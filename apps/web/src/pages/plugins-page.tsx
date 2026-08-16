@@ -71,6 +71,17 @@ export function PluginsRoute({
   const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
   const pendingConnectProvider = usePendingConnectProvider();
   const clearPendingConnectProvider = useClearPendingConnectProvider();
+  // `/plugins?connect=mcp` (CL-6142): the deep link
+  // `@workbench/connections-tools`' `request_connection` tool hands a
+  // human when an agent asks for an MCP server that isn't connected yet.
+  // Read once off the initial URL, same `window.location.search` pattern
+  // `onboarding-page.tsx` uses for its own connect-return query params —
+  // this is the one special `connect=` value handled outside the
+  // `pendingConnectProvider` context, since "mcp" never names a
+  // `CONNECTOR_REGISTRY` entry `PluginConnectPanel` could open.
+  const [autoOpenMcpAdd] = useState(
+    () => new URLSearchParams(window.location.search).get("connect") === "mcp",
+  );
 
   const openPluginPanel = useCallback((plugin: ResolvedPlugin) => {
     setOpenPlugin(plugin);
@@ -214,10 +225,12 @@ export function PluginsRoute({
           </div>
         ) : null}
         <PluginsGallery
+          tenantId={tenantId}
           plugins={pluginsState.plugins}
           skills={skillCards}
           onOpenPlugin={openPluginPanel}
           onOpenSkill={(skill) => setOpenSkillName(skill.name)}
+          autoOpenMcpAdd={autoOpenMcpAdd}
         />
       </PageShell>
       <PluginConnectPanel

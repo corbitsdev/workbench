@@ -87,6 +87,13 @@ const SKILLS: readonly SkillCardData[] = [
   },
 ];
 
+// `McpServersSection` fetches its server list on mount — stub `fetch` so
+// this suite (which only exercises the plugin/skill grid) never issues a
+// real request, and resolve within an `act()` flush so the state update
+// isn't reported unwrapped.
+globalThis.fetch = (async () =>
+  new Response(JSON.stringify({ data: [] }))) as unknown as typeof fetch;
+
 function renderGallery() {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -94,6 +101,7 @@ function renderGallery() {
   act(() => {
     root.render(
       <PluginsGallery
+        tenantId="tenant_test"
         plugins={PLUGINS}
         skills={SKILLS}
         onOpenPlugin={() => {}}

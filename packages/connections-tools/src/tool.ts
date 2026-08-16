@@ -8,23 +8,31 @@
 // OAuth itself; only a human, acting in the browser through the
 // existing Connections settings surface, can finish a connect flow.
 //
+// Both tools also read `@workbench/connections`' MCP-server listing
+// (CL-6142's `/api/workflow-connections/mcp-servers`, backed by
+// `@corbits/mcp-tools`' own `mcp_list_servers` route) — a tenant-minted
+// `mcp:<slug>` connector has no fixed registry id, so `list_connections`
+// folds it into the connected list by name, and `request_connection`
+// falls back to it (see `ADD_MCP_SERVER_DEEP_LINK`) before reporting an
+// unknown connector.
+//
 // Approval: `list_connections` reads only, so it declares no `approval`
 // key (matching a read-style tool, e.g. `@corbits/memory-tools`' search
-// tool). `request_connection` performs no HTTP call and mutates
-// nothing either — it validates a connector id against the same static
-// registry and returns a deep-link string — so it also declares no
-// `approval` key. Neither tool is architecturally required to gate
-// behind a human: nothing here writes a credential, calls a third
-// party, or exposes a secret. (Contrast `@corbits/capability-tools`'
-// `request_capability`, which mutates a workflow definition and so
-// genuinely needs `approval: "ask"`.)
+// tool). `request_connection` performs no state-mutating HTTP call
+// either — it reads the registry and the MCP-server listing and
+// returns a deep-link string — so it also declares no `approval` key.
+// Neither tool is architecturally required to gate behind a human:
+// nothing here writes a credential, calls a third party, or exposes a
+// secret. (Contrast `@corbits/capability-tools`' `request_capability`,
+// which mutates a workflow definition and so genuinely needs
+// `approval: "ask"`.)
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { CONNECTOR_REGISTRY } from "@workbench/connections";
 import { type } from "arktype";
 
-import { listConnections } from "./client";
+import { listConnections, listMcpServerConnections } from "./client";
 
 export const LIST_CONNECTIONS_TOOL = "list_connections";
 export const REQUEST_CONNECTION_TOOL = "request_connection";
@@ -76,24 +84,42 @@ function connectDeepLink(connectorId: string): string {
   return `/plugins?connect=${connectorId}`;
 }
 
+/** `/plugins?connect=mcp` — the same deep-link shape `connectDeepLink`
+ * builds for a fixed `CONNECTOR_REGISTRY` id, pointed at Plugins'
+ * generic "Add MCP server" card instead of one connector's own card,
+ * since an MCP server has no fixed id to deep-link to (it is tenant-
+ * minted at connect time — see `mcp-server-routes.ts`'s header). */
+const ADD_MCP_SERVER_DEEP_LINK = "/plugins?connect=mcp";
+
 async function runListConnections(
   env: WorkflowConnectionEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
   try {
-    const connections = await listConnections(clientConfig(env));
-    if (connections.length === 0) {
+    const [connections, mcpServers] = await Promise.all([
+      listConnections(clientConfig(env)),
+      listMcpServerConnections(clientConfig(env)),
+    ]);
+    const connected = connections.filter((entry) => entry.connected);
+    const notConnected = connections.filter((entry) => !entry.connected);
+    if (
+      connected.length === 0 &&
+      notConnected.length === 0 &&
+      mcpServers.length === 0
+    ) {
       return {
         callId: call.id,
         isError: false,
         content: "No connectors are registered in this workbench.",
       };
     }
-    const connected = connections.filter((entry) => entry.connected);
-    const notConnected = connections.filter((entry) => !entry.connected);
+    const connectedNames = [
+      ...connected.map((entry) => entry.displayName),
+      ...mcpServers.map((server) => `${server.name} (MCP server)`),
+    ];
     const lines = [
-      connected.length > 0
-        ? `Connected: ${connected.map((entry) => entry.displayName).join(", ")}.`
+      connectedNames.length > 0
+        ? `Connected: ${connectedNames.join(", ")}.`
         : "Connected: none.",
       notConnected.length > 0
         ? `Not connected: ${notConnected.map((entry) => entry.displayName).join(", ")}.`
@@ -105,28 +131,51 @@ async function runListConnections(
   }
 }
 
-function runRequestConnection(
+async function runRequestConnection(
+  env: WorkflowConnectionEnv,
   call: ToolCall,
   parsed: RequestConnectionInput,
-): ToolResult {
+): Promise<ToolResult> {
   const descriptor = CONNECTOR_REGISTRY[parsed.connector];
-  if (descriptor === undefined) {
-    const known = Object.keys(CONNECTOR_REGISTRY).join(", ");
-    return errorResult(
-      call.id,
-      new Error(
-        `"${parsed.connector}" isn't a connector this workbench knows about. Known connectors: ${known}.`,
-      ),
-    );
+  if (descriptor !== undefined) {
+    return {
+      callId: call.id,
+      isError: false,
+      content:
+        `To connect ${descriptor.displayName}, ask the human to open ` +
+        `${connectDeepLink(descriptor.id)} and let you know once it's ` +
+        `connected. This only hands over a link — connecting still ` +
+        `happens in the browser, never automatically.`,
+    };
   }
+
+  // Not a fixed registry connector — check whether it is already a
+  // connected MCP server under this name before assuming it needs one.
+  try {
+    const mcpServers = await listMcpServerConnections(clientConfig(env));
+    const already = mcpServers.find(
+      (server) =>
+        server.slug === parsed.connector || server.name === parsed.connector,
+    );
+    if (already !== undefined) {
+      return {
+        callId: call.id,
+        isError: false,
+        content: `"${already.name}" is already connected as an MCP server.`,
+      };
+    }
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+
   return {
     callId: call.id,
     isError: false,
     content:
-      `To connect ${descriptor.displayName}, ask the human to open ` +
-      `${connectDeepLink(descriptor.id)} and let you know once it's ` +
-      `connected. This only hands over a link — connecting still ` +
-      `happens in the browser, never automatically.`,
+      `"${parsed.connector}" isn't a fixed connector this workbench ` +
+      `knows about, and no MCP server by that name is connected yet. ` +
+      `If it's an MCP server, ask the human to open ` +
+      `${ADD_MCP_SERVER_DEEP_LINK} and add it by name and URL there.`,
   };
 }
 
@@ -192,7 +241,7 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
               ),
             );
           }
-          return Promise.resolve(runRequestConnection(call, parsed));
+          return runRequestConnection(env, call, parsed);
         }
         default:
           return Promise.resolve(

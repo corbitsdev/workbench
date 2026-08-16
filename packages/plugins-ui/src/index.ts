@@ -6,6 +6,15 @@ export { SkillCard } from "./skill-card";
 export type { SkillCardData } from "./skill-card";
 export { InstalledStrip } from "./installed-strip";
 export { PluginConnectPanel } from "./plugin-connect-panel";
+export { McpServersSection } from "./mcp-servers-section";
+
+export {
+  McpServersApiError,
+  listMcpServers,
+  connectMcpServer,
+  disconnectMcpServer,
+} from "./mcp-servers-api";
+export type { McpServer, McpServerConnected } from "./mcp-servers-api";
 
 export {
   FEATURED_CONNECTOR_IDS,

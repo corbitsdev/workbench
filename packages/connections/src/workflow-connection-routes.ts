@@ -26,6 +26,7 @@
 import { Hono } from "hono";
 
 import { CONNECTOR_REGISTRY } from "./registry";
+import type { McpServerConnection } from "./mcp-server-store";
 
 /**
  * The tenant + principal + run a presented sidecar token and run
@@ -75,6 +76,16 @@ export type CreateWorkflowConnectionRoutesDeps = {
   readonly listConnectedProviders: (
     tenantId: string,
   ) => Promise<readonly string[]>;
+  /** Backs `GET /mcp-servers` (`@corbits/mcp-tools`' `mcp_list_servers`):
+   * every `mcp:<slug>` server this tenant has connected. `apps/hub`
+   * supplies `@workbench/connections`' own `listMcpServerConnections`
+   * (`mcp-server-store.ts`) — a direct DB read, since this route has no
+   * tenant-session cookies to reuse `./mcp-server-routes.ts`'s hub-HTTP
+   * listing. Optional so an environment that hasn't wired MCP support
+   * yet degrades to an empty list rather than a route-mount error. */
+  readonly listMcpServers?: (
+    tenantId: string,
+  ) => Promise<readonly McpServerConnection[]>;
 };
 
 export function createWorkflowConnectionRoutes(
@@ -119,6 +130,12 @@ export function createWorkflowConnectionRoutes(
       connected: connectedIds.has(descriptor.id),
     }));
     return c.json({ data: connections }, 200);
+  });
+
+  app.get("/mcp-servers", async (c) => {
+    const scope = c.get("workflowConnectionScope");
+    const servers = (await deps.listMcpServers?.(scope.tenantId)) ?? [];
+    return c.json({ data: servers }, 200);
   });
 
   return app;

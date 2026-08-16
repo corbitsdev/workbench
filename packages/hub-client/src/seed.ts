@@ -795,6 +795,13 @@ export type EnsureProviderArgs = {
   tenantId: string;
   name: string;
   plugin: string;
+  /** The API origin an `http`-plugin credential from this provider pins
+   * its requests to (`CreateProvider`'s own field, `@intx/types`).
+   * Every fixed connector today (GitHub, Exa, ...) lets the hub-side
+   * plugin default this; a dynamic-origin connector — a tenant-supplied
+   * MCP server URL — must set it explicitly, or credential resolution
+   * fails closed with `no_origin`. */
+  apiBaseUrl?: string;
 };
 
 export async function ensureProvider(
@@ -806,7 +813,7 @@ export async function ensureProvider(
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/providers`,
-    { name: args.name, plugin: args.plugin },
+    { name: args.name, plugin: args.plugin, apiBaseUrl: args.apiBaseUrl },
     cookies,
   );
   if (created.status === 201) {

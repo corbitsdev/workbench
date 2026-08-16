@@ -211,7 +211,9 @@ import {
 } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
+  createMcpServerRoutes,
   createWorkflowConnectionRoutes,
+  listMcpServerConnections,
 } from "@workbench/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
@@ -1340,6 +1342,21 @@ export async function createHub(config: HubConfig) {
         listConnectedProviders(db, tenantId),
     }),
   );
+  // MCP servers: the tenant-scoped connect/list/disconnect surface
+  // Plugins drives (CL-6142), mirroring `connections` above but for
+  // tenant-minted `mcp:<slug>` connectors rather than
+  // `CONNECTOR_REGISTRY`'s fixed set.
+  app.route(
+    `${TENANT_PREFIX}/mcp-servers`,
+    createMcpServerRoutes({
+      hubUrl: config.baseUrl,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      log: (line) => log.info`${line}`,
+    }),
+  );
   // Myra's own connections-visibility surface
   // (`@corbits/connections-tools`' `list_connections`/
   // `request_connection`): the workflow-run-authenticated counterpart
@@ -1350,6 +1367,7 @@ export async function createHub(config: HubConfig) {
       authenticator: createWorkflowRunAuthenticator({ db }),
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),
+      listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
