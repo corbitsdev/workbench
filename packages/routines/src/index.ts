@@ -88,4 +88,13 @@ export type {
   LaunchedRoutineRun,
   RunSummaryResolver,
   DeliveryThreadPort,
+  DeliverySpacePort,
 } from "./routes";
+
+export { createWorkflowRoutineRoutes } from "./workflow-routine-routes";
+export type {
+  CreateWorkflowRoutineRoutesDeps,
+  WorkflowRoutineRunScope,
+  WorkflowRoutinesEnv,
+  WorkflowRunAuthenticator as WorkflowRoutineRunAuthenticator,
+} from "./workflow-routine-routes";

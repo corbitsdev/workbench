@@ -79,6 +79,16 @@ export type SkillRegistry = {
       readonly scope: SkillAccessScope;
     },
   ): Promise<SkillSummary>;
+  /** Republishes an existing skill's body/description as a new commit on
+   * its same asset, scope untouched — the "republish" `canAdministerSkill`
+   * documents. Distinct from `create`, which always 409s on a name a
+   * fully-formed skill already owns (see `create`'s own conflict
+   * handling) — only the skill's own creator may `update` it. */
+  update(
+    caller: SkillCaller,
+    name: string,
+    input: { readonly description: string; readonly body: string },
+  ): Promise<SkillSummary>;
 };
 
 export type CreateSkillRegistryDeps = {
@@ -391,6 +401,44 @@ export function createSkillRegistry(
         message: `Create ${name}`,
       });
       return finish(created.id);
+    },
+
+    async update(caller, name, input) {
+      const parsedName = assertSkillName(name);
+      const description = assertDescription(input.description);
+      let contents: string;
+      try {
+        contents = buildSkillMd({
+          name: parsedName,
+          description,
+          body: input.body,
+        });
+      } catch (cause) {
+        contentErrorToRegistryError(cause);
+      }
+
+      const { row } = await resolveVisible(caller, parsedName);
+      if (!canAdministerSkill(row, caller)) {
+        throw new SkillRegistryError(
+          "forbidden",
+          `only the author of "${parsedName}" may update it`,
+        );
+      }
+      await assets.writeSkillMd({
+        assetId: row.assetId,
+        skillName: parsedName,
+        contents,
+        message: `Update ${parsedName}`,
+      });
+      const summaries = await summarize(caller, [row]);
+      const summary = summaries[0];
+      if (summary === undefined) {
+        throw new SkillRegistryError(
+          "not_found",
+          `updated skill "${parsedName}" is not readable back`,
+        );
+      }
+      return summary;
     },
   };
 }

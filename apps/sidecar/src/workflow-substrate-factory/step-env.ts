@@ -317,6 +317,11 @@ export function createSidecarStepBuildEnv(
       hubMemoryUrl: string;
       hubSkillsUrl: string;
       hubCapabilitiesUrl: string;
+      hubRoutinesUrl: string;
+      hubTaskPlannerUrl: string;
+      hubConnectionsUrl: string;
+      hubAgentDirectoryUrl: string;
+      hubChatUrl: string;
       sidecarToken: string;
       definitionId: string;
     } = {
@@ -356,6 +361,17 @@ export function createSidecarStepBuildEnv(
       // "definitionId"]`) for its workflow-run-authenticated capabilities
       // surface.
       hubCapabilitiesUrl: deps.hubArtifactsUrl,
+      // Same hub HTTP origin again, under the keys the Myra manager-tools
+      // bundles declare (CL-5879 follow-up: routines-tools, task-dispatch-
+      // tools, connections-tools, agent-directory-tools) for their own
+      // workflow-run-authenticated surfaces — one hub origin, one env key
+      // per tool-bundle surface, matching every precedent above rather
+      // than overloading an existing name for an unrelated surface.
+      hubRoutinesUrl: deps.hubArtifactsUrl,
+      hubTaskPlannerUrl: deps.hubArtifactsUrl,
+      hubConnectionsUrl: deps.hubArtifactsUrl,
+      hubAgentDirectoryUrl: deps.hubArtifactsUrl,
+      hubChatUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
       definitionId: deps.definitionId,
     };

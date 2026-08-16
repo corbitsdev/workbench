@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/connections-tools",
+  "private": true,
+  "description": "The list_connections and request_connection tools as an @intx/agent tool bundle: an agent sees which third-party connections this workbench already has live and hands the human a deep link to connect one that isn't, reusing the existing connections plane and never inventing new state or completing OAuth itself",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@workbench/connections": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

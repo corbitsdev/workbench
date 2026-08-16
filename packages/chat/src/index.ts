@@ -90,7 +90,7 @@ export type {
 } from "./platform-port";
 
 export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
-export type { ChatDb, ChatStore } from "./store";
+export type { ChatDb, ChatStore, ChannelByParticipantAddress } from "./store";
 
 export {
   createInMemoryThreadStore,
@@ -244,3 +244,11 @@ export {
   artifactPartsForFinalizedTurn,
   artifactPartsForToolCall,
 } from "./artifact-delivery";
+
+export { createWorkflowParticipantRoutes } from "./workflow-participant-routes";
+export type {
+  CreateWorkflowParticipantRoutesDeps,
+  WorkflowParticipantEnv,
+  WorkflowParticipantRunScope,
+  WorkflowRunAuthenticator as WorkflowParticipantRunAuthenticator,
+} from "./workflow-participant-routes";

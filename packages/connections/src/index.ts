@@ -32,6 +32,13 @@ export {
   type CreateConnectionRoutesDeps,
 } from "./routes";
 export {
+  createWorkflowConnectionRoutes,
+  type ConnectionSummary,
+  type CreateWorkflowConnectionRoutesDeps,
+  type WorkflowConnectionRunScope,
+  type WorkflowRunAuthenticator as WorkflowConnectionRunAuthenticator,
+} from "./workflow-connection-routes";
+export {
   createOAuthConnectRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
   sanitizeReturnPath,

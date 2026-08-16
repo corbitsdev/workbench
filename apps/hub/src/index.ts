@@ -40,7 +40,9 @@ import {
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
   createDrizzleDefinitionSkillsStore,
+  createWorkflowAgentCreateRoutes,
   createWorkflowCapabilityRoutes,
+  createWorkflowSkillPinRoutes,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   type CapabilityInventoryProvider,
@@ -63,6 +65,7 @@ import {
   createDrizzleWriteClaimStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  createWorkflowParticipantRoutes,
   isChannelHostDefinitionName,
   listConnectedProviders,
   provisionSpaceChannel,
@@ -134,6 +137,7 @@ import {
   createDrizzleRoutineStore,
   createMyraRoutineDrafting,
   createRoutineRoutes,
+  createWorkflowRoutineRoutes,
   type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
@@ -148,6 +152,7 @@ import {
 import {
   createMyraAgentDefinitionDrafting,
   createPlannerRoutes,
+  createWorkflowDispatchRoutes,
   dispatchWithPlanner,
   isPlannerCreatedDefinitionName,
   PlannerDefinitionGrantDeniedError,
@@ -203,7 +208,10 @@ import {
   createDrizzlePendingSeedStore,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
-import { createConnectionRoutes } from "@workbench/connections";
+import {
+  createConnectionRoutes,
+  createWorkflowConnectionRoutes,
+} from "@workbench/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   createProviderHealthPort,
@@ -939,6 +947,22 @@ export async function createHub(config: HubConfig) {
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  // Myra's own channel-invite surface (`@corbits/agent-directory-tools`'
+  // `create_agent`'s `invite: true` default): the workflow-run-
+  // authenticated counterpart to `POST .../invite` above, self-CHANNEL
+  // scoped — see `@corbits/chat`'s `workflow-participant-routes.ts` for
+  // the [Intx/repo gap] this resolves around (no direct run-address ->
+  // channel index; resolved by scanning the tenant's channel
+  // participant lists).
+  app.route(
+    "/api/workflow-chat",
+    createWorkflowParticipantRoutes({
+      store: chatStore,
+      platform: chatPlatform,
+      publish: channelSubscribers.publish,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+    }),
+  );
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant
   // prefix and outside session auth, like the webhook ingress below —
   // Slack is not a principal, and this route resolves its own
@@ -1167,6 +1191,23 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // Myra's own agent-creation surface (`@corbits/agent-directory-tools`'
+  // `create_agent`/`list_agents`): the workflow-run-authenticated
+  // counterpart to the tenant-session mount just above, self-TENANT
+  // scoped (Myra may create an agent anywhere in her own tenant). See
+  // `@corbits/agent-directory`'s `workflow-create-routes.ts` for the
+  // authorization reasoning.
+  app.route(
+    "/api/workflow-agent-directory",
+    createWorkflowAgentCreateRoutes({
+      db,
+      assetService,
+      skillIndex: skills.skillIndex,
+      skillsStore: definitionSkillsStore,
+      capabilityInventory,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+    }),
+  );
   // The workflow-run-authenticated variant of the capabilities route
   // just above (CL-6086): a workflow child has no browser session, only
   // its sidecar bearer token and its own run address, so it reaches
@@ -1183,6 +1224,21 @@ export async function createHub(config: HubConfig) {
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+    }),
+  );
+  // Myra's own skill-pin surface (`@corbits/skills-tools`' `pin_skill`):
+  // self-TENANT scoped (unlike `/api/workflow-capabilities` above, which
+  // is self-definition scoped) — Myra may pin a skill onto any
+  // definition in her own tenant. See `@corbits/agent-directory`'s
+  // `workflow-skill-pin-routes.ts` for the authorization reasoning.
+  app.route(
+    "/api/workflow-skill-pins",
+    createWorkflowSkillPinRoutes({
+      db,
+      assetService,
+      skillIndex: skills.skillIndex,
+      skillsStore: definitionSkillsStore,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
   );
@@ -1279,6 +1335,18 @@ export async function createHub(config: HubConfig) {
       // reports exactly what a Connect click would decide.
       oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
       providerHealth: providerHealthStore,
+      listConnectedProviders: (tenantId) =>
+        listConnectedProviders(db, tenantId),
+    }),
+  );
+  // Myra's own connections-visibility surface
+  // (`@corbits/connections-tools`' `list_connections`/
+  // `request_connection`): the workflow-run-authenticated counterpart
+  // to the tenant-session mount just above.
+  app.route(
+    "/api/workflow-connections",
+    createWorkflowConnectionRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),
     }),
@@ -1650,6 +1718,65 @@ export async function createHub(config: HubConfig) {
       validateRoutineInput: routineInputValid,
     }),
   );
+  // Myra's own routine-management surface (`@corbits/routines-tools`'
+  // `routine_list`/`routine_create`/`routine_update`/`routine_run_now`):
+  // the workflow-run-authenticated counterpart to the tenant-session
+  // mount just above, reusing the exact same store/launcher/delivery
+  // ports — see `@corbits/routines`' `workflow-routine-routes.ts` for
+  // the deliberate self-tenant-scoped authorization decision this route
+  // enforces in place of `requireGrant`.
+  app.route(
+    "/api/workflow-routines",
+    createWorkflowRoutineRoutes({
+      store: routineStore,
+      launcher: routineLauncher,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      definitionInTenant: async (tenantId, definitionId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+          columns: { id: true },
+        });
+        return row !== undefined;
+      },
+      webhookTriggerInTenant: async (
+        tenantId,
+        webhookTriggerId,
+        definitionId,
+      ) => {
+        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
+        return row !== undefined && row.workflowDefinitionId === definitionId;
+      },
+      deliveryChannelRequired: routineDeliveryChannelRequired,
+      deliverySpace: {
+        createDeliverySpace: (input) =>
+          provisionSpaceChannel(
+            {
+              tenancy: chatTenancy,
+              platform: chatPlatform,
+              store: chatStore,
+              channelHostInferencePreferences:
+                chatDeps.channelHostInferencePreferences,
+              turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+            },
+            input,
+          ),
+      },
+      resolveTenantDomain: async (tenantId) => {
+        const row = await db.query.tenant.findFirst({
+          where: eq(tenantTable.id, tenantId),
+          columns: { domain: true },
+        });
+        if (row === undefined) {
+          throw new Error(`No tenant "${tenantId}"`);
+        }
+        return row.domain;
+      },
+      validateRoutineInput: routineInputValid,
+    }),
+  );
   // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
   // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
   // general job-runner today, so this loop is scoped to exactly one job
@@ -2015,6 +2142,54 @@ export async function createHub(config: HubConfig) {
           },
           inventorySources: plannerInventorySources,
         }).propose(input),
+    }),
+  );
+  // Myra's own task-dispatch surface (`@corbits/task-dispatch-tools`'
+  // `dispatch_task`): the workflow-run-authenticated counterpart to the
+  // tenant-session planner route just above, reusing the exact same
+  // spawn/planner deps. When the tool call names an `agentDefinitionId`
+  // it skips the planner's own one-shot re-ask entirely (see
+  // `@corbits/task-planner`'s `workflow-dispatch-routes.ts`); otherwise
+  // it falls back to the full Myra-picks-or-creates-an-agent flow.
+  app.route(
+    "/api/workflow-task-planner",
+    createWorkflowDispatchRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      db,
+      runner: {
+        run: (runnerInput) =>
+          runOneShotFoldedPrompt(
+            {
+              foldedRuns: taskLauncherDeps.foldedRuns,
+              events: sidecarRouter.events,
+              cryptoProviders: plannerCryptoProviders,
+              lifecycle: taskLifecycle,
+              undeploy: (address, reason) =>
+                sidecarRouter.sendAgentUndeploy(address, reason),
+            },
+            runnerInput,
+          ),
+      },
+      inventorySources: plannerInventorySources,
+      resolveMyraDefinitionId: (tenantId) =>
+        resolveMyraDefinitionIdFromDb(db, tenantId),
+      taskLauncherDeps,
+      store: taskStore,
+      deployAgentDefinition,
+      undeployAgentDefinition,
+      requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {
+        const result = await authorize(
+          chatGrantStore,
+          principalId,
+          tenantId,
+          "workflow-definition:*",
+          "create",
+          chatConditionRegistry,
+        );
+        if (result.effect !== "allow") {
+          throw new PlannerDefinitionGrantDeniedError(principalId);
+        }
+      },
     }),
   );
 

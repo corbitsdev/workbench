@@ -161,3 +161,94 @@ describe("load", () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe("create", () => {
+  test("a request with no bearer token is rejected", async () => {
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "escalate",
+        description: "Escalates blockers.",
+        body: "Ping the on-call.",
+      }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  test("creates a tenant-scoped skill regardless of the caller's own scope choice", async () => {
+    const response = await request("/create", {
+      method: "POST",
+      body: {
+        name: "escalate",
+        description: "Escalates blockers.",
+        body: "Ping the on-call.",
+      },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { name: string; scope: string };
+    };
+    expect(body.data.name).toBe("escalate");
+    expect(body.data.scope).toBe("tenant");
+
+    const loaded = await request("/load", {
+      method: "POST",
+      body: { name: "escalate" },
+      address: TEAMMATE_ADDRESS,
+    });
+    expect(loaded.status).toBe(200);
+  });
+});
+
+describe("update", () => {
+  test("a request with no bearer token is rejected", async () => {
+    const response = await app.request("/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "summarize", body: "New body." }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  test("updating an unknown skill is a 404", async () => {
+    const response = await request("/update", {
+      method: "POST",
+      body: { name: "does-not-exist", body: "New body." },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  test("omitting description preserves the skill's current description", async () => {
+    const response = await request("/update", {
+      method: "POST",
+      body: { name: "summarize", body: "Collect decisions, owners, dates." },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { description: string; body?: string };
+    };
+    expect(body.data.description).toBe("Condenses a long thread.");
+
+    const loaded = await request("/load", {
+      method: "POST",
+      body: { name: "summarize" },
+    });
+    const loadedBody = (await loaded.json()) as { data: { body: string } };
+    expect(loadedBody.data.body).toBe("Collect decisions, owners, dates.");
+  });
+
+  test("an explicit description replaces the skill's current one", async () => {
+    const response = await request("/update", {
+      method: "POST",
+      body: {
+        name: "summarize",
+        body: "Collect decisions.",
+        description: "Summarizes any thread.",
+      },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { data: { description: string } };
+    expect(body.data.description).toBe("Summarizes any thread.");
+  });
+});

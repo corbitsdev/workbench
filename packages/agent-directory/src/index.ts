@@ -5,9 +5,14 @@ export {
   reindexPinnedSkills,
   withAgentModel,
   withAgentToolPackagePin,
+  createAgentDefinitionCore,
+  DuplicateAgentHandleError,
   AGENT_DEFINITION_STEP_ID,
   type AgentDefinitionCapabilities,
   type AgentDefinitionWorkflowInput,
+  type CreateAgentDefinitionCoreDeps,
+  type CreateAgentDefinitionCoreInput,
+  type CreateAgentDefinitionCoreResult,
 } from "./agent-workflow";
 export {
   createDrizzleDefinitionSkillsStore,
@@ -56,3 +61,14 @@ export {
   type WorkflowCapabilityRunScope,
   type WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
 } from "./workflow-capability-routes";
+export {
+  createWorkflowSkillPinRoutes,
+  type CreateWorkflowSkillPinRoutesDeps,
+  type WorkflowSkillPinRunScope,
+  type WorkflowRunAuthenticator as WorkflowSkillPinRunAuthenticator,
+} from "./workflow-skill-pin-routes";
+export {
+  createWorkflowAgentCreateRoutes,
+  type CreateWorkflowAgentCreateRoutesDeps,
+  type WorkflowAgentCreateEnv,
+} from "./workflow-create-routes";

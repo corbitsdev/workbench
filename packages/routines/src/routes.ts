@@ -262,9 +262,11 @@ const ApproveDraftBody = type({
 /**
  * The wire shape for a routine — never a raw id-only reference, always
  * the name and structured trigger a UI can render directly, per the
- * platform's "no raw IDs on screen" floor.
+ * platform's "no raw IDs on screen" floor. Exported: `./workflow-routine-routes.ts`
+ * (Myra's own tenant-scoped routine surface) renders the exact same shape,
+ * never a second, drifting view of a routine row.
  */
-function routineView(row: RoutineRow) {
+export function routineView(row: RoutineRow) {
   return {
     id: row.id,
     name: row.name,
@@ -303,8 +305,12 @@ async function runView(
  *
  * When the routine has a delivery channel and a deliveryThreads port is
  * wired, opens a delivery thread first and passes it to the launcher.
+ *
+ * Exported: `./workflow-routine-routes.ts`'s "run now" reuses this exact
+ * launch-then-correlate call, never a second launch path for Myra's own
+ * tenant-scoped routine surface either.
  */
-async function launchAndCorrelate(
+export async function launchAndCorrelate(
   deps: {
     store: RoutineStore;
     launcher: RoutineLauncher;
@@ -379,8 +385,11 @@ async function launchAndCorrelate(
  * when it is and the referenced webhook-triggers row checks out for this
  * tenant and definition. See `webhookTriggerInTenant`'s doc comment on
  * why the definition id must match.
+ *
+ * Exported: `./workflow-routine-routes.ts` runs the exact same check on
+ * Myra's own create/update path, never a looser one.
  */
-async function webhookTriggerValid(
+export async function webhookTriggerValid(
   deps: Pick<CreateRoutineRoutesDeps, "webhookTriggerInTenant">,
   tenantId: string,
   trigger: RoutineTriggerT,
@@ -397,8 +406,12 @@ async function webhookTriggerValid(
 
 /** Every definition defaults to channel-required — see
  * `CreateRoutineRoutesDeps.deliveryChannelRequired`'s own doc comment
- * for why an omitted port must never change prior behavior. */
-async function isDeliveryChannelRequired(
+ * for why an omitted port must never change prior behavior.
+ *
+ * Exported: `./workflow-routine-routes.ts` consults the same rule for
+ * Myra's own create/run-now path.
+ */
+export async function isDeliveryChannelRequired(
   deps: Pick<CreateRoutineRoutesDeps, "deliveryChannelRequired">,
   tenantId: string,
   definitionId: string,
