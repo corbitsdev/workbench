@@ -1,0 +1,361 @@
+// A scripted playback of the owner's canonical GTM scenario (CL-5879
+// manager-tools follow-up), exercised directly against the manager-tools
+// bundles' `run()` with a single fake `fetch` standing in for every
+// workflow-run-authenticated route those bundles call. This proves the
+// CONTRACT across packages — a tool call's request shape matches what
+// each route expects, and a route's response shape matches what each
+// client parses — end to end through real bundle code, with no model
+// or hub process involved.
+//
+// What this test does NOT prove: that a live model, given the assistant
+// system prompt, actually chooses this tool sequence on its own. That is
+// an [Intx/repo gap] this suite cannot close — it requires a live
+// inference call (or at minimum a recorded transcript against a real
+// model), which is out of scope for a unit suite. What IS proven here,
+// honestly: every tool call this scenario needs is wired, its inputs
+// are accepted by the real route contracts, and outputs from one step
+// (a newly created agent's id) flow correctly into the next step's
+// input (that agent becomes the routine's `definitionId`) — the exact
+// mechanical chain a model would need to walk.
+//
+// Scenario played back (owner's script), with one substitution: the
+// owner's script names Attio as one of the three connectors, but
+// `CONNECTOR_REGISTRY` (`packages/connections/src/registry.ts`) has no
+// "attio" entry today — this suite plays back against three connectors
+// that ARE registered (Exa, Granola, Linear) and separately asserts
+// that naming "attio" is honestly rejected (fail-closed against the
+// real registry, never a fabricated connector), rather than silently
+// assuming a connector that doesn't exist.
+//   1. Myra is asked to set up a GTM sales motion.
+//   2. She checks which connections exist; none of Exa/Granola/Linear
+//      are connected, so she hands over connect links for each.
+//   3. Once the human connects them (simulated: the fake connections
+//      state flips to connected), she creates two specialist agents —
+//      a call-notes extractor and a weekly-analytics agent — inviting
+//      each into the workbench's channel.
+//   4. She creates two routines: a daily one that extracts info from
+//      calls and shares updates, targeting the call-notes agent; and a
+//      weekly one that provides analytical updates, targeting the
+//      analytics agent.
+import { expect, test } from "bun:test";
+import type { ToolCall } from "@intx/types/runtime";
+
+import {
+  connectionsTools,
+  LIST_CONNECTIONS_TOOL,
+  REQUEST_CONNECTION_TOOL,
+  type WorkflowConnectionEnv,
+} from "@corbits/connections-tools";
+import {
+  agentDirectoryTools,
+  CREATE_AGENT_TOOL,
+  type WorkflowAgentDirectoryEnv,
+} from "@corbits/agent-directory-tools";
+import {
+  routinesTools,
+  ROUTINE_CREATE_TOOL,
+  type WorkflowRoutineEnv,
+} from "@corbits/routines-tools";
+
+const HUB = "https://hub.example.com";
+
+function call(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+): ToolCall {
+  return { id, name, arguments: args };
+}
+
+/** Minimal in-memory hub double: tracks which connectors are connected
+ * and which agent definitions have been created, and routes every
+ * request the three bundles under test can issue to the exact response
+ * shape their own clients parse. Any request this fake doesn't
+ * recognize fails the test loudly (thrown 404), rather than silently
+ * returning something a real hub never would. */
+function createFakeHub() {
+  const connected = new Set<string>();
+  const createdDefinitions: { id: string; name: string }[] = [];
+  const invitedDefinitionIds: string[] = [];
+  const createdRoutines: {
+    definitionId: string;
+    trigger: unknown;
+    name: string;
+  }[] = [];
+
+  // Mirrors the real `CONNECTOR_REGISTRY` entries for these three ids
+  // (`packages/connections/src/registry.ts`) closely enough for this
+  // route double; `request_connection` itself validates against the
+  // REAL registry, not this list, so the fail-closed assertion below is
+  // still testing real code.
+  const registry = [
+    { id: "exa", displayName: "Exa", docsUrl: "https://exa.ai/docs" },
+    { id: "granola", displayName: "Granola", docsUrl: "https://granola.ai" },
+    { id: "linear", displayName: "Linear", docsUrl: "https://linear.app/docs" },
+  ];
+
+  const fetchImpl = (async (
+    input: string | Request | URL,
+    init?: RequestInit,
+  ) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const body =
+      typeof init?.body === "string"
+        ? (JSON.parse(init.body) as Record<string, unknown>)
+        : undefined;
+
+    if (
+      url.pathname === "/api/workflow-connections/connections" &&
+      method === "GET"
+    ) {
+      return Response.json({
+        data: registry.map((entry) => ({
+          ...entry,
+          connected: connected.has(entry.id),
+        })),
+      });
+    }
+
+    if (
+      url.pathname === "/api/workflow-agent-directory/definitions" &&
+      method === "POST" &&
+      body
+    ) {
+      const id = `def_${String(createdDefinitions.length + 1)}`;
+      createdDefinitions.push({ id, name: body["name"] as string });
+      return Response.json(
+        {
+          id,
+          name: body["name"],
+          description: null,
+          currentVersion: 1,
+          status: "deployed",
+          skills: [],
+        },
+        { status: 201 },
+      );
+    }
+
+    if (
+      url.pathname === "/api/workflow-chat/participants/invite" &&
+      method === "POST" &&
+      body
+    ) {
+      const definitionId = body["definitionId"] as string;
+      invitedDefinitionIds.push(definitionId);
+      return Response.json(
+        {
+          address: `${definitionId}@workflow`,
+          definitionId,
+          handle: definitionId,
+        },
+        { status: 201 },
+      );
+    }
+
+    if (
+      url.pathname === "/api/workflow-routines/routines" &&
+      method === "POST" &&
+      body
+    ) {
+      createdRoutines.push({
+        definitionId: body["definitionId"] as string,
+        trigger: body["trigger"],
+        name: body["name"] as string,
+      });
+      return Response.json(
+        {
+          id: `rtn_${String(createdRoutines.length)}`,
+          name: body["name"],
+          definitionId: body["definitionId"],
+          trigger: body["trigger"],
+          scope: "bench",
+          input: body["input"] ?? {},
+          enabled: true,
+          deliveryChannelId: null,
+          consecutiveFailures: 0,
+          deadLetteredAt: null,
+          createdAt: "2026-08-16T00:00:00.000Z",
+          updatedAt: "2026-08-16T00:00:00.000Z",
+        },
+        { status: 201 },
+      );
+    }
+
+    throw new Error(`fake hub: unhandled ${method} ${url.pathname}`);
+  }) as unknown as typeof fetch;
+
+  return {
+    fetchImpl,
+    connected,
+    createdDefinitions,
+    invitedDefinitionIds,
+    createdRoutines,
+  };
+}
+
+test("GTM scenario: connect three services, then create two specialist agents and two routines targeting them", async () => {
+  const hub = createFakeHub();
+
+  // None of these three bundles' `WorkflowXEnv` types expose a
+  // `fetchImpl` test seam (only their `client.ts`'s own config type
+  // does, never threaded from `env`) — the established pattern this
+  // repo's other tool-bundle tests use instead (see
+  // `packages/capability-tools/src/tool.test.ts`) is to monkey-patch
+  // `globalThis.fetch` for the call, restored in a `finally`.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = hub.fetchImpl;
+  try {
+    await runScenario(hub);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+async function runScenario(
+  hub: ReturnType<typeof createFakeHub>,
+): Promise<void> {
+  const connectionsEnv: WorkflowConnectionEnv = {
+    hubConnectionsUrl: HUB,
+    sidecarToken: "sc-token",
+    address: "run_myra@workflow",
+  } as unknown as WorkflowConnectionEnv;
+  const agentDirectoryEnv: WorkflowAgentDirectoryEnv = {
+    hubAgentDirectoryUrl: HUB,
+    hubChatUrl: HUB,
+    sidecarToken: "sc-token",
+    address: "run_myra@workflow",
+  } as unknown as WorkflowAgentDirectoryEnv;
+  const routinesEnv: WorkflowRoutineEnv = {
+    hubRoutinesUrl: HUB,
+    sidecarToken: "sc-token",
+    address: "run_myra@workflow",
+  } as unknown as WorkflowRoutineEnv;
+
+  // Step 2: Myra checks what's connected — nothing is, yet.
+  const connectionsBundle = connectionsTools(connectionsEnv);
+  const initialList = await connectionsBundle.run(
+    call("c1", LIST_CONNECTIONS_TOOL, {}),
+    new AbortController().signal,
+  );
+  expect(initialList.isError).toBe(false);
+  expect(String(initialList.content)).toContain("Exa");
+  expect(String(initialList.content)).toContain("Connected: none.");
+
+  // A connector the owner's script names but this workbench doesn't
+  // register yet (see the file header) is honestly rejected — never a
+  // fabricated deep-link for a connector that doesn't exist.
+  const unknown = await connectionsBundle.run(
+    call("req_attio", REQUEST_CONNECTION_TOOL, { connector: "attio" }),
+    new AbortController().signal,
+  );
+  expect(unknown.isError).toBe(true);
+  expect(String(unknown.content)).toContain("attio");
+
+  // She hands over a connect link for each of the three (real) services.
+  const links: string[] = [];
+  for (const connector of ["exa", "granola", "linear"]) {
+    const result = await connectionsBundle.run(
+      call(`req_${connector}`, REQUEST_CONNECTION_TOOL, { connector }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    links.push(String(result.content));
+  }
+  expect(links.every((line) => line.includes("/plugins?connect="))).toBe(true);
+
+  // Human connects all three (simulated).
+  hub.connected.add("exa");
+  hub.connected.add("granola");
+  hub.connected.add("linear");
+
+  const afterConnect = await connectionsBundle.run(
+    call("c2", LIST_CONNECTIONS_TOOL, {}),
+    new AbortController().signal,
+  );
+  expect(String(afterConnect.content)).toContain("Not connected: none.");
+  expect(String(afterConnect.content)).toContain(
+    "Connected: Exa, Granola, Linear.",
+  );
+
+  // Step 3: Myra creates the two specialist agents she needs, inviting
+  // each into the workbench (the tool's own default).
+  const agentDirectoryBundle = agentDirectoryTools(agentDirectoryEnv);
+  const callNotesAgent = await agentDirectoryBundle.run(
+    call("a1", CREATE_AGENT_TOOL, {
+      name: "Call Notes Extractor",
+      systemPrompt:
+        "Extract structured notes and action items from Granola call " +
+        "transcripts and summarize them for the team.",
+    }),
+    new AbortController().signal,
+  );
+  expect(callNotesAgent.isError).toBe(false);
+  const analyticsAgent = await agentDirectoryBundle.run(
+    call("a2", CREATE_AGENT_TOOL, {
+      name: "Weekly Analytics",
+      systemPrompt:
+        "Produce a weekly analytical rollup of sales-motion activity " +
+        "for the team.",
+    }),
+    new AbortController().signal,
+  );
+  expect(analyticsAgent.isError).toBe(false);
+
+  expect(hub.createdDefinitions.map((d) => d.name)).toEqual([
+    "Call Notes Extractor",
+    "Weekly Analytics",
+  ]);
+  // Both were invited into the caller's channel (the default), never
+  // silently skipped.
+  expect(hub.invitedDefinitionIds).toEqual(
+    hub.createdDefinitions.map((d) => d.id),
+  );
+
+  const [callNotesDefinition, analyticsDefinition] = hub.createdDefinitions;
+  if (callNotesDefinition === undefined || analyticsDefinition === undefined) {
+    throw new Error("expected both specialist agents to have been created");
+  }
+  const callNotesDefinitionId = callNotesDefinition.id;
+  const analyticsDefinitionId = analyticsDefinition.id;
+
+  // Step 4: Myra creates the two routines, each targeting the agent she
+  // just made for it — the created agent's id, returned from step 3,
+  // becomes the routine's definitionId here.
+  const routinesBundle = routinesTools(routinesEnv);
+  const dailyRoutine = await routinesBundle.run(
+    call("r1", ROUTINE_CREATE_TOOL, {
+      name: "Daily call notes",
+      instruction: "Extract info from today's calls and share updates.",
+      definitionId: callNotesDefinitionId,
+      trigger: { kind: "daily", hour: 8, minute: 0 },
+    }),
+    new AbortController().signal,
+  );
+  expect(dailyRoutine.isError).toBe(false);
+
+  const weeklyRoutine = await routinesBundle.run(
+    call("r2", ROUTINE_CREATE_TOOL, {
+      name: "Weekly analytics update",
+      instruction: "Provide an analytical update for the week.",
+      definitionId: analyticsDefinitionId,
+      trigger: { kind: "weekly", dayOfWeek: 5, hour: 9, minute: 0 },
+    }),
+    new AbortController().signal,
+  );
+  expect(weeklyRoutine.isError).toBe(false);
+
+  expect(hub.createdRoutines).toEqual([
+    {
+      definitionId: callNotesDefinitionId,
+      trigger: { kind: "daily", hour: 8, minute: 0 },
+      name: "Daily call notes",
+    },
+    {
+      definitionId: analyticsDefinitionId,
+      trigger: { kind: "weekly", dayOfWeek: 5, hour: 9, minute: 0 },
+      name: "Weekly analytics update",
+    },
+  ]);
+}

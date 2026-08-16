@@ -71,11 +71,17 @@ test("the prompt instructs Myra to greet, introduce herself, and ask what she's 
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("one-off task");
 });
 
-test("the agent pins @corbits/memory-tools (CL-5852) — a real package name, resolved at deploy time", () => {
+test("the agent pins memory, capability, and the manager-tools bundles — real package names, resolved at deploy time", () => {
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
   expect(ASSISTANT_TOOL_PACKAGE_PINS).toEqual([
     { name: "@corbits/memory-tools", version: "0.0.1" },
+    { name: "@corbits/capability-tools", version: "0.0.1" },
+    { name: "@corbits/routines-tools", version: "0.0.1" },
+    { name: "@corbits/agent-directory-tools", version: "0.0.1" },
+    { name: "@corbits/task-dispatch-tools", version: "0.0.1" },
+    { name: "@corbits/connections-tools", version: "0.0.1" },
+    { name: "@corbits/skills-tools", version: "0.0.1" },
   ]);
 });
 
