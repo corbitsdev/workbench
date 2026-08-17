@@ -85,6 +85,7 @@ function createFakeDb(opts: {
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
 }) {
+  const deleted: { table: unknown }[] = [];
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
   function updateOn(table: unknown, values: unknown) {
@@ -103,6 +104,7 @@ function createFakeDb(opts: {
   }
   return {
     inserted,
+    deleted,
     updated,
     query: {
       workflowDefinition: {
@@ -123,6 +125,10 @@ function createFakeDb(opts: {
         },
         update(table: unknown) {
           return { set: (values: unknown) => updateOn(table, values) };
+        },
+        delete(table: unknown) {
+          deleted.push({ table });
+          return { where: async () => undefined };
         },
       });
     },
@@ -301,6 +307,7 @@ function createDeps(opts: {
     db: opts.db as never,
     store,
     foldedRuns: {
+      toolGrantsForPins: () => [],
       db: opts.db as never,
       sessionService: {
         async deploySingleStepAtHead(params: unknown) {
