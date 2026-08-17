@@ -67,3 +67,67 @@ test("createSidecarWorkflowSupervisor omits onSuspensionRegister when the caller
     (capturedConfig as { onSuspensionRegister?: unknown }).onSuspensionRegister,
   ).toBeUndefined();
 });
+
+// Same wiring-gap class as onSuspensionRegister above (CL: MCP live proof):
+// the hub delivers decrypted credential material on the deploy frame's
+// `workflow.credentials`, and the workflow-host supervisor forwards its
+// `credentialDelivery` binding to the child on the pre-trigger barrier —
+// but before this fix `createSidecarWorkflowSupervisor` never accepted the
+// field, so the child's materialRef stayed null and every
+// `credentials.resolve("mcp:<slug>")` failed "no credential is bound".
+test("createSidecarWorkflowSupervisor forwards credentialDelivery to the workflow-host supervisor", () => {
+  const delivery = {
+    bindings: [
+      {
+        handle: "mcp:exa",
+        credentialId: "cred_1",
+        consumer: "tool:@corbits/mcp-tools",
+      },
+    ],
+    materials: [
+      {
+        credentialId: "cred_1",
+        providerKey: "http",
+        origin: "https://mcp.exa.ai/mcp",
+        secret: "unauthenticated-mcp-server",
+      },
+    ],
+  };
+
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: {} as never,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-3" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-3",
+    stepCount: 1,
+    deploymentMailAddress: "dep-3@local",
+    deriveStepAddress: () => "dep-3-step@local",
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+    credentialDelivery: delivery,
+  });
+
+  expect(capturedConfig).toMatchObject({ credentialDelivery: delivery });
+});
+
+test("createSidecarWorkflowSupervisor omits credentialDelivery when the deploy carries none", () => {
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: {} as never,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-4" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-4",
+    stepCount: 1,
+    deploymentMailAddress: "dep-4@local",
+    deriveStepAddress: () => "dep-4-step@local",
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+  });
+
+  expect(
+    (capturedConfig as { credentialDelivery?: unknown }).credentialDelivery,
+  ).toBeUndefined();
+});
