@@ -56,6 +56,36 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     expect(greetingKickoffBrief({})).not.toContain("undefined");
   });
 
+  test("a distinctive workbench name is framed as a chosen label, never a brief to answer", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "Ada",
+      workbenchName: "Copywriter test",
+    });
+    expect(brief).toContain('titled "Copywriter test"');
+    expect(brief).toMatch(/label the person chose, not a request/i);
+    expect(brief).toMatch(/never treat it as their brief or answer it as a question/i);
+    expect(brief).not.toContain("undefined");
+  });
+
+  test.each([
+    "New Workbench",
+    "Untitled",
+    "Session A",
+    "Room 3",
+    "test run",
+  ])("a generic workbench name (%s) is omitted from the brief entirely", (workbenchName) => {
+    const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
+    expect(brief).not.toContain(workbenchName);
+    expect(brief).not.toContain("titled");
+    expect(brief).not.toContain("undefined");
+  });
+
+  test("an absent workbench name is omitted from the brief entirely", () => {
+    const brief = greetingKickoffBrief({ senderName: "Ada" });
+    expect(brief).not.toContain("titled");
+    expect(brief).not.toContain("undefined");
+  });
+
   test("a dispatch failure is swallowed, never thrown", async () => {
     const platform = fakePlatform({
       sendMail: async () => {

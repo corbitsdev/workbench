@@ -295,6 +295,12 @@ export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
   readonly agentAddress: string;
 };
 
+/** Placeholder titles a workbench gets by default, not a brief the
+ * opener chose to type — "Session A", "test", "Untitled" and the like
+ * describe the box, not the ask, so the kickoff brief omits them
+ * entirely rather than letting the model read them as the task. */
+const GENERIC_WORKBENCH_NAME = /^(new workbench|untitled|session|room|test)\b/i;
+
 /**
  * The kickoff mail's text: the facts the agent needs to say a grounded
  * hello (who opened the workbench, what it is called) plus how to say
@@ -303,24 +309,36 @@ export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
  * the greeting dynamic (the model writes it from these facts) rather
  * than a canned script is what lets it name the person and the
  * workbench, and lead with a first step when the name hints at one.
+ *
+ * A workbench's title is a label the opener picked for the room, never
+ * a task description — a chat named "Copywriter test" is not a request
+ * for copywriting. Generic/placeholder titles are dropped from the
+ * brief entirely; distinctive ones are still passed along, but framed
+ * explicitly as a label to nod to at most once, never as the thing
+ * being asked of the agent.
  */
 export function greetingKickoffBrief(input: GreetingKickoffBriefInput): string {
   const who =
     input.senderName !== undefined && input.senderName !== ""
       ? input.senderName
       : "someone";
-  const named =
-    input.workbenchName !== undefined && input.workbenchName !== ""
-      ? ` called "${input.workbenchName}"`
-      : "";
+  const hasDistinctiveName =
+    input.workbenchName !== undefined &&
+    input.workbenchName !== "" &&
+    !GENERIC_WORKBENCH_NAME.test(input.workbenchName);
+  const named = hasDistinctiveName ? ` titled "${input.workbenchName}"` : "";
+  const labelNote = hasDistinctiveName
+    ? `The workbench is titled "${input.workbenchName}" — that is a label ` +
+      "the person chose, not a request; you may nod to it at most once, " +
+      "never treat it as their brief or answer it as a question. "
+    : "";
   return (
     `${who} just opened a new workbench${named} with you in it. ` +
+    `${labelNote}` +
     "Say hello as a teammate would: two or three sentences, first " +
     "person, address them by name if you have one. No menu of " +
     "options and no talk of memory, lookups, or what you could not " +
-    "find. If the workbench name hints at a purpose, offer one " +
-    "concrete first step for it; otherwise ask what they are working " +
-    "on."
+    "find. Ask what they are working on."
   );
 }
 
