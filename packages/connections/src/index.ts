@@ -39,6 +39,21 @@ export {
 } from "./mcp-server-routes";
 export { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 export {
+  MCP_PRESETS,
+  MCP_PRESET_CONNECTOR_IDS,
+  mcpPresetBySlug,
+  mcpPresetByName,
+  type McpPreset,
+} from "./mcp-presets";
+export {
+  createMcpOAuthProvider,
+  type McpOAuthSession,
+} from "./mcp-oauth";
+export {
+  createMcpOAuthRoutes,
+  type CreateMcpOAuthRoutesDeps,
+} from "./mcp-oauth-routes";
+export {
   listMcpServerConnections,
   type McpServerConnection,
 } from "./mcp-server-store";

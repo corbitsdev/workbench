@@ -509,6 +509,7 @@
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
+        "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",

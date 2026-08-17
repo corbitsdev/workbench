@@ -211,6 +211,7 @@ import {
 } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
+  createMcpOAuthRoutes,
   createMcpServerRoutes,
   createWorkflowConnectionRoutes,
   listMcpServerConnections,
@@ -1372,6 +1373,22 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
+    }),
+  );
+  // MCP servers' OAuth connect flow (CL-6152): discovers and drives a
+  // preset's (or an ad hoc `?url=&name=`) authorization server per the
+  // MCP spec, landing back on the same `mcp:<slug>` credential storage
+  // `createMcpServerRoutes` above uses for a pasted token.
+  app.route(
+    `${TENANT_PREFIX}/mcp-servers/oauth`,
+    createMcpOAuthRoutes({
+      hubUrl: config.baseUrl,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      log: (line) => log.info`${line}`,
+      credentialCipher,
     }),
   );
   // Myra's own connections-visibility surface
