@@ -37,15 +37,15 @@ describe("resolveInsightsScope", () => {
     expect(result.scopeLabel).toBe("All workbenches");
   });
 
-  test("non-member default landing: caller's own current workbench, labeled with its name", () => {
+  test("parentless landing IS the aggregate: every workbench's runs land on the root tenancy", () => {
     const result = resolveInsightsScope({
       mode: "landing",
       workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: nonMemberScope,
     });
-    expect(result.effectiveTenantId).toBe("tnt_bench_a");
-    expect(result.scopeLabel).toBe("Support bench");
+    expect(result.effectiveTenantId).toBe(nonMemberScope.tenantId);
+    expect(result.scopeLabel).toBe("All workbenches");
   });
 
   test("scope not yet resolved: falls back to the current workbench id, never blocks", () => {
