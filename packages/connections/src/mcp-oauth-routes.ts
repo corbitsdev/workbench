@@ -22,6 +22,7 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
+import { MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-providers";
 import { cookiesFromHeader, ensureCredential, ensureProvider, type ApiCall } from "@workbench/hub-client";
 import { createHubAPI } from "@workbench/hub-client";
 import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -345,7 +346,7 @@ export function createMcpOAuthRoutes(
         {
           tenantId: tenant.id,
           name: providerName(slug),
-          plugin: "http",
+          plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
           apiBaseUrl: origin,
         },
         deps.log,
