@@ -53,6 +53,7 @@ import {
 import {
   buildEffectiveInferenceRows,
   computeReorderPatches,
+  providerDisplayName,
   restrictedOfferings,
   rowsByModel,
   type EffectiveInferenceRow,
@@ -223,6 +224,9 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
 
   return (
     <div className="channel-settings-pane">
+      <h3 className="chat-settings-agent-block-title">
+        {INFERENCE_STRINGS.heading}
+      </h3>
       <p className="chat-settings-field-hint">{INFERENCE_STRINGS.hint}</p>
       {rowError !== null ? (
         <p className="chat-dialog-error" role="alert">
@@ -276,7 +280,9 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
 
                   return (
                     <TableRow key={row.offeringId}>
-                      <TableCell>{row.providerName}</TableCell>
+                      <TableCell>
+                        {providerDisplayName(row.providerName)}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           tone={
@@ -356,8 +362,10 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
               <span>
                 {(ownModelNameById.get(offering.modelId) ?? offering.modelId) +
                   " · " +
-                  (ownProviderNameById.get(offering.providerId) ??
-                    offering.providerId)}
+                  providerDisplayName(
+                    ownProviderNameById.get(offering.providerId) ??
+                      offering.providerId,
+                  )}
               </span>
               <Button
                 variant="outline"
@@ -467,12 +475,14 @@ function ShadowOfferingDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {INFERENCE_STRINGS.byokDialogTitle(row.providerName)}
+            {INFERENCE_STRINGS.byokDialogTitle(
+              providerDisplayName(row.providerName),
+            )}
           </DialogTitle>
           <DialogDescription>
             {INFERENCE_STRINGS.byokDialogDescription(
               row.canonicalName,
-              row.providerName,
+              providerDisplayName(row.providerName),
             )}
           </DialogDescription>
         </DialogHeader>

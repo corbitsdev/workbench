@@ -61,7 +61,7 @@ describe("CapacitySection", () => {
     try {
       const text = document.body.textContent ?? "";
       expect(text).toContain(
-        "This workbench's agents run on their own dedicated capacity.",
+        "Run this workbench's agents on their own machine.",
       );
       expect(text.toLowerCase()).not.toContain("sidecar");
       expect(text.toLowerCase()).not.toContain("provisioner");
@@ -119,7 +119,9 @@ describe("CapacitySection", () => {
 
       expect(toggle?.getAttribute("aria-checked")).toBe("false");
       const alert = document.body.querySelector('[role="alert"]');
-      expect(alert?.textContent).toBe("Couldn't save this setting. Try again.");
+      expect(alert?.textContent).toBe(
+        "Couldn't turn on dedicated capacity — try again.",
+      );
     } finally {
       act(() => root.unmount());
       container.remove();

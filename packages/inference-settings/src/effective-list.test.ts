@@ -5,10 +5,24 @@ import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 import {
   buildEffectiveInferenceRows,
   computeReorderPatches,
+  providerDisplayName,
   restrictedOfferings,
   rowsByModel,
   type EffectiveInferenceRow,
 } from "./effective-list";
+
+describe("providerDisplayName", () => {
+  test("resolves a known provider slug to its own display name", () => {
+    expect(providerDisplayName("ollama")).toBe("Ollama (local)");
+    expect(providerDisplayName("opencode-zen")).toBe("Opencode Zen");
+  });
+
+  test("falls back to the raw slug for an unrecognized provider", () => {
+    expect(providerDisplayName("some-custom-provider")).toBe(
+      "some-custom-provider",
+    );
+  });
+});
 
 function row(
   offeringId: string,

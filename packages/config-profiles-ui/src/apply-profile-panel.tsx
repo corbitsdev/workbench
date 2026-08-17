@@ -6,7 +6,7 @@
 // After Apply, the same per-entry rendering shows what actually happened
 // (including a partial failure's successes, failure, and anything never
 // attempted), never a bare aggregate count.
-import { Button, EmptyState, toast } from "@corbits/react-ui";
+import { Button, toast } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -145,14 +145,11 @@ export function ApplyProfilePanel({
   return (
     <QueryView query={query} label={CONFIG_PROFILES_STRINGS.loadError}>
       {(profiles) => {
-        if (profiles.length === 0) {
-          return (
-            <EmptyState
-              title={CONFIG_PROFILES_STRINGS.emptyApplyTitle}
-              description={CONFIG_PROFILES_STRINGS.emptyApplyDescription}
-            />
-          );
-        }
+        // No profiles exist yet for this tenant to apply — nothing this
+        // panel can offer, so it renders nothing rather than an empty-state
+        // callout every workbench without a profile would otherwise see
+        // (CL-6151: it read as a broken feature, not an unused one).
+        if (profiles.length === 0) return null;
         const selected = profiles.find((profile) => profile.id === selectedId);
         return (
           <div className="config-profiles-callout">

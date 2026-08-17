@@ -5,6 +5,24 @@
 // a plain unit test, no DOM or network stub required.
 
 import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
+import { PROVIDER_TEST_CONFIG } from "@workbench/hub-client/credential-test";
+
+/**
+ * The provider's own display name (e.g. "Ollama (local)", "Opencode Zen")
+ * for a catalog row's `providerName`, which is the internal slug the
+ * catalog stores it under (e.g. `"ollama"`, `"opencode-zen"`) — never a
+ * name a person should read as-is. Falls back to the raw slug for a
+ * provider `PROVIDER_TEST_CONFIG` doesn't know about (a custom
+ * bring-your-own-key provider a workbench minted under a name of its own
+ * choosing), so an unrecognized provider still renders something rather
+ * than nothing.
+ */
+export function providerDisplayName(providerName: string): string {
+  const config = (
+    PROVIDER_TEST_CONFIG as Readonly<Record<string, { displayName: string }>>
+  )[providerName];
+  return config?.displayName ?? providerName;
+}
 
 export type EffectiveInferenceRow = {
   readonly offeringId: string;

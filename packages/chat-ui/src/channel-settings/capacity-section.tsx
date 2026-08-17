@@ -11,11 +11,7 @@ import { useEffect, useState } from "react";
 import { CHAT_STRINGS } from "../strings";
 import { getCapacityPlacement, setCapacityPlacement } from "./capacity-api";
 
-export function CapacitySection({
-  tenantId,
-}: {
-  readonly tenantId: string;
-}) {
+export function CapacitySection({ tenantId }: { readonly tenantId: string }) {
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -46,7 +42,7 @@ export function CapacitySection({
       })
       .catch(() => {
         setEnabled(previous);
-        setError(CHAT_STRINGS.channelSettingsCapacitySaveError);
+        setError(CHAT_STRINGS.channelSettingsCapacitySaveError(next));
       })
       .finally(() => setSaving(false));
   }

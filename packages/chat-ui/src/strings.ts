@@ -177,7 +177,7 @@ export const CHAT_STRINGS = {
   channelSettingsSectionGeneral: "General",
   channelSettingsSectionMembers: "Members",
   channelSettingsSectionAgents: "Agents",
-  channelSettingsSectionAssistant: "Assistant",
+  channelSettingsSectionAssistant: "Myra",
   channelSettingsSectionKeysPlugins: "Keys & plugins",
   channelSettingsSectionInference: "Inference",
   channelSettingsSectionCapacity: "Capacity",
@@ -216,7 +216,7 @@ export const CHAT_STRINGS = {
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
     "Per-conversation autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",
-  channelSettingsAssistantNameLabel: "Assistant name",
+  channelSettingsAssistantNameLabel: "Name",
   channelSettingsAssistantInstructionsLabel: "Instructions",
   channelSettingsAssistantInstructionsHint:
     "How this agent should act and what it knows to do. Applies from this agent's next reply in this conversation; other conversations with the same agent pick it up the next time their agent wakes.",
@@ -261,16 +261,18 @@ export const CHAT_STRINGS = {
   channelSettingsNotificationsHint:
     "This choice is yours alone — it doesn't change notifications for anyone else.",
   channelSettingsNotificationsSaveError:
-    "Couldn't save this setting. Try again.",
+    "Couldn't save your notification setting — try again.",
   channelSettingsCapacityDescription:
-    "This workbench's agents run on their own dedicated capacity.",
-  channelSettingsCapacityLabel:
-    "Keep this workbench's agents on dedicated capacity",
+    "Run this workbench's agents on their own machine.",
+  channelSettingsCapacityLabel: "Run on a dedicated machine",
   channelSettingsCapacityHint:
-    "Agents in this workbench won't share compute with other workbenches.",
+    "This workbench's agents won't share a machine with any other workbench, so heavy work here never slows the others down.",
   channelSettingsCapacityUnavailableHint:
     "Not available on this server yet — ask your operator to enable isolated capacity.",
-  channelSettingsCapacitySaveError: "Couldn't save this setting. Try again.",
+  channelSettingsCapacitySaveError: (enabling: boolean) =>
+    enabling
+      ? "Couldn't turn on dedicated capacity — try again."
+      : "Couldn't turn off dedicated capacity — try again.",
   channelSettingsArchiveTitle: "Archive workbench",
   channelSettingsArchiveBody:
     "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",

@@ -7,7 +7,7 @@
 // never drift on what Everyone contains. Agents (CL-5990) was cut in
 // CL-6121 — a directory tab in global Settings duplicated agent
 // configuration that already lives per-workbench (`@corbits/chat-ui`'s
-// `ChannelSettingsSurface`, "Assistant" section, CL-6084); that's the one
+// `ChannelSettingsSurface`, "Myra" section, CL-6084); that's the one
 // place it belongs now.
 
 import type { SettingsSection } from "@corbits/settings-ui";

@@ -343,7 +343,7 @@ describe("Assistant settings section", () => {
     expect(textarea?.value).toBe("Try to save this.");
   });
 
-  test("a channel with no agent participant never shows the Assistant tab", async () => {
+  test("a channel with no agent participant never shows the Myra tab", async () => {
     stubFetch({ agents: [] });
     const el = mount(baseProps({ section: "general" }));
     await settle();
@@ -351,7 +351,7 @@ describe("Assistant settings section", () => {
     const navLabels = Array.from(
       el.querySelectorAll(".channel-settings-nav-item"),
     ).map((item) => item.textContent);
-    expect(navLabels).not.toContain("Assistant");
+    expect(navLabels).not.toContain("Myra");
   });
 
   test("a two-agent channel shows both entries and edits the right one", async () => {

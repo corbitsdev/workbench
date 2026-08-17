@@ -142,7 +142,7 @@ describe("ApplyProfilePanel", () => {
     }
   });
 
-  test("shows an empty state when there are no profiles", async () => {
+  test("renders nothing when there are no profiles to apply", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/tenants/tnt_1/config-profiles") {
         return json(200, { items: [] });
@@ -153,7 +153,7 @@ describe("ApplyProfilePanel", () => {
     const { container, root } = mount();
     try {
       await settle();
-      expect(container.textContent).toContain("No profiles yet");
+      expect(container.textContent).toBe("");
       expect(container.querySelector("select")).toBeNull();
     } finally {
       act(() => root.unmount());

@@ -124,10 +124,7 @@ describe("NotificationsSection", () => {
         throw new Error(`unexpected fetch: ${path}`);
       }
       if (init?.method === "PATCH") {
-        const patch = JSON.parse(String(init.body)) as Record<
-          string,
-          unknown
-        >;
+        const patch = JSON.parse(String(init.body)) as Record<string, unknown>;
         store.data = { ...store.data, ...patch };
         return Response.json({ preferences: store.data });
       }
@@ -145,7 +142,10 @@ describe("NotificationsSection", () => {
   });
 
   test("reverts and shows an error when the save fails", async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const path =
         typeof input === "string" ? input : new URL(String(input)).pathname;
       if (path !== `/api/tenants/${TENANT_ID}/preferences`) {
@@ -168,7 +168,9 @@ describe("NotificationsSection", () => {
       });
       expect(mute?.getAttribute("aria-pressed")).toBe("false");
       const alert = document.body.querySelector('[role="alert"]');
-      expect(alert?.textContent).toBe("Couldn't save this setting. Try again.");
+      expect(alert?.textContent).toBe(
+        "Couldn't save your notification setting — try again.",
+      );
     } finally {
       act(() => root.unmount());
       container.remove();

@@ -37,9 +37,6 @@ export const CONFIG_PROFILES_STRINGS = {
   emptyTitle: "No profiles yet",
   emptyDescription:
     "Create a profile from scratch, or save a workbench's current setup as one.",
-  emptyApplyTitle: "No profiles yet",
-  emptyApplyDescription:
-    "Create a profile from Settings to apply it here in one action.",
 
   createButton: "Create a profile",
   captureButton: "Save current setup as a profile",

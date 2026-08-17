@@ -1,6 +1,6 @@
 // The workbench "Keys & plugins" section (CL-6099 workstream 1): every
 // registered connector's status for this exact workbench tenant, with
-// provenance ("Set here" vs "Workbench default") straight from
+// provenance ("Connected here" vs "Using shared key") straight from
 // `@workbench/connections/plugins`'s `listPluginsForTenant` — the same
 // chain-aware resolver the global Connections settings section and the
 // Plugins gallery both already read, so this view can never disagree with
@@ -43,6 +43,29 @@ import {
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof KeysPluginsApiError ? cause.message : fallback;
+}
+
+/** One status per card, not two: an actionable problem ("Needs attention")
+ * always wins, since it's the thing to act on regardless of whose key is
+ * in use; otherwise a connected offering reads by provenance ("Connected
+ * here" vs "Using shared key"), and nothing connected anywhere reads
+ * "Not connected". Replaces the old two-badge layout (a connection-status
+ * chip plus a separate "Set here"/"Workbench default" provenance chip) —
+ * a person reading the card only ever needs the one word that matters. */
+export function pluginCardStatus(plugin: ResolvedPlugin): {
+  readonly label: string;
+  readonly tone: "success" | "danger" | "neutral";
+} {
+  if (plugin.status === "needs_attention") {
+    return { label: "Needs attention", tone: "danger" };
+  }
+  if (plugin.provenance === "this-workbench") {
+    return { label: "Connected here", tone: "success" };
+  }
+  if (plugin.provenance === "inherited") {
+    return { label: "Using shared key", tone: "neutral" };
+  }
+  return { label: "Not connected", tone: "neutral" };
 }
 
 export function KeysPluginsSection({
@@ -95,9 +118,8 @@ export function KeysPluginsSection({
       {(plugins) => (
         <div className="channel-settings-pane">
           <p className="chat-settings-field-hint">
-            A key connected here belongs to this workbench alone. Anything not
-            connected here is the workbench default — connect your own key to
-            override it.
+            Keys added here are used only by this workbench. Everything else
+            uses the keys from Shared Settings.
           </p>
           {rowError !== null ? (
             <p className="chat-dialog-error" role="alert">
@@ -105,67 +127,43 @@ export function KeysPluginsSection({
             </p>
           ) : null}
           <div className="settings-connections-grid">
-            {plugins.map((plugin) => (
-              <div
-                key={plugin.descriptor.id}
-                className="settings-connection-card"
-              >
-                <span className="settings-connection-card-title">
-                  {plugin.descriptor.displayName}
-                </span>
-                <Badge
-                  tone={
-                    plugin.status === "connected"
-                      ? "success"
-                      : plugin.status === "needs_attention"
-                        ? "danger"
-                        : "neutral"
-                  }
+            {plugins.map((plugin) => {
+              const status = pluginCardStatus(plugin);
+              return (
+                <div
+                  key={plugin.descriptor.id}
+                  className="settings-connection-card"
                 >
-                  {plugin.status === "connected"
-                    ? "Connected"
-                    : plugin.status === "needs_attention"
-                      ? "Needs attention"
-                      : "Not connected"}
-                </Badge>
-                {plugin.provenance !== null ? (
-                  <Badge
-                    tone={
-                      plugin.provenance === "this-workbench"
-                        ? "success"
-                        : "neutral"
-                    }
-                  >
-                    {plugin.provenance === "this-workbench"
-                      ? "Set here"
-                      : "Workbench default"}
-                  </Badge>
-                ) : null}
-                <div className="settings-connection-card-actions">
-                  {plugin.status !== "not_connected" &&
-                  plugin.provenance === "this-workbench" ? (
-                    <ConfirmButton
-                      variant="destructive"
-                      size="sm"
-                      confirmLabel="Remove"
-                      onConfirm={() => handleRemove(plugin)}
-                    >
-                      Remove
-                    </ConfirmButton>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setConnectTarget(plugin)}
-                    >
-                      {plugin.provenance === "inherited"
-                        ? "Override"
-                        : "Connect"}
-                    </Button>
-                  )}
+                  <span className="settings-connection-card-title">
+                    {plugin.descriptor.displayName}
+                  </span>
+                  <Badge tone={status.tone}>{status.label}</Badge>
+                  <div className="settings-connection-card-actions">
+                    {plugin.status !== "not_connected" &&
+                    plugin.provenance === "this-workbench" ? (
+                      <ConfirmButton
+                        variant="destructive"
+                        size="sm"
+                        confirmLabel="Remove"
+                        onConfirm={() => handleRemove(plugin)}
+                      >
+                        Remove
+                      </ConfirmButton>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setConnectTarget(plugin)}
+                      >
+                        {plugin.provenance === "inherited"
+                          ? "Override"
+                          : "Connect"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <ConnectDialog
