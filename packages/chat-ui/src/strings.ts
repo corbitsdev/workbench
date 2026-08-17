@@ -71,6 +71,8 @@ export const CHAT_STRINGS = {
   routinesAction: "Routines",
   insightsAction: "Insights",
   channelMembersLabel: "Members",
+  teamStackOverflow: (count: number) =>
+    `${count} more ${count === 1 ? "member" : "members"}`,
   threadsMenuCount: (count: number) =>
     `${count} ${count === 1 ? "thread" : "threads"}`,
   inviteAgentDialogTitle: "Invite an agent",
@@ -162,6 +164,13 @@ export const CHAT_STRINGS = {
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
   typingIndicator: (label: string) => `${label} is typing`,
+  agentsTyping: (names: readonly string[]) => {
+    if (names.length === 0) return "";
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    const others = names.length - 2;
+    return `${names[0]}, ${names[1]} and ${others} ${others === 1 ? "other" : "others"} are typing…`;
+  },
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",

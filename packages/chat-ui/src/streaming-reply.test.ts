@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { nextStreamingReplyState } from "./streaming-reply";
+import { nextStreamingReplyState, typingAgentNames } from "./streaming-reply";
+
+const HUMAN = { address: "prn_sawyer", handle: "Sawyer" };
+const MYRA = { address: "myra@agents.example", handle: "Myra" };
 
 function agentEvent(inner: unknown) {
   return { eventType: "chat.agent", data: inner };
@@ -96,5 +99,19 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
     ).toBe(state);
     expect(nextStreamingReplyState(state, agentEvent(null))).toBe(state);
     expect(nextStreamingReplyState(state, agentEvent("garbage"))).toBe(state);
+  });
+});
+
+describe("typingAgentNames", () => {
+  test("no active reply means nobody is typing", () => {
+    expect(typingAgentNames(null, [MYRA])).toEqual([]);
+  });
+
+  test("an active reply names the channel's agent participant", () => {
+    expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual(["Myra"]);
+  });
+
+  test("no agent participant on the channel means nobody is named", () => {
+    expect(typingAgentNames({ text: "Hel" }, [HUMAN])).toEqual([]);
   });
 });

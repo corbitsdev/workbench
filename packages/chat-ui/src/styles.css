@@ -1353,6 +1353,21 @@
   animation-delay: 0.3s;
 }
 
+.chat-agent-typing-avatars {
+  display: flex;
+  align-items: center;
+}
+
+.chat-agent-typing-avatar {
+  display: inline-flex;
+  margin-left: -0.35rem;
+  border: 1.5px solid var(--background);
+}
+
+.chat-agent-typing-avatar:first-child {
+  margin-left: 0;
+}
+
 @keyframes chat-typing-dot {
   0%,
   60%,
@@ -1750,6 +1765,27 @@
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.chat-team-stack {
+  display: flex;
+  align-items: center;
+}
+
+.chat-team-stack-overflow {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 0;
+  border: 1.5px solid var(--background);
+  margin-left: -0.35rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .chat-member-stack {

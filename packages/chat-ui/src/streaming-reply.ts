@@ -13,6 +13,9 @@
 
 import { useEffect, useState } from "react";
 
+import { isAgentAddress } from "@corbits/chat/mentions";
+import type { ParticipantRecord } from "./api";
+
 export type StreamingReplyState = { readonly text: string } | null;
 
 type InferenceDeltaEvent = {
@@ -102,4 +105,24 @@ export function useStreamingReply(channelId: string | null): {
   }
 
   return { streamingReply, handleStreamEvent };
+}
+
+/**
+ * The handle(s) to show as "typing" above the composer while a turn
+ * streams — mirrors `mergeStreamingReply`'s attribution exactly (the
+ * channel's first agent participant), since a `chat.agent` event carries no
+ * sender of its own. Channels with more than one invited agent are the
+ * same known approximation `mergeStreamingReply` already documents, not a
+ * new gap: only the streaming turn's actual agent can be named once the
+ * wire event carries one.
+ */
+export function typingAgentNames(
+  streamingReply: StreamingReplyState,
+  participants: readonly ParticipantRecord[],
+): readonly string[] {
+  if (streamingReply === null) return [];
+  const agent = participants.find((participant) =>
+    isAgentAddress(participant.address),
+  );
+  return agent === undefined ? [] : [agent.handle];
 }

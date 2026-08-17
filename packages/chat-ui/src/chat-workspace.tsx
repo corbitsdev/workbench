@@ -69,7 +69,7 @@ import { mentionCandidatesFromParticipants } from "./mentions";
 import type { BringInMember, MentionInviteIntent } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
-import { useStreamingReply } from "./streaming-reply";
+import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
 import type {
@@ -85,6 +85,7 @@ import type { BlockResponseActions } from "./blocks/block-responses";
 import {
   typingLabel,
   TypingIndicator,
+  AgentTypingIndicator,
   useTypingIndicator,
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
@@ -115,6 +116,50 @@ export interface PresenceMember {
   readonly principalId: string;
   readonly displayName: string;
   readonly color: string;
+}
+
+/** One entry in the header's combined who's-active stack — an agent
+ * participant or a live human, normalized to the one shape the stack
+ * renders regardless of source. */
+export interface TeamAvatarEntry {
+  readonly key: string;
+  readonly initials: string;
+  readonly label: string;
+  readonly tone: "agent" | "neutral";
+  readonly color?: string;
+}
+
+/** How many avatars the header shows before collapsing the rest into a
+ * "+N" chip. */
+export const TEAM_AVATAR_STACK_LIMIT = 6;
+
+/**
+ * Every currently-active member of the workbench, for the header's
+ * overlapping avatar stack: every agent participant on the channel (agents
+ * are always "active" — they have no presence concept of their own) plus
+ * every human currently reflected in live presence. Agents first since
+ * they're a channel's stable roster; humans are who's here right now.
+ */
+export function buildTeamAvatarStack(
+  participants: readonly ParticipantRecord[],
+  presenceMembers: readonly PresenceMember[],
+): readonly TeamAvatarEntry[] {
+  const agents = participants
+    .filter((participant) => isAgentAddress(participant.address))
+    .map((participant) => ({
+      key: participant.address,
+      initials: participant.handle,
+      label: participant.handle,
+      tone: "agent" as const,
+    }));
+  const humans = presenceMembers.map((member) => ({
+    key: member.principalId,
+    initials: member.displayName.slice(0, 1).toUpperCase(),
+    label: member.displayName,
+    tone: "neutral" as const,
+    color: member.color,
+  }));
+  return [...agents, ...humans];
 }
 
 type ChannelsState =
@@ -1170,8 +1215,13 @@ function ChatWorkspaceInner({
   const threadTitle =
     openThread?.title ??
     (pendingParentMessageId !== null ? "New thread" : "Thread");
-  // Member stack: up to three participant handles for the top bar.
-  const memberStack = (activeChannel?.participants ?? []).slice(0, 3);
+  // Team stack: every active agent + live human for the top bar.
+  const teamStack = buildTeamAvatarStack(
+    activeChannel?.participants ?? [],
+    presenceMembers ?? [],
+  );
+  const visibleTeamStack = teamStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
+  const teamStackOverflow = teamStack.length - visibleTeamStack.length;
 
   // The channel header only exists once a channel is active; the loading,
   // error, and no-channel states still carry the host's leading control (the
@@ -1344,44 +1394,46 @@ function ChatWorkspaceInner({
                       </div>
                     </details>
                   ) : null}
-                  {memberStack.length > 0 ? (
+                  {visibleTeamStack.length > 0 ? (
                     <div
-                      className="chat-member-stack"
+                      className="chat-team-stack"
                       aria-label={CHAT_STRINGS.channelMembersLabel}
                     >
-                      {memberStack.map((participant) => (
+                      {visibleTeamStack.map((entry) =>
+                        entry.tone === "agent" ? (
+                          <span
+                            key={entry.key}
+                            className="chat-member-avatar"
+                            title={entry.label}
+                          >
+                            <Avatar
+                              initials={entry.initials}
+                              label={entry.label}
+                              tone="agent"
+                              size="sm"
+                            />
+                          </span>
+                        ) : (
+                          <span
+                            key={entry.key}
+                            className="chat-presence-avatar"
+                            style={{ backgroundColor: entry.color }}
+                            title={entry.label}
+                          >
+                            {entry.initials}
+                          </span>
+                        ),
+                      )}
+                      {teamStackOverflow > 0 ? (
                         <span
-                          key={participant.address}
-                          className="chat-member-avatar"
-                          title={participant.handle}
+                          className="chat-team-stack-overflow"
+                          title={CHAT_STRINGS.teamStackOverflow(
+                            teamStackOverflow,
+                          )}
                         >
-                          <Avatar
-                            initials={participant.handle}
-                            label={participant.handle}
-                            tone={
-                              isAgentAddress(participant.address)
-                                ? "agent"
-                                : "neutral"
-                            }
-                            size="sm"
-                          />
+                          +{teamStackOverflow}
                         </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {presenceMembers !== undefined &&
-                  presenceMembers.length > 0 ? (
-                    <div className="chat-presence-stack" aria-label="Live now">
-                      {presenceMembers.slice(0, 5).map((member) => (
-                        <span
-                          key={member.principalId}
-                          className="chat-presence-avatar"
-                          style={{ backgroundColor: member.color }}
-                          title={member.displayName}
-                        >
-                          {member.displayName.slice(0, 1).toUpperCase()}
-                        </span>
-                      ))}
+                      ) : null}
                     </div>
                   ) : null}
                   {canInviteAgent(activeChannel?.kind) ? (
@@ -1536,7 +1588,14 @@ function ChatWorkspaceInner({
                         activeChannel?.participants ?? [],
                       )}
                     />
-                  ) : null}
+                  ) : (
+                    <AgentTypingIndicator
+                      names={typingAgentNames(
+                        streamingReply,
+                        activeChannel?.participants ?? [],
+                      )}
+                    />
+                  )}
                   <Composer
                     ref={composerRef}
                     agents={mentionCandidatesFromParticipants(

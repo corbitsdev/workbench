@@ -8,6 +8,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Avatar } from "@corbits/react-ui";
+
 import type { ParticipantRecord } from "./api";
 import { localPartOf } from "./timeline";
 import { CHAT_STRINGS } from "./strings";
@@ -145,6 +147,37 @@ export function TypingIndicator({ label }: { readonly label: string }) {
         <span />
       </span>
       <span>{CHAT_STRINGS.typingIndicator(label)}</span>
+    </div>
+  );
+}
+
+/**
+ * The names line above the composer: "Myra is typing…", "Myra and Scribe
+ * are typing…", "Myra, Scribe and 2 others are typing…" — `names`' order
+ * decides who's named before the "and N others" collapse kicks in at three.
+ * Renders nothing for an empty list so callers can pass it unconditionally.
+ */
+export function AgentTypingIndicator({
+  names,
+}: {
+  readonly names: readonly string[];
+}) {
+  if (names.length === 0) return null;
+  return (
+    <div className="chat-typing-indicator chat-agent-typing-indicator" role="status">
+      <span className="chat-agent-typing-avatars">
+        {names.map((name) => (
+          <span key={name} className="chat-agent-typing-avatar" title={name}>
+            <Avatar initials={name} label={name} tone="agent" size="sm" />
+          </span>
+        ))}
+      </span>
+      <span className="chat-typing-indicator-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span>{CHAT_STRINGS.agentsTyping(names)}</span>
     </div>
   );
 }
