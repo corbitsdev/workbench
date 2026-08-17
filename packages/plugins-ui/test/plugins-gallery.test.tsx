@@ -51,15 +51,15 @@ const CONNECTED: ResolvedPlugin = {
 };
 
 const INHERITED: ResolvedPlugin = {
-  descriptor: descriptor("linear", "Linear"),
+  descriptor: descriptor("scrapecreators", "ScrapeCreators"),
   status: "connected",
   provenance: "inherited",
-  credentialId: "cred_linear",
-  credentialName: "Linear",
+  credentialId: "cred_scrapecreators",
+  credentialName: "ScrapeCreators",
 };
 
 const NOT_CONNECTED: ResolvedPlugin = {
-  descriptor: descriptor("exa", "Exa"),
+  descriptor: descriptor("huggingface", "Hugging Face"),
   status: "not_connected",
   provenance: null,
   credentialId: null,
@@ -117,10 +117,18 @@ describe("PluginsGallery", () => {
     const { container } = renderGallery();
 
     expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).toContain("Linear");
-    expect(container.textContent).toContain("Exa");
+    expect(container.textContent).toContain("ScrapeCreators");
+    expect(container.textContent).toContain("Hugging Face");
     expect(container.textContent).toContain(
       "Lets agents read and open pull requests in your GitHub repos.",
+    );
+  });
+
+  test("filters out the old registry card for a connector an MCP preset now fronts", () => {
+    const { container } = renderGallery();
+
+    expect(container.textContent).not.toContain(
+      "Lets agents run live web search and research lookups.",
     );
   });
 
@@ -152,7 +160,7 @@ describe("PluginsGallery", () => {
     });
 
     expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).not.toContain("Exa");
+    expect(container.textContent).not.toContain("Hugging Face");
   });
 
   test("switching to the Skills tab renders skill cards with outcome copy and scope badges", () => {

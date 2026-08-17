@@ -26,6 +26,7 @@ import {
   connectorDescriptors,
   type ConnectorDescriptor,
 } from "@workbench/connections/registry";
+import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -154,6 +155,7 @@ export function ConnectorCardGrid({
 
   const descriptors = connectorDescriptors()
     .filter((descriptor) => descriptor.probe !== undefined)
+    .filter((descriptor) => !MCP_PRESET_CONNECTOR_IDS.includes(descriptor.id))
     .filter(filter ?? (() => true));
 
   return (

@@ -7,11 +7,13 @@
 
 import { EmptyState, LibrarySearchInput, Tabs } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
 import { PackageSearch, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { InstalledStrip } from "./installed-strip";
 import { McpServersSection } from "./mcp-servers-section";
+import { McpPresetCardsSection } from "./mcp-preset-cards";
 import {
   FEATURED_CONNECTOR_IDS,
   PLUGIN_CATEGORY_ORDER,
@@ -57,7 +59,10 @@ function PluginsTabPanel({
   readonly query: string;
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
-  const filtered = plugins.filter((plugin) =>
+  const nonPreset = plugins.filter(
+    (plugin) => !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
+  );
+  const filtered = nonPreset.filter((plugin) =>
     matchesQuery(
       [plugin.descriptor.displayName, pluginCategory(plugin.descriptor.id)],
       query,
@@ -219,6 +224,7 @@ export function PluginsGallery({
             {active === "plugins" ? (
               <>
                 <InstalledStrip plugins={plugins} onOpen={onOpenPlugin} />
+                <McpPresetCardsSection tenantId={tenantId} />
                 <McpServersSection
                   tenantId={tenantId}
                   autoOpenAdd={autoOpenMcpAdd}
