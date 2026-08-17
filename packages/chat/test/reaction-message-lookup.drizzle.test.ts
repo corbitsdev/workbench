@@ -120,11 +120,14 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
 
       const target55Back = mailRows[TARGET_INDEX_FROM_NEWEST];
       if (target55Back === undefined) {
-        throw new Error("unreachable: MESSAGE_COUNT > TARGET_INDEX_FROM_NEWEST");
+        throw new Error(
+          "unreachable: MESSAGE_COUNT > TARGET_INDEX_FROM_NEWEST",
+        );
       }
       targetMessageId = target55Back.id;
 
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db,
         sessionService: {} as unknown as SessionService,
         assetService: {} as unknown as AssetService,

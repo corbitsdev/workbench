@@ -469,6 +469,8 @@ describe.skipIf(databaseUrl === undefined)(
         // ("hi") must get a real answer. This is where a run that ends
         // after its opening turn, or a mail rejected as terminal, shows.
         await hop("a second turn gets a real answer", async () => {
+          const settleMs = Number(process.env["E2E_TURN2_DELAY_MS"] ?? "0");
+          if (settleMs > 0) await Bun.sleep(settleMs);
           const sent = await api(
             hub.baseUrl,
             "POST",
@@ -477,6 +479,7 @@ describe.skipIf(databaseUrl === undefined)(
             user.cookies,
           );
           expectStatus("send hi", sent, 201);
+          const sentAt = Date.now();
           const deadline = Date.now() + 180_000;
           for (;;) {
             const res = await api(
@@ -492,18 +495,20 @@ describe.skipIf(databaseUrl === undefined)(
               "list chat messages",
             ) as {
               sender: { address: string };
+              createdAt: string;
               parts: { kind: string; text?: string }[];
             }[];
             const agentTexts = items
               .filter(
                 (item) =>
                   item.sender.address === agentAddress &&
-                  item.parts.some((p) => p.kind === "text"),
+                  item.parts.some((p) => p.kind === "text") &&
+                  new Date(item.createdAt).getTime() > sentAt,
               )
               .map((item) => item.parts.map((p) => p.text ?? "").join(""));
-            if (agentTexts.length >= 2) {
+            if (agentTexts.length >= 1) {
               console.log(
-                `  Myra's answer to "hi" (ollama): ${agentTexts[agentTexts.length - 1]}`,
+                `  Myra's answer to "hi" (ollama): ${agentTexts.join(" ||| ")}`,
               );
               return;
             }
@@ -511,7 +516,7 @@ describe.skipIf(databaseUrl === undefined)(
               throw new Error(
                 `no answer to "hi" within 180s; agent messages: ` +
                   `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
-                  `${hub.output().slice(-4000)}\nsidecar output (tail):\n` +
+                  `${hub.output().slice(-60000)}\nsidecar output (tail):\n` +
                   `${sidecar.output().slice(-6000)}`,
               );
             }

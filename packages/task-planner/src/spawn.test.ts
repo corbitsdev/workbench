@@ -206,7 +206,7 @@ function createTaskLauncherDeps(db: ReturnType<typeof createFakeDb>) {
     foldedRuns: {
       db: db as never,
       sessionService: {
-        async deployInstanceAtHead() {
+        async deploySingleStepAtHead() {
           return { publicKey: "test-public-key" };
         },
         async sendUserMessage() {

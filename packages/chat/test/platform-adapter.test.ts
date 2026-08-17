@@ -404,12 +404,15 @@ function createFakeSessionService(): SessionService & {
     deployInstanceAtHeadCalls,
     sendUserMessageCalls,
     async stageWorkflowStep() {},
-    async deployInstanceAtHead(params: unknown) {
+    async deployInstanceAtHead() {
+      throw new Error(
+        "deployInstanceAtHead must not be called: a folded run deploys " +
+          "an explicit unbounded single-step workflow via deploySingleStepAtHead",
+      );
+    },
+    async deploySingleStepAtHead(params: unknown) {
       deployInstanceAtHeadCalls.push(params);
       return { publicKey: "test-public-key" };
-    },
-    async deploySingleStepAtHead() {
-      return { publicKey: "unused" };
     },
     async deployWorkflowDefinition() {
       throw new Error(
@@ -554,6 +557,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       // Fake db, not a real drizzle instance.
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
@@ -704,7 +708,7 @@ describe("createHubChatPlatform", () => {
     });
     const sessionService = createFakeSessionService();
     const deployError = new Error("sidecar unreachable");
-    sessionService.deployInstanceAtHead = async () => {
+    sessionService.deploySingleStepAtHead = async () => {
       throw deployError;
     };
     const assetService = createFakeAssetService();
@@ -712,6 +716,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -778,7 +783,7 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_channel1",
     });
     const sessionService = createFakeSessionService();
-    sessionService.deployInstanceAtHead = async () => {
+    sessionService.deploySingleStepAtHead = async () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
     const assetService = createFakeAssetService();
@@ -786,6 +791,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -857,6 +863,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -937,6 +944,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1041,6 +1049,7 @@ describe("createHubChatPlatform", () => {
     };
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1081,6 +1090,7 @@ describe("createHubChatPlatform", () => {
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1111,6 +1121,7 @@ describe("createHubChatPlatform", () => {
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1155,6 +1166,7 @@ describe("createHubChatPlatform", () => {
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1206,6 +1218,7 @@ describe("createHubChatPlatform", () => {
       ],
     });
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1240,6 +1253,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1315,6 +1329,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -1440,6 +1455,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -1554,6 +1570,7 @@ describe("createHubChatPlatform", () => {
         });
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -1619,6 +1636,7 @@ describe("createHubChatPlatform", () => {
         });
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -1667,6 +1685,7 @@ describe("createHubChatPlatform", () => {
         });
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -1706,6 +1725,7 @@ describe("createHubChatPlatform", () => {
         });
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -1786,6 +1806,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -1872,6 +1893,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -1917,6 +1939,7 @@ describe("createHubChatPlatform", () => {
           definitionId: "wfd_channel1",
         });
         createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
@@ -1951,6 +1974,7 @@ describe("createHubChatPlatform", () => {
           definitionId: "wfd_channel1",
         });
         createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
@@ -2052,7 +2076,7 @@ describe("createHubChatPlatform", () => {
 
       let deployAttempts = 0;
       const sessionService = createFakeSessionService();
-      sessionService.deployInstanceAtHead = async () => {
+      sessionService.deploySingleStepAtHead = async () => {
         deployAttempts += 1;
         if (deployAttempts === 1) throw alreadyDeployedError();
         return { publicKey: "test-public-key" };
@@ -2080,6 +2104,7 @@ describe("createHubChatPlatform", () => {
 
       try {
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -2121,7 +2146,7 @@ describe("createHubChatPlatform", () => {
         const sidecarRouter = createFakeSidecarRouter({
           routableAddresses: [],
         });
-        sessionService.deployInstanceAtHead = async () => {
+        sessionService.deploySingleStepAtHead = async () => {
           deployAttempts += 1;
           if (deployAttempts === 1) throw alreadyDeployedError();
           // The forced redeploy is what actually brings the agent
@@ -2147,6 +2172,7 @@ describe("createHubChatPlatform", () => {
         };
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -2186,7 +2212,7 @@ describe("createHubChatPlatform", () => {
         const sidecarRouter = createFakeSidecarRouter({
           routableAddresses: [],
         });
-        sessionService.deployInstanceAtHead = async () => {
+        sessionService.deploySingleStepAtHead = async () => {
           deployAttempts += 1;
           if (deployAttempts === 1) throw alreadyDeployedError();
           // Every later (forced) redeploy "succeeds" from the
@@ -2203,6 +2229,7 @@ describe("createHubChatPlatform", () => {
         };
 
         const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService,
@@ -2240,7 +2267,7 @@ describe("createHubChatPlatform", () => {
       const sidecarRouter = createFakeSidecarRouter({
         routableAddresses: [],
       });
-      sessionService.deployInstanceAtHead = async () => {
+      sessionService.deploySingleStepAtHead = async () => {
         deployAttempts += 1;
         if (deployAttempts === 1) throw alreadyDeployedError();
         sidecarRouter.routableAddresses.push(
@@ -2261,6 +2288,7 @@ describe("createHubChatPlatform", () => {
 
       const eventCollectors = createFakeEventCollectors();
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -2351,6 +2379,7 @@ describe("createHubChatPlatform", () => {
     test("recomputes and persists the folded body from the definition's current asset", async () => {
       const db = buildRefreshableDb();
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2398,6 +2427,7 @@ describe("createHubChatPlatform", () => {
       });
       const sessionService = createFakeSessionService();
       const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,

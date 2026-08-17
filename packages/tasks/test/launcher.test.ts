@@ -300,7 +300,7 @@ function createDeps(opts: {
     foldedRuns: {
       db: opts.db as never,
       sessionService: {
-        async deployInstanceAtHead(params: unknown) {
+        async deploySingleStepAtHead(params: unknown) {
           deployCalls.push(params);
           return { publicKey: "test-public-key" };
         },

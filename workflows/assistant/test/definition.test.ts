@@ -45,6 +45,16 @@ test("the step carries an explicit per-turn timeout", () => {
   expect(assistantStep(definition).timeout).toBe(INPUT.turnTimeoutMs);
 });
 
+test("the step is unbounded: it re-arms after every reply instead of completing after the first", () => {
+  // The platform's step primitive defaults `triggers` to 1 (batch). A
+  // conversation is the long-lived interactive agent that must never
+  // self-complete — without this, the run ends after the greeting and
+  // every later message is rejected as sent to a terminal run.
+  expect(assistantStep(buildAssistantWorkflow(INPUT)).triggers).toBe(
+    "unbounded",
+  );
+});
+
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildAssistantWorkflow(INPUT);
   expect(definition.id).toBe(ASSISTANT_WORKFLOW_ID);

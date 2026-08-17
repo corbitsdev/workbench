@@ -51,6 +51,8 @@ mock.module("@intx/hub-api", () => ({
 
 const { launchFoldedRun, InferenceResolutionError } =
   await import("../src/launch");
+const { wakeFoldedRun } = await import("../src/wake");
+const { sessionAsset } = await import("@intx/db/schema");
 
 type InsertChain = {
   values(values: unknown): Promise<void>;
@@ -144,12 +146,15 @@ function createFakeSessionService(): SessionService & {
   return {
     deployInstanceAtHeadCalls,
     async stageWorkflowStep() {},
-    async deployInstanceAtHead(params: unknown) {
+    async deployInstanceAtHead() {
+      throw new Error(
+        "deployInstanceAtHead must not be called: a folded run deploys " +
+          "an explicit unbounded single-step workflow via deploySingleStepAtHead",
+      );
+    },
+    async deploySingleStepAtHead(params: unknown) {
       deployInstanceAtHeadCalls.push(params);
       return { publicKey: "test-public-key" };
-    },
-    async deploySingleStepAtHead() {
-      return { publicKey: "unused" };
     },
     async deployWorkflowDefinition() {
       throw new Error(
@@ -200,6 +205,7 @@ describe("launchFoldedRun", () => {
         sessionService,
         assetService: {} as never,
         sidecarRouter: {} as never,
+        hubPublicKey: "hub-key",
         eventCollectors,
       },
       {
@@ -239,6 +245,17 @@ describe("launchFoldedRun", () => {
     });
 
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    // The folded step must be unbounded: a conversation services every
+    // mail as another turn; the platform default (1) ends the run after
+    // the first reply and every later message is rejected as terminal.
+    const deployedDefinition = sessionService.deployInstanceAtHeadCalls[0] as {
+      definition: { steps: Record<string, { triggers?: unknown }> };
+      hubPublicKey: string;
+    };
+    expect(
+      Object.values(deployedDefinition.definition.steps)[0]?.triggers,
+    ).toBe("unbounded");
+    expect(deployedDefinition.hubPublicKey).toBe("hub-key");
     const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
       agentAddress: string;
       agentId: string;
@@ -322,6 +339,7 @@ describe("launchFoldedRun", () => {
         sessionService,
         assetService: {} as never,
         sidecarRouter: {} as never,
+        hubPublicKey: "hub-key",
         eventCollectors,
         credentialCipher,
       },
@@ -360,7 +378,7 @@ describe("launchFoldedRun", () => {
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
     const deployError = new Error("sidecar unreachable");
-    sessionService.deployInstanceAtHead = async () => {
+    sessionService.deploySingleStepAtHead = async () => {
       throw deployError;
     };
     const eventCollectors = createFakeEventCollectors();
@@ -372,6 +390,7 @@ describe("launchFoldedRun", () => {
           sessionService,
           assetService: {} as never,
           sidecarRouter: {} as never,
+          hubPublicKey: "hub-key",
           eventCollectors,
         },
         {
@@ -418,7 +437,7 @@ describe("launchFoldedRun", () => {
 
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
-    sessionService.deployInstanceAtHead = async () => {
+    sessionService.deploySingleStepAtHead = async () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
     const eventCollectors = createFakeEventCollectors();
@@ -430,6 +449,7 @@ describe("launchFoldedRun", () => {
           sessionService,
           assetService: {} as never,
           sidecarRouter: {} as never,
+          hubPublicKey: "hub-key",
           eventCollectors,
         },
         {
@@ -467,6 +487,7 @@ describe("launchFoldedRun", () => {
           sessionService: createFakeSessionService(),
           assetService: {} as never,
           sidecarRouter: {} as never,
+          hubPublicKey: "hub-key",
           eventCollectors: createFakeEventCollectors(),
         },
         {
@@ -524,6 +545,7 @@ describe("launchFoldedRun", () => {
         sessionService,
         assetService: {} as never,
         sidecarRouter: {} as never,
+        hubPublicKey: "hub-key",
         eventCollectors,
       },
       {
@@ -559,6 +581,7 @@ describe("launchFoldedRun", () => {
           sessionService,
           assetService: {} as never,
           sidecarRouter: {} as never,
+          hubPublicKey: "hub-key",
           eventCollectors,
         },
         {
@@ -578,5 +601,56 @@ describe("launchFoldedRun", () => {
     ).rejects.toThrow(/invalid inference sources override/);
 
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+  });
+});
+
+describe("wakeFoldedRun", () => {
+  test("clears the instance's stale session_asset manifest rows before redeploying the same instance id", async () => {
+    // A wake redeploys the SAME instance id; the platform's ordinary
+    // launch reserves one session_asset row per (instance, mount path)
+    // with no conflict handling, so the previous occurrence's rows must
+    // go first or the redeploy dies on the primary key.
+    const db = createFakeDb();
+    const dbWithSelect = Object.assign(db, {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: () => Promise.resolve([{ id: "ses_1" }]),
+            }),
+          }),
+        }),
+      }),
+    });
+    const sessionService = createFakeSessionService();
+    await wakeFoldedRun(
+      {
+        db: dbWithSelect as never,
+        sessionService,
+        eventCollectors: createFakeEventCollectors(),
+        credentialCipher: {} as never,
+      } as never,
+      {
+        tenantId: "ten_1",
+        instanceId: "run_1",
+        triggerAddress: "run_1@acme.test",
+        principalId: "prn_1",
+        foldedBody: FOLDED_BODY,
+        sources: {
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        },
+      },
+    );
+    expect(db.deleted.map((d) => d.table)).toContain(sessionAsset);
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
   });
 });
