@@ -290,3 +290,145 @@ describe("GET / and DELETE /:slug", () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe("GET /presets", () => {
+  test("lists Granola, Exa, and Linear, none connected yet", async () => {
+    const hub = fakeHub({});
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/presets");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { slug: string; connected: boolean; keyOptional: boolean }[];
+    };
+    const bySlug = new Map(body.data.map((p) => [p.slug, p]));
+    expect(bySlug.get("exa")?.connected).toBe(false);
+    expect(bySlug.get("exa")?.keyOptional).toBe(true);
+    expect(bySlug.get("granola")?.keyOptional).toBe(false);
+    expect(bySlug.get("linear")).toBeDefined();
+  });
+
+  test("flags a preset connected once its provider+credential exist", async () => {
+    const hub = fakeHub({
+      providers: [
+        {
+          id: "prv_exa",
+          tenantId: TENANT.id,
+          name: "mcp:exa",
+          plugin: "http",
+          apiBaseUrl: "https://mcp.exa.ai",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      credentials: [
+        {
+          id: "crd_exa",
+          tenantId: TENANT.id,
+          providerId: "prv_exa",
+          name: "Exa",
+          type: "api_key",
+          secret: "unauthenticated-mcp-server",
+          status: "active",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/presets");
+    const body = (await response.json()) as {
+      data: { slug: string; connected: boolean }[];
+    };
+    const bySlug = new Map(body.data.map((p) => [p.slug, p]));
+    expect(bySlug.get("exa")?.connected).toBe(true);
+    expect(bySlug.get("granola")?.connected).toBe(false);
+  });
+});
+
+describe("POST / with presetSlug", () => {
+  test("connects Exa with no token, using the preset's fixed URL and name", async () => {
+    const hub = fakeHub({});
+    let probedUrl: string | undefined;
+    let probedToken: string | undefined;
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      probe: async (url, token) => {
+        probedUrl = url;
+        probedToken = token;
+        return { ok: true, toolCount: 7 };
+      },
+    });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "exa" }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      slug: string;
+      name: string;
+      url: string;
+      toolCount: number;
+    };
+    expect(body).toEqual({
+      slug: "exa",
+      name: "Exa",
+      url: "https://mcp.exa.ai/mcp",
+      toolCount: 7,
+    });
+    expect(probedUrl).toBe("https://mcp.exa.ai/mcp");
+    expect(probedToken).toBeUndefined();
+    expect(hub.providers[0]?.name).toBe("mcp:exa");
+    expect(hub.credentials[0]?.secret).toBe("unauthenticated-mcp-server");
+  });
+
+  test("an unknown presetSlug is a 400, never touching storage", async () => {
+    const hub = fakeHub({});
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "not-a-real-preset" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(hub.providers).toHaveLength(0);
+  });
+
+  test("a probe that reports requiresOAuth surfaces an oauth_required error code", async () => {
+    const hub = fakeHub({});
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      probe: async () => ({
+        ok: false,
+        message: "sign in first",
+        requiresOAuth: true,
+        authorizationServerUrl: "https://mcp.linear.app",
+      }),
+    });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "linear" }),
+    });
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("oauth_required");
+  });
+
+  test("neither name/url nor presetSlug is a 400", async () => {
+    const hub = fakeHub({});
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
+  });
+});

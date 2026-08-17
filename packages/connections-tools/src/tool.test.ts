@@ -53,20 +53,21 @@ test("list_connections summarizes connected and not-connected connectors from th
   globalThis.fetch = stubFetch({
     connections: [
       {
-        id: "granola",
-        displayName: "Granola",
-        docsUrl: "https://www.granola.ai",
+        id: "github",
+        displayName: "GitHub",
+        docsUrl: "https://github.com/settings/tokens",
         connected: true,
       },
       {
-        id: "exa",
-        displayName: "Exa",
-        docsUrl: "https://exa.ai",
+        id: "scrapecreators",
+        displayName: "ScrapeCreators",
+        docsUrl: "https://scrapecreators.com",
         connected: false,
       },
     ],
     mcpServers: [
       { slug: "notion", name: "Notion", url: "https://mcp.notion.example" },
+      { slug: "exa", name: "Exa", url: "https://mcp.exa.ai/mcp" },
     ],
   });
   try {
@@ -76,9 +77,12 @@ test("list_connections summarizes connected and not-connected connectors from th
       new AbortController().signal,
     );
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Connected: Granola/);
+    expect(result.content).toMatch(/Connected: GitHub/);
+    expect(result.content).toMatch(/Exa \(via MCP\)/);
     expect(result.content).toMatch(/Notion \(MCP server\)/);
-    expect(result.content).toMatch(/Not connected: Exa/);
+    expect(result.content).toMatch(/Not connected: ScrapeCreators/);
+    expect(result.content).toMatch(/Granola/);
+    expect(result.content).not.toMatch(/Exa,/); // Exa never listed twice
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -138,7 +142,7 @@ test("request_connection reports an already-connected MCP server rather than re-
   }
 });
 
-test("request_connection returns the connector's deep link for a known connector, performing no HTTP call", async () => {
+test("request_connection returns the connector's deep link for a known registry-only connector, performing no HTTP call", async () => {
   const originalFetch = globalThis.fetch;
   let called = false;
   globalThis.fetch = (async () => {
@@ -148,13 +152,49 @@ test("request_connection returns the connector's deep link for a known connector
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
-      callFor(REQUEST_CONNECTION_TOOL, { connector: "granola" }),
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "github" }),
       new AbortController().signal,
     );
     expect(called).toBe(false);
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Granola/);
-    expect(result.content).toContain("/plugins?connect=granola");
+    expect(result.content).toMatch(/GitHub/);
+    expect(result.content).toContain("/plugins?connect=github");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("request_connection deep-links a curated MCP preset by name, checking for an existing MCP connection first", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubFetch({ mcpServers: [] });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "Exa" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/Exa/);
+    expect(result.content).toMatch(/no key needed/);
+    expect(result.content).toContain("/plugins?connect=mcp:exa");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("request_connection reports an already-connected preset rather than re-requesting it", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubFetch({
+    mcpServers: [{ slug: "exa", name: "Exa", url: "https://mcp.exa.ai/mcp" }],
+  });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "exa" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/already connected/);
   } finally {
     globalThis.fetch = originalFetch;
   }
