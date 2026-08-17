@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   createSkill,
   listSkills,
+  loadSkill,
   pinSkill,
   updateSkill,
   type SkillsToolClientConfig,
@@ -49,6 +50,30 @@ test("listSkills throws an honest error on a non-ok response", async () => {
     })) as unknown as typeof fetch;
 
   await expect(listSkills(testConfig(fetchImpl))).rejects.toThrow(/500/);
+});
+
+test("loadSkill posts the name to /load and returns the skill with its full body", async () => {
+  let seenUrl: string | undefined;
+  let seenBody: unknown;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({
+        data: {
+          name: "triage",
+          description: "Sorts inbound issues.",
+          body: "## Steps\nAlways label severity first.",
+        },
+      }),
+    );
+  }) as unknown as typeof fetch;
+
+  const skill = await loadSkill(testConfig(fetchImpl), "triage");
+
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-skills/load");
+  expect(seenBody).toEqual({ name: "triage" });
+  expect(skill.body).toContain("Always label severity first.");
 });
 
 test("createSkill posts to /create and parses back the created summary", async () => {

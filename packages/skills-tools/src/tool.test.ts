@@ -6,6 +6,7 @@ import {
   CREATE_SKILL_TOOL,
   LIST_SKILLS_TOOL,
   PIN_SKILL_TOOL,
+  READ_SKILL_TOOL,
   UPDATE_SKILL_TOOL,
   type WorkflowSkillsWriteEnv,
 } from "./tool";
@@ -36,10 +37,11 @@ async function withFetch<T>(
   }
 }
 
-test("declares exactly the four skills tools", () => {
+test("declares exactly the five skills tools", () => {
   const bundle = skillsTools(testEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     LIST_SKILLS_TOOL,
+    READ_SKILL_TOOL,
     CREATE_SKILL_TOOL,
     UPDATE_SKILL_TOOL,
     PIN_SKILL_TOOL,
@@ -55,13 +57,65 @@ test("requires the sanctioned workflow-skills-write env keys", () => {
   ]);
 });
 
-test('list_skills carries no approval gate; the three writes are all approval: "ask"', () => {
+test('the two reads carry no approval gate; the three writes are all approval: "ask"', () => {
   expect(skillsTools.definitions).toEqual([
     { name: LIST_SKILLS_TOOL },
+    { name: READ_SKILL_TOOL },
     { name: CREATE_SKILL_TOOL, approval: "ask" },
     { name: UPDATE_SKILL_TOOL, approval: "ask" },
     { name: PIN_SKILL_TOOL, approval: "ask" },
   ]);
+});
+
+test("read_skill returns the skill's full body", async () => {
+  const bundle = skillsTools(testEnv());
+  const result = await withFetch(
+    (async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            name: "triage",
+            description: "Sorts inbound issues.",
+            body: "## Steps\nAlways label severity first.",
+          },
+        }),
+      )) as unknown as typeof fetch,
+    () =>
+      bundle.run(
+        callFor(READ_SKILL_TOOL, { name: "triage" }),
+        new AbortController().signal,
+      ),
+  );
+  expect(result.isError).toBeFalsy();
+  expect(result.content).toContain("Always label severity first.");
+});
+
+test("read_skill rejects a call missing the name without calling out", async () => {
+  const bundle = skillsTools(testEnv());
+  const result = await bundle.run(
+    callFor(READ_SKILL_TOOL, {}),
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/invalid input/);
+});
+
+test("read_skill surfaces a 404 as an honest tool error", async () => {
+  const bundle = skillsTools(testEnv());
+  const result = await withFetch(
+    (async () =>
+      new Response("", {
+        status: 404,
+        statusText: "Not Found",
+      })) as unknown as typeof fetch,
+    () =>
+      bundle.run(
+        callFor(READ_SKILL_TOOL, { name: "ghost" }),
+        new AbortController().signal,
+      ),
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/404/);
 });
 
 test("list_skills reports each skill's name and description", async () => {
