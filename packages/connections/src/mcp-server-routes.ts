@@ -29,6 +29,7 @@ import {
   type ApiCall,
 } from "@workbench/hub-client";
 import { probeMcpServer } from "./mcp-probe";
+import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
@@ -39,15 +40,15 @@ const ErrorEnvelope = (code: string, message: string) => ({
  * `server` argument `mcp_list_tools`/`mcp_call` take. */
 const MCP_PROVIDER_PREFIX = "mcp:";
 
-function providerName(slug: string): string {
+export function providerName(slug: string): string {
   return `${MCP_PROVIDER_PREFIX}${slug}`;
 }
 
-function slugOf(name: string): string {
+export function slugOf(name: string): string {
   return name.slice(MCP_PROVIDER_PREFIX.length);
 }
 
-function slugify(name: string): string {
+export function slugify(name: string): string {
   const base = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -64,11 +65,17 @@ function slugify(name: string): string {
  * this substrate — a public MCP server with no auth still sends an
  * (unused) bearer header few servers will reject, but a stricter one
  * could. */
-const NO_TOKEN_SENTINEL = "unauthenticated-mcp-server";
+export const NO_TOKEN_SENTINEL = "unauthenticated-mcp-server";
 
+/** Either a hand-typed `name`+`url` (the original CL-6142 shape) or a
+ * curated `presetSlug` (CL-6152) -- resolving a preset's fixed `url`/
+ * `displayName` happens in the route handler below, never trusted off
+ * the wire, so a preset connect can never be redirected at an arbitrary
+ * URL by tampering with the request body. */
 const SubmitMcpServer = type({
-  name: "string > 0",
-  url: "string > 0",
+  "name?": "string > 0",
+  "url?": "string > 0",
+  "presetSlug?": "string > 0",
   "token?": "string | undefined",
 });
 
@@ -96,7 +103,7 @@ export type CreateMcpServerRoutesDeps = {
   probe?: typeof probeMcpServer;
 };
 
-async function listMcpProviders(
+export async function listMcpProviders(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
@@ -115,7 +122,7 @@ async function listMcpProviders(
   return providers.filter((p) => p.name.startsWith(MCP_PROVIDER_PREFIX));
 }
 
-async function listMcpCredentials(
+export async function listMcpCredentials(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
@@ -133,7 +140,7 @@ async function listMcpCredentials(
   ).data;
 }
 
-function uniqueSlug(desired: string, taken: ReadonlySet<string>): string {
+export function uniqueSlug(desired: string, taken: ReadonlySet<string>): string {
   if (!taken.has(desired)) return desired;
   for (let suffix = 2; suffix < 1000; suffix += 1) {
     const candidate = `${desired}-${suffix}`;
@@ -167,6 +174,38 @@ export function createMcpServerRoutes(
     return c.json({ data: servers }, 200);
   });
 
+  app.get("/presets", deps.requireGrant("credential:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    const [providers, credentials] = await Promise.all([
+      listMcpProviders(api, cookies, tenant.id),
+      listMcpCredentials(api, cookies, tenant.id),
+    ]);
+    const credentialByProviderId = new Map(
+      credentials.map((cred) => [cred.providerId, cred]),
+    );
+    const providerBySlug = new Map(
+      providers.map((provider) => [slugOf(provider.name), provider]),
+    );
+    const presets = MCP_PRESETS.map((preset) => {
+      const provider = providerBySlug.get(preset.slug);
+      const credential =
+        provider === undefined
+          ? undefined
+          : credentialByProviderId.get(provider.id);
+      return {
+        slug: preset.slug,
+        displayName: preset.displayName,
+        description: preset.description,
+        url: preset.url,
+        keyOptional: preset.keyOptional,
+        docsUrl: preset.docsUrl,
+        connected: credential !== undefined,
+      };
+    });
+    return c.json({ data: presets }, 200);
+  });
+
   app.post("/", deps.requireGrant("credential:*", "create"), async (c) => {
     const body: unknown = await (c as Context<TenantEnv>).req
       .json()
@@ -179,17 +218,50 @@ export function createMcpServerRoutes(
       );
     }
 
-    const test = await probe(parsed.url, parsed.token);
+    const preset =
+      parsed.presetSlug !== undefined
+        ? mcpPresetBySlug(parsed.presetSlug)
+        : undefined;
+    if (parsed.presetSlug !== undefined && preset === undefined) {
+      return c.json(
+        ErrorEnvelope(
+          "bad_request",
+          `Unknown MCP server preset: "${parsed.presetSlug}"`,
+        ),
+        400,
+      );
+    }
+    const name = preset?.displayName ?? parsed.name;
+    const url = preset?.url ?? parsed.url;
+    if (name === undefined || url === undefined) {
+      return c.json(
+        ErrorEnvelope(
+          "bad_request",
+          "Invalid MCP server: provide either presetSlug, or both name and url.",
+        ),
+        400,
+      );
+    }
+
+    const test = await probe(url, parsed.token);
     if (!test.ok) {
-      return c.json(ErrorEnvelope("connect_failed", test.message), 422);
+      return c.json(
+        test.requiresOAuth === true
+          ? ErrorEnvelope("oauth_required", test.message)
+          : ErrorEnvelope("connect_failed", test.message),
+        422,
+      );
     }
 
     const tenant = c.get("tenant");
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     const existingProviders = await listMcpProviders(api, cookies, tenant.id);
     const takenSlugs = new Set(existingProviders.map((p) => slugOf(p.name)));
-    const slug = uniqueSlug(slugify(parsed.name), takenSlugs);
-    const origin = new URL(parsed.url).origin;
+    const slug =
+      preset !== undefined && !takenSlugs.has(preset.slug)
+        ? preset.slug
+        : uniqueSlug(slugify(name), takenSlugs);
+    const origin = new URL(url).origin;
 
     try {
       const providerId = await ensureProvider(
@@ -209,21 +281,21 @@ export function createMcpServerRoutes(
         {
           tenantId: tenant.id,
           providerId,
-          name: parsed.name,
+          name,
           secret:
             parsed.token && parsed.token.length > 0
               ? parsed.token
               : NO_TOKEN_SENTINEL,
           type: "api_key",
-          metadata: { url: parsed.url, name: parsed.name },
+          metadata: { url, name },
           verified: true,
         },
         deps.log,
       );
       const connected: McpServerConnected = {
         slug,
-        name: parsed.name,
-        url: parsed.url,
+        name,
+        url,
         toolCount: test.toolCount,
       };
       return c.json(connected, 200);

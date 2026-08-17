@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
     "./plugins": "./src/plugins.ts",
-    "./provider-health": "./src/provider-health.ts"
+    "./provider-health": "./src/provider-health.ts",
+    "./mcp-presets": "./src/mcp-presets.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,6 +22,7 @@
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

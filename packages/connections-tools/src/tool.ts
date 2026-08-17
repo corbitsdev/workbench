@@ -30,6 +30,7 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { CONNECTOR_REGISTRY } from "@workbench/connections";
+import { MCP_PRESETS, mcpPresetByName } from "@workbench/connections/mcp-presets";
 import { type } from "arktype";
 
 import { listConnections, listMcpServerConnections } from "./client";
@@ -91,6 +92,23 @@ function connectDeepLink(connectorId: string): string {
  * minted at connect time — see `mcp-server-routes.ts`'s header). */
 const ADD_MCP_SERVER_DEEP_LINK = "/plugins?connect=mcp";
 
+/** `/plugins?connect=mcp:<slug>` — a curated preset's own card
+ * (CL-6152). Presets are still tenant-minted `mcp:<slug>` connections
+ * once connected, but the *card* a human clicks to start one is fixed
+ * and known ahead of time, unlike a hand-typed custom MCP server. */
+function presetDeepLink(slug: string): string {
+  return `/plugins?connect=mcp:${slug}`;
+}
+
+/** Every `CONNECTOR_REGISTRY` id a curated MCP preset now fronts —
+ * excluded from the raw api-key connector tallies below so a service
+ * with both an old api-key entry and a new preset (Granola, Exa,
+ * Linear) is only ever reported once, under its preset's own connected/
+ * not-connected state. */
+const PRESET_FRONTED_IDS = new Set(
+  MCP_PRESETS.map((preset) => preset.slug),
+);
+
 async function runListConnections(
   env: WorkflowConnectionEnv,
   call: ToolCall,
@@ -100,12 +118,27 @@ async function runListConnections(
       listConnections(clientConfig(env)),
       listMcpServerConnections(clientConfig(env)),
     ]);
-    const connected = connections.filter((entry) => entry.connected);
-    const notConnected = connections.filter((entry) => !entry.connected);
+    const connectedMcpSlugs = new Set(mcpServers.map((server) => server.slug));
+    const registryEntries = connections.filter(
+      (entry) => !PRESET_FRONTED_IDS.has(entry.id),
+    );
+    const connected = registryEntries.filter((entry) => entry.connected);
+    const notConnected = registryEntries.filter((entry) => !entry.connected);
+    const otherMcpServers = mcpServers.filter(
+      (server) => !PRESET_FRONTED_IDS.has(server.slug),
+    );
+    const presetConnected = MCP_PRESETS.filter((preset) =>
+      connectedMcpSlugs.has(preset.slug),
+    );
+    const presetNotConnected = MCP_PRESETS.filter(
+      (preset) => !connectedMcpSlugs.has(preset.slug),
+    );
+
     if (
       connected.length === 0 &&
       notConnected.length === 0 &&
-      mcpServers.length === 0
+      otherMcpServers.length === 0 &&
+      MCP_PRESETS.length === 0
     ) {
       return {
         callId: call.id,
@@ -115,14 +148,19 @@ async function runListConnections(
     }
     const connectedNames = [
       ...connected.map((entry) => entry.displayName),
-      ...mcpServers.map((server) => `${server.name} (MCP server)`),
+      ...presetConnected.map((preset) => `${preset.displayName} (via MCP)`),
+      ...otherMcpServers.map((server) => `${server.name} (MCP server)`),
+    ];
+    const notConnectedNames = [
+      ...notConnected.map((entry) => entry.displayName),
+      ...presetNotConnected.map((preset) => preset.displayName),
     ];
     const lines = [
       connectedNames.length > 0
         ? `Connected: ${connectedNames.join(", ")}.`
         : "Connected: none.",
-      notConnected.length > 0
-        ? `Not connected: ${notConnected.map((entry) => entry.displayName).join(", ")}.`
+      notConnectedNames.length > 0
+        ? `Not connected: ${notConnectedNames.join(", ")}.`
         : "Not connected: none.",
     ];
     return { callId: call.id, isError: false, content: lines.join(" ") };
@@ -136,6 +174,37 @@ async function runRequestConnection(
   call: ToolCall,
   parsed: RequestConnectionInput,
 ): Promise<ToolResult> {
+  // Checked ahead of the fixed registry: a curated preset (Granola, Exa,
+  // Linear) is now the featured card for its service — a human asking
+  // to "connect Exa" should land on that MCP card, not the old api-key
+  // one, which `settings-ui`/`plugins-ui` no longer render as a separate
+  // card at all.
+  const preset = mcpPresetByName(parsed.connector);
+  if (preset !== undefined) {
+    try {
+      const mcpServers = await listMcpServerConnections(clientConfig(env));
+      const already = mcpServers.find((server) => server.slug === preset.slug);
+      if (already !== undefined) {
+        return {
+          callId: call.id,
+          isError: false,
+          content: `"${already.name}" is already connected as an MCP server.`,
+        };
+      }
+    } catch (err) {
+      return errorResult(call.id, err);
+    }
+    return {
+      callId: call.id,
+      isError: false,
+      content:
+        `To connect ${preset.displayName} (${preset.description}), ask ` +
+        `the human to open ${presetDeepLink(preset.slug)} and let you ` +
+        `know once it's connected. This only hands over a link — ` +
+        `connecting still happens in the browser, never automatically.`,
+    };
+  }
+
   const descriptor = CONNECTOR_REGISTRY[parsed.connector];
   if (descriptor !== undefined) {
     return {
