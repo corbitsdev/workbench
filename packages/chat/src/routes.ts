@@ -689,7 +689,7 @@ const MoveChannelBody = type({
  * with a channel that predates channel tenancy entirely sorting oldest
  * of all.
  */
-async function findExistingAgentChat(
+export async function findExistingAgentChat(
   deps: Pick<CreateChatRoutesDeps, "store" | "platform" | "tenancy">,
   tenantId: string,
   definitionId: string,

@@ -73,6 +73,7 @@ const neverHandsOn = async (): Promise<string> => {
 
 async function seedRunningTask(
   store: ReturnType<typeof createMemoryTaskStore>,
+  channelId?: string,
 ): Promise<TaskRecord> {
   return store.createTask({
     id: "task_1",
@@ -83,7 +84,25 @@ async function seedRunningTask(
     prompt: "Summarize the incident.",
     modelPreference: null,
     runId: "run_1",
+    channelId: channelId ?? null,
   });
+}
+
+function fakeChannel(fallbackChannelId?: string) {
+  const posted: { tenantId: string; channelId: string; text: string }[] = [];
+  return {
+    posted,
+    deps: {
+      post: async (input: {
+        tenantId: string;
+        channelId: string;
+        text: string;
+      }) => {
+        posted.push(input);
+      },
+      resolveFallbackChannelId: async () => fallbackChannelId,
+    },
+  };
 }
 
 describe("createTaskOrchestrator", () => {
@@ -511,5 +530,166 @@ describe("createTaskOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(notify.delivered).toHaveLength(0);
+  });
+
+  test("a completed task with a channelId posts its result into that channel", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store, "chn_origin");
+    const notify = fakeNotify();
+    const channel = fakeChannel("chn_myra");
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: neverHandsOn,
+      channel: channel.deps,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        seq: 1,
+        data: { content: "All clear." },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 2,
+        data: { status: "completed" },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channel.posted).toHaveLength(1);
+    expect(channel.posted[0]?.channelId).toBe("chn_origin");
+    expect(channel.posted[0]?.text).toStartWith("Task finished:");
+    expect(channel.posted[0]?.text).toContain("All clear.");
+
+    orchestrator.dispose();
+  });
+
+  test("a completed task with no channelId falls back to the tenant's assistant channel", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store);
+    const notify = fakeNotify();
+    const channel = fakeChannel("chn_myra");
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: neverHandsOn,
+      channel: channel.deps,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channel.posted).toHaveLength(1);
+    expect(channel.posted[0]?.channelId).toBe("chn_myra");
+
+    orchestrator.dispose();
+  });
+
+  test("a completed task with no channelId and no assistant channel posts nowhere, keeping only the notify record", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store);
+    const notify = fakeNotify();
+    const channel = fakeChannel(undefined);
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: neverHandsOn,
+      channel: channel.deps,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channel.posted).toHaveLength(0);
+    expect(notify.delivered).toHaveLength(1);
+
+    orchestrator.dispose();
+  });
+
+  test("a failed task posts an honest failure line into its channel", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store, "chn_origin");
+    const notify = fakeNotify();
+    const channel = fakeChannel();
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: neverHandsOn,
+      channel: channel.deps,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "failed", error: { message: "tool exploded" } },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channel.posted).toHaveLength(1);
+    expect(channel.posted[0]?.text).toStartWith("Task finished:");
+    expect(channel.posted[0]?.text).toContain("failed");
+    expect(channel.posted[0]?.text).toContain("tool exploded");
+
+    orchestrator.dispose();
   });
 });

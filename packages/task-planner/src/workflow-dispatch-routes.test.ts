@@ -151,6 +151,7 @@ function storeOverInserts(db: {
     async linkPlannerRun(input) {
       plannerRunIds.set(input.id, input.plannerRunId);
     },
+    async recordChannel() {},
     async listLegs(tenantId, taskId) {
       return legRows().filter(
         (leg) => leg.tenantId === tenantId && leg.taskId === taskId,
@@ -318,6 +319,15 @@ function authenticatorFor(scope: typeof RUN_SCOPE | null) {
   return { resolve: mock(async () => scope) };
 }
 
+/** No dispatch in this file exercises the channel-lookup itself
+ * (`@corbits/chat`'s own tests cover `findChannelByParticipantAddress`)
+ * — every route call here just needs a `chatStore` that resolves to
+ * "no channel", the same outcome a task launched with no channel
+ * context gets. */
+function fakeChatStore() {
+  return { findChannelByParticipantAddress: async () => undefined };
+}
+
 async function postDispatch(
   app: ReturnType<typeof createWorkflowDispatchRoutes>,
   body: Record<string, unknown>,
@@ -345,6 +355,7 @@ describe("createWorkflowDispatchRoutes", () => {
 
     const app = createWorkflowDispatchRoutes({
       authenticator,
+      chatStore: fakeChatStore(),
       ...spawnDeps,
       ...plannerRunDeps,
     });
@@ -372,6 +383,7 @@ describe("createWorkflowDispatchRoutes", () => {
 
     const app = createWorkflowDispatchRoutes({
       authenticator,
+      chatStore: fakeChatStore(),
       ...spawnDeps,
       ...plannerRunDeps,
     });
@@ -404,6 +416,7 @@ describe("createWorkflowDispatchRoutes", () => {
 
     const app = createWorkflowDispatchRoutes({
       authenticator,
+      chatStore: fakeChatStore(),
       ...spawnDeps,
       ...plannerRunDeps,
     });
@@ -430,6 +443,7 @@ describe("createWorkflowDispatchRoutes", () => {
 
     const app = createWorkflowDispatchRoutes({
       authenticator,
+      chatStore: fakeChatStore(),
       ...spawnDeps,
       ...plannerRunDeps,
     });
@@ -454,6 +468,7 @@ describe("createWorkflowDispatchRoutes", () => {
 
     const app = createWorkflowDispatchRoutes({
       authenticator,
+      chatStore: fakeChatStore(),
       ...spawnDeps,
       ...plannerRunDeps,
     });

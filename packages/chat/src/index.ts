@@ -69,7 +69,7 @@ export {
 } from "./participants";
 export type { ParticipantRecord } from "./participants";
 
-export { createChatRoutes } from "./routes";
+export { createChatRoutes, findExistingAgentChat } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
 
 export { createChannelSubscriberRegistry } from "./channel-events";

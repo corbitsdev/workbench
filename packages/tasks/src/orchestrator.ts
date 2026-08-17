@@ -33,6 +33,7 @@ import {
 } from "@corbits/turn-artifacts";
 import {
   deliverTaskResultMail,
+  renderNotification,
   type NotifyDeliveryDeps,
   type TaskResultNotification,
 } from "@corbits/notify";
@@ -60,6 +61,28 @@ export type TaskOrchestratorDeps = {
    * first leg while reporting it finished.
    */
   launchLeg: ChainDeps["launchLeg"];
+  /**
+   * Posts a task's result into a channel — the Inbox was never the
+   * only place a dispatched task's outcome should surface. Optional:
+   * a host that hasn't wired chat posting yet still gets the Inbox
+   * delivery this orchestrator already provides, unchanged.
+   */
+  channel?: TaskChannelPostDeps;
+};
+
+export type TaskChannelPostDeps = {
+  /** Posts `text` into the given channel, from the channel itself
+   * (mirrors `@corbits/chat`'s `sendMail` `fromChannelId` — an agent's
+   * own reply, not a human's). */
+  post(input: {
+    readonly tenantId: string;
+    readonly channelId: string;
+    readonly text: string;
+  }): Promise<void>;
+  /** The tenant's Myra/assistant channel, when one exists — the
+   * fallback for a task dispatched with no origin channel (a direct
+   * planner-API call). Undefined when the tenant has none. */
+  resolveFallbackChannelId(tenantId: string): Promise<string | undefined>;
 };
 
 export type TaskOrchestrator = {
@@ -127,6 +150,7 @@ export function createTaskOrchestrator(
       tenantId: string;
       principalId: string;
       definitionId: string;
+      channelId: string | null;
       createdAt: Date;
     },
     taskStatus: "done" | "failed",
@@ -188,6 +212,34 @@ export function createTaskOrchestrator(
         id: record.id,
         resultMailId: mailId,
       });
+    }
+
+    await postResultToChannel(record, resultEvent);
+  }
+
+  async function postResultToChannel(
+    record: { tenantId: string; channelId: string | null },
+    resultEvent: TaskResultNotification,
+  ): Promise<void> {
+    if (deps.channel === undefined) return;
+    const channelId =
+      record.channelId ??
+      (await deps.channel.resolveFallbackChannelId(record.tenantId));
+    if (channelId === undefined) return;
+
+    const outcome =
+      resultEvent.status === "done"
+        ? `“${resultEvent.agentName}” completed the task.`
+        : `“${resultEvent.agentName}” failed the task.`;
+    const rendered = renderNotification(resultEvent);
+    const text = `Task finished: ${outcome}\n\n${rendered.body}`;
+
+    try {
+      await deps.channel.post({ tenantId: record.tenantId, channelId, text });
+    } catch (cause) {
+      log.error`task orchestrator: failed to post task ${resultEvent.taskId}'s result into channel ${channelId}: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`;
     }
   }
 
