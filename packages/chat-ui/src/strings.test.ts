@@ -24,3 +24,28 @@ describe("toast confirmation copy", () => {
     );
   });
 });
+
+describe("agentsTyping copy", () => {
+  test("one name reads as a single typist", () => {
+    expect(CHAT_STRINGS.agentsTyping(["Myra"])).toBe("Myra is typing…");
+  });
+
+  test("two names are joined with 'and'", () => {
+    expect(CHAT_STRINGS.agentsTyping(["Myra", "Scribe"])).toBe(
+      "Myra and Scribe are typing…",
+    );
+  });
+
+  test("three or more collapse the rest into 'and N others'", () => {
+    expect(CHAT_STRINGS.agentsTyping(["Myra", "Scribe", "Tally"])).toBe(
+      "Myra, Scribe and 1 other are typing…",
+    );
+    expect(
+      CHAT_STRINGS.agentsTyping(["Myra", "Scribe", "Tally", "Nova"]),
+    ).toBe("Myra, Scribe and 2 others are typing…");
+  });
+
+  test("no names renders nothing to say", () => {
+    expect(CHAT_STRINGS.agentsTyping([])).toBe("");
+  });
+});
