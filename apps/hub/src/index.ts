@@ -2080,6 +2080,27 @@ export async function createHub(config: HubConfig) {
       connectorId: "capability",
       credentialBinding: null,
     });
+    // MCP tools are fed by MCP server connections, not by the classic
+    // connector registry above — without this the inventory rejects
+    // `@corbits/mcp-tools` on a bench with live MCP servers, so created
+    // specialists cannot search (CL-6206's live 400). Credential
+    // bindings for this package come from `mcpCredentialBindingsFor`
+    // at launch, never from an inventory row.
+    const mcpServers = await listMcpServerConnections(db, tenantId);
+    if (mcpServers.length > 0) {
+      entries.push({
+        name: "@corbits/mcp-tools",
+        connectorId: "mcp",
+        credentialBinding: null,
+      });
+    }
+    // The ask_user interaction card needs no credential at all — it is
+    // always offerable, exactly like capability-tools.
+    entries.push({
+      name: "@corbits/interaction-tools",
+      connectorId: "interaction",
+      credentialBinding: null,
+    });
     return entries;
   }
 
