@@ -867,6 +867,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
       credentials: unknown;
       config: { grants: { resource: string; action: string }[] };
+      definition: { credentialBindings?: readonly unknown[] };
     };
     expect(deployed.credentials).toEqual(buildCredentialDeliveryResult.delivery);
     expect(deployed.config.grants).toContainEqual(
@@ -876,6 +877,7 @@ describe("deployAtHead — mcp credential bindings", () => {
         conditions: { tool: "tool:@corbits/mcp-tools" },
       }),
     );
+    expect(deployed.definition.credentialBindings).toEqual([MCP_BINDING]);
   });
 
   test("never calls mcpCredentialBindingsFor when @corbits/mcp-tools is not pinned", async () => {
