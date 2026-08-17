@@ -470,7 +470,25 @@
    come from react-ui's `Avatar`; this only positions it within the row. */
 .chat-sender-avatar {
   margin-top: 0.1rem;
-  border-radius: var(--ui-radius-sm, 0.25rem);
+  border-radius: 50%;
+}
+
+/* A SenderAvatar rendered without the profile-button wrapper (the
+   streaming bubble) still occupies the same avatar column, so text
+   never shifts when the streamed reply finalizes into a persisted
+   message. */
+.chat-bubble-row > .chat-sender-avatar-wrap {
+  width: 2.15rem;
+  display: inline-grid;
+  place-items: start center;
+  flex-shrink: 0;
+}
+
+/* A pending own message renders no avatar chip until the server echo
+   replaces it — indent it to the shared text column so a just-sent
+   message never jumps sideways on landing. */
+.chat-message-group[data-pending] > .chat-bubble-row {
+  padding-left: calc(0.45rem + 2.15rem + 0.65rem);
 }
 
 /* Wraps a message sender's avatar with room for the shared-channel
@@ -1469,6 +1487,12 @@
   display: inline-flex;
   margin-left: -0.35rem;
   border: 1.5px solid var(--background);
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.chat-agent-typing-avatar > [role="img"] {
+  border-radius: 50%;
 }
 
 .chat-agent-typing-avatar:first-child {
