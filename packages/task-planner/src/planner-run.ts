@@ -22,9 +22,29 @@ import {
   validateTaskSpecAgainstInventory,
   type TaskSpec,
 } from "./task-spec";
+import { isInferenceFailureReply } from "./inference-failure-reply";
 import type { OneShotReply } from "@corbits/folded-runs";
 
 const DEFAULT_PLANNER_TIMEOUT_MS = 60_000;
+const DEFAULT_INFERENCE_RETRY_DELAY_MS = 2_000;
+
+/** Thrown when the one-shot planning prompt's reply is an inference-
+ * failure report (saturation, a 402, a timeout, ...) both on the
+ * initial attempt and on the one retry `runPlanner` gives it — never a
+ * malformed plan, so this is kept distinct from
+ * `PlannerReplyUnparseableError` and mapped to its own honest 503 by
+ * `routes.ts`, rather than the misleading "planning_failed" 422 a
+ * parse failure gets. */
+export class PlannerInferenceUnavailableError extends Error {
+  constructor(tenantId: string) {
+    super(`Myra's inference couldn't be reached for tenant "${tenantId}"`);
+    this.name = "PlannerInferenceUnavailableError";
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Myra's asset name in the seeded workflow catalog — the same lookup
  * `apps/web/src/myra-channel.ts` does client-side, mirrored here for
@@ -57,6 +77,9 @@ export type PlannerRunDeps = {
   readonly inventorySources: InventorySources;
   readonly resolveMyraDefinitionId: (tenantId: string) => Promise<string>;
   readonly timeoutMs?: number;
+  /** Delay before the single retry an inference-failure reply gets.
+   * Overridable so tests don't wait on the real default. */
+  readonly inferenceRetryDelayMs?: number;
 };
 
 export type PlannerRunResult = {
@@ -147,13 +170,25 @@ export async function runPlanner(
 
   const prompt = buildPlannerPrompt(input.outcome, inventory);
 
-  const reply = await deps.runner.run({
-    tenantId: input.tenantId,
-    principalId: input.principalId,
-    definitionId,
-    prompt,
-    timeoutMs: deps.timeoutMs ?? DEFAULT_PLANNER_TIMEOUT_MS,
-  });
+  const runOnce = () =>
+    deps.runner.run({
+      tenantId: input.tenantId,
+      principalId: input.principalId,
+      definitionId,
+      prompt,
+      timeoutMs: deps.timeoutMs ?? DEFAULT_PLANNER_TIMEOUT_MS,
+    });
+
+  let reply = await runOnce();
+  if (isInferenceFailureReply(reply.content)) {
+    await delay(
+      deps.inferenceRetryDelayMs ?? DEFAULT_INFERENCE_RETRY_DELAY_MS,
+    );
+    reply = await runOnce();
+    if (isInferenceFailureReply(reply.content)) {
+      throw new PlannerInferenceUnavailableError(input.tenantId);
+    }
+  }
 
   const spec = parseTaskSpec(reply.content);
   validateTaskSpecAgainstInventory(spec, inventory);

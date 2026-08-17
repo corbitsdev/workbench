@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   runPlanner,
+  PlannerInferenceUnavailableError,
   PlannerMyraUnavailableError,
   type PlannerRunDeps,
 } from "./planner-run";
@@ -150,5 +151,51 @@ describe("runPlanner", () => {
     await expect(runPlanner(deps, INPUT)).rejects.toBeInstanceOf(
       PlannerMyraUnavailableError,
     );
+  });
+
+  const INFERENCE_FAILURE_REPLY =
+    "This agent could not complete your request due to an unrecoverable inference error [HTTP 500]: upstream saturated";
+
+  test("an inference-failure reply retries once, then succeeds", async () => {
+    let calls = 0;
+    const deps = buildDeps({
+      inferenceRetryDelayMs: 0,
+      runner: {
+        run: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return { content: INFERENCE_FAILURE_REPLY, runId: "wfr_5a" };
+          }
+          return {
+            content: JSON.stringify({
+              kind: "task",
+              use: "wfd_summarizer",
+              refinedOutcome: "Summarize the doc",
+            }),
+            runId: "wfr_5b",
+          };
+        },
+      },
+    });
+    const result = await runPlanner(deps, INPUT);
+    expect(calls).toBe(2);
+    expect(result.plannerRunId).toBe("wfr_5b");
+  });
+
+  test("an inference-failure reply on both attempts throws PlannerInferenceUnavailableError, not planning_failed", async () => {
+    let calls = 0;
+    const deps = buildDeps({
+      inferenceRetryDelayMs: 0,
+      runner: {
+        run: async () => {
+          calls += 1;
+          return { content: INFERENCE_FAILURE_REPLY, runId: `wfr_6_${calls}` };
+        },
+      },
+    });
+    await expect(runPlanner(deps, INPUT)).rejects.toBeInstanceOf(
+      PlannerInferenceUnavailableError,
+    );
+    expect(calls).toBe(2);
   });
 });

@@ -12,7 +12,10 @@ import { Hono } from "hono";
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 
-import { PlannerMyraUnavailableError } from "./planner-run";
+import {
+  PlannerInferenceUnavailableError,
+  PlannerMyraUnavailableError,
+} from "./planner-run";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
@@ -54,6 +57,9 @@ const ErrorEnvelope = (code: string, message: string) => ({
 
 const PLAN_FAILED_MESSAGE =
   "Myra couldn't turn that into a task. Try rephrasing, or pick an agent yourself.";
+
+const INFERENCE_UNAVAILABLE_MESSAGE =
+  "The model couldn't be reached — try again in a moment";
 
 const CreatePlanBody = type({
   outcome: "string > 0",
@@ -193,6 +199,12 @@ export function createPlannerRoutes(
       log.error`planner dispatch failed for tenant ${tenant.id}: ${
         err instanceof Error ? err.message : String(err)
       }`;
+      if (err instanceof PlannerInferenceUnavailableError) {
+        return c.json(
+          ErrorEnvelope("inference_unavailable", INFERENCE_UNAVAILABLE_MESSAGE),
+          503,
+        );
+      }
       if (isPlanningFailure(err)) {
         return c.json(
           ErrorEnvelope("planning_failed", PLAN_FAILED_MESSAGE),
