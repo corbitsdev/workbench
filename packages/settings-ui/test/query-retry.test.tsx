@@ -60,6 +60,12 @@ describe("PeopleSection retry", () => {
           nextCursor: null,
         });
       }
+      if (url === "/api/tenants/tnt_1/roles") {
+        return json(200, { data: [], nextCursor: null });
+      }
+      if (url === "/api/tenants/tnt_1/access-policy/pending-invites") {
+        return json(200, { data: [] });
+      }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;
 
@@ -88,6 +94,9 @@ describe("PeopleSection retry", () => {
   test("a 401 renders sign-in-required, not the generic error state", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/tenants/tnt_1/principals") return json(401, {});
+      if (url === "/api/tenants/tnt_1/roles") return json(401, {});
+      if (url === "/api/tenants/tnt_1/access-policy/pending-invites")
+        return json(401, {});
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;
 
