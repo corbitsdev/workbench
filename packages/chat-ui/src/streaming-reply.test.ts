@@ -160,6 +160,14 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual([]);
   });
 
+  test("a slugified handle is shown as a display name — \"myra\" reads \"Myra\"", () => {
+    expect(
+      typingAgentNames({ text: "" }, [
+        { address: "myra@agents.example", handle: "myra" },
+      ]),
+    ).toEqual(["Myra"]);
+  });
+
   test("no agent participant on the channel means nobody is named", () => {
     expect(typingAgentNames({ text: "" }, [HUMAN])).toEqual([]);
   });
