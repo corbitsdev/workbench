@@ -79,7 +79,7 @@ describe("tickRoutineScheduler", () => {
     expect(runs).toHaveLength(1);
   });
 
-  test("threads deliveryThreads through to fireScheduledRoutine — a scheduled fire opens a delivery thread exactly like a manual run now", async () => {
+  test("a scheduled fire launches with no delivery thread — the run posts to the channel root", async () => {
     const store = createInMemoryRoutineStore();
     const routine = await store.createRoutine({
       tenantId: "t1",
@@ -94,24 +94,18 @@ describe("tickRoutineScheduler", () => {
     const at = new Date(
       Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
     );
-    const opened: { tenantId: string; channelId: string }[] = [];
+    let seenInput: Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
     await tickRoutineScheduler(
       {
         store,
-        launcher: launcher(async () => ({ runId: "run_1" })),
-        deliveryThreads: {
-          createDeliveryThread: async (input) => {
-            opened.push({
-              tenantId: input.tenantId,
-              channelId: input.channelId,
-            });
-            return { id: "thread_1" };
-          },
-        },
+        launcher: launcher(async (input) => {
+          seenInput = input;
+          return { runId: "run_1" };
+        }),
       },
       at,
     );
-    expect(opened).toEqual([{ tenantId: "t1", channelId: "ch_delivery" }]);
+    expect(seenInput).not.toHaveProperty("deliveryThreadId");
   });
 
   test("a launch failure backs off and records schedule-failed", async () => {

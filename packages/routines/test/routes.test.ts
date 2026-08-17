@@ -2,7 +2,7 @@
 // (request parsing, grant checks, response envelopes, and the
 // routine<->run correlation write), not anything `arktype`, `hono`, or
 // Interchange already tests on its own.
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
@@ -11,7 +11,6 @@ import {
   createRoutineRoutes,
   fireScheduledRoutine,
   type CreateRoutineRoutesDeps,
-  type DeliveryThreadPort,
   type RoutineLauncher,
 } from "../src/routes";
 import { createInMemoryRoutineStore } from "../src/store";
@@ -42,9 +41,13 @@ function principal(id: string) {
 function fakeLauncher(): RoutineLauncher & {
   calls: number;
   lastInput: Record<string, unknown> | undefined;
+  lastLaunchInput: Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
 } {
   let calls = 0;
   let lastInput: Record<string, unknown> | undefined;
+  let lastLaunchInput:
+    | Parameters<RoutineLauncher["launchRoutineRun"]>[0]
+    | undefined;
   return {
     get calls() {
       return calls;
@@ -52,9 +55,13 @@ function fakeLauncher(): RoutineLauncher & {
     get lastInput() {
       return lastInput;
     },
+    get lastLaunchInput() {
+      return lastLaunchInput;
+    },
     async launchRoutineRun(input) {
       calls += 1;
       lastInput = input.input;
+      lastLaunchInput = input;
       return { runId: `run_${calls}` };
     },
   };
@@ -330,6 +337,11 @@ describe("createRoutineRoutes", () => {
     });
     expect(runResponse.status).toBe(201);
     expect(launcher.calls).toBe(1);
+    // The run-now response carries only a runId — a run's result always
+    // delivers into the channel's root feed, never a hidden thread.
+    const runBody = (await runResponse.json()) as Record<string, unknown>;
+    expect(Object.keys(runBody)).toEqual(["runId"]);
+    expect(launcher.lastLaunchInput).not.toHaveProperty("deliveryThreadId");
 
     const runsResponse = await app.request(`/routines/${created["id"]}/runs`);
     const runsBody = (await runsResponse.json()) as {
@@ -646,52 +658,6 @@ describe("createRoutineRoutes", () => {
     });
   });
 
-  describe("runRef bucketing", () => {
-    function fakeDeliveryThreads(): DeliveryThreadPort & {
-      runRefs: string[];
-    } {
-      const runRefs: string[] = [];
-      return {
-        runRefs,
-        async createDeliveryThread(input) {
-          runRefs.push(input.runRef);
-          return { id: `thread_${String(runRefs.length)}` };
-        },
-      };
-    }
-
-    test("retrying the same fire within the same minute reuses runRef", async () => {
-      const deliveryThreads = fakeDeliveryThreads();
-      const deps = buildDeps({ launcher: fakeLauncher(), deliveryThreads });
-      const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { body: created } = await createRoutine(app, VALID_BODY);
-
-      setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
-      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
-      setSystemTime(new Date("2026-01-01T00:00:50.000Z"));
-      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
-      setSystemTime();
-
-      expect(deliveryThreads.runRefs).toHaveLength(2);
-      expect(deliveryThreads.runRefs[0]).toBe(deliveryThreads.runRefs[1]);
-    });
-
-    test("retrying in a different minute mints a different runRef", async () => {
-      const deliveryThreads = fakeDeliveryThreads();
-      const deps = buildDeps({ launcher: fakeLauncher(), deliveryThreads });
-      const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { body: created } = await createRoutine(app, VALID_BODY);
-
-      setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
-      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
-      setSystemTime(new Date("2026-01-01T00:01:10.000Z"));
-      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
-      setSystemTime();
-
-      expect(deliveryThreads.runRefs).toHaveLength(2);
-      expect(deliveryThreads.runRefs[0]).not.toBe(deliveryThreads.runRefs[1]);
-    });
-  });
 });
 
 describe("fireScheduledRoutine", () => {
