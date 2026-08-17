@@ -847,6 +847,18 @@ export function createSidecarDeployRouter(deps: {
       // registered against the deployment address only after spawn succeeds,
       // so a spawn-time rejection leaves the registry untouched.
       await wired.supervisor.spawn(spawnOpts);
+      // Seed the child's credential material NOW, before inbound mail is
+      // registered below: the supervisor's own pre-trigger barrier
+      // (`pushRunGrants`, the only other `credentials-updated` producer)
+      // is armed solely by an `onRunStart` binding this wiring does not
+      // supply, so without this push the delivered material would sit on
+      // the supervisor bindings forever and every
+      // `credentials.resolve(handle)` would fail "no credential is bound".
+      if (spec.credentials !== undefined) {
+        await wired.supervisor.deliverCredentials({
+          delivery: spec.credentials,
+        });
+      }
       wiredForUnwind = wired;
       activeSupervisors.set(spec.agentAddress, wired);
       supervisorRegistered = true;
