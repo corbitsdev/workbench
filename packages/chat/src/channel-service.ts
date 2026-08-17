@@ -285,7 +285,15 @@ export type GreetingKickoffBriefInput = {
   readonly senderName?: string;
   /** The workbench's title, when it has one beyond its id. */
   readonly workbenchName?: string;
+  /** The opening date as dd/mm/yyyy, so the agent knows what day it is. */
+  readonly openedOn?: string;
 };
+
+export function kickoffDate(now: Date): string {
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${now.getFullYear()}`;
+}
 
 export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
   readonly tenantId: string;
@@ -331,8 +339,13 @@ export function greetingKickoffBrief(input: GreetingKickoffBriefInput): string {
       "the person chose, not a request; you may nod to it at most once, " +
       "never treat it as their brief or answer it as a question. "
     : "";
+  const dated =
+    input.openedOn !== undefined && input.openedOn !== ""
+      ? `Today's date is ${input.openedOn} (dd/mm/yyyy). `
+      : "";
   return (
     `${who} just opened a new workbench${named} with you in it. ` +
+    `${dated}` +
     `${labelNote}` +
     "Say hello as a teammate would: two or three sentences, first " +
     "person, address them by name if you have one. No menu of " +
@@ -376,6 +389,7 @@ export async function dispatchGreetingKickoff(
             ...(input.workbenchName !== undefined
               ? { workbenchName: input.workbenchName }
               : {}),
+            openedOn: kickoffDate(new Date()),
           }),
         },
       ]),
