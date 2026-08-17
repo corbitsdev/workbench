@@ -496,7 +496,7 @@ export function createToolBearingAgentFactory(deps: {
     // subprocess) before the construction error propagates, so a
     // partial-success chain never leaks an LSP subprocess.
     const pluginInstances: unknown[] = [];
-    let chainEnv: BaseEnv = env;
+    let chainEnv: BaseEnv & { credentials?: HostCredentialCapability } = env;
     try {
       for (const factory of materialization.pluginFactories) {
         const instance = factory(chainEnv);
@@ -510,6 +510,32 @@ export function createToolBearingAgentFactory(deps: {
       await disposeAll(pluginInstances, "plugin construction rollback");
       await disposeCredentialCapabilities(credentialCapabilities);
       throw err;
+    }
+
+    // `createAgent`'s presence-only `validateEnv` checks every tool
+    // contributor's declared `requires` keys against THIS shared
+    // `chainEnv`, not against the per-tool `scopedEnv` each wrapped
+    // factory above builds for itself when it actually runs -- so a
+    // `requires: ["credentials"]` tool (e.g. `@corbits/mcp-tools`)
+    // needs `chainEnv.credentials` to already be non-nullish here, even
+    // though every such factory's own wrapper unconditionally replaces
+    // the value with its consumer-scoped capability before building its
+    // bundle. Without this, `validateEnv` throws `AgentEnvError` before
+    // any factory ever runs. Which consumer's capability lands on the
+    // shared env does not matter for correctness -- it is never read
+    // directly, only overridden -- so the first credential-requiring
+    // factory's capability satisfies the presence check for all of
+    // them.
+    const credentialRequiringFactory = materialization.factories.find(
+      (factory) => factory.requires.includes("credentials"),
+    );
+    if (credentialRequiringFactory !== undefined) {
+      chainEnv = {
+        ...chainEnv,
+        credentials: credentialCapabilityFor(
+          toolConsumer(packageFromToolId(credentialRequiringFactory.id)),
+        ),
+      };
     }
 
     let agent: Agent;
