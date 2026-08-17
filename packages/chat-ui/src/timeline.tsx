@@ -44,6 +44,7 @@ import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
+import { Markdown } from "./markdown";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
@@ -429,7 +430,9 @@ function TextBubble({
             {formatTimestamp(createdAt)}
           </span>
         )}
-        <p className="chat-bubble-text">{text}</p>
+        <div className="chat-bubble-text">
+          <Markdown text={text} />
+        </div>
         {onFixConnection !== undefined &&
           isClassifiedInferenceFailureText(text) && (
             <Button
@@ -665,7 +668,9 @@ function PendingMessageGroup({
               </span>
             ) : null}
           </div>
-          <p className="chat-bubble-text">{text}</p>
+          <div className="chat-bubble-text">
+            <Markdown text={text} />
+          </div>
           {pendingStatus === "failed" && pendingActions !== undefined ? (
             <div className="chat-pending-failed-row" role="alert">
               <span className="chat-pending-failed-label">
