@@ -72,8 +72,8 @@ test("the agent pins @corbits/granola-tools and @corbits/linear-tools by name an
     ...COLLATERAL_GENERATION_TOOL_PACKAGE_PINS,
   ]);
   expect(COLLATERAL_GENERATION_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.1" },
-    { name: "@corbits/linear-tools", version: "0.0.1" },
+    { name: "@corbits/granola-tools", version: "0.0.2" },
+    { name: "@corbits/linear-tools", version: "0.0.2" },
   ]);
 });
 

@@ -2,7 +2,7 @@
   "name": "@corbits/capability-tools",
   "private": true,
   "description": "The request_capability tool as an @intx/agent tool bundle (CL-6084): an agent asks in-chat for a tool package, skill, or model it doesn't have, gated behind Interchange's native per-invocation approval, and — once approved — calls the sanctioned workflow-run capabilities surface with the run's own bearer token, never a model-supplied identity",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

@@ -356,7 +356,7 @@ describe("launchFoldedRun", () => {
 
     const pinnedFoldedBody: FoldedBody = {
       ...FOLDED_BODY,
-      toolPackagePins: [{ name: "@corbits/routines-tools", version: "0.0.1" }],
+      toolPackagePins: [{ name: "@corbits/routines-tools", version: "0.0.2" }],
     };
 
     const result = await launchFoldedRun(

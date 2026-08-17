@@ -41,14 +41,14 @@ export const ASSISTANT_STEP_ID = "assistant";
  * own file-header comment for which one).
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/memory-tools", version: "0.0.1" },
-  { name: "@corbits/capability-tools", version: "0.0.1" },
-  { name: "@corbits/routines-tools", version: "0.0.1" },
-  { name: "@corbits/agent-directory-tools", version: "0.0.1" },
-  { name: "@corbits/task-dispatch-tools", version: "0.0.1" },
-  { name: "@corbits/connections-tools", version: "0.0.1" },
-  { name: "@corbits/skills-tools", version: "0.0.1" },
-  { name: "@corbits/mcp-tools", version: "0.0.1" },
+  { name: "@corbits/memory-tools", version: "0.0.2" },
+  { name: "@corbits/capability-tools", version: "0.0.2" },
+  { name: "@corbits/routines-tools", version: "0.0.2" },
+  { name: "@corbits/agent-directory-tools", version: "0.0.2" },
+  { name: "@corbits/task-dispatch-tools", version: "0.0.2" },
+  { name: "@corbits/connections-tools", version: "0.0.2" },
+  { name: "@corbits/skills-tools", version: "0.0.2" },
+  { name: "@corbits/mcp-tools", version: "0.0.2" },
 ];
 
 /**

@@ -83,7 +83,7 @@ export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
 
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
-  [{ name: "@corbits/granola-tools", version: "0.0.1" }];
+  [{ name: "@corbits/granola-tools", version: "0.0.2" }];
 
 /**
  * Binds `@corbits/granola-tools`' declared "granola" handle to a
