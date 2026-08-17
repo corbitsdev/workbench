@@ -2782,3 +2782,230 @@ tr.insights-row-clickable:hover {
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
+
+/* CL-6224: per-workbench Timeline — one wall-clock spine (chat messages,
+   thread forks, routine runs, tasks, approvals), day dividers, and a right
+   rail of per-day KPI counts. Matches the Insights stage's own visual
+   language (hairline dividers, uppercase section labels, --shell-accent
+   left-edge, tabular-nums) rather than inventing a second one. */
+.workbench-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.workbench-timeline-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.workbench-timeline-filter-option {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 0;
+  background: var(--card, var(--background));
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.workbench-timeline-filter-option[data-active="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.workbench-timeline-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  gap: 1rem;
+  align-items: start;
+}
+
+.workbench-timeline-day + .workbench-timeline-day {
+  margin-top: 0.75rem;
+}
+
+.workbench-timeline-day-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.workbench-timeline-day-divider span {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.workbench-timeline-day-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.workbench-timeline-rail {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  list-style: none;
+}
+
+.workbench-timeline-rail::before {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.workbench-timeline-entry {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.workbench-timeline-entry[data-indented="true"] {
+  margin-left: 1.4rem;
+}
+
+.workbench-timeline-marker {
+  position: absolute;
+  left: -1.1rem;
+  top: 0.65rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.workbench-timeline-entry[data-indented="true"] .workbench-timeline-marker {
+  border-radius: 2px;
+  transform: rotate(45deg);
+  width: 7px;
+  height: 7px;
+}
+
+.workbench-timeline-marker-neutral {
+  background: var(--muted-foreground);
+}
+
+.workbench-timeline-marker-primary {
+  background: var(--shell-accent);
+}
+
+.workbench-timeline-marker-success {
+  background: var(--ok);
+}
+
+.workbench-timeline-marker-danger {
+  background: var(--destructive);
+}
+
+.workbench-timeline-marker-warn {
+  background: var(--warn);
+}
+
+.workbench-timeline-marker-info {
+  background: var(--chart-1);
+}
+
+.workbench-timeline-entry-time {
+  flex: 0 0 auto;
+  min-width: 3.5rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-entry-body {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.workbench-timeline-entry-body strong {
+  font-weight: 650;
+}
+
+.workbench-timeline-entry-excerpt {
+  min-width: 0;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.workbench-timeline-kpis {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--card, var(--background));
+}
+
+.workbench-timeline-kpis h3 {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-kpi-day {
+  padding-top: 0.5rem;
+  border-top: 1px solid
+    color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.workbench-timeline-kpi-day:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.workbench-timeline-kpi-day h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.workbench-timeline-kpi-day dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.workbench-timeline-kpi-day dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.workbench-timeline-kpi-day dt {
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-kpi-day dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}

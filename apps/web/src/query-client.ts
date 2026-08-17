@@ -126,6 +126,20 @@ export const tenantKeys = {
     ["tenant", tenantId, "tasks", "by-run", runId] as const,
   topLevelRuns: (tenantId: string) =>
     ["tenant", tenantId, "top-level-runs"] as const,
+  /** A workbench's own timeline reads (CL-6224): `tenantId` is the owning
+   * bench chat's channel-tenancy addresses these routes at (see
+   * docs/channel-tenancy.md), `channelId` the workbench's own id. */
+  channelMessages: (tenantId: string, channelId: string) =>
+    ["tenant", tenantId, "chat", "channels", channelId, "messages"] as const,
+  channelThreads: (tenantId: string, channelId: string) =>
+    ["tenant", tenantId, "chat", "channels", channelId, "threads"] as const,
+  workbenchTimelineRoutineRuns: (tenantId: string, channelId: string) =>
+    [
+      "tenant",
+      tenantId,
+      "workbench-timeline-routine-runs",
+      channelId,
+    ] as const,
 };
 
 /**

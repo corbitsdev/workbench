@@ -84,6 +84,7 @@ import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
+import { WorkbenchTimelineRoute } from "./workbench-timeline";
 
 function dash(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -1135,20 +1136,30 @@ export function InsightsPage({
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
-          <InsightsLanding
-            summary={summaryData}
-            activity={activityData}
-            byModel={byModelData}
-            byTool={byToolData}
-            runs={runsData}
-            routines={routinesData}
-            range={range}
-            loading={loading}
-            onOpenRun={(id) =>
-              navigate(`/insights/runs/${encodeURIComponent(id)}`)
-            }
-            onOpenRuns={() => navigate("/insights/runs")}
-          />
+          {activeWorkbenchId !== null ? (
+            <WorkbenchTimelineRoute
+              benchTenantId={selectedTenantId}
+              channelId={activeWorkbenchId}
+              onOpenRun={(id) =>
+                navigate(`/insights/runs/${encodeURIComponent(id)}`)
+              }
+            />
+          ) : (
+            <InsightsLanding
+              summary={summaryData}
+              activity={activityData}
+              byModel={byModelData}
+              byTool={byToolData}
+              runs={runsData}
+              routines={routinesData}
+              range={range}
+              loading={loading}
+              onOpenRun={(id) =>
+                navigate(`/insights/runs/${encodeURIComponent(id)}`)
+              }
+              onOpenRuns={() => navigate("/insights/runs")}
+            />
+          )}
         </PageShell>
       </div>
     </div>
