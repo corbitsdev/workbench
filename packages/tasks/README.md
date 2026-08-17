@@ -3,8 +3,10 @@
 Spawn-and-return agent tasks: a person picks an agent definition, writes a
 prompt, and a one-shot folded run launches on its own — no channel, no
 participants, no settings. When the run finishes, its reply lands in the
-Inbox as a `task-result` item, and a task can optionally chain hand-offs to
-further agents, each leg carried out in turn.
+Inbox as a `task-result` item, and also posts into the channel the task was
+dispatched from (falling back to the tenant's assistant chat when no origin
+channel was recorded). A task can optionally chain hand-offs to further
+agents, each leg carried out in turn.
 
 ## Composition with @intx/*
 
