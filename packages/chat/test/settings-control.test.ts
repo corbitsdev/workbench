@@ -79,7 +79,38 @@ test("control mail merges settings and yields a settings-changed event", () => {
     {
       kind: "event",
       event: "channel.settings-changed",
-      data: { updatedBy: "b", settings: { "chat/topic": "launch planning" } },
+      data: {
+        updatedBy: "b",
+        settings: { "chat/topic": "launch planning" },
+        changed: { "chat/topic": "launch planning" },
+        previous: {},
+      },
+    },
+  ]);
+});
+
+test("a settings-changed event carries the prior values of touched keys", () => {
+  const payload = parseControlPayload(
+    controlMail({
+      namespace: CHANNEL_CONTROL_NAMESPACE,
+      settings: { "chat/name": "GTM research" },
+    }),
+  );
+  const result = applyControlPayload(
+    { ...STATE_ABC, settings: { "chat/name": "New Workbench" } },
+    payload,
+    "b",
+  );
+  expect(result.events).toEqual([
+    {
+      kind: "event",
+      event: "channel.settings-changed",
+      data: {
+        updatedBy: "b",
+        settings: { "chat/name": "GTM research" },
+        changed: { "chat/name": "GTM research" },
+        previous: { "chat/name": "New Workbench" },
+      },
     },
   ]);
 });
