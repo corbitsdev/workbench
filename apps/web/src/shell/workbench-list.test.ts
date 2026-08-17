@@ -76,6 +76,29 @@ describe("orderWorkbenchRows", () => {
     ]);
   });
 
+  test("orders most-recent activity first within each half", () => {
+    const rows = [
+      channel({ id: "old", lastActivityAt: "2026-08-01T00:00:00Z" }),
+      channel({ id: "new", lastActivityAt: "2026-08-10T00:00:00Z" }),
+      channel({
+        id: "pinned-old",
+        pinned: true,
+        lastActivityAt: "2026-08-01T00:00:00Z",
+      }),
+      channel({
+        id: "pinned-new",
+        pinned: true,
+        lastActivityAt: "2026-08-10T00:00:00Z",
+      }),
+    ];
+    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
+      "pinned-new",
+      "pinned-old",
+      "new",
+      "old",
+    ]);
+  });
+
   test("never groups by kind — a flat list in, a flat list out", () => {
     const rows = [
       channel({ id: "a", kind: "chat" }),
