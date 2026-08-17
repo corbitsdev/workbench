@@ -298,6 +298,9 @@ describe("MCP OAuth connect flow", () => {
       expect(probedToken).toMatch(/^token_for_code_/);
       expect(hub.providers).toHaveLength(1);
       expect(hub.providers[0]?.name).toBe("mcp:exa");
+      // Same credential plugin as the API-key connect path — the plain
+      // "http" plugin can't deliver MCP credentials to runs.
+      expect(hub.providers[0]?.plugin).toBe("mcp-streamable-http");
       expect(hub.credentials).toHaveLength(1);
       expect(hub.credentials[0]?.secret).toBe(probedToken);
     } finally {
