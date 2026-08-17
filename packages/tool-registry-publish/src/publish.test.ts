@@ -1,55 +1,29 @@
+// The publish flow treats a published name@version as IMMUTABLE: a
+// filename that already exists in the registry is skipped (same-source
+// rebuilds are not byte-deterministic, so differing bytes cannot prove
+// changed code) — shipping a change requires a version bump.
 import { describe, expect, test } from "bun:test";
-import {
-  assertNoVersionCollision,
-  sha512Integrity,
-  TarballVersionCollisionError,
-} from "./publish";
+import { shouldPublishTarball, sha512Integrity } from "./publish";
 
-describe("assertNoVersionCollision", () => {
-  test("allows a filename with no existing entry", () => {
-    const bytes = new TextEncoder().encode("tarball-bytes");
-    expect(() =>
-      assertNoVersionCollision("foo-0.0.2.tgz", bytes, undefined),
-    ).not.toThrow();
+describe("shouldPublishTarball", () => {
+  test("a brand-new filename publishes", () => {
+    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", undefined)).toBe(
+      true,
+    );
   });
 
-  test("allows re-publishing byte-identical content under the same filename", () => {
-    const bytes = new TextEncoder().encode("tarball-bytes");
-    expect(() =>
-      assertNoVersionCollision(
-        "foo-0.0.2.tgz",
-        bytes,
-        sha512Integrity(bytes),
-      ),
-    ).not.toThrow();
+  test("an already-published filename is skipped, whatever its bytes", () => {
+    const existing = sha512Integrity(new TextEncoder().encode("old bytes"));
+    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", existing)).toBe(
+      false,
+    );
   });
+});
 
-  test("fails loudly when the same filename would carry different content", () => {
-    const oldBytes = new TextEncoder().encode("old-tarball-bytes");
-    const newBytes = new TextEncoder().encode("new-tarball-bytes");
-    expect(() =>
-      assertNoVersionCollision(
-        "foo-0.0.2.tgz",
-        newBytes,
-        sha512Integrity(oldBytes),
-      ),
-    ).toThrow(TarballVersionCollisionError);
-  });
-
-  test("collision error names the filename and tells the caller to bump the version", () => {
-    const oldBytes = new TextEncoder().encode("old");
-    const newBytes = new TextEncoder().encode("new");
-    try {
-      assertNoVersionCollision(
-        "foo-0.0.2.tgz",
-        newBytes,
-        sha512Integrity(oldBytes),
-      );
-      throw new Error("expected assertNoVersionCollision to throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(TarballVersionCollisionError);
-      expect((err as Error).message).toContain("foo-0.0.2.tgz");
-      expect((err as Error).message).toContain("bump");
-    }
+describe("sha512Integrity", () => {
+  test("is stable for identical bytes and SRI-shaped", () => {
+    const bytes = new TextEncoder().encode("same");
+    expect(sha512Integrity(bytes)).toBe(sha512Integrity(bytes));
+    expect(sha512Integrity(bytes).startsWith("sha512-")).toBe(true);
   });
 });

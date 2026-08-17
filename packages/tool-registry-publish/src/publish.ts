@@ -154,14 +154,17 @@ export class TarballVersionCollisionError extends Error {
  * standalone so the check is unit-testable without invoking a real
  * `bun build` through `packToolPackageTarball`.
  */
-export function assertNoVersionCollision(
+/** A published name@version is immutable: once a tarball exists under a
+ * filename, later publishes SKIP it (returning false) rather than
+ * overwrite — same-source rebuilds are not byte-deterministic (tar
+ * mtimes), so differing bytes cannot prove changed code. Shipping a
+ * code change requires a version bump; the skip is logged loudly by the
+ * caller so a forgotten bump is visible, never silent. */
+export function shouldPublishTarball(
   filename: string,
-  bytes: Uint8Array,
   existingIntegrity: string | undefined,
-): void {
-  if (existingIntegrity === undefined) return;
-  if (existingIntegrity === sha512Integrity(bytes)) return;
-  throw new TarballVersionCollisionError(filename);
+): boolean {
+  return existingIntegrity === undefined;
 }
 
 async function listExistingTarballs(
@@ -257,11 +260,17 @@ export async function publishCorbitsToolsRegistry(
   const summaries: PublishSummary[] = [];
   for (const packageDir of CORBITS_TOOL_PACKAGE_DIRS) {
     const tarball = await packToolPackageTarball(packageDir);
-    assertNoVersionCollision(
-      tarball.filename,
-      tarball.bytes,
-      existingIntegrityByFilename.get(tarball.filename),
-    );
+    if (
+      !shouldPublishTarball(
+        tarball.filename,
+        existingIntegrityByFilename.get(tarball.filename),
+      )
+    ) {
+      args.log?.(
+        `${tarball.filename} already published — versions are immutable; bump the version to ship changes (skipped)`,
+      );
+      continue;
+    }
     const summary = await putTarball(
       args.hubUrl,
       args.cookies,

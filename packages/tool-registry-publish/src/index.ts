@@ -10,7 +10,7 @@ export {
   type PackedTarball,
 } from "./pack";
 export {
-  assertNoVersionCollision,
+  shouldPublishTarball,
   publishCorbitsToolsRegistry,
   sha512Integrity,
   TarballVersionCollisionError,
