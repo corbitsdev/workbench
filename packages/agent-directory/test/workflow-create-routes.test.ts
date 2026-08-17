@@ -263,6 +263,34 @@ test("a toolPackagePins entry the tenant's inventory offers is pinned onto the c
   expect(written as string).toContain("@corbits/memory-tools");
 });
 
+test("a create naming no pins gets the baseline set the inventory offers — a specialist is never toolless (CL-6206)", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+  });
+  const response = await app.request("/definitions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({
+      name: "Research Buddy",
+      handle: "research-buddy",
+      systemPrompt: "You are a careful research assistant.",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const written = writtenFiles?.["workflow.json"] as string;
+  // The fake inventory offers memory-tools (see buildApp); mcp-tools and
+  // interaction-tools are not offered, so only the resolvable baseline
+  // member is pinned — never a pin that would fail at launch.
+  expect(written).toContain("@corbits/memory-tools");
+  expect(written).not.toContain("@corbits/mcp-tools");
+});
+
 test("a create with no model bakes the tenant's catalog default in, so the definition self-resolves at launch", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp({
