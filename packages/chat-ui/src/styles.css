@@ -566,6 +566,41 @@
   align-self: baseline;
 }
 
+/* CL-5879: the safe markdown subset a message bubble renders. */
+.chat-md-paragraph,
+.chat-md-heading {
+  display: block;
+}
+
+.chat-md-heading {
+  margin: 0;
+}
+
+.chat-md-inline-code {
+  background: var(--muted, color-mix(in srgb, var(--foreground) 8%, transparent));
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  padding: 0.05rem 0.3rem;
+  font-size: 0.85em;
+}
+
+.chat-md-code-block {
+  margin: 0.35rem 0;
+  padding: 0.5rem 0.6rem;
+  background: var(--muted, color-mix(in srgb, var(--foreground) 8%, transparent));
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+
+.chat-md-list {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+.chat-md-link {
+  color: var(--primary, inherit);
+}
+
 /* Grouped continuation (CL-6106): the run's second-and-later messages from
    the same author drop the avatar/name header entirely — indented to sit
    under the name above, with the timestamp tucked into the avatar gutter
@@ -602,18 +637,11 @@
   align-self: flex-start;
 }
 
-/* Optimistic sends (CL-6103): a message the reader just sent renders
-   immediately, quieted while it's still in flight and flagged inline —
-   never a status line elsewhere on the page — once it fails. */
-.chat-bubble[data-pending="sending"] {
-  opacity: 0.6;
-}
-
-.chat-bubble[data-pending="failed"] {
-  border-left: 2px solid var(--destructive);
-  background: color-mix(in srgb, var(--destructive) 8%, transparent);
-  padding: 0.4rem 0.6rem;
-}
+/* Optimistic sends (CL-5879): a message the reader just sent renders
+   exactly like a normal message immediately — full opacity, no restyling —
+   with only the small clock glyph next to its header while in flight, and
+   an inline "Not sent — retry" row appended below it (never replacing or
+   dimming the bubble itself) once it fails. */
 
 .chat-pending-glyph {
   display: inline-flex;
