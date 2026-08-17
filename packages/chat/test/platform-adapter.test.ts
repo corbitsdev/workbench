@@ -200,8 +200,17 @@ function createFakeDb(opts: {
         address: string | null;
         principalId: string | null;
         definitionId?: string;
+        status?: string;
       }
     | undefined;
+  /**
+   * `select().from(foldedRun).where(eq(foldedRun.id, ...))` backing
+   * `isFoldedRunSettled`'s marker check -- `true` (the default) means
+   * the configured `workflowRunRow` is a folded run, matching every
+   * run `createHubChatPlatform` itself ever launches; `false` proves
+   * the predicate does not fire for a plain "completed" status alone.
+   */
+  foldedRunMarker?: boolean;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
   /**
    * A full synthetic `session_mail` table, newest-first, for
@@ -310,6 +319,14 @@ function createFakeDb(opts: {
           }
           if (table === sessionMail) {
             return sessionMailSelectChain(opts.sessionMailRows ?? []);
+          }
+          if (table === foldedRun) {
+            const marker = opts.foldedRunMarker ?? true;
+            return selectChain(
+              marker && opts.workflowRunRow !== undefined
+                ? [{ id: opts.workflowRunRow.id }]
+                : [],
+            );
           }
           return selectChain([]);
         },
@@ -480,6 +497,12 @@ function createFakeSidecarRouter(
     },
     async sendAgentUndeploy(address: string, reason: string) {
       sendAgentUndeployCalls.push({ address, reason });
+      // Mirrors `removeAgentAddress`
+      // (`vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`): a real
+      // undeploy always clears the address out of the routable set it
+      // resolved through, regardless of success or failure.
+      const index = routableAddresses.indexOf(address);
+      if (index !== -1) routableAddresses.splice(index, 1);
     },
     getRoutableAddresses() {
       return routableAll
@@ -1444,6 +1467,266 @@ describe("createHubChatPlatform", () => {
       expect(deployed.runId).toBe("ins_channel1");
       // ...before the send.
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+    });
+
+    // CL-6147: a folded run settles `workflow_run.status` to
+    // "completed" after every handled mail (idle until its next
+    // message), but stays resident on the sidecar -- still
+    // routable -- until the idle-sleep sweep tears it down. Before
+    // this fix, `sendMail` only ever woke a non-routable target, so
+    // every message sent inside that window reached a terminal
+    // occurrence and was rejected by the workflow-host supervisor.
+    // These prove the folded-run-aware decision in isolation from the
+    // idle-sleep lifecycle itself (`@corbits/agent-lifecycle`'s own
+    // contract, proven elsewhere).
+    describe("folded-run-aware wake decision (CL-6147)", () => {
+      function completedFoldedRunDb(opts: { foldedRunMarker?: boolean } = {}) {
+        return createFakeDb({
+          assetRow: {
+            tenantId: "ten_1",
+            creatorPrincipalId: "prin_creator",
+            name: "channel-1",
+            displayName: null,
+          },
+          definitionId: "wfd_channel1",
+          workflowRunRow: {
+            id: "ins_channel1",
+            address: "ins_channel1@ten1.workbench.test",
+            principalId: "prin_run1",
+            definitionId: "wfd_channel1",
+            status: "completed",
+          },
+          workflowDefinitionRow: {
+            id: "wfd_channel1",
+            tenantId: "ten_1",
+            status: "deployed",
+            assetId: "asst_channel1",
+          },
+          channelLaunchRow: {
+            tenantId: "ten_1",
+            instanceId: "ins_channel1",
+            foldedBody: {
+              systemPrompt: "host prompt",
+              model: "claude-sonnet-5",
+              toolPackagePins: [],
+              grantRequirements: [],
+              credentialBindings: [],
+            },
+          },
+          ...(opts.foldedRunMarker !== undefined
+            ? { foldedRunMarker: opts.foldedRunMarker }
+            : {}),
+        });
+      }
+
+      test("sendMail redeploys a settled (completed) folded run before sending, even though it is still routable", async () => {
+        resolveDefinitionSourcesResult = {
+          ok: true,
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        };
+
+        const db = completedFoldedRunDb();
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        // Still resident on the sidecar -- routable -- unlike the
+        // non-routable case above: `ensureAwake` alone would no-op
+        // here and hand the terminal occurrence's address straight to
+        // `sendFoldedMail`.
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        });
+        const eventCollectors = createFakeEventCollectors();
+        const assetService = createFakeAssetService({
+          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        });
+
+        const platform = createHubChatPlatform({
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService,
+          sidecarRouter,
+          eventCollectors,
+          lifecycle: { idleSleepMs: 60_000 },
+        });
+
+        const sent = await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sent.id).toBeTruthy();
+        // The settled occurrence was explicitly undeployed first...
+        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(1);
+        expect(sidecarRouter.sendAgentUndeployCalls[0]?.address).toBe(
+          "ins_channel1@ten1.workbench.test",
+        );
+        // ...which is what let the ordinary not-routable wake path
+        // below actually redeploy despite routability...
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+        const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+          agentAddress: string;
+          runId: string;
+        };
+        expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
+        expect(deployed.runId).toBe("ins_channel1");
+        // ...before the send.
+        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      });
+
+      test("sendMail redeploys a settled folded run even with no lifecycle configured", async () => {
+        resolveDefinitionSourcesResult = {
+          ok: true,
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        };
+
+        const db = completedFoldedRunDb();
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        });
+        const assetService = createFakeAssetService({
+          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        });
+
+        const platform = createHubChatPlatform({
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService,
+          sidecarRouter,
+          eventCollectors: createFakeEventCollectors(),
+          // No `lifecycle` here: the settled check must not depend on
+          // the idle-sleep lifecycle being configured at all.
+        });
+
+        await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      });
+
+      test("sendMail does not redeploy a routable, still-running folded run", async () => {
+        const db = createFakeDb({
+          assetRow: {
+            tenantId: "ten_1",
+            creatorPrincipalId: "prin_creator",
+            name: "channel-1",
+            displayName: null,
+          },
+          definitionId: "wfd_channel1",
+          workflowRunRow: {
+            id: "ins_channel1",
+            address: "ins_channel1@ten1.workbench.test",
+            principalId: "prin_run1",
+            status: "running",
+          },
+        });
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        });
+
+        const platform = createHubChatPlatform({
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService: createFakeAssetService(),
+          sidecarRouter,
+          eventCollectors: createFakeEventCollectors(),
+          lifecycle: { idleSleepMs: 60_000 },
+        });
+
+        await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      });
+
+      test("sendMail does not treat a completed run with no folded_run marker as settled", async () => {
+        // A plain top-level deployment's own genuine "done forever"
+        // also reads `status === 'completed'` -- only the `folded_run`
+        // marker (see `@corbits/folded-runs`' `isFoldedRunSettled`)
+        // distinguishes a folded run's "idle until next message" from
+        // that. Absent it, this must fall back to the ordinary
+        // routability-only decision, not force a redeploy.
+        const db = completedFoldedRunDb({ foldedRunMarker: false });
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        });
+
+        const platform = createHubChatPlatform({
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService: createFakeAssetService({
+            assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+          }),
+          sidecarRouter,
+          eventCollectors: createFakeEventCollectors(),
+          lifecycle: { idleSleepMs: 60_000 },
+        });
+
+        await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      });
     });
 
     test("waking a host launch pins the noop source again, never touching the catalog", async () => {
