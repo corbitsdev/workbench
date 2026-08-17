@@ -603,6 +603,26 @@ function ChatWorkspaceInner({
   // Root-thread id from listThreads — used so the root feed loads
   // root-thread membership only, not the full channel mailbox.
   const [rootThreadId, setRootThreadId] = useState<string | null>(null);
+  // The channel `rootThreadId` (state) was resolved for, mirrored in a ref.
+  // `loadMessages` must never read the plain `rootThreadId` state directly:
+  // React batches state updates, so a resolver that both writes the state
+  // and immediately (same microtask, no render in between) triggers
+  // `loadMessages` would still hand it last render's closed-over value —
+  // one render stale, but on a channel switch "one render stale" means
+  // the *previous* channel's thread id. A ref has no such lag; both halves
+  // of this pair are only ever written together via `applyRootThread`
+  // below, so a matching `channelId` guarantees a fresh `threadId`.
+  const rootThreadRef = useRef<{
+    readonly channelId: string;
+    readonly threadId: string | null;
+  } | null>(null);
+  const applyRootThread = useCallback(
+    (channelId: string, threadId: string | null) => {
+      rootThreadRef.current = { channelId, threadId };
+      setRootThreadId(threadId);
+    },
+    [],
+  );
   const [threadMetaByMessageId, setThreadMetaByMessageId] = useState<
     ReadonlyMap<string, ThreadAffordanceMeta>
   >(new Map());
@@ -628,7 +648,10 @@ function ChatWorkspaceInner({
       try {
         const page = await listThreads(tenantId, channelId);
         setThreads(page.items);
-        setRootThreadId(page.rootThreadId !== "" ? page.rootThreadId : null);
+        applyRootThread(
+          channelId,
+          page.rootThreadId !== "" ? page.rootThreadId : null,
+        );
         // Build affordance meta for parent messages that already have a
         // reply thread. Reply counts load lazily when the thread is opened;
         // until then we surface "Thread" via replyCount 0+.
@@ -671,11 +694,11 @@ function ChatWorkspaceInner({
         setThreadMetaByMessageId(meta);
       } catch {
         setThreads([]);
-        setRootThreadId(null);
+        applyRootThread(channelId, null);
         setThreadMetaByMessageId(new Map());
       }
     },
-    [tenantId],
+    [tenantId, applyRootThread],
   );
 
   const loadPins = useCallback(
@@ -707,8 +730,16 @@ function ChatWorkspaceInner({
         // Root feed may race with loadThreads on channel switch: if we
         // don't yet know the root thread id, resolve it from listThreads
         // before loading messages so we never fall back to full mail while
-        // threads are available.
-        let resolvedRootThreadId = rootThreadId;
+        // threads are available. Read `rootThreadRef`, never the plain
+        // `rootThreadId` state — a caller that both resolves the ref and
+        // invokes `loadMessages` in the same tick (no render in between,
+        // see `applyRootThread`'s doc) would otherwise still be handed
+        // last render's closed-over state, which on a channel switch is
+        // the *previous* channel's thread id.
+        let resolvedRootThreadId =
+          rootThreadRef.current?.channelId === channelId
+            ? rootThreadRef.current.threadId
+            : null;
         if (
           openThreadId === null &&
           pendingParentMessageId === null &&
@@ -718,7 +749,7 @@ function ChatWorkspaceInner({
             const threadsPage = await listThreads(tenantId, channelId);
             resolvedRootThreadId =
               threadsPage.rootThreadId !== "" ? threadsPage.rootThreadId : null;
-            setRootThreadId(resolvedRootThreadId);
+            applyRootThread(channelId, resolvedRootThreadId);
             setThreads(threadsPage.items);
           } catch {
             resolvedRootThreadId = null;
@@ -783,7 +814,7 @@ function ChatWorkspaceInner({
             (target.kind === "thread" || target.kind === "root-thread");
           if (!isStaleThreadRef) throw cause;
           if (target.kind === "thread") setOpenThreadId(null);
-          if (target.kind === "root-thread") setRootThreadId(null);
+          if (target.kind === "root-thread") applyRootThread(channelId, null);
           const fallbackTarget = resolveMessageFeedTarget({
             openThreadId: target.kind === "thread" ? null : openThreadId,
             pendingParentMessageId,
@@ -835,7 +866,7 @@ function ChatWorkspaceInner({
       tenantId,
       openThreadId,
       pendingParentMessageId,
-      rootThreadId,
+      applyRootThread,
       onChannelNotFound,
     ],
   );
