@@ -127,6 +127,12 @@ export type CreateHubChatPlatformDeps = {
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
+   * The wake path's settle-window backoff (see RECLAIM_RETRY_DELAYS_MS
+   * below). Injectable so tests exercise the window in milliseconds
+   * instead of the production ~8s budget.
+   */
+  reclaimRetryDelaysMs?: readonly number[];
+  /**
    * Same resolver `./routes.ts`'s `channelHostInferencePreferences` dep
    * takes (see its own doc), reused here for `launchInvite`: a
    * hand-authored definition that declares no model requirements of
@@ -260,7 +266,9 @@ export function createHubChatPlatform(
   // window: 250ms, 500ms, 1s, 2s, 4s — a ~7.75s budget, long enough
   // for a normal reconnect challenge to settle without leaving a
   // sender stuck for much longer than that.
-  const RECLAIM_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000];
+  const RECLAIM_RETRY_DELAYS_MS = deps.reclaimRetryDelaysMs ?? [
+    250, 500, 1000, 2000, 4000,
+  ];
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
@@ -371,6 +379,31 @@ export function createHubChatPlatform(
       principalId: run.principalId,
       foldedBody: parsedFoldedBody,
     };
+    // CL-6203: a "running" run that merely is not routable at this
+    // instant is more often a live process behind a routability blip
+    // (a WS reconnect, the sidecar's own post-restart reclaim) than a
+    // dead one. Redeploying OVER a live process moves the run's
+    // deployment anchor out from under it: the survivor's pack pushes
+    // are rejected from then on ("no live deployment anchor" /
+    // path_violation), its mail acks are withheld into a redelivery
+    // storm, and the next wake dies on signature_invalid — the channel
+    // is bricked. So a running run first gets the settle window; only
+    // when the address never comes back is the redeploy real — and
+    // then the possibly-live resident is stopped BEFORE the anchor
+    // moves, so nothing survives to push against it.
+    if (run.status === "running" && !isRoutable(address)) {
+      if (await waitForReclaimToSettle(address)) return;
+      try {
+        await deps.sidecarRouter.sendAgentUndeploy(
+          address,
+          "wake is redeploying this run; stopping the resident instance " +
+            "so it cannot push against the moved deployment anchor",
+        );
+      } catch (undeployErr) {
+        if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
+      }
+    }
+
     const deploy = () =>
       wakeFoldedRun(
         foldedRunsDeps,
