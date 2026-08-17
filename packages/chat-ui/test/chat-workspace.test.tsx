@@ -134,6 +134,16 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
     container,
     settle: () => act(() => sleep(30)),
     unmount: () => root.unmount(),
+    rerender: (nextProps: Parameters<typeof ChatWorkspace>[0]) =>
+      act(() => {
+        root.render(
+          createElement(
+            QueryClientProvider,
+            { client: queryClient },
+            createElement(ChatWorkspace, nextProps),
+          ),
+        );
+      }),
   };
 }
 
@@ -1394,6 +1404,128 @@ describe("Channel header polish (CL-6106)", () => {
 
     const actions = harness.container.querySelector(".chat-channel-actions");
     expect(actions?.lastElementChild?.contains(button)).toBe(true);
+    harness.unmount();
+  });
+});
+
+describe("switching channels never carries a stale root-thread id across", () => {
+  // CL-6067/6069 regression: `loadMessages`'s closure over `rootThreadId`
+  // can still hold the *previous* channel's value the instant a channel
+  // switch fires the reset effect (the reset's own `setRootThreadId(null)`
+  // hasn't committed yet). Trusting it sends the new channel's messages
+  // request down the old channel's thread id, which 404s and can leave the
+  // pane stuck on the loading skeleton behind the stale-thread-ref fallback
+  // cascade instead of rendering promptly.
+  const CHANNEL_A = { ...CHANNEL_WIRE, id: "ch_a", title: "Channel A" };
+  const CHANNEL_B = { ...CHANNEL_WIRE, id: "ch_b", title: "Channel B" };
+
+  function stubFetchTwoChannels(wrongRequests: string[]) {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      const notFound = () =>
+        new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_A, CHANNEL_B] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/ch_a\/threads$/.test(path)) {
+        return json({ rootThreadId: "thr_a", items: [] });
+      }
+      if (/\/chat\/channels\/ch_b\/threads$/.test(path)) {
+        return json({ rootThreadId: "thr_b", items: [] });
+      }
+      const rootThread = (id: string) => ({
+        id,
+        kind: "root" as const,
+        parentMessageId: null,
+        parentThreadId: null,
+        runRef: null,
+        title: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      if (/\/chat\/channels\/ch_a\/threads\/thr_a\/messages$/.test(path)) {
+        return json({
+          thread: rootThread("thr_a"),
+          items: [
+            {
+              id: "msg_a",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              sender: { name: null, address: "user@x.localhost" },
+              parts: [{ kind: "text", text: "A message" }],
+            },
+          ],
+        });
+      }
+      if (/\/chat\/channels\/ch_b\/threads\/thr_b\/messages$/.test(path)) {
+        return json({
+          thread: rootThread("thr_b"),
+          items: [
+            {
+              id: "msg_b",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              sender: { name: null, address: "user@x.localhost" },
+              parts: [{ kind: "text", text: "B message" }],
+            },
+          ],
+        });
+      }
+      // Any cross-channel thread id combination is the bug this test
+      // guards against — record it and 404, exactly like the real hub
+      // would for a thread id that doesn't belong to that channel.
+      if (/\/chat\/channels\/[^/]+\/threads\/[^/]+\/messages$/.test(path)) {
+        wrongRequests.push(path);
+        return notFound();
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/pins$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_A,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+  }
+
+  test("switching to another channel loads that channel's own thread, not the previous one's", async () => {
+    const wrongRequests: string[] = [];
+    stubFetchTwoChannels(wrongRequests);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_a",
+    });
+    await harness.settle();
+    await harness.settle();
+    expect(harness.container.textContent).toContain("A message");
+
+    harness.rerender({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_b",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(wrongRequests).toEqual([]);
+    expect(harness.container.textContent).not.toContain("Couldn't load");
+    expect(harness.container.textContent).toContain("B message");
     harness.unmount();
   });
 });
