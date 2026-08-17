@@ -1,5 +1,10 @@
 export { CORBITS_TOOLS_REGISTRY, CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
 export {
+  describeCorbitsToolPackages,
+  type CorbitsToolPackageDescription,
+  type CorbitsToolPackageTool,
+} from "./describe";
+export {
   packToolPackageTarball,
   tarballFilenameFor,
   type PackedTarball,

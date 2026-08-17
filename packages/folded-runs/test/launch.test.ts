@@ -206,6 +206,7 @@ describe("launchFoldedRun", () => {
         assetService: {} as never,
         sidecarRouter: {} as never,
         hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
         eventCollectors,
       },
       {
@@ -304,6 +305,105 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  // CL-6149: a pinned tool package's calls failed every call with
+  // "No matching grants" because nothing derived `tool:` grants for
+  // `toolPackagePins` — the deploy-time capability walk only covers
+  // inline tool factories. `deployAtHead` must call `toolGrantsForPins`
+  // with the launch's pins and fold the result into `config.grants` (the
+  // array the sidecar writes verbatim to `state/grants.json`, the file
+  // the spawned child's authz gate actually reads), minted against this
+  // run's own principal.
+  test("mints config.grants from toolGrantsForPins, scoped to this run's principal", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+    const toolGrantsForPinsCalls: unknown[] = [];
+
+    const pinnedFoldedBody: FoldedBody = {
+      ...FOLDED_BODY,
+      toolPackagePins: [{ name: "@corbits/routines-tools", version: "0.0.1" }],
+    };
+
+    const result = await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: {} as never,
+        sidecarRouter: {} as never,
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: (pins) => {
+          toolGrantsForPinsCalls.push(pins);
+          return [
+            {
+              resource: "tool:@corbits/routines-tools/routines:routine_create",
+              action: "invoke",
+              effect: "ask",
+            },
+            {
+              resource: "tool:@corbits/routines-tools/routines:routine_list",
+              action: "invoke",
+              effect: "allow",
+            },
+          ];
+        },
+        eventCollectors,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_channel1",
+        triggerAddress: "ins_channel1@ten1.workbench.test",
+        definitionId: "wfd_channel1",
+        foldedBody: pinnedFoldedBody,
+        launchLabel: "the channel host",
+      },
+    );
+
+    expect(toolGrantsForPinsCalls).toEqual([pinnedFoldedBody.toolPackagePins]);
+
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      config: { grants: unknown[]; principalId: string };
+    };
+    expect(deployed.config.principalId).toBe(result.instancePrincipalId);
+    expect(deployed.config.grants).toEqual([
+      {
+        id: expect.any(String),
+        resource: "tool:@corbits/routines-tools/routines:routine_create",
+        action: "invoke",
+        effect: "ask",
+        origin: "system",
+        conditions: null,
+        expiresAt: null,
+        roleId: null,
+        principalId: result.instancePrincipalId,
+      },
+      {
+        id: expect.any(String),
+        resource: "tool:@corbits/routines-tools/routines:routine_list",
+        action: "invoke",
+        effect: "allow",
+        origin: "system",
+        conditions: null,
+        expiresAt: null,
+        roleId: null,
+        principalId: result.instancePrincipalId,
+      },
+    ]);
+  });
+
   // A caller-supplied `credentialCipher` must reach `resolveDefinitionSources`
   // on every launch, or an invited agent's credential secret is decrypted
   // (if at all) through the built-in noop fallback instead of the real
@@ -340,6 +440,7 @@ describe("launchFoldedRun", () => {
         assetService: {} as never,
         sidecarRouter: {} as never,
         hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
         eventCollectors,
         credentialCipher,
       },
@@ -391,6 +492,7 @@ describe("launchFoldedRun", () => {
           assetService: {} as never,
           sidecarRouter: {} as never,
           hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
           eventCollectors,
         },
         {
@@ -450,6 +552,7 @@ describe("launchFoldedRun", () => {
           assetService: {} as never,
           sidecarRouter: {} as never,
           hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
           eventCollectors,
         },
         {
@@ -488,6 +591,7 @@ describe("launchFoldedRun", () => {
           assetService: {} as never,
           sidecarRouter: {} as never,
           hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
           eventCollectors: createFakeEventCollectors(),
         },
         {
@@ -546,6 +650,7 @@ describe("launchFoldedRun", () => {
         assetService: {} as never,
         sidecarRouter: {} as never,
         hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
         eventCollectors,
       },
       {
@@ -582,6 +687,7 @@ describe("launchFoldedRun", () => {
           assetService: {} as never,
           sidecarRouter: {} as never,
           hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
           eventCollectors,
         },
         {
@@ -629,6 +735,7 @@ describe("wakeFoldedRun", () => {
         sessionService,
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
+        toolGrantsForPins: () => [],
       } as never,
       {
         tenantId: "ten_1",

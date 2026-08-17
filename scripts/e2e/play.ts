@@ -490,6 +490,49 @@ async function main(): Promise<void> {
       }));
   }
   for (const m of await listAgentMessages()) seenIds.add(m.id);
+
+  // The play harness has no UI, so nothing ever posts the in-chat
+  // approve card (`packages/chat/src/chat-orchestrator.ts`'s
+  // `postApproveBlock`) that a real bench user would click. An
+  // `approval: "ask"` tool (every pinned mutating tool -- routine
+  // create/update/run-now, task dispatch, request_capability, ...)
+  // parks on the tenant's `GET .../approvals/needs-you` inbox instead
+  // of ever completing, so this polls that inbox and approves every
+  // pending item with scope "once", printing what it approved. Without
+  // this, a turn that needs an approval-gated tool never finishes and
+  // the play loop times out waiting for a reply that can never come.
+  async function autoApproveAll(): Promise<void> {
+    const res = await api(
+      hub.baseUrl,
+      "GET",
+      `/api/tenants/${tenant.tenantId}/approvals/needs-you`,
+      undefined,
+      user.cookies,
+    );
+    if (res.status !== 200) return;
+    const items = arrayField(res.data, "items", "needs-you") as {
+      id: string;
+      agentName: string;
+      headline: string;
+    }[];
+    for (const item of items) {
+      const approved = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
+        { scope: "once" },
+        user.cookies,
+      );
+      if (approved.status === 200) {
+        console.log(`  [auto-approved] ${item.agentName}: ${item.headline}`);
+      } else {
+        console.log(
+          `  [auto-approve FAILED ${String(approved.status)}] ${item.agentName}: ${item.headline}`,
+        );
+      }
+    }
+  }
+
   for (const human of SCRIPT) {
     console.log(`\n>>> SAWYER: ${human}`);
     const sent = await api(
@@ -503,6 +546,7 @@ async function main(): Promise<void> {
     const t0 = Date.now();
     let answered = false;
     while (Date.now() - t0 < TURN_TIMEOUT_MS) {
+      await autoApproveAll();
       const fresh = (await listAgentMessages()).filter(
         (m) => !seenIds.has(m.id),
       );

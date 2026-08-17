@@ -1,5 +1,7 @@
 export type {
   FoldedRunsDeps,
+  PinnedToolGrantDeclaration,
+  ToolGrantsForPins,
   SentFoldedMail,
   ListedFoldedMail,
   ListedFoldedMailItem,
