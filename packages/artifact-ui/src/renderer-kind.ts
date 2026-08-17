@@ -10,6 +10,7 @@ export const ARTIFACT_RENDERER_KINDS = [
   "doc",
   "sheet",
   "pdf",
+  "html",
   "unsupported",
 ] as const;
 
@@ -39,6 +40,7 @@ export function resolveArtifactRendererKind(artifact: {
   }
   if (kind === "pdf") return "pdf";
   if (kind === "file" && ext === "pdf") return "pdf";
+  if (kind === "file" && ext === "html") return "html";
   return "unsupported";
 }
 

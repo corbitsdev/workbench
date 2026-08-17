@@ -43,6 +43,12 @@ describe("resolveArtifactRendererKind", () => {
     ).toBe("pdf");
   });
 
+  test("kind file with .html extension renders as html", () => {
+    expect(
+      resolveArtifactRendererKind({ kind: "file", title: "landing.html" }),
+    ).toBe("html");
+  });
+
   test("routine and unrecognized kinds fall back to unsupported", () => {
     expect(
       resolveArtifactRendererKind({ kind: "routine", title: "Weekly GTM" }),

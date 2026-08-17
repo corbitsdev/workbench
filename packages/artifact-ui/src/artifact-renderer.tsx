@@ -21,6 +21,15 @@ export type ArtifactRenderProps = {
   /** Overrides the default "unsupported" copy with something specific to
    * why this content can't be shown (e.g. a binary MIME type). */
   readonly unavailableReason?: string;
+  /**
+   * The sandboxed preview route (`GET .../artifacts/:id/preview`) for a
+   * `"html"`-kind artifact — the `<iframe sandbox="allow-scripts">`'s
+   * `src`. Absent when the host has no server-backed preview for this
+   * content (e.g. a chat blob that was never diverted into a Library
+   * artifact), in which case the pane falls back to an honest
+   * "unsupported" message rather than rendering raw markup unsandboxed.
+   */
+  readonly previewSrc?: string;
 };
 
 type DocLine =
@@ -121,6 +130,36 @@ function PdfRenderer({
   );
 }
 
+/**
+ * Live sandboxed preview of a self-contained HTML artifact. `allow-scripts`
+ * with NO `allow-same-origin` puts the framed document in an opaque unique
+ * origin: it can run inline script, but it cannot read this app's cookies
+ * or storage, call back into the hub API, or navigate the parent — the
+ * server's own `Content-Security-Policy: sandbox allow-scripts` header
+ * enforces the same posture even if an attribute got stripped somewhere.
+ */
+function HtmlPreviewRenderer({
+  title,
+  previewSrc,
+}: {
+  readonly title: string;
+  readonly previewSrc?: string;
+}) {
+  if (previewSrc === undefined) {
+    return (
+      <UnsupportedRenderer unavailableReason="No sandboxed preview is available for this HTML artifact yet." />
+    );
+  }
+  return (
+    <iframe
+      title={`${title} preview`}
+      src={previewSrc}
+      sandbox="allow-scripts"
+      className="h-full min-h-[24rem] w-full border-0"
+    />
+  );
+}
+
 function EmptyContent({ message }: { readonly message: string }) {
   return <p className="text-sm text-muted-foreground">{message}</p>;
 }
@@ -143,6 +182,7 @@ export function ArtifactRenderer({
   title,
   content,
   unavailableReason,
+  previewSrc,
 }: ArtifactRenderProps) {
   switch (rendererKind) {
     case "doc":
@@ -151,6 +191,13 @@ export function ArtifactRenderer({
       return <SheetRenderer content={content} />;
     case "pdf":
       return <PdfRenderer title={title} content={content} />;
+    case "html":
+      return (
+        <HtmlPreviewRenderer
+          title={title}
+          {...(previewSrc !== undefined ? { previewSrc } : {})}
+        />
+      );
     case "unsupported":
       return (
         <UnsupportedRenderer
