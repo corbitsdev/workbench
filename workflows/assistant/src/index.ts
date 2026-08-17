@@ -48,7 +48,6 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/task-dispatch-tools", version: "0.0.1" },
   { name: "@corbits/connections-tools", version: "0.0.1" },
   { name: "@corbits/skills-tools", version: "0.0.1" },
-  { name: "@corbits/mcp-tools", version: "0.0.1" },
 ];
 
 /**
@@ -114,10 +113,7 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "the team's firm memory (memory_search, memory_add, memory_list) — " +
   "use it to recall facts and decisions from earlier conversations and " +
   "to record ones worth keeping, never to fabricate a recollection " +
-  "when a search comes back empty. Any MCP server connected under " +
-  "Plugins is reachable with mcp_list_servers, mcp_list_tools, and " +
-  "mcp_call — always call mcp_list_tools for a server before calling " +
-  "mcp_call on it, never guess a tool name or its arguments. " +
+  "when a search comes back empty. " +
   ASSISTANT_WELCOME_CLAUSE +
   " " +
   ASSISTANT_TRIAGE_CLAUSE +

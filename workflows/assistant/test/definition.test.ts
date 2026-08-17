@@ -82,14 +82,7 @@ test("the agent pins memory, capability, and the manager-tools bundles — real 
     { name: "@corbits/task-dispatch-tools", version: "0.0.1" },
     { name: "@corbits/connections-tools", version: "0.0.1" },
     { name: "@corbits/skills-tools", version: "0.0.1" },
-    { name: "@corbits/mcp-tools", version: "0.0.1" },
   ]);
-});
-
-test("the prompt tells Myra to discover an MCP server's tools before calling one", () => {
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_list_tools");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_call");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("never guess a tool name");
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
