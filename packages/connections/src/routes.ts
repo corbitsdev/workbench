@@ -28,6 +28,7 @@ import {
   type SupportedCredentialProvider,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
+  type SeedCatalogArgs,
 } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
@@ -75,6 +76,11 @@ export type CreateConnectionRoutesDeps = {
     args: EnsureCredentialArgs,
     log: (line: string) => void,
   ) => ReturnType<typeof ensureCredential>;
+  /** Test-only override, matching `complete-credential.ts`'s
+   * `seedCatalogFn` override pattern — lets `routes.test.ts` prove an
+   * inference-provider connect seeds the catalog (and a non-inference
+   * connector never does) without reaching for module mocking. */
+  seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   /** The env bag an oauth-pkce/oauth-code descriptor's `oauth.clientId(env)`
    * reads a registered app id from (e.g. `{huggingfaceClientId}`) — the
    * same bag `createOAuthConnectRoutes` reads, so `GET /oauth-configured`
@@ -116,6 +122,7 @@ export function createConnectionRoutes(
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
   const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
   const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
+  const runSeedCatalog = deps.seedCatalogFn ?? seedCatalog;
 
   // Lets a settings-ui OAuth card tell "not configured" (an operator
   // hasn't registered this connector's OAuth app yet) apart from "not
@@ -311,7 +318,7 @@ export function createConnectionRoutes(
         // model list) exactly the way onboarding does, so the models show
         // up in Inference and a workbench can actually run on them.
         if (isInferenceProvider(descriptor.id)) {
-          await seedCatalog({
+          await runSeedCatalog({
             api,
             cookies,
             tenantId: tenant.id,

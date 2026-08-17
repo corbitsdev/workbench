@@ -162,11 +162,7 @@ export function ConnectorCardGrid({
         <ConnectorCard
           key={descriptor.id}
           descriptor={descriptor}
-          statusResult={connectorStatus(
-            descriptor.displayName,
-            credentials,
-            providers,
-          )}
+          statusResult={connectorStatus(descriptor.id, credentials, providers)}
           onConnect={() => {
             setDialogMode("connect");
             setDialogDescriptor(descriptor);
@@ -325,7 +321,7 @@ export function ConnectionsSection({
                   key={card.id}
                   card={card}
                   statusResult={connectorStatus(
-                    card.displayName,
+                    card.id,
                     credentials,
                     providers,
                   )}
