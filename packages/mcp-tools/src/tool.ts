@@ -188,18 +188,22 @@ function toolSummary(tool: McpToolInfo) {
   };
 }
 
-/** Loads one server's tools, `null` when the server has no bound
- * credential (mirrors `resolveMcpFetch`'s honest-degrade contract). */
+/** Loads one server's tools, or the resolve-failure reason (mirrors
+ * `resolveMcpFetch`'s honest-degrade contract — the reason is threaded
+ * to the caller's error text, never swallowed). */
 async function loadServerTools(
   env: McpToolsEnv,
   server: McpServerListing,
-): Promise<readonly McpToolInfo[] | null> {
+): Promise<
+  { tools: readonly McpToolInfo[] } | { tools: null; reason: string }
+> {
   const resolved = await resolveMcpFetch(env, server.slug);
-  if (resolved.fetch === null) return null;
+  if (resolved.fetch === null) return { tools: null, reason: resolved.reason };
   const fetchImpl = resolved.fetch;
-  return withMcpConnection({ url: server.url, fetchImpl }, (client) =>
+  const tools = await withMcpConnection({ url: server.url, fetchImpl }, (client) =>
     listMcpTools(client),
   );
+  return { tools };
 }
 
 /** `{server}` -- full tool list for one connected server. */
@@ -218,11 +222,13 @@ async function runListToolsForServer(
       ),
     );
   }
-  const tools = await loadServerTools(env, server);
-  if (tools === null) {
+  const loaded = await loadServerTools(env, server);
+  if (loaded.tools === null) {
     return errorResult(
       call.id,
-      new Error(`MCP server "${slug}" is not connected.`),
+      new Error(
+        `MCP server "${slug}" is not reachable from this run: ${loaded.reason}`,
+      ),
     );
   }
   return {
@@ -230,7 +236,7 @@ async function runListToolsForServer(
     isError: false,
     content: JSON.stringify({
       server: slug,
-      tools: tools.map(toolSummary),
+      tools: loaded.tools.map(toolSummary),
     }),
   };
 }
@@ -252,14 +258,16 @@ async function runListToolsForTool(
       ),
     );
   }
-  const tools = await loadServerTools(env, server);
-  if (tools === null) {
+  const loaded = await loadServerTools(env, server);
+  if (loaded.tools === null) {
     return errorResult(
       call.id,
-      new Error(`MCP server "${slug}" is not connected.`),
+      new Error(
+        `MCP server "${slug}" is not reachable from this run: ${loaded.reason}`,
+      ),
     );
   }
-  const tool = tools.find((candidate) => candidate.name === toolName);
+  const tool = loaded.tools.find((candidate) => candidate.name === toolName);
   if (tool === undefined) {
     return errorResult(
       call.id,
@@ -297,11 +305,15 @@ async function runListToolsForPattern(
     server: string;
     tool: ReturnType<typeof toolSummary>;
   }> = [];
+  const unreachable: Array<{ server: string; reason: string }> = [];
   for (const server of servers) {
     const serverMatches = regex.test(server.slug) || regex.test(server.name);
-    const tools = await loadServerTools(env, server);
-    if (tools === null) continue;
-    for (const tool of tools) {
+    const loaded = await loadServerTools(env, server);
+    if (loaded.tools === null) {
+      unreachable.push({ server: server.slug, reason: loaded.reason });
+      continue;
+    }
+    for (const tool of loaded.tools) {
       if (serverMatches || regex.test(tool.name)) {
         matches.push({ server: server.slug, tool: toolSummary(tool) });
       }
@@ -310,7 +322,9 @@ async function runListToolsForPattern(
   return {
     callId: call.id,
     isError: false,
-    content: JSON.stringify({ pattern, matches }),
+    content: JSON.stringify(
+      unreachable.length > 0 ? { pattern, matches, unreachable } : { pattern, matches },
+    ),
   };
 }
 
@@ -323,17 +337,18 @@ async function runListToolsCatalog(
   const servers = await listMcpServers(registryConfig(env));
   const catalog = [];
   for (const server of servers) {
-    const tools = await loadServerTools(env, server);
+    const loaded = await loadServerTools(env, server);
     catalog.push({
       server: server.slug,
       name: server.name,
-      tools:
-        tools === null
-          ? []
-          : tools.map((tool) => ({
+      ...(loaded.tools === null
+        ? { tools: [], unreachable: loaded.reason }
+        : {
+            tools: loaded.tools.map((tool) => ({
               name: tool.name,
               description: truncateDescription(tool.description),
             })),
+          }),
     });
   }
   return {
