@@ -185,7 +185,7 @@ async function runRequestConnection(
  * env keys.
  */
 export const connectionsTools = defineTool<WorkflowConnectionEnv>({
-  id: "@corbits/connections-tools/connections",
+  id: "@corbits/connections-tools/conn",
   requires: ["hubConnectionsUrl", "sidecarToken", "address"],
   definitions: [
     { name: LIST_CONNECTIONS_TOOL },

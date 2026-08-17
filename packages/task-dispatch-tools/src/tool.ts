@@ -99,7 +99,7 @@ async function runDispatchTask(
  * an agent).
  */
 export const taskDispatchTools = defineTool<WorkflowDispatchEnv>({
-  id: "@corbits/task-dispatch-tools/dispatch",
+  id: "@corbits/task-dispatch-tools/tasks",
   requires: ["hubTaskPlannerUrl", "sidecarToken", "address"],
   definitions: [{ name: DISPATCH_TASK_TOOL, approval: "ask" }],
   factory: (env) => ({

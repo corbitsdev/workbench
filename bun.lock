@@ -1129,6 +1129,7 @@
       "name": "@corbits/tool-registry-publish",
       "version": "0.0.1",
       "dependencies": {
+        "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "tar": "catalog:",

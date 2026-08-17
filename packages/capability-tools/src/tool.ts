@@ -158,7 +158,7 @@ async function runRequestCapability(
  * "<Agent> wants to add a capability: \"GitHub tools\" — Allow?".
  */
 export const capabilityTools = defineTool<WorkflowCapabilityEnv>({
-  id: "@corbits/capability-tools/capability",
+  id: "@corbits/capability-tools/cap",
   requires: ["hubCapabilitiesUrl", "sidecarToken", "address", "definitionId"],
   definitions: [{ name: REQUEST_CAPABILITY_TOOL, approval: "ask" }],
   factory: (env) => ({

@@ -203,7 +203,7 @@ async function runCreateAgent(
  * CL-manager-tools self-service specialist-creation path.
  */
 export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
-  id: "@corbits/agent-directory-tools/agent-directory",
+  id: "@corbits/agent-directory-tools/ad",
   requires: ["hubAgentDirectoryUrl", "hubChatUrl", "sidecarToken", "address"],
   definitions: [
     { name: LIST_AGENTS_TOOL },

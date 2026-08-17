@@ -90,7 +90,7 @@ async function runGitHubActivity(
  * rate limit.
  */
 export const githubTools = defineTool<GitHubEnv>({
-  id: "@corbits/github-tools/github-activity",
+  id: "@corbits/github-tools/gh",
   requires: [],
   definitions: [{ name: GITHUB_ACTIVITY_TOOL }],
   factory: (env) => ({
