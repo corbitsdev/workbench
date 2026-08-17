@@ -63,6 +63,15 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
+  test("ollama collects a URL, not a key, and needs no probed secret to reach reachability", () => {
+    const descriptor = CONNECTOR_REGISTRY["ollama"];
+    expect(descriptor?.authKind).toBe("api-key");
+    expect(descriptor?.credentialInputKind).toBe("url");
+    expect(descriptor?.credentialPlaceholder).toBe("http://localhost:11434");
+    expect(descriptor?.probe).toBeDefined();
+    expect(descriptor?.feedsTools).toEqual([]);
+  });
+
   test("includes the five tool connectors with the right feedsTools", () => {
     expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual([
       "@corbits/granola-tools",

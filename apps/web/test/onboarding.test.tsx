@@ -98,12 +98,13 @@ describe("PRIMARY_CREDENTIAL_PROVIDERS and SECONDARY_CREDENTIAL_PROVIDERS", () =
     ]);
   });
 
-  test("groq, deepseek, and mistral sit behind the secondary group", () => {
+  test("groq, deepseek, mistral, huggingface, and ollama sit behind the secondary group", () => {
     expect(SECONDARY_CREDENTIAL_PROVIDERS.map((p) => p.id)).toEqual([
       "groq",
       "deepseek",
       "mistral",
       "huggingface",
+      "ollama",
     ]);
   });
 

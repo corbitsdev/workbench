@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ApiCall, SeedCatalogArgs } from "@workbench/hub-client";
 import {
+  envProviderBaseUrlsFrom,
   envProviderKeysFrom,
   plantEnvProviderCredentials,
 } from "../src/plant-env-credentials";
@@ -17,9 +18,15 @@ function collector() {
  * and 404s everything else — `plantEnvProviderCredentials` never calls
  * anything else through `api` itself (the plant/probe indirections are
  * always passed as fakes in these tests). */
-function credentialsApi(activeNames: Set<string>, revokedNames: Set<string> = new Set()): ApiCall {
+function credentialsApi(
+  activeNames: Set<string>,
+  revokedNames: Set<string> = new Set<string>(),
+): ApiCall {
   return async (method, path) => {
-    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)) {
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
+    ) {
       const active = [...activeNames].map((name) => ({
         id: `cred_${name}`,
         tenantId: TENANT_ID,
@@ -55,14 +62,18 @@ function credentialsApi(activeNames: Set<string>, revokedNames: Set<string> = ne
  * one would never see it. */
 function paginatedCredentialsApi(pages: string[][]): ApiCall {
   return async (method, path) => {
-    if (!(method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`))) {
+    if (!(
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
+    )) {
       throw new Error(`unexpected call: ${method} ${path}`);
     }
     const url = new URL(path, "http://hub.test");
     const cursor = url.searchParams.get("cursor");
     const pageIndex = cursor === null ? 0 : Number(cursor);
     const names = pages[pageIndex] ?? [];
-    const nextCursor = pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
+    const nextCursor =
+      pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
     return {
       status: 200,
       data: {
@@ -112,6 +123,35 @@ describe("envProviderKeysFrom", () => {
 
   test("an empty-string value is treated as unset", () => {
     expect(envProviderKeysFrom({ ANTHROPIC_API_KEY: "" })).toEqual({});
+  });
+
+  test("OLLAMA_BASE_URL's presence plants the fixed placeholder secret, never the URL", () => {
+    const keys = envProviderKeysFrom({
+      OLLAMA_BASE_URL: "http://localhost:11434",
+    });
+    expect(keys.ollama).toBe("ollama");
+  });
+
+  test("an empty OLLAMA_BASE_URL is treated as unset", () => {
+    expect(envProviderKeysFrom({ OLLAMA_BASE_URL: "" })).toEqual({});
+  });
+});
+
+describe("envProviderBaseUrlsFrom", () => {
+  test("reads OLLAMA_BASE_URL as ollama's base URL", () => {
+    expect(
+      envProviderBaseUrlsFrom({
+        OLLAMA_BASE_URL: "https://home-mac.example.ts.net",
+      }),
+    ).toEqual({ ollama: "https://home-mac.example.ts.net" });
+  });
+
+  test("an empty environment yields an empty map", () => {
+    expect(envProviderBaseUrlsFrom({})).toEqual({});
+  });
+
+  test("an empty-string value is treated as unset", () => {
+    expect(envProviderBaseUrlsFrom({ OLLAMA_BASE_URL: "" })).toEqual({});
   });
 });
 
@@ -227,6 +267,34 @@ describe("plantEnvProviderCredentials", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("failed");
     expect(lines[0]).not.toContain("sk-ant-bad");
+  });
+
+  test("plants ollama with its configured base URL threaded to both the probe and the seed", async () => {
+    const { log } = collector();
+    const active = new Set<string>();
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(active),
+      cookies: ["session=abc"],
+      tenantId: TENANT_ID,
+      envProviderKeys: { ollama: "ollama" },
+      envProviderBaseUrls: { ollama: "https://home-mac.example.ts.net" },
+      log,
+      testCredential: async (args) => {
+        expect(args.provider).toBe("ollama");
+        expect(args.baseURL).toBe("https://home-mac.example.ts.net");
+        return { ok: true };
+      },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        active.add("ollama-default");
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "ollama", status: "planted" }]);
+    expect(seedCatalogCalls[0]?.baseURLOverride).toBe(
+      "https://home-mac.example.ts.net",
+    );
   });
 
   test("one provider's failed probe never blocks another provider's plant", async () => {
@@ -347,7 +415,10 @@ describe("plantEnvProviderCredentials", () => {
     let probed = false;
     const outcomes = await plantEnvProviderCredentials({
       // The active "anthropic-default" row lives on page two only.
-      api: paginatedCredentialsApi([["other-provider-default"], ["anthropic-default"]]),
+      api: paginatedCredentialsApi([
+        ["other-provider-default"],
+        ["anthropic-default"],
+      ]),
       cookies: [],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-real" },

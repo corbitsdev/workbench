@@ -45,6 +45,7 @@ import {
   ensureSeeded,
   testAndPersistCredential,
 } from "../../../packages/onboarding/src/complete-credential.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/hub-client/src/credential-test.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");
@@ -429,9 +430,22 @@ async function run(): Promise<void> {
     // into the live acceptance gate: Myra must greet unprompted and answer
     // "hi" with real prose, never a credential-error report. Absent, the
     // stub key proves the wiring only.
+    //
+    // E2E_PROVIDER=ollama + OLLAMA_BASE_URL is the second live mode: a real
+    // Ollama instance (local, or reached through a tailscale tunnel)
+    // connects through the same card path onboarding itself offers, no key
+    // required — Ollama has none.
     const liveApiKey = process.env["E2E_PROVIDER_API_KEY"];
-    const stubApiKey = liveApiKey ?? "sk-e2e-stub-not-real";
-    const live = liveApiKey !== undefined;
+    const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"];
+    const useOllama =
+      process.env["E2E_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
+    const connectProvider = useOllama
+      ? ("ollama" as const)
+      : ("anthropic" as const);
+    const stubApiKey = useOllama
+      ? OLLAMA_PLACEHOLDER_SECRET
+      : (liveApiKey ?? "sk-e2e-stub-not-real");
+    const live = useOllama || liveApiKey !== undefined;
 
     // --- Step 1: signup -> onboarding -> connect provider (stub key) -> shell
     await step(
@@ -515,17 +529,22 @@ async function run(): Promise<void> {
           );
         }
         const pushWorkflow = createGitWorkflowPusher();
-        const connected = await testAndPersistCredential({
+        const connectArgs = {
           api: hubApi,
           cookies,
           hubUrl: hub.baseUrl,
           userId,
           userEmail: email,
-          provider: "anthropic",
+          provider: connectProvider,
           apiKey: stubApiKey,
           pushWorkflow,
           log: () => undefined,
-        });
+        };
+        const connected = await testAndPersistCredential(
+          useOllama && ollamaBaseUrl !== undefined
+            ? { ...connectArgs, baseURLOverride: ollamaBaseUrl }
+            : connectArgs,
+        );
         if (connected.kind !== "connected") {
           throw new Error(
             `expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`,
@@ -539,16 +558,21 @@ async function run(): Promise<void> {
             );
           }
           try {
-            const seeded = await ensureSeeded({
+            const seedArgs = {
               api: hubApi,
               cookies,
               hubUrl: hub.baseUrl,
               pushWorkflow,
               log: () => undefined,
               tenant: connected,
-              provider: "anthropic",
+              provider: connectProvider,
               apiKey: stubApiKey,
-            });
+            };
+            const seeded = await ensureSeeded(
+              useOllama && ollamaBaseUrl !== undefined
+                ? { ...seedArgs, baseURLOverride: ollamaBaseUrl }
+                : seedArgs,
+            );
             return {
               status: "pass",
               detail: `stub credential stored and every default workflow deployed: ${seeded.workflows.join(", ")}`,

@@ -26,6 +26,15 @@ describe("createChannelHostInferencePreferencesResolver", () => {
     ]);
   });
 
+  test("ollama-only bench resolves to an ollama source, never anthropic", async () => {
+    const resolve = createChannelHostInferencePreferencesResolver(async () => [
+      "ollama",
+    ]);
+    expect(await resolve("tnt_bench")).toEqual([
+      { provider: "ollama", model: "qwen3.8:27b" },
+    ]);
+  });
+
   test("a multi-provider bench keeps anthropic first among the connected set", async () => {
     const resolve = createChannelHostInferencePreferencesResolver(async () => [
       "openrouter",

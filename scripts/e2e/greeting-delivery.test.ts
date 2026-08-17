@@ -34,6 +34,7 @@ import {
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/hub-client/src/credential-test.ts";
 import {
   api,
   createCleanupHarness,
@@ -64,6 +65,19 @@ if (databaseUrl === undefined) {
 // and the deployments it seeds carry it as a stored, never-triggered
 // source until the assistant's own opening turn genuinely dials it.
 const STUB_API_KEY = "e2e-greeting-delivery-stub-key-not-real";
+
+// E2E_PROVIDER=ollama + OLLAMA_BASE_URL turns this suite into a live
+// acceptance gate the same way `walkthrough.ts`'s E2E_PROVIDER_API_KEY
+// does for Anthropic: a real Ollama instance actually answers the
+// greeting kickoff, so the final assertion below expects real prose
+// instead of the stub key's credential-error report.
+const OLLAMA_BASE_URL = process.env["OLLAMA_BASE_URL"];
+const USE_OLLAMA =
+  process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
+const CONNECT_PROVIDER = USE_OLLAMA
+  ? ("ollama" as const)
+  : ("anthropic" as const);
+const CONNECT_API_KEY = USE_OLLAMA ? OLLAMA_PLACEHOLDER_SECRET : STUB_API_KEY;
 
 function stringField(data: unknown, field: string, what: string): string {
   if (typeof data === "object" && data !== null && field in data) {
@@ -192,17 +206,22 @@ describe.skipIf(databaseUrl === undefined)(
       const connected = await hop(
         "connecting a real inference credential via the key path (no provider probe — CL-6123)",
         async () => {
-          const result = await testAndPersistCredential({
+          const testArgs = {
             api: hubApi,
             cookies: user.cookies,
             hubUrl: hub.baseUrl,
             userId: user.userId,
             userEmail: user.email,
-            provider: "anthropic",
-            apiKey: STUB_API_KEY,
+            provider: CONNECT_PROVIDER,
+            apiKey: CONNECT_API_KEY,
             pushWorkflow,
             log: () => undefined,
-          });
+          };
+          const result = await testAndPersistCredential(
+            USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+              ? { ...testArgs, baseURLOverride: OLLAMA_BASE_URL }
+              : testArgs,
+          );
           if (result.kind !== "connected") {
             throw new Error(
               `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
@@ -223,16 +242,21 @@ describe.skipIf(databaseUrl === undefined)(
               );
             }
             try {
-              await ensureSeeded({
+              const seedArgs = {
                 api: hubApi,
                 cookies: user.cookies,
                 hubUrl: hub.baseUrl,
                 pushWorkflow,
                 log: () => undefined,
                 tenant: connected,
-                provider: "anthropic",
-                apiKey: STUB_API_KEY,
-              });
+                provider: CONNECT_PROVIDER,
+                apiKey: CONNECT_API_KEY,
+              };
+              await ensureSeeded(
+                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+                  ? { ...seedArgs, baseURLOverride: OLLAMA_BASE_URL }
+                  : seedArgs,
+              );
               break;
             } catch (cause) {
               if (Date.now() > deadline) throw cause;
@@ -260,7 +284,14 @@ describe.skipIf(databaseUrl === undefined)(
                 principalId: tenant.principalId,
                 domain: tenant.tenantDomain,
               },
-              model: modelSourceFor("anthropic", STUB_API_KEY),
+              model:
+                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+                  ? modelSourceFor(
+                      CONNECT_PROVIDER,
+                      CONNECT_API_KEY,
+                      OLLAMA_BASE_URL,
+                    )
+                  : modelSourceFor(CONNECT_PROVIDER, CONNECT_API_KEY),
               pushWorkflow,
               log: () => undefined,
               workflows: DEFAULT_WORKFLOWS,
@@ -397,7 +428,23 @@ describe.skipIf(databaseUrl === undefined)(
                 .filter((p) => p.kind === "text")
                 .map((p) => p.text ?? "")
                 .join("");
-              if (!text.includes("credential error") || !/40[13]/.test(text)) {
+              if (USE_OLLAMA) {
+                // A live Ollama instance actually answers: the opening
+                // turn must be real prose, never the stub-key credential
+                // error this suite otherwise proves against Anthropic.
+                if (
+                  text.trim().length === 0 ||
+                  /credential error/i.test(text)
+                ) {
+                  throw new Error(
+                    `expected a real Ollama greeting, got: ${JSON.stringify(agentMessage)}`,
+                  );
+                }
+                console.log(`  Myra's unprompted greeting (ollama): ${text}`);
+              } else if (
+                !text.includes("credential error") ||
+                !/40[13]/.test(text)
+              ) {
                 throw new Error(
                   `expected the agent's greeting-turn message to report the ` +
                     `stub key's credential error, got: ${JSON.stringify(agentMessage)}`,

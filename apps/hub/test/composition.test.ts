@@ -35,6 +35,7 @@ const config: HubConfig = {
   allowUnverifiedEmails: true,
   sidecarProvisioner: { kind: "none" },
   envProviderKeys: {},
+  envProviderBaseUrls: {},
   envCredentialPlantAdmin: {
     email: "alice@example.com",
     password: "password123",

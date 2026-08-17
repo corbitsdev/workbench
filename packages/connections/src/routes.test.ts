@@ -294,6 +294,48 @@ describe("POST /:connectorId/complete", () => {
     expect(providerRowName).toBe("accepting-connector");
   });
 
+  test("a credentialInputKind: url connector stores the fixed placeholder secret and the URL as apiBaseUrl", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      "url-connector": {
+        id: "url-connector",
+        displayName: "URL Connector",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        credentialInputKind: "url",
+        credentialPlaceholder: "http://localhost:11434",
+        probe: async () => ({ ok: true }),
+      },
+    };
+    let providerArgs: { apiBaseUrl?: string } | undefined;
+    let credentialSecret: string | undefined;
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async (_api, _cookies, args) => {
+        providerArgs = args;
+        return "prv_1";
+      },
+      ensureCredentialFn: async (_api, _cookies, args) => {
+        credentialSecret = args.secret;
+        return "crd_1";
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/url-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "http://localhost:11434" }),
+    });
+    expect(response.status).toBe(200);
+    expect(providerArgs?.apiBaseUrl).toBe("http://localhost:11434");
+    expect(credentialSecret).toBe("ollama");
+  });
+
   test("a storage failure after a good probe 500s", async () => {
     const app = buildApp({
       ensureProviderFn: async () => {

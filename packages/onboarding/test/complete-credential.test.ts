@@ -7,6 +7,7 @@ import type {
 import {
   completeCredentialSetup,
   ensureSeeded,
+  modelSourceFor,
   testAndPersistCredential,
 } from "../src/complete-credential";
 
@@ -70,6 +71,37 @@ function tenantResponse() {
     cookies: [],
   };
 }
+
+describe("modelSourceFor", () => {
+  test("every other provider ignores a baseURLOverride", () => {
+    expect(modelSourceFor("anthropic", "sk-ant", "https://ignored")).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-ant",
+    });
+  });
+
+  test("ollama defaults to the local OpenAI-compatible origin with no override", () => {
+    expect(modelSourceFor("ollama", "ollama")).toEqual({
+      provider: "openai-compatible",
+      model: "qwen3.8:27b",
+      baseURL: "http://localhost:11434/v1",
+      apiKey: "ollama",
+    });
+  });
+
+  test("ollama's baseURLOverride is normalized to the /v1 form", () => {
+    expect(
+      modelSourceFor("ollama", "ollama", "https://home-mac.example.ts.net"),
+    ).toEqual({
+      provider: "openai-compatible",
+      model: "qwen3.8:27b",
+      baseURL: "https://home-mac.example.ts.net/v1",
+      apiKey: "ollama",
+    });
+  });
+});
 
 describe("completeCredentialSetup", () => {
   // CL-6123: onboarding no longer probes a submitted key before storing
