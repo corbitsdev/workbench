@@ -55,6 +55,7 @@ import type {
   SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
+import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { type } from "arktype";
@@ -123,6 +124,20 @@ export type CreateHubChatPlatformDeps = {
    * `ensureAwake` to redeploy a non-routable target before sending.
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
+  /**
+   * Same resolver `./routes.ts`'s `channelHostInferencePreferences` dep
+   * takes (see its own doc), reused here for `launchInvite`: a
+   * hand-authored definition that declares no model requirements of
+   * its own (e.g. a `create_agent` definition created without a
+   * `model` — see `@corbits/agent-directory`'s `createAgentDefinitionCore`)
+   * would otherwise 409 as `not_launchable` even though the tenant has
+   * a perfectly usable catalog default. Omitted, or a tenant with no
+   * connected provider, that 409 is exactly what still happens — the
+   * honest answer when there is truly nothing to launch against.
+   */
+  channelHostInferencePreferences?: (
+    tenantId: string,
+  ) => Promise<readonly InferencePreference[]>;
 };
 
 // Channel-host asset naming lives in `./channel-host-naming` — a
@@ -543,6 +558,21 @@ export function createHubChatPlatform(
       const instanceId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
+      // A definition that declares no model requirements of its own
+      // (`foldedBody.model === null`) would otherwise 409 as
+      // `not_launchable` — resolve the same catalog default a fresh
+      // channel host gets instead of failing loud. Only consulted when
+      // the definition truly names nothing; a definition with its own
+      // model is never second-guessed.
+      const fallbackModel =
+        foldedBody.model === null
+          ? (
+              (await deps.channelHostInferencePreferences?.(
+                input.tenantId,
+              )) ?? []
+            )[0]?.model
+          : undefined;
+
       await launchFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,
         instanceId,
@@ -550,6 +580,7 @@ export function createHubChatPlatform(
         definitionId: input.definitionId,
         foldedBody,
         launchLabel: "the invited agent",
+        ...(fallbackModel !== undefined ? { fallbackModel } : {}),
         // Unchanged from before this pin existed: an invited agent's
         // replies are real, so its inference sources still resolve
         // against the tenant catalog. `noopInference: false` (matching

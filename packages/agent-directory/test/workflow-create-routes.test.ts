@@ -157,6 +157,9 @@ function buildApp(
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsRun,
+    ...(opts.tenantDefaultModel !== undefined
+      ? { tenantDefaultModel: opts.tenantDefaultModel }
+      : {}),
   }) as unknown as Hono;
 }
 
@@ -258,6 +261,63 @@ test("a toolPackagePins entry the tenant's inventory offers is pinned onto the c
   const written = writtenFiles?.["workflow.json"];
   expect(typeof written).toBe("string");
   expect(written as string).toContain("@corbits/memory-tools");
+});
+
+test("a create with no model bakes the tenant's catalog default in, so the definition self-resolves at launch", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    tenantDefaultModel: (tenantId) =>
+      Promise.resolve(
+        tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined,
+      ),
+  });
+  const response = await app.request("/definitions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({
+      name: "Research Buddy",
+      handle: "research-buddy",
+      systemPrompt: "You are a careful research assistant.",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const written = writtenFiles?.["workflow.json"];
+  expect(typeof written).toBe("string");
+  expect(written as string).toContain("anthropic/claude-sonnet");
+});
+
+test("a create with an explicit model never consults the tenant default", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    tenantDefaultModel: () => {
+      throw new Error("must not be consulted when the caller supplied a model");
+    },
+  });
+  const response = await app.request("/definitions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({
+      name: "Research Buddy",
+      handle: "research-buddy",
+      systemPrompt: "You are a careful research assistant.",
+      model: "openrouter/some-model",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const written = writtenFiles?.["workflow.json"];
+  expect(written as string).toContain("openrouter/some-model");
 });
 
 test("an invalid body is a 400", async () => {

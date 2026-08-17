@@ -815,6 +815,14 @@ export async function createHub(config: HubConfig) {
     "/api/channel-tenancies",
     createChannelTenancyRoutes({ tenancy: chatTenancy }),
   );
+  // Shared by the chat platform's invite-launch fallback below and
+  // `chatDeps.channelHostInferencePreferences` further down — one
+  // resolver, derived once, rather than two independent instances of
+  // the same tenant-catalog derivation drifting apart.
+  const channelHostInferencePreferencesResolver =
+    createChannelHostInferencePreferencesResolver((tenantId) =>
+      listConnectedProviders(db, tenantId),
+    );
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
@@ -826,6 +834,11 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
+    // A hand-authored definition with no model requirements of its own
+    // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
+    // doc) still launches on invite by falling back to this same
+    // tenant-catalog default, instead of 409ing `not_launchable`.
+    channelHostInferencePreferences: channelHostInferencePreferencesResolver,
   });
   // Built once, beside the platform, for the process's lifetime: turns
   // an invited agent's `connector.reply` events into channel messages,
@@ -957,10 +970,7 @@ export async function createHub(config: HubConfig) {
     // `createChannelHostInferencePreferencesResolver`) — never a fixed
     // provider/model pair, so a bench whose only credential is, say,
     // OpenRouter still gets a channel host that can resolve a source.
-    channelHostInferencePreferences:
-      createChannelHostInferencePreferencesResolver((tenantId) =>
-        listConnectedProviders(db, tenantId),
-      ),
+    channelHostInferencePreferences: channelHostInferencePreferencesResolver,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
@@ -1228,6 +1238,12 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      // A definition created with no `model` still declares one — the
+      // same tenant-catalog default a fresh channel host resolves —
+      // rather than staying empty and 409ing `not_launchable` at
+      // invite time.
+      tenantDefaultModel: async (tenantId) =>
+        (await channelHostInferencePreferencesResolver(tenantId))[0]?.model,
     }),
   );
   // Myra's own agent-creation surface (`@corbits/agent-directory-tools`'
@@ -1245,6 +1261,8 @@ export async function createHub(config: HubConfig) {
       skillsStore: definitionSkillsStore,
       capabilityInventory,
       authenticator: createWorkflowRunAuthenticator({ db }),
+      tenantDefaultModel: async (tenantId) =>
+        (await channelHostInferencePreferencesResolver(tenantId))[0]?.model,
     }),
   );
   // The workflow-run-authenticated variant of the capabilities route

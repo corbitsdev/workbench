@@ -385,6 +385,22 @@ export type CreateAgentDefinitionCoreDeps = {
     ): Promise<readonly PinnedSkillIndexEntry[]>;
   };
   readonly skillsStore: DefinitionSkillsStore;
+  /**
+   * Resolves the tenant's current catalog default model — the same
+   * first-connected-provider model `@corbits/chat`'s
+   * `channelHostInferencePreferences` derives for a fresh channel host
+   * (see `createChannelHostInferencePreferencesResolver`) — for a
+   * `create_agent`/`POST /agent-definitions` call that supplies no
+   * `model` of its own. Without this, such a definition's `inference.sources`
+   * stays empty and a later invite launch 409s as `not_launchable`
+   * ("declares no model requirements"); baking a real model in here
+   * makes the definition launchable on its own, no fallback needed at
+   * launch time. Omitted, or a tenant with no connected provider,
+   * leaves the definition exactly as empty as before this dep existed.
+   */
+  readonly tenantDefaultModel?: (
+    tenantId: string,
+  ) => Promise<string | undefined>;
 };
 
 export type CreateAgentDefinitionCoreInput = {
@@ -451,10 +467,10 @@ export async function createAgentDefinitionCore(
     description: input.description ?? "",
     systemPrompt: input.systemPrompt,
   };
+  const model =
+    input.model ?? (await deps.tenantDefaultModel?.(input.tenantId));
   const definition = buildAgentDefinitionWorkflow(
-    input.model !== undefined
-      ? { ...baseDefinitionInput, model: input.model }
-      : baseDefinitionInput,
+    model !== undefined ? { ...baseDefinitionInput, model } : baseDefinitionInput,
   );
   // The definition's own system prompt is what the caller supplied; the
   // pinned-skills index and any directly-named tool-package pins are

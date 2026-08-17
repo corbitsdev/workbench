@@ -1195,6 +1195,137 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(/seed a tenant catalog source/);
   });
 
+  // A `create_agent`-minted definition with no `model` of its own
+  // (`@corbits/agent-directory`'s `createAgentDefinitionCore`, absent
+  // a `tenantDefaultModel` dep) serializes with an empty
+  // `inference.sources` list — `foldedBody.model` reads back `null`.
+  // Without `channelHostInferencePreferences`, that used to 409 as
+  // `not_launchable`; this proves the fallback resolves and launches
+  // instead, exactly mirroring the model a fresh channel host would
+  // get for this tenant.
+  const NO_MODEL_WORKFLOW_JSON = serializeChannelHostWorkflow(
+    buildChannelHostWorkflow({
+      triggerAddress: "ins_channel1@ten1.workbench.test",
+      inferencePreferences: [],
+      turnTimeoutMs: 60_000,
+    }),
+  );
+
+  test("launchInvite falls back to the channel-host inference preferences when the definition declares no model requirements", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
+      toolGrantsForPins: () => [],
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService({
+        assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
+      }),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+      channelHostInferencePreferences: async (tenantId) =>
+        tenantId === "ten_1"
+          ? [{ provider: "anthropic", model: "claude-sonnet-5" }]
+          : [],
+    });
+
+    const launched = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+
+    expect(launched.instanceId).toMatch(/^run_/);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      fallbackModel: "claude-sonnet-5",
+    });
+  });
+
+  test("launchInvite still 409s honestly when the tenant has no connected providers to fall back to", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: false,
+      message: "This definition declares no model requirements; cannot resolve any inference sources",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
+      toolGrantsForPins: () => [],
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService({
+        assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
+      }),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+      channelHostInferencePreferences: async () => [],
+    });
+
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_echo",
+      }),
+    ).rejects.toThrow(/seed a tenant catalog source/);
+
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      fallbackModel: null,
+    });
+  });
+
   test("listInvitableDefinitions lists deployed definitions, excluding channel hosts", async () => {
     const db = createFakeDb({
       assetRow: {

@@ -124,6 +124,17 @@ export async function deployAtHead(
      * override existed.
      */
     sources?: SourcesOverride;
+    /**
+     * The model to resolve against when `foldedBody.model` is `null` —
+     * a definition that declares no model requirements of its own
+     * (e.g. a hand-authored agent created without a `model`). Absent,
+     * a `null` `foldedBody.model` resolves to the loud
+     * `InferenceResolutionError` it always has; present, it is what
+     * lets that same definition still launch by falling back to the
+     * caller's own tenant-default resolution instead of 409ing. Never
+     * consulted when `foldedBody.model` is already set.
+     */
+    fallbackModel?: string;
   },
 ): Promise<void> {
   const sourcesOverride = parseSourcesOverride(params.sources);
@@ -134,7 +145,7 @@ export async function deployAtHead(
           db: deps.db,
           tenantId: params.tenantId,
           modelRequirements: null,
-          fallbackModel: params.foldedBody.model,
+          fallbackModel: params.foldedBody.model ?? params.fallbackModel ?? null,
           invokerPreferences: {},
           ...(deps.credentialCipher !== undefined
             ? { credentialCipher: deps.credentialCipher }
@@ -231,6 +242,8 @@ export type LaunchFoldedRunParams = {
    * `deployAtHead`'s own doc on the same field.
    */
   sources?: SourcesOverride;
+  /** See `deployAtHead`'s own doc on the same field. */
+  fallbackModel?: string;
   /**
    * Invoked inside the same launch transaction, immediately after the
    * principal/session/run rows are written, so a caller-owned table
@@ -361,12 +374,13 @@ export async function launchFoldedRun(
       foldedBody: params.foldedBody,
       launchLabel: params.launchLabel,
     };
-    await deployAtHead(
-      deps,
-      params.sources !== undefined
-        ? { ...deployAtHeadParams, sources: params.sources }
-        : deployAtHeadParams,
-    );
+    await deployAtHead(deps, {
+      ...deployAtHeadParams,
+      ...(params.sources !== undefined ? { sources: params.sources } : {}),
+      ...(params.fallbackModel !== undefined
+        ? { fallbackModel: params.fallbackModel }
+        : {}),
+    });
   } catch (err) {
     // Mirrors the reference route's failure-path cleanup: a deploy
     // failure must not leave the just-committed principal/session/run

@@ -40,6 +40,7 @@ import {
   withAgentModel,
   withAgentSystemPrompt,
   withAgentToolPackagePin,
+  type CreateAgentDefinitionCoreDeps,
   type CreateAgentDefinitionCoreInput,
 } from "./agent-workflow";
 import type { DefinitionSkillsStore } from "./skills-store";
@@ -79,6 +80,7 @@ export type CreateAgentDefinitionRoutesDeps = {
   history: DefinitionAssetHistory;
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
+  tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
 /** Where a definition's serialized `WorkflowDefinition` lives in its asset tree. */
@@ -125,6 +127,7 @@ export function createAgentDefinitionRoutes({
   history,
   capabilityInventory,
   requireGrant,
+  tenantDefaultModel,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
@@ -185,7 +188,13 @@ export function createAgentDefinitionRoutes({
     let row: Awaited<ReturnType<typeof createAgentDefinitionCore>>["row"];
     try {
       ({ row } = await createAgentDefinitionCore(
-        { db, assetService, skillIndex, skillsStore },
+        {
+          db,
+          assetService,
+          skillIndex,
+          skillsStore,
+          ...(tenantDefaultModel !== undefined ? { tenantDefaultModel } : {}),
+        },
         coreInput,
       ));
     } catch (cause) {
