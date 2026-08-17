@@ -236,6 +236,71 @@ test("auto-provisions a delivery space via deliverySpace + resolveTenantDomain w
   });
 });
 
+test("delivery defaults to the creating run's own channel — no new space is provisioned", async () => {
+  let provisioned = false;
+  const deliverySpace: DeliverySpacePort = {
+    createDeliverySpace: () => {
+      provisioned = true;
+      return Promise.resolve({
+        channelId: "ch_provisioned",
+        compensate: () => Promise.resolve(),
+      });
+    },
+  };
+  const deps = buildDeps({
+    deliveryChannelRequired: async () => true,
+    deliverySpace,
+    resolveTenantDomain: async () => "acme.example",
+    resolveRunChannel: async (tenantId, runId) =>
+      tenantId === TENANT_ID && runId === RUN_ID ? "ch_home" : undefined,
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, {
+    ...VALID_BODY,
+    deliveryChannelId: undefined,
+  });
+  expect(response.status).toBe(201);
+  expect(body["deliveryChannelId"]).toBe("ch_home");
+  expect(provisioned).toBe(false);
+});
+
+test("a run with no home channel still auto-provisions a delivery space", async () => {
+  const deliverySpace: DeliverySpacePort = {
+    createDeliverySpace: () =>
+      Promise.resolve({
+        channelId: "ch_provisioned",
+        compensate: () => Promise.resolve(),
+      }),
+  };
+  const deps = buildDeps({
+    deliveryChannelRequired: async () => true,
+    deliverySpace,
+    resolveTenantDomain: async () => "acme.example",
+    resolveRunChannel: async () => undefined,
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, {
+    ...VALID_BODY,
+    deliveryChannelId: undefined,
+  });
+  expect(response.status).toBe(201);
+  expect(body["deliveryChannelId"]).toBe("ch_provisioned");
+});
+
+test("an explicit deliveryChannelId always wins over the run's home channel", async () => {
+  const deps = buildDeps({
+    deliveryChannelRequired: async () => true,
+    resolveRunChannel: async () => "ch_home",
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, {
+    ...VALID_BODY,
+    deliveryChannelId: "ch_named",
+  });
+  expect(response.status).toBe(201);
+  expect(body["deliveryChannelId"]).toBe("ch_named");
+});
+
 test("runOnceNow launches immediately through the same launcher run-now uses", async () => {
   const launcher = fakeLauncher();
   const app = buildApp(buildDeps({ launcher }));
