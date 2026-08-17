@@ -16,7 +16,7 @@
 // `./mcp-server-routes.ts`'s manual connect uses, under the same
 // `mcp:<slug>` naming, so an OAuth-connected server is indistinguishable
 // at read time from one connected with a pasted token.
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { type } from "arktype";
@@ -339,7 +339,9 @@ export function createMcpOAuthRoutes(
       const slug = takenSlugs.has(payload.slug)
         ? payload.slug
         : uniqueSlug(slugify(payload.name), takenSlugs);
-      const origin = new URL(payload.url).origin;
+      // The FULL endpoint URL, matching the API-key connect path — the
+      // origin alone drops paths like `/mcp` and every downstream call
+      // dies at the CDN ("supports only cachable requests").
       const providerId = await ensureProvider(
         api,
         cookies,
@@ -347,7 +349,7 @@ export function createMcpOAuthRoutes(
           tenantId: tenant.id,
           name: providerName(slug),
           plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
-          apiBaseUrl: origin,
+          apiBaseUrl: payload.url,
         },
         deps.log,
       );
