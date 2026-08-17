@@ -1640,7 +1640,9 @@ describe("createHubChatPlatform", () => {
     // idle-sleep lifecycle itself (`@corbits/agent-lifecycle`'s own
     // contract, proven elsewhere).
     describe("folded-run-aware wake decision (CL-6147)", () => {
-      function completedFoldedRunDb(opts: { foldedRunMarker?: boolean } = {}) {
+      function completedFoldedRunDb(
+        opts: { foldedRunMarker?: boolean; runStatus?: string } = {},
+      ) {
         return createFakeDb({
           assetRow: {
             tenantId: "ten_1",
@@ -1654,7 +1656,7 @@ describe("createHubChatPlatform", () => {
             address: "ins_channel1@ten1.workbench.test",
             principalId: "prin_run1",
             definitionId: "wfd_channel1",
-            status: "completed",
+            status: opts.runStatus ?? "completed",
           },
           workflowDefinitionRow: {
             id: "wfd_channel1",
@@ -1678,6 +1680,131 @@ describe("createHubChatPlatform", () => {
             : {}),
         });
       }
+
+      // CL-6203: the wake-redeploy brick. A "running" run behind a
+      // routability blip must never be redeployed over — that moves its
+      // deployment anchor while the process is alive, and the survivor
+      // bricks the channel with rejected pack pushes.
+      test("a running run that becomes routable during the settle window is never redeployed", async () => {
+        resolveDefinitionSourcesResult = {
+          ok: true,
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        };
+        const db = completedFoldedRunDb({ runStatus: "running" });
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: [],
+        });
+        // The blip resolves itself two ticks into the settle window —
+        // exactly the live-process case the redeploy must not clobber.
+        setTimeout(() => {
+          sidecarRouter.routableAddresses.push(
+            "ins_channel1@ten1.workbench.test",
+          );
+        }, 5);
+        const eventCollectors = createFakeEventCollectors();
+        const assetService = createFakeAssetService({
+          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        });
+
+        const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService,
+          sidecarRouter,
+          eventCollectors,
+          lifecycle: { idleSleepMs: 60_000 },
+          reclaimRetryDelaysMs: [2, 10, 20],
+        });
+
+        const sent = await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sent.id).toBeTruthy();
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
+      });
+
+      test("a running run that never settles is undeployed BEFORE the redeploy, so no survivor pushes against the moved anchor", async () => {
+        resolveDefinitionSourcesResult = {
+          ok: true,
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        };
+        const db = completedFoldedRunDb({ runStatus: "running" });
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: [],
+        });
+        const eventCollectors = createFakeEventCollectors();
+        const assetService = createFakeAssetService({
+          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        });
+
+        const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService,
+          sidecarRouter,
+          eventCollectors,
+          lifecycle: { idleSleepMs: 60_000 },
+          reclaimRetryDelaysMs: [1, 2],
+        });
+
+        const sent = await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sent.id).toBeTruthy();
+        // The resident is stopped, and the redeploy still happens —
+        // the awaited undeploy in `wakeByAddress` structurally
+        // precedes the deploy call.
+        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(1);
+        expect(sidecarRouter.sendAgentUndeployCalls[0]?.reason).toContain(
+          "moved deployment anchor",
+        );
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      });
 
       test("sendMail redeploys a settled (completed) folded run before sending, even though it is still routable", async () => {
         resolveDefinitionSourcesResult = {
