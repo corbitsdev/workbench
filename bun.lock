@@ -203,7 +203,7 @@
     },
     "packages/agent-directory-tools": {
       "name": "@corbits/agent-directory-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -262,7 +262,7 @@
     },
     "packages/artifact-tools": {
       "name": "@corbits/artifact-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -349,7 +349,7 @@
     },
     "packages/capability-tools": {
       "name": "@corbits/capability-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -522,7 +522,7 @@
     },
     "packages/connections-tools": {
       "name": "@corbits/connections-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -637,7 +637,7 @@
     },
     "packages/github-tools": {
       "name": "@corbits/github-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -650,7 +650,7 @@
     },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -744,7 +744,7 @@
     },
     "packages/interaction-tools": {
       "name": "@corbits/interaction-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -757,7 +757,7 @@
     },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -775,7 +775,7 @@
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -803,7 +803,7 @@
     },
     "packages/memory-tools": {
       "name": "@corbits/memory-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -905,7 +905,7 @@
     },
     "packages/reddit-tools": {
       "name": "@corbits/reddit-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -938,7 +938,7 @@
     },
     "packages/routines-tools": {
       "name": "@corbits/routines-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1025,7 +1025,7 @@
     },
     "packages/skills-tools": {
       "name": "@corbits/skills-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1058,7 +1058,7 @@
     },
     "packages/task-dispatch-tools": {
       "name": "@corbits/task-dispatch-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1180,7 +1180,7 @@
     },
     "packages/web-search-tools": {
       "name": "@corbits/web-search-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1209,6 +1209,14 @@
       },
       "devDependencies": {
         "@intx/crypto": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/workbench-sim": {
+      "name": "@workbench/sim",
+      "version": "0.0.1",
+      "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -2316,6 +2324,8 @@
     "@workbench/onboarding": ["@workbench/onboarding@workspace:packages/onboarding"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/sim": ["@workbench/sim@workspace:packages/workbench-sim"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
