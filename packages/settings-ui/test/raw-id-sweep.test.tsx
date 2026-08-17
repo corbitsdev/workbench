@@ -39,9 +39,11 @@ describe("raw-id sweep", () => {
             updatedAt: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        roles={[]}
         onSuspend={() => undefined}
         onReactivate={() => undefined}
         onRemove={() => undefined}
+        onRoleChange={() => undefined}
       />,
     );
     const text = visibleText(markup);
