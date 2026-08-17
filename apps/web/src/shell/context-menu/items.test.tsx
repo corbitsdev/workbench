@@ -141,22 +141,6 @@ describe("shellContextMenuFor: routine", () => {
   });
 });
 
-describe("shellContextMenuFor: inbox-filter", () => {
-  test("offers only copy-link, pointed at the filter's canonical path", async () => {
-    const target: ShellContextMenuTarget = {
-      type: "inbox-filter",
-      filter: "mention",
-    };
-    const menu = shellContextMenuFor(target, actions());
-    expect(itemIds(menu.entries)).toEqual(["copy-link"]);
-    findItem(menu.entries, "copy-link").onSelect();
-    await Promise.resolve();
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/inbox/mention`,
-    );
-  });
-});
-
 describe("shellContextMenuFor: insights-run", () => {
   test("offers open and copy-link, pointed at the run's canonical route", () => {
     const target: ShellContextMenuTarget = {

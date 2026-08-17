@@ -31,7 +31,6 @@ import { requestChannelRename } from "../../channel-rename-events";
 import { requestOpenCommandPalette } from "../../command-palette-events";
 import { runRoutineNow } from "../../routines-api";
 import { SETTINGS_PATH } from "../../routes";
-import { inboxPathForFilter } from "../../inbox-api";
 import type { ShellContextMenuTarget } from "./targets";
 
 export type ShellContextMenuActions = {
@@ -159,22 +158,6 @@ function routineMenu(
   return { label: target.name, entries };
 }
 
-function inboxFilterMenu(
-  target: Extract<ShellContextMenuTarget, { type: "inbox-filter" }>,
-): ContextMenu {
-  const path = inboxPathForFilter(target.filter);
-  return {
-    entries: [
-      contextMenuItem({
-        id: "copy-link",
-        label: "Copy link",
-        icon: <LinkIcon />,
-        onSelect: () => void copyLink(path, "Inbox filter"),
-      }),
-    ],
-  };
-}
-
 function insightsRunMenu(
   target: Extract<ShellContextMenuTarget, { type: "insights-run" }>,
   actions: ShellContextMenuActions,
@@ -257,8 +240,6 @@ export function shellContextMenuFor(
       return profileMenu(target, actions);
     case "routine":
       return routineMenu(target, actions);
-    case "inbox-filter":
-      return inboxFilterMenu(target);
     case "insights-run":
       return insightsRunMenu(target, actions);
     case "account":

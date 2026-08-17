@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   ACTION_COMMANDS,
   consumePendingNewSkill,
-  consumePendingNewTask,
   requestNewRoutine,
   requestNewWorkbench,
   resetPendingDialogRequests,
@@ -169,22 +168,6 @@ describe("runActionCommand", () => {
     expect(consumePendingNewSkill()).toBe(true);
   });
 
-  test("new-task dispatches immediately when already on /inbox", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/inbox" });
-    await runActionCommand("new-task", ctx);
-    expect(dispatched).toContain("workbench:tasks:create");
-    expect(navigated).toEqual([]);
-    expect(consumePendingNewTask()).toBe(false);
-  });
-
-  test("new-task off-route navigates and records a pending flag instead of dispatching", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/library" });
-    await runActionCommand("new-task", ctx);
-    expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/inbox"]);
-    expect(consumePendingNewTask()).toBe(true);
-  });
-
   test("upload-artifact navigates to /library when off-route", async () => {
     const { ctx, navigated } = context({ path: "/agents" });
     await runActionCommand("upload-artifact", ctx);
@@ -229,7 +212,7 @@ describe("runActionCommand", () => {
 });
 
 // Backs the `>` command palette's "New routine" and "Make this a routine"
-// (chat-page.tsx, inbox-page.tsx) — a caller with no command-palette
+// (chat-page.tsx) — a caller with no command-palette
 // `ActionCommandContext`. Canvas state lives above every route, so this
 // opens the panel synchronously, beside whatever page is already showing
 // — no navigation, no pending flag, no window event, no mount race to

@@ -18,7 +18,7 @@ function legacyRedirectTarget(
   return newPrefix;
 }
 
-function LegacyRedirect({
+export function LegacyRedirect({
   path,
   navigate,
   oldPrefix,

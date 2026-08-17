@@ -29,7 +29,6 @@ import {
   isChannelSettingsPath,
 } from "../channel-path";
 import { reportChannelNotFound } from "../channel-not-found-event";
-import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -220,9 +219,6 @@ export function ChatPage({
         openRoutine({ routineId: null, channelId: inSpaceChannelId })
       }
       presenceMembers={presenceMembers}
-      {...(tenantId !== null
-        ? { onOpenInsights: () => navigate(workbenchInsightsPath(tenantId)) }
-        : {})}
       onChannelNotFound={reportChannelNotFound}
       onBackToChannelList={() => navigate(channelPath(null))}
       {...(onSignIn !== undefined ? { onSignIn } : {})}

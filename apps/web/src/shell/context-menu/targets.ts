@@ -19,10 +19,6 @@ export type ShellContextMenuTarget =
       readonly handle: string;
     }
   | { readonly type: "routine"; readonly id: string; readonly name: string }
-  | {
-      readonly type: "inbox-filter";
-      readonly filter: "all" | "action" | "mention" | "delivery";
-    }
   | { readonly type: "insights-run"; readonly id: string };
 
 function attr(element: Element, name: string): string | null {
@@ -72,21 +68,6 @@ export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextM
           id,
           name: attr(element, "data-ctx-routine-name") ?? id,
         };
-      },
-    },
-    {
-      selector: "[data-ctx-inbox-filter]",
-      resolve: (element) => {
-        const filter = attr(element, "data-ctx-inbox-filter");
-        if (
-          filter !== "all" &&
-          filter !== "action" &&
-          filter !== "mention" &&
-          filter !== "delivery"
-        ) {
-          return null;
-        }
-        return { type: "inbox-filter", filter };
       },
     },
     {

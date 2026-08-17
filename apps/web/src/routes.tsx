@@ -1,7 +1,7 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — Inbox, Insights, and Settings are reached from its footer, and
+// routes — Plugins, Insights, and Settings are reached from its footer, and
 // everything here also stays reachable by deep link and the palette.
 // Conversation deep links (`/c/:channelId`) stay routable; `/` is the Myra
 // land hop (ensure + open her conversation) for a bench with a workbench
@@ -10,12 +10,12 @@
 // Approvals has no page — the Activity band owns them. Agents and Skills
 // are Settings sections; `/agents` and `/skills` stay routable only as
 // redirects to their new home, so old links and bookmarks still land
-// somewhere real.
+// somewhere real. Inbox is gone too (CL-6151: tasks + approvals don't flow
+// into workbenches); `/inbox` stays routable only as a redirect to `/`.
 
 import {
   Blocks,
   ChartColumn,
-  Inbox,
   Library,
   MessageSquare,
   SlidersHorizontal,
@@ -23,10 +23,11 @@ import {
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
+import { useEffect } from "react";
+
 import { CHANNEL_PATH_PREFIX, isChannelPath } from "./channel-path";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
-import { InboxRoute } from "./pages/inbox-page";
 import { InsightsRoute } from "./pages/insights-page";
 import { LibraryRoute } from "./pages/library-page";
 import {
@@ -63,9 +64,9 @@ export type AppRoute = {
 };
 
 /**
- * Matches nested product paths (`/routines/:id`, `/insights/...`, `/inbox/...`)
- * plus conversation deep links (which also match when Myra land `/` is
- * active). Other routes are exact path matches.
+ * Matches nested product paths (`/routines/:id`, `/insights/...`) plus
+ * conversation deep links (which also match when Myra land `/` is active).
+ * Other routes are exact path matches.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === CHANNEL_PATH_PREFIX) {
@@ -75,7 +76,6 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/routines" ||
     routePath === "/library" ||
     routePath === "/insights" ||
-    routePath === "/inbox" ||
     routePath === "/agents" ||
     routePath === "/skills" ||
     routePath === SETTINGS_PATH
@@ -83,6 +83,19 @@ export function matchesRoute(routePath: string, path: string): boolean {
     return path === routePath || path.startsWith(`${routePath}/`);
   }
   return routePath === path;
+}
+
+/** Bounces old `/inbox` links and bookmarks home (CL-6151: the Inbox page
+ * is gone — tasks and approvals don't flow into a workbench). */
+function InboxRedirect({
+  navigate,
+}: {
+  readonly navigate: (to: string) => void;
+}) {
+  useEffect(() => {
+    navigate("/");
+  }, [navigate]);
+  return null;
 }
 
 export const APP_ROUTES: readonly AppRoute[] = [
@@ -104,9 +117,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/inbox",
     label: "Inbox",
-    icon: <Inbox />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <InboxRoute path={path} navigate={navigate} />
+    icon: <MessageSquare />,
+    render: (_path: string, navigate: (to: string) => void) => (
+      <InboxRedirect navigate={navigate} />
     ),
   },
   {
@@ -189,6 +202,5 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/routines",
   "/library",
   "/insights",
-  "/inbox",
   SETTINGS_PATH,
 ]);

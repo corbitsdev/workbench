@@ -1,13 +1,15 @@
 // The command palette's `>` action commands: everything the shell mock's
 // `buildCmdkEntries` lists under "Commands" that this app can actually wire
-// today. Skills and tasks still use the off-route-safe pending-flag
-// pattern `library-upload.ts` established: the palette can fire from any
-// page, before the target page (and its window-event listener) has
-// mounted, so a same-tick `dispatchEvent` would be a race the listener
-// always loses. `pending-dialog-request.ts` generalizes that pattern; the
-// target pages/sections (skills-settings-section.tsx, inbox-page.tsx)
-// consume the pending flag on mount. Skills moved from its own route into
-// a Settings section (CL-5990) — "New skill" lands on `/settings/skills`.
+// today. Skills still use the off-route-safe pending-flag pattern
+// `library-upload.ts` established: the palette can fire from any page,
+// before the target page (and its window-event listener) has mounted, so
+// a same-tick `dispatchEvent` would be a race the listener always loses.
+// `pending-dialog-request.ts` generalizes that pattern; the target section
+// (skills-settings-section.tsx) consumes the pending flag on mount. Skills
+// moved from its own route into a Settings section (CL-5990) — "New
+// skill" lands on `/settings/skills`. "New task" and the Inbox page it
+// used to open are gone (CL-6151, owner decision): tasks are dispatched
+// by Myra from inside a workbench now.
 //
 // Workbench creation is not one of those — there is no dialog to race, no
 // page to mount first: one click mints a fresh Myra workbench and
@@ -36,10 +38,8 @@ import { requestLibraryUpload } from "./library-upload";
 import type { RoutinePanelSubject } from "./shell/canvas-availability";
 
 export const NEW_SKILL_EVENT = "workbench:skills:create";
-export const NEW_TASK_EVENT = "workbench:tasks:create";
 
 const newSkillRequest = createPendingDialogRequest();
-const newTaskRequest = createPendingDialogRequest();
 
 /**
  * The one creation verb: mints a fresh Myra workbench and navigates
@@ -63,10 +63,6 @@ export async function requestNewWorkbench(args: {
 }
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
-/** Consumed by inbox-page.tsx on mount — the task composer opens there
- * (CL-6049): a task is spawn-and-return, its result reaches the Inbox,
- * so that's the one page that owns the affordance for starting one. */
-export const consumePendingNewTask = newTaskRequest.consumePending;
 
 /**
  * Opens the routine panel's editor view directly on a brand-new routine,
@@ -95,7 +91,6 @@ export function requestNewRoutine(args: {
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newSkillRequest.resetPending();
-  newTaskRequest.resetPending();
 }
 
 export type ActionCommandId =
@@ -103,7 +98,6 @@ export type ActionCommandId =
   | "new-agent"
   | "new-routine"
   | "new-skill"
-  | "new-task"
   | "upload-artifact"
   | "toggle-theme"
   | "close-canvas"
@@ -138,11 +132,6 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Schedule · trigger · demand",
   },
   { id: "new-skill", title: "New skill", subtitle: "Workbench capability" },
-  {
-    id: "new-task",
-    title: "New task",
-    subtitle: "Give an agent a prompt",
-  },
   {
     id: "upload-artifact",
     title: "Upload artifact",
@@ -182,10 +171,10 @@ export type ActionCommandContext = {
 
 /**
  * Runs one action command. "new-channel" and "new-agent" both mint
- * directly — see `requestNewWorkbench`'s doc; "new-skill" and "new-task"
- * still go through a pending flag when the palette fires them off-route
- * (see the module doc), so the target page's own mount effect opens the
- * dialog instead of a dispatch racing against that page's not-yet-mounted
+ * directly — see `requestNewWorkbench`'s doc; "new-skill" still goes
+ * through a pending flag when the palette fires it off-route (see the
+ * module doc), so the target page's own mount effect opens the dialog
+ * instead of a dispatch racing against that page's not-yet-mounted
  * listener.
  */
 export async function runActionCommand(
@@ -212,14 +201,6 @@ export async function runActionCommand(
           ctx.path.startsWith("/settings/skills/"),
         navigateToTargetRoute: () => ctx.navigate("/settings/skills"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
-      });
-      return;
-    }
-    case "new-task": {
-      newTaskRequest.request({
-        alreadyOnTargetRoute: ctx.path === "/inbox",
-        navigateToTargetRoute: () => ctx.navigate("/inbox"),
-        dispatch: () => window.dispatchEvent(new CustomEvent(NEW_TASK_EVENT)),
       });
       return;
     }
