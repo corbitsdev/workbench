@@ -90,7 +90,7 @@ function dash(value: string | number | null | undefined): string {
   return String(value);
 }
 
-function formatWhen(iso: string): string {
+export function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(undefined, {
@@ -101,7 +101,7 @@ function formatWhen(iso: string): string {
   });
 }
 
-function statusTone(
+export function statusTone(
   status: string,
 ): "success" | "warning" | "danger" | "neutral" | "info" {
   switch (status) {
@@ -144,7 +144,7 @@ function tokenParts(summary: OverallUsage) {
   ].filter((p) => p.value > 0);
 }
 
-function toTraceSpans(trace: RunTrace): TraceSpan[] {
+export function toTraceSpans(trace: RunTrace): TraceSpan[] {
   if (trace.spans === null || trace.spans.length === 0) return [];
   const origin = Math.min(...trace.spans.map((s) => s.start), 0);
   const end = Math.max(...trace.spans.map((s) => s.end), origin + 1);
@@ -514,7 +514,7 @@ function InsightsLanding({
   );
 }
 
-function runDurationLabel(run: InsightsRun): string {
+export function runDurationLabel(run: InsightsRun): string {
   if (run.endedAt === undefined || run.endedAt === null) return "—";
   const startMs = Date.parse(run.createdAt);
   const endMs = Date.parse(run.endedAt);

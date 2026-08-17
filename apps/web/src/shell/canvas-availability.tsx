@@ -44,7 +44,7 @@ export type RoutinePanelSubject = {
    * present. Omitted (or a `routineId` given instead) opens the editor
    * directly, the same way every pre-existing caller (routines-page's own
    * "New routine"/"Edit" actions, "Make this a routine") already does. */
-  readonly view?: "list";
+  readonly view?: "list" | "runs";
   readonly routineId?: string | null;
   /** Seeds the Name/Instruction fields the instant a brand-new panel opens
    * (`routineId: null` only) — "Make this a routine" (a completed task
