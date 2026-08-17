@@ -51,6 +51,7 @@ import {
 } from "./agent-workflow";
 import {
   assertCapabilityInInventory,
+  baselineAgentToolPins,
   CapabilityOutOfInventoryError,
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
@@ -198,8 +199,18 @@ export function createWorkflowAgentCreateRoutes(
       skills,
     };
     if (body.model !== undefined) coreInput.model = body.model;
-    if (body.toolPackagePins !== undefined) {
+    if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
       coreInput.toolPackagePins = body.toolPackagePins;
+    } else {
+      // No pins named: the specialist still gets the baseline set this
+      // tenant can resolve, so a created "research agent" can actually
+      // search, remember, and ask (CL-6206).
+      const inventory = await deps.capabilityInventory.resolve({
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+      });
+      const baseline = baselineAgentToolPins(inventory);
+      if (baseline.length > 0) coreInput.toolPackagePins = baseline;
     }
 
     const { row } = await createAgentDefinitionCore(
