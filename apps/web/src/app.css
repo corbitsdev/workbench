@@ -122,6 +122,16 @@ select:disabled,
   --ui-radius-sm: 0;
   --ui-radius-md: 0;
   --ui-radius-lg: 0;
+  /* Workbench panels still name --ui-* surface tokens; map them onto
+     react-ui's semantic palette so borders/fills resolve instead of
+     falling through as invalid custom properties. */
+  --ui-bg: var(--background);
+  --ui-bg-subtle: var(--muted);
+  --ui-fg: var(--foreground);
+  --ui-fg-muted: var(--muted-foreground);
+  --ui-border: var(--border);
+  --ui-accent: var(--primary);
+  --ui-danger: var(--destructive);
   --shell-sidebar-width: 17.5rem;
   --shell-sidebar-width-tight: 15rem;
   --shell-canvas-width: min(36rem, 42vw);
@@ -447,6 +457,11 @@ select:disabled,
 .shell-sidebar .panel-band-activity {
   padding: 0.5rem 0.7rem 0.6rem;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  /* A long approval card must never take the sidebar hostage: the band
+     caps at a third of the viewport and scrolls inside itself, so the
+     workbench list above and the footer dock below stay reachable. */
+  max-height: 34vh;
+  overflow-y: auto;
 }
 
 .panel-page-header {
@@ -741,27 +756,19 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
-/* Page-local toolbars replace TopBar action clusters (search, view toggle)
-   that still need component state on the page. Identity lives in the panel. */
-.page-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem 0;
-}
-
 /* Column 4: collapses to zero width rather than being merely hidden, so the
    main pane reclaims the space instead of leaving a gap. `overflow: hidden`
    keeps the collapsing content clipped instead of reflowing the page while
    the width animates; the inner wrapper's own transform/opacity transition
-   is what actually reads as "sliding" rather than "shrinking". */
+   is what actually reads as "sliding" rather than "shrinking". Same ground
+   surface and soft divider language as the sidebar — peer column, not a
+   card-tinted foreign sheet. */
 .shell-canvas-column {
   overflow: hidden;
   width: 0;
   flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  background: var(--card);
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
   transition:
     width 200ms ease,
     border-color 200ms ease;
@@ -781,6 +788,16 @@ select:disabled,
 
 .shell-canvas-column:not([data-open="true"]) {
   border-left-color: transparent;
+}
+
+/* react-ui Input/Textarea default to bg-card; inside the canvas that
+   reintroduces the grey slab we just removed from the column ground.
+   Sit controls on the same ground as the stage so the pane stays one
+   continuous surface. */
+.shell-canvas-column [data-slot="input"],
+.shell-canvas-column [data-slot="textarea"],
+.shell-canvas-column textarea {
+  background: var(--background);
 }
 
 .shell-canvas-inner {
@@ -804,6 +821,184 @@ select:disabled,
 .shell-canvas-column[data-open="true"] .shell-canvas-inner {
   opacity: 1;
   transform: translateX(0);
+}
+
+/* Routine canvas pane: peer of the sidebar — soft dividers, list density,
+   quiet status, no admin-form chrome. */
+.shell-routine-pane {
+  background: var(--background);
+}
+
+.shell-routine-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-routine-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shell-routine-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-routine-new {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-routine-new:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.shell-routine-row,
+.shell-routine-task-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.shell-routine-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.shell-routine-row-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.shell-routine-row-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+.shell-routine-row-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  padding-top: 0.1rem;
+}
+
+.shell-routine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+}
+
+.shell-routine-status-label {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 450;
+}
+
+.shell-routine-status-label.is-danger {
+  color: var(--destructive);
+}
+
+.shell-routine-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.shell-routine-section {
+  margin-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-routine-section-head {
+  padding: 0.55rem 0.75rem 0.25rem;
+}
+
+.shell-routine-section-label {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-quiet-empty {
+  margin: 0;
+  padding: 0.15rem 0.75rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-routine-run-row:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
 .shell-profile-pane,

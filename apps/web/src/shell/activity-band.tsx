@@ -43,6 +43,30 @@ import type { NeedsYouItem } from "../api";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 
+/** Raw machinery a person can't act on — internal ids and plumbing
+ * flags stay out of the card; the full arguments remain auditable
+ * server-side on the approval itself. */
+const HIDDEN_ARGUMENT_KEYS = new Set(["definitionId", "enabled"]);
+
+const DETAIL_VALUE_MAX_CHARS = 160;
+
+export function approvalDetails(
+  args: Record<string, unknown>,
+): { label: string; value: string }[] {
+  return Object.entries(args)
+    .filter(([label]) => !HIDDEN_ARGUMENT_KEYS.has(label))
+    .map(([label, value]) => {
+      const text = typeof value === "string" ? value : JSON.stringify(value);
+      return {
+        label,
+        value:
+          text.length > DETAIL_VALUE_MAX_CHARS
+            ? `${text.slice(0, DETAIL_VALUE_MAX_CHARS)}…`
+            : text,
+      };
+    });
+}
+
 export function ActivityBand() {
   const { selectedTenantId } = useBench();
   const queryClient = useQueryClient();
@@ -115,13 +139,7 @@ export function ActivityBand() {
                 id: approval.id,
                 headline: approval.headline,
                 requestedBy: `${approval.agentName} in ${approval.benchName}`,
-                details: Object.entries(approval.arguments).map(
-                  ([label, value]) => ({
-                    label,
-                    value:
-                      typeof value === "string" ? value : JSON.stringify(value),
-                  }),
-                ),
+                details: approvalDetails(approval.arguments),
               };
               const state =
                 approvingId === approval.id
