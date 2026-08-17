@@ -6,6 +6,8 @@
 // asset never materializes a workflow.json, so the definition's asset
 // cannot be the wake source, and `folded-runs` has no launch-body
 // table of its own to read.
+import { eq } from "drizzle-orm";
+import { sessionAsset } from "@intx/db/schema";
 import { deployAtHead, type SourcesOverride } from "./launch";
 import { resolveFoldedRunSessionId } from "./runs";
 import type { FoldedRunsDeps } from "./types";
@@ -37,6 +39,19 @@ export async function wakeFoldedRun(
   const sessionId = await resolveFoldedRunSessionId(deps.db, {
     principalId: params.principalId,
   });
+
+  // A wake redeploys the same instance id the settled occurrence used.
+  // The platform's ordinary launch reserves one `session_asset` manifest
+  // row per (instance, mount path) with no conflict handling — a
+  // duplicate-launch guard that is right for one-shot deployments and
+  // wrong for a folded run, whose whole lifecycle is "settle, then
+  // redeploy this very id". The undeploy that precedes every wake tears
+  // the sidecar workspace down, so the previous occurrence's manifest
+  // rows are stale by construction: clear them here, or the redeploy
+  // dies on the primary key and the conversation goes silent.
+  await deps.db
+    .delete(sessionAsset)
+    .where(eq(sessionAsset.runId, params.instanceId));
 
   const deployAtHeadParams = {
     tenantId: params.tenantId,

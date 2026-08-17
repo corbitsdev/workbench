@@ -86,6 +86,7 @@ export function buildChannelHostWorkflow(
           inference: { sources: input.inferencePreferences ?? [] },
         }),
         timeout: input.turnTimeoutMs,
+        triggers: "unbounded",
       }),
     },
   });

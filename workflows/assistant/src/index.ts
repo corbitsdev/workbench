@@ -195,6 +195,7 @@ export function buildAssistantWorkflow(
           toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
         } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
+        triggers: "unbounded",
       }),
     },
   });

@@ -75,6 +75,8 @@ export type CreateHubChatPlatformDeps = {
   sessionService: SessionService;
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
+  /** See `FoldedRunsDeps.hubPublicKey`. */
+  hubPublicKey: string;
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
@@ -187,6 +189,7 @@ export function createHubChatPlatform(
     assetService: deps.assetService,
     sidecarRouter: deps.sidecarRouter,
     eventCollectors: deps.eventCollectors,
+    hubPublicKey: deps.hubPublicKey,
     ...(deps.credentialCipher !== undefined
       ? { credentialCipher: deps.credentialCipher }
       : {}),
@@ -194,6 +197,7 @@ export function createHubChatPlatform(
 
   const cryptoProviders = createCryptoProviderCache();
   const wakeLogger = getLogger(["chat", "wake"]);
+  const SETTLED_UNDEPLOY_WAIT_MS = 5_000;
 
   // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
   // wake-coalescing logic live entirely in that package, imported as a
@@ -686,6 +690,7 @@ export function createHubChatPlatform(
       // with an attached asset pack, so this has apparently never fired
       // before. Tracked upstream; not fixable from `@corbits/chat`.
       if ((await isFoldedRunSettled(deps.db, run)) && isRoutable(run.address)) {
+        wakeLogger.info`${run.address} has a settled occurrence still resident; undeploying it so this message wakes a fresh one`;
         try {
           await deps.sidecarRouter.sendAgentUndeploy(
             run.address,
@@ -695,8 +700,19 @@ export function createHubChatPlatform(
         } catch (undeployErr) {
           if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
         }
-      }
-      if (lifecycle !== undefined) {
+        // The undeploy is a fire-and-forget frame to the sidecar; the
+        // router only drops the address once the sidecar confirms. Wait
+        // for that (bounded) so the wake below sees an unroutable
+        // address instead of no-op'ing onto the dead occurrence.
+        const undeployDeadline = Date.now() + SETTLED_UNDEPLOY_WAIT_MS;
+        while (isRoutable(run.address) && Date.now() < undeployDeadline) {
+          await sleep(100);
+        }
+        if (isRoutable(run.address)) {
+          wakeLogger.warn`${run.address} stayed routable ${SETTLED_UNDEPLOY_WAIT_MS}ms after undeploy; waking anyway`;
+        }
+        await wakeByAddress(run.address);
+      } else if (lifecycle !== undefined) {
         await lifecycle.ensureAwake(run.address);
       } else if (!isRoutable(run.address)) {
         await wakeByAddress(run.address);

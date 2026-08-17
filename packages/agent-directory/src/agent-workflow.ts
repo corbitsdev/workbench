@@ -332,6 +332,7 @@ export function buildAgentDefinitionWorkflow(
           ? { ...agent, toolPackagePins: input.toolPackagePins }
           : agent,
       timeout: AGENT_DEFINITION_TURN_TIMEOUT_MS,
+      triggers: "unbounded",
     }),
   };
   return input.credentialBindings !== undefined &&

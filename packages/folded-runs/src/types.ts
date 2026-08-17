@@ -30,6 +30,13 @@ export type FoldedRunsDeps = {
    * ciphertext to the provider as its API key.
    */
   credentialCipher?: CredentialCipher;
+  /**
+   * The hub's hex-encoded Ed25519 signing public key — the same value the
+   * sidecar router is created with. `deployAtHead` deploys a folded run
+   * as an explicit single-step workflow (so it can declare the step's
+   * `triggers: "unbounded"` budget) and that deploy carries the hub key.
+   */
+  hubPublicKey: string;
 };
 
 export type SentFoldedMail = {

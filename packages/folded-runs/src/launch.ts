@@ -26,7 +26,11 @@ import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
 import { InferenceSource } from "@intx/types/runtime";
-import type { FoldedBody } from "@intx/workflow-deploy";
+import {
+  wrapHarnessAsSingleStepWorkflow,
+  type FoldedBody,
+} from "@intx/workflow-deploy";
+import { defineWorkflow, step } from "@intx/workflow";
 import type { FoldedRunsDeps } from "./types";
 
 /**
@@ -90,10 +94,16 @@ export function parseSourcesOverride(
  * (`launchFoldedRun`) still own their own failure-path rollback of
  * those rows — this function only throws.
  */
+const FOLDED_STEP_ID = "default";
+
 export async function deployAtHead(
   deps: Pick<
     FoldedRunsDeps,
-    "db" | "sessionService" | "eventCollectors" | "credentialCipher"
+    | "db"
+    | "sessionService"
+    | "eventCollectors"
+    | "credentialCipher"
+    | "hubPublicKey"
   >,
   params: {
     tenantId: string;
@@ -143,23 +153,45 @@ export async function deployAtHead(
     params.instanceId,
   );
 
-  await deps.sessionService.deployInstanceAtHead({
+  const config = {
+    sessionId: params.sessionId,
+    agentId: params.instanceId,
+    tenantId: params.tenantId,
+    principalId: params.principalId,
+    agentAddress: params.triggerAddress,
+    systemPrompt: params.foldedBody.systemPrompt,
+    tools: [],
+    grants: [],
+    sources: resolution.sources,
+    defaultSource: resolution.defaultSource,
+  };
+  const deployContent = { systemPrompt: params.foldedBody.systemPrompt };
+  // A folded run is a conversation: its one step must service every
+  // inbound mail as another turn, never complete after the first. The
+  // platform's `deployInstanceAtHead` wraps the agent as a step with the
+  // default trigger budget of 1 (batch), which is exactly what made every
+  // chat go silent after its first real reply — so the folded launch
+  // builds the same single-step workflow itself, with the budget
+  // declared, and deploys it through the same head deploy.
+  const definition = defineWorkflow({
+    id: `wf_${params.instanceId}`,
+    trigger: { type: "mail", to: params.triggerAddress },
+    steps: {
+      [FOLDED_STEP_ID]: step({
+        agent: wrapHarnessAsSingleStepWorkflow({ config, deployContent }),
+        triggers: "unbounded",
+      }),
+    },
+  });
+  await deps.sessionService.deploySingleStepAtHead({
     agentAddress: params.triggerAddress,
     agentId: params.instanceId,
     runId: params.instanceId,
-    config: {
-      sessionId: params.sessionId,
-      agentId: params.instanceId,
-      tenantId: params.tenantId,
-      principalId: params.principalId,
-      agentAddress: params.triggerAddress,
-      systemPrompt: params.foldedBody.systemPrompt,
-      tools: [],
-      grants: [],
-      sources: resolution.sources,
-      defaultSource: resolution.defaultSource,
-    },
-    deployContent: { systemPrompt: params.foldedBody.systemPrompt },
+    config,
+    deployContent,
+    definition,
+    sources: { [FOLDED_STEP_ID]: resolution.sources },
+    hubPublicKey: deps.hubPublicKey,
     toolPackagePins: params.foldedBody.toolPackagePins,
   });
 }

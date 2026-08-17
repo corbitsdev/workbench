@@ -448,8 +448,9 @@ export async function createHub(config: HubConfig) {
       return lookupFoldedRunReconnectKey(db, agentAddress);
     },
   };
+  const hubPublicKey = hexEncode(signingKey.publicKey);
   const sidecarRouter = createSidecarRouter({
-    hubPublicKey: hexEncode(signingKey.publicKey),
+    hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
     lookups,
   });
@@ -802,6 +803,7 @@ export async function createHub(config: HubConfig) {
     sidecarRouter,
     eventCollectors,
     credentialCipher,
+    hubPublicKey,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
   });
@@ -1327,6 +1329,7 @@ export async function createHub(config: HubConfig) {
             assetService,
             sidecarRouter,
             eventCollectors,
+            hubPublicKey,
             cryptoProviderCache: foldedRunCryptoProviders,
           },
           trigger,
@@ -1454,6 +1457,7 @@ export async function createHub(config: HubConfig) {
       sidecarRouter,
       eventCollectors,
       credentialCipher,
+      hubPublicKey,
     },
     cryptoProviders: createCryptoProviderCache(),
     notify: taskNotifyDeps,
@@ -1651,6 +1655,7 @@ export async function createHub(config: HubConfig) {
     sidecarRouter,
     eventCollectors,
     credentialCipher,
+    hubPublicKey,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
     joinDeliveryChannel: (input) =>

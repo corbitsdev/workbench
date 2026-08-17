@@ -72,6 +72,7 @@ export function buildEchoWorkflow(
           inference: { sources: input.inferencePreferences },
         }),
         timeout: input.turnTimeoutMs,
+        triggers: "unbounded",
       }),
     },
   });
