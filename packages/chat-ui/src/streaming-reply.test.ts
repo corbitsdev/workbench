@@ -152,11 +152,15 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames(null, [MYRA])).toEqual([]);
   });
 
-  test("an active reply names the channel's agent participant", () => {
-    expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual(["Myra"]);
+  test("a pending reply with no tokens names the channel's agent participant", () => {
+    expect(typingAgentNames({ text: "" }, [HUMAN, MYRA])).toEqual(["Myra"]);
+  });
+
+  test("once tokens stream the bubble takes over — the typing line goes quiet", () => {
+    expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual([]);
   });
 
   test("no agent participant on the channel means nobody is named", () => {
-    expect(typingAgentNames({ text: "Hel" }, [HUMAN])).toEqual([]);
+    expect(typingAgentNames({ text: "" }, [HUMAN])).toEqual([]);
   });
 });

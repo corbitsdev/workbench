@@ -577,4 +577,9 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
     const merged = mergeStreamingReply(serverItems, { text: "hi" }, []);
     expect(merged).toBe(serverItems);
   });
+
+  test("a pending reply with no tokens yet renders no ghost bubble — the typing line owns that phase", () => {
+    const merged = mergeStreamingReply(serverItems, { text: "" }, [agent]);
+    expect(merged).toBe(serverItems);
+  });
 });
