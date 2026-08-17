@@ -9,6 +9,7 @@ import {
   type SeedTenantArgs,
   type WorkflowPusher,
 } from "../src/seed";
+import { DEFAULT_SKILLS } from "../src/default-skills";
 import {
   assetRow,
   collector,
@@ -71,6 +72,10 @@ function baseRoutes(method: string, path: string) {
     return { status: 201, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
     return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+  if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`))
+    return { status: 404, data: {} };
+  if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+    return { status: 201, data: {} };
   return undefined;
 }
 
@@ -956,6 +961,105 @@ function catalogOfferingRow(id: string, modelId: string, providerId: string) {
     updatedAt: TIMESTAMP,
   };
 }
+
+describe("default skills seeding", () => {
+  const workflowRoutes = (method: string, path: string) => {
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+      return { status: 201, data: assetRow("ast_1", "echo") };
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    )
+      return { status: 200, data: [] };
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    )
+      return { status: 201, data: deploymentRow("dep_1", "ast_1", "deployed") };
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+    )
+      return { status: 200, data: { runIds: ["run_1"] } };
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+    )
+      return {
+        status: 202,
+        data: {
+          runId: "dep_1",
+          address: `ins_dep_1@${TENANT_DOMAIN}`,
+          messageId: "<m1@workbench.localhost>",
+        },
+      };
+    return undefined;
+  };
+
+  test("a fresh tenant gets every default skill created tenant-scoped", async () => {
+    const { log } = collector();
+    const { push } = recordingPusher();
+    const skillPosts: unknown[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        skillPosts.push(body);
+        return { status: 201, data: {} };
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      return workflowRoutes(method, path);
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(skillPosts.map((b) => (b as { name: string }).name)).toEqual(
+      DEFAULT_SKILLS.map((s) => s.name),
+    );
+    for (const body of skillPosts) {
+      expect(body as object).toMatchObject({ scope: "tenant" });
+      expect((body as { body: string }).body.length).toBeGreaterThan(200);
+    }
+  });
+
+  test("an already-seeded skill is skipped, never re-created", async () => {
+    const { lines, log } = collector();
+    const { push } = recordingPusher();
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 200, data: { skill: {} } };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        throw new Error("must not re-create an existing skill");
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      return workflowRoutes(method, path);
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(lines.some((l) => l.includes("already exists"))).toBe(true);
+  });
+});
 
 describe("seedCatalog", () => {
   test("no apiKey and no placeholderCredential plants only the catalog model", async () => {
