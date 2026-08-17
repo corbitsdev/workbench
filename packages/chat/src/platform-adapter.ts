@@ -761,8 +761,17 @@ export function createHubChatPlatform(
       // exercised a real redeploy-by-address against a live sidecar
       // with an attached asset pack, so this has apparently never fired
       // before. Tracked upstream; not fixable from `@corbits/chat`.
-      if ((await isFoldedRunSettled(deps.db, run)) && isRoutable(run.address)) {
-        wakeLogger.info`${run.address} has a settled occurrence still resident; undeploying it so this message wakes a fresh one`;
+      // A "failed" folded run with its address still routable is the
+      // CL-6203 wreck: the anchored-out survivor of a redeploy-over-live,
+      // holding a WS route while every push it makes is rejected. It
+      // recovers exactly like a settled occurrence — undeploy the
+      // zombie, then wake a fresh one.
+      const residentNeedsReplacing =
+        ((await isFoldedRunSettled(deps.db, run)) ||
+          run.status === "failed") &&
+        isRoutable(run.address);
+      if (residentNeedsReplacing) {
+        wakeLogger.info`${run.address} has a ${run.status === "failed" ? "failed run's zombie" : "settled occurrence"} still resident; undeploying it so this message wakes a fresh one`;
         try {
           await deps.sidecarRouter.sendAgentUndeploy(
             run.address,
