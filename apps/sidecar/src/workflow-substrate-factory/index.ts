@@ -52,11 +52,15 @@ import {
   createWorkflowSpawnSuspendableChild,
   createWorkflowStepInvoker,
   type GrantEvaluator,
+  type LoadParkedApproval,
   type RunWorkflowChildBindings,
   type SubstrateFactory,
   type SubstrateFactoryEnv,
 } from "@intx/workflow-host";
-import { type StepInvoker } from "@intx/workflow";
+import {
+  type ReadParkedApprovalOps,
+  type StepInvoker,
+} from "@intx/workflow";
 
 import {
   createToolBearingAgentFactory,
@@ -76,6 +80,13 @@ import {
   SubstrateConfig,
 } from "./config";
 import { runStepStorageRoot } from "./storage-paths";
+import {
+  readColdParkedApprovalSnapshot,
+  readColdParkedPendingOperations,
+  readWarmParkedApprovalSnapshot,
+  readWarmParkedPendingOperations,
+  toParkedApprovalOps,
+} from "./parked-approvals";
 import { createSidecarStepBuildEnv } from "./step-env";
 
 export { createSidecarStepBuildEnv };
@@ -630,7 +641,64 @@ export function createSidecarSubstrateFactory(
               { recursive: true, force: true },
             );
 
-    const bindingsBase = {
+    // Recover a parked correlation's approval snapshot for the child's
+    // re-registration enumeration (ported from upstream Interchange's
+    // sidecar at the vendored pin). Wired unconditionally (unlike
+    // `cleanupRunStorage`, which is cold-only): a warm agent parks on
+    // approval just as a cold one does, and the branch on `warmKeep`
+    // selects the durable read — cold reads the per-attempt isogit
+    // store, warm reconstructs the agent's durable conversation state
+    // from the substrate.
+    const loadParkedApproval: LoadParkedApproval = ({
+      runId,
+      stepId,
+      attempt,
+      correlationId,
+    }) =>
+      env.spawn.warmKeep
+        ? readWarmParkedApprovalSnapshot({
+            substrate,
+            workflowRunRepoId,
+            stepId,
+            correlationId,
+          })
+        : readColdParkedApprovalSnapshot({
+            dataDir: validated.SIDECAR_DATA_DIR,
+            workflowRunRepoId,
+            runId,
+            stepId,
+            attempt,
+            correlationId,
+          });
+
+    // Enumerate a crashed step's durable pending approval operations for
+    // the resume classifier, off the same cold/warm durable read as
+    // `loadParkedApproval`. Where that binding is a lookup by a known
+    // correlationId (answering the supervisor's re-registration), this is
+    // the enumeration the classifier needs when the correlationId never
+    // reached the log — the crash-across-park case.
+    const readParkedApprovalOps: ReadParkedApprovalOps = async ({
+      runId,
+      stepId,
+      attempt,
+    }) =>
+      toParkedApprovalOps(
+        env.spawn.warmKeep
+          ? await readWarmParkedPendingOperations({
+              substrate,
+              workflowRunRepoId,
+              stepId,
+            })
+          : await readColdParkedPendingOperations({
+              dataDir: validated.SIDECAR_DATA_DIR,
+              workflowRunRepoId,
+              runId,
+              stepId,
+              attempt,
+            }),
+      );
+
+    const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
       workflowRunRef: validated.WORKFLOW_RUN_REF,
@@ -643,11 +711,10 @@ export function createSidecarSubstrateFactory(
       spawnSuspendableChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
+      loadParkedApproval,
+      readParkedApprovalOps,
+      ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
-    const bindings: RunWorkflowChildBindings =
-      cleanupRunStorage !== undefined
-        ? { ...bindingsBase, cleanupRunStorage }
-        : bindingsBase;
     return bindings;
   };
 }
