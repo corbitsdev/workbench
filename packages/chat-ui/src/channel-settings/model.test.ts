@@ -10,7 +10,6 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
       "danger",
     ]);
@@ -22,7 +21,6 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
     ]);
   });
@@ -32,7 +30,6 @@ describe("channelSettingsSections", () => {
       "general",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
     ]);
   });
@@ -43,7 +40,6 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
     ]);
   });
@@ -55,7 +51,6 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
       "danger",
     ]);
@@ -80,7 +75,6 @@ describe("channelSettingsSections", () => {
       "assistant",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
       "danger",
     ]);
@@ -95,8 +89,31 @@ describe("channelSettingsSections", () => {
       "assistant",
       "keys-plugins",
       "inference",
-      "capacity",
       "notifications",
+    ]);
+  });
+
+  test("Capacity is absent by default — this server has no isolated capacity to offer", () => {
+    expect(channelSettingsSections("chat").map((s) => s.id)).not.toContain(
+      "capacity",
+    );
+    expect(channelSettingsSections("channel").map((s) => s.id)).not.toContain(
+      "capacity",
+    );
+  });
+
+  test("Capacity appears, after Notifications, when this server offers it", () => {
+    expect(
+      channelSettingsSections("channel", false, false, true).map((s) => s.id),
+    ).toEqual([
+      "general",
+      "members",
+      "agents",
+      "keys-plugins",
+      "inference",
+      "notifications",
+      "capacity",
+      "danger",
     ]);
   });
 
@@ -123,9 +140,14 @@ describe("channelSettingsSections", () => {
       "shared",
       "shared",
       "shared",
-      "shared",
       "personal",
       "danger",
     ]);
+  });
+
+  test("Capacity is grouped Shared even though it sits after Notifications in the list", () => {
+    const withCapacity = channelSettingsSections("channel", false, false, true);
+    const capacity = withCapacity.find((s) => s.id === "capacity");
+    expect(capacity?.group).toBe("shared");
   });
 });

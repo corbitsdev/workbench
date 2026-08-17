@@ -43,6 +43,9 @@ function stubFetch(options: {
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
     }
+    if (/\/sidecar-placement$/.test(path)) {
+      return json({ enabled: false, provisionerAvailable: false });
+    }
     const removeMatch = /\/chat\/channels\/[^/]+\/participants\/([^/]+)$/.exec(
       path,
     );

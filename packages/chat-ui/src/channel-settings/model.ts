@@ -44,11 +44,18 @@ export type ChannelSettingsSection = {
  * nothing to show — no name, no instructions — until a real agent is
  * there to edit. Defaults to `false`, an inert control being worse
  * than a hidden one.
+ *
+ * `hasCapacity` gates Capacity the same way: this server's provisioner
+ * either can or cannot run a workbench's agents on their own machine —
+ * a fact this server decides once for everyone, never per conversation
+ * — so a server without one has nothing here to configure. Defaults to
+ * `false`, hidden until the caller confirms the feature is live.
  */
 export function channelSettingsSections(
   channelKind: string,
   isDm = false,
   hasAgent = false,
+  hasCapacity = false,
 ): readonly ChannelSettingsSection[] {
   const sections: ChannelSettingsSection[] = [
     {
@@ -90,16 +97,18 @@ export function channelSettingsSections(
       group: "shared",
     },
     {
-      id: "capacity",
-      label: CHAT_STRINGS.channelSettingsSectionCapacity,
-      group: "shared",
-    },
-    {
       id: "notifications",
       label: CHAT_STRINGS.channelSettingsSectionNotifications,
       group: "personal",
     },
   );
+  if (hasCapacity) {
+    sections.push({
+      id: "capacity",
+      label: CHAT_STRINGS.channelSettingsSectionCapacity,
+      group: "shared",
+    });
+  }
   if (channelKind !== "chat") {
     sections.push({
       id: "danger",
