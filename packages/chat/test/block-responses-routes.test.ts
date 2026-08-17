@@ -258,6 +258,65 @@ describe("block response routes — anti-hijack scope", () => {
   });
 });
 
+describe("block response routes — question answers", () => {
+  test("answering a question posts the answer into the channel as the responder's own message", async () => {
+    const platform = fakePlatform();
+    const deps = buildDeps({
+      platform,
+      blockResponses: createInMemoryBlockResponseStore(),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const channelId = await newChannel(deps.store);
+
+    const post = await app.request(
+      responsesUrl(channelId, "m1", "blk_question1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "question",
+          answer: "Production",
+          optionIndex: 1,
+        }),
+      },
+    );
+    expect(post.status).toBe(200);
+
+    // Two mail sends land: the answer-as-message, and the block.response
+    // event -- both authored by the responding principal.
+    expect(platform.sentMail).toHaveLength(2);
+    expect(
+      platform.sentMail.every((mail) => mail.principalId === "prn_alice"),
+    ).toBe(true);
+
+    const get = await getResponses(app, channelId, "m1", "blk_question1");
+    const body = (await get.json()) as { own: unknown };
+    expect(body.own).toEqual({
+      kind: "question",
+      answer: "Production",
+      optionIndex: 1,
+    });
+  });
+
+  test("a question response without answer text is rejected", async () => {
+    const deps = buildDeps({
+      blockResponses: createInMemoryBlockResponseStore(),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const channelId = await newChannel(deps.store);
+
+    const post = await app.request(
+      responsesUrl(channelId, "m1", "blk_question1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "" }),
+      },
+    );
+    expect(post.status).toBe(400);
+  });
+});
+
 describe("block response routes — block.response event", () => {
   test("a response appends a machine-readable event into the channel's own mail", async () => {
     const platform = fakePlatform();

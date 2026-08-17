@@ -5,7 +5,7 @@
 // update land exactly as `POST /channels/:id/invite` produces them).
 // Reuses `./test-support.ts`'s `TENANT`/`fakePlatform` and
 // `createInMemoryChatStore`, matching `channel-service.test.ts`'s style.
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 
 import { createInMemoryChatStore } from "../src/store";
@@ -125,4 +125,85 @@ test("invites the named definition into the caller's own channel, resolved from 
     { address: RUN_ADDRESS, handle: "myra" },
     { address: "ins_invited1@acme.example", handle: "echo" },
   ]);
+});
+
+describe("POST /participants/messages", () => {
+  test("is a 401 without a recognized run credential", async () => {
+    const app = buildApp();
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi" }] }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  test("a run whose address is not a participant of any channel is a 404", async () => {
+    const app = buildApp();
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi" }] }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  test("an invalid body is a 400", async () => {
+    const store = createInMemoryChatStore();
+    await store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: "chan_1",
+      settings: {
+        "chat/kind": "channel",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+      },
+      updatedBy: "prn_1",
+    });
+    const app = buildApp({ store });
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ parts: "not an array" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("posts a question block into the caller's own channel as the run's own message", async () => {
+    const store = createInMemoryChatStore();
+    await store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: "chan_1",
+      settings: {
+        "chat/kind": "channel",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+      },
+      updatedBy: "prn_1",
+    });
+    const platform = fakePlatform();
+
+    const app = buildApp({ store, platform });
+    const questionBlock = {
+      kind: "block",
+      block: {
+        type: "question",
+        data: {
+          questionId: "q_1",
+          question: "Which environment?",
+          options: ["Staging", "Production"],
+        },
+      },
+    };
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ parts: [questionBlock] }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { id: string; createdAt: string };
+    expect(typeof body.id).toBe("string");
+    expect(platform.sentMail.length).toBeGreaterThanOrEqual(1);
+    expect(platform.sentMail[0]?.principalId).toBe("prn_1");
+    expect(platform.sentMail[0]?.channelId).toBe("chan_1");
+  });
 });

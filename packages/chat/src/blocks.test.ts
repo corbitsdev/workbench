@@ -274,11 +274,97 @@ describe("parseBlock hostile inputs", () => {
   });
 
   test("non-object data for every known type fails cleanly", () => {
-    for (const t of ["approve", "steps", "metrics", "poll", "form", "stream"]) {
+    for (const t of [
+      "approve",
+      "steps",
+      "metrics",
+      "poll",
+      "form",
+      "stream",
+      "question",
+    ]) {
       for (const data of [null, undefined, 0, "s", [], () => {}]) {
         const result = parseBlock({ type: t, data });
         expect(result.ok).toBe(false);
       }
     }
+  });
+});
+
+describe("parseBlock — question", () => {
+  test("round-trips a question with lettered options and no free text", () => {
+    const result = parseBlock({
+      type: "question",
+      data: {
+        questionId: "q_fixture1",
+        question: "Which environment should this deploy to?",
+        subtitle: "Pick the closest match.",
+        options: ["Staging", "Production", "Canary"],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    expect(result.block.type).toBe("question");
+    if (result.block.type !== "question") throw new Error("wrong type");
+    expect(result.block.data.options).toEqual([
+      "Staging",
+      "Production",
+      "Canary",
+    ]);
+    expect(result.block.data.allowFreeText).toBeUndefined();
+  });
+
+  test("round-trips allowFreeText", () => {
+    const result = parseBlock({
+      type: "question",
+      data: {
+        questionId: "q_fixture2",
+        question: "What should we call the new agent?",
+        options: ["Myra", "Otto"],
+        allowFreeText: true,
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "question") throw new Error("wrong type");
+    expect(result.block.data.allowFreeText).toBe(true);
+  });
+
+  test("rejects fewer than 2 options", () => {
+    const result = parseBlock({
+      type: "question",
+      data: { questionId: "q1", question: "Q?", options: ["only one"] },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects more than 6 options", () => {
+    const result = parseBlock({
+      type: "question",
+      data: {
+        questionId: "q1",
+        question: "Q?",
+        options: ["a", "b", "c", "d", "e", "f", "g"],
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("strips undeclared keys", () => {
+    const result = parseBlock({
+      type: "question",
+      data: {
+        questionId: "q1",
+        question: "Q?",
+        options: ["a", "b"],
+        tally: { a: 99 },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "question") throw new Error("wrong type");
+    expect(
+      (result.block.data as Record<string, unknown>)["tally"],
+    ).toBeUndefined();
   });
 });
