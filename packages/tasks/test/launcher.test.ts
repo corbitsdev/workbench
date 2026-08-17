@@ -213,6 +213,9 @@ function storeOverInserts(db: {
     async linkPlannerRun() {
       throw new Error("launchTask never calls linkPlannerRun");
     },
+    async recordChannel() {
+      throw new Error("launchTask never calls recordChannel");
+    },
     async listLegs(tenantId, taskId) {
       return legsOf(taskId).filter((leg) => leg.tenantId === tenantId);
     },

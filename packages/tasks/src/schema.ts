@@ -62,6 +62,11 @@ export const task = tasksSchema.table("task", {
   runId: text("run_id").notNull(),
   resultMailId: text("result_mail_id"),
   plannerRunId: text("planner_run_id"),
+  /** The channel this task's dispatch originated from — set when
+   * `dispatch_task` fires from inside a workbench, so completion can
+   * post its result back there instead of only the Inbox. Null for a
+   * task launched with no channel context (a direct planner-API call). */
+  channelId: text("channel_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

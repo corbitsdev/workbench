@@ -41,6 +41,9 @@ export interface TaskRecord {
   readonly stepCount: number;
   readonly resultMailId: string | null;
   readonly plannerRunId: string | null;
+  /** The channel this task was dispatched from, when it was dispatched
+   * from inside a workbench — null for a direct planner-API launch. */
+  readonly channelId: string | null;
   readonly createdAt: Date;
   readonly completedAt: Date | null;
 }
@@ -82,6 +85,7 @@ export interface CreateTaskInput {
   readonly prompt: string;
   readonly modelPreference: string | null;
   readonly plannerRunId?: string | null;
+  readonly channelId?: string | null;
   readonly runId: string;
   readonly createdAt?: Date;
   /** Legs after the first, in the order they will be handed through. */
@@ -99,6 +103,12 @@ export interface RecordResultMailInput {
   readonly tenantId: string;
   readonly id: string;
   readonly resultMailId: string;
+}
+
+export interface RecordChannelInput {
+  readonly tenantId: string;
+  readonly id: string;
+  readonly channelId: string;
 }
 
 export interface LinkPlannerRunInput {
@@ -163,6 +173,10 @@ export interface TaskStore {
   completeTask(input: CompleteTaskInput): Promise<TaskRecord | null>;
   /** Stamps the delivered inbox mail id onto an already-completed task. */
   recordResultMail(input: RecordResultMailInput): Promise<void>;
+  /** Stamps the originating channel onto a task dispatched from inside
+   * a workbench — set once, right after dispatch, by the caller that
+   * resolved the dispatching run's own channel. */
+  recordChannel(input: RecordChannelInput): Promise<void>;
   /**
    * Stamps the planner run id onto a task that a planner dispatched on
    * the caller's behalf — set once, immediately after `launchTask`
@@ -264,6 +278,7 @@ function toRecord(
     stepCount: ordered.length,
     resultMailId: row.resultMailId,
     plannerRunId: row.plannerRunId,
+    channelId: row.channelId,
     createdAt: row.createdAt,
     completedAt: row.completedAt,
   };
@@ -373,6 +388,7 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
             runId: input.runId,
             resultMailId: null,
             plannerRunId: input.plannerRunId ?? null,
+            channelId: input.channelId ?? null,
             createdAt,
             completedAt: null,
           })
@@ -450,6 +466,13 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
       await db
         .update(task)
         .set({ plannerRunId: input.plannerRunId })
+        .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)));
+    },
+
+    async recordChannel(input) {
+      await db
+        .update(task)
+        .set({ channelId: input.channelId })
         .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)));
     },
 
@@ -622,6 +645,7 @@ export function createMemoryTaskStore(): TaskStore {
         runId: input.runId,
         resultMailId: null,
         plannerRunId: input.plannerRunId ?? null,
+        channelId: input.channelId ?? null,
         createdAt,
         completedAt: null,
       };
@@ -700,6 +724,12 @@ export function createMemoryTaskStore(): TaskStore {
       const row = tasks.get(input.id);
       if (row === undefined || row.tenantId !== input.tenantId) return;
       tasks.set(row.id, { ...row, plannerRunId: input.plannerRunId });
+    },
+
+    async recordChannel(input) {
+      const row = tasks.get(input.id);
+      if (row === undefined || row.tenantId !== input.tenantId) return;
+      tasks.set(row.id, { ...row, channelId: input.channelId });
     },
 
     async listLegs(tenantId, taskId) {

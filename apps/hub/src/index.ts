@@ -66,6 +66,7 @@ import {
   createDrizzleWriteClaimStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  findExistingAgentChat,
   createWorkflowParticipantRoutes,
   isChannelHostDefinitionName,
   listConnectedProviders,
@@ -1509,6 +1510,32 @@ export async function createHub(config: HubConfig) {
     notify: taskNotifyDeps,
     recordActivity: (address) => taskLifecycle.recordActivity(address),
     launchLeg: (input) => launchTaskLeg(taskLauncherDeps, input),
+    channel: {
+      async post({ tenantId, channelId, text }) {
+        await chatPlatform.sendMail({
+          tenantId,
+          channelId,
+          fromChannelId: channelId,
+          content: { content: text },
+        });
+      },
+      async resolveFallbackChannelId(tenantId) {
+        try {
+          const myraDefinitionId = await resolveMyraDefinitionIdFromDb(
+            db,
+            tenantId,
+          );
+          const chat = await findExistingAgentChat(
+            { store: chatStore, platform: chatPlatform, tenancy: chatTenancy },
+            tenantId,
+            myraDefinitionId,
+          );
+          return chat?.channelId;
+        } catch {
+          return undefined;
+        }
+      },
+    },
   });
   // A hand-off claimed by a process that died has no one left to
   // redeliver it, so a periodic pass gives up on it and tells the
@@ -2254,6 +2281,7 @@ export async function createHub(config: HubConfig) {
         resolveMyraDefinitionIdFromDb(db, tenantId),
       taskLauncherDeps,
       store: taskStore,
+      chatStore,
       deployAgentDefinition,
       undeployAgentDefinition,
       requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {

@@ -50,6 +50,7 @@ import type {
   WorkflowCapabilityRunAuthenticator,
   WorkflowCapabilityRunScope,
 } from "@corbits/agent-directory";
+import type { ChatStore } from "@corbits/chat";
 
 import {
   PlannerMyraUnavailableError,
@@ -78,7 +79,9 @@ export type WorkflowDispatchRunScope = WorkflowCapabilityRunScope;
 export type WorkflowRunAuthenticator = WorkflowCapabilityRunAuthenticator;
 
 export type WorkflowDispatchEnv = {
-  Variables: { workflowDispatchScope: WorkflowDispatchRunScope };
+  Variables: {
+    workflowDispatchScope: WorkflowDispatchRunScope & { address: string };
+  };
 };
 
 /** The `{use}`-only arm of `spawnFromTaskSpec`'s `input.inventory` never
@@ -132,6 +135,14 @@ const DispatchBody = type({
 
 export type CreateWorkflowDispatchRoutesDeps = {
   readonly authenticator: WorkflowRunAuthenticator;
+  /**
+   * Resolves the dispatching run's own channel, so a task's completion
+   * can post its result back into the workbench it was dispatched
+   * from, not only the Inbox — see `@corbits/tasks`' orchestrator.
+   * Only the one method `workflow-participant-routes.ts` already
+   * depends on for the same "caller's own channel" lookup.
+   */
+  readonly chatStore: Pick<ChatStore, "findChannelByParticipantAddress">;
 } & SpawnDeps &
   PlannerRunDeps;
 
@@ -193,7 +204,7 @@ export function createWorkflowDispatchRoutes(
         401,
       );
     }
-    c.set("workflowDispatchScope", scope);
+    c.set("workflowDispatchScope", { ...scope, address });
     await next();
   });
 
@@ -220,6 +231,23 @@ export function createWorkflowDispatchRoutes(
           ? { agentDefinitionId: body.agentDefinitionId }
           : {}),
       });
+
+      // Best-effort: a task this dispatch itself just launched must
+      // never fail on the back of a channel lookup — an unresolved
+      // channel simply leaves the task's completion to the Inbox/Myra
+      // fallback, same as a task launched with no channel context at
+      // all.
+      const originChannel = await deps.chatStore
+        .findChannelByParticipantAddress(scope.tenantId, scope.address)
+        .catch(() => undefined);
+      if (originChannel !== undefined) {
+        await deps.store.recordChannel({
+          tenantId: scope.tenantId,
+          id: task.id,
+          channelId: originChannel.channelId,
+        });
+      }
+
       return c.json({ taskId: task.id }, 201);
     } catch (err) {
       log.error`workflow task dispatch failed for tenant ${scope.tenantId}: ${

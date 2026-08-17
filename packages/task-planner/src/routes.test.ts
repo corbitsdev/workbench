@@ -56,6 +56,7 @@ const RESULT: DispatchWithPlannerResult = {
     stepCount: 1,
     resultMailId: null,
     plannerRunId: "wfr_planner_1",
+    channelId: null,
     createdAt: new Date(),
     completedAt: null,
   },

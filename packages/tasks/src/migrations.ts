@@ -125,6 +125,12 @@ export const tasksMigrations: readonly TaskMigration[] = [
         WHERE "run_id" IS NOT NULL AND "started_at" IS NULL;
     `,
   },
+  {
+    name: "0006_task_channel_id",
+    sql: `
+      ALTER TABLE "tasks"."task" ADD COLUMN IF NOT EXISTS "channel_id" text;
+    `,
+  },
 ];
 
 /**
