@@ -23,6 +23,7 @@
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import {
   inferenceCredentialName,
+  OLLAMA_PLACEHOLDER_SECRET,
   parseAs,
   seedCatalog,
   testProviderCredential,
@@ -55,6 +56,13 @@ export const PROVIDER_ENV_VARS: Readonly<
   deepseek: ["DEEPSEEK_API_KEY"],
   mistral: ["MISTRAL_API_KEY"],
   huggingface: ["HUGGINGFACE_API_KEY"],
+  // Not a secret — see `OLLAMA_PLACEHOLDER_SECRET`. Listed here so the
+  // env-var-per-provider convention this map documents stays complete;
+  // `envProviderKeysFrom`/`envProviderBaseUrlsFrom` below give this one
+  // provider's entry different treatment: presence plants the fixed
+  // placeholder secret, and the value itself is read separately as the
+  // instance's base URL.
+  ollama: ["OLLAMA_BASE_URL"],
 };
 
 /**
@@ -62,6 +70,10 @@ export const PROVIDER_ENV_VARS: Readonly<
  * matching name wins per provider. Pure and side-effect-free so a
  * caller (the hub's own `readHubConfig`) can arktype-parse the
  * individual variables first and still land on this same mapping.
+ * `ollama` is the one provider whose env var is not itself a secret:
+ * `OLLAMA_BASE_URL`'s mere presence plants the fixed
+ * `OLLAMA_PLACEHOLDER_SECRET`, never the URL itself — the URL is read
+ * separately by `envProviderBaseUrlsFrom`.
  */
 export function envProviderKeysFrom(
   env: Record<string, string | undefined>,
@@ -74,12 +86,31 @@ export function envProviderKeysFrom(
     for (const name of names) {
       const value = env[name];
       if (value !== undefined && value.length > 0) {
-        keys[provider] = value;
+        keys[provider] =
+          provider === "ollama" ? OLLAMA_PLACEHOLDER_SECRET : value;
         break;
       }
     }
   }
   return keys;
+}
+
+/**
+ * The base-URL counterpart to `envProviderKeysFrom`: every curated
+ * provider has a fixed origin except `ollama`, whose `OLLAMA_BASE_URL`
+ * env var names the actual instance (local or tailscale-tunneled) to
+ * plant a credential against. Empty for every other provider — this map
+ * only ever carries the one entry today.
+ */
+export function envProviderBaseUrlsFrom(
+  env: Record<string, string | undefined>,
+): Partial<Record<SupportedCredentialProvider, string>> {
+  const baseUrls: Partial<Record<SupportedCredentialProvider, string>> = {};
+  const value = env["OLLAMA_BASE_URL"];
+  if (value !== undefined && value.length > 0) {
+    baseUrls.ollama = value;
+  }
+  return baseUrls;
 }
 
 export type PlantEnvProviderCredentialsOutcome = {
@@ -109,6 +140,11 @@ export type PlantEnvProviderCredentialsArgs = {
   tenantId: string;
   /** provider -> API key, e.g. from `envProviderKeysFrom`. */
   envProviderKeys: Partial<Record<SupportedCredentialProvider, string>>;
+  /** provider -> configured base URL, e.g. from `envProviderBaseUrlsFrom`.
+   * Only `ollama` ever carries an entry today; every other provider's
+   * probe and seed run against its own fixed origin regardless of what
+   * (if anything) this map holds for it. */
+  envProviderBaseUrls?: Partial<Record<SupportedCredentialProvider, string>>;
   /** One line per provider: name, outcome, and (on failure) a probe
    * error summary — never the key. */
   log: (line: string) => void;
@@ -196,7 +232,12 @@ export async function plantEnvProviderCredentials(
       continue;
     }
 
-    const probe = await testCredential({ provider, apiKey });
+    const baseURL = args.envProviderBaseUrls?.[provider];
+    const probe = await testCredential(
+      baseURL !== undefined
+        ? { provider, apiKey, baseURL }
+        : { provider, apiKey },
+    );
     if (!probe.ok) {
       const sanitized = sanitizeProviderMessage(probe.message);
       args.log(`env credential plant: ${provider} probe failed: ${sanitized}`);
@@ -204,20 +245,33 @@ export async function plantEnvProviderCredentials(
       continue;
     }
 
+    const suppressedLog = () => {
+      // seedCatalog's own step-by-step log is suppressed here: this
+      // module reports exactly one summary line per provider below,
+      // never the per-row created/skipped detail seedCatalog logs for
+      // its other callers (`workbench seed`, the guided step).
+    };
+    const seedCatalogArgs: SeedCatalogArgs =
+      baseURL !== undefined
+        ? {
+            api: args.api,
+            cookies: args.cookies,
+            tenantId: args.tenantId,
+            provider,
+            apiKey,
+            baseURLOverride: baseURL,
+            log: suppressedLog,
+          }
+        : {
+            api: args.api,
+            cookies: args.cookies,
+            tenantId: args.tenantId,
+            provider,
+            apiKey,
+            log: suppressedLog,
+          };
     try {
-      await runSeedCatalog({
-        api: args.api,
-        cookies: args.cookies,
-        tenantId: args.tenantId,
-        provider,
-        apiKey,
-        log: () => {
-          // seedCatalog's own step-by-step log is suppressed here: this
-          // module reports exactly one summary line per provider below,
-          // never the per-row created/skipped detail seedCatalog logs
-          // for its other callers (`workbench seed`, the guided step).
-        },
-      });
+      await runSeedCatalog(seedCatalogArgs);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       args.log(`env credential plant: ${provider} failed to plant: ${message}`);

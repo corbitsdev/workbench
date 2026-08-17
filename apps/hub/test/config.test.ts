@@ -36,6 +36,7 @@ describe("readHubConfig", () => {
       allowUnverifiedEmails: false,
       sidecarProvisioner: { kind: "none" },
       envProviderKeys: {},
+      envProviderBaseUrls: {},
       envCredentialPlantAdmin: {
         email: "alice@example.com",
         password: "password123",
@@ -68,6 +69,15 @@ describe("readHubConfig", () => {
         GOOGLE_API_KEY: "google-key",
       });
       expect(config.envProviderKeys["google-genai"]).toBe("gemini-key");
+    });
+
+    test("OLLAMA_BASE_URL plants the fixed placeholder secret and its own base URL", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        OLLAMA_BASE_URL: "http://localhost:11434",
+      });
+      expect(config.envProviderKeys.ollama).toBe("ollama");
+      expect(config.envProviderBaseUrls.ollama).toBe("http://localhost:11434");
     });
   });
 

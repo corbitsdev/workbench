@@ -42,6 +42,10 @@ export type {
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
 export {
+  fetchOllamaModelCatalog,
+  ollamaApiRoot,
+  ollamaOpenAICompatBaseURL,
+  OLLAMA_PLACEHOLDER_SECRET,
   providerModelSource,
   supportedCredentialProviders,
   testProviderCredential,
@@ -49,6 +53,7 @@ export {
 export type {
   AdapterPluginId,
   CredentialTestResult,
+  OllamaCatalogModel,
   ProviderModelSource,
   ProviderTestConfig,
   SupportedCredentialProvider,

@@ -273,6 +273,16 @@ export type CredentialProviderCard = {
   readonly description: string;
   readonly keyConsoleUrl: string;
   readonly keyHint: string;
+  /**
+   * Absent (the default) means this card's single field collects an API
+   * key. `"url"` means it collects the origin of an already-running
+   * instance instead — Ollama needs no key at all — and
+   * `urlDefaultValue` prefills that field. `submitCredential` sends the
+   * fixed `OLLAMA_PLACEHOLDER_SECRET` as `apiKey` and this value as
+   * `baseURL` for any `"url"` card; see that function's own doc.
+   */
+  readonly fieldKind?: "url";
+  readonly urlDefaultValue?: string;
 };
 
 /** The six the wizard leads with — the providers most people reach for
@@ -355,6 +365,15 @@ export const SECONDARY_CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] =
       keyConsoleUrl: "https://huggingface.co/settings/tokens/new",
       keyHint: "hf_",
     },
+    {
+      id: "ollama",
+      label: "Ollama (local)",
+      description: "Ollama (local) — runs models on your machine.",
+      keyConsoleUrl: "https://ollama.com",
+      keyHint: "",
+      fieldKind: "url",
+      urlDefaultValue: "http://localhost:11434",
+    },
   ];
 
 /** Every provider card, primary row first — the flat list a lookup by id
@@ -391,11 +410,16 @@ async function postOnboarding(
   path: string,
   provider: CredentialProvider,
   apiKey: string,
+  baseURL?: string,
 ): Promise<{ readonly response: Response; readonly body: unknown }> {
   const response = await fetch(`/api/onboarding/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider, apiKey }),
+    body: JSON.stringify(
+      baseURL !== undefined
+        ? { provider, apiKey, baseURL }
+        : { provider, apiKey },
+    ),
   });
   const body: unknown = await response.json().catch(() => null);
   return { response, body };
@@ -422,16 +446,23 @@ function readErrorEnvelope(
  * is caught later, the first time it's actually dialed, and surfaces
  * in-chat through the credential-error + "Fix this connection" flow
  * (CL-6092) — not here.
+ *
+ * `baseURL` is the configurable-base-URL seam Ollama's card uses
+ * (`CredentialProviderCard.fieldKind === "url"`): the field's value is
+ * sent here, never as `apiKey` — `apiKey` for that one provider is
+ * always `OLLAMA_PLACEHOLDER_SECRET`, since Ollama has no key to paste.
  */
 export async function submitCredential(
   provider: CredentialProvider,
   apiKey: string,
+  baseURL?: string,
 ): Promise<CredentialOutcome> {
   try {
     const { response, body } = await postOnboarding(
       "complete",
       provider,
       apiKey,
+      baseURL,
     );
     if (!response.ok) {
       const message = readErrorEnvelope(

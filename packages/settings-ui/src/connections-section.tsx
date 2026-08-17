@@ -566,8 +566,14 @@ export function ConnectorCredentialDialog({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const isUrlField = descriptor?.credentialInputKind === "url";
+
   useEffect(() => {
-    setApiKey("");
+    setApiKey(
+      descriptor?.credentialInputKind === "url"
+        ? (descriptor.credentialPlaceholder ?? "")
+        : "",
+    );
     setShowKey(false);
     setSubmitting(false);
     setSubmitError(null);
@@ -630,10 +636,13 @@ export function ConnectorCredentialDialog({
         </DialogHeader>
         <DialogBody className="settings-form-stack">
           <div className="settings-form-field">
-            <span>{SETTINGS_STRINGS.connectionsKeyLabel}</span>
-            <div className="settings-secret-row">
+            <span>
+              {isUrlField ? "URL" : SETTINGS_STRINGS.connectionsKeyLabel}
+            </span>
+            {isUrlField ? (
               <Input
-                type={showKey ? "text" : "password"}
+                type="text"
+                placeholder={descriptor?.credentialPlaceholder}
                 value={apiKey}
                 onChange={(event) => {
                   setApiKey(event.target.value);
@@ -641,15 +650,27 @@ export function ConnectorCredentialDialog({
                 }}
                 autoComplete="off"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowKey((value) => !value)}
-              >
-                {showKey ? "Hide" : "Show"}
-              </Button>
-            </div>
+            ) : (
+              <div className="settings-secret-row">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setSubmitError(null);
+                  }}
+                  autoComplete="off"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowKey((value) => !value)}
+                >
+                  {showKey ? "Hide" : "Show"}
+                </Button>
+              </div>
+            )}
           </div>
           {submitError !== null && (
             <p className="settings-inline-error" role="alert">

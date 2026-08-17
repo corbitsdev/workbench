@@ -40,7 +40,10 @@
 // paste-a-token provider card.
 
 import { type } from "arktype";
-import { envProviderKeysFrom } from "@workbench/onboarding";
+import {
+  envProviderBaseUrlsFrom,
+  envProviderKeysFrom,
+} from "@workbench/onboarding";
 import type { SupportedCredentialProvider } from "@workbench/hub-client";
 
 const HTTP_URL = /^https?:\/\/.+$/;
@@ -112,6 +115,9 @@ const HubEnv = type({
   "HUGGINGFACE_API_KEY?": type("string > 0").describe(
     "your Hugging Face router API token; optional, auto-plants a probed catalog credential on the operator bench at hub start",
   ),
+  "OLLAMA_BASE_URL?": type("string > 0").describe(
+    "the origin your local (or tailscale-tunneled) Ollama instance listens on, e.g. http://localhost:11434; optional, auto-plants a probed catalog credential (no key required) on the operator bench at hub start",
+  ),
   "HUB_ADMIN_EMAIL?": type(/^[^@\s]+@[^@\s]+$/).describe(
     "the administrator account the env-key auto-plant signs in as to find the operator bench; same identity `workbench setup`/`workbench seed` use — unset falls back to alice@example.com, the same default those commands use",
   ),
@@ -119,7 +125,7 @@ const HubEnv = type({
     "the administrator password the env-key auto-plant signs in with; unset falls back to password123, the same default `workbench setup`/`workbench seed` use",
   ),
   "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    "the operator bench slug the env-key auto-plant resolves; same variable `workbench setup`/`workbench seed` read — unset falls back to \"workbench\"",
+    'the operator bench slug the env-key auto-plant resolves; same variable `workbench setup`/`workbench seed` read — unset falls back to "workbench"',
   ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
@@ -224,7 +230,16 @@ export type HubConfig = {
   /** Every curated provider's key found under its conventional env var
    * name (`@workbench/onboarding`'s `PROVIDER_ENV_VARS`). Empty when
    * none are set — the env-key auto-plant then does nothing. */
-  readonly envProviderKeys: Partial<Record<SupportedCredentialProvider, string>>;
+  readonly envProviderKeys: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
+  /** The configured base URL for whichever curated providers carry one
+   * (`OLLAMA_BASE_URL` today, the only such provider). Empty when unset
+   * — the env-key auto-plant then probes and seeds ollama, if present in
+   * `envProviderKeys`, against its own default local origin. */
+  readonly envProviderBaseUrls: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
   /** The identity the env-key auto-plant signs in as to find the
    * operator bench — the same identity `workbench setup`/`workbench
    * seed` use, defaulted the same way when unset. Always populated
@@ -373,6 +388,7 @@ export function readHubConfig(
         : DEFAULT_SIGNUP_RATE_LIMIT_MAX,
     },
     envProviderKeys: envProviderKeysFrom(parsed),
+    envProviderBaseUrls: envProviderBaseUrlsFrom(parsed),
     envCredentialPlantAdmin: {
       email: parsed.HUB_ADMIN_EMAIL ?? DEFAULT_PLANT_ADMIN_EMAIL,
       password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,

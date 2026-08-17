@@ -6,6 +6,9 @@
 // provider.
 import { describe, expect, test } from "bun:test";
 import {
+  fetchOllamaModelCatalog,
+  ollamaApiRoot,
+  ollamaOpenAICompatBaseURL,
   providerModelSource,
   supportedCredentialProviders,
   testProviderCredential,
@@ -26,6 +29,7 @@ describe("supportedCredentialProviders", () => {
       "groq",
       "huggingface",
       "mistral",
+      "ollama",
       "openai",
       "opencode-zen",
       "openrouter",
@@ -44,9 +48,26 @@ describe("providerModelSource", () => {
       "deepseek",
       "mistral",
       "huggingface",
+      "ollama",
     ] as const) {
       expect(providerModelSource(provider).provider).toBe("openai-compatible");
     }
+  });
+
+  test("ollama's default baseURL resolves to the OpenAI-compatible /v1 form", () => {
+    expect(providerModelSource("ollama").baseURL).toBe(
+      "http://localhost:11434/v1",
+    );
+  });
+
+  test("ollama's baseURL override is normalized to the /v1 form regardless of shape", () => {
+    expect(
+      providerModelSource("ollama", "https://home-mac.example.ts.net").baseURL,
+    ).toBe("https://home-mac.example.ts.net/v1");
+    expect(
+      providerModelSource("ollama", "https://home-mac.example.ts.net/v1")
+        .baseURL,
+    ).toBe("https://home-mac.example.ts.net/v1");
   });
 
   test("keeps anthropic, openai, and google-genai on their own adapters", () => {
@@ -312,6 +333,138 @@ describe("testProviderCredential: xai", () => {
     expect(seenMethod).toBe("GET");
     expect(seenUrl).toBe("https://api.x.ai/v1/models");
     expect(seenHeaders["authorization"]).toContain("test-secret-key");
+  });
+});
+
+describe("testProviderCredential: ollama", () => {
+  // Ollama has no auth layer — the probe proves reachability against
+  // GET /api/tags, and a configurable baseURL is the whole point (a
+  // local instance, or one reached through a tailscale tunnel).
+  test("reports ok when the instance is reachable", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({ models: [{ name: "qwen3.8:27b" }] }), {
+        status: 200,
+      });
+
+    const result = await testProviderCredential({
+      provider: "ollama",
+      apiKey: "ollama",
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("reports the instance unreachable when the probe fails to connect", async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+
+    const result = await testProviderCredential({
+      provider: "ollama",
+      apiKey: "ollama",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("ECONNREFUSED");
+  });
+
+  test("probes GET <baseURL>/api/tags against the configured origin, not the default", async () => {
+    let seenUrl = "";
+    let seenMethod = "";
+    const fetchImpl: FetchLike = async (url, init) => {
+      seenUrl = url;
+      seenMethod = init.method;
+      return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    };
+
+    await testProviderCredential({
+      provider: "ollama",
+      apiKey: "ollama",
+      baseURL: "https://home-mac.example.ts.net",
+      fetchImpl,
+    });
+
+    expect(seenMethod).toBe("GET");
+    expect(seenUrl).toBe("https://home-mac.example.ts.net/api/tags");
+  });
+
+  test("defaults to the local origin when no baseURL is given", async () => {
+    let seenUrl = "";
+    const fetchImpl: FetchLike = async (url) => {
+      seenUrl = url;
+      return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    };
+
+    await testProviderCredential({
+      provider: "ollama",
+      apiKey: "ollama",
+      fetchImpl,
+    });
+
+    expect(seenUrl).toBe("http://localhost:11434/api/tags");
+  });
+});
+
+describe("ollamaApiRoot / ollamaOpenAICompatBaseURL", () => {
+  test("strips a trailing /v1 to find the plain root", () => {
+    expect(ollamaApiRoot("http://localhost:11434/v1")).toBe(
+      "http://localhost:11434",
+    );
+    expect(ollamaApiRoot("http://localhost:11434")).toBe(
+      "http://localhost:11434",
+    );
+    expect(ollamaApiRoot("http://localhost:11434/")).toBe(
+      "http://localhost:11434",
+    );
+  });
+
+  test("always appends exactly one /v1", () => {
+    expect(ollamaOpenAICompatBaseURL("http://localhost:11434")).toBe(
+      "http://localhost:11434/v1",
+    );
+    expect(ollamaOpenAICompatBaseURL("http://localhost:11434/v1")).toBe(
+      "http://localhost:11434/v1",
+    );
+  });
+});
+
+describe("fetchOllamaModelCatalog", () => {
+  test("returns the live model list when the instance answers", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          models: [{ name: "qwen3.8:27b" }, { name: "qwen3.5:9b-mlx" }],
+        }),
+        { status: 200 },
+      );
+
+    const models = await fetchOllamaModelCatalog(
+      "http://localhost:11434",
+      fetchImpl,
+    );
+    expect(models).toEqual([
+      { canonicalName: "qwen3.8:27b", displayName: "qwen3.8:27b" },
+      { canonicalName: "qwen3.5:9b-mlx", displayName: "qwen3.5:9b-mlx" },
+    ]);
+  });
+
+  test("returns undefined when the instance is unreachable", async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    expect(
+      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
+    ).toBeUndefined();
+  });
+
+  test("returns undefined when the response carries zero models", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({ models: [] }), { status: 200 });
+    expect(
+      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
+    ).toBeUndefined();
   });
 });
 

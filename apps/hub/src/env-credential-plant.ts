@@ -59,6 +59,7 @@ const log = getLogger(["hub", "env-credential-plant"]);
 export type EnvCredentialPlantDeps = {
   baseUrl: string;
   envProviderKeys: HubConfig["envProviderKeys"];
+  envProviderBaseUrls: HubConfig["envProviderBaseUrls"];
   admin: HubConfig["envCredentialPlantAdmin"];
   /** The fully composed, guarded app's own request entry point. */
   fetch: (request: Request) => Promise<Response>;
@@ -180,6 +181,7 @@ async function attemptPlant(
     cookies: resolved.session.cookies,
     tenantId: resolved.tenantId,
     envProviderKeys: deps.envProviderKeys,
+    envProviderBaseUrls: deps.envProviderBaseUrls,
     log: (line) => log.info`${line}`,
   });
   return { status: "ran", outcomes, session: resolved.session };
@@ -221,7 +223,8 @@ export function scheduleEnvProviderCredentialPlant(
   }
 
   const intervalMs = deps.retryIntervalMs ?? DEFAULT_RETRY_INTERVAL_MS;
-  const maxIntervalMs = deps.maxRetryIntervalMs ?? DEFAULT_MAX_RETRY_INTERVAL_MS;
+  const maxIntervalMs =
+    deps.maxRetryIntervalMs ?? DEFAULT_MAX_RETRY_INTERVAL_MS;
   const giveUpAfterMs = deps.giveUpAfterMs ?? DEFAULT_GIVE_UP_AFTER_MS;
 
   let stopped = false;

@@ -32,6 +32,7 @@ export type {
   PendingSeedStore,
 } from "./pending-seed";
 export {
+  envProviderBaseUrlsFrom,
   envProviderKeysFrom,
   plantEnvProviderCredentials,
   PROVIDER_ENV_VARS,

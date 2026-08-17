@@ -16,6 +16,7 @@
 // factory folded their previously hand-written `packages/onboarding`
 // routes into this registry.
 import {
+  OLLAMA_PLACEHOLDER_SECRET,
   PROVIDER_TEST_CONFIG,
   testProviderCredential,
   type SupportedCredentialProvider,
@@ -54,23 +55,51 @@ const INFERENCE_PROVIDER_DOCS_URL: Readonly<
   mistral: "https://console.mistral.ai/api-keys",
   openrouter: "https://openrouter.ai",
   huggingface: "https://huggingface.co/settings/tokens",
+  ollama: "https://ollama.com",
 };
+
+// Ollama's onboarding URL field default — the local-machine origin
+// Ollama listens on out of the box, before anyone points it at a
+// tailscale-tunneled or otherwise remote instance.
+const OLLAMA_DEFAULT_URL = "http://localhost:11434";
 
 function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
   const entries: Record<string, ConnectorDescriptor> = {};
   for (const [id, config] of Object.entries(PROVIDER_TEST_CONFIG)) {
     if (id === "openrouter" || id === "huggingface") continue;
     const providerId = id as SupportedCredentialProvider;
-    entries[id] = {
-      id,
-      displayName: config.displayName,
-      authKind: "api-key",
-      credentialPlugin: "http",
-      docsUrl: INFERENCE_PROVIDER_DOCS_URL[providerId],
-      feedsTools: [],
-      probe: (apiKey) =>
-        testProviderCredential({ provider: providerId, apiKey }),
-    };
+    // Ollama collects a URL, not a secret — it has no auth layer at all
+    // (see `credential-test.ts`'s own `ollama` config entry). Every
+    // other connector's single form field is a real key, probed and
+    // stored as-is.
+    entries[id] =
+      providerId === "ollama"
+        ? {
+            id,
+            displayName: config.displayName,
+            authKind: "api-key",
+            credentialPlugin: "http",
+            docsUrl: INFERENCE_PROVIDER_DOCS_URL[providerId],
+            feedsTools: [],
+            credentialInputKind: "url",
+            credentialPlaceholder: OLLAMA_DEFAULT_URL,
+            probe: (baseURL) =>
+              testProviderCredential({
+                provider: providerId,
+                apiKey: OLLAMA_PLACEHOLDER_SECRET,
+                baseURL,
+              }),
+          }
+        : {
+            id,
+            displayName: config.displayName,
+            authKind: "api-key",
+            credentialPlugin: "http",
+            docsUrl: INFERENCE_PROVIDER_DOCS_URL[providerId],
+            feedsTools: [],
+            probe: (apiKey) =>
+              testProviderCredential({ provider: providerId, apiKey }),
+          };
   }
   entries["openrouter"] = {
     id: "openrouter",

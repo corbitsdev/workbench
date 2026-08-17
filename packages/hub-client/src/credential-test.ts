@@ -27,7 +27,8 @@ export type SupportedCredentialProvider =
   | "groq"
   | "deepseek"
   | "mistral"
-  | "huggingface";
+  | "huggingface"
+  | "ollama";
 
 /**
  * The inference adapter (`@intx/inference`'s runtime provider registry,
@@ -60,6 +61,17 @@ export type TestProviderCredentialArgs = {
   readonly provider: SupportedCredentialProvider;
   readonly apiKey: string;
   readonly fetchImpl?: FetchLike;
+  /**
+   * Overrides the provider's own `PROVIDER_TEST_CONFIG` base URL for this
+   * one probe. Every curated provider today has a fixed origin, so this
+   * is unused for all of them except `ollama`, whose whole point is
+   * running against whatever origin the person actually pointed their
+   * local (or tailscale-tunneled) Ollama instance at — see this
+   * provider's own config entry below for the URL shape this accepts
+   * (the plain root, e.g. `http://localhost:11434`, never the
+   * OpenAI-compatible `/v1` suffix).
+   */
+  readonly baseURL?: string;
 };
 
 const PROBE_TIMEOUT_MS = 5000;
@@ -85,8 +97,11 @@ export type ProviderTestConfig = {
    * itself validates the key (it never calls this model). */
   readonly probeModel: string;
   /** Builds the free probe request that proves the key without spending a
-   * token: same auth layer a completion would hit, no generation cost. */
-  readonly buildProbeRequest: (apiKey: string) => ProbeRequest;
+   * token: same auth layer a completion would hit, no generation cost.
+   * `baseURL` is the resolved origin for this probe — `config.baseURL`
+   * for every provider except `ollama`, which threads a caller-supplied
+   * override through here (see `TestProviderCredentialArgs.baseURL`). */
+  readonly buildProbeRequest: (apiKey: string, baseURL: string) => ProbeRequest;
   /** Whether this status means "the probe proved the key," overriding the
    * default `response.ok` (2xx) check. Only Opencode Zen's probe needs
    * this: its empty-body POST can never succeed with a 2xx — the gateway
@@ -117,6 +132,46 @@ const GoogleErrorBody = type({ "error?": { "status?": "string" } });
 // instead of matching the shared `ErrorBody` shape below.
 const XaiErrorBody = type({ "code?": "string" });
 
+// Ollama needs no key — it serves whatever is running on the machine (or
+// tunneled origin) it was pointed at with no auth layer at all. Every
+// other provider's credential row stores a real secret; Ollama's stores
+// this instead, so the credential machinery (which assumes every row
+// carries *some* secret) never special-cases "no secret" as a distinct
+// shape. Never a real secret — named so it reads as an obvious
+// placeholder if it ever surfaces in a log line or a bug report.
+export const OLLAMA_PLACEHOLDER_SECRET = "ollama";
+
+const OLLAMA_PROBE_MODEL = "qwen3.8:27b";
+
+function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/**
+ * The plain Ollama origin (no `/v1` suffix) a native endpoint like
+ * `/api/tags` lives at, derived from whatever shape the caller supplied
+ * — the plain root a person types into the onboarding URL field
+ * (`http://localhost:11434`), or the OpenAI-compatible `/v1` form
+ * (`http://localhost:11434/v1`) already stored on a catalog provider row.
+ * Idempotent either way, so a caller never has to know which shape it's
+ * holding before calling this.
+ */
+export function ollamaApiRoot(baseURL: string): string {
+  const trimmed = stripTrailingSlash(baseURL);
+  return trimmed.endsWith("/v1")
+    ? stripTrailingSlash(trimmed.slice(0, -"/v1".length))
+    : trimmed;
+}
+
+/**
+ * The OpenAI-compatible `/v1` origin the `openai-compatible` adapter
+ * actually dials for chat completions, derived from whatever shape the
+ * caller supplied — see `ollamaApiRoot`, which this builds on.
+ */
+export function ollamaOpenAICompatBaseURL(baseURL: string): string {
+  return `${ollamaApiRoot(baseURL)}/v1`;
+}
+
 export const PROVIDER_TEST_CONFIG: Readonly<
   Record<SupportedCredentialProvider, ProviderTestConfig>
 > = {
@@ -125,7 +180,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.anthropic.com",
     adapterPlugin: "anthropic",
     probeModel: "claude-sonnet-5",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.anthropic.com/v1/models",
       headers: { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION },
     }),
@@ -136,7 +191,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.openai.com/v1",
     adapterPlugin: "openai",
     probeModel: "gpt-4o-mini",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.openai.com/v1/models",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -147,7 +202,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://generativelanguage.googleapis.com",
     adapterPlugin: "google-genai",
     probeModel: "gemini-2.5-flash",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
       headers: {},
     }),
@@ -166,7 +221,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.x.ai/v1",
     adapterPlugin: "openai-compatible",
     probeModel: "grok-4.6",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.x.ai/v1/models",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -190,7 +245,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     // `/api/v1/key` is the documented account/key-status endpoint and the
     // one OpenRouter's own docs say answers 401 for a missing, invalid,
     // disabled, or expired key.
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://openrouter.ai/api/v1/key",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -210,7 +265,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     // trips Zen's own error-message templating, which leaks an unrendered
     // `{{model}}` placeholder into the response body instead of naming
     // anything real.
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://opencode.ai/zen/v1/chat/completions",
       method: "POST",
       headers: {
@@ -231,7 +286,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.groq.com/openai/v1",
     adapterPlugin: "openai-compatible",
     probeModel: "llama-3.3-70b-versatile",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.groq.com/openai/v1/models",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -242,7 +297,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.deepseek.com",
     adapterPlugin: "openai-compatible",
     probeModel: "deepseek-v4-flash",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.deepseek.com/models",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -253,7 +308,7 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     baseURL: "https://api.mistral.ai/v1",
     adapterPlugin: "openai-compatible",
     probeModel: "mistral-small-2603",
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://api.mistral.ai/v1/models",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
@@ -269,11 +324,36 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     // token-exchange example uses it the same way) and answers a plain
     // 401 for a missing, invalid, or expired token — confirmed live
     // against both `whoami-v2` and the router's own endpoints.
-    buildProbeRequest: (apiKey) => ({
+    buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://huggingface.co/api/whoami-v2",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
     isKeyRejected: (status) => status === 401,
+  },
+  ollama: {
+    displayName: "Ollama (local)",
+    // The plain root, not the `/v1` OpenAI-compatible form — this is
+    // what the onboarding URL field defaults to and what `/api/tags`
+    // (this probe) and `/api/*` generally live under. `providerModelSource`
+    // derives the `/v1` form this provider actually deploys workflows
+    // against (`ollamaOpenAICompatBaseURL`) from this same value.
+    baseURL: "http://localhost:11434",
+    adapterPlugin: "openai-compatible",
+    probeModel: OLLAMA_PROBE_MODEL,
+    // No auth layer to prove a key against — this probes reachability
+    // instead: `GET /api/tags` is Ollama's own model-list endpoint,
+    // answered by any locally (or tailscale-) running instance with no
+    // credential at all.
+    buildProbeRequest: (_apiKey, baseURL) => ({
+      url: `${ollamaApiRoot(baseURL)}/api/tags`,
+      headers: {},
+    }),
+    // Nothing here is ever really "a rejected key" — Ollama has none —
+    // but every response that reaches this branch already failed the
+    // `response.ok` check above, so it is honestly a probe failure
+    // either way; reusing the "rejected" branch surfaces the provider's
+    // own status/body instead of the generic transport-failure message.
+    isKeyRejected: () => true,
   },
 };
 
@@ -290,15 +370,20 @@ export type ProviderModelSource = {
 
 /** The default model and endpoint a freshly-added credential deploys
  * workflows against, before the person who added it ever picks a
- * different one. */
+ * different one. `baseURLOverride` is the configurable-base-URL seam
+ * every other provider ignores (a fixed origin) and `ollama` uses (the
+ * root a person actually pointed their instance at, converted here to
+ * the `/v1` form the `openai-compatible` adapter dials). */
 export function providerModelSource(
   provider: SupportedCredentialProvider,
+  baseURLOverride?: string,
 ): ProviderModelSource {
   const config = PROVIDER_TEST_CONFIG[provider];
+  const base = baseURLOverride ?? config.baseURL;
   return {
     provider: config.adapterPlugin,
     model: config.probeModel,
-    baseURL: config.baseURL,
+    baseURL: provider === "ollama" ? ollamaOpenAICompatBaseURL(base) : base,
   };
 }
 
@@ -370,7 +455,10 @@ export async function testProviderCredential(
 ): Promise<CredentialTestResult> {
   const config = PROVIDER_TEST_CONFIG[args.provider];
   const doFetch = args.fetchImpl ?? fetch;
-  const probe = config.buildProbeRequest(args.apiKey);
+  const probe = config.buildProbeRequest(
+    args.apiKey,
+    args.baseURL ?? config.baseURL,
+  );
 
   const requestInitBase = {
     method: probe.method ?? "GET",
@@ -416,4 +504,48 @@ export async function testProviderCredential(
     ok: false,
     message: `Your ${config.displayName} key works — the test request itself failed: ${providerErrorMessage(config.displayName, response.status, body)}`,
   };
+}
+
+const OllamaTagsResponse = type({
+  models: type({ name: "string" }).array(),
+});
+
+export type OllamaCatalogModel = {
+  readonly canonicalName: string;
+  readonly displayName: string;
+};
+
+/**
+ * The live model list a reachable Ollama instance actually serves right
+ * now, read straight off its own `GET /api/tags` — never the curated
+ * static seed (`CATALOG_SEEDS.ollama`), which only exists as the
+ * fallback for a connect attempt this can't reach. Returns `undefined`
+ * on any failure (unreachable origin, malformed response, zero models):
+ * every caller treats that as "fall back to the static seed," never as
+ * an error to surface — `credential-test.ts`'s own probe already covers
+ * telling the person their instance is unreachable.
+ */
+export async function fetchOllamaModelCatalog(
+  baseURL: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+): Promise<readonly OllamaCatalogModel[] | undefined> {
+  try {
+    const response = await fetchImpl(`${ollamaApiRoot(baseURL)}/api/tags`, {
+      method: "GET",
+      headers: new Headers(),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    if (!response.ok) return undefined;
+    const body: unknown = await response.json();
+    const parsed = OllamaTagsResponse(body);
+    if (parsed instanceof type.errors || parsed.models.length === 0) {
+      return undefined;
+    }
+    return parsed.models.map((model) => ({
+      canonicalName: model.name,
+      displayName: model.name,
+    }));
+  } catch {
+    return undefined;
+  }
 }

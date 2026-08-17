@@ -11,7 +11,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { scheduleEnvProviderCredentialPlant } from "../src/env-credential-plant.ts";
 
 const BASE_URL = "http://hub.test";
-const ADMIN = { email: "alice@example.com", password: "password123", orgSlug: "workbench" };
+const ADMIN = {
+  email: "alice@example.com",
+  password: "password123",
+  orgSlug: "workbench",
+};
 
 type FakeState = {
   principals: { tenantId: string; tenantSlug: string; principalId: string }[];
@@ -54,7 +58,11 @@ function fakeFetch(state: FakeState): (request: Request) => Promise<Response> {
     if (url.pathname === "/api/auth/sign-in/email") {
       if (!state.signInOk) return json({ error: "invalid_credentials" }, 401);
       state.signInCount += 1;
-      return json({ user: { id: "usr_admin" } }, 200, `session=abc${state.signInCount}`);
+      return json(
+        { user: { id: "usr_admin" } },
+        200,
+        `session=abc${state.signInCount}`,
+      );
     }
     // Answering 200 here (instead of throwing on an "unexpected path")
     // is deliberate: a fake that throws on sign-up hides the bug this
@@ -89,15 +97,16 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: {},
+      envProviderBaseUrls: {},
       admin: ADMIN,
       fetch: async () => {
         fetchCalled = true;
         return new Response("{}", { status: 200 });
       },
-      plant: (async () => {
+      plant: async () => {
         plantCalled = true;
         return [];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -113,7 +122,11 @@ describe("scheduleEnvProviderCredentialPlant", () => {
       signUpCalled: false,
       unauthorizeOnce: false,
       principals: [
-        { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+        {
+          tenantId: "ten_operator",
+          tenantSlug: "workbench",
+          principalId: "prn_admin",
+        },
       ],
     };
     let plantCalls = 0;
@@ -121,14 +134,15 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       fetch: fakeFetch(state),
-      plant: (async (args: { tenantId: string }) => {
+      plant: async (args: { tenantId: string }) => {
         plantCalls += 1;
         seenTenantId = args.tenantId;
         return [{ provider: "anthropic" as const, status: "planted" as const }];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -155,14 +169,15 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       maxRetryIntervalMs: 10,
       fetch: fakeFetch(state),
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [{ provider: "anthropic" as const, status: "planted" as const }];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -172,7 +187,11 @@ describe("scheduleEnvProviderCredentialPlant", () => {
 
     // The bench now exists — as it would once `workbench setup` runs.
     state.principals = [
-      { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+      {
+        tenantId: "ten_operator",
+        tenantSlug: "workbench",
+        principalId: "prn_admin",
+      },
     ];
 
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -192,14 +211,15 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       maxRetryIntervalMs: 10,
       fetch: fakeFetch(state),
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -222,6 +242,7 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       maxRetryIntervalMs: 10,
@@ -246,23 +267,28 @@ describe("scheduleEnvProviderCredentialPlant", () => {
       signUpCalled: false,
       unauthorizeOnce: false,
       principals: [
-        { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+        {
+          tenantId: "ten_operator",
+          tenantSlug: "workbench",
+          principalId: "prn_admin",
+        },
       ],
     };
     let plantCalls = 0;
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 60,
       maxRetryIntervalMs: 60,
       fetch: fakeFetch(state),
       // Stays unresolved ("blocked") every tick so the session survives
       // across ticks instead of the run going terminal after one pass.
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [{ provider: "anthropic" as const, status: "blocked" as const }];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -290,21 +316,26 @@ describe("scheduleEnvProviderCredentialPlant", () => {
       signUpCalled: false,
       unauthorizeOnce: false,
       principals: [
-        { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+        {
+          tenantId: "ten_operator",
+          tenantSlug: "workbench",
+          principalId: "prn_admin",
+        },
       ],
     };
     let plantCalls = 0;
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       maxRetryIntervalMs: 10,
       fetch: fakeFetch(state),
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [{ provider: "anthropic" as const, status: "blocked" as const }];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -324,15 +355,16 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 5,
       maxRetryIntervalMs: 5,
       giveUpAfterMs: 20,
       fetch: fakeFetch(state),
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [{ provider: "anthropic" as const, status: "planted" as const }];
-      }),
+      },
     });
     handles.push(handle);
 
@@ -341,7 +373,11 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     expect(plantCallsAtGiveUp).toBe(0);
 
     state.principals = [
-      { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+      {
+        tenantId: "ten_operator",
+        tenantSlug: "workbench",
+        principalId: "prn_admin",
+      },
     ];
     await new Promise((resolve) => setTimeout(resolve, 40));
     // Given up already — a bench that shows up afterward is never
@@ -364,13 +400,14 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     const handle = scheduleEnvProviderCredentialPlant({
       baseUrl: BASE_URL,
       envProviderKeys: { anthropic: "sk-ant-test" },
+      envProviderBaseUrls: {},
       admin: ADMIN,
       retryIntervalMs: 10,
       fetch: fakeFetch(state),
-      plant: (async () => {
+      plant: async () => {
         plantCalls += 1;
         return [{ provider: "anthropic" as const, status: "planted" as const }];
-      }),
+      },
     });
 
     // Let the first (failing) attempt actually run and schedule its
@@ -380,7 +417,11 @@ describe("scheduleEnvProviderCredentialPlant", () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     handle.stop();
     state.principals = [
-      { tenantId: "ten_operator", tenantSlug: "workbench", principalId: "prn_admin" },
+      {
+        tenantId: "ten_operator",
+        tenantSlug: "workbench",
+        principalId: "prn_admin",
+      },
     ];
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(plantCalls).toBe(0);

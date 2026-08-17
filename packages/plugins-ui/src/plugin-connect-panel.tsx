@@ -44,30 +44,42 @@ function ApiKeyConnectForm({
   tenantId,
   connectorId,
   displayName,
+  fieldKind,
+  fieldPlaceholder,
   onConnected,
 }: {
   readonly tenantId: string;
   readonly connectorId: string;
   readonly displayName: string;
+  /** Absent means this connector's single field collects a secret to
+   * paste (every connector today). `"url"` means it collects the origin
+   * of an already-running instance instead — Ollama needs no key at all
+   * — and `fieldPlaceholder` prefills that field. The value still rides
+   * the same `apiKey` wire field either way: `routes.ts`'s
+   * `credentialInputKind` check on the server decides what to do with
+   * it. */
+  readonly fieldKind?: "url";
+  readonly fieldPlaceholder?: string;
   readonly onConnected: () => void;
 }) {
-  const [apiKey, setApiKey] = useState("");
+  const isUrl = fieldKind === "url";
+  const [value, setValue] = useState(isUrl ? (fieldPlaceholder ?? "") : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit() {
     setSubmitting(true);
     setError(null);
-    testConnectorCredential(tenantId, connectorId, apiKey)
+    testConnectorCredential(tenantId, connectorId, value)
       .then((result) => {
         if (!result.ok) {
           setError(result.message);
           return;
         }
-        return completeConnectorCredential(tenantId, connectorId, apiKey).then(
+        return completeConnectorCredential(tenantId, connectorId, value).then(
           () => {
             toast(`${displayName} connected.`);
-            setApiKey("");
+            setValue(isUrl ? (fieldPlaceholder ?? "") : "");
             onConnected();
           },
         );
@@ -81,13 +93,14 @@ function ApiKeyConnectForm({
   return (
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1.5 text-sm font-medium">
-        API key
+        {isUrl ? "URL" : "API key"}
         <Input
-          type="password"
-          value={apiKey}
+          type={isUrl ? "text" : "password"}
+          placeholder={isUrl ? fieldPlaceholder : undefined}
+          value={value}
           autoComplete="off"
           onChange={(event) => {
-            setApiKey(event.target.value);
+            setValue(event.target.value);
             setError(null);
           }}
         />
@@ -100,7 +113,7 @@ function ApiKeyConnectForm({
       <Button
         type="button"
         variant="primary"
-        disabled={apiKey.trim() === "" || submitting}
+        disabled={value.trim() === "" || submitting}
         onClick={handleSubmit}
       >
         {submitting ? "Testing & connecting…" : "Test & connect"}
@@ -226,6 +239,15 @@ export function PluginConnectPanel({
                   Connect with {plugin.descriptor.displayName}
                 </a>
               </Button>
+            ) : plugin.descriptor.credentialInputKind === "url" ? (
+              <ApiKeyConnectForm
+                tenantId={tenantId}
+                connectorId={plugin.descriptor.id}
+                displayName={plugin.descriptor.displayName}
+                fieldKind="url"
+                fieldPlaceholder={plugin.descriptor.credentialPlaceholder ?? ""}
+                onConnected={onChanged}
+              />
             ) : (
               <ApiKeyConnectForm
                 tenantId={tenantId}

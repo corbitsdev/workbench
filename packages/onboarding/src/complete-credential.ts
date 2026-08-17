@@ -50,6 +50,7 @@ import { PrincipalSummary, TenantResponse, paginatedSchema } from "@intx/types";
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
+  ollamaOpenAICompatBaseURL,
   parseAs,
   seedCatalog,
   seedTenant,
@@ -120,6 +121,9 @@ export type TestAndPersistCredentialArgs = CommonArgs & {
    * pasted key or a durable-key connect flow (OpenRouter).
    */
   credentialMetadata?: Record<string, unknown>;
+  /** The configurable-base-URL seam `ollama` uses (see `modelSourceFor`);
+   * ignored for every other provider. */
+  baseURLOverride?: string;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
 };
 
@@ -127,6 +131,7 @@ export type EnsureSeededArgs = CommonArgs & {
   tenant: PersonalTenant;
   provider: SupportedCredentialProvider;
   apiKey: string;
+  baseURLOverride?: string;
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
 
@@ -136,6 +141,7 @@ export type CompleteCredentialArgs = CommonArgs & {
   provider: SupportedCredentialProvider;
   apiKey: string;
   credentialMetadata?: Record<string, unknown>;
+  baseURLOverride?: string;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
@@ -194,10 +200,15 @@ export async function findPersonalTenant(
 /** The `ModelSource` `ensureSeeded` deploys every default workflow
  * against: the connected provider's own curated default model
  * (`CATALOG_SEEDS`), paired with the plaintext key stored for that same
- * provider — never probed against it before this point. */
+ * provider — never probed against it before this point. `baseURLOverride`
+ * is the configurable-base-URL seam every provider but `ollama` ignores
+ * (a fixed origin); for `ollama` it is the root the person actually
+ * pointed their instance at, normalized to the OpenAI-compatible `/v1`
+ * form this deploys against. */
 export function modelSourceFor(
   provider: SupportedCredentialProvider,
   apiKey: string,
+  baseURLOverride?: string,
 ): ModelSource {
   const catalogSeed = CATALOG_SEEDS[provider];
   const defaultModel = catalogSeed.models[0];
@@ -206,10 +217,16 @@ export function modelSourceFor(
       `catalog seed for provider ${provider} has no default model`,
     );
   }
+  const baseURL =
+    provider === "ollama"
+      ? ollamaOpenAICompatBaseURL(
+          baseURLOverride ?? catalogSeed.provider.baseURL,
+        )
+      : catalogSeed.provider.baseURL;
   return {
     provider: catalogSeed.provider.plugin,
     model: defaultModel.canonicalName,
-    baseURL: catalogSeed.provider.baseURL,
+    baseURL,
     apiKey,
   };
 }
@@ -251,10 +268,14 @@ export async function testAndPersistCredential(
     // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
     credentialVerified: true,
   };
-  await runSeedCatalog(
+  const withMetadata =
     args.credentialMetadata !== undefined
       ? { ...seedCatalogArgs, credentialMetadata: args.credentialMetadata }
-      : seedCatalogArgs,
+      : seedCatalogArgs;
+  await runSeedCatalog(
+    args.baseURLOverride !== undefined
+      ? { ...withMetadata, baseURLOverride: args.baseURLOverride }
+      : withMetadata,
   );
 
   return { kind: "connected", ...tenant };
@@ -282,7 +303,7 @@ export async function ensureSeeded(
       principalId: args.tenant.principalId,
       domain: args.tenant.tenantDomain,
     },
-    model: modelSourceFor(args.provider, args.apiKey),
+    model: modelSourceFor(args.provider, args.apiKey, args.baseURLOverride),
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
@@ -313,7 +334,7 @@ export async function completeCredentialSetup(
   const persisted = await testAndPersistCredential(args);
   if (persisted.kind !== "connected") return persisted;
 
-  const ensureSeededArgs = {
+  const baseEnsureSeededArgs = {
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
@@ -323,6 +344,10 @@ export async function completeCredentialSetup(
     provider: args.provider,
     apiKey: args.apiKey,
   };
+  const ensureSeededArgs =
+    args.baseURLOverride !== undefined
+      ? { ...baseEnsureSeededArgs, baseURLOverride: args.baseURLOverride }
+      : baseEnsureSeededArgs;
   const withPublishToolRegistry =
     args.publishToolRegistry !== undefined
       ? { ...ensureSeededArgs, publishToolRegistry: args.publishToolRegistry }
