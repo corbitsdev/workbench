@@ -395,7 +395,16 @@ function stubThreadedFetch() {
       if (init?.method === "POST") {
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
-      return json({ items: [] });
+      return json({
+        items: [
+          {
+            id: "msg_1",
+            createdAt: "2026-01-01T00:00:30.000Z",
+            parts: [{ kind: "text", text: "root note" }],
+            sender: { name: null, address: "prn_alice@acme.example" },
+          },
+        ],
+      });
     }
     if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
@@ -443,6 +452,33 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     harness.unmount();
   });
 
+  test("an opened thread shows the message it hangs off above its replies", async () => {
+    stubThreadedFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    // The thread's own feed carries only "inside the thread"; its
+    // parent ("root note", msg_1) is pulled from the channel feed.
+    const text = harness.container.textContent ?? "";
+    const parentAt = text.indexOf("root note");
+    const replyAt = text.indexOf("inside the thread");
+    expect(parentAt).toBeGreaterThan(-1);
+    expect(replyAt).toBeGreaterThan(-1);
+    expect(parentAt).toBeLessThan(replyAt);
+    harness.unmount();
+  });
+
   test("forking a message inside a thread opens a sub-thread with a three-segment breadcrumb and an origin banner", async () => {
     stubThreadedFetch();
     const harness = mount({
@@ -465,8 +501,11 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     // renders once a thread already has replies (see `MessageHoverToolbar`
     // and `ThreadAffordance` in `timeline.tsx`), so a fresh message's fork
     // affordance lives in the hover cluster, not a `.chat-thread-open` row.
+    // Scope to the reply message's own toolbar — the thread view now
+    // renders the parent message (msg_1) above it, which has its own
+    // hover cluster.
     const forkButton = harness.container.querySelector(
-      '.chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
+      '#chat-message-msg_2 .chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
     ) as HTMLButtonElement;
     expect(forkButton).not.toBeNull();
     await act(async () => {
@@ -503,7 +542,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
       await sleep(30);
     });
     const forkButton = harness.container.querySelector(
-      '.chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
+      '#chat-message-msg_2 .chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
     ) as HTMLButtonElement;
     await act(async () => {
       forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
