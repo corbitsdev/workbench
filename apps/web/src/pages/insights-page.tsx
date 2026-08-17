@@ -25,7 +25,7 @@ import {
 } from "@corbits/react-ui";
 import { ChartColumn } from "lucide-react";
 import type * as React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   activitySeriesForWindow,
@@ -885,6 +885,18 @@ function parseInsightsPath(path: string): {
  * outright (and every non-landing mode stays tied to the current
  * workbench, unaffected by scope).
  */
+const WINDOW_REFRESH_MS = 60_000;
+
+/** The insights [from, to] window, re-anchored to now once a minute. */
+export function useInsightsWindow(): InsightsRange {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), WINDOW_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return useMemo(() => createInsightsWindow(undefined, now), [now]);
+}
+
 export function resolveInsightsScope({
   mode,
   workbenchId,
@@ -914,13 +926,20 @@ export function resolveInsightsScope({
       scopeLabel: "All workbenches",
     };
   }
-  // Not a workspace member (or `/scope` hasn't resolved yet): default to
-  // the caller's own current workbench, never an aggregate they cannot
-  // see. Before `/scope` resolves this falls back to the raw tenant id
-  // so the dashboard never blocks on it.
+  // The root tenancy with no parent IS the aggregate: every workbench's
+  // runs land on it, so the landing view is all workbenches by
+  // definition — label it that way instead of the tenant's own name,
+  // which reads like a single workbench. Before `/scope` resolves this
+  // falls back to the raw tenant id so the dashboard never blocks on it.
+  if (scopeData !== null) {
+    return {
+      effectiveTenantId: scopeData.tenantId,
+      scopeLabel: "All workbenches",
+    };
+  }
   return {
-    effectiveTenantId: scopeData?.tenantId ?? selectedTenantId,
-    scopeLabel: scopeData?.name ?? selectedTenantId ?? "",
+    effectiveTenantId: selectedTenantId,
+    scopeLabel: selectedTenantId ?? "",
   };
 }
 
@@ -1198,9 +1217,11 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     (typeof window !== "undefined" ? window.location.pathname : "/insights");
   const { mode, workbenchId } = parseInsightsPath(currentPath);
 
-  // One window per mount — shared by usage/activity/tools query keys and
-  // the landing run KPI/recent filter so labels stay honest and stable.
-  const range = useMemo(() => createInsightsWindow(), []);
+  // A sliding window: `to` re-anchors to now every minute, so the
+  // dashboard keeps up with live turns instead of freezing at whatever
+  // instant the page mounted. The minute granularity keeps query keys
+  // stable between ticks.
+  const range = useInsightsWindow();
 
   // Own identity, parent (a workspace, if this workbench has one), and
   // sibling workbenches — read once off the current workbench regardless
