@@ -152,7 +152,8 @@ describe("question card — open state", () => {
       withFreeText.querySelector(".chat-block-question-freetext"),
     ).not.toBeNull();
 
-    if (root !== null) act(() => root.unmount());
+    const mounted = root;
+    if (mounted !== null) act(() => mounted.unmount());
     container?.remove();
     container = null;
     root = null;
