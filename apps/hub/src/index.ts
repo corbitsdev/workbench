@@ -262,6 +262,7 @@ import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
+import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -469,6 +470,8 @@ export async function createHub(config: HubConfig) {
   const toolGrantsForPins = createToolGrantsForPins(
     await describeCorbitsToolPackages(),
   );
+  // See `./mcp-credential-bindings.ts`'s own doc.
+  const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -833,6 +836,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     hubPublicKey,
     toolGrantsForPins,
+    mcpCredentialBindingsFor,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
     // A hand-authored definition with no model requirements of its own
@@ -1370,6 +1374,7 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             hubPublicKey,
             toolGrantsForPins,
+            mcpCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
           },
           trigger,
@@ -1515,6 +1520,7 @@ export async function createHub(config: HubConfig) {
       credentialCipher,
       hubPublicKey,
       toolGrantsForPins,
+      mcpCredentialBindingsFor,
     },
     cryptoProviders: createCryptoProviderCache(),
     notify: taskNotifyDeps,
@@ -1740,6 +1746,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     hubPublicKey,
     toolGrantsForPins,
+    mcpCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
     joinDeliveryChannel: (input) =>

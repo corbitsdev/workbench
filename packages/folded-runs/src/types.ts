@@ -4,7 +4,7 @@
 // registry — arrives as an injected port; this package never imports
 // a hub or a host-specific package such as `@corbits/chat`.
 import type { DB } from "@intx/db";
-import type { CredentialCipher, GrantEffect } from "@intx/types";
+import type { CredentialBinding, CredentialCipher, GrantEffect } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type {
   AssetService,
@@ -54,6 +54,27 @@ export type ToolGrantsForPins = (
   pins: readonly ToolPackagePin[],
 ) => readonly PinnedToolGrantDeclaration[];
 
+/**
+ * Derives the extra `@corbits/mcp-tools` credential bindings a folded run's
+ * launch needs for its tenant's connected MCP servers. `mcp-tools`' handles
+ * are dynamic (one `mcp:<slug>` per tenant-connected server, unknown at
+ * package-publish time), so its `package.json` declares no static
+ * `interchange.credentials` entry the deploy-time capability walk
+ * (`vendor/intx/workflow-deploy/src/capability-walk.ts`) could turn into a
+ * binding — without this port, `env.credentials.resolve("mcp:<slug>")`
+ * always throws "not connected" even when the tenant's credential exists.
+ * `deployAtHead` calls this whenever `@corbits/mcp-tools` is among a
+ * launch's `toolPackagePins`, mirroring `ToolGrantsForPins`'s reason for
+ * living here rather than in the capability walk.
+ *
+ * The composition root (`apps/hub`) supplies the real implementation, built
+ * from `@corbits/connections`' `listMcpServerConnections` — `folded-runs`
+ * never imports that package itself.
+ */
+export type McpCredentialBindingsFor = (
+  tenantId: string,
+) => Promise<readonly CredentialBinding[]>;
+
 export type FoldedRunsDeps = {
   db: DB["db"];
   sessionService: SessionService;
@@ -81,6 +102,12 @@ export type FoldedRunsDeps = {
   hubPublicKey: string;
   /** See `ToolGrantsForPins`'s own doc. */
   toolGrantsForPins: ToolGrantsForPins;
+  /**
+   * See `McpCredentialBindingsFor`'s own doc. Optional: a caller that never
+   * pins `@corbits/mcp-tools` (every launcher besides the hub's real chat
+   * composition today) has no need to supply it.
+   */
+  mcpCredentialBindingsFor?: McpCredentialBindingsFor;
 };
 
 export type SentFoldedMail = {
