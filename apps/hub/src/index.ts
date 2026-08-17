@@ -2462,6 +2462,7 @@ export async function createHub(config: HubConfig) {
   const envCredentialPlant = scheduleEnvProviderCredentialPlant({
     baseUrl: config.baseUrl,
     envProviderKeys: config.envProviderKeys,
+    envProviderBaseUrls: config.envProviderBaseUrls,
     admin: config.envCredentialPlantAdmin,
     fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
   });

@@ -92,9 +92,27 @@ export interface ConnectorDescriptor {
    * workflow deployments, not a specific tool package. */
   readonly feedsTools: readonly string[];
   /** api-key connectors only. Absent for oauth-pkce/oauth-code/webhook-secret
-   * descriptors. */
+   * descriptors. For a `credentialInputKind: "url"` connector (Ollama),
+   * the string this receives is the URL the person typed, not a secret —
+   * see that field's own doc. */
   readonly probe?: (apiKey: string) => Promise<CredentialTestResult>;
   /** oauth-pkce/oauth-code connectors only. Absent for api-key/webhook-secret
    * descriptors. */
   readonly oauth?: ConnectorOAuthConfig;
+  /**
+   * What an `authKind: "api-key"` connector's single form field actually
+   * collects: a secret to paste (every connector today) or, for Ollama —
+   * which needs no key at all — the URL of the instance to connect. Absent
+   * means `"api-key"`, so every existing descriptor is unaffected. The
+   * settings-ui/plugins-ui connect form reads this to swap the field's
+   * label and validation; the wire shape is unchanged either way (still
+   * one string in the `apiKey` JSON field) — see `routes.ts`'s own
+   * handling of a `"url"` connector for what happens to that string
+   * server-side.
+   */
+  readonly credentialInputKind?: "api-key" | "url";
+  /** Prefilled default for a `credentialInputKind: "url"` field — the
+   * local-machine origin Ollama listens on by default. Ignored for an
+   * `"api-key"` connector. */
+  readonly credentialPlaceholder?: string;
 }

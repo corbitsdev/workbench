@@ -49,8 +49,12 @@ import {
 } from "@corbits/tool-registry-publish";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
-import { CATALOG_SEEDS } from "./catalog-seed-data";
-import type { SupportedCredentialProvider } from "./credential-test";
+import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
+import {
+  fetchOllamaModelCatalog,
+  ollamaOpenAICompatBaseURL,
+  type SupportedCredentialProvider,
+} from "./credential-test";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -1198,6 +1202,16 @@ export type SeedCatalogArgs = {
    * own.
    */
   credentialVerified?: boolean;
+  /**
+   * Overrides `CATALOG_SEEDS[provider].provider.baseURL` for this seed
+   * run — the configurable-base-URL seam every other curated provider
+   * ignores (a fixed origin) and `ollama` uses (the root a person
+   * actually pointed their instance at). Accepted in any shape
+   * `ollamaOpenAICompatBaseURL` normalizes (plain root or `/v1` form);
+   * normalized here before it reaches `ensureProvider`/`ensureCatalogProvider`.
+   * Ignored for every provider except `ollama`.
+   */
+  baseURLOverride?: string;
 };
 
 /**
@@ -1214,8 +1228,23 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   const { api, cookies, tenantId, log, provider = "anthropic" } = args;
   const seed = CATALOG_SEEDS[provider];
 
+  const providerBaseURL =
+    provider === "ollama"
+      ? ollamaOpenAICompatBaseURL(args.baseURLOverride ?? seed.provider.baseURL)
+      : seed.provider.baseURL;
+
+  // Ollama's whole catalog is whatever the instance actually has loaded
+  // right now — the curated static seed (two names, kept in sync by
+  // hand) is only the fallback for an unreachable instance. Every other
+  // provider's model list is fixed, so this never runs for them.
+  const dynamicModels: readonly CatalogModelSpec[] | undefined =
+    provider === "ollama"
+      ? await fetchOllamaModelCatalog(providerBaseURL)
+      : undefined;
+  const models = dynamicModels ?? seed.models;
+
   const modelIds: string[] = [];
-  for (const model of seed.models) {
+  for (const model of models) {
     modelIds.push(
       await ensureCatalogModel(
         api,
@@ -1239,12 +1268,16 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     return;
   }
 
-  const providerId = await ensureProvider(
-    api,
-    cookies,
-    { tenantId, name: seed.provider.name, plugin: seed.provider.plugin },
-    log,
-  );
+  const providerArgs =
+    provider === "ollama"
+      ? {
+          tenantId,
+          name: seed.provider.name,
+          plugin: seed.provider.plugin,
+          apiBaseUrl: providerBaseURL,
+        }
+      : { tenantId, name: seed.provider.name, plugin: seed.provider.plugin };
+  const providerId = await ensureProvider(api, cookies, providerArgs, log);
   const baseCredentialArgs = {
     tenantId,
     providerId,
@@ -1268,7 +1301,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       tenantId,
       name: seed.provider.name,
       plugin: seed.provider.plugin,
-      baseURL: seed.provider.baseURL,
+      baseURL: providerBaseURL,
       credentialId,
     },
     log,
@@ -1283,6 +1316,6 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   }
 
   log(
-    `catalog ready: ${seed.provider.name}/${seed.models.map((m) => m.canonicalName).join(", ")}`,
+    `catalog ready: ${seed.provider.name}/${models.map((m) => m.canonicalName).join(", ")}`,
   );
 }

@@ -195,6 +195,30 @@ export const CATALOG_SEEDS: Readonly<
       },
     ],
   },
+  ollama: {
+    provider: {
+      name: "ollama",
+      plugin: "openai-compatible",
+      // The OpenAI-compatible `/v1` form — what a deployed workflow's
+      // `ModelSource.baseURL` actually dials. `baseURLOverride`
+      // (`seedCatalog`, `credential-test.ts`'s `ollamaOpenAICompatBaseURL`)
+      // replaces this with whatever origin the person actually pointed
+      // their instance at; this default is the local-machine origin
+      // every onboarding URL field defaults to.
+      baseURL: "http://localhost:11434/v1",
+    },
+    // Curated against a real instance's `/api/tags` (see this ticket's
+    // report): whichever of these two the person's own Ollama actually
+    // has loaded, `qwen3.8:27b` leads since it is the one confirmed to
+    // serve tool calls and thinking.
+    models: [
+      { canonicalName: "qwen3.8:27b", displayName: "Qwen 3.8 27B (Ollama)" },
+      {
+        canonicalName: "qwen3.5:9b-mlx",
+        displayName: "Qwen 3.5 9B MLX (Ollama)",
+      },
+    ],
+  },
 };
 
 /** A single provider/model pair, structurally the shape a channel-host

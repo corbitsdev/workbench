@@ -31,6 +31,7 @@ import { Button, EmptyState, Input, ProviderMark } from "@corbits/react-ui";
 import { CircleAlert, KeyRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test";
 
 import { useNavigate } from "../navigation";
 import {
@@ -173,6 +174,11 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
+  // Ollama's card collects a URL, not a key — its own field, defaulted
+  // to its card's `urlDefaultValue` the moment that card is picked (see
+  // `handleSelectProvider` below), so the field is never blank the
+  // first time a person lands on it.
+  const [urlValue, setUrlValue] = useState("");
   // True for a returning user whose workbench already exists but is
   // still missing a working credential (`existing-member` with
   // `seeded: false`) — the copy below tells them connecting one now
@@ -283,11 +289,28 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
+  const isUrlProvider = activeProvider?.fieldKind === "url";
+
+  const handleSelectProvider = useCallback(
+    (nextId: CredentialProvider) => {
+      setProvider(nextId);
+      const nextCard = CREDENTIAL_PROVIDERS.find((p) => p.id === nextId);
+      if (nextCard?.fieldKind === "url" && urlValue === "") {
+        setUrlValue(nextCard.urlDefaultValue ?? "");
+      }
+    },
+    [urlValue],
+  );
+
   const handleSubmitCredential = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       setState({ phase: "submitting" });
-      void submitCredential(provider, apiKey).then((outcome) => {
+      const submission = isUrlProvider
+        ? submitCredential(provider, OLLAMA_PLACEHOLDER_SECRET, urlValue)
+        : submitCredential(provider, apiKey);
+      void submission.then((outcome) => {
         if (outcome.kind === "seeded") {
           navigate("/");
         } else {
@@ -295,7 +318,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         }
       });
     },
-    [provider, apiKey, navigate],
+    [provider, apiKey, urlValue, isUrlProvider, navigate],
   );
 
   if (state.phase === "provisioning") {
@@ -355,7 +378,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   const submitting = state.phase === "submitting";
   const error = state.phase === "credential" ? state.error : null;
-  const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
 
   return (
     <OnboardingLayout>
@@ -409,7 +431,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           >
             <ProviderPicker
               selected={provider}
-              onSelect={setProvider}
+              onSelect={handleSelectProvider}
               disabled={submitting}
             />
             {activeProvider !== undefined && (
@@ -417,40 +439,64 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 {activeProvider.description}
               </p>
             )}
-            <label htmlFor="onboarding-api-key">
-              {activeProvider?.label} API key
-            </label>
-            <Input
-              id="onboarding-api-key"
-              type="text"
-              placeholder={
-                activeProvider?.keyHint
-                  ? `${activeProvider.keyHint}...`
-                  : "Paste your key"
-              }
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              required
-              disabled={submitting}
-              aria-describedby="onboarding-api-key-help"
-            />
-            <p id="onboarding-api-key-help">
-              <a
-                href={activeProvider?.keyConsoleUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Get a key from the {activeProvider?.label} console
-              </a>
-              {activeProvider?.keyHint ? (
-                <>
-                  {" "}
-                  — it starts with <code>{activeProvider.keyHint}</code>.
-                </>
-              ) : (
-                "."
-              )}
-            </p>
+            {isUrlProvider ? (
+              <>
+                <label htmlFor="onboarding-provider-url">
+                  {activeProvider?.label} URL
+                </label>
+                <Input
+                  id="onboarding-provider-url"
+                  type="text"
+                  placeholder={activeProvider?.urlDefaultValue}
+                  value={urlValue}
+                  onChange={(event) => setUrlValue(event.target.value)}
+                  required
+                  disabled={submitting}
+                  aria-describedby="onboarding-provider-url-help"
+                />
+                <p id="onboarding-provider-url-help">
+                  The origin your Ollama instance listens on — local, or reached
+                  through a tunnel.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="onboarding-api-key">
+                  {activeProvider?.label} API key
+                </label>
+                <Input
+                  id="onboarding-api-key"
+                  type="text"
+                  placeholder={
+                    activeProvider?.keyHint
+                      ? `${activeProvider.keyHint}...`
+                      : "Paste your key"
+                  }
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  required
+                  disabled={submitting}
+                  aria-describedby="onboarding-api-key-help"
+                />
+                <p id="onboarding-api-key-help">
+                  <a
+                    href={activeProvider?.keyConsoleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Get a key from the {activeProvider?.label} console
+                  </a>
+                  {activeProvider?.keyHint ? (
+                    <>
+                      {" "}
+                      — it starts with <code>{activeProvider.keyHint}</code>.
+                    </>
+                  ) : (
+                    "."
+                  )}
+                </p>
+              </>
+            )}
             {error !== null && (
               <EmptyState
                 icon={<KeyRound />}
@@ -458,8 +504,18 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 description={error}
               />
             )}
-            <Button type="submit" disabled={submitting || apiKey.length === 0}>
-              {submitting ? "Adding your key…" : "Connect this key"}
+            <Button
+              type="submit"
+              disabled={
+                submitting ||
+                (isUrlProvider ? urlValue.length === 0 : apiKey.length === 0)
+              }
+            >
+              {submitting
+                ? "Connecting…"
+                : isUrlProvider
+                  ? "Connect this instance"
+                  : "Connect this key"}
             </Button>
           </form>
         </div>

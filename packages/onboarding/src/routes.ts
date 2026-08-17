@@ -63,6 +63,12 @@ assertNonEmpty(providerIds);
 const SubmitCredential = type({
   provider: type.enumerated(...providerIds),
   apiKey: "string > 0",
+  // Ollama's card collects a URL instead of a key (see the onboarding
+  // page's own `ProviderCardButton`/credential form); `apiKey` still
+  // carries the fixed `OLLAMA_PLACEHOLDER_SECRET` for that provider, and
+  // this optional field carries the actual instance URL. Absent for
+  // every other provider.
+  "baseURL?": "string > 0",
 });
 
 const ProvisionBody = type({
@@ -586,18 +592,23 @@ export function createOnboardingRoutes(
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     const runCompleteCredentialSetup =
       deps.completeCredentialSetupFn ?? completeCredentialSetup;
+    const baseCompleteCredentialArgs = {
+      api,
+      cookies,
+      hubUrl: deps.hubUrl,
+      userId: user.id,
+      userEmail: user.email,
+      provider: parsed.provider,
+      apiKey: parsed.apiKey,
+      pushWorkflow: deps.pushWorkflow,
+      log: deps.log,
+    };
     try {
-      const result = await runCompleteCredentialSetup({
-        api,
-        cookies,
-        hubUrl: deps.hubUrl,
-        userId: user.id,
-        userEmail: user.email,
-        provider: parsed.provider,
-        apiKey: parsed.apiKey,
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-      });
+      const result = await runCompleteCredentialSetup(
+        parsed.baseURL !== undefined
+          ? { ...baseCompleteCredentialArgs, baseURLOverride: parsed.baseURL }
+          : baseCompleteCredentialArgs,
+      );
 
       if (result.kind === "invalid-credential") {
         return c.json(

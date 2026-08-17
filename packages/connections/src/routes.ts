@@ -21,6 +21,7 @@ import {
   createHubAPI,
   ensureCredential,
   ensureProvider,
+  OLLAMA_PLACEHOLDER_SECRET,
   type ApiCall,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
@@ -256,15 +257,29 @@ export function createConnectionRoutes(
       }
 
       const cookies = cookiesFromHeader(c.req.header("cookie"));
+      // A `credentialInputKind: "url"` connector (Ollama) collects a URL
+      // in the same wire field every other connector uses for a secret —
+      // it stores the fixed placeholder secret instead, and the URL
+      // itself as the provider row's `apiBaseUrl` (the same seam MCP
+      // servers use).
+      const isUrlCredential = descriptor.credentialInputKind === "url";
+      const providerArgs: EnsureProviderArgs = isUrlCredential
+        ? {
+            tenantId: tenant.id,
+            name: descriptor.id,
+            plugin: descriptor.credentialPlugin,
+            apiBaseUrl: parsed.apiKey,
+          }
+        : {
+            tenantId: tenant.id,
+            name: descriptor.id,
+            plugin: descriptor.credentialPlugin,
+          };
       try {
         const providerId = await runEnsureProvider(
           api,
           cookies,
-          {
-            tenantId: tenant.id,
-            name: descriptor.id,
-            plugin: descriptor.credentialPlugin,
-          },
+          providerArgs,
           deps.log,
         );
         const credentialId = await runEnsureCredential(
@@ -274,7 +289,7 @@ export function createConnectionRoutes(
             tenantId: tenant.id,
             providerId,
             name: descriptor.displayName,
-            secret: parsed.apiKey,
+            secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
             type: "api_key",
             // `test` above already proved `parsed.apiKey` against
             // `descriptor.probe`, so a name conflict here (a
