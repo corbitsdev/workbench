@@ -25,6 +25,7 @@ import {
   type DispatchTimingMark,
   type SpawnOpts,
   type SubprocessSpawner,
+  type SuspensionRegistration,
 } from "@intx/workflow-host";
 import { hexEncode, isRunAddress } from "@intx/types";
 import {
@@ -212,6 +213,18 @@ export function createSidecarDeployRouter(deps: {
     deploymentId: string;
     agentAddress: string;
   }) => void;
+  /**
+   * Control-plane suspension sink threaded verbatim to every deployment's
+   * supervisor as `onSuspensionRegister`. Production wires this to the
+   * sidecar's hub link (`HubLink.sendSignalCorrelationRegister`) so an
+   * ask-rail suspension's approval snapshot reaches the hub as a
+   * `signal.correlation.register` frame and the hub co-writes the run's
+   * routing + approval rows. Optional so a test that does not exercise the
+   * approval-park path needs no hub-link stub; omitting it in production
+   * means a workflow-child ask-suspend parks with no approval ever
+   * registered.
+   */
+  registerSuspension?: (registration: SuspensionRegistration) => void;
   /**
    * Substrate-config env keys the multi-step branch propagates into
    * the workflow-process child's spawn-time env (see
@@ -673,10 +686,20 @@ export function createSidecarDeployRouter(deps: {
         }),
         subprocessSpawner: multistepSpawner,
       };
+      const wiredConfigWithOnSuspensionRegister =
+        deps.registerSuspension !== undefined
+          ? {
+              ...wiredBaseConfig,
+              onSuspensionRegister: deps.registerSuspension,
+            }
+          : wiredBaseConfig;
       const wiredConfigWithBinaryPath =
         deps.multistepBinaryPath !== undefined
-          ? { ...wiredBaseConfig, binaryPath: deps.multistepBinaryPath }
-          : wiredBaseConfig;
+          ? {
+              ...wiredConfigWithOnSuspensionRegister,
+              binaryPath: deps.multistepBinaryPath,
+            }
+          : wiredConfigWithOnSuspensionRegister;
       const wiredConfigWithOnDispatchTiming =
         deps.onDispatchTiming !== undefined
           ? {

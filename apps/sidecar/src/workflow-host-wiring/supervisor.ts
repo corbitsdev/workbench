@@ -20,6 +20,7 @@ import {
   type HubTransportMailBusAdapter,
   type PrincipalSigner,
   type SubprocessSpawner,
+  type SuspensionRegistration,
   type WorkflowSupervisor,
 } from "@intx/workflow-host";
 
@@ -106,6 +107,16 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * `DEFAULT_READY_TIMEOUT_MS` (30s).
    */
   readyTimeoutMs?: number;
+  /**
+   * Control-plane suspension sink, forwarded verbatim to the supervisor's
+   * `onSuspensionRegister` binding. Production wires this to the sidecar's
+   * hub link (`HubLink.sendSignalCorrelationRegister`) so an ask-rail
+   * suspension's approval snapshot reaches the hub as a
+   * `signal.correlation.register` frame; the hub co-writes the run's
+   * routing + approval rows from it. Omitted, a workflow-child suspend
+   * never registers an approval and the run parks invisibly forever.
+   */
+  onSuspensionRegister?: (registration: SuspensionRegistration) => void;
 };
 
 export type SidecarWorkflowSupervisor = {
@@ -179,13 +190,20 @@ export function createSidecarWorkflowSupervisor(
     deriveStepAddress: opts.deriveStepAddress,
     deriveMailAuditRef: deriveSidecarMailAuditRef(opts.deploymentId),
   };
+  const supervisorConfigWithOnSuspensionRegister =
+    opts.onSuspensionRegister !== undefined
+      ? {
+          ...supervisorBaseConfig,
+          onSuspensionRegister: opts.onSuspensionRegister,
+        }
+      : supervisorBaseConfig;
   const supervisorConfigWithDeriveStepRepoId =
     opts.deriveStepRepoId !== undefined
       ? {
-          ...supervisorBaseConfig,
+          ...supervisorConfigWithOnSuspensionRegister,
           deriveStepRepoId: opts.deriveStepRepoId,
         }
-      : supervisorBaseConfig;
+      : supervisorConfigWithOnSuspensionRegister;
   const supervisorConfigWithOnDispatchTiming =
     opts.onDispatchTiming !== undefined
       ? {

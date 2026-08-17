@@ -260,6 +260,21 @@ const orchestrator = createSidecarOrchestrator({
       unregisterDeployment: ({ deploymentId }) => {
         deploymentAddressRegistry.unregister(deploymentId);
       },
+      // Lazy-bound the same way as `workflowRunPackClient.hubLink` above:
+      // `createDeployRouter` runs synchronously during `createSidecarOrchestrator`
+      // construction, before `orchestrator.hubLink` exists, so `resolvedHubLink`
+      // is consulted at call time rather than captured now. Without this, a
+      // workflow-child's ask-rail suspension never reaches the hub as a
+      // `signal.correlation.register` frame and its approval is never
+      // registered.
+      registerSuspension: (registration) => {
+        if (resolvedHubLink === null) {
+          throw new Error(
+            "sidecar boot: suspension register attempted before hub link was constructed",
+          );
+        }
+        resolvedHubLink.sendSignalCorrelationRegister(registration);
+      },
       multistepMailRouter,
       multistepSignalRouter,
       multistepDrainRouter,
