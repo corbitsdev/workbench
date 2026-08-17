@@ -208,3 +208,39 @@ test("an unknown tool name returns a loud error, never silently a no-op", async 
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/unknown tool/i);
 });
+
+test("mcp_list_tools {server} surfaces the credential resolve reason instead of a bare not-connected", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: [
+            { slug: "notion", name: "Notion", url: "https://example.test/mcp" },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )) as unknown as typeof fetch;
+  try {
+    const capability: CredentialCapability = {
+      resolve(): Promise<MediatedCredential> {
+        return Promise.reject(new Error("no credential is bound"));
+      },
+    };
+    const bundle = mcpTools(fakeEnv(undefined, capability));
+    const result = await bundle.run(
+      {
+        id: "c2",
+        name: MCP_LIST_TOOLS_TOOL,
+        arguments: { server: "notion" },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/not reachable from this run/i);
+    expect(result.content).toContain("no credential is bound");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
