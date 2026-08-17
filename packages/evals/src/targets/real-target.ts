@@ -356,6 +356,70 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
     const seenMessageIds = new Set<string>();
     let toolCallsConsumed = 0;
 
+    function bootFailureOutput(): string {
+      return (
+        `hub output (tail):\n${hub.output().slice(-60_000)}\n` +
+        `sidecar output (tail):\n${sidecar.output().slice(-6_000)}`
+      );
+    }
+
+    // `POST /channels` fires `dispatchGreetingKickoff` fire-and-forget
+    // (see `packages/chat/src/routes.ts`) right after the chat mints —
+    // the unprompted-greeting turn `greeting-delivery.test.ts` proves
+    // lands with zero user messages sent. That test waits for the
+    // greeting's own agent-authored message to land *before* sending
+    // its first human turn; this target must do the same, or the first
+    // scripted turn's human message and mail fan-out race the still
+    // in-flight greeting turn's own record-mail to the channel host,
+    // which is what the "run 'run_<channelId>' is terminal" rejection
+    // traces back to. The greeting's message id (and its tool calls) are
+    // folded in as already-seen so `sendTurn`'s own reply/tool-call
+    // bookkeeping for turn 1 starts clean.
+    const greeting = await pollUntil(
+      "Myra's unprompted greeting landing with zero user messages sent",
+      300_000,
+      async () => {
+        if (sidecar.exited()) {
+          throw new Error(
+            `sidecar exited waiting for the greeting; ${bootFailureOutput()}`,
+          );
+        }
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${seeded.tenantId}/chat/channels/${chatId}/messages`,
+          undefined,
+          cookies,
+        );
+        expectStatus("list messages while waiting for the greeting", res, 200);
+        const items = arrayField(
+          res.data,
+          "items",
+          "list messages while waiting for the greeting",
+        ) as ChatMessage[];
+        return findNewAgentReply(items, agentAddress, seenMessageIds);
+      },
+    ).catch((cause) => {
+      throw new Error(
+        `no unprompted greeting within 300s; ${bootFailureOutput()}`,
+        { cause },
+      );
+    });
+    seenMessageIds.add(greeting.id);
+    // See the settle-window comment in `sendTurn` below — the greeting's
+    // own record-mail into the channel host needs the same room to land
+    // before the first scripted turn posts.
+    await Bun.sleep(3_000);
+    const greetingToolCalls = await readAllToolCalls(
+      sqlClient,
+      seeded.tenantId,
+      chatId,
+    );
+    toolCallsConsumed = newToolCallsSince(
+      greetingToolCalls,
+      toolCallsConsumed,
+    ).consumed;
+
     async function sendTurn(human: string): Promise<Turn> {
       const postRes = await api(
         hub.baseUrl,
@@ -382,14 +446,18 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
         seenMessageIds.add(item.id);
       }
 
+      // A 27B local Ollama model, with tools, can take well over two
+      // minutes for one turn — 300s gives it room without masking a
+      // genuine hang (the sidecar-exited check above still fails fast
+      // on that).
       let lastItems: ChatMessage[] = [];
       const reply = await pollUntil(
         `Myra's reply to "${human}"`,
-        120_000,
+        300_000,
         async () => {
           if (sidecar.exited()) {
             throw new Error(
-              `sidecar exited waiting for a reply; output:\n${sidecar.output()}`,
+              `sidecar exited waiting for a reply; ${bootFailureOutput()}`,
             );
           }
           const res = await api(
@@ -410,12 +478,22 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
         },
       ).catch((cause) => {
         throw new Error(
-          `no reply within 120s; last-seen messages: ${JSON.stringify(lastItems)}\n` +
-            `sidecar output:\n${sidecar.output()}`,
+          `no reply within 300s; last-seen messages: ${JSON.stringify(lastItems)}\n` +
+            bootFailureOutput(),
           { cause },
         );
       });
       seenMessageIds.add(reply.id);
+
+      // A landed reply still has its own record-mail settling into the
+      // channel host's shared timeline (`sendChannelMessage`'s "for the
+      // record" delivery) — posting the next turn's human message before
+      // that settles races the host's write with this turn's, which is
+      // what a `path_violation` pack rejection and a subsequent
+      // "workflow run ... is terminal" (see the module comment) traces
+      // back to. A short settle window here is the same fix
+      // `greeting-delivery.test.ts` reaches for via `E2E_TURN2_DELAY_MS`.
+      await Bun.sleep(3_000);
 
       const allToolCalls = await readAllToolCalls(
         sqlClient,
