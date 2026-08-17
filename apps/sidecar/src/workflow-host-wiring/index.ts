@@ -508,6 +508,15 @@ export function createSidecarDeployRouter(deps: {
      * Undefined for a deployment with no referenced bodies.
      */
     referencedDefinitionHashes: Record<string, string> | undefined;
+    /**
+     * Decrypted credential material from the deploy frame's
+     * `workflow.credentials`, threaded to the supervisor's
+     * `credentialDelivery` binding so the child's materialRef is seeded
+     * before the first trigger. Frame-only and never persisted (secrets
+     * stay off disk), so the boot-restore path rebuilds the spec without
+     * it and the deployment waits for the hub's `credentials.update` push.
+     */
+    credentials: NonNullable<AgentDeployFrame["workflow"]>["credentials"];
   }
 
   /**
@@ -693,13 +702,20 @@ export function createSidecarDeployRouter(deps: {
               onSuspensionRegister: deps.registerSuspension,
             }
           : wiredBaseConfig;
+      const wiredConfigWithCredentialDelivery =
+        spec.credentials !== undefined
+          ? {
+              ...wiredConfigWithOnSuspensionRegister,
+              credentialDelivery: spec.credentials,
+            }
+          : wiredConfigWithOnSuspensionRegister;
       const wiredConfigWithBinaryPath =
         deps.multistepBinaryPath !== undefined
           ? {
-              ...wiredConfigWithOnSuspensionRegister,
+              ...wiredConfigWithCredentialDelivery,
               binaryPath: deps.multistepBinaryPath,
             }
-          : wiredConfigWithOnSuspensionRegister;
+          : wiredConfigWithCredentialDelivery;
       const wiredConfigWithOnDispatchTiming =
         deps.onDispatchTiming !== undefined
           ? {
@@ -1147,6 +1163,7 @@ export function createSidecarDeployRouter(deps: {
       referencedDefinitionHashes: deriveReferencedDefinitionHashes(
         projection.referencedDefinitions,
       ),
+      credentials: projection.credentials,
     };
     const record = buildDeploymentRecord(spec, spec.sources);
 
@@ -1395,6 +1412,7 @@ export function createSidecarDeployRouter(deps: {
             sessionId: record.sessionId,
             hubPublicKey: record.hubPublicKey,
             referencedDefinitionHashes: record.referencedDefinitionHashes,
+            credentials: undefined,
           };
 
           // The slug is the caller's, matching `deployMultiStep`: claim before

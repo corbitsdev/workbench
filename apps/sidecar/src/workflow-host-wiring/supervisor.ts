@@ -117,6 +117,18 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * never registers an approval and the run parks invisibly forever.
    */
   onSuspensionRegister?: (registration: SuspensionRegistration) => void;
+  /**
+   * Decrypted credential material from the deploy frame's
+   * `workflow.credentials`, forwarded verbatim to the supervisor's
+   * `credentialDelivery` binding so the child's materialRef is seeded on
+   * the pre-trigger barrier. Omitted, every tool-package
+   * `credentials.resolve(handle)` fails "no credential is bound" even
+   * though the hub resolved and delivered the material on the frame.
+   * Absent on the boot-restore path by construction: secrets are never
+   * persisted sidecar-side, so a restored deployment waits for the hub's
+   * `credentials.update` push.
+   */
+  credentialDelivery?: import("@intx/types/sidecar").CredentialDelivery;
 };
 
 export type SidecarWorkflowSupervisor = {
@@ -197,13 +209,20 @@ export function createSidecarWorkflowSupervisor(
           onSuspensionRegister: opts.onSuspensionRegister,
         }
       : supervisorBaseConfig;
+  const supervisorConfigWithCredentialDelivery =
+    opts.credentialDelivery !== undefined
+      ? {
+          ...supervisorConfigWithOnSuspensionRegister,
+          credentialDelivery: opts.credentialDelivery,
+        }
+      : supervisorConfigWithOnSuspensionRegister;
   const supervisorConfigWithDeriveStepRepoId =
     opts.deriveStepRepoId !== undefined
       ? {
-          ...supervisorConfigWithOnSuspensionRegister,
+          ...supervisorConfigWithCredentialDelivery,
           deriveStepRepoId: opts.deriveStepRepoId,
         }
-      : supervisorConfigWithOnSuspensionRegister;
+      : supervisorConfigWithCredentialDelivery;
   const supervisorConfigWithOnDispatchTiming =
     opts.onDispatchTiming !== undefined
       ? {
