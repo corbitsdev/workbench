@@ -88,6 +88,24 @@ test("the prompt tells Myra to use ask_user instead of prose lists for enumerabl
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("interactive card");
 });
 
+test("the prompt opens with a one-line identity and is organized into named sections", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT.startsWith("You are Myra")).toBe(true);
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("## Where you are");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("## Deciding what to do");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("## Tools");
+});
+
+test("the prompt grounds Myra inside the workbench — she never asks to be pointed at it", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("already inside the workbench");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never ask to be pointed at the workbench",
+  );
+});
+
+test("the prompt has Myra load the writing-system-prompts skill before authoring any agent prompt", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("writing-system-prompts");
+});
+
 test("the agent pins memory, capability, and the manager-tools bundles — real package names, resolved at deploy time", () => {
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
@@ -99,7 +117,7 @@ test("the agent pins memory, capability, and the manager-tools bundles — real 
     { name: "@corbits/task-dispatch-tools", version: "0.0.2" },
     { name: "@corbits/connections-tools", version: "0.0.2" },
     { name: "@corbits/skills-tools", version: "0.0.2" },
-    { name: "@corbits/mcp-tools", version: "0.0.2" },
+    { name: "@corbits/mcp-tools", version: "0.0.3" },
   { name: "@corbits/interaction-tools", version: "0.0.2" },
   ]);
 });
