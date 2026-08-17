@@ -502,10 +502,36 @@ export async function createHub(config: HubConfig) {
       },
     ) => void;
   } = {};
+  // Package-owned insights tables, migrated ahead of the event collector
+  // registry so `usageSink` is live before the first `inference.usage`
+  // event can arrive.
+  await applyInsightsMigrations(config.databaseUrl);
+  const insightsUsage = createPostgresUsageStore(config.databaseUrl);
+  const usageSink = createUsageSink({
+    store: insightsUsage.store,
+    generateId: () => generateId("inferenceTurn"),
+  });
   const eventCollectors = createEventCollectorRegistry({
     db: withTurnPartWriteDefaults(db),
     onTurnFinalized: (agentAddress, turn) =>
       artifactDeliveryHandlerRef.current?.(agentAddress, turn),
+    // The vendored `onUsage` forward (see VENDORED.md) — the platform
+    // collector accumulates turns per session but never persisted
+    // `inference.usage`; this is the first point tenantId + turnId +
+    // model + tokens are all in scope at once.
+    onUsage: (_agentAddress, tenantId, sessionId, usage) => {
+      void usageSink
+        .handle({
+          turnId: usage.turnId,
+          tenantId,
+          sessionId,
+          model: usage.model,
+          tokens: usage.usage,
+        })
+        .catch((err: unknown) => {
+          log.warn`Failed to record usage for turn ${usage.turnId}: ${err instanceof Error ? err.message : String(err)}`;
+        });
+    },
   });
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
@@ -1059,19 +1085,10 @@ export async function createHub(config: HubConfig) {
   // inference_turn / turn_part tables directly
   // (see @corbits/insights' createDrizzleRunTraceReader) — no new storage,
   // same `db` handle every other platform-table reader in this file uses.
-  await applyInsightsMigrations(config.databaseUrl);
-  const insightsUsage = createPostgresUsageStore(config.databaseUrl);
-  // Sink constructed so the store path is live for reads, but left
-  // unsubscribed: Interchange's event-collector drops inference.usage and
-  // exposes no product-side usage stream that carries tenantId + turnId
-  // with the tokens. sidecarRouter.events ("agent.event") does surface
-  // raw inference.usage, but correlating turn/tenant requires collector-
-  // private state or a DB scrape — not a clean <30-line subscribe.
-  // Pending an Interchange usage event stream, do not invent fake turns.
-  void createUsageSink({
-    store: insightsUsage.store,
-    generateId: () => generateId("inferenceTurn"),
-  });
+  // The sink itself is constructed earlier, alongside `eventCollectors`
+  // (see the vendored `onUsage` forward on `createEventCollectorRegistry`
+  // above), since that's the only place tenantId/turnId/model land
+  // together on an `inference.usage` event.
   app.route(
     `${TENANT_PREFIX}/insights`,
     createInsightsRoutes({
