@@ -281,12 +281,48 @@ export type DispatchGreetingKickoffDeps = {
   readonly platform: Pick<ChannelMail, "sendMail">;
 };
 
-export type DispatchGreetingKickoffInput = {
+export type GreetingKickoffBriefInput = {
+  /** The opener's display name, when the host can resolve one. */
+  readonly senderName?: string;
+  /** The workbench's title, when it has one beyond its id. */
+  readonly workbenchName?: string;
+};
+
+export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
   readonly tenantId: string;
   readonly principalId: string;
   readonly channelId: string;
   readonly agentAddress: string;
 };
+
+/**
+ * The kickoff mail's text: the facts the agent needs to say a grounded
+ * hello (who opened the workbench, what it is called) plus how to say
+ * it. It is delivered to the agent's own mailbox and never rendered on
+ * the timeline, so it reads as a brief, not as a human message. Keeping
+ * the greeting dynamic (the model writes it from these facts) rather
+ * than a canned script is what lets it name the person and the
+ * workbench, and lead with a first step when the name hints at one.
+ */
+export function greetingKickoffBrief(input: GreetingKickoffBriefInput): string {
+  const who =
+    input.senderName !== undefined && input.senderName !== ""
+      ? input.senderName
+      : "someone";
+  const named =
+    input.workbenchName !== undefined && input.workbenchName !== ""
+      ? ` called "${input.workbenchName}"`
+      : "";
+  return (
+    `${who} just opened a new workbench${named} with you in it. ` +
+    "Say hello as a teammate would: two or three sentences, first " +
+    "person, address them by name if you have one. No menu of " +
+    "options and no talk of memory, lookups, or what you could not " +
+    "find. If the workbench name hints at a purpose, offer one " +
+    "concrete first step for it; otherwise ask what they are working " +
+    "on."
+  );
+}
 
 /**
  * Fires a newly-minted chat's one agent's very first turn the moment
@@ -313,7 +349,19 @@ export async function dispatchGreetingKickoff(
       tenantId: input.tenantId,
       channelId: localPartOf(input.agentAddress),
       principalId: input.principalId,
-      content: encodeParts([{ kind: "text", text: "Continue." }]),
+      content: encodeParts([
+        {
+          kind: "text",
+          text: greetingKickoffBrief({
+            ...(input.senderName !== undefined
+              ? { senderName: input.senderName }
+              : {}),
+            ...(input.workbenchName !== undefined
+              ? { workbenchName: input.workbenchName }
+              : {}),
+          }),
+        },
+      ]),
       fromChannelId: input.channelId,
     });
   } catch (err) {

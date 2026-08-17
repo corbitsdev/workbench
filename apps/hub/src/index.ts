@@ -939,6 +939,20 @@ export async function createHub(config: HubConfig) {
       createChannelHostInferencePreferencesResolver((tenantId) =>
         listConnectedProviders(db, tenantId),
       ),
+    resolvePrincipalName: async (_tenantId, principalId) => {
+      const principalRow = await db.query.principal.findFirst({
+        where: (p, { eq: equals }) => equals(p.id, principalId),
+        columns: { kind: true, refId: true },
+      });
+      if (principalRow === undefined || principalRow.kind !== "user") {
+        return undefined;
+      }
+      const userRow = await db.query.user.findFirst({
+        where: (u, { eq: equals }) => equals(u.id, principalRow.refId),
+        columns: { name: true },
+      });
+      return userRow?.name ?? undefined;
+    },
     commands: commandRegistry,
     // The same native undeploy call the idle-sleep lifecycle uses to
     // tear an invited agent's instance down (see `chatPlatform`'s own

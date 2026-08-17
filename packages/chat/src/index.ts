@@ -152,6 +152,7 @@ export type {
 export {
   launchAndJoinAgent,
   dispatchGreetingKickoff,
+  greetingKickoffBrief,
   sendChannelMessage,
   startWorkflowCommand,
   provisionSpaceChannel,

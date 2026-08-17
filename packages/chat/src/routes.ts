@@ -155,6 +155,15 @@ export type CreateChatRoutesDeps = {
     tenantId: string,
   ) => Promise<readonly InferencePreference[]>;
   /**
+   * Resolves a principal to the display name a greeting can use. The
+   * hub wires this to its user table; omitted, the greeting kickoff
+   * simply carries no name.
+   */
+  resolvePrincipalName?: (
+    tenantId: string,
+    principalId: string,
+  ) => Promise<string | undefined>;
+  /**
    * Thread identity store (root / reply / delivery). When omitted,
    * thread list routes return empty and delivery-thread creation is
    * unavailable — composition that wants threads (hub) injects a
@@ -1089,6 +1098,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         // own first turn fires right here, on mint, never waiting on a
         // reply. See `dispatchGreetingKickoff`'s own doc comment for
         // why this can never fail — or roll back — the mint itself.
+        const senderName =
+          deps.resolvePrincipalName !== undefined
+            ? await deps
+                .resolvePrincipalName(tenant.id, principal.id)
+                .catch(() => undefined)
+            : undefined;
         void dispatchGreetingKickoff(
           { platform: deps.platform },
           {
@@ -1096,6 +1111,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             principalId: principal.id,
             channelId,
             agentAddress: joined.address,
+            ...(senderName !== undefined ? { senderName } : {}),
+            ...(chatTitle !== undefined ? { workbenchName: chatTitle } : {}),
           },
         );
 
