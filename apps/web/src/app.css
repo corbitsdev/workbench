@@ -122,8 +122,8 @@ select:disabled,
   --ui-radius-sm: 0;
   --ui-radius-md: 0;
   --ui-radius-lg: 0;
-  --shell-sidebar-width: 16.5rem;
-  --shell-sidebar-width-tight: 14rem;
+  --shell-sidebar-width: 17.5rem;
+  --shell-sidebar-width-tight: 15rem;
   --shell-canvas-width: min(36rem, 42vw);
   /* Mock --accent / --faint: same idea across themes, but each still
      resolves through a react-ui token so dark mode gets its own correct
@@ -1230,9 +1230,9 @@ select:disabled,
 
 .shell-ch-right {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.28rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
   flex-shrink: 0;
 }
 

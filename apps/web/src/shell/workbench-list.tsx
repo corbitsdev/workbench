@@ -140,16 +140,22 @@ export function workbenchRowSignals(
 }
 
 /**
- * Flat ordering for the one list: pinned rows first, everything else in the
- * order given. Stable within each half so the platform's own ordering is
- * never scrambled. Pure so the "no kind sections" rule is testable.
+ * Flat ordering for the one list: pinned rows first, then most-recent
+ * activity first within each half. Missing timestamps sort last but keep
+ * their given relative order (stable sort). Pure so the "no kind sections"
+ * and "recency, not insertion order" rules are testable.
  */
 export function orderWorkbenchRows(
   channels: readonly Channel[],
 ): readonly Channel[] {
+  const byRecency = (a: Channel, b: Channel) => {
+    const at = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
+    const bt = b.lastActivityAt ? Date.parse(b.lastActivityAt) : 0;
+    return bt - at;
+  };
   return [
-    ...channels.filter((channel) => channel.pinned),
-    ...channels.filter((channel) => !channel.pinned),
+    ...channels.filter((channel) => channel.pinned).sort(byRecency),
+    ...channels.filter((channel) => !channel.pinned).sort(byRecency),
   ];
 }
 
