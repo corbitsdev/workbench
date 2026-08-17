@@ -62,13 +62,15 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   expect(agent.toolFactories).toEqual([]);
 });
 
-test("the prompt instructs Myra to greet, introduce herself, and ask what she's for on a bench's first-ever conversation", () => {
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("first message");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("greet the sender by name");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("introduce");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("Myra");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("standing job");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("one-off task");
+test("the prompt tells Myra to greet from the kickoff brief as a teammate — by name, one-line intro, a first step or a question, never a menu", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("kickoff brief");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("greet them by name");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("introduce yourself as Myra");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("one concrete first step");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "Never list your capabilities as a menu",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("standing job");
 });
 
 test("the agent pins memory, capability, and the manager-tools bundles — real package names, resolved at deploy time", () => {

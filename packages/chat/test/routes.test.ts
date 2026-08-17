@@ -171,7 +171,7 @@ describe("POST /channels", () => {
     const kickoff = platform.sentMail[1];
     expect(kickoff?.channelId).toBe("ins_invited1");
     expect(kickoff?.fromChannelId).toBe(body.id);
-    expect(kickoff?.content).toEqual({ content: "Continue." });
+    expect(kickoff?.content.content).toMatch(/just opened a new workbench/);
   });
 
   test("creating a chat with an explicit name keeps that name as the title", async () => {
@@ -1240,7 +1240,9 @@ describe("POST /channels/:id/messages — invite pre-step (CL-5879 mention-pulls
     // mention names its own freshly-assigned handle.
     expect(
       platform.sentMail.some(
-        (mail) => mail.channelId === "ins_invited1" && mail.fromChannelId === channel.id,
+        (mail) =>
+          mail.channelId === "ins_invited1" &&
+          mail.fromChannelId === channel.id,
       ),
     ).toBe(true);
   });
@@ -1326,10 +1328,7 @@ describe("POST /channels/:id/messages — invite pre-step (CL-5879 mention-pulls
       // still succeeds.
       requireGrant: (resource, action) => async (c, next) => {
         if (action === "create" && resource !== "workflow-run:*") {
-          return c.json(
-            { error: { code: "forbidden", message: "no" } },
-            403,
-          );
+          return c.json({ error: { code: "forbidden", message: "no" } }, 403);
         }
         await next();
       },

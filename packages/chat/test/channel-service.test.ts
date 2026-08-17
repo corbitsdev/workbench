@@ -8,7 +8,10 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import { dispatchGreetingKickoff } from "../src/channel-service";
+import {
+  dispatchGreetingKickoff,
+  greetingKickoffBrief,
+} from "../src/channel-service";
 import {
   buildDeps,
   createChannel,
@@ -35,7 +38,22 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     const kickoff = platform.sentMail[0];
     expect(kickoff?.channelId).toBe("ins_agent1");
     expect(kickoff?.fromChannelId).toBe("chan_1");
-    expect(kickoff?.content).toEqual({ content: "Continue." });
+    expect(kickoff?.content).toEqual({
+      content: greetingKickoffBrief({}),
+    });
+  });
+
+  test("the kickoff brief carries who opened the workbench and what it is called, and asks for a teammate's hello — never a menu", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "Ada",
+      workbenchName: "GTM research",
+    });
+    expect(brief).toContain("Ada");
+    expect(brief).toContain("GTM research");
+    expect(brief).toMatch(/teammate/i);
+    expect(brief).toMatch(/no menu/i);
+    expect(brief).toMatch(/memory/i);
+    expect(greetingKickoffBrief({})).not.toContain("undefined");
   });
 
   test("a dispatch failure is swallowed, never thrown", async () => {

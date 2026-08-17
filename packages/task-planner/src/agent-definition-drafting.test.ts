@@ -329,9 +329,8 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("first reply");
     expect(sentPrompt).toContain("greet the person by name");
     expect(sentPrompt).toContain("introduce itself");
-    expect(sentPrompt).toContain("fresh start");
-    expect(sentPrompt).toContain("standing job");
-    expect(sentPrompt).toContain("one-off task");
+    expect(sentPrompt).toContain("one concrete first step");
+    expect(sentPrompt).toContain("never as a menu");
     expect(sentPrompt).not.toContain("request_capability");
   });
 
