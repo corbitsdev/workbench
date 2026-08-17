@@ -106,16 +106,26 @@ async function findServer(
 async function resolveMcpFetch(
   env: McpToolsEnv,
   slug: string,
-): Promise<typeof fetch | null> {
-  if (env.credentials === undefined) return null;
+): Promise<{ fetch: typeof fetch } | { fetch: null; reason: string }> {
+  if (env.credentials === undefined) {
+    return { fetch: null, reason: "the run has no credential capability" };
+  }
   try {
     const mediated: MediatedCredential = await env.credentials.resolve(
       mcpCredentialHandle(slug),
     );
-    if (mediated.kind !== "http") return null;
-    return mediated.fetch as unknown as typeof fetch;
-  } catch {
-    return null;
+    if (mediated.kind !== "http") {
+      return {
+        fetch: null,
+        reason: `credential resolved to kind "${mediated.kind}", not http`,
+      };
+    }
+    return { fetch: mediated.fetch as unknown as typeof fetch };
+  } catch (cause) {
+    return {
+      fetch: null,
+      reason: `credential resolve failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    };
   }
 }
 
@@ -184,8 +194,9 @@ async function loadServerTools(
   env: McpToolsEnv,
   server: McpServerListing,
 ): Promise<readonly McpToolInfo[] | null> {
-  const fetchImpl = await resolveMcpFetch(env, server.slug);
-  if (fetchImpl === null) return null;
+  const resolved = await resolveMcpFetch(env, server.slug);
+  if (resolved.fetch === null) return null;
+  const fetchImpl = resolved.fetch;
   return withMcpConnection({ url: server.url, fetchImpl }, (client) =>
     listMcpTools(client),
   );
@@ -357,12 +368,7 @@ async function runListTools(
     }
     if (parsed.server !== undefined) {
       return parsed.toolName !== undefined
-        ? await runListToolsForTool(
-            env,
-            call,
-            parsed.server,
-            parsed.toolName,
-          )
+        ? await runListToolsForTool(env, call, parsed.server, parsed.toolName)
         : await runListToolsForServer(env, call, parsed.server);
     }
     return await runListToolsCatalog(env, call);
@@ -417,15 +423,17 @@ async function runRead(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
         ),
       );
     }
-    const fetchImpl = await resolveMcpFetch(env, parsed.server);
-    if (fetchImpl === null) {
+    const resolved = await resolveMcpFetch(env, parsed.server);
+    if (resolved.fetch === null) {
       return errorResult(
         call.id,
-        new Error(`MCP server "${parsed.server}" is not connected.`),
+        new Error(
+          `MCP server "${parsed.server}" is not reachable from this run: ${resolved.reason}`,
+        ),
       );
     }
     const result = await withMcpConnection(
-      { url: server.url, fetchImpl },
+      { url: server.url, fetchImpl: resolved.fetch },
       async (client) => {
         const tools = await listMcpTools(client);
         const gate = readOnlyGate(tools, parsed.tool);
@@ -470,15 +478,17 @@ async function runCall(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
         ),
       );
     }
-    const fetchImpl = await resolveMcpFetch(env, parsed.server);
-    if (fetchImpl === null) {
+    const resolved = await resolveMcpFetch(env, parsed.server);
+    if (resolved.fetch === null) {
       return errorResult(
         call.id,
-        new Error(`MCP server "${parsed.server}" is not connected.`),
+        new Error(
+          `MCP server "${parsed.server}" is not reachable from this run: ${resolved.reason}`,
+        ),
       );
     }
     const result = await withMcpConnection(
-      { url: server.url, fetchImpl },
+      { url: server.url, fetchImpl: resolved.fetch },
       (client) =>
         callMcpTool(client, {
           name: parsed.tool,

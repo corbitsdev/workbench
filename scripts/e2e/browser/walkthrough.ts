@@ -875,32 +875,34 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 5: CL-6066 — New task dialog styling
+    // --- Step 5: the Ctrl+T "New task" dialog was REMOVED with the Inbox
+    // (owner decision, cl-inbox-drop): tasks are dispatched by Myra inside
+    // a workbench. The step now asserts the shortcut opens NOTHING.
     await step(
       () => page,
-      "08-new-task-dialog-CL-6066",
+      "08-no-task-dialog-after-inbox-drop",
       async () => {
         await page.click("body");
         await page.keyboard.down("Control");
         await page.keyboard.press("t");
         await page.keyboard.up("Control");
-        await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
-        const found = await page.evaluate(
-          () => document.body.textContent?.includes("New task") ?? false,
-        );
-        await page.keyboard.press("Escape");
-        if (!found) {
+        const dialogAppeared = await page
+          .waitForSelector('[role="dialog"]', { timeout: 4_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (dialogAppeared) {
+          await page.keyboard.press("Escape");
           return {
             status: "fail",
             detail:
-              "Cmd/Ctrl+T opened a dialog, but it is not the New task dialog",
+              "Ctrl+T opened a dialog, but the New task dialog was removed " +
+              "with the Inbox (cl-inbox-drop) — a stray binding survived",
           };
         }
         return {
-          status: "repro-confirmed",
+          status: "pass",
           detail:
-            "New task dialog opened via Ctrl+T — captured for visual review against " +
-            "CL-6066 (unstyled dialog); see screenshot",
+            "Ctrl+T opens nothing — the removed New task dialog stayed removed",
         };
       },
     );
