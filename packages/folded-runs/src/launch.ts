@@ -267,16 +267,37 @@ export async function deployAtHead(
   // chat go silent after its first real reply — so the folded launch
   // builds the same single-step workflow itself, with the budget
   // declared, and deploys it through the same head deploy.
-  const definition = defineWorkflow({
-    id: `wf_${params.instanceId}`,
-    trigger: { type: "mail", to: params.triggerAddress },
-    steps: {
-      [FOLDED_STEP_ID]: step({
-        agent: wrapHarnessAsSingleStepWorkflow({ config, deployContent }),
-        triggers: "unbounded",
-      }),
-    },
-  });
+  const foldedSteps = {
+    [FOLDED_STEP_ID]: step({
+      agent: wrapHarnessAsSingleStepWorkflow({ config, deployContent }),
+      triggers: "unbounded",
+    }),
+  };
+  // The workflow-host's per-step credential snapshot
+  // (`vendor/intx/workflow-host/src/supervisor/credentials.ts`) derives
+  // its bindings from the deployed *definition*'s own
+  // `credentialBindings`, not from `buildCredentialDelivery`'s output —
+  // that delivery only seeds the credential material itself. Mirror
+  // `buildAgentDefinitionWorkflow`'s same conditional shape so a folded
+  // run's synthesized definition carries the same combined bindings
+  // (the definition's own plus the pinned-package MCP bindings folded in
+  // above) the delivered material was resolved against; without this the
+  // sidecar's `consumerBindings` finds nothing for `mcp:<slug>` and every
+  // resolve() fails "not connected" even though the material was
+  // delivered.
+  const definition =
+    credentialBindings.length > 0
+      ? defineWorkflow({
+          id: `wf_${params.instanceId}`,
+          trigger: { type: "mail", to: params.triggerAddress },
+          credentialBindings,
+          steps: foldedSteps,
+        })
+      : defineWorkflow({
+          id: `wf_${params.instanceId}`,
+          trigger: { type: "mail", to: params.triggerAddress },
+          steps: foldedSteps,
+        });
   await deps.sessionService.deploySingleStepAtHead({
     agentAddress: params.triggerAddress,
     agentId: params.instanceId,
