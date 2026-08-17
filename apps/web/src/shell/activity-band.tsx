@@ -51,9 +51,9 @@ const HIDDEN_ARGUMENT_KEYS = new Set(["definitionId", "enabled"]);
 const DETAIL_VALUE_MAX_CHARS = 160;
 
 export function approvalDetails(
-  args: Record<string, unknown>,
+  args: object,
 ): { label: string; value: string }[] {
-  return Object.entries(args)
+  return Object.entries(args as Record<string, unknown>)
     .filter(([label]) => !HIDDEN_ARGUMENT_KEYS.has(label))
     .map(([label, value]) => {
       const text = typeof value === "string" ? value : JSON.stringify(value);

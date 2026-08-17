@@ -50,27 +50,11 @@ export async function listMcpServerConnections(
     connections.push({
       slug: provider.name.slice(MCP_PROVIDER_PREFIX.length),
       name: credential.name,
-      url: endpointUrlOf(credential.metadata, provider.apiBaseUrl),
+      // Both connect paths store the server's FULL MCP endpoint here —
+      // never a bare origin, which drops paths like `/mcp` and dies at
+      // the CDN.
+      url: provider.apiBaseUrl ?? "",
     });
   }
   return connections;
-}
-
-/**
- * The server's full MCP endpoint. The credential's `metadata.url` is
- * the exact URL the connect flow probed (both the API-key and OAuth
- * paths store it); `provider.apiBaseUrl` is the fallback for rows
- * predating that metadata — the OAuth path historically stored only
- * the origin there, which drops paths like `/mcp` and turns every
- * call into a CDN-level rejection.
- */
-function endpointUrlOf(
-  metadata: unknown,
-  apiBaseUrl: string | null,
-): string {
-  if (typeof metadata === "object" && metadata !== null) {
-    const url = (metadata as Record<string, unknown>)["url"];
-    if (typeof url === "string" && url !== "") return url;
-  }
-  return apiBaseUrl ?? "";
 }

@@ -169,6 +169,7 @@ export function RoutinePanel() {
   if (subject === null || subject.view === "list") {
     return (
       <RoutineListPanel
+        channelId={subject?.channelId}
         onClose={close}
         onSelect={(routineId) =>
           openRoutine({
@@ -347,11 +348,16 @@ async function pollForOutcome(
 }
 
 function RoutineListPanel({
+  channelId,
   onClose,
   onSelect,
   onNew,
   onOpenRuns,
 }: {
+  /** The workbench this panel was opened beside. The pop-out is
+   * strictly workbench-scoped (owner decision, CL-6200): only routines
+   * delivering here and tasks dispatched from here are listed. */
+  readonly channelId?: string | undefined;
   readonly onClose: () => void;
   readonly onSelect: (routineId: string) => void;
   readonly onNew: () => void;
@@ -371,7 +377,11 @@ function RoutineListPanel({
     tenantId !== null,
     () => listRoutines(tenantId as string),
   );
-  const routines = routinesQuery.kind === "ready" ? routinesQuery.data : [];
+  const allRoutines = routinesQuery.kind === "ready" ? routinesQuery.data : [];
+  const routines =
+    channelId === undefined
+      ? allRoutines
+      : allRoutines.filter((r) => r.deliveryChannelId === channelId);
   const routineIds = routines.map((r) => r.id);
   const runHistoriesQuery = useTenantQuery<
     ReadonlyMap<string, readonly RoutineRun[]>
@@ -547,7 +557,11 @@ function RoutineListPanel({
           />
         )}
         {tenantId !== null ? (
-          <TasksSection tenantId={tenantId} navigate={navigate} />
+          <TasksSection
+            tenantId={tenantId}
+            channelId={channelId}
+            navigate={navigate}
+          />
         ) : null}
       </div>
     </div>
@@ -697,9 +711,11 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
  * outcome shows inline the moment it lands, not just in Insights. */
 function TasksSection({
   tenantId,
+  channelId,
   navigate,
 }: {
   readonly tenantId: string;
+  readonly channelId?: string | undefined;
   readonly navigate: (path: string) => void;
 }) {
   const tasksQuery = useTenantQuery(tenantKeys.tasks(tenantId), true, () =>
@@ -708,6 +724,9 @@ function TasksSection({
   const tasks =
     tasksQuery.kind === "ready"
       ? [...tasksQuery.data]
+          .filter(
+            (task) => channelId === undefined || task.channelId === channelId,
+          )
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, 10)
       : [];
