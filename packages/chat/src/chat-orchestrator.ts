@@ -44,7 +44,9 @@ import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
 import type { ConnectedProviderLister } from "./inference-preferences";
-import { parseParticipants } from "./participants";
+import { mentionedParticipants } from "./mentions";
+import { localPartOf } from "./agent-address";
+import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 import type { WriteClaimStore } from "./write-claims";
@@ -173,6 +175,13 @@ async function resolveMemberChannels(
       principalId: string | null;
       agentChannelId: string;
       channelIds: string[];
+      /**
+       * Each member channel's own participant records, keyed by
+       * channel id — `postReply` needs these to run the same
+       * @mention fan-out human sends get, delegating the host's
+       * reply to whichever specialists it @mentions.
+       */
+      participantsByChannelId: Map<string, ParticipantRecord[]>;
     }
   | undefined
 > {
@@ -198,6 +207,12 @@ async function resolveMemberChannels(
     principalId: run.principalId,
     agentChannelId: run.id,
     channelIds: memberChannels.map((channel) => channel.channelId),
+    participantsByChannelId: new Map(
+      memberChannels.map((channel) => [
+        channel.channelId,
+        parseParticipants(channel.settings["chat/participants"]),
+      ]),
+    ),
   };
 }
 
@@ -216,6 +231,29 @@ async function postReply(
       content: encodeParts([{ kind: "text", text: content }]),
       fromChannelId: resolved.agentChannelId,
     });
+
+    // The delegation hop: when the host's reply @mentions other agent
+    // teammates, they must receive it exactly as they would a human's
+    // @mention — otherwise a handoff only reaches the human side of
+    // the channel and the mentioned specialist never wakes up.
+    const participants =
+      resolved.participantsByChannelId.get(channelId) ?? [];
+    const mentioned = mentionedParticipants(
+      [{ kind: "text", text: content }],
+      participants,
+    ).filter(
+      (address) => localPartOf(address) !== localPartOf(agentAddress),
+    );
+    for (const recipient of mentioned) {
+      await deps.platform.sendMail({
+        tenantId: resolved.tenantId,
+        channelId: localPartOf(recipient),
+        content: encodeParts([{ kind: "text", text: content }], {
+          replyTo: channelId,
+        }),
+        fromChannelId: channelId,
+      });
+    }
   }
 }
 

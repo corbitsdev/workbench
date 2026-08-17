@@ -189,7 +189,7 @@ describe("message fan-out", () => {
     expect(platform.sentMail).toHaveLength(mailBefore + 1); // only the send itself, no fan-out copy
   });
 
-  test("a message to a channel still requires a mention to fan out", async () => {
+  test("a no-mention message in a channel routes to its host — the first agent participant", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -208,7 +208,79 @@ describe("message fan-out", () => {
 
     expect(response.status).toBe(201);
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(1); // only to the channel itself
+    expect(platform.sentMail).toHaveLength(2); // to the channel, then fanned to the host
+    const fanned = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanned?.channelId).toBe("ins_echo1");
+  });
+
+  test("a no-mention message in a multi-agent workbench delivers to the host only, not every agent", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_echo", name: "Echo" },
+          { id: "wfd_second", name: "Second" },
+        ],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example", "ins_echo2@acme.example"],
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "no mention at all" }],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.sentMail).toHaveLength(2); // to the channel, then fanned to the host only
+    const fanned = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanned?.channelId).toBe("ins_echo1");
+  });
+
+  test("a reply to an agent's message routes to that agent even unmentioned", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_echo", name: "Echo" },
+          { id: "wfd_second", name: "Second" },
+        ],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example", "ins_echo2@acme.example"],
+    });
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    // Simulates the orchestrator's own posted reply — sent from the
+    // agent's channel, no principalId — landing in the channel's
+    // mailbox exactly as `postReply` delivers it.
+    const parent = await platform.sendMail({
+      tenantId: TENANT.id,
+      channelId: channel.id,
+      fromChannelId: "ins_echo2",
+      content: { content: "here's my answer" },
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "thanks, no mention here" }],
+        inReplyToMessageId: parent.id,
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const fanned = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanned?.channelId).toBe("ins_echo2");
   });
 
   test("a mention fan-out carries the prior channel conversation, excluding the just-sent message", async () => {
@@ -587,7 +659,7 @@ describe("POST /channels/:id/invite", () => {
     ).toHaveLength(0);
   });
 
-  test("inviting into a chat is rejected with a 409", async () => {
+  test("inviting a second agent into a chat grows it — no invite cap", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -603,8 +675,8 @@ describe("POST /channels/:id/invite", () => {
       body: JSON.stringify({ definitionId: "wfd_echo" }),
     });
 
-    expect(response.status).toBe(409);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("conflict");
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { address: string };
+    expect(body.address).toBe("ins_invited1@acme.example");
   });
 });

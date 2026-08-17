@@ -84,7 +84,10 @@ const ASSISTANT_TRIAGE_CLAUSE =
   "completes rather than leaving it to be found in another channel. " +
   "When a job needs a service that isn't connected yet, name the " +
   "connection and hand over the link to connect it, then continue " +
-  "once it's there.";
+  "once it's there. In a workbench with other agent teammates, " +
+  "delegate by @mentioning the specialist in your reply and saying " +
+  "why in a few words — don't answer for a specialist when handing " +
+  "off.";
 
 /**
  * TEAMMATE: how Myra offers help without pushing it — folds in the
