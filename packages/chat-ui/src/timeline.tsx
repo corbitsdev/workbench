@@ -483,8 +483,32 @@ function friendlyEventText(
         : CHAT_STRINGS.eventAgentJoinedUnknown;
     case "channel.membership-changed":
       return CHAT_STRINGS.eventMembershipChanged;
-    case "channel.settings-changed":
+    case "channel.settings-changed": {
+      const changed =
+        data !== undefined &&
+        typeof data.changed === "object" &&
+        data.changed !== null
+          ? (data.changed as Record<string, unknown>)
+          : undefined;
+      const previous =
+        data !== undefined &&
+        typeof data.previous === "object" &&
+        data.previous !== null
+          ? (data.previous as Record<string, unknown>)
+          : undefined;
+      const to = changed?.["chat/name"];
+      if (
+        changed !== undefined &&
+        Object.keys(changed).length === 1 &&
+        typeof to === "string"
+      ) {
+        const from = previous?.["chat/name"];
+        return typeof from === "string" && from !== to
+          ? CHAT_STRINGS.eventChannelRenamed(from, to)
+          : CHAT_STRINGS.eventChannelRenamedTo(to);
+      }
       return CHAT_STRINGS.eventSettingsChanged;
+    }
     case "block.response": {
       const kind = data !== undefined ? data.kind : undefined;
       return kind === "poll"

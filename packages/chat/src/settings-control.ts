@@ -109,11 +109,19 @@ export function applyControlPayload(
 
   let settings = state.settings;
   if (payload.settings !== undefined) {
+    // The event carries the delta and the prior values of the touched
+    // keys so timeline readers can say what changed ("Renamed A to B"),
+    // not just that something did.
+    const previous = Object.fromEntries(
+      Object.keys(payload.settings)
+        .filter((key) => key in state.settings)
+        .map((key) => [key, state.settings[key]]),
+    );
     settings = { ...settings, ...payload.settings };
     events.push({
       kind: "event",
       event: "channel.settings-changed",
-      data: { updatedBy, settings },
+      data: { updatedBy, settings, changed: payload.settings, previous },
     });
   }
 

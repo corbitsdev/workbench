@@ -64,6 +64,9 @@ export const CHAT_STRINGS = {
   eventAgentJoinedUnknown: "An agent joined",
   eventMembershipChanged: "Membership updated",
   eventSettingsChanged: "Settings updated",
+  eventChannelRenamed: (from: string, to: string): string =>
+    `Renamed "${from}" to "${to}"`,
+  eventChannelRenamedTo: (to: string): string => `Renamed to "${to}"`,
   eventBlockResponsePoll: "A vote was recorded",
   eventBlockResponseForm: "A form was submitted",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
