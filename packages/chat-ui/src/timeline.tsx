@@ -1272,6 +1272,7 @@ function ThreadAffordance({
 export function ChannelTimeline({
   items,
   participants = [],
+  settingUpAgent,
   currentUser,
   threadMetaByMessageId,
   threadAffordanceMode = "reply",
@@ -1291,6 +1292,9 @@ export function ChannelTimeline({
    * `pendingStatus`. An ordinary item simply omits it. */
   readonly items: readonly TimelineMessageItem[];
   readonly participants?: readonly ParticipantRecord[];
+  /** True for an agent chat still finishing its background launch —
+   * renders the setting-up state instead of "No messages yet". */
+  readonly settingUpAgent?: boolean;
   readonly currentUser?: CurrentUser;
   /** Reply-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
@@ -1355,6 +1359,34 @@ export function ChannelTimeline({
   }, [items.length]);
 
   if (items.length === 0) {
+    // A freshly minted agent chat answers before its launches finish
+    // (async mint): the agent participant streams in seconds later. An
+    // empty agent chat is therefore SETTING UP, never "say something" —
+    // that copy invites racing the greeting.
+    const agentJoined = participants.some((participant) =>
+      isAgentAddress(participant.address),
+    );
+    if (settingUpAgent === true) {
+      return (
+        <div className="chat-timeline-empty">
+          <div className="chat-workbench-loading" role="status">
+            <span className="chat-workbench-loading-mark" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span className="chat-workbench-loading-title">
+              {CHAT_STRINGS.workbenchLoadingTitle}
+            </span>
+            <span className="chat-workbench-loading-stage">
+              {agentJoined
+                ? CHAT_STRINGS.workbenchLoadingAgentJoined
+                : CHAT_STRINGS.workbenchLoadingStarting}
+            </span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="chat-timeline-empty">
         <EmptyState

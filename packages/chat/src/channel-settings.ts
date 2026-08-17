@@ -222,16 +222,22 @@ export function channelView(row: {
   title: string;
   kind: string;
   pinned: boolean;
+  definitionId: string | null;
   participants: ParticipantRecord[];
 } {
   const kind = kindOf(row.settings);
   const name = row.settings["chat/name"];
   const pinned = row.settings["chat/pinned"];
+  const definitionId = row.settings["chat/definitionId"];
   return {
     id: row.channelId,
     title: typeof name === "string" ? name : row.channelId,
     kind,
     pinned: typeof pinned === "boolean" ? pinned : presetForKind(kind).pinned,
+    // The agent this chat was minted for — the client's signal that an
+    // empty, agentless chat is still SETTING UP (async mint) rather
+    // than idle.
+    definitionId: typeof definitionId === "string" ? definitionId : null,
     participants: participantsOf(row.settings),
   };
 }

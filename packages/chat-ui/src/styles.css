@@ -424,6 +424,62 @@
   padding: 0.75rem clamp(0.85rem, 3vw, 1.75rem) 1rem;
 }
 
+/* The async-mint setup state: three staggered orange squares (the
+   brand's zero-radius language) pulsing while the launches finish. */
+.chat-workbench-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  text-align: center;
+}
+
+.chat-workbench-loading-mark {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.chat-workbench-loading-mark > span {
+  width: 0.6rem;
+  height: 0.6rem;
+  background: var(--primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-workbench-loading-mark > span {
+    animation: chat-workbench-loading-pulse 1.2s ease-in-out infinite;
+  }
+  .chat-workbench-loading-mark > span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .chat-workbench-loading-mark > span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes chat-workbench-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.3rem);
+  }
+}
+
+.chat-workbench-loading-title {
+  font-size: 0.9375rem;
+  font-weight: 640;
+  color: var(--foreground);
+}
+
+.chat-workbench-loading-stage {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 .chat-timeline-empty {
   display: flex;
   flex: 1;

@@ -164,6 +164,12 @@ export type CreateChatRoutesDeps = {
     principalId: string,
   ) => Promise<string | undefined>;
   /**
+   * Runs the mint's launch work after the 201 has left. Production
+   * fire-and-forgets (the default); tests inject an awaiting runner so
+   * assertions see the launched state deterministically.
+   */
+  runMintLaunch?: (work: () => Promise<void>) => void;
+  /**
    * Thread identity store (root / reply / delivery). When omitted,
    * thread list routes return empty and delivery-thread creation is
    * unavailable — composition that wants threads (hub) injects a
@@ -925,7 +931,38 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         creatorUserId: principal.refId,
       });
 
-      try {
+      // Compensation can itself fail (a dropped connection, the same
+      // outage that failed the launch). That must never swallow the
+      // launch failure that triggered it — compensation failure is its
+      // own loud log line, tagged with the orphaned tenant id for an
+      // operator to clean up by hand, and the ORIGINAL launch error
+      // always propagates to the caller (sync paths) or the log
+      // (the async mint path below).
+      async function compensateMint(err: unknown, phase: string) {
+        log.error(
+          "Channel {phase} failed for {channelId} after minting " +
+            "{tenantId}; compensating the orphaned tenant and settings",
+          { phase, channelId, tenantId: channelTenant.tenantId, err },
+        );
+        try {
+          await deps.store.deleteChannelSettings(tenant.id, channelId);
+          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+        } catch (compensationErr) {
+          log.error(
+            "Compensation failed for orphaned tenant {tenantId} after " +
+              "channel {channelId}'s {phase} failure; this tenant is now " +
+              "a privileged orphan and requires manual cleanup",
+            {
+              phase,
+              channelId,
+              tenantId: channelTenant.tenantId,
+              compensationErr,
+            },
+          );
+        }
+      }
+
+      async function launchHost() {
         await deps.platform.launchChannel({
           tenantId: tenant.id,
           creatorPrincipalId: principal.id,
@@ -933,33 +970,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           triggerAddress,
           definition,
         });
-      } catch (err) {
-        log.error(
-          "Channel host launch failed for {channelId} after minting " +
-            "{tenantId}; compensating the orphaned tenant",
-          { channelId, tenantId: channelTenant.tenantId, err },
-        );
-        // Compensation can itself fail (a dropped connection, the same
-        // outage that failed the launch). That must never swallow the
-        // launch failure that triggered it: a caught-and-discarded
-        // compensation error here would silently leave a
-        // fully-privileged tenant behind with nothing in the response
-        // or the throw to say so. Compensation failure is instead its
-        // own loud log line, tagged with the orphaned tenant id for an
-        // operator to clean up by hand, and the ORIGINAL launch error
-        // is always what propagates.
-        try {
-          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
-        } catch (compensationErr) {
-          log.error(
-            "Compensation failed for orphaned tenant {tenantId} after " +
-              "channel {channelId}'s launch failure; this tenant is now a " +
-              "privileged orphan with no channel pointing at it and " +
-              "requires manual cleanup",
-            { channelId, tenantId: channelTenant.tenantId, compensationErr },
-          );
-        }
-        throw err;
       }
 
       const preset = presetForKind(body.kind);
@@ -997,6 +1007,77 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         settings,
         updatedBy: principal.id,
       });
+
+      // The agent-chat mint answers BEFORE its launches: the channel
+      // row and tenant above are the durable mint, the two launches
+      // (host + agent) take seconds each, and the client already
+      // renders the setup state until `channel.agent-joined` streams
+      // in. DMs and plain channels keep the synchronous launch — their
+      // join step mails through the host, so the host must exist
+      // before this handler can finish their setup.
+      if (!isChatWithPrincipal(body) && isChatWithDefinition(body)) {
+        const definitionId = body.definitionId;
+        const runMintLaunch =
+          deps.runMintLaunch ?? ((work: () => Promise<void>) => void work());
+        runMintLaunch(async () => {
+          try {
+            await launchHost();
+          } catch (err) {
+            await compensateMint(err, "host launch");
+            return;
+          }
+          try {
+            const joined = await launchAndJoinAgent(
+              { store: deps.store, platform: deps.platform, publish },
+              {
+                tenantId: tenant.id,
+                principalId: principal.id,
+                channelId,
+                definitionId,
+                existingSettings: row.settings,
+                invitable,
+              },
+            );
+            const senderName =
+              deps.resolvePrincipalName !== undefined
+                ? await deps
+                    .resolvePrincipalName(tenant.id, principal.id)
+                    .catch(() => undefined)
+                : undefined;
+            void dispatchGreetingKickoff(
+              { platform: deps.platform },
+              {
+                tenantId: tenant.id,
+                principalId: principal.id,
+                channelId,
+                agentAddress: joined.address,
+                ...(senderName !== undefined ? { senderName } : {}),
+                ...(chatTitle !== undefined
+                  ? { workbenchName: chatTitle }
+                  : {}),
+              },
+            );
+            if (chatTitle === undefined) {
+              await deps.store.updateChannelSettings({
+                tenantId: tenant.id,
+                channelId,
+                settings: { ...joined.settings, "chat/name": joined.handle },
+                updatedBy: principal.id,
+              });
+            }
+          } catch (err) {
+            await compensateMint(err, "agent launch");
+          }
+        });
+        return c.json(withTenancy(channelView(row), channelTenant), 201);
+      }
+
+      try {
+        await launchHost();
+      } catch (err) {
+        await compensateMint(err, "host launch");
+        throw err;
+      }
 
       if (isChatWithPrincipal(body)) {
         // A person-DM's counterpart is added directly, with no
@@ -1075,119 +1156,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      if (!isChatWithDefinition(body)) {
-        return c.json(withTenancy(channelView(row), channelTenant), 201);
-      }
-
-      // A chat's agent is chosen at creation, not invited later: the
-      // same launch-and-join core `POST .../invite` uses, run inline
-      // here so the chat comes back from this single call already
-      // carrying its one agent participant.
-      //
-      // The agent launch runs after the host, tenant, and settings are
-      // all live. Any failure here leaves a half-built channel that must
-      // be rolled back: the tenant and settings this handler minted are
-      // compensated and deleted exactly as the host-launch path above
-      // compensates a tenant whose host never came up, so a retry starts
-      // clean rather than reusing an orphaned tenant.
-      //
-      // InferenceResolutionError (no model requirements / no inference
-      // source) is a caller-correctable config problem → 409. Other launch
-      // failures (too many @mentions, transient platform errors) → 422.
-      // Compensation failures are logged loudly and never swallow the
-      // original launch error.
-      try {
-        const joined = await launchAndJoinAgent(
-          { store: deps.store, platform: deps.platform, publish },
-          {
-            tenantId: tenant.id,
-            principalId: principal.id,
-            channelId,
-            definitionId: body.definitionId,
-            existingSettings: row.settings,
-            invitable,
-          },
-        );
-
-        // The room is never silent until a human speaks: the agent's
-        // own first turn fires right here, on mint, never waiting on a
-        // reply. See `dispatchGreetingKickoff`'s own doc comment for
-        // why this can never fail — or roll back — the mint itself.
-        const senderName =
-          deps.resolvePrincipalName !== undefined
-            ? await deps
-                .resolvePrincipalName(tenant.id, principal.id)
-                .catch(() => undefined)
-            : undefined;
-      void dispatchGreetingKickoff(
-          { platform: deps.platform },
-          {
-            tenantId: tenant.id,
-            principalId: principal.id,
-            channelId,
-            agentAddress: joined.address,
-            ...(senderName !== undefined ? { senderName } : {}),
-            ...(chatTitle !== undefined ? { workbenchName: chatTitle } : {}),
-          },
-        );
-
-        // The chat's default title, when the caller passes no name, is
-        // its agent's handle.
-        const finalSettings =
-          chatTitle === undefined
-            ? (
-                await deps.store.updateChannelSettings({
-                  tenantId: tenant.id,
-                  channelId,
-                  settings: { ...joined.settings, "chat/name": joined.handle },
-                  updatedBy: principal.id,
-                })
-              ).settings
-            : joined.settings;
-
-        return c.json(
-          withTenancy(
-            channelView({ channelId, settings: finalSettings }),
-            channelTenant,
-          ),
-          201,
-        );
-      } catch (err) {
-        log.error(
-          "Agent launch failed for channel {channelId} after the host " +
-            "launched and settings were written; compensating the channel " +
-            "tenant and deleting its settings",
-          { channelId, tenantId: channelTenant.tenantId, err },
-        );
-        try {
-          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
-          await deps.store.deleteChannelSettings(tenant.id, channelId);
-        } catch (compensationErr) {
-          log.error(
-            "Compensation failed after agent launch failure for channel " +
-              "{channelId}; the orphaned tenant {tenantId} and/or its " +
-              "settings require manual cleanup",
-            {
-              channelId,
-              tenantId: channelTenant.tenantId,
-              compensationErr,
-            },
-          );
-        }
-        if (err instanceof InferenceResolutionError) {
-          return c.json(
-            ErrorEnvelope("not_launchable", err.resolutionMessage),
-            409,
-          );
-        }
-        return c.json(
-          ErrorEnvelope(
-            "agent_launch_failed",
-            err instanceof Error ? err.message : String(err),
-          ),
-          422,
-        );
-      }
+      return c.json(withTenancy(channelView(row), channelTenant), 201);
     },
   );
 

@@ -45,6 +45,7 @@ const ChannelWire = type({
   title: "string",
   kind: "string",
   pinned: "boolean",
+  "definitionId?": "string | null",
   participants: "unknown[]",
   "legacy?": "boolean",
   // Row signals `GET /channels` annotates when it can resolve a

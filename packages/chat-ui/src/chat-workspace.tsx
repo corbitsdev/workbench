@@ -1617,6 +1617,10 @@ function ChatWorkspaceInner({
                     </div>
                   ) : null}
                   <ChannelTimeline
+                    settingUpAgent={
+                      activeChannel?.kind === "chat" &&
+                      typeof activeChannel.definitionId === "string"
+                    }
                     items={mergeStreamingReply(
                       mergePendingSends(
                         messagesState.items,
