@@ -79,14 +79,43 @@ test("mcp_list_servers reports no servers plainly when none are connected", asyn
   }
 });
 
-test("mcp_list_tools rejects a missing server argument", async () => {
+test("mcp_list_tools with no arguments returns a catalog of connected servers", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )) as unknown as typeof fetch;
+  try {
+    const bundle = mcpTools(fakeEnv());
+    const result = await bundle.run(
+      {
+        id: "c1",
+        name: MCP_LIST_TOOLS_TOOL,
+        arguments: {},
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(JSON.parse(result.content as string)).toEqual({ servers: [] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mcp_list_tools rejects toolName without server", async () => {
   const bundle = mcpTools(fakeEnv());
   const result = await bundle.run(
-    { id: "c1", name: MCP_LIST_TOOLS_TOOL, arguments: {} } satisfies ToolCall,
+    {
+      id: "c1",
+      name: MCP_LIST_TOOLS_TOOL,
+      arguments: { toolName: "echo" },
+    } satisfies ToolCall,
     new AbortController().signal,
   );
   expect(result.isError).toBe(true);
-  expect(result.content).toContain("server");
 });
 
 test("mcp_call rejects a missing tool argument", async () => {

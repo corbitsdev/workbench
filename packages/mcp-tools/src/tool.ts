@@ -2,8 +2,12 @@
 // reach ANY MCP server a tenant has connected through Plugins, instead
 // of a hand-built tool package per integration.
 //
-//   mcp_list_servers          -- which MCP servers are connected.
-//   mcp_list_tools({server})  -- what tools a connected server exposes.
+//   mcp_list_servers -- which MCP servers are connected.
+//   mcp_list_tools   -- discover tools: no args for a truncated
+//                        catalog of every server, {pattern} to regex
+//                        search names across all servers, {server} for
+//                        one server's full list, {server, toolName}
+//                        for one tool's full schema.
 //   mcp_call({server, tool, arguments}) -- invoke one of those tools.
 //
 // Credentials: each connected server is a `mcp:<slug>` credential
@@ -42,7 +46,12 @@ import type { CredentialCapability, MediatedCredential } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
-import { callMcpTool, listMcpTools, withMcpConnection } from "./mcp-client";
+import {
+  callMcpTool,
+  listMcpTools,
+  withMcpConnection,
+  type McpToolInfo,
+} from "./mcp-client";
 import { listMcpServers, type McpServerListing } from "./registry-client";
 
 export const MCP_LIST_SERVERS_TOOL = "mcp_list_servers";
@@ -139,12 +148,188 @@ async function runListServers(
   }
 }
 
-const ListToolsInput = type({ server: "string > 0" });
+const ListToolsInput = type({
+  "server?": "string > 0",
+  "toolName?": "string > 0",
+  "pattern?": "string > 0",
+});
 const CallInput = type({
   server: "string > 0",
   tool: "string > 0",
   "arguments?": "object",
 });
+
+const TRUNCATE_LENGTH = 100;
+const TRUNCATE_SUFFIX = "… [truncated]";
+
+function truncateDescription(description: string | undefined): string {
+  if (description === undefined) return "";
+  if (description.length <= TRUNCATE_LENGTH) return description;
+  return description.slice(0, TRUNCATE_LENGTH) + TRUNCATE_SUFFIX;
+}
+
+function toolSummary(tool: McpToolInfo) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    readOnly: tool.annotations?.readOnlyHint === true,
+  };
+}
+
+/** Loads one server's tools, `null` when the server has no bound
+ * credential (mirrors `resolveMcpFetch`'s honest-degrade contract). */
+async function loadServerTools(
+  env: McpToolsEnv,
+  server: McpServerListing,
+): Promise<readonly McpToolInfo[] | null> {
+  const fetchImpl = await resolveMcpFetch(env, server.slug);
+  if (fetchImpl === null) return null;
+  return withMcpConnection({ url: server.url, fetchImpl }, (client) =>
+    listMcpTools(client),
+  );
+}
+
+/** `{server}` -- full tool list for one connected server. */
+async function runListToolsForServer(
+  env: McpToolsEnv,
+  call: ToolCall,
+  slug: string,
+): Promise<ToolResult> {
+  const server = await findServer(env, slug);
+  if (server === null) {
+    return errorResult(
+      call.id,
+      new Error(
+        `MCP server "${slug}" is not connected. Call ` +
+          `${MCP_LIST_SERVERS_TOOL} to see the connected servers.`,
+      ),
+    );
+  }
+  const tools = await loadServerTools(env, server);
+  if (tools === null) {
+    return errorResult(
+      call.id,
+      new Error(`MCP server "${slug}" is not connected.`),
+    );
+  }
+  return {
+    callId: call.id,
+    isError: false,
+    content: JSON.stringify({
+      server: slug,
+      tools: tools.map(toolSummary),
+    }),
+  };
+}
+
+/** `{server, toolName}` -- one tool's full schema. */
+async function runListToolsForTool(
+  env: McpToolsEnv,
+  call: ToolCall,
+  slug: string,
+  toolName: string,
+): Promise<ToolResult> {
+  const server = await findServer(env, slug);
+  if (server === null) {
+    return errorResult(
+      call.id,
+      new Error(
+        `MCP server "${slug}" is not connected. Call ` +
+          `${MCP_LIST_SERVERS_TOOL} to see the connected servers.`,
+      ),
+    );
+  }
+  const tools = await loadServerTools(env, server);
+  if (tools === null) {
+    return errorResult(
+      call.id,
+      new Error(`MCP server "${slug}" is not connected.`),
+    );
+  }
+  const tool = tools.find((candidate) => candidate.name === toolName);
+  if (tool === undefined) {
+    return errorResult(
+      call.id,
+      new Error(
+        `MCP server "${slug}" has no tool named "${toolName}". Call ` +
+          `${MCP_LIST_TOOLS_TOOL} with just {server} to see its tools.`,
+      ),
+    );
+  }
+  return {
+    callId: call.id,
+    isError: false,
+    content: JSON.stringify({ server: slug, tool: toolSummary(tool) }),
+  };
+}
+
+/** `{pattern}` -- regex search of tool AND server names across every
+ * connected server. */
+async function runListToolsForPattern(
+  env: McpToolsEnv,
+  call: ToolCall,
+  pattern: string,
+): Promise<ToolResult> {
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, "i");
+  } catch (err) {
+    return errorResult(
+      call.id,
+      new Error(`"${pattern}" is not a valid regex: ${String(err)}`),
+    );
+  }
+  const servers = await listMcpServers(registryConfig(env));
+  const matches: Array<{
+    server: string;
+    tool: ReturnType<typeof toolSummary>;
+  }> = [];
+  for (const server of servers) {
+    const serverMatches = regex.test(server.slug) || regex.test(server.name);
+    const tools = await loadServerTools(env, server);
+    if (tools === null) continue;
+    for (const tool of tools) {
+      if (serverMatches || regex.test(tool.name)) {
+        matches.push({ server: server.slug, tool: toolSummary(tool) });
+      }
+    }
+  }
+  return {
+    callId: call.id,
+    isError: false,
+    content: JSON.stringify({ pattern, matches }),
+  };
+}
+
+/** No args -- a catalog of every connected server with tool names and
+ * truncated descriptions, cheap enough to skim before drilling in. */
+async function runListToolsCatalog(
+  env: McpToolsEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const servers = await listMcpServers(registryConfig(env));
+  const catalog = [];
+  for (const server of servers) {
+    const tools = await loadServerTools(env, server);
+    catalog.push({
+      server: server.slug,
+      name: server.name,
+      tools:
+        tools === null
+          ? []
+          : tools.map((tool) => ({
+              name: tool.name,
+              description: truncateDescription(tool.description),
+            })),
+    });
+  }
+  return {
+    callId: call.id,
+    isError: false,
+    content: JSON.stringify({ servers: catalog }),
+  };
+}
 
 async function runListTools(
   env: McpToolsEnv,
@@ -159,41 +344,27 @@ async function runListTools(
       ),
     );
   }
-  try {
-    const server = await findServer(env, parsed.server);
-    if (server === null) {
-      return errorResult(
-        call.id,
-        new Error(
-          `MCP server "${parsed.server}" is not connected. Call ` +
-            `${MCP_LIST_SERVERS_TOOL} to see the connected servers.`,
-        ),
-      );
-    }
-    const fetchImpl = await resolveMcpFetch(env, parsed.server);
-    if (fetchImpl === null) {
-      return errorResult(
-        call.id,
-        new Error(`MCP server "${parsed.server}" is not connected.`),
-      );
-    }
-    const tools = await withMcpConnection(
-      { url: server.url, fetchImpl },
-      (client) => listMcpTools(client),
+  if (parsed.toolName !== undefined && parsed.server === undefined) {
+    return errorResult(
+      call.id,
+      new Error(`${MCP_LIST_TOOLS_TOOL}'s "toolName" requires "server".`),
     );
-    return {
-      callId: call.id,
-      isError: false,
-      content: JSON.stringify({
-        server: parsed.server,
-        tools: tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-          readOnly: tool.annotations?.readOnlyHint === true,
-        })),
-      }),
-    };
+  }
+  try {
+    if (parsed.pattern !== undefined) {
+      return await runListToolsForPattern(env, call, parsed.pattern);
+    }
+    if (parsed.server !== undefined) {
+      return parsed.toolName !== undefined
+        ? await runListToolsForTool(
+            env,
+            call,
+            parsed.server,
+            parsed.toolName,
+          )
+        : await runListToolsForServer(env, call, parsed.server);
+    }
+    return await runListToolsCatalog(env, call);
   } catch (err) {
     return errorResult(call.id, err);
   }
@@ -271,11 +442,19 @@ export const mcpTools = defineTool<McpToolsEnv>({
       {
         name: MCP_LIST_TOOLS_TOOL,
         description:
-          "Lists the tools one connected MCP server exposes, including " +
-          "each tool's input schema and whether the server marks it " +
-          "read-only. ALWAYS call this before mcp_call for a server you " +
-          "haven't already inspected in this conversation — never guess " +
-          "a tool name or its arguments.",
+          "Discovers tools on connected MCP servers. Call this once to " +
+          "find the tool you need, then mcp_call — minimize round-trips; " +
+          "never guess a tool name or its arguments. Four modes, pick " +
+          "the narrowest that fits: no arguments returns a catalog of " +
+          "every connected server with its tool names and truncated " +
+          "descriptions, for a first skim. `{pattern}` regex-searches " +
+          "tool AND server names across every connected server — use " +
+          "this when you're not sure which server has the tool you " +
+          "want. `{server}` returns one server's full tool list with " +
+          "full descriptions. `{server, toolName}` returns that one " +
+          "tool's full input schema, once you know exactly which tool " +
+          "you're calling. Never dump a whole server's catalog into a " +
+          "reply to the human.",
         inputSchema: {
           type: "object",
           properties: {
@@ -283,10 +462,24 @@ export const mcpTools = defineTool<McpToolsEnv>({
               type: "string",
               description:
                 "The server's slug, exactly as returned by " +
-                `${MCP_LIST_SERVERS_TOOL}.`,
+                `${MCP_LIST_SERVERS_TOOL}. Omit with \`pattern\` to ` +
+                "search across all servers, or omit both for the full " +
+                "catalog.",
+            },
+            toolName: {
+              type: "string",
+              description:
+                "A specific tool's exact name, to get its full input " +
+                "schema. Requires `server`.",
+            },
+            pattern: {
+              type: "string",
+              description:
+                "A regex tested against every connected server's tool " +
+                "and server names. Use this when unsure which server " +
+                "has the tool you want.",
             },
           },
-          required: ["server"],
         },
       },
       {
@@ -294,8 +487,9 @@ export const mcpTools = defineTool<McpToolsEnv>({
         description:
           "Calls one tool on a connected MCP server. Always requires " +
           "human approval before it runs, regardless of the downstream " +
-          `tool. Call ${MCP_LIST_TOOLS_TOOL} first to get the exact ` +
-          "tool name and input schema — never invent either.",
+          `tool. Call ${MCP_LIST_TOOLS_TOOL} once first to find the ` +
+          "tool (pattern search when unsure which server) and get its " +
+          "exact name and input schema — never invent either.",
         inputSchema: {
           type: "object",
           properties: {

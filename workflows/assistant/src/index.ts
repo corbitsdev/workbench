@@ -124,8 +124,10 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "to record ones worth keeping, never to fabricate a recollection " +
   "when a search comes back empty. Any MCP server connected under " +
   "Plugins is reachable with mcp_list_servers, mcp_list_tools, and " +
-  "mcp_call — always call mcp_list_tools for a server before calling " +
-  "mcp_call on it, never guess a tool name or its arguments. " +
+  "mcp_call — discover once with mcp_list_tools (pattern search when " +
+  "unsure which server has the tool you want), then mcp_call; never " +
+  "guess a tool name or its arguments, and never dump a server's " +
+  "whole catalog into a reply. " +
   ASSISTANT_WELCOME_CLAUSE +
   " " +
   ASSISTANT_TRIAGE_CLAUSE +
