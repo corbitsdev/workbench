@@ -12,7 +12,7 @@ import {
   resolveArtifactRendererKind,
   resolveRendererKindFromMediaType,
 } from "@corbits/artifact-ui";
-import type { ArtifactDetail } from "./api";
+import { artifactPreviewPath, type ArtifactDetail } from "./api";
 import type { CanvasArtifactContent } from "./shell/canvas-availability";
 
 /** Decodes a Library artifact detail into the canvas's typed content — the
@@ -20,6 +20,7 @@ import type { CanvasArtifactContent } from "./shell/canvas-availability";
  * chip opened from chat and the same artifact opened from Library render
  * identically. */
 export function artifactContentFromDetail(
+  tenantId: string,
   detail: ArtifactDetail,
 ): CanvasArtifactContent {
   const rendererKind = resolveArtifactRendererKind(detail);
@@ -32,6 +33,9 @@ export function artifactContentFromDetail(
     // presence `/update` route's own write-grant check is the real gate
     // — this only decides which pane a capable viewer sees.
     canEdit: rendererKind === "doc",
+    ...(rendererKind === "html"
+      ? { previewSrc: artifactPreviewPath(tenantId, detail.id) }
+      : {}),
   };
 }
 

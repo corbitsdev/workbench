@@ -130,7 +130,7 @@ export function ChatPage({
         const artifactId = part.artifactId;
         void fetchArtifactDetail(tenantId, artifactId)
           .then((detail) => {
-            openArtifactInCanvas(artifactContentFromDetail(detail));
+            openArtifactInCanvas(artifactContentFromDetail(tenantId, detail));
           })
           .catch((err) => {
             openArtifactInCanvas(

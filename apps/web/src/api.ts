@@ -255,6 +255,20 @@ export function rejectApproval(
 }
 
 /**
+ * Sandboxed HTML preview URL for a Library artifact (CL-5879) — the same
+ * path an `<iframe sandbox>` in the canvas or Library detail pane loads,
+ * and the "Open in new tab" affordance's `href`. Server-side (`GET
+ * .../artifacts/:id/preview` in `@corbits/artifacts-hub`) answers 415 for
+ * a non-HTML artifact.
+ */
+export function artifactPreviewPath(
+  tenantId: string,
+  artifactId: string,
+): string {
+  return `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}/preview`;
+}
+
+/**
  * One-shot fetch of a Library artifact's detail — the same
  * `GET /api/tenants/:id/artifacts/:artifactId` read `LibraryRoute` uses via
  * `useAPIQuery`, but as a plain promise for callers that aren't a mounted

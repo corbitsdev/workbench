@@ -37,7 +37,7 @@ import {
   type ArtifactSaveState,
 } from "@corbits/artifact-ui";
 import type { ProfileSubject, SharedChannelSummary } from "@corbits/chat-ui";
-import { Maximize2, Minimize2, UserRound, X } from "lucide-react";
+import { ExternalLink, Maximize2, Minimize2, UserRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type * as Y from "yjs";
 
@@ -211,11 +211,16 @@ function CanvasPaneHeader({
   focus,
   onClose,
   onToggleFocus,
+  previewSrc,
 }: {
   readonly title?: string;
   readonly focus: boolean;
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
+  /** When set (an `"html"`-kind artifact with a resolved preview route),
+   * adds an "Open in new tab" action pointed at the same sandboxed URL the
+   * pane's iframe already loads. */
+  readonly previewSrc?: string;
 }) {
   return (
     <div className="shell-canvas-pane-header">
@@ -223,6 +228,14 @@ function CanvasPaneHeader({
         <span className="shell-canvas-pane-title">{title}</span>
       ) : null}
       <div className="shell-canvas-pane-actions">
+        {previewSrc !== undefined ? (
+          <Button variant="ghost" size="sm" asChild>
+            <a href={previewSrc} target="_blank" rel="noreferrer">
+              <ExternalLink aria-hidden="true" />
+              Open in new tab
+            </a>
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
@@ -464,6 +477,9 @@ function ArtifactCanvasPane({
         focus={focus}
         onClose={onClose}
         onToggleFocus={onToggleFocus}
+        {...(artifact.previewSrc !== undefined
+          ? { previewSrc: artifact.previewSrc }
+          : {})}
       />
       <div
         className="shell-artifact-pane-body"
@@ -497,6 +513,9 @@ function ArtifactCanvasPane({
             content={artifact.content}
             {...(artifact.unavailableReason !== undefined
               ? { unavailableReason: artifact.unavailableReason }
+              : {})}
+            {...(artifact.previewSrc !== undefined
+              ? { previewSrc: artifact.previewSrc }
               : {})}
           />
         )}

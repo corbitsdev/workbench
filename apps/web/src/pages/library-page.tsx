@@ -33,7 +33,7 @@ import {
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, FileStack, X } from "lucide-react";
+import { ArrowDownUp, ExternalLink, FileStack, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   describeApiError,
@@ -43,6 +43,7 @@ import {
 } from "@corbits/api-query";
 
 import {
+  artifactPreviewPath,
   ArtifactDetailSchema,
   ArtifactListPageSchema,
   useAPIQuery,
@@ -144,16 +145,24 @@ function ProvenanceLine({
 }
 
 function PreviewPane({
+  tenantId,
   detail,
   loading,
   error,
   onClose,
 }: {
+  readonly tenantId: string | null;
   readonly detail: ArtifactDetail | null;
   readonly loading: boolean;
   readonly error: string | null;
   readonly onClose: () => void;
 }) {
+  const rendererKind =
+    detail !== null ? resolveArtifactRendererKind(detail) : null;
+  const previewSrc =
+    detail !== null && rendererKind === "html" && tenantId !== null
+      ? artifactPreviewPath(tenantId, detail.id)
+      : undefined;
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-l border-border bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -170,15 +179,25 @@ function PreviewPane({
           ) : null}
           {detail !== null ? <ProvenanceLine source={detail.source} /> : null}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          aria-label="Close preview"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
+        <div className="flex items-center gap-1">
+          {previewSrc !== undefined ? (
+            <Button variant="ghost" size="sm" asChild>
+              <a href={previewSrc} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden="true" />
+                Open in new tab
+              </a>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label="Close preview"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {loading ? <Skeleton className="h-40 w-full" /> : null}
@@ -187,11 +206,15 @@ function PreviewPane({
             {error}
           </p>
         ) : null}
-        {!loading && error === null && detail !== null ? (
+        {!loading &&
+        error === null &&
+        detail !== null &&
+        rendererKind !== null ? (
           <ArtifactRenderer
-            rendererKind={resolveArtifactRendererKind(detail)}
+            rendererKind={rendererKind}
             title={detail.title}
             content={detail.content}
+            {...(previewSrc !== undefined ? { previewSrc } : {})}
           />
         ) : null}
       </div>
@@ -216,6 +239,7 @@ export function LibraryPage({
   preview = null,
   previewLoading = false,
   previewError = null,
+  tenantId = null,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   readonly now?: number;
@@ -229,6 +253,10 @@ export function LibraryPage({
   readonly preview?: ArtifactDetail | null;
   readonly previewLoading?: boolean;
   readonly previewError?: string | null;
+  /** Needed to build the HTML preview route's URL (CL-5879); the "Open in
+   * new tab" / iframe affordance is simply absent without one (a
+   * standalone render with no bench tenant, e.g. these page tests). */
+  readonly tenantId?: string | null;
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
@@ -392,6 +420,7 @@ export function LibraryPage({
         {activeSelected !== null ? (
           <div className="hidden w-[min(28rem,40%)] shrink-0 md:flex md:flex-col">
             <PreviewPane
+              tenantId={tenantId}
               detail={preview}
               loading={previewLoading}
               error={previewError}
@@ -513,6 +542,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
         return (
           <LibraryPage
             artifacts={artifacts}
+            tenantId={selectedTenantId}
             uploading={uploading}
             uploadError={uploadError}
             query={searchQuery}

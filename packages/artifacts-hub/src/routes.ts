@@ -15,6 +15,7 @@ import {
   createFileArtifact,
   getArtifact,
   listArtifacts,
+  resolveDownload,
   serializeArtifact,
   serializeArtifactListItem,
   UnsupportedUploadTypeError,
@@ -64,6 +65,12 @@ export type ArtifactUploadInput = {
   readonly bytes: Uint8Array;
 };
 
+/** Outcome of resolving an artifact's sandboxed HTML preview. */
+export type ArtifactPreviewResult =
+  | { readonly status: "ok"; readonly html: string }
+  | { readonly status: "not_found" }
+  | { readonly status: "unsupported" };
+
 /** Minimal port the routes need — production wraps the engine db. */
 export type ArtifactRoutesStore = {
   list(
@@ -76,7 +83,13 @@ export type ArtifactRoutesStore = {
     principalId: string,
     files: readonly ArtifactUploadInput[],
   ): Promise<readonly SerializedArtifact[]>;
+  preview(tenantId: string, artifactId: string): Promise<ArtifactPreviewResult>;
 };
+
+/** Bare MIME type, stripped of any `; charset=...` parameter. */
+function baseMimeType(mimeType: string): string {
+  return mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+}
 
 export type CreateArtifactRoutesDeps = {
   store: ArtifactRoutesStore;
@@ -226,6 +239,25 @@ export function createArtifactDbStore(
       });
       return rows.map(serializeArtifact);
     },
+    async preview(tenantId, artifactId) {
+      const row = await getArtifact(db, artifactId);
+      if (row === null || row.tenantId !== tenantId)
+        return { status: "not_found" };
+      const download = await resolveDownload(db, contentStore, row, false);
+      if ("status" in download) {
+        return {
+          status: download.status === 404 ? "not_found" : "unsupported",
+        };
+      }
+      if (baseMimeType(download.mimeType) !== "text/html") {
+        return { status: "unsupported" };
+      }
+      const html =
+        typeof download.body === "string"
+          ? download.body
+          : new TextDecoder().decode(download.body);
+      return { status: "ok", html };
+    },
   };
 }
 
@@ -353,6 +385,55 @@ export function createArtifactRoutes(
     }
   });
 
+  // Sandboxed HTML preview: served with a locked-down CSP so a self-contained
+  // page renders visually but can reach nothing on the hub's own origin.
+  //  - `sandbox allow-scripts` (the header, mirrored by the iframe's own
+  //    `sandbox` attribute): scripts may run, but the document sits in an
+  //    opaque unique origin — no cookies, no storage, no same-origin fetches,
+  //    no top-level navigation, no popups.
+  //  - `default-src 'none'`: nothing loads unless a more specific directive
+  //    below allows it — no network reach to the hub API or anywhere else.
+  //  - `style-src 'unsafe-inline'`: inline `<style>`/`style=` renders, since a
+  //    single-file page has no external stylesheet to fetch.
+  //  - `img-src data:`: inline data-URL images render; no external image
+  //    fetches.
+  //  - `script-src 'unsafe-inline'`: inline `<script>` runs, matching the
+  //    `sandbox allow-scripts` directive above; no external script fetches.
+  // `X-Frame-Options` is deliberately never set — the page must stay
+  // frameable by our own canvas iframe.
+  app.get(
+    "/:artifactId/preview",
+    deps.requireGrant("asset:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const artifactId = c.req.param("artifactId");
+      const result = await deps.store.preview(tenant.id, artifactId);
+      if (result.status === "not_found") {
+        return c.json(
+          { error: { code: "not_found", message: "Artifact not found" } },
+          404,
+        );
+      }
+      if (result.status === "unsupported") {
+        return c.json(
+          {
+            error: {
+              code: "unsupported_media_type",
+              message: "Artifact is not previewable HTML",
+            },
+          },
+          415,
+        );
+      }
+      return c.body(result.html, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy":
+          "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'unsafe-inline'",
+        "X-Content-Type-Options": "nosniff",
+      });
+    },
+  );
+
   app.get("/:artifactId", deps.requireGrant("asset:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const artifactId = c.req.param("artifactId");
@@ -394,6 +475,7 @@ export function createUnavailableArtifactRoutes(
   app.get("/", requireGrant("asset:*", "read"), unavailable);
   app.post("/upload", requireGrant("asset:*", "write"), unavailable);
   app.get("/counts", requireGrant("asset:*", "read"), unavailable);
+  app.get("/:artifactId/preview", requireGrant("asset:*", "read"), unavailable);
   app.get("/:artifactId", requireGrant("asset:*", "read"), unavailable);
   return app;
 }

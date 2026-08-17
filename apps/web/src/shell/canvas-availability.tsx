@@ -28,6 +28,10 @@ export type CanvasArtifactContent = {
   readonly content: string;
   readonly unavailableReason?: string;
   readonly canEdit?: boolean;
+  /** The sandboxed preview route for an `"html"`-kind artifact (CL-5879) —
+   * see `ArtifactRenderProps.previewSrc`. Absent for every other renderer
+   * kind, and for an HTML blob with no Library artifact id to preview. */
+  readonly previewSrc?: string;
 };
 
 /** The canvas's routine pane subject: which routine to show, or `null` to

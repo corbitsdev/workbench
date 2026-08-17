@@ -57,3 +57,29 @@ describe("ArtifactRenderer sheet cutover", () => {
     expect(markup).toContain("This sheet has no rows yet.");
   });
 });
+
+describe("ArtifactRenderer html preview", () => {
+  test("renders a sandboxed iframe pointed at the preview route", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer
+        rendererKind="html"
+        title="Landing page"
+        content=""
+        previewSrc="/api/tenants/t1/artifacts/a1/preview"
+      />,
+    );
+    expect(markup).toContain("<iframe");
+    expect(markup).toContain('sandbox="allow-scripts"');
+    expect(markup).toContain('src="/api/tenants/t1/artifacts/a1/preview"');
+  });
+
+  test("falls back to an unsupported message with no previewSrc", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer rendererKind="html" title="Landing page" content="" />,
+    );
+    expect(markup).not.toContain("<iframe");
+    expect(markup).toContain(
+      "No sandboxed preview is available for this HTML artifact yet.",
+    );
+  });
+});

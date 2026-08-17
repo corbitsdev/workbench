@@ -77,7 +77,7 @@ function artifactDetail(overrides: Partial<ArtifactDetail>): ArtifactDetail {
 
 describe("artifactContentFromDetail", () => {
   test("resolves the renderer kind the same way Library detail does", () => {
-    const content = artifactContentFromDetail(artifactDetail({}));
+    const content = artifactContentFromDetail("t1", artifactDetail({}));
     expect(content).toEqual({
       id: "art_1",
       title: "Q3 report",
@@ -89,6 +89,7 @@ describe("artifactContentFromDetail", () => {
 
   test("never falls back to blob bytes — it reads the artifact's own content", () => {
     const content = artifactContentFromDetail(
+      "t1",
       artifactDetail({ kind: "csv-export", title: "Signups", content: "a,b" }),
     );
     expect(content.rendererKind).toBe("sheet");
@@ -97,9 +98,23 @@ describe("artifactContentFromDetail", () => {
 
   test("a non-text kind is never marked editable — only 'doc' co-edits", () => {
     const content = artifactContentFromDetail(
+      "t1",
       artifactDetail({ kind: "csv-export", title: "Signups", content: "a,b" }),
     );
     expect(content.canEdit).toBe(false);
+  });
+
+  test("an html file artifact gets a previewSrc pointed at the sandboxed preview route", () => {
+    const content = artifactContentFromDetail(
+      "t1",
+      artifactDetail({
+        kind: "file",
+        title: "landing.html",
+        content: "<p>hi</p>",
+      }),
+    );
+    expect(content.rendererKind).toBe("html");
+    expect(content.previewSrc).toBe("/api/tenants/t1/artifacts/art_1/preview");
   });
 });
 
