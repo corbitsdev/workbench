@@ -61,6 +61,16 @@ const SkillIndexResponse = type({
 
 const PinResponse = type({ skills: "string[]" });
 
+export type SkillDetail = {
+  readonly name: string;
+  readonly description: string;
+  readonly body: string;
+};
+
+const SkillDetailResponse = type({
+  data: { name: "string", description: "string", body: "string" },
+});
+
 function authHeaders(config: SkillsToolClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
@@ -120,6 +130,26 @@ export async function listSkills(
   if (parsed instanceof type.errors) {
     throw new Error(
       `Skill list response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed.data;
+}
+
+/** Loads one skill's full body by name — the on-demand read behind
+ * `read_skill`, over the same `/load` route the pinned-skill
+ * `load_skill` tool uses. Throws on any transport, HTTP, or shape
+ * failure — never fabricates content. */
+export async function loadSkill(
+  config: SkillsToolClientConfig,
+  name: string,
+): Promise<SkillDetail> {
+  const body = await postJson(config, skillsEndpoint(config, "/load"), {
+    name,
+  });
+  const parsed = SkillDetailResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Load-skill response did not match the expected shape: ${parsed.summary}`,
     );
   }
   return parsed.data;

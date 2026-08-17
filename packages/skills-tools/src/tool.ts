@@ -21,12 +21,14 @@ import { type } from "arktype";
 import {
   createSkill,
   listSkills,
+  loadSkill,
   pinSkill,
   updateSkill,
   type SkillsToolClientConfig,
 } from "./client";
 
 export const LIST_SKILLS_TOOL = "list_skills";
+export const READ_SKILL_TOOL = "read_skill";
 export const CREATE_SKILL_TOOL = "create_skill";
 export const UPDATE_SKILL_TOOL = "update_skill";
 export const PIN_SKILL_TOOL = "pin_skill";
@@ -79,6 +81,33 @@ const PinSkillInput = type({
   definitionId: "string > 0",
   skillName: "string > 0",
 });
+
+const ReadSkillInput = type({
+  name: "string > 0",
+});
+
+async function runReadSkill(
+  env: WorkflowSkillsWriteEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = ReadSkillInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`read_skill received invalid input: ${parsed.summary}`),
+    );
+  }
+  try {
+    const skill = await loadSkill(clientConfig(env), parsed.name);
+    return {
+      callId: call.id,
+      isError: false,
+      content: `# ${skill.name}\n${skill.description}\n\n${skill.body}`,
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
 
 async function runListSkills(
   env: WorkflowSkillsWriteEnv,
@@ -179,6 +208,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
   requires: ["hubSkillsUrl", "hubAgentDirectoryUrl", "sidecarToken", "address"],
   definitions: [
     { name: LIST_SKILLS_TOOL },
+    { name: READ_SKILL_TOOL },
     { name: CREATE_SKILL_TOOL, approval: "ask" },
     { name: UPDATE_SKILL_TOOL, approval: "ask" },
     { name: PIN_SKILL_TOOL, approval: "ask" },
@@ -192,6 +222,23 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
           "one-line description for each. Use this to see what already " +
           "exists before offering to create a new one.",
         inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: READ_SKILL_TOOL,
+        description:
+          "Read one skill's full instructions by name. Use this when " +
+          "you are about to do the thing a skill covers — load it and " +
+          "follow it rather than working from the one-line description.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "The exact name of the skill to read.",
+            },
+          },
+          required: ["name"],
+        },
       },
       {
         name: CREATE_SKILL_TOOL,
@@ -279,6 +326,8 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
       switch (call.name) {
         case LIST_SKILLS_TOOL:
           return runListSkills(env, call);
+        case READ_SKILL_TOOL:
+          return runReadSkill(env, call);
         case CREATE_SKILL_TOOL:
           return runCreateSkill(env, call);
         case UPDATE_SKILL_TOOL:
