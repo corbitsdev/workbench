@@ -18,13 +18,16 @@ function mount(initialChannelId: string | null) {
   let latestState: StreamingReplyState = null;
   let send: (eventType: string, data: unknown) => void = () => {};
   let setChannelId: (id: string | null) => void = () => {};
+  let awaitReply: () => void = () => {};
 
   function Host() {
     const [channelId, updateChannelId] = useState(initialChannelId);
     setChannelId = updateChannelId;
-    const { streamingReply, handleStreamEvent } = useStreamingReply(channelId);
+    const { streamingReply, handleStreamEvent, noteAwaitingReply } =
+      useStreamingReply(channelId);
     latestState = streamingReply;
     send = handleStreamEvent;
+    awaitReply = noteAwaitingReply;
     return null;
   }
 
@@ -40,6 +43,10 @@ function mount(initialChannelId: string | null) {
     switchChannel: (id: string | null) =>
       act(() => {
         setChannelId(id);
+      }),
+    awaitReply: () =>
+      act(() => {
+        awaitReply();
       }),
     get: () => latestState,
     unmount: () => act(() => root.unmount()),
@@ -93,6 +100,19 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
 
     harness.switchChannel("chan_b");
     expect(harness.get()).toBeNull();
+    harness.unmount();
+  });
+
+  test("noteAwaitingReply opens a pending reply after a send, and deltas take over", () => {
+    const harness = mount("chan_a");
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ text: "" });
+
+    harness.send("chat.agent", delta("Hel"));
+    expect(harness.get()).toEqual({ text: "Hel" });
+
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ text: "Hel" });
     harness.unmount();
   });
 

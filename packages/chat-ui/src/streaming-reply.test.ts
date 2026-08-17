@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { nextStreamingReplyState, typingAgentNames } from "./streaming-reply";
+import {
+  nextStreamingReplyState,
+  openPendingReply,
+  typingAgentNames,
+} from "./streaming-reply";
 
 const HUMAN = { address: "prn_sawyer", handle: "Sawyer" };
 const MYRA = { address: "myra@agents.example", handle: "Myra" };
@@ -89,6 +93,36 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
     ).toBe(state);
   });
 
+  test("reactor.start opens an empty reply when idle — the turn began before any tokens", () => {
+    expect(
+      nextStreamingReplyState(
+        null,
+        agentEvent({ type: "reactor.start", seq: 0, data: {} }),
+      ),
+    ).toEqual({ text: "" });
+  });
+
+  test("reactor.start never resets an in-progress reply", () => {
+    const state = { text: "Hello" };
+    expect(
+      nextStreamingReplyState(
+        state,
+        agentEvent({ type: "reactor.start", seq: 9, data: {} }),
+      ),
+    ).toBe(state);
+  });
+
+  test("reactor.done and reactor.error clear the reply — the whole turn is over", () => {
+    for (const type of ["reactor.done", "reactor.error"]) {
+      expect(
+        nextStreamingReplyState(
+          { text: "Hello" },
+          agentEvent({ type, seq: 10, data: {} }),
+        ),
+      ).toBeNull();
+    }
+  });
+
   test("a malformed delta payload (no partial.text) is ignored rather than crashing", () => {
     const state = { text: "Hello" };
     expect(
@@ -99,6 +133,17 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
     ).toBe(state);
     expect(nextStreamingReplyState(state, agentEvent(null))).toBe(state);
     expect(nextStreamingReplyState(state, agentEvent("garbage"))).toBe(state);
+  });
+});
+
+describe("openPendingReply", () => {
+  test("opens an empty pending reply when idle", () => {
+    expect(openPendingReply(null)).toEqual({ text: "" });
+  });
+
+  test("never resets a reply already streaming", () => {
+    const state = { text: "Hel" };
+    expect(openPendingReply(state)).toBe(state);
   });
 });
 
