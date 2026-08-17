@@ -70,19 +70,6 @@ describe("SHELL_CONTEXT_MENU_TARGETS", () => {
     });
   });
 
-  test("resolves a known inbox filter", () => {
-    const container = mount('<div data-ctx-inbox-filter="mention"></div>');
-    expect(resolve(container)).toEqual({
-      type: "inbox-filter",
-      filter: "mention",
-    });
-  });
-
-  test("falls through an unrecognized inbox filter value", () => {
-    const container = mount('<div data-ctx-inbox-filter="bogus"></div>');
-    expect(resolve(container)).toEqual(SHELL_CONTEXT_MENU_FALLBACK);
-  });
-
   test("resolves an insights run row", () => {
     const container = mount('<div data-ctx-insights-run="run-1"></div>');
     expect(resolve(container)).toEqual({

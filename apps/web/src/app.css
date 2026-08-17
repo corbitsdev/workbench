@@ -954,17 +954,6 @@ select:disabled,
   outline: 1px solid var(--foreground);
   outline-offset: -1px;
 }
-.shell-sidebar-footer-count {
-  margin-left: auto;
-  min-width: 1.35rem;
-  padding: 0 0.35rem;
-  border: 1px solid var(--shell-accent);
-  color: var(--shell-accent);
-  font-size: 0.75rem;
-  line-height: 1.25rem;
-  text-align: center;
-}
-
 /* Brand row: the mark left, "+ New workbench" right — the sidebar's first
    line, above the search box and the Workbenches label. */
 .shell-sidebar-brand-row {

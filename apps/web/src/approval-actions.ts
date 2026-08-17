@@ -1,11 +1,11 @@
 // Builds the `ApprovalActions` port `ChatWorkspace` (`@corbits/chat-ui`)
-// calls for its in-chat approve card. Reuses the exact functions Inbox and
-// the Activity band already use -- `getApprovalNeedsYou`, `approveApproval`,
-// `rejectApproval` in `api.ts` -- and invalidates the same query keys they
-// invalidate, so approving in chat updates Inbox's badge and the Activity
-// band's count live, and vice versa. This is the one place that logic
-// belongs: chat-ui owns no `QueryClient`, so the invalidation the design
-// calls for can only run here.
+// calls for its in-chat approve card. Reuses the exact functions the
+// Activity band already uses -- `getApprovalNeedsYou`, `approveApproval`,
+// `rejectApproval` in `api.ts` -- and invalidates the same query keys it
+// invalidates, so approving in chat updates the Activity band's count
+// live, and vice versa. This is the one place that logic belongs: chat-ui
+// owns no `QueryClient`, so the invalidation the design calls for can only
+// run here.
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApprovalActions, ApprovalDecisionResult } from "@corbits/chat-ui";
@@ -23,8 +23,9 @@ export function createChatApprovalActions(
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.needsYou(tenantId),
     });
-    // Mirrors `inbox-page.tsx`'s own `invalidateInbox`: any cached query
-    // keyed under this tenant's inbox paths (list, detail, counts).
+    // Any cached query keyed under this tenant's inbox API paths (list,
+    // detail, counts) — the tasks backend still owns these routes even
+    // though the Inbox page that used to read them is gone.
     void queryClient.invalidateQueries({
       predicate: (query) => {
         const key = query.queryKey;

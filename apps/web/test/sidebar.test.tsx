@@ -61,10 +61,6 @@ function stubFetch(needsYou: unknown = { items: [] }): void {
       return Promise.resolve(json(needsYou));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
-    if (path.includes("/inbox/counts"))
-      return Promise.resolve(
-        json({ action: 1, mention: 0, delivery: 1, open: 2 }),
-      );
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -89,15 +85,15 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("footer is a Plugins row plus the account row; the inbox bell lives in the header", () => {
+  test("footer is Plugins, Insights, then the account row — no Inbox", () => {
     const markup = renderSidebar("/c");
     expect(markup).toContain("shell-sidebar-footer-row");
     expect(markup).toContain(">Plugins<");
-    expect(markup).toContain('aria-label="Notifications"');
+    expect(markup).toContain(">Insights<");
     expect(markup).toContain("data-ctx-account");
-    // Insights and Settings moved into the account menu — no standalone
-    // footer icons remain (a second stacked footer band was the bug).
-    expect(markup).not.toContain('aria-label="Insights"');
+    expect(markup).not.toContain(">Inbox<");
+    expect(markup).not.toContain('aria-label="Notifications"');
+    // Settings stays in the account menu, not a standalone footer icon.
     expect(markup).not.toContain('aria-label="Settings"');
   });
 

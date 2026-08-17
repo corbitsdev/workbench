@@ -1,10 +1,13 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// needs-you activity band, the utility icon row (plugins, insights, inbox
-// bell with its unread count, settings), and below it the account row —
-// avatar + name, the whole row is the trigger for a menu that pops upward
-// with weekly usage, settings, feedback, and log out. Always present;
-// there is no collapse affordance and no second nav column.
+// needs-you activity band, the utility icon row (plugins, insights), and
+// below it the account row — avatar + name, the whole row is the trigger
+// for a menu that pops upward with weekly usage, settings, feedback, and
+// log out. Always present; there is no collapse affordance and no second
+// nav column.
+//
+// Inbox is gone (CL-6151, owner decision: tasks + approvals don't flow
+// into workbenches) — Insights took its footer slot instead.
 //
 // No bench switcher (CL-6089): a workbench IS an agent conversation now,
 // one per account, so there is nothing to switch between in the common
@@ -27,7 +30,7 @@ import {
   SidebarPanelFooter,
 } from "@corbits/react-ui";
 import {
-  Bell,
+  ChartColumn,
   ChevronRight,
   LogOut,
   MessageSquarePlus,
@@ -44,7 +47,6 @@ import {
 } from "@corbits/insights/client";
 
 import webPackage from "../../package.json";
-import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { requestNewWorkbench } from "../command-palette-actions";
@@ -59,40 +61,6 @@ import { WorkbenchList } from "./workbench-list";
 /** The repo's own issue tracker — read off this package's manifest (set
  * from `git remote`) rather than a hardcoded org/repo guess. */
 const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
-
-function InboxBell({
-  active,
-  onNavigate,
-}: {
-  readonly active: boolean;
-  readonly onNavigate: (to: string) => void;
-}) {
-  const { selectedTenantId } = useBench();
-  const countsQuery = useAPIQuery(
-    selectedTenantId === null ? "" : inboxCountsPath(selectedTenantId),
-    InboxCountsSchema,
-  );
-  const counts = countsQuery.kind === "ready" ? countsQuery.data : null;
-  const open = counts?.open ?? 0;
-  // A footer row like Plugins: bell, "Inbox", and the open count when there
-  // is one — the row IS the affordance, no popover in between.
-  return (
-    <button
-      type="button"
-      className="shell-sidebar-footer-row shell-sidebar-bell"
-      data-active={active ? "true" : undefined}
-      aria-current={active ? "page" : undefined}
-      aria-label="Notifications"
-      onClick={() => onNavigate("/inbox")}
-    >
-      <Bell />
-      <span>Inbox</span>
-      {open > 0 ? (
-        <span className="shell-sidebar-footer-count">{open}</span>
-      ) : null}
-    </button>
-  );
-}
 
 /**
  * One-line 7-day cost/token summary, read off the same cheap `/usage`
@@ -183,10 +151,9 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        {/* Reference shape: one Plugins row, then the account row anchors
-            everything else (Insights as usage, Settings, Log out) in its
-            pop-up menu — a single footer, never two stacked rows. Inbox
-            lives in the header beside search. */}
+        {/* Footer order: Plugins, Insights, then the account row anchors
+            everything else (weekly usage, Settings, Log out) in its
+            pop-up menu — a single footer, never two stacked rows. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"
@@ -197,10 +164,16 @@ export function Sidebar({
           <Plug />
           <span>Plugins</span>
         </button>
-        <InboxBell
-          active={matchesRoute("/inbox", path)}
-          onNavigate={onNavigate}
-        />
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/insights", path) ? "true" : undefined}
+          aria-current={matchesRoute("/insights", path) ? "page" : undefined}
+          onClick={() => onNavigate("/insights")}
+        >
+          <ChartColumn />
+          <span>Insights</span>
+        </button>
 
         <Menu>
           <MenuTrigger asChild>

@@ -10,16 +10,20 @@
 // static render.
 
 import { ThemeProvider } from "@corbits/react-ui";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
 
-/** Legacy routes that only redirect (see `pages/legacy-settings-redirects.tsx`)
- * — no stable panel title to assert via the generic SSR loop below. */
-const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills"]);
+/** Legacy routes that only redirect — `/agents` and `/skills` bounce to
+ * their Settings section (`pages/legacy-settings-redirects.tsx`), `/inbox`
+ * bounces home (the Inbox page is gone, CL-6151) — none has a stable panel
+ * title to assert via the generic SSR loop below. */
+const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills", "/inbox"]);
 
 const noNavigate = () => undefined;
 const noop = () => undefined;
@@ -50,32 +54,23 @@ function stagePageTitle(markup: string): string | undefined {
   return /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1];
 }
 
-/** The sidebar footer marks its own destination current: Insights and
- * Settings are icon buttons with `aria-label` + `aria-current`; the inbox
- * bell (a react-ui NotificationsBell inside a wrapper) marks its wrapper
- * with `data-active` instead. Returns the active destination's label so
+/** The sidebar footer marks its own destination current: Plugins and
+ * Insights are text rows with `aria-current="page"` on the lit one.
+ * Settings lives in the account menu, so its route lights nothing in the
+ * chrome — the stage title carries it. Returns the active row's label so
  * tests confirm the *right* footer affordance lights, and nothing else
  * does. */
-// The sidebar's active-destination signals: the header bell for Inbox,
-// the Plugins footer row, and the account menu (Insights/Settings live
-// inside it, so their routes light nothing in the chrome — the stage
-// title carries them).
 function activeFooterLabel(markup: string): string | undefined {
-  if (/shell-sidebar-bell"[^>]*data-active="true"/.test(markup)) {
-    return "Inbox";
-  }
-  if (/shell-sidebar-footer-row"[^>]*aria-current="page"/.test(markup)) {
-    return "Plugins";
-  }
-  const match =
-    /aria-label="([^"]+)"[^>]*aria-current="page"/.exec(markup) ??
-    /aria-current="page"[^>]*aria-label="([^"]+)"/.exec(markup);
-  return match?.[1];
+  const lit = /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
+    markup,
+  );
+  if (lit === null) return undefined;
+  return /<span>([^<]+)<\/span>/.exec(lit[1] ?? "")?.[1];
 }
 
 const FOOTER_LABELS: Record<string, string> = {
-  "/inbox": "Inbox",
   "/plugins": "Plugins",
+  "/insights": "Insights",
 };
 
 describe("route table", () => {
@@ -94,13 +89,12 @@ describe("route table", () => {
     ]);
   });
 
-  test("palette pages are Workbenches, Routines, Library, Insights, Inbox, Settings", () => {
+  test("palette pages are Workbenches, Routines, Library, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Workbenches",
       "Routines",
       "Library",
       "Insights",
-      "Inbox",
       "Settings",
     ]);
   });
@@ -122,6 +116,41 @@ describe("route table", () => {
     expect(matchesRoute("/skills", "/skills/skill_1")).toBe(true);
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/agents");
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/skills");
+  });
+
+  test("/inbox stays routable (redirect-only) but is off the palette pages", () => {
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/inbox");
+  });
+});
+
+describe("/inbox redirect", () => {
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    if (root !== null) {
+      act(() => {
+        root?.unmount();
+      });
+      root = null;
+    }
+    container?.remove();
+    container = null;
+  });
+
+  test("bounces old /inbox links home — the Inbox page is gone (CL-6151)", async () => {
+    const inboxRoute = APP_ROUTES.find((route) => route.path === "/inbox");
+    if (inboxRoute === undefined) throw new Error("no /inbox route entry");
+    const navigated: string[] = [];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        inboxRoute.render("/inbox", (to) => navigated.push(to)),
+      );
+    });
+    expect(navigated).toEqual(["/"]);
   });
 });
 
