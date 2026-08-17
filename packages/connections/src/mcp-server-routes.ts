@@ -349,6 +349,15 @@ export function createMcpServerRoutes(
           cookies,
         );
       }
+      // The provider row is the connection as far as the listing is
+      // concerned — deleting only the credential left a ghost entry
+      // that re-listed forever.
+      await api(
+        "DELETE",
+        `/api/tenants/${tenant.id}/providers/${provider.id}`,
+        undefined,
+        cookies,
+      );
       return c.body(null, 204);
     },
   );
