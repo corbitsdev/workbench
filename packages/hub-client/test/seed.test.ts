@@ -10,6 +10,7 @@ import {
   type WorkflowPusher,
 } from "../src/seed";
 import { DEFAULT_SKILLS } from "../src/default-skills";
+import { CATALOG_SEEDS } from "../src/catalog-seed-data";
 import {
   assetRow,
   collector,
@@ -1124,7 +1125,11 @@ describe("seedCatalog", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        expect(body).toEqual({ modelId: "mdl_1", providerId: "cpv_1" });
+        expect(body).toEqual({
+          modelId: "mdl_1",
+          providerId: "cpv_1",
+          priority: 0,
+        });
         return {
           status: 201,
           data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
@@ -1296,11 +1301,17 @@ describe("seedCatalog", () => {
       if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
-      )
+      ) {
+        // Priority = the provider's CATALOG_SEEDS declaration index, so
+        // multi-provider fallback order is deterministic, never a tie.
+        expect((body as { priority: number }).priority).toBe(
+          Object.keys(CATALOG_SEEDS).indexOf("huggingface"),
+        );
         return {
           status: 201,
           data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
         };
+      }
       return undefined;
     };
 
