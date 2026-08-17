@@ -572,10 +572,27 @@
 .chat-bubble-text {
   margin: 0;
   font-size: 0.9375rem;
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--foreground);
+  /* Reading width, not viewport width: on a wide window an unbounded
+     line runs 200+ characters and long agent replies become a wall.
+     ~72ch is the ceiling comfortable prose tolerates. */
+  max-width: 72ch;
+}
+
+/* Long agent replies are documents, not one-liners: give block-level
+   markdown a vertical rhythm so bold run-in headers and lists read as
+   structure instead of a single dense wall. */
+.chat-md-paragraph + .chat-md-paragraph,
+.chat-md-paragraph + .chat-md-heading,
+.chat-md-heading + .chat-md-paragraph {
+  margin-top: 0.5rem;
+}
+
+.chat-bubble-text strong {
+  font-weight: 640;
 }
 
 .chat-bubble-time {
