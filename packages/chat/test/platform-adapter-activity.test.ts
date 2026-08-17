@@ -74,6 +74,7 @@ function fakeDb(plan: {
 function buildPlatform(plan: Parameters<typeof fakeDb>[0]) {
   return createHubChatPlatform({
     hubPublicKey: "hub-key",
+    toolGrantsForPins: () => [],
     db: fakeDb(plan) as never,
     noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
     sessionService: {} as unknown as SessionService,
