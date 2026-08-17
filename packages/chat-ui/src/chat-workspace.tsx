@@ -765,6 +765,33 @@ function ChatWorkspaceInner({
           rootThreadId: resolvedRootThreadId,
         });
 
+        // A thread hangs off a message the reader was just looking at —
+        // rendering the thread without it strands the conversation
+        // context. Prepend the parent from the channel feed when the
+        // thread's own page doesn't carry it; a parent that can't be
+        // found (deleted, out of the fetched window) degrades to the
+        // bare thread rather than an error.
+        async function withParentContext(
+          items: MessageItem[],
+          parentMessageId: string | null,
+        ): Promise<MessageItem[]> {
+          if (
+            parentMessageId === null ||
+            items.some((m) => m.id === parentMessageId)
+          ) {
+            return items;
+          }
+          try {
+            const channelPage = await listMessages(tenantId, channelId);
+            const parent = channelPage.items.find(
+              (m) => m.id === parentMessageId,
+            );
+            return parent === undefined ? items : [parent, ...items];
+          } catch {
+            return items;
+          }
+        }
+
         async function fetchTarget(
           fetchFor: MessageFeedTarget,
         ): Promise<MessageItem[]> {
@@ -775,11 +802,16 @@ function ChatWorkspaceInner({
                 channelId,
                 fetchFor.threadId,
               );
-              return sortMessagesOldestFirst(page.items);
+              return withParentContext(
+                sortMessagesOldestFirst(page.items),
+                page.thread.parentMessageId,
+              );
             }
             case "empty":
-              // Brand-new reply thread — nothing to load yet.
-              return [];
+              // Brand-new reply thread — no replies yet, but the message
+              // it is being started from is the context the composer
+              // needs on screen.
+              return withParentContext([], pendingParentMessageId);
             case "root-thread": {
               const page = await listThreadMessages(
                 tenantId,
