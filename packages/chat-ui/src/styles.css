@@ -611,8 +611,11 @@
    the same author drop the avatar/name header entirely — indented to sit
    under the name above, with the timestamp tucked into the avatar gutter
    and only revealed on hover/focus rather than shown on every line. */
+/* Base row padding (0.45rem) + avatar column (2.15rem) + row gap
+   (0.65rem) — all three, so continuation text sits exactly under the
+   header message's text, not 0.45rem left of it. */
 .chat-bubble-row[data-grouped="true"] {
-  padding-left: calc(2.15rem + 0.65rem);
+  padding-left: calc(0.45rem + 2.15rem + 0.65rem);
   position: relative;
 }
 
@@ -1882,7 +1885,7 @@
   width: 1.5rem;
   height: 1.5rem;
   flex-shrink: 0;
-  border-radius: 0;
+  border-radius: 50%;
   border: 1.5px solid var(--background);
   margin-left: -0.35rem;
   background: var(--muted);
@@ -1945,6 +1948,13 @@
 
 .chat-presence-avatar:first-child {
   margin-left: 0;
+}
+
+/* Agents in the header stack keep their accent color but share the
+   humans' circular shape — one motif for the whole roster row. */
+.chat-presence-avatar[data-agent="true"] {
+  background: var(--chat-agent-accent, var(--primary));
+  color: var(--primary-foreground, var(--background));
 }
 
 /* Existing reaction chips + pin toggle, indented to align under the bubble

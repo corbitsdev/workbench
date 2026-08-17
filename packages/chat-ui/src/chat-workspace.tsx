@@ -13,7 +13,7 @@
 
 import { UnauthenticatedError } from "@corbits/api-query";
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Avatar, Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import {
   ChartColumn,
   ChevronDown,
@@ -1450,15 +1450,11 @@ function ChatWorkspaceInner({
                         entry.tone === "agent" ? (
                           <span
                             key={entry.key}
-                            className="chat-member-avatar"
+                            className="chat-presence-avatar"
+                            data-agent="true"
                             title={entry.label}
                           >
-                            <Avatar
-                              initials={entry.initials}
-                              label={entry.label}
-                              tone="agent"
-                              size="sm"
-                            />
+                            {entry.initials.slice(0, 1).toUpperCase()}
                           </span>
                         ) : (
                           <span

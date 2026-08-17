@@ -264,7 +264,6 @@ function WorkbenchRow({
   }
 
   const displayTitle = title || CHAT_STRINGS.unnamedChannel;
-  const faces = channel.participants.slice(0, 1);
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
@@ -282,25 +281,11 @@ function WorkbenchRow({
         data-active={active ? "true" : undefined}
         onClick={onSelect}
       >
+        {/* The workbench's own initial, not its agent's — every bench
+            hosts Myra, so an agent monogram renders an identical "M"
+            column that says nothing. */}
         <span className="shell-ch-stack" aria-hidden="true">
-          {faces.length === 0 ? (
-            <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
-          ) : (
-            faces.map((p) => (
-              <span
-                key={p.address}
-                data-agent={
-                  p.address.includes("agent") || p.address.includes("ins_")
-                    ? "true"
-                    : undefined
-                }
-                data-ctx-profile-address={p.address}
-                data-ctx-profile-handle={p.handle}
-              >
-                {p.handle.slice(0, 1).toUpperCase()}
-              </span>
-            ))
-          )}
+          <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
         </span>
         <span className="shell-ch-meta">
           <span className="shell-ch-name-row">
