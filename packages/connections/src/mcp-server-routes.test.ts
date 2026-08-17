@@ -126,6 +126,12 @@ function fakeHub(seed: {
       if (idx !== -1) credentials.splice(idx, 1);
       return { status: 204, data: undefined, cookies: [] };
     }
+    if (method === "DELETE" && path.includes("/providers/")) {
+      const id = path.split("/").pop();
+      const idx = providers.findIndex((p) => p.id === id);
+      if (idx !== -1) providers.splice(idx, 1);
+      return { status: 204, data: undefined, cookies: [] };
+    }
     throw new Error(`unhandled fake hub call: ${method} ${path}`);
   };
 
@@ -281,6 +287,13 @@ describe("GET / and DELETE /:slug", () => {
     const deleted = await app.request("/notion", { method: "DELETE" });
     expect(deleted.status).toBe(204);
     expect(hub.credentials).toHaveLength(0);
+    // The provider row goes too — leaving it made the delete a silent
+    // no-op in the listing, which shows providers, not credentials.
+    expect(hub.providers).toHaveLength(0);
+
+    const relisted = await app.request("/");
+    const relistedBody = (await relisted.json()) as { data: unknown[] };
+    expect(relistedBody.data).toHaveLength(0);
   });
 
   test("disconnecting an unknown slug is a 404", async () => {
