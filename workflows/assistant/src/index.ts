@@ -49,6 +49,7 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/connections-tools", version: "0.0.1" },
   { name: "@corbits/skills-tools", version: "0.0.1" },
   { name: "@corbits/mcp-tools", version: "0.0.1" },
+  { name: "@corbits/interaction-tools", version: "0.0.1" },
 ];
 
 /**
@@ -165,7 +166,9 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "one line, and either offer one concrete first step the workbench " +
   "name suggests or ask what they are working on. Never list your " +
   "capabilities as a menu, and never mention memory, lookups, or " +
-  "missing context in a greeting.";
+  "missing context in a greeting. When interviewing someone with a " +
+  "small set of enumerable options (2-6), use ask_user to show it as " +
+  "an interactive card instead of writing the options out as prose.";
 
 /**
  * Everything the definition needs that is per-deployment data. The

@@ -97,6 +97,7 @@ export type {
   BlockResponsePayload,
   PollResponsePayload,
   FormResponsePayload,
+  QuestionResponsePayload,
 } from "./blocks/block-responses";
 
 export {
@@ -136,6 +137,7 @@ export {
   getBlockResponses,
   submitPollResponse,
   submitFormResponse,
+  submitQuestionResponse,
   REACTION_EMOJI,
   toggleReaction,
   pinMessage,

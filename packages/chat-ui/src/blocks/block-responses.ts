@@ -21,7 +21,14 @@ export type FormResponsePayload = {
   readonly values: Readonly<Record<string, string>>;
 };
 
-export type BlockResponsePayload = PollResponsePayload | FormResponsePayload;
+export type QuestionResponsePayload = {
+  readonly kind: "question";
+  readonly answer: string;
+  readonly optionIndex?: number;
+};
+
+export type BlockResponsePayload =
+  PollResponsePayload | FormResponsePayload | QuestionResponsePayload;
 
 /**
  * The live read behind a poll/form card. `own` is this signed-in
@@ -65,5 +72,13 @@ export type BlockResponseActions = {
     messageId: string,
     blockId: string,
     values: Readonly<Record<string, string>>,
+  ) => Promise<BlockResponseSubmitResult>;
+  /** Submits this principal's answer to a question -- the chosen option's
+   * label (or free text) plus, for a lettered option, its index. */
+  readonly submitQuestion: (
+    messageId: string,
+    blockId: string,
+    answer: string,
+    optionIndex?: number,
   ) => Promise<BlockResponseSubmitResult>;
 };

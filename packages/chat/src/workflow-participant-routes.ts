@@ -44,9 +44,12 @@ import { type } from "arktype";
 
 import {
   launchAndJoinAgent,
+  sendChannelMessage,
   type LaunchAndJoinAgentDeps,
+  type SendChannelMessageDeps,
 } from "./channel-service";
 import type { ChatStore } from "./store";
+import { Part, type Part as PartType } from "./parts";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -87,12 +90,16 @@ export type WorkflowParticipantEnv = {
 
 const InviteParticipantInput = type({ definitionId: "string > 0" });
 
+const PostMessageInput = type({ parts: Part.array() });
+
 export type CreateWorkflowParticipantRoutesDeps = {
   readonly store: Pick<
     ChatStore,
     "findChannelByParticipantAddress" | "updateChannelSettings"
-  >;
-  readonly platform: LaunchAndJoinAgentDeps["platform"];
+  > &
+    SendChannelMessageDeps["store"];
+  readonly platform: LaunchAndJoinAgentDeps["platform"] &
+    SendChannelMessageDeps["platform"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
   readonly authenticator: WorkflowRunAuthenticator;
 };
@@ -168,6 +175,52 @@ export function createWorkflowParticipantRoutes(
       },
       201,
     );
+  });
+
+  // The posting half of an in-channel gen-UI block: a workflow child
+  // (`@corbits/interaction-tools`'s `ask_user`) posts a message carrying a
+  // `block` part into its own channel — resolved the same way
+  // `/participants/invite` resolves "own channel", via the caller's mail
+  // address. No block-type allowlist here: this route is a generic
+  // channel-message post, same shape `sendChannelMessage` gives any
+  // tenant-authenticated caller through `./routes.ts`; the block's own
+  // schema (`@corbits/chat`'s `blocks.ts`) is what a renderer trusts, not
+  // this route.
+  app.post("/participants/messages", async (c) => {
+    const scope = c.get("workflowParticipantScope");
+    const body = PostMessageInput(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        errorEnvelope("bad_request", `invalid message body: ${body.summary}`),
+        400,
+      );
+    }
+
+    const channel = await deps.store.findChannelByParticipantAddress(
+      scope.tenantId,
+      scope.address,
+    );
+    if (channel === undefined) {
+      return c.json(
+        errorEnvelope(
+          "not_found",
+          `The calling run "${scope.address}" is not a participant of any channel in this workbench`,
+        ),
+        404,
+      );
+    }
+
+    const sent = await sendChannelMessage(
+      { store: deps.store, platform: deps.platform },
+      {
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        channelId: channel.channelId,
+        messageParts: body.parts as PartType[],
+      },
+    );
+
+    return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
   });
 
   return app;

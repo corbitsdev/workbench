@@ -387,9 +387,20 @@ const SubmitFormResponseBody = type({
   values: "Record<string, string>",
 });
 
+// The answer is resolved client-side (the chosen option's label, or the
+// free-text value) and posted verbatim: this route never sees
+// `QuestionBlockData`'s option list, so it cannot re-derive a label from
+// `optionIndex` alone. `answer` is what actually gets relayed into the
+// channel as the responding user's own message.
+const SubmitQuestionResponseBody = type({
+  kind: "'question'",
+  answer: "string > 0",
+  "optionIndex?": "number.integer >= 0",
+});
+
 const SubmitBlockResponseBody = SubmitPollResponseBody.or(
   SubmitFormResponseBody,
-);
+).or(SubmitQuestionResponseBody);
 
 /**
  * Every `/channels/:id/*` handler must resolve the channel inside the
@@ -1896,7 +1907,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const payload: BlockResponsePayload =
         body.kind === "poll"
           ? { kind: "poll", choiceIds: body.choiceIds }
-          : { kind: "form", values: body.values };
+          : body.kind === "form"
+            ? { kind: "form", values: body.values }
+            : {
+                kind: "question",
+                answer: body.answer,
+                ...(body.optionIndex !== undefined
+                  ? { optionIndex: body.optionIndex }
+                  : {}),
+              };
 
       const row = await deps.blockResponses.upsertBlockResponse({
         tenantId: ownerTenantId,
@@ -1906,6 +1925,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principalId: principal.id,
         payload,
       });
+
+      // A question's answer is the interview reply itself, not just a
+      // structured event: post it into the channel as the responding
+      // user's own message so the asking agent receives it exactly as it
+      // would any other reply from that user — visible in-thread, routed
+      // by the channel's normal host routing, no side channel only the
+      // agent can read.
+      if (payload.kind === "question") {
+        await sendChannelMessage(
+          { store: deps.store, platform: deps.platform },
+          {
+            tenantId: ownerTenantId,
+            principalId: principal.id,
+            channelId,
+            messageParts: [{ kind: "text", text: payload.answer }],
+          },
+        );
+      }
 
       // A machine-readable event into the same channel timeline the
       // responder is already a member of, so the outcome reaches the

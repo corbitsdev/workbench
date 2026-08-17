@@ -14,6 +14,7 @@ import {
   getBlockResponses,
   submitFormResponse,
   submitPollResponse,
+  submitQuestionResponse,
 } from "@corbits/chat-ui";
 
 export function createChatBlockResponseActions(
@@ -75,6 +76,18 @@ export function createChatBlockResponseActions(
     submitForm(messageId, blockId, values) {
       return submit(() =>
         submitFormResponse(tenantId, channelId, messageId, blockId, values),
+      );
+    },
+    submitQuestion(messageId, blockId, answer, optionIndex) {
+      return submit(() =>
+        submitQuestionResponse(
+          tenantId,
+          channelId,
+          messageId,
+          blockId,
+          answer,
+          optionIndex,
+        ),
       );
     },
   };

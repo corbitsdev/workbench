@@ -21,6 +21,11 @@ export type BlockResponsePayload =
   | {
       readonly kind: "form";
       readonly values: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly kind: "question";
+      readonly answer: string;
+      readonly optionIndex?: number;
     };
 
 export interface BlockResponseRow {
