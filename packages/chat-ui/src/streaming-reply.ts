@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import type { ParticipantRecord } from "./api";
+import { displayNameFromHandle } from "./timeline";
 
 export type StreamingReplyState = { readonly text: string } | null;
 
@@ -168,5 +169,5 @@ export function typingAgentNames(
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
   );
-  return agent === undefined ? [] : [agent.handle];
+  return agent === undefined ? [] : [displayNameFromHandle(agent.handle)];
 }

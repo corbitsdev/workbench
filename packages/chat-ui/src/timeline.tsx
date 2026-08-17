@@ -209,7 +209,7 @@ function initialsOf(source: string): string {
  * never a `sender.name`. Never applied to a handle already shown as a
  * literal `@mention` elsewhere.
  */
-function displayNameFromHandle(handle: string): string {
+export function displayNameFromHandle(handle: string): string {
   return handle
     .split(/[-_]+/)
     .filter((word) => word.length > 0)
