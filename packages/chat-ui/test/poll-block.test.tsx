@@ -80,6 +80,7 @@ function fakeBackend() {
       return { kind: "submitted" };
     },
     submitForm: async () => ({ kind: "submitted" }),
+    submitQuestion: async () => ({ kind: "submitted" }),
   };
 
   return { actions, submitCalls, votesByPrincipal };
@@ -190,6 +191,7 @@ describe("poll card round-trip", () => {
       }),
       submitPoll: async () => ({ kind: "submitted" }),
       submitForm: async () => ({ kind: "submitted" }),
+      submitQuestion: async () => ({ kind: "submitted" }),
     };
     const el = await mount(actions);
 

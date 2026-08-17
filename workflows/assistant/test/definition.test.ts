@@ -83,6 +83,11 @@ test("the prompt tells Myra to greet from the kickoff brief as a teammate — by
   expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("standing job");
 });
 
+test("the prompt tells Myra to use ask_user instead of prose lists for enumerable-option interviews", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("ask_user");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("interactive card");
+});
+
 test("the agent pins memory, capability, and the manager-tools bundles — real package names, resolved at deploy time", () => {
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
@@ -95,6 +100,7 @@ test("the agent pins memory, capability, and the manager-tools bundles — real 
     { name: "@corbits/connections-tools", version: "0.0.1" },
     { name: "@corbits/skills-tools", version: "0.0.1" },
     { name: "@corbits/mcp-tools", version: "0.0.1" },
+    { name: "@corbits/interaction-tools", version: "0.0.1" },
   ]);
 });
 

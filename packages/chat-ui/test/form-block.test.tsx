@@ -59,6 +59,7 @@ function fakeBackend() {
       stored = values;
       return { kind: "submitted" };
     },
+    submitQuestion: async () => ({ kind: "submitted" }),
   };
 
   return {

@@ -15,6 +15,7 @@ import type { BlockResponseActions } from "./block-responses";
 import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
 import { PollBlockView } from "./poll-block";
+import { QuestionBlockView } from "./question-block";
 import { StepsBlockView } from "./steps-block";
 import { StreamBlockView } from "./stream-block";
 
@@ -56,6 +57,14 @@ function renderKnownBlock(
       );
     case "stream":
       return <StreamBlockView data={block.data} />;
+    case "question":
+      return (
+        <QuestionBlockView
+          data={block.data}
+          messageId={messageId}
+          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
+        />
+      );
   }
 }
 

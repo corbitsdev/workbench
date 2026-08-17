@@ -101,13 +101,28 @@ export const StreamBlockData = type({
 }).onDeepUndeclaredKey("delete");
 export type StreamBlockData = typeof StreamBlockData.infer;
 
+// An interview question with lettered options, posed by an agent
+// (`ask_user`, `@corbits/interaction-tools`) and answered in-thread. Like
+// `PollBlockData`, it carries no resolved answer — the chosen option (or
+// free-text) lives in the block-response row, read back through the same
+// `/blocks/:blockId/responses` surface polls use, never in the message.
+export const QuestionBlockData = type({
+  questionId: "string",
+  question: "string",
+  "subtitle?": "string",
+  options: "2 <= string[] <= 6",
+  "allowFreeText?": "boolean",
+}).onDeepUndeclaredKey("delete");
+export type QuestionBlockData = typeof QuestionBlockData.infer;
+
 export type Block =
   | { readonly type: "approve"; readonly data: ApproveBlockData }
   | { readonly type: "steps"; readonly data: StepsBlockData }
   | { readonly type: "metrics"; readonly data: MetricsBlockData }
   | { readonly type: "poll"; readonly data: PollBlockData }
   | { readonly type: "form"; readonly data: FormBlockData }
-  | { readonly type: "stream"; readonly data: StreamBlockData };
+  | { readonly type: "stream"; readonly data: StreamBlockData }
+  | { readonly type: "question"; readonly data: QuestionBlockData };
 
 export type BlockParseResult =
   | { readonly ok: true; readonly block: Block }
@@ -162,6 +177,13 @@ export function parseBlock(envelope: BlockPart["block"]): BlockParseResult {
         return { ok: false, type: envelope.type, summary: data.summary };
       }
       return { ok: true, block: { type: "stream", data } };
+    }
+    case "question": {
+      const data = QuestionBlockData(envelope.data);
+      if (data instanceof type.errors) {
+        return { ok: false, type: envelope.type, summary: data.summary };
+      }
+      return { ok: true, block: { type: "question", data } };
     }
     default:
       return {

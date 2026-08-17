@@ -842,7 +842,15 @@ export function channelStreamUrl(tenantId: string, channelId: string): string {
 const BlockResponsePayloadWire = type({
   kind: "'poll'",
   choiceIds: "string[]",
-}).or(type({ kind: "'form'", values: "Record<string, string>" }));
+})
+  .or(type({ kind: "'form'", values: "Record<string, string>" }))
+  .or(
+    type({
+      kind: "'question'",
+      answer: "string",
+      "optionIndex?": "number",
+    }),
+  );
 export type BlockResponsePayload = typeof BlockResponsePayloadWire.infer;
 
 const BlockResponsesWire = type({
@@ -911,6 +919,28 @@ export function submitFormResponse(
     {
       method: "POST",
       body: JSON.stringify({ kind: "form", values }),
+    },
+  ).then(() => undefined);
+}
+
+export function submitQuestionResponse(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  blockId: string,
+  answer: string,
+  optionIndex?: number,
+): Promise<void> {
+  return request(
+    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    SubmittedBlockResponse,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        optionIndex !== undefined
+          ? { kind: "question", answer, optionIndex }
+          : { kind: "question", answer },
+      ),
     },
   ).then(() => undefined);
 }

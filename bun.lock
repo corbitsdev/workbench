@@ -742,6 +742,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/interaction-tools": {
+      "name": "@corbits/interaction-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
       "version": "0.0.1",
@@ -1502,6 +1515,7 @@
       "devDependencies": {
         "@corbits/agent-directory-tools": "workspace:*",
         "@corbits/connections-tools": "workspace:*",
+        "@corbits/interaction-tools": "workspace:*",
         "@corbits/routines-tools": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -1812,6 +1826,8 @@
     "@corbits/inference-settings": ["@corbits/inference-settings@workspace:packages/inference-settings"],
 
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
+
+    "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:packages/interaction-tools"],
 
     "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 

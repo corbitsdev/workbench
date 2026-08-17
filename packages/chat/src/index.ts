@@ -17,6 +17,7 @@ export {
   PollBlockData,
   FormBlockData,
   StreamBlockData,
+  QuestionBlockData,
   parseBlock,
 } from "./blocks";
 export type { Block, BlockParseResult } from "./blocks";
