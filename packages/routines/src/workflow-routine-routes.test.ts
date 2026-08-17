@@ -131,6 +131,59 @@ test("rejects a definition that is not in the run's own tenant", async () => {
   expect((body["error"] as Record<string, unknown>)["code"]).toBe("not_found");
 });
 
+test("resolves a definition NAME to its id via resolveDefinitionId and stores the resolved id", async () => {
+  const deps = buildDeps({
+    definitionInTenant: async (tenantId, definitionId) =>
+      tenantId === TENANT_ID && definitionId === "wfd_digest",
+    resolveDefinitionId: async (tenantId, idOrName) =>
+      tenantId === TENANT_ID && idOrName === "digest-writer"
+        ? "wfd_digest"
+        : undefined,
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, {
+    ...VALID_BODY,
+    definitionId: "digest-writer",
+  });
+  expect(response.status).toBe(201);
+  expect(body["definitionId"]).toBe("wfd_digest");
+});
+
+test("an unresolvable definitionId 404s with up to 8 candidate name (wfd_id) pairs", async () => {
+  const deps = buildDeps({
+    definitionInTenant: async () => false,
+    resolveDefinitionId: async () => undefined,
+    listDefinitionCandidates: async () => [
+      { id: "wfd_digest", name: "digest-writer" },
+      { id: "wfd_other", name: "other-agent" },
+    ],
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, {
+    ...VALID_BODY,
+    definitionId: "nonexistent",
+  });
+  expect(response.status).toBe(404);
+  const message = (body["error"] as Record<string, unknown>)[
+    "message"
+  ] as string;
+  expect(message).toContain("digest-writer (wfd_digest)");
+  expect(message).toContain("other-agent (wfd_other)");
+});
+
+test("an ambiguous name resolves to undefined and 404s", async () => {
+  const deps = buildDeps({
+    definitionInTenant: async () => false,
+    resolveDefinitionId: async () => undefined,
+  });
+  const app = buildApp(deps);
+  const { response } = await createRoutine(app, {
+    ...VALID_BODY,
+    definitionId: "digest-writer",
+  });
+  expect(response.status).toBe(404);
+});
+
 test("rejects an invalid trigger with a 400", async () => {
   const app = buildApp(buildDeps());
   const { response } = await createRoutine(app, {

@@ -1820,6 +1820,32 @@ export async function createHub(config: HubConfig) {
         });
         return row !== undefined;
       },
+      // Myra's `routine_create` tool receives a definition's NAME from
+      // `list_agents`, not its `wfd_` id — resolve an exact, deployed-only
+      // name match within the tenant before the `definitionInTenant`
+      // check above runs a second time against the resolved id.
+      resolveDefinitionId: async (tenantId, idOrName) => {
+        const rows = await db.query.workflowDefinition.findMany({
+          where: and(
+            eq(workflowDefinition.name, idOrName),
+            eq(workflowDefinition.tenantId, tenantId),
+            eq(workflowDefinition.status, "deployed"),
+          ),
+          columns: { id: true },
+        });
+        return rows.length === 1 ? rows[0]?.id : undefined;
+      },
+      listDefinitionCandidates: async (tenantId) => {
+        const rows = await db.query.workflowDefinition.findMany({
+          where: and(
+            eq(workflowDefinition.tenantId, tenantId),
+            eq(workflowDefinition.status, "deployed"),
+          ),
+          columns: { id: true, name: true },
+          limit: 8,
+        });
+        return rows;
+      },
       webhookTriggerInTenant: async (
         tenantId,
         webhookTriggerId,

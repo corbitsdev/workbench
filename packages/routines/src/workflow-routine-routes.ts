@@ -80,6 +80,30 @@ export type CreateWorkflowRoutineRoutesDeps = {
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
+  /**
+   * Resolves a `definitionId` that isn't a raw `wfd_` id into one by
+   * exact-matching it as a deployed workflow definition's NAME within
+   * the tenant. Myra's `routine_create` tool receives a definition's
+   * name from `list_agents`, not its id — this lets `POST /routines`
+   * accept either. Returns `undefined` when the name doesn't match any
+   * deployed definition, or matches more than one (ambiguous); either
+   * way the request then falls through to `definitionInTenant`'s 404.
+   * Tests may omit (name resolution disabled; `definitionId` must
+   * already be a raw id).
+   */
+  resolveDefinitionId?: (
+    tenantId: string,
+    idOrName: string,
+  ) => Promise<string | undefined>;
+  /**
+   * Lists up to 8 `name (wfd_id)` candidates for the tenant, surfaced
+   * in the 404 body when a `definitionId` resolves to neither a known
+   * id nor a known name, so the calling model can self-correct. Tests
+   * may omit (no candidates listed).
+   */
+  listDefinitionCandidates?: (
+    tenantId: string,
+  ) => Promise<ReadonlyArray<{ id: string; name: string }>>;
   /** Same contract as `CreateRoutineRoutesDeps.webhookTriggerInTenant`. */
   webhookTriggerInTenant?: (
     tenantId: string,
@@ -128,6 +152,26 @@ export type CreateWorkflowRoutineRoutesDeps = {
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
+
+/** "definition not found" plus up to 8 `name (wfd_id)` candidates, so a
+ * model that passed a bad id or name can self-correct. */
+async function definitionNotFoundMessage(
+  deps: CreateWorkflowRoutineRoutesDeps,
+  tenantId: string,
+): Promise<string> {
+  if (deps.listDefinitionCandidates === undefined) {
+    return "definition not found";
+  }
+  const candidates = await deps.listDefinitionCandidates(tenantId);
+  if (candidates.length === 0) {
+    return "definition not found";
+  }
+  const listed = candidates
+    .slice(0, 8)
+    .map((d) => `${d.name} (${d.id})`)
+    .join(", ");
+  return `definition not found. Valid definitions: ${listed}`;
+}
 
 // `scope` is always `"bench"` — Myra always creates for the shared
 // workbench, never a personal routine on someone else's behalf — so
@@ -196,13 +240,27 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
+    let definitionId = body.definitionId;
     if (deps.definitionInTenant !== undefined) {
-      const owned = await deps.definitionInTenant(
-        scope.tenantId,
-        body.definitionId,
-      );
+      let owned = await deps.definitionInTenant(scope.tenantId, definitionId);
+      if (!owned && deps.resolveDefinitionId !== undefined) {
+        const resolved = await deps.resolveDefinitionId(
+          scope.tenantId,
+          body.definitionId,
+        );
+        if (resolved !== undefined) {
+          definitionId = resolved;
+          owned = await deps.definitionInTenant(scope.tenantId, definitionId);
+        }
+      }
       if (!owned) {
-        return c.json(ErrorEnvelope("not_found", "definition not found"), 404);
+        return c.json(
+          ErrorEnvelope(
+            "not_found",
+            await definitionNotFoundMessage(deps, scope.tenantId),
+          ),
+          404,
+        );
       }
     }
 
@@ -211,7 +269,7 @@ export function createWorkflowRoutineRoutes(
         deps,
         scope.tenantId,
         body.trigger,
-        body.definitionId,
+        definitionId,
       ))
     ) {
       return c.json(
@@ -224,7 +282,7 @@ export function createWorkflowRoutineRoutes(
       (await isDeliveryChannelRequired(
         deps,
         scope.tenantId,
-        body.definitionId,
+        definitionId,
       )) &&
       (body.deliveryChannelId === undefined || body.deliveryChannelId === "");
 
@@ -245,7 +303,7 @@ export function createWorkflowRoutineRoutes(
     if (deps.validateRoutineInput !== undefined) {
       const validated = await deps.validateRoutineInput(
         scope.tenantId,
-        body.definitionId,
+        definitionId,
         body.input ?? {},
       );
       if (!validated.ok) {
@@ -285,7 +343,7 @@ export function createWorkflowRoutineRoutes(
       row = await deps.store.createRoutine({
         tenantId: scope.tenantId,
         name: body.name,
-        definitionId: body.definitionId,
+        definitionId,
         trigger: body.trigger,
         scope: "bench",
         input: body.input ?? {},

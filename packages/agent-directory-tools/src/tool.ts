@@ -124,8 +124,8 @@ async function runListAgents(
         : definitions
             .map((definition) =>
               definition.description !== null
-                ? `${definition.name} — ${definition.description}`
-                : definition.name,
+                ? `${definition.name} — ${definition.description} (use this id for routines/dispatch: ${definition.id})`
+                : `${definition.name} (use this id for routines/dispatch: ${definition.id})`,
             )
             .join("\n");
     return { callId: call.id, isError: false, content };
@@ -166,7 +166,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}". It is not in this channel — invite it explicitly if you want it here.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It is not in this channel — invite it explicitly if you want it here.`,
     };
   }
 
@@ -175,7 +175,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" and invited it into this channel.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and invited it into this channel.`,
     };
   } catch (err) {
     // The agent was genuinely created — that half-success must never
@@ -192,7 +192,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}", but could not invite it into this channel: ${reason}.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not invite it into this channel: ${reason}.`,
     };
   }
 }
