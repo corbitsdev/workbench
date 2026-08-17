@@ -286,7 +286,7 @@ async function runScenario(
   );
   expect(String(afterConnect.content)).toContain("Not connected: none.");
   expect(String(afterConnect.content)).toContain(
-    "Connected: Exa, Granola, Linear.",
+    "Connected: Granola, Exa, Linear.",
   );
 
   // Step 3: Myra creates the two specialist agents she needs, inviting

@@ -30,7 +30,10 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { CONNECTOR_REGISTRY } from "@workbench/connections";
-import { MCP_PRESETS, mcpPresetByName } from "@workbench/connections/mcp-presets";
+import {
+  MCP_PRESETS,
+  mcpPresetByName,
+} from "@workbench/connections/mcp-presets";
 import { type } from "arktype";
 
 import { listConnections, listMcpServerConnections } from "./client";
@@ -105,9 +108,7 @@ function presetDeepLink(slug: string): string {
  * with both an old api-key entry and a new preset (Granola, Exa,
  * Linear) is only ever reported once, under its preset's own connected/
  * not-connected state. */
-const PRESET_FRONTED_IDS = new Set(
-  MCP_PRESETS.map((preset) => preset.slug),
-);
+const PRESET_FRONTED_IDS = new Set(MCP_PRESETS.map((preset) => preset.slug));
 
 async function runListConnections(
   env: WorkflowConnectionEnv,
@@ -127,11 +128,21 @@ async function runListConnections(
     const otherMcpServers = mcpServers.filter(
       (server) => !PRESET_FRONTED_IDS.has(server.slug),
     );
-    const presetConnected = MCP_PRESETS.filter((preset) =>
-      connectedMcpSlugs.has(preset.slug),
+    // A preset service counts as connected through EITHER door: its MCP
+    // server, or a plain key stored under the same connector id — a
+    // Granola key connected before the MCP card existed must never
+    // read as "Not connected".
+    const keyConnectedIds = new Set(
+      connections.filter((entry) => entry.connected).map((entry) => entry.id),
+    );
+    const presetConnected = MCP_PRESETS.filter(
+      (preset) =>
+        connectedMcpSlugs.has(preset.slug) || keyConnectedIds.has(preset.slug),
     );
     const presetNotConnected = MCP_PRESETS.filter(
-      (preset) => !connectedMcpSlugs.has(preset.slug),
+      (preset) =>
+        !connectedMcpSlugs.has(preset.slug) &&
+        !keyConnectedIds.has(preset.slug),
     );
 
     if (
@@ -148,7 +159,11 @@ async function runListConnections(
     }
     const connectedNames = [
       ...connected.map((entry) => entry.displayName),
-      ...presetConnected.map((preset) => `${preset.displayName} (via MCP)`),
+      ...presetConnected.map((preset) =>
+        connectedMcpSlugs.has(preset.slug)
+          ? `${preset.displayName} (via MCP)`
+          : preset.displayName,
+      ),
       ...otherMcpServers.map((server) => `${server.name} (MCP server)`),
     ];
     const notConnectedNames = [
