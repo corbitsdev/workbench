@@ -885,6 +885,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // tenant row carries the same readable name instead of the raw
       // channel id. An unknown definition leaves this undefined; the
       // post-join handle fallback below still names the chat then.
+      // Independent reads run concurrently — each is cheap alone, but the
+      // mint path pays every serial await twice over (two launches follow).
+      const inferencePreferencesPromise =
+        deps.channelHostInferencePreferences?.(tenant.id);
       const invitable = isChatWithDefinition(body)
         ? await deps.platform.listInvitableDefinitions(tenant.id)
         : [];
@@ -896,7 +900,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : undefined);
       const triggerAddress = formatRunAddress(channelId, tenant.domain);
       const inferencePreferences =
-        (await deps.channelHostInferencePreferences?.(tenant.id)) ?? [];
+        (await inferencePreferencesPromise) ?? [];
       const definition = serializeChannelHostWorkflow(
         buildChannelHostWorkflow({
           triggerAddress,
@@ -1115,7 +1119,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 .resolvePrincipalName(tenant.id, principal.id)
                 .catch(() => undefined)
             : undefined;
-        void dispatchGreetingKickoff(
+      void dispatchGreetingKickoff(
           { platform: deps.platform },
           {
             tenantId: tenant.id,
