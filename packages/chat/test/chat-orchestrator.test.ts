@@ -200,13 +200,12 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
-  // CL-6137: a turn that never emits `connector.reply` content posts
-  // nothing to any channel by construction — the assertion here is
-  // that `message.run.ended` bookkeeping stays a no-op for delivery
-  // (only ever logging, never posting) in both directions: a reply
-  // this process already saw is not re-posted when the bracket closes,
-  // and a bracket closing with nothing seen posts nothing either.
-  test("message.run.ended never posts by itself, whether or not a reply preceded it", async () => {
+  // CL-6137 / turn-drop notice (stress round 3): a turn that never
+  // emits `connector.reply` content is no longer invisible — the
+  // bracket close posts an honest in-channel notice — but a reply this
+  // process already saw for the turn is never followed by a redundant
+  // notice, and a redelivered bracket-close event posts at most one.
+  test("message.run.ended posts a notice only for a turn that ended with no reply, once per redelivery", async () => {
     const sentMail: unknown[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -228,7 +227,7 @@ describe("createChatOrchestrator", () => {
     });
 
     // Turn 1: a reply, then its own bracket close — one post, from the
-    // reply alone.
+    // reply alone, no notice on top of it.
     events.emit("agent.event", {
       agentAddress: "ins_echo1@ten1.workbench.test",
       sessionId: "ses_1",
@@ -244,14 +243,36 @@ describe("createChatOrchestrator", () => {
     expect(sentMail).toHaveLength(1);
 
     // Turn 2: a silent completion — no reply this process ever saw for
-    // it — posts nothing.
+    // it — posts the honest empty-turn notice.
+    const silentEnd = {
+      type: "message.run.ended",
+      data: { status: "completed" },
+    };
     events.emit("agent.event", {
       agentAddress: "ins_echo1@ten1.workbench.test",
       sessionId: "ses_1",
-      event: { type: "message.run.ended", data: { status: "completed" } },
+      event: silentEnd,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(1);
+    expect(sentMail).toHaveLength(2);
+    expect(
+      decodeParts((sentMail[1] as { content: MailContent }).content),
+    ).toEqual([
+      {
+        kind: "text",
+        text: "I didn't manage to answer that one — say it again and I'll pick it up.",
+      },
+    ]);
+
+    // Turn 2's end event redelivered (sidecar reconnect, wire-layer
+    // replay) — no second notice.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: silentEnd,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(2);
 
     // Turn 3: a fresh reply after the silent turn 2 still posts — the
     // bracket-close bookkeeping never leaves stale state behind.
@@ -261,7 +282,48 @@ describe("createChatOrchestrator", () => {
       event: { type: "connector.reply", data: { content: "hi again" } },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(2);
+    expect(sentMail).toHaveLength(3);
+
+    orchestrator.dispose();
+  });
+
+  test("message.run.ended posts the extracted error text for a failed turn", async () => {
+    const sentMail: unknown[] = [];
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push(input);
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        data: { status: "failed", error: { message: "provider timed out" } },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(1);
+    expect(
+      decodeParts((sentMail[0] as { content: MailContent }).content),
+    ).toEqual([
+      { kind: "text", text: "provider timed out" },
+    ]);
 
     orchestrator.dispose();
   });

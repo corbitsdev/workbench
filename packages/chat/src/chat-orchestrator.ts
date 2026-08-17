@@ -596,6 +596,14 @@ export function createChatOrchestrator(
   // but chat only needs a presence bit, never the reply text itself.
   const repliedAddresses = new Set<string>();
 
+  // Process-lifetime idempotency guard for the turn-drop notice below,
+  // keyed the same coarse way as `repliedAddresses` (this stream carries
+  // no turnId to key a redelivered `message.run.ended` on more
+  // precisely): set the moment a notice is posted for an address's
+  // silent turn, cleared the moment that address's next `connector.reply`
+  // arrives so a genuinely new turn is never suppressed by a stale entry.
+  const notifiedDropAddresses = new Set<string>();
+
   const unsubscribe = deps.events.on(
     "agent.event",
     ({ agentAddress, event }) => {
@@ -608,6 +616,7 @@ export function createChatOrchestrator(
       const content = connectorReplyContent(event);
       if (content !== undefined) {
         repliedAddresses.add(agentAddress);
+        notifiedDropAddresses.delete(agentAddress);
         void postReply(deps, agentAddress, content).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
@@ -635,13 +644,33 @@ export function createChatOrchestrator(
       // logs loudly when *dispatch* itself fails
       // (`dispatchGreetingKickoff` in `channel-service.ts`), but had no
       // counterpart for "dispatched fine, the turn ran, nothing ever
-      // came back out."
+      // came back out." Beyond the error log, an honest notice now goes
+      // into the channel itself — a human staring at a stalled thread
+      // during saturated inference (stress round 3) must never see
+      // nothing at all — guarded by `notifiedDropAddresses` so a
+      // redelivered `message.run.ended` (sidecar reconnect, wire-layer
+      // replay) posts the notice once, not once per delivery.
       const ended = messageRunEnded(event);
       if (ended !== undefined) {
         const hadReply = repliedAddresses.delete(agentAddress);
         if (!hadReply) {
           const errorMessage = ended.errorMessage ?? "no error reported";
           log.error`chat orchestrator: agent ${agentAddress}'s turn ended (${ended.status}) with no reply ever posted to any channel: ${errorMessage}`;
+
+          if (!notifiedDropAddresses.has(agentAddress)) {
+            notifiedDropAddresses.add(agentAddress);
+            const noticeContent =
+              ended.status === "failed"
+                ? errorMessage
+                : "I didn't manage to answer that one — say it again and I'll pick it up.";
+            void postReply(deps, agentAddress, noticeContent).catch(
+              (cause: unknown) => {
+                log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
+                  cause instanceof Error ? cause.message : String(cause)
+                }`;
+              },
+            );
+          }
         }
         return;
       }
