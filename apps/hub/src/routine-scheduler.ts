@@ -25,11 +25,7 @@
 //   "due" means `nextFireAt <= now`, not "does the current wall-clock
 //   minute match" — a fire that was due while the hub was down is still
 //   due (and gets caught up) the next time this loop polls.
-import type {
-  DeliveryThreadPort,
-  RoutineLauncher,
-  RoutineStore,
-} from "@corbits/routines";
+import type { RoutineLauncher, RoutineStore } from "@corbits/routines";
 import { fireScheduledRoutine } from "@corbits/routines";
 import { getLogger } from "@intx/log";
 
@@ -43,12 +39,6 @@ export type RoutineSchedulerDeps = {
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
-  /** See `@corbits/routines`' `fireScheduledRoutine` — a scheduled fire
-   * opens (or reuses) its own delivery thread exactly like a manual
-   * "run now" does (`createRoutineRoutes`' own `deliveryThreads`), so a
-   * routine's run messages group under one thread in the delivery
-   * channel regardless of what triggered the fire. */
-  deliveryThreads?: DeliveryThreadPort;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
   now?: () => Date;
 };
@@ -63,10 +53,7 @@ const log = getLogger(["hub", "routine-scheduler"]);
  * waiting on `setInterval`.
  */
 export async function tickRoutineScheduler(
-  deps: Pick<
-    RoutineSchedulerDeps,
-    "store" | "launcher" | "deliveryChannelRequired" | "deliveryThreads"
-  >,
+  deps: Pick<RoutineSchedulerDeps, "store" | "launcher" | "deliveryChannelRequired">,
   at: Date,
 ): Promise<void> {
   const dueRoutines = await deps.store.listDueRoutines(at);
@@ -83,9 +70,6 @@ export async function tickRoutineScheduler(
       };
       if (deps.deliveryChannelRequired !== undefined) {
         fireDeps.deliveryChannelRequired = deps.deliveryChannelRequired;
-      }
-      if (deps.deliveryThreads !== undefined) {
-        fireDeps.deliveryThreads = deps.deliveryThreads;
       }
       await fireScheduledRoutine(fireDeps, {
         tenantId: claimed.tenantId,

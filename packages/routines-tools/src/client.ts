@@ -87,7 +87,6 @@ export interface UpdateRoutineRequest {
 
 export interface RunRoutineNowResult {
   readonly runId: string;
-  readonly deliveryThreadId?: string;
 }
 
 const RoutineViewResponse = type({
@@ -111,7 +110,6 @@ const ListRoutinesResponse = type({
 
 const RunRoutineNowResponse = type({
   runId: "string",
-  "deliveryThreadId?": "string",
 });
 
 /** Pulls `error.message` out of a Hono `app.onError` envelope

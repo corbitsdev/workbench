@@ -55,7 +55,6 @@ import {
   createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
-  createDeliveryThread,
   joinRunParticipant,
   createDrizzleBlockResponseStore,
   createDrizzleChannelTenancyStore,
@@ -1834,15 +1833,10 @@ export async function createHub(config: HubConfig) {
         grantStore: routineGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      // A run-now or a scheduled fire opens (or reuses) its own thread in
-      // the delivery channel before launching, so the run's own messages
-      // land grouped under one root message rather than loose in the
-      // channel — `@corbits/routines`' own `launchAndCorrelate` doc
-      // comment already named this wiring as the intended hub seam.
-      deliveryThreads: {
-        createDeliveryThread: (input) =>
-          createDeliveryThread(threadStore, input),
-      },
+      // A run-now or a scheduled fire's result is a message into the
+      // routine's delivery channel root timeline — never a pre-opened
+      // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
+      // for the multi-message contract.
       runSummaryResolver: createHubRunSummaryResolver(db),
       definitionInTenant: async (tenantId, definitionId) => {
         const row = await db.query.workflowDefinition.findFirst({
@@ -2003,13 +1997,6 @@ export async function createHub(config: HubConfig) {
     store: routineStore,
     launcher: routineLauncher,
     deliveryChannelRequired: routineDeliveryChannelRequired,
-    // Same delivery-thread wiring `POST /routines/:id/run` gets — a
-    // scheduled fire groups its own run's messages under one thread in
-    // the delivery channel exactly like a manual "run now" does; see the
-    // note beside `createRoutineRoutes`' own `deliveryThreads`.
-    deliveryThreads: {
-      createDeliveryThread: (input) => createDeliveryThread(threadStore, input),
-    },
   });
 
   // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated

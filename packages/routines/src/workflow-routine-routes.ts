@@ -36,7 +36,6 @@ import {
   routineView,
   webhookTriggerValid,
   type DeliverySpacePort,
-  type DeliveryThreadPort,
   type RoutineLauncher,
 } from "./routes";
 
@@ -110,8 +109,6 @@ export type CreateWorkflowRoutineRoutesDeps = {
     webhookTriggerId: string,
     definitionId: string,
   ) => Promise<boolean>;
-  /** Same contract as `CreateRoutineRoutesDeps.deliveryThreads`. */
-  deliveryThreads?: DeliveryThreadPort | undefined;
   /**
    * Resolves the creating run's own channel — the workbench the person
    * was talking in when they asked for the routine. A routine created
@@ -388,11 +385,7 @@ export function createWorkflowRoutineRoutes(
 
     if (body.runOnceNow === true) {
       await launchAndCorrelate(
-        {
-          store: deps.store,
-          launcher: deps.launcher,
-          deliveryThreads: deps.deliveryThreads,
-        },
+        { store: deps.store, launcher: deps.launcher },
         {
           tenantId: scope.tenantId,
           principalId: scope.principalId,
@@ -493,11 +486,7 @@ export function createWorkflowRoutineRoutes(
     }
 
     const launched = await launchAndCorrelate(
-      {
-        store: deps.store,
-        launcher: deps.launcher,
-        deliveryThreads: deps.deliveryThreads,
-      },
+      { store: deps.store, launcher: deps.launcher },
       {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
@@ -510,12 +499,7 @@ export function createWorkflowRoutineRoutes(
       },
     );
 
-    return c.json(
-      launched.deliveryThreadId !== undefined
-        ? { runId: launched.runId, deliveryThreadId: launched.deliveryThreadId }
-        : { runId: launched.runId },
-      201,
-    );
+    return c.json({ runId: launched.runId }, 201);
   });
 
   return app;

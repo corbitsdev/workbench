@@ -20,7 +20,7 @@ import {
   OneShotDefinitionNotFoundError,
 } from "@corbits/folded-runs";
 
-import { RoutineTrigger, minuteKey, type RoutineTriggerT } from "./trigger";
+import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import type {
   RoutineRow,
   RoutineRunRow,
@@ -37,7 +37,6 @@ const log = getLogger(["routines", "routes"]);
 
 export interface LaunchedRoutineRun {
   readonly runId: string;
-  readonly deliveryThreadId?: string;
 }
 
 /**
@@ -47,8 +46,14 @@ export interface LaunchedRoutineRun {
  * correlation. Keeping this a port, not a direct dependency, is what
  * keeps `@corbits/routines` hosted-service-agnostic.
  *
- * When `deliveryChannelId` is set, the host must post results into that
- * channel's delivery thread (`deliveryThreadId` when provided).
+ * A run's delivery is a message into `deliveryChannelId`'s root
+ * timeline — never a pre-opened thread. If a single run's delivery ever
+ * needs more than one message, the FIRST message still lands on the
+ * channel root; any follow-up messages from that same run thread under
+ * it via `inReplyToMessageId` (`@corbits/chat`'s send API already
+ * supports this) rather than a thread minted ahead of the run, before
+ * anyone knows whether the run will actually produce more than one
+ * message.
  */
 export interface RoutineLauncher {
   launchRoutineRun(input: {
@@ -57,23 +62,9 @@ export interface RoutineLauncher {
     definitionId: string;
     input: Record<string, unknown>;
     deliveryChannelId?: string | null | undefined;
-    deliveryThreadId?: string | null | undefined;
     runRef?: string | undefined;
     routineName?: string | undefined;
   }): Promise<LaunchedRoutineRun>;
-}
-
-/**
- * Optional port: open a delivery thread in the routine's channel before
- * launch. Wired to `@corbits/chat` `createDeliveryThread` at the hub.
- */
-export interface DeliveryThreadPort {
-  createDeliveryThread(input: {
-    tenantId: string;
-    channelId: string;
-    runRef: string;
-    title?: string;
-  }): Promise<{ id: string }>;
 }
 
 /**
@@ -134,12 +125,6 @@ export type CreateRoutineRoutesDeps = {
     webhookTriggerId: string,
     definitionId: string,
   ) => Promise<boolean>;
-  /**
-   * Delivery-thread creation for the delivery invariant. When set,
-   * every fire with a `deliveryChannelId` opens (or reuses) a delivery
-   * thread before launch.
-   */
-  deliveryThreads?: DeliveryThreadPort | undefined;
   /**
    * Provisions a brand-new space for a routine created with no
    * `deliveryChannelId`, named after the routine. When omitted, a
@@ -304,8 +289,9 @@ async function runView(
  * never silently orphan a platform run. Clears fire-failure counters
  * only after both steps succeed.
  *
- * When the routine has a delivery channel and a deliveryThreads port is
- * wired, opens a delivery thread first and passes it to the launcher.
+ * A run's result always delivers as a message into `deliveryChannelId`'s
+ * root timeline — see `RoutineLauncher`'s own doc comment for the
+ * multi-message contract.
  *
  * Exported: `./workflow-routine-routes.ts`'s "run now" reuses this exact
  * launch-then-correlate call, never a second launch path for Myra's own
@@ -315,7 +301,6 @@ export async function launchAndCorrelate(
   deps: {
     store: RoutineStore;
     launcher: RoutineLauncher;
-    deliveryThreads?: DeliveryThreadPort | undefined;
   },
   input: {
     tenantId: string;
@@ -328,37 +313,12 @@ export async function launchAndCorrelate(
     routineName?: string;
   },
 ): Promise<LaunchedRoutineRun> {
-  let deliveryThreadId: string | undefined;
-  if (
-    input.deliveryChannelId !== null &&
-    input.deliveryChannelId !== "" &&
-    deps.deliveryThreads !== undefined
-  ) {
-    // runRef is stable per fire attempt: routine id + triggeredBy + time
-    // bucket — a retry of the same fire within the same minute reuses the
-    // ref instead of minting a new delivery thread.
-    const runRef = `${input.routineId}:${input.triggeredBy}:${minuteKey(new Date())}`;
-    const createDeliveryThreadInput = {
-      tenantId: input.tenantId,
-      channelId: input.deliveryChannelId,
-      runRef,
-    };
-    const thread = await deps.deliveryThreads.createDeliveryThread(
-      input.routineName !== undefined
-        ? { ...createDeliveryThreadInput, title: input.routineName }
-        : createDeliveryThreadInput,
-    );
-    deliveryThreadId = thread.id;
-  }
-
   const launched = await deps.launcher.launchRoutineRun({
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId: input.definitionId,
     input: input.input,
     deliveryChannelId: input.deliveryChannelId,
-    deliveryThreadId: deliveryThreadId !== undefined ? deliveryThreadId : null,
-    runRef: deliveryThreadId !== undefined ? input.routineId : undefined,
     routineName: input.routineName,
   });
   try {
@@ -377,9 +337,7 @@ export async function launchAndCorrelate(
     );
   }
   await deps.store.clearFireFailures(input.routineId);
-  return deliveryThreadId !== undefined
-    ? { runId: launched.runId, deliveryThreadId }
-    : { runId: launched.runId };
+  return { runId: launched.runId };
 }
 
 /**
@@ -568,11 +526,7 @@ export function createRoutineRoutes(
 
       if (body.runOnceNow === true) {
         await launchAndCorrelate(
-          {
-            store: deps.store,
-            launcher: deps.launcher,
-            deliveryThreads: deps.deliveryThreads,
-          },
+          { store: deps.store, launcher: deps.launcher },
           {
             tenantId: tenant.id,
             principalId: principal.id,
@@ -750,11 +704,7 @@ export function createRoutineRoutes(
         );
       }
       const launched = await launchAndCorrelate(
-        {
-          store: deps.store,
-          launcher: deps.launcher,
-          deliveryThreads: deps.deliveryThreads,
-        },
+        { store: deps.store, launcher: deps.launcher },
         {
           tenantId: tenant.id,
           principalId: principal.id,
@@ -767,15 +717,7 @@ export function createRoutineRoutes(
         },
       );
 
-      return c.json(
-        launched.deliveryThreadId !== undefined
-          ? {
-              runId: launched.runId,
-              deliveryThreadId: launched.deliveryThreadId,
-            }
-          : { runId: launched.runId },
-        201,
-      );
+      return c.json({ runId: launched.runId }, 201);
     },
   );
 
@@ -1050,7 +992,6 @@ export async function fireScheduledRoutine(
   deps: {
     store: RoutineStore;
     launcher: RoutineLauncher;
-    deliveryThreads?: DeliveryThreadPort | undefined;
     deliveryChannelRequired?: (
       tenantId: string,
       definitionId: string,

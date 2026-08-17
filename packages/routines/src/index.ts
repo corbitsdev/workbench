@@ -87,7 +87,6 @@ export type {
   RoutineLauncher,
   LaunchedRoutineRun,
   RunSummaryResolver,
-  DeliveryThreadPort,
   DeliverySpacePort,
 } from "./routes";
 
