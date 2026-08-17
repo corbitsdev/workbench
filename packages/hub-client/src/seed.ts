@@ -1154,13 +1154,22 @@ async function ensureCatalogProvider(
 async function ensureCatalogOffering(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; modelId: string; providerId: string },
+  args: {
+    tenantId: string;
+    modelId: string;
+    providerId: string;
+    priority: number;
+  },
   log: (line: string) => void,
 ): Promise<void> {
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/catalog/offerings`,
-    { modelId: args.modelId, providerId: args.providerId },
+    {
+      modelId: args.modelId,
+      providerId: args.providerId,
+      priority: args.priority,
+    },
     cookies,
   );
   if (created.status === 201) {
@@ -1347,11 +1356,24 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     },
     log,
   );
+  // Priority = the provider's CATALOG_SEEDS declaration index (anthropic
+  // first), so when several connected providers serve the same model the
+  // fallback order is deterministic instead of an all-zeroes tie broken
+  // by insertion accident.
+  const offeringPriority = Math.max(
+    0,
+    Object.keys(CATALOG_SEEDS).indexOf(provider),
+  );
   for (const modelId of modelIds) {
     await ensureCatalogOffering(
       api,
       cookies,
-      { tenantId, modelId, providerId: catalogProviderId },
+      {
+        tenantId,
+        modelId,
+        providerId: catalogProviderId,
+        priority: offeringPriority,
+      },
       log,
     );
   }

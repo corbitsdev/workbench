@@ -17,6 +17,7 @@
     "@corbits/api-query": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
+    "@corbits/inference-settings": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#5321f64b7f347a57a59002ba4160e4d0caa9c8c3",
     "@corbits/workflow-catalog": "workspace:*",
     "@intx/types": "workspace:*",

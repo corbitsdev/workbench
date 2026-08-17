@@ -246,6 +246,7 @@ export const SETTINGS_STRINGS = {
   connectionsSectionTitle: "Connections",
   connectionsSectionDescription:
     "Keys added here work in every workbench, for everyone.",
+  modelsSectionTitle: "Models",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",

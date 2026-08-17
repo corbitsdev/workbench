@@ -18,7 +18,8 @@
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
 
-import { Bell, KeyRound, List, Shield, Star, User, Users } from "lucide-react";
+import { Bell, Cpu, KeyRound, List, Shield, Star, User, Users } from "lucide-react";
+import { InferenceSection } from "@corbits/inference-settings";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
@@ -88,6 +89,23 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         icon: KeyRound,
         gate: "credentials",
         render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
+      },
+      {
+        // The tenancy-wide view of every model each connected provider
+        // serves — which provider answers first, per-model fallback
+        // order, and what's restricted. The same surface a workbench's
+        // own settings mounts per-bench; here it edits the shared
+        // defaults every workbench inherits.
+        id: "models",
+        title: SETTINGS_STRINGS.modelsSectionTitle,
+        icon: Cpu,
+        gate: "credentials",
+        render: (ctx) =>
+          ctx.tenantId === null ? (
+            <></>
+          ) : (
+            <InferenceSection tenantId={ctx.tenantId} />
+          ),
       },
       {
         id: "people",
