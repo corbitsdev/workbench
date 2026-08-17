@@ -283,4 +283,35 @@ describe("sendFoldedMailWithRetry", () => {
     expect(result.attempts).toBe(3);
     expect(result.error).toBeInstanceOf(Error);
   });
+
+  test("never re-delivers: a successful send followed by a record-write failure is not retried", async () => {
+    let sendUserMessageCalls = 0;
+    const db = {
+      insert() {
+        return {
+          values: async () => {
+            throw new Error("db blip");
+          },
+        };
+      },
+    };
+    const deps = {
+      db: db as never,
+      sessionService: {
+        async sendUserMessage() {
+          sendUserMessageCalls += 1;
+          return new TextEncoder().encode("raw-mime-bytes");
+        },
+      } as never,
+      sidecarRouter: { dispatchAgentEvent() {} } as never,
+    };
+
+    const result = await sendFoldedMailWithRetry(deps, SEND_PARAMS, 3);
+
+    expect(sendUserMessageCalls).toBe(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable: asserted false above");
+    expect(result.attempts).toBe(1);
+    expect(result.error).toBeInstanceOf(Error);
+  });
 });
