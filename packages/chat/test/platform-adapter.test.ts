@@ -1681,6 +1681,63 @@ describe("createHubChatPlatform", () => {
         });
       }
 
+      test("a failed run with its zombie still routable is undeployed and woken — the brick recovers on the next message", async () => {
+        resolveDefinitionSourcesResult = {
+          ok: true,
+          sources: [
+            {
+              id: "off_1",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "off_1",
+        };
+        const db = completedFoldedRunDb({ runStatus: "failed" });
+        db.inserted.push({
+          table: agentSession,
+          values: { id: "ses_run1", principalId: "prin_run1" },
+        });
+
+        const sessionService = createFakeSessionService();
+        // The anchored-out survivor from the original brick: still
+        // holding a WS route, acks withheld, pushing against a moved
+        // anchor.
+        const sidecarRouter = createFakeSidecarRouter({
+          routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        });
+        const eventCollectors = createFakeEventCollectors();
+        const assetService = createFakeAssetService({
+          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        });
+
+        const platform = createHubChatPlatform({
+          hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
+          db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+          sessionService,
+          assetService,
+          sidecarRouter,
+          eventCollectors,
+          lifecycle: { idleSleepMs: 60_000 },
+          reclaimRetryDelaysMs: [1, 2],
+        });
+
+        const sent = await platform.sendMail({
+          tenantId: "ten_1",
+          channelId: "ins_channel1",
+          principalId: "prin_sender",
+          content: { content: "hi" },
+        });
+
+        expect(sent.id).toBeTruthy();
+        expect(sidecarRouter.sendAgentUndeployCalls.length).toBeGreaterThan(0);
+        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      });
+
       // CL-6203: the wake-redeploy brick. A "running" run behind a
       // routability blip must never be redeployed over — that moves its
       // deployment anchor while the process is alive, and the survivor
