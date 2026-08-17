@@ -82,8 +82,10 @@ async function main(): Promise<void> {
   }
 
   const live =
-    process.env["EVAL_PROVIDER_API_KEY"] !== undefined &&
-    process.env["EVAL_PROVIDER_API_KEY"] !== "";
+    (process.env["EVAL_PROVIDER_API_KEY"] !== undefined &&
+      process.env["EVAL_PROVIDER_API_KEY"] !== "") ||
+    (process.env["EVAL_PROVIDER"] === "ollama" &&
+      process.env["OLLAMA_BASE_URL"] !== undefined);
 
   const configs: readonly RunConfig[] = [
     { name: live ? "live" : "plumbing-only" },

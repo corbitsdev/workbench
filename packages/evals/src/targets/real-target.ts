@@ -27,6 +27,7 @@ import {
   type ApiCall,
 } from "@workbench/hub-client";
 import { completeCredentialSetup } from "@workbench/onboarding";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 
 import { resetSchema, setupDatabase } from "../../../../scripts/db-setup.ts";
 import {
@@ -235,7 +236,15 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
       200,
     );
 
-    const apiKey = process.env["EVAL_PROVIDER_API_KEY"] ?? STUB_API_KEY;
+    // EVAL_PROVIDER=ollama + OLLAMA_BASE_URL runs against a local Ollama
+    // (no key: the fixed placeholder secret); otherwise an Anthropic key.
+    const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"];
+    const useOllama =
+      process.env["EVAL_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
+    const provider = useOllama ? ("ollama" as const) : ("anthropic" as const);
+    const apiKey = useOllama
+      ? OLLAMA_PLACEHOLDER_SECRET
+      : (process.env["EVAL_PROVIDER_API_KEY"] ?? STUB_API_KEY);
 
     const seeded = await pollUntil(
       "connecting the inference credential and deploying default workflows",
@@ -248,10 +257,13 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
             hubUrl: hub.baseUrl,
             userId,
             userEmail: email,
-            provider: "anthropic",
+            provider,
             apiKey,
             pushWorkflow,
             log: () => undefined,
+            ...(useOllama && ollamaBaseUrl !== undefined
+              ? { baseURLOverride: ollamaBaseUrl }
+              : {}),
           });
           if (outcome.kind !== "seeded") {
             throw new Error(
