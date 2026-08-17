@@ -102,12 +102,16 @@ describe("POST /channels", () => {
   });
 
   test("creating an unnamed chat titles it by the agent's display name, tenant row included", async () => {
+    const launches: Array<() => Promise<void>> = [];
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [
           { id: "wfd_assist", name: "assistant", description: "Myra" },
         ],
       }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -116,9 +120,17 @@ describe("POST /channels", () => {
       definitionId: "wfd_assist",
     });
 
+    // The 201 answers before the launches: the title is already the
+    // agent's display name (known from the definition), participants
+    // stream in once the background launch joins the agent.
     expect(response.status).toBe(201);
     expect(body.title).toBe("Myra");
-    expect(body.participants).toEqual([
+    expect(body.participants).toEqual([]);
+    expect(launches).toHaveLength(1);
+    await launches[0]?.();
+
+    const settled = await deps.store.getChannelSettings(TENANT.id, body.id);
+    expect(settled?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "myra" },
     ]);
     const tenancy = deps.tenancy as ReturnType<
@@ -129,8 +141,12 @@ describe("POST /channels", () => {
   });
 
   test("creating a chat auto-invites its agent and titles it by handle", async () => {
+    const launches: Array<() => Promise<void>> = [];
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -141,8 +157,11 @@ describe("POST /channels", () => {
 
     expect(response.status).toBe(201);
     expect(body.kind).toBe("chat");
-    expect(body.title).toBe("echo");
-    expect(body.participants).toEqual([
+    await launches[0]?.();
+
+    const settled = await deps.store.getChannelSettings(TENANT.id, body.id);
+    expect(settled?.settings["chat/name"]).toBe("echo");
+    expect(settled?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "echo" },
     ]);
 
@@ -190,7 +209,8 @@ describe("POST /channels", () => {
     expect(body.title).toBe("My Assistant");
   });
 
-  test("creating a chat whose agent has no launchable inference source returns 409, not 500", async () => {
+  test("an unlaunchable agent compensates the mint in the background — the channel vanishes cleanly", async () => {
+    const launches: Array<() => Promise<void>> = [];
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -201,6 +221,9 @@ describe("POST /channels", () => {
           );
         },
       }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -210,23 +233,30 @@ describe("POST /channels", () => {
       body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
-    expect(response.status).toBe(409);
-    const errorBody = (await response.json()) as {
-      error: { code: string; message: string };
-    };
-    expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toBe(
-      "This definition declares no model requirements",
-    );
+    // The mint answers before the launch — the failure lands in the
+    // background and rolls the channel back instead of surfacing a
+    // status code the caller has already stopped waiting for.
+    expect(response.status).toBe(201);
+    await launches[0]?.();
+
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    expect(await deps.store.listChannelSettings(TENANT.id)).toHaveLength(0);
+    expect(await tenancy.listChildChannelTenancies(TENANT.id)).toHaveLength(0);
   });
 
-  test("agent launch failure returns 422, not 500, and compensates the channel", async () => {
+  test("agent launch failure compensates the channel in the background, so a retry starts clean", async () => {
+    const launches: Array<() => Promise<void>> = [];
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
         launchInvite: () =>
           Promise.reject(new Error("blocked: too many @mentions; max 5")),
       }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -236,20 +266,13 @@ describe("POST /channels", () => {
       body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
-    expect(response.status).toBe(422);
-    const body = (await response.json()) as {
-      error: { code: string; message: string };
-    };
-    expect(body.error.code).toBe("agent_launch_failed");
-    expect(body.error.message).toContain("too many @mentions");
+    expect(response.status).toBe(201);
+    await launches[0]?.();
 
-    // The half-built channel is rolled back: its settings row is gone
-    // and its minted tenant is compensated, so a retry starts clean.
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryChannelTenancyStore
     >;
-    const channels = await deps.store.listChannelSettings(TENANT.id);
-    expect(channels).toHaveLength(0);
+    expect(await deps.store.listChannelSettings(TENANT.id)).toHaveLength(0);
     expect(await tenancy.listChildChannelTenancies(TENANT.id)).toHaveLength(0);
   });
 });
