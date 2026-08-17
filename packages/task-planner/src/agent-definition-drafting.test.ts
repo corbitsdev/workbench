@@ -334,6 +334,32 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("request_capability");
   });
 
+  // CL-5879: a specialist agent delegated to via @mention deep-dives in
+  // a thread; the drafting brief must tell the drafted agent to close
+  // that thread out with a summary back to whoever delegated it and to
+  // the main conversation, so a handoff never dead-ends in the thread.
+  test("the drafting brief instructs the drafted agent to finish a delegated thread with a summary back to the host/main", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_3b",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+
+    expect(sentPrompt).toContain("@mentions it to delegate a job");
+    expect(sentPrompt).toContain("finish that thread with a one-line");
+    expect(sentPrompt).toContain("whoever delegated it and to the main");
+  });
+
   test("the prompt tells the model request_capability is pinned automatically, only when @corbits/capability-tools is offered", async () => {
     let sentPrompt = "";
     const drafting = createMyraAgentDefinitionDrafting(

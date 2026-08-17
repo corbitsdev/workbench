@@ -217,6 +217,137 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a delegated specialist's reply threads under the delegating message; the host's own replies stay in main (CL-5879)", async () => {
+    const sentMail: { channelId: string; fromChannelId?: string }[] = [];
+    const assignments: {
+      tenantId: string;
+      channelId: string;
+      threadId: string;
+      messageId: string;
+    }[] = [];
+    const openedThreadFor: string[] = [];
+    const events = createSidecarEmitter();
+
+    // `findFoldedRunByAddress` is exercised for real (see this file's
+    // header comment), so this fake answers by call order rather than
+    // inspecting the drizzle `where` expression: the host's own event
+    // resolves first, the delegated specialist's reply second — exactly
+    // the order this test emits them in.
+    const runsByCallOrder = [
+      { id: "ins_myra1", tenantId: "ten_1" },
+      { id: "ins_echo1", tenantId: "ten_1" },
+    ];
+    let dbCallIndex = 0;
+    const db = {
+      query: {
+        workflowRun: {
+          findFirst: async () => {
+            const run = runsByCallOrder[dbCallIndex];
+            dbCallIndex += 1;
+            return run === undefined
+              ? undefined
+              : { ...run, principalId: null };
+          },
+        },
+      },
+    };
+
+    const orchestrator = createChatOrchestrator({
+      db: db as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", [
+            "ins_myra1@ten1.workbench.test",
+            "ins_echo1@ten1.workbench.test",
+          ]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push({
+            channelId: input.channelId,
+            ...(input.fromChannelId !== undefined
+              ? { fromChannelId: input.fromChannelId }
+              : {}),
+          });
+          return {
+            id: `mail_${sentMail.length}`,
+            createdAt: new Date().toISOString(),
+          };
+        },
+      },
+      threads: {
+        openReplyThread: async (input) => {
+          openedThreadFor.push(input.parentMessageId);
+          return {
+            id: "thr_1",
+            tenantId: input.tenantId,
+            channelId: input.channelId,
+            kind: "reply",
+            parentMessageId: input.parentMessageId,
+            parentThreadId: "thr_root",
+            runRef: null,
+            title: null,
+            createdAt: new Date(),
+          };
+        },
+        assignMessage: async (input) => {
+          assignments.push(input);
+        },
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    // The host (Myra) replies, delegating to the specialist by @mention.
+    events.emit("agent.event", {
+      agentAddress: "ins_myra1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "@ins_echo1 can you take this one" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The delegating message is mail_1, posted into ins_channel1.
+    expect(sentMail[0]).toMatchObject({
+      channelId: "ins_channel1",
+      fromChannelId: "ins_myra1",
+    });
+    // No thread assignment yet — only the specialist's own reply threads.
+    expect(assignments).toHaveLength(0);
+
+    // The specialist wakes, does its deep-dive, and replies.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_2",
+      event: {
+        type: "connector.reply",
+        data: { content: "Done — filed the ticket." },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The specialist's reply lands in the same main channel as the host...
+    const specialistReply = sentMail.find(
+      (m) => m.fromChannelId === "ins_echo1",
+    );
+    expect(specialistReply).toMatchObject({ channelId: "ins_channel1" });
+    // ...but is threaded under the delegating message (mail_1), not left
+    // loose on the root feed.
+    expect(openedThreadFor).toEqual(["mail_1"]);
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0]).toMatchObject({
+      tenantId: "ten_1",
+      channelId: "ins_channel1",
+      threadId: "thr_1",
+    });
+
+    orchestrator.dispose();
+  });
+
   test("posts into every channel when the store shows the address in more than one", async () => {
     const sentMail: { channelId: string }[] = [];
     const events = createSidecarEmitter();

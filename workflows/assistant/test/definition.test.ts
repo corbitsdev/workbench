@@ -149,3 +149,45 @@ test("a non-positive or fractional turn timeout is rejected", () => {
     buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
   ).toThrow(/turnTimeoutMs/);
 });
+
+// CL-5879: an outcome ("a sales motion", "a content pipeline", "a repo
+// to maintain") is enough on its own for Myra to propose a team design
+// — she never waits to be told the mechanism ("make an agent").
+test("the prompt tells Myra to propose a team design from an outcome, never wait for the mechanism", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never wait to be told the mechanism",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "work out the team yourself: which specialists it needs",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "say that plan back in one short paragraph before doing anything",
+  );
+});
+
+test("the prompt asks only for facts Myra can't infer, never permission to use the mechanism", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "ask only for the handful of facts you genuinely can't infer",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never 'should I create an agent for that?'",
+  );
+});
+
+test("the prompt builds the whole team on the person's OK: agents, routines, and memory in one go", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "On their OK, build the whole thing in one go: create the " +
+      "specialists and invite them in, create the routines, and save " +
+      "the facts they gave you to memory",
+  );
+});
+
+test("the prompt has a delegated specialist finish its thread with a summary back to the host/main", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "that @mention opens a thread for the deep-dive",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "finish its thread with a one-line summary addressed back to you " +
+      "and the main conversation",
+  );
+});

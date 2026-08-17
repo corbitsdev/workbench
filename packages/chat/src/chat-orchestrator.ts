@@ -49,6 +49,7 @@ import { localPartOf } from "./agent-address";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
+import type { ThreadStore } from "./threads";
 import type { WriteClaimStore } from "./write-claims";
 
 const log = getLogger(["chat", "orchestrator"]);
@@ -116,6 +117,15 @@ export type ChatOrchestratorDeps = {
    * never conservatively attribute a failure to one.
    */
   listConnectedProviders?: ConnectedProviderLister;
+  /**
+   * Threads a delegated specialist's reply under the message that
+   * delegated to it (CL-5879) — the same `openReplyThread`/`assignMessage`
+   * pair `routes.ts`'s human-send path already uses. Absent when no
+   * thread store is mounted, matching `memory`'s own optional shape: a
+   * deploy that never wires threads keeps every reply on the root feed
+   * exactly as before this landed.
+   */
+  threads?: Pick<ThreadStore, "openReplyThread" | "assignMessage">;
 };
 
 export type ChatOrchestrator = {
@@ -216,8 +226,59 @@ async function resolveMemberChannels(
   };
 }
 
+/**
+ * The delegating message a mentioned specialist's *next* reply should
+ * thread under (CL-5879) — set the moment `postReply`'s own mention
+ * fan-out below wakes that specialist, read (and cleared) the moment
+ * that specialist's own `postReply` call posts into the same channel.
+ * Keyed by the specialist's run id (`localPartOf` its agent address,
+ * the same id `resolveMemberChannels` calls `agentChannelId`): that id
+ * is stable across the fan-out send and the specialist's own later
+ * reply, unlike a channel id, which the specialist's reply shares with
+ * the host's (see the module's own postReply doc below) but arrives
+ * once per member channel rather than once per specialist.
+ *
+ * Only the specialist's first reply after being delegated to is
+ * threaded — the entry is deleted on read, matching this package's
+ * "thread machinery that already exists" scope for CL-5879 rather than
+ * tracking an open-ended delegation session. A specialist mentioned
+ * again gets a fresh entry from that later delegating message.
+ */
+type PendingDelegationThread = {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly messageId: string;
+};
+
+async function threadDelegatedReply(
+  deps: ChatOrchestratorDeps,
+  pendingDelegationThreads: Map<string, PendingDelegationThread>,
+  agentAddress: string,
+  channelId: string,
+  messageId: string,
+): Promise<void> {
+  if (deps.threads === undefined) return;
+  const runId = localPartOf(agentAddress);
+  const pending = pendingDelegationThreads.get(runId);
+  if (pending === undefined || pending.channelId !== channelId) return;
+  pendingDelegationThreads.delete(runId);
+
+  const reply = await deps.threads.openReplyThread({
+    tenantId: pending.tenantId,
+    channelId: pending.channelId,
+    parentMessageId: pending.messageId,
+  });
+  await deps.threads.assignMessage({
+    tenantId: pending.tenantId,
+    channelId: pending.channelId,
+    threadId: reply.id,
+    messageId,
+  });
+}
+
 async function postReply(
   deps: ChatOrchestratorDeps,
+  pendingDelegationThreads: Map<string, PendingDelegationThread>,
   agentAddress: string,
   content: string,
 ): Promise<void> {
@@ -225,12 +286,20 @@ async function postReply(
   if (resolved === undefined) return;
 
   for (const channelId of resolved.channelIds) {
-    await deps.platform.sendMail({
+    const sent = await deps.platform.sendMail({
       tenantId: resolved.tenantId,
       channelId,
       content: encodeParts([{ kind: "text", text: content }]),
       fromChannelId: resolved.agentChannelId,
     });
+
+    await threadDelegatedReply(
+      deps,
+      pendingDelegationThreads,
+      agentAddress,
+      channelId,
+      sent.id,
+    );
 
     // The delegation hop: when the host's reply @mentions other agent
     // teammates, they must receive it exactly as they would a human's
@@ -252,6 +321,14 @@ async function postReply(
           replyTo: channelId,
         }),
         fromChannelId: channelId,
+      });
+      // The delegating host's own replies stay in main (never
+      // recorded here for its own address) — only the mentioned
+      // specialist's *next* reply threads, under this exact message.
+      pendingDelegationThreads.set(localPartOf(recipient), {
+        tenantId: resolved.tenantId,
+        channelId,
+        messageId: sent.id,
       });
     }
   }
@@ -651,6 +728,9 @@ export function createChatOrchestrator(
   // looks permanently dead with no trace anywhere it ever tried again.
   const notifiedDropAddresses = new Set<string>();
 
+  // See `PendingDelegationThread`'s own doc comment above `postReply`.
+  const pendingDelegationThreads = new Map<string, PendingDelegationThread>();
+
   const unsubscribe = deps.events.on(
     "agent.event",
     ({ agentAddress, event }) => {
@@ -669,7 +749,12 @@ export function createChatOrchestrator(
       if (content !== undefined) {
         repliedAddresses.add(agentAddress);
         notifiedDropAddresses.delete(agentAddress);
-        void postReply(deps, agentAddress, content).catch((cause: unknown) => {
+        void postReply(
+          deps,
+          pendingDelegationThreads,
+          agentAddress,
+          content,
+        ).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
@@ -715,7 +800,12 @@ export function createChatOrchestrator(
               ended.status === "failed"
                 ? errorMessage
                 : "I didn't manage to answer that one — say it again and I'll pick it up.";
-            void postReply(deps, agentAddress, noticeContent).catch(
+            void postReply(
+              deps,
+              pendingDelegationThreads,
+              agentAddress,
+              noticeContent,
+            ).catch(
               (cause: unknown) => {
                 log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
                   cause instanceof Error ? cause.message : String(cause)
