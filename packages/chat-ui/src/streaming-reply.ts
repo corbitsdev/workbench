@@ -148,8 +148,9 @@ export function useStreamingReply(channelId: string | null): {
 }
 
 /**
- * The handle(s) to show as "typing" above the composer while a turn
- * streams — mirrors `mergeStreamingReply`'s attribution exactly (the
+ * The handle(s) to show as "typing" above the composer while a reply is
+ * owed but no tokens have streamed yet — mirrors `mergeStreamingReply`'s
+ * attribution exactly (the
  * channel's first agent participant), since a `chat.agent` event carries no
  * sender of its own. Channels with more than one invited agent are the
  * same known approximation `mergeStreamingReply` already documents, not a
@@ -160,7 +161,10 @@ export function typingAgentNames(
   streamingReply: StreamingReplyState,
   participants: readonly ParticipantRecord[],
 ): readonly string[] {
-  if (streamingReply === null) return [];
+  // Only the tokenless pending phase shows the typing line; once text
+  // streams, the growing timeline bubble is the signal — showing both
+  // would double-indicate the same turn.
+  if (streamingReply === null || streamingReply.text !== "") return [];
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
   );

@@ -381,7 +381,10 @@ export function mergeStreamingReply(
   streamingReply: StreamingReplyState,
   participants: readonly ParticipantRecord[],
 ): readonly TimelineMessageItem[] {
-  if (streamingReply === null) return items;
+  // A pending reply with no tokens yet stays off the timeline — an
+  // empty bubble with no timestamp reads as broken; the typing line
+  // above the composer owns that phase until the first delta lands.
+  if (streamingReply === null || streamingReply.text === "") return items;
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
   );
