@@ -181,8 +181,10 @@ import {
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
   ensureWorkflowDefinitionForAsset,
+  type AgentRepoStore,
   type WsHandle,
 } from "@intx/hub-sessions";
+import { createLaunchCaches } from "./launch-caches";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
@@ -540,10 +542,31 @@ export async function createHub(config: HubConfig) {
     eventCollectors,
     agentRepoStore,
   });
+  // CL-6225: the launch path re-reads every tool-package tarball and
+  // rebuilds a full git pack of every attached asset on every agent
+  // launch; both reads are pure functions of an immutable commit SHA (see
+  // `./launch-caches.ts`). Only `createSessionService`'s launch path gets
+  // the cached wrapper — the smart-HTTP git routes and the asset REST
+  // routes below keep the raw `agentRepoStore`/`assetService` because they
+  // serve requests under per-request principals the cache is not sound
+  // for (see `./launch-caches.ts`'s header comment).
+  const launchCaches = createLaunchCaches({
+    assetService,
+    repoStore: agentRepoStore.repoStore,
+  });
+  const launchAgentRepoStore: AgentRepoStore = {
+    writeDeployTree: agentRepoStore.writeDeployTree,
+    createDeployPack: agentRepoStore.createDeployPack,
+    receiveAgentStatePack: agentRepoStore.receiveAgentStatePack,
+    receiveWorkflowRunPack: agentRepoStore.receiveWorkflowRunPack,
+    getDeployRef: agentRepoStore.getDeployRef,
+    getSigningPublicKey: agentRepoStore.getSigningPublicKey,
+    repoStore: launchCaches.repoStore,
+  };
   const sessionService = createSessionService({
     sidecarRouter,
-    agentRepoStore,
-    assetService,
+    agentRepoStore: launchAgentRepoStore,
+    assetService: launchCaches.assetService,
     db,
     toolPackageRegistries: {
       httpRegistries: REGISTRIES,
