@@ -1925,6 +1925,21 @@ export async function createHub(config: HubConfig) {
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
       deliveryChannelRequired: routineDeliveryChannelRequired,
+      // A routine created from inside a workbench delivers into that
+      // workbench: the creating run is a channel participant, so its
+      // address (runId@domain) resolves straight to the channel.
+      resolveRunChannel: async (tenantId, runId) => {
+        const row = await db.query.tenant.findFirst({
+          where: eq(tenantTable.id, tenantId),
+          columns: { domain: true },
+        });
+        if (row === undefined) return undefined;
+        const hit = await chatStore.findChannelByParticipantAddress(
+          tenantId,
+          `${runId}@${row.domain}`,
+        );
+        return hit?.channelId;
+      },
       deliverySpace: {
         createDeliverySpace: (input) =>
           provisionSpaceChannel(

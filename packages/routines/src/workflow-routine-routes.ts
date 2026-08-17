@@ -103,7 +103,7 @@ export type CreateWorkflowRoutineRoutesDeps = {
    */
   listDefinitionCandidates?: (
     tenantId: string,
-  ) => Promise<ReadonlyArray<{ id: string; name: string }>>;
+  ) => Promise<readonly { id: string; name: string }[]>;
   /** Same contract as `CreateRoutineRoutesDeps.webhookTriggerInTenant`. */
   webhookTriggerInTenant?: (
     tenantId: string,
@@ -113,13 +113,21 @@ export type CreateWorkflowRoutineRoutesDeps = {
   /** Same contract as `CreateRoutineRoutesDeps.deliveryThreads`. */
   deliveryThreads?: DeliveryThreadPort | undefined;
   /**
+   * Resolves the creating run's own channel — the workbench the person
+   * was talking in when they asked for the routine. A routine created
+   * with no `deliveryChannelId` delivers there by default; a brand-new
+   * space (via `deliverySpace` below) is only ever minted for a run
+   * with no home channel of its own.
+   */
+  resolveRunChannel?: (
+    tenantId: string,
+    runId: string,
+  ) => Promise<string | undefined>;
+  /**
    * Same contract as `CreateRoutineRoutesDeps.deliverySpace`: provisions
-   * a brand-new space for a routine Myra creates with no
-   * `deliveryChannelId`, named after the routine. There is no "run's own
-   * channel" to fall back to instead — that channel-context plumbing
-   * doesn't exist anywhere in this codebase yet — so auto-provisioning
-   * a fresh space via this same port is the correct native fallback,
-   * identical to the tenant route's own behavior.
+   * a brand-new space for a routine created with no `deliveryChannelId`
+   * by a run that `resolveRunChannel` cannot place in a channel, named
+   * after the routine.
    */
   deliverySpace?: DeliverySpacePort | undefined;
   /**
@@ -278,13 +286,29 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
+    // Delivery target precedence: the channel the caller named, then
+    // the creating run's own channel (a routine asked for inside a
+    // workbench reports back into that workbench), then a freshly
+    // provisioned space as the last resort.
+    const namedChannelId =
+      body.deliveryChannelId !== undefined && body.deliveryChannelId !== ""
+        ? body.deliveryChannelId
+        : undefined;
+    const deliveryRequired = await isDeliveryChannelRequired(
+      deps,
+      scope.tenantId,
+      definitionId,
+    );
+
+    const homeChannelId =
+      deliveryRequired && namedChannelId === undefined
+        ? await deps.resolveRunChannel?.(scope.tenantId, scope.runId)
+        : undefined;
+
     const needsDelivery =
-      (await isDeliveryChannelRequired(
-        deps,
-        scope.tenantId,
-        definitionId,
-      )) &&
-      (body.deliveryChannelId === undefined || body.deliveryChannelId === "");
+      deliveryRequired &&
+      namedChannelId === undefined &&
+      homeChannelId === undefined;
 
     if (
       needsDelivery &&
@@ -336,7 +360,7 @@ export function createWorkflowRoutineRoutes(
       });
     }
     const deliveryChannelId =
-      body.deliveryChannelId ?? provisionedSpace?.channelId ?? null;
+      namedChannelId ?? homeChannelId ?? provisionedSpace?.channelId ?? null;
 
     let row: RoutineRow;
     try {
