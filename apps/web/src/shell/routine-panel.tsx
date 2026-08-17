@@ -47,11 +47,13 @@ import {
   MenuContent,
   MenuItem,
   MenuTrigger,
+  RichEmptyState,
   RunNowButton,
   Skeleton,
   StatusDot,
   Switch,
   toast,
+  TraceWaterfall,
 } from "@corbits/react-ui";
 import type { BadgeTone, StatusDotTone } from "@corbits/react-ui";
 import { listChannelAgents } from "@corbits/chat-ui";
@@ -59,6 +61,7 @@ import { listTasks } from "@corbits/tasks-ui";
 import type { Task, TaskStatus } from "@corbits/tasks-ui";
 import { ChevronLeft, Clock, Plus, X } from "lucide-react";
 
+import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { ensureMyraChannel } from "../myra-channel";
@@ -77,7 +80,20 @@ import {
   useTenantQuery,
 } from "../routines-api";
 import type { Routine, RoutineRun, RoutineTrigger } from "../routines-api";
+import {
+  insightsRunTracePath,
+  insightsTopLevelRunsPath,
+  RunTraceSchema,
+  TopLevelRunsSchema,
+} from "../insights-api";
+import type { InsightsRun } from "../insights-api";
 import { RunsTable } from "../pages/routines-page";
+import {
+  formatWhen,
+  runDurationLabel,
+  statusTone,
+  toTraceSpans,
+} from "../pages/insights-page";
 import {
   createWebhookTrigger,
   DEFAULT_WEBHOOK_INPUT_TEMPLATE,
@@ -166,6 +182,29 @@ export function RoutinePanel() {
           openRoutine({
             routineId: null,
             ...(subject?.channelId !== undefined
+              ? { channelId: subject.channelId }
+              : {}),
+          })
+        }
+        onOpenRuns={() =>
+          openRoutine({
+            view: "runs",
+            ...(subject?.channelId !== undefined
+              ? { channelId: subject.channelId }
+              : {}),
+          })
+        }
+      />
+    );
+  }
+
+  if (subject.view === "runs") {
+    return (
+      <RunsCanvasPanel
+        onBack={() =>
+          openRoutine({
+            view: "list",
+            ...(subject.channelId !== undefined
               ? { channelId: subject.channelId }
               : {}),
           })
@@ -311,10 +350,12 @@ function RoutineListPanel({
   onClose,
   onSelect,
   onNew,
+  onOpenRuns,
 }: {
   readonly onClose: () => void;
   readonly onSelect: (routineId: string) => void;
   readonly onNew: () => void;
+  readonly onOpenRuns: () => void;
 }) {
   const navigate = useNavigate();
   const { selectedTenantId: tenantId } = useBench();
@@ -410,6 +451,9 @@ function RoutineListPanel({
           </Button>
           <span className="text-sm font-medium">Routines</span>
         </div>
+        <Button variant="ghost" size="sm" onClick={onOpenRuns}>
+          Runs
+        </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <button
@@ -505,6 +549,143 @@ function RoutineListPanel({
         {tenantId !== null ? (
           <TasksSection tenantId={tenantId} navigate={navigate} />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function runStatusDotTone(status: string): StatusDotTone {
+  const tone = statusTone(status);
+  if (tone === "danger") return "danger";
+  if (tone === "success" || tone === "info") return "emphasis";
+  return "neutral";
+}
+
+/** This workbench's own runs — its agent runs and its routines' runs
+ * (`insightsTopLevelRunsPath` is already tenant-scoped, so a workbench's
+ * runs are exactly this bench's top-level feed) — each row opening the
+ * same `TraceWaterfall` insights renders, inline in this pane: no route
+ * hop out of `/c/:id`. Selection is local state, not canvas subject state
+ * — a click into a trace and back never touches the shell's own history. */
+function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
+  const { selectedTenantId: tenantId } = useBench();
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  const runsQuery = useAPIQuery(
+    tenantId === null ? "" : insightsTopLevelRunsPath(tenantId),
+    TopLevelRunsSchema,
+  );
+  const runs: readonly InsightsRun[] =
+    runsQuery.kind === "ready" ? runsQuery.data.data : [];
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+
+  const traceQuery = useAPIQuery(
+    tenantId === null || selectedRunId === null
+      ? ""
+      : insightsRunTracePath(tenantId, selectedRunId),
+    RunTraceSchema,
+  );
+
+  if (selectedRunId !== null) {
+    const spans =
+      traceQuery.kind === "ready" ? toTraceSpans(traceQuery.data) : [];
+    return (
+      <div className="shell-routine-pane flex h-full min-h-0 flex-col">
+        <div className="flex items-center gap-1 border-b border-[var(--ui-border)] px-3 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelectedRunId(null)}
+            aria-label="Back to runs"
+            title="Back to runs"
+          >
+            <ChevronLeft />
+          </Button>
+          <span className="truncate text-sm font-medium">
+            {selectedRun?.definitionName ?? selectedRunId}
+          </span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {traceQuery.kind === "loading" ? (
+            <Skeleton className="query-skeleton" />
+          ) : null}
+          {traceQuery.kind === "ready" && spans.length > 0 ? (
+            <TraceWaterfall
+              title="Run trace"
+              spans={spans}
+              description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
+            />
+          ) : null}
+          {traceQuery.kind === "ready" && spans.length === 0 ? (
+            <RichEmptyState
+              title="Empty trace"
+              description="The run exists but has no recorded spans yet."
+            />
+          ) : null}
+          {traceQuery.kind === "error" ? (
+            <RichEmptyState
+              title="Trace not available"
+              description={traceQuery.message}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shell-routine-pane flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-1 border-b border-[var(--ui-border)] px-3 py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          aria-label="Back"
+          title="Back"
+        >
+          <ChevronLeft />
+        </Button>
+        <span className="text-sm font-medium">Runs</span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {runsQuery.kind === "loading" ? (
+          <Skeleton className="query-skeleton" />
+        ) : runsQuery.kind === "ready" && runs.length === 0 ? (
+          <EmptyState
+            icon={<Clock />}
+            title="No runs yet."
+            description="This workbench's agent and routine runs will show up here."
+          />
+        ) : runsQuery.kind === "ready" ? (
+          runs.map((run) => (
+            <button
+              key={run.id}
+              type="button"
+              className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2 text-left"
+              onClick={() => setSelectedRunId(run.id)}
+            >
+              <StatusDot
+                label={run.status}
+                tone={runStatusDotTone(run.status)}
+              />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {run.definitionName}
+              </span>
+              <span className="shrink-0 text-xs text-[var(--ui-fg-muted)]">
+                {formatWhen(run.createdAt)}
+              </span>
+              <span className="shrink-0 text-xs text-[var(--ui-fg-muted)]">
+                {runDurationLabel(run)}
+              </span>
+            </button>
+          ))
+        ) : (
+          <EmptyState
+            icon={<Clock />}
+            title="Couldn't load runs"
+            description="Try again in a moment."
+          />
+        )}
       </div>
     </div>
   );

@@ -66,6 +66,8 @@ let channelAgentsByChannel: Record<
 let chatChannels: Record<string, unknown>[] = [];
 let runsByRoutineId: Record<string, Record<string, unknown>[]> = {};
 let tasks: Record<string, unknown>[] = [];
+let topLevelRuns: Record<string, unknown>[] = [];
+let runTraces: Record<string, Record<string, unknown>> = {};
 
 function routineRecord(
   overrides: Partial<Record<string, unknown>> = {},
@@ -186,6 +188,19 @@ async function routeFetch(
   if (url.endsWith("/tasks") && method === "GET") {
     return jsonResponse({ items: tasks });
   }
+  if (url.includes("/top-level-runs")) {
+    return jsonResponse({ data: topLevelRuns, nextCursor: null });
+  }
+  const traceMatch = url.match(/\/insights\/runs\/([^/]+)\/trace$/);
+  if (traceMatch) {
+    return jsonResponse(
+      runTraces[traceMatch[1] as string] ?? {
+        runId: traceMatch[1],
+        spans: null,
+        absent: "no reader mounted",
+      },
+    );
+  }
   const patchMatch = url.match(/\/routines\/([^/?]+)$/);
   if (patchMatch && method === "PATCH") {
     const patch: Record<string, unknown> = JSON.parse(String(init?.body));
@@ -251,6 +266,8 @@ describe("RoutinePanel", () => {
     chatChannels = [];
     runsByRoutineId = {};
     tasks = [];
+    topLevelRuns = [];
+    runTraces = {};
     channelAgentsByChannel = {
       ch_1: [
         { address: "myra_1@wf_1.tnt_1", handle: "myra", definitionId: "wfd_1" },
@@ -526,6 +543,83 @@ describe("RoutinePanel", () => {
       await renderPanel({ view: "list" });
       await settle();
       expect(container.textContent).toContain("Run one now to see it here.");
+    });
+  });
+
+  describe("runs view", () => {
+    function runRecord(
+      overrides: Partial<Record<string, unknown>> = {},
+    ): Record<string, unknown> {
+      return {
+        id: "run_a",
+        definitionId: "wfd_1",
+        definitionName: "Myra",
+        tenantId: "tnt_1",
+        address: "myra_1@wf_1.tnt_1",
+        status: "deployed",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    test("Runs button on the list view opens the runs view", async () => {
+      await renderPanel({ view: "list" });
+      act(() => buttonWithText("Runs")?.click());
+      expect(openedSubjects).toContainEqual({ view: "runs" });
+    });
+
+    test("empty state says No runs yet.", async () => {
+      await renderPanel({ view: "runs" });
+      await settle();
+      expect(container.textContent).toContain("No runs yet.");
+    });
+
+    test("lists runs and never navigates away", async () => {
+      topLevelRuns = [runRecord({ id: "run_a", definitionName: "Myra" })];
+      await renderPanel({ view: "runs" });
+      await settle();
+      expect(container.textContent).toContain("Myra");
+    });
+
+    test("clicking a run row shows its trace inline, without navigating", async () => {
+      topLevelRuns = [runRecord({ id: "run_a", definitionName: "Myra" })];
+      runTraces["run_a"] = {
+        runId: "run_a",
+        spans: [
+          {
+            id: "sp_1",
+            label: "Plan",
+            kind: "tool",
+            start: 0,
+            end: 100,
+            durationMs: 100,
+            tokens: null,
+            phase: "ok",
+            error: null,
+            timingSource: "measured",
+          },
+        ],
+      };
+      await renderPanel({ view: "runs" });
+      await settle();
+
+      const row = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Myra"),
+      );
+      act(() => row?.click());
+      await settle();
+
+      expect(container.textContent).toContain("Run trace");
+      expect(container.textContent).toContain("Plan");
+      expect(closed).toBe(false);
+    });
+
+    test("back chevron on the runs view returns to the list", async () => {
+      await renderPanel({ view: "runs" });
+      const back = container.querySelector('[aria-label="Back"]');
+      act(() => (back as HTMLButtonElement).click());
+      expect(openedSubjects).toContainEqual({ view: "list" });
     });
   });
 
