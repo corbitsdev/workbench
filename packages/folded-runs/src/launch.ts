@@ -16,6 +16,8 @@
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
+import { buildCredentialDelivery } from "@intx/db";
+import type { CredentialBinding } from "@intx/types";
 import {
   agentSession,
   principal as principalTable,
@@ -106,6 +108,7 @@ export async function deployAtHead(
     | "credentialCipher"
     | "hubPublicKey"
     | "toolGrantsForPins"
+    | "mcpCredentialBindingsFor"
   >,
   params: {
     tenantId: string;
@@ -186,6 +189,64 @@ export async function deployAtHead(
       principalId: params.principalId,
     }));
 
+  // `@corbits/mcp-tools` declares no static `interchange.credentials` (its
+  // handles are one `mcp:<slug>` per tenant-connected server, unknown at
+  // package-publish time), so the deploy-time capability walk never binds
+  // them. Mirror `ToolGrantsForPins`'s pinned-package carve-out: when the
+  // launch pins the package, fetch the tenant's real MCP credential
+  // bindings and fold them in alongside whatever the definition itself
+  // declares, so `env.credentials.resolve("mcp:<slug>")` has something to
+  // find instead of failing every call closed with "not connected".
+  const isMcpToolsPin = params.foldedBody.toolPackagePins.some(
+    (pin) => pin.name === "@corbits/mcp-tools",
+  );
+  const mcpBindings: readonly CredentialBinding[] =
+    isMcpToolsPin && deps.mcpCredentialBindingsFor !== undefined
+      ? await deps.mcpCredentialBindingsFor(params.tenantId)
+      : [];
+  const credentialBindings = [
+    ...params.foldedBody.credentialBindings,
+    ...mcpBindings,
+  ];
+
+  let credentials: Parameters<
+    FoldedRunsDeps["sessionService"]["deploySingleStepAtHead"]
+  >[0]["credentials"];
+  if (credentialBindings.length > 0) {
+    if (deps.credentialCipher === undefined) {
+      throw new Error(
+        `${params.launchLabel}: launch carries credential bindings but no credentialCipher was supplied; cannot resolve credential material`,
+      );
+    }
+    const delivery = await buildCredentialDelivery({
+      db: deps.db,
+      tenantId: params.tenantId,
+      bindings: credentialBindings,
+      creatorPrincipalId: null,
+      invokerPrincipalId: params.principalId,
+      credentialCipher: deps.credentialCipher,
+    });
+    if (!delivery.ok) {
+      throw new Error(
+        `${params.launchLabel}: credential binding resolution failed: ${delivery.reason.message}`,
+      );
+    }
+    credentials = delivery.delivery;
+    for (const bindingGrant of delivery.bindingGrants) {
+      grants.push({
+        id: generateId("grant"),
+        resource: bindingGrant.resource,
+        action: "use",
+        effect: "allow",
+        origin: "system",
+        conditions: bindingGrant.conditions,
+        expiresAt: null,
+        roleId: null,
+        principalId: params.principalId,
+      });
+    }
+  }
+
   const config = {
     sessionId: params.sessionId,
     agentId: params.instanceId,
@@ -226,6 +287,7 @@ export async function deployAtHead(
     sources: { [FOLDED_STEP_ID]: resolution.sources },
     hubPublicKey: deps.hubPublicKey,
     toolPackagePins: params.foldedBody.toolPackagePins,
+    ...(credentials !== undefined ? { credentials } : {}),
   });
 }
 

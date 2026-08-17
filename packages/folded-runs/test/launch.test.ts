@@ -49,7 +49,28 @@ mock.module("@intx/hub-api", () => ({
   },
 }));
 
-const { launchFoldedRun, InferenceResolutionError } =
+const actualDb = await import("@intx/db");
+
+type BuildCredentialDeliveryResult = Awaited<
+  ReturnType<typeof actualDb.buildCredentialDelivery>
+>;
+
+let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
+  ok: true,
+  delivery: undefined,
+  bindingGrants: [],
+};
+const buildCredentialDeliveryCalls: unknown[] = [];
+
+mock.module("@intx/db", () => ({
+  ...actualDb,
+  buildCredentialDelivery: async (...args: unknown[]) => {
+    buildCredentialDeliveryCalls.push(args[0]);
+    return buildCredentialDeliveryResult;
+  },
+}));
+
+const { launchFoldedRun, deployAtHead, InferenceResolutionError } =
   await import("../src/launch");
 const { wakeFoldedRun } = await import("../src/wake");
 const { sessionAsset } = await import("@intx/db/schema");
@@ -759,5 +780,154 @@ describe("wakeFoldedRun", () => {
     );
     expect(db.deleted.map((d) => d.table)).toContain(sessionAsset);
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+  });
+});
+
+describe("deployAtHead — mcp credential bindings", () => {
+  const MCP_BINDING = {
+    package: "@corbits/mcp-tools",
+    handle: "mcp:exa",
+    provider: "mcp:exa",
+    locator: "tenant" as const,
+  };
+
+  test("fetches and delivers the tenant's mcp bindings when @corbits/mcp-tools is pinned", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+    buildCredentialDeliveryCalls.length = 0;
+    buildCredentialDeliveryResult = {
+      ok: true,
+      delivery: {
+        bindings: [
+          { handle: "mcp:exa", credentialId: "cred_1", consumer: "tool:@corbits/mcp-tools" },
+        ],
+        materials: [
+          { credentialId: "cred_1", providerKey: "mcp", origin: "https://mcp.exa.ai/mcp", secret: "n/a" },
+        ],
+      },
+      bindingGrants: [
+        {
+          resource: "credential:cred_1",
+          conditions: { tool: "tool:@corbits/mcp-tools" },
+        },
+      ],
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+    const mcpCredentialBindingsForCalls: string[] = [];
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        mcpCredentialBindingsFor: async (tenantId: string) => {
+          mcpCredentialBindingsForCalls.push(tenantId);
+          return [MCP_BINDING];
+        },
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_1",
+        triggerAddress: "ins_1@ten1.workbench.test",
+        principalId: "prn_1",
+        sessionId: "ses_1",
+        foldedBody: {
+          ...FOLDED_BODY,
+          toolPackagePins: [{ name: "@corbits/mcp-tools", version: "*" }],
+        },
+        launchLabel: "myra",
+      },
+    );
+
+    expect(mcpCredentialBindingsForCalls).toEqual(["ten_1"]);
+    expect(buildCredentialDeliveryCalls).toHaveLength(1);
+    expect(buildCredentialDeliveryCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      bindings: [MCP_BINDING],
+    });
+
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      credentials: unknown;
+      config: { grants: { resource: string; action: string }[] };
+    };
+    expect(deployed.credentials).toEqual(buildCredentialDeliveryResult.delivery);
+    expect(deployed.config.grants).toContainEqual(
+      expect.objectContaining({
+        resource: "credential:cred_1",
+        action: "use",
+        conditions: { tool: "tool:@corbits/mcp-tools" },
+      }),
+    );
+  });
+
+  test("never calls mcpCredentialBindingsFor when @corbits/mcp-tools is not pinned", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+    buildCredentialDeliveryCalls.length = 0;
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+    let mcpCredentialBindingsForCallCount = 0;
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        mcpCredentialBindingsFor: async () => {
+          mcpCredentialBindingsForCallCount += 1;
+          return [MCP_BINDING];
+        },
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_2",
+        triggerAddress: "ins_2@ten1.workbench.test",
+        principalId: "prn_2",
+        sessionId: "ses_2",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "myra",
+      },
+    );
+
+    expect(mcpCredentialBindingsForCallCount).toBe(0);
+    expect(buildCredentialDeliveryCalls).toHaveLength(0);
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      credentials?: unknown;
+    };
+    expect(deployed.credentials).toBeUndefined();
   });
 });
