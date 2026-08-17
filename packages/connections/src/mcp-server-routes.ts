@@ -140,7 +140,10 @@ export async function listMcpCredentials(
   ).data;
 }
 
-export function uniqueSlug(desired: string, taken: ReadonlySet<string>): string {
+export function uniqueSlug(
+  desired: string,
+  taken: ReadonlySet<string>,
+): string {
   if (!taken.has(desired)) return desired;
   for (let suffix = 2; suffix < 1000; suffix += 1) {
     const candidate = `${desired}-${suffix}`;
@@ -261,7 +264,11 @@ export function createMcpServerRoutes(
       preset !== undefined && !takenSlugs.has(preset.slug)
         ? preset.slug
         : uniqueSlug(slugify(name), takenSlugs);
-    const origin = new URL(url).origin;
+    // Store the FULL endpoint URL, path included — MCP servers live at a
+    // path (e.g. https://mcp.granola.ai/mcp); storing only the origin sent
+    // every later mcp_list_tools/mcp_call to the root, where nothing
+    // answers (bit a live connect).
+    const endpointUrl = new URL(url).toString();
 
     try {
       const providerId = await ensureProvider(
@@ -271,7 +278,7 @@ export function createMcpServerRoutes(
           tenantId: tenant.id,
           name: providerName(slug),
           plugin: "http",
-          apiBaseUrl: origin,
+          apiBaseUrl: endpointUrl,
         },
         deps.log,
       );

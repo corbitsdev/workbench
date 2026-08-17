@@ -185,7 +185,7 @@ describe("POST /", () => {
     expect(body.toolCount).toBe(3);
     expect(hub.providers).toHaveLength(1);
     expect(hub.providers[0]?.name).toBe("mcp:notion-workspace");
-    expect(hub.providers[0]?.apiBaseUrl).toBe("https://mcp.notion.example");
+    expect(hub.providers[0]?.apiBaseUrl).toBe("https://mcp.notion.example/sse");
     expect(hub.credentials).toHaveLength(1);
     expect(hub.credentials[0]?.secret).toBe("secret-token");
   });
