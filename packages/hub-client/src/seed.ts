@@ -48,6 +48,7 @@ import {
   type PublishCorbitsToolsRegistryArgs,
 } from "@corbits/tool-registry-publish";
 import { CliError } from "./errors";
+import { DEFAULT_SKILLS } from "./default-skills";
 import { parseAs, type ApiCall } from "./hub";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
@@ -369,6 +370,44 @@ async function plantGrant(
   log(`granted ${args.resource}/${args.action}`);
 }
 
+async function plantDefaultSkills(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  log: (line: string) => void,
+): Promise<void> {
+  for (const skill of DEFAULT_SKILLS) {
+    const existing = await api(
+      "GET",
+      `/api/tenants/${tenantId}/skills/${encodeURIComponent(skill.name)}`,
+      undefined,
+      cookies,
+    );
+    if (existing.status === 200) {
+      log(`skill ${skill.name} already exists (skipped)`);
+      continue;
+    }
+    const created = await api(
+      "POST",
+      `/api/tenants/${tenantId}/skills`,
+      {
+        name: skill.name,
+        description: skill.description,
+        body: skill.body,
+        scope: "tenant",
+      },
+      cookies,
+    );
+    if (created.status !== 201) {
+      throw new CliError(
+        `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    log(`seeded skill ${skill.name}`);
+  }
+}
+
 async function ensureWorkflowAsset(
   api: ApiCall,
   cookies: string[],
@@ -688,6 +727,8 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       log,
     );
   }
+
+  await plantDefaultSkills(api, cookies, tenant.tenantId, log);
 
   // Deploying any workflow that pins a `@corbits/*` tool package (the
   // "assistant" default workflow pins `@corbits/memory-tools`) needs
