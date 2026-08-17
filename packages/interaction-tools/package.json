@@ -2,7 +2,7 @@
   "name": "@corbits/interaction-tools",
   "private": true,
   "description": "The ask_user tool: an @intx/agent bundle that poses an interview question in-thread as a question block and returns immediately, letting the answer arrive as the responding user's next message",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

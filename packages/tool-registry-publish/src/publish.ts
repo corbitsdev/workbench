@@ -6,12 +6,24 @@
 // `packageRegistryAuthorize`). Idempotent: re-running overwrites
 // same-name tarball entries and reuses an existing registry asset.
 
+import { createHash } from "node:crypto";
 import { AssetResponse, AssetWithOriginResponse } from "@intx/types";
 import { type, type Type } from "arktype";
 import { packToolPackageTarball, type PackedTarball } from "./pack";
 import { CORBITS_TOOL_PACKAGE_DIRS, CORBITS_TOOLS_REGISTRY } from "./registry";
 
 export type ApiResult = { status: number; data: unknown; cookies: string[] };
+
+/**
+ * SRI-shaped integrity of `bytes`, matching `ssri.fromData(bytes, {
+ * algorithms: ["sha512"] })`'s default single-hash output
+ * (`vendor/intx/hub-api/src/routes/assets.ts`'s tarball-list route
+ * computes the same way). Computed locally with `node:crypto` rather
+ * than adding an `ssri` dependency for one hash.
+ */
+export function sha512Integrity(bytes: Uint8Array): string {
+  return `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+}
 
 /** Structurally compatible with `@workbench/hub-client`'s `ApiCall` — declared locally so this package never depends on hub-client, which depends on this one. */
 export type ApiCall = (
@@ -105,6 +117,78 @@ async function ensureRegistryAsset(
   return afterConflict;
 }
 
+const TarballSummary = type({
+  filename: "string",
+  size: "number",
+  integrity: "string",
+});
+const TarballListResponse = TarballSummary.array();
+
+/**
+ * Thrown when a tarball whose filename (hence its `name@version`) is
+ * already published to the registry would be overwritten with
+ * different bytes. Republishing under an unchanged version is the
+ * exact failure mode that leaves running agents on stale tool code —
+ * the resolver and sidecar caches key on `name@version`, not on
+ * content, so a same-version overwrite never reaches an already
+ * -launched or freshly-materialized run. Bumping the package's
+ * `version` is the only supported way to ship new tool-package bytes.
+ */
+export class TarballVersionCollisionError extends Error {
+  constructor(filename: string) {
+    super(
+      `publishCorbitsToolsRegistry: ${filename} is already published with different content; bump the package's version before republishing. Tool-package resolution keys on name@version, so overwriting an unchanged version never reaches a running or freshly-launched agent.`,
+    );
+    this.name = "TarballVersionCollisionError";
+  }
+}
+
+/**
+ * Guard against publishing a tarball whose filename (hence its
+ * `name@version`) already exists in the registry with different
+ * bytes. Same filename + same content is a harmless no-op re-publish
+ * (a retried CI run, a rebuild that reproduced byte-identical output);
+ * same filename + different content means the caller changed the
+ * package's source without bumping its version, which would silently
+ * strand every consumer of `name@version` on the old bytes. Exported
+ * standalone so the check is unit-testable without invoking a real
+ * `bun build` through `packToolPackageTarball`.
+ */
+export function assertNoVersionCollision(
+  filename: string,
+  bytes: Uint8Array,
+  existingIntegrity: string | undefined,
+): void {
+  if (existingIntegrity === undefined) return;
+  if (existingIntegrity === sha512Integrity(bytes)) return;
+  throw new TarballVersionCollisionError(filename);
+}
+
+async function listExistingTarballs(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  assetId: string,
+): Promise<Map<string, string>> {
+  const listed = await api(
+    "GET",
+    `/api/tenants/${tenantId}/assets/${assetId}/tarballs`,
+    undefined,
+    cookies,
+  );
+  if (listed.status !== 200) {
+    throw new Error(
+      `publishCorbitsToolsRegistry: failed to list existing tarballs: ${String(listed.status)}`,
+    );
+  }
+  const rows = parseSchema(
+    TarballListResponse,
+    listed.data,
+    "list tarballs response",
+  );
+  return new Map(rows.map((row) => [row.filename, row.integrity]));
+}
+
 async function putTarball(
   hubUrl: string,
   cookies: string[],
@@ -163,10 +247,21 @@ export async function publishCorbitsToolsRegistry(
     args.cookies,
     args.tenantId,
   );
+  const existingIntegrityByFilename = await listExistingTarballs(
+    args.api,
+    args.cookies,
+    args.tenantId,
+    assetId,
+  );
 
   const summaries: PublishSummary[] = [];
   for (const packageDir of CORBITS_TOOL_PACKAGE_DIRS) {
     const tarball = await packToolPackageTarball(packageDir);
+    assertNoVersionCollision(
+      tarball.filename,
+      tarball.bytes,
+      existingIntegrityByFilename.get(tarball.filename),
+    );
     const summary = await putTarball(
       args.hubUrl,
       args.cookies,

@@ -41,7 +41,13 @@ package's source, republish and redeploy with:
 bun run seed
 ```
 
-This is safe to re-run.
+This is safe to re-run. Changing a tool package's source requires bumping
+its `package.json` `version` (and any pin naming that version) before
+republishing — resolution and the sidecar's materialized store key on
+`name@version`, not on content, so republishing unchanged-version bytes
+never reaches a running or freshly-launched agent; `tool-registry-publish`
+refuses to overwrite an existing `name@version` with different content for
+exactly this reason.
 
 ## Memory plane
 

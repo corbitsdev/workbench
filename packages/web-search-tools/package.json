@@ -2,7 +2,7 @@
   "name": "@corbits/web-search-tools",
   "private": true,
   "description": "Web search integration: a minimal Exa client and an @intx/agent tool bundle exposing web_search",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

@@ -92,15 +92,15 @@ test("the agent pins memory, capability, and the manager-tools bundles — real 
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
   expect(ASSISTANT_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/memory-tools", version: "0.0.1" },
-    { name: "@corbits/capability-tools", version: "0.0.1" },
-    { name: "@corbits/routines-tools", version: "0.0.1" },
-    { name: "@corbits/agent-directory-tools", version: "0.0.1" },
-    { name: "@corbits/task-dispatch-tools", version: "0.0.1" },
-    { name: "@corbits/connections-tools", version: "0.0.1" },
-    { name: "@corbits/skills-tools", version: "0.0.1" },
-    { name: "@corbits/mcp-tools", version: "0.0.1" },
-    { name: "@corbits/interaction-tools", version: "0.0.1" },
+    { name: "@corbits/memory-tools", version: "0.0.2" },
+    { name: "@corbits/capability-tools", version: "0.0.2" },
+    { name: "@corbits/routines-tools", version: "0.0.2" },
+    { name: "@corbits/agent-directory-tools", version: "0.0.2" },
+    { name: "@corbits/task-dispatch-tools", version: "0.0.2" },
+    { name: "@corbits/connections-tools", version: "0.0.2" },
+    { name: "@corbits/skills-tools", version: "0.0.2" },
+    { name: "@corbits/mcp-tools", version: "0.0.2" },
+  { name: "@corbits/interaction-tools", version: "0.0.2" },
   ]);
 });
 
