@@ -46,6 +46,7 @@ export {
   ollamaApiRoot,
   ollamaOpenAICompatBaseURL,
   OLLAMA_PLACEHOLDER_SECRET,
+  PROVIDER_TEST_CONFIG,
   providerModelSource,
   supportedCredentialProviders,
   testProviderCredential,

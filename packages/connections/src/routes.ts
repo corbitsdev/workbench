@@ -22,7 +22,10 @@ import {
   ensureCredential,
   ensureProvider,
   OLLAMA_PLACEHOLDER_SECRET,
+  PROVIDER_TEST_CONFIG,
+  seedCatalog,
   type ApiCall,
+  type SupportedCredentialProvider,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
 } from "@workbench/hub-client";
@@ -155,6 +158,10 @@ export function createConnectionRoutes(
       return c.json({ providers, connectedProviderCount }, 200);
     },
   );
+
+  function isInferenceProvider(id: string): id is SupportedCredentialProvider {
+    return Object.hasOwn(PROVIDER_TEST_CONFIG, id);
+  }
 
   function findApiKeyDescriptor(connectorId: string) {
     const descriptor = registry[connectorId];
@@ -299,6 +306,22 @@ export function createConnectionRoutes(
           },
           deps.log,
         );
+        // An inference provider connected here must become usable, not
+        // just stored: plant its curated model catalog (and Ollama's live
+        // model list) exactly the way onboarding does, so the models show
+        // up in Inference and a workbench can actually run on them.
+        if (isInferenceProvider(descriptor.id)) {
+          await seedCatalog({
+            api,
+            cookies,
+            tenantId: tenant.id,
+            log: deps.log,
+            provider: descriptor.id,
+            apiKey: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
+            credentialVerified: true,
+            ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
+          });
+        }
         // Only clear once the credential is actually durable — a storage
         // failure below (the `catch`) must leave a prior needs-attention
         // record standing rather than clearing it on a test pass whose
