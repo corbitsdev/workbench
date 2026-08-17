@@ -18,6 +18,7 @@ export {
   findFoldedRunById,
   findFoldedRunByAddress,
   resolveFoldedRunSessionId,
+  isFoldedRunSettled,
 } from "./runs";
 export {
   deployAtHead,

@@ -14,6 +14,7 @@ import {
   domainOf,
   findFoldedRunByAddress,
   findFoldedRunById,
+  isFoldedRunSettled,
   launchFoldedRun,
   listFoldedMail,
   readDefinitionJSON,
@@ -242,6 +243,21 @@ export function createHubChatPlatform(
     return err instanceof Error && err.message.includes("agent is unreachable");
   }
 
+  // `sendAgentUndeploy` rejects with this exact text
+  // (`vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`) when the
+  // address has no WS entry in `addressIndex` at all — nothing to tear
+  // down. A settled folded-run occurrence (CL-6147) can reach the
+  // forced-undeploy fallback below with its WS entry already gone: the
+  // underlying run ended on its own between the caller's routability
+  // check and this wake actually running, with no `sendAgentUndeploy`
+  // ever called for it. Treated as "already undeployed", not an error.
+  function isNoSidecarConnected(err: unknown): boolean {
+    return (
+      err instanceof Error &&
+      err.message.includes("No sidecar connected for agent")
+    );
+  }
+
   // A hub restart empties this process's own routable-address index
   // (`sidecarRouter.getRoutableAddresses()`, backed by the same
   // `addressIndex` `routeMail` delivers against — see
@@ -351,10 +367,17 @@ export function createHubChatPlatform(
       // self-healing race after all; redeploy for real instead of
       // throwing.
       if (await waitForReclaimToSettle(address)) return;
-      await deps.sidecarRouter.sendAgentUndeploy(
-        address,
-        "post-restart reclaim did not settle within the wake's retry budget",
-      );
+      try {
+        await deps.sidecarRouter.sendAgentUndeploy(
+          address,
+          "post-restart reclaim did not settle within the wake's retry budget",
+        );
+      } catch (undeployErr) {
+        // Nothing to tear down — the address already has no WS entry
+        // in `addressIndex` (see `isNoSidecarConnected`'s own doc). The
+        // redeploy below is what actually recovers it.
+        if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
+      }
       await deploy();
     }
   }
@@ -614,7 +637,70 @@ export function createHubChatPlatform(
       // listening on. This is also how a mention fan-out copy reaches
       // a sleeping invited agent: every send, including fan-out
       // copies, goes through this one `sendMail` choke point.
-      await lifecycle?.ensureAwake(run.address);
+      //
+      // Routability alone is not enough for a folded run: it settles
+      // to `workflow_run.status === "completed"` after every handled
+      // mail (idle until its next message — see
+      // `@corbits/folded-runs`' `isFoldedRunSettled` doc), but stays
+      // resident on the sidecar (still routable) until the idle-sleep
+      // sweep tears it down. `lifecycle.ensureAwake` no-ops on a
+      // routable address, so without this check every message sent
+      // inside that window reaches a terminal occurrence, which
+      // `vendor/intx/workflow-host/src/supervisor/supervisor.ts`
+      // permanently rejects (`workflow_run_terminal`) — the hub then
+      // redelivers into the same terminal occurrence forever, since
+      // nothing else ever redeploys it.
+      //
+      // Redeploying a settled-but-still-routable address straight from
+      // here (skipping an explicit undeploy) reliably trips the
+      // sidecar's own "is already deployed" bookkeeping — confirmed
+      // empirically against a live sidecar. Only a clean, explicit
+      // `sendAgentUndeploy` round trip through the *current* connection
+      // — not a redeploy attempt's implicit one — reliably clears it.
+      // So: undeploy first (tolerating "no WS entry", which just means
+      // it is already gone), then let the ordinary not-routable wake
+      // path below do the actual redeploy — the same path that already
+      // works for every idle-sweep-triggered wake (see the "sendMail
+      // wakes a non-routable channel" test).
+      //
+      // [Intx gap] CL-6147: even with the clean undeploy-first sequence
+      // above, redeploying (waking) a folded run's instance id a
+      // *second* time still fails once the workflow carries any
+      // attached asset pack (in practice every workflow, via the
+      // shared `corbits-tools` package registry every launch resolves)
+      // — confirmed against a live sidecar + Postgres. The failure is
+      // `session_asset_instance_id_mount_path_pk` in Postgres:
+      // `sendAttachmentPack`'s "ordinary launch" branch
+      // (`vendor/intx/hub-sessions/src/session-service.ts`) does a bare
+      // `INSERT INTO session_asset` with no conflict handling, on the
+      // documented assumption that an ordinary (non-`allocationTarget`)
+      // launch never reuses an instance id — an assumption
+      // `@corbits/folded-runs`' whole wake design (redeploy the *same*
+      // instance id to resume a folded run) breaks by construction. The
+      // `allocationTarget` branch right next to it already tolerates an
+      // identical re-insert via `onConflictDoNothing`, so the fix likely
+      // belongs there — extending that same tolerance to the ordinary
+      // path — but that is vendor code this package must not edit.
+      // Nothing before this PR's live-Ollama second-turn coverage ever
+      // exercised a real redeploy-by-address against a live sidecar
+      // with an attached asset pack, so this has apparently never fired
+      // before. Tracked upstream; not fixable from `@corbits/chat`.
+      if ((await isFoldedRunSettled(deps.db, run)) && isRoutable(run.address)) {
+        try {
+          await deps.sidecarRouter.sendAgentUndeploy(
+            run.address,
+            "folded run occurrence settled; undeploying so the next " +
+              "message redeploys a fresh occurrence",
+          );
+        } catch (undeployErr) {
+          if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
+        }
+      }
+      if (lifecycle !== undefined) {
+        await lifecycle.ensureAwake(run.address);
+      } else if (!isRoutable(run.address)) {
+        await wakeByAddress(run.address);
+      }
       // Tracking here (not only at launch) brings instances that were
       // already resident before this hub process started — restored by
       // a sidecar reconnect, launched by an earlier run — under the
