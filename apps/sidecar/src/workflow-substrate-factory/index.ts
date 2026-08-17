@@ -35,6 +35,7 @@ import {
 import {
   createHttpRawAuthorizationCredentialProvider,
   createHttpXApiKeyCredentialProvider,
+  createMcpStreamableHttpCredentialProvider,
 } from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { createSSHSignature } from "@intx/crypto";
@@ -380,6 +381,7 @@ export function createSidecarSubstrateFactory(
       ...builtinCredentialProviders(),
       createHttpRawAuthorizationCredentialProvider(),
       createHttpXApiKeyCredentialProvider(),
+      createMcpStreamableHttpCredentialProvider(),
     ]);
 
     // The tool-bearing agent factory reads the materialized tool

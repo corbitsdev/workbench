@@ -28,6 +28,10 @@ import {
   parseAs,
   type ApiCall,
 } from "@workbench/hub-client";
+import {
+  MCP_NO_TOKEN_SENTINEL,
+  MCP_STREAMABLE_HTTP_PROVIDER_KEY,
+} from "@corbits/credential-providers";
 import { probeMcpServer } from "./mcp-probe";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
@@ -58,14 +62,11 @@ export function slugify(name: string): string {
 
 /** A pasted token with no real secret still has to satisfy credential
  * storage's non-empty `secret` — a tokenless MCP server is stored under
- * this sentinel rather than skipping credential storage entirely, since
- * `@corbits/mcp-tools`' `mcp_call` resolves its mediated fetch through a
- * bound credential handle with no "no credential needed" path. [Intx
- * gap]: there is no credential-free, origin-pinned mediated fetch in
- * this substrate — a public MCP server with no auth still sends an
- * (unused) bearer header few servers will reject, but a stricter one
- * could. */
-export const NO_TOKEN_SENTINEL = "unauthenticated-mcp-server";
+ * `MCP_NO_TOKEN_SENTINEL`, and the `mcp-streamable-http` provider plugin
+ * (which owns the constant) reads it back as "send no authorization
+ * header", so a keyless public server like Exa never sees a bogus
+ * bearer it would 401. */
+export const NO_TOKEN_SENTINEL = MCP_NO_TOKEN_SENTINEL;
 
 /** Either a hand-typed `name`+`url` (the original CL-6142 shape) or a
  * curated `presetSlug` (CL-6152) -- resolving a preset's fixed `url`/
@@ -277,7 +278,7 @@ export function createMcpServerRoutes(
         {
           tenantId: tenant.id,
           name: providerName(slug),
-          plugin: "http",
+          plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
           apiBaseUrl: endpointUrl,
         },
         deps.log,

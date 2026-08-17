@@ -14,3 +14,10 @@ export {
 export type { HttpXApiKeyCredentialProviderOptions } from "./http-x-api-key-provider";
 
 export { deriveResolvedBindings } from "./resolved-bindings";
+
+export {
+  createMcpStreamableHttpCredentialProvider,
+  MCP_NO_TOKEN_SENTINEL,
+  MCP_STREAMABLE_HTTP_PROVIDER_KEY,
+} from "./mcp-streamable-http-provider";
+export type { McpStreamableHttpCredentialProviderOptions } from "./mcp-streamable-http-provider";

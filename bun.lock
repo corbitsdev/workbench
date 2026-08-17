@@ -504,6 +504,7 @@
       "name": "@workbench/connections",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/credential-providers": "workspace:*",
         "@corbits/mcp-tools": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
@@ -775,7 +776,7 @@
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",

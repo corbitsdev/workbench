@@ -17,6 +17,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/credential-providers": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
