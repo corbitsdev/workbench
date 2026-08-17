@@ -85,7 +85,11 @@ export function listPendingInvites(
 
 export function createPendingInvite(
   tenantId: string,
-  input: { readonly matchType: "email" | "domain"; readonly value: string },
+  input: {
+    readonly matchType: "email" | "domain";
+    readonly value: string;
+    readonly roleId?: string;
+  },
 ): Promise<PendingInvite> {
   return request(
     `/api/tenants/${tenantId}/access-policy/pending-invites`,
