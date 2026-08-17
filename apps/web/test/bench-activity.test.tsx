@@ -144,6 +144,7 @@ describe("useBenchActivity", () => {
         {
           id: "run_deployment1",
           definitionId: "def_researcher",
+          channelId: "ch_1",
           definitionName: "researcher",
           tenantId: "tnt_1",
           address: "run_deployment1@tnt1.example",
@@ -171,6 +172,7 @@ describe("useBenchActivity", () => {
         {
           id: "tsk_running",
           definitionId: "wfd_myra_task_1",
+          channelId: "ch_1",
           agentName: "Incident triage",
           prompt: "Summarize the thread",
           modelPreference: null,
@@ -185,6 +187,7 @@ describe("useBenchActivity", () => {
         {
           id: "tsk_done",
           definitionId: "def_researcher",
+          channelId: "ch_1",
           agentName: "Researcher",
           prompt: "Draft the summary",
           modelPreference: null,

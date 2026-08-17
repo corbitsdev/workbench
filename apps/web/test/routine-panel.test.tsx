@@ -383,6 +383,27 @@ describe("RoutinePanel", () => {
       expect(container.textContent).toContain("Daily 09:00");
     });
 
+    test("opened beside a workbench, the list shows only routines delivering there", async () => {
+      routines = [
+        routineRecord({
+          id: "rtn_here",
+          name: "Here digest",
+          deliveryChannelId: "ch_1",
+        }),
+        routineRecord({
+          id: "rtn_elsewhere",
+          name: "Elsewhere digest",
+          deliveryChannelId: "ch_other",
+        }),
+        routineRecord({ id: "rtn_unbound", name: "Unbound digest" }),
+      ];
+      await renderPanel({ view: "list", channelId: "ch_1" });
+
+      expect(container.textContent).toContain("Here digest");
+      expect(container.textContent).not.toContain("Elsewhere digest");
+      expect(container.textContent).not.toContain("Unbound digest");
+    });
+
     test("selecting a row opens that routine's editor via openRoutine", async () => {
       routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
       await renderPanel({ view: "list" });
@@ -504,6 +525,7 @@ describe("RoutinePanel", () => {
         {
           id: "tsk_1",
           definitionId: "def_1",
+          channelId: "ch_1",
           agentName: "Myra",
           prompt: "Summarize the week",
           modelPreference: null,
@@ -518,6 +540,7 @@ describe("RoutinePanel", () => {
         {
           id: "tsk_2",
           definitionId: "def_1",
+          channelId: "ch_1",
           agentName: "Myra",
           prompt: "Draft the memo",
           modelPreference: null,
@@ -553,6 +576,7 @@ describe("RoutinePanel", () => {
       return {
         id: "run_a",
         definitionId: "wfd_1",
+        channelId: "ch_1",
         definitionName: "Myra",
         tenantId: "tnt_1",
         address: "myra_1@wf_1.tnt_1",

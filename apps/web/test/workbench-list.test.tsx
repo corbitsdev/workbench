@@ -74,6 +74,7 @@ function runningTask(overrides: Record<string, unknown> = {}) {
     // proves the row's name comes from the task's own agentName, not a
     // definitions lookup this band no longer even fetches.
     definitionId: "wfd_myra_task_1",
+    channelId: "ch_1",
     agentName: "Incident triage",
     prompt: "Summarize the thread",
     modelPreference: null,

@@ -8,6 +8,7 @@ function task(overrides: Partial<Task> = {}): Task {
   return {
     id: "tsk_1",
     definitionId: "def_1",
+    channelId: "ch_1",
     agentName: "Researcher",
     prompt: "Summarize the thread",
     modelPreference: null,
