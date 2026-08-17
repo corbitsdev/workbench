@@ -810,9 +810,22 @@ async function run(): Promise<void> {
           timeout: 10_000,
         });
         try {
-          await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
-            timeout: 45_000,
-          });
+          if (live) {
+            // The greeting bubble is already there; wait for the answer —
+            // a second agent bubble. A local 27B model can take a while.
+            await page.waitForFunction(
+              () =>
+                document.querySelectorAll(
+                  'div.chat-bubble-row[data-own="false"]',
+                ).length >= 2,
+              { timeout: 180_000 },
+            );
+          } else {
+            await page.waitForSelector(
+              'div.chat-bubble-row[data-own="false"]',
+              { timeout: 45_000 },
+            );
+          }
         } catch {
           const hubTail = hub.output().slice(-1500);
           const sidecarTail = sidecar.output().slice(-1500);

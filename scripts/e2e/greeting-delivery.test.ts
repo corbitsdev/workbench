@@ -463,6 +463,62 @@ describe.skipIf(databaseUrl === undefined)(
           }
         },
       );
-    }, 180_000);
+
+      if (USE_OLLAMA) {
+        // The conversation must continue past the greeting: a second turn
+        // ("hi") must get a real answer. This is where a run that ends
+        // after its opening turn, or a mail rejected as terminal, shows.
+        await hop("a second turn gets a real answer", async () => {
+          const sent = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+            { parts: [{ kind: "text", text: "hi" }] },
+            user.cookies,
+          );
+          expectStatus("send hi", sent, 201);
+          const deadline = Date.now() + 180_000;
+          for (;;) {
+            const res = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+              undefined,
+              user.cookies,
+            );
+            const items = arrayField(
+              res.data,
+              "items",
+              "list chat messages",
+            ) as {
+              sender: { address: string };
+              parts: { kind: string; text?: string }[];
+            }[];
+            const agentTexts = items
+              .filter(
+                (item) =>
+                  item.sender.address === agentAddress &&
+                  item.parts.some((p) => p.kind === "text"),
+              )
+              .map((item) => item.parts.map((p) => p.text ?? "").join(""));
+            if (agentTexts.length >= 2) {
+              console.log(
+                `  Myra's answer to "hi" (ollama): ${agentTexts[agentTexts.length - 1]}`,
+              );
+              return;
+            }
+            if (Date.now() > deadline) {
+              throw new Error(
+                `no answer to "hi" within 180s; agent messages: ` +
+                  `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
+                  `${hub.output().slice(-4000)}\nsidecar output (tail):\n` +
+                  `${sidecar.output().slice(-6000)}`,
+              );
+            }
+            await Bun.sleep(2000);
+          }
+        });
+      }
+    }, 420_000);
   },
 );
