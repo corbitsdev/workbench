@@ -259,6 +259,7 @@ import {
 import { readHubConfig, type HubConfig } from "./config";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { createHubRoutineLauncher } from "./routine-launcher";
+import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
@@ -499,7 +500,7 @@ export async function createHub(config: HubConfig) {
     ) => void;
   } = {};
   const eventCollectors = createEventCollectorRegistry({
-    db,
+    db: withTurnPartWriteDefaults(db),
     onTurnFinalized: (agentAddress, turn) =>
       artifactDeliveryHandlerRef.current?.(agentAddress, turn),
   });
