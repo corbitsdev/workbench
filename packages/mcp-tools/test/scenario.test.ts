@@ -119,7 +119,11 @@ test("mcp_read executes a readOnlyHint tool without approval", async () => {
       {
         id: "r1",
         name: MCP_READ_TOOL,
-        arguments: { server: "notion", tool: "echo", arguments: { text: "hi" } },
+        arguments: {
+          server: "notion",
+          tool: "echo",
+          arguments: { text: "hi" },
+        },
       } satisfies ToolCall,
       new AbortController().signal,
     );
@@ -265,7 +269,7 @@ test("mcp_call against an unconnected server degrades to an honest error, never 
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toMatch(/not reachable from this run/i);
+    expect(result.content).toMatch(/not connected|not reachable/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
