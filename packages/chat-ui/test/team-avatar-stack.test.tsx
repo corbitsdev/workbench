@@ -116,15 +116,15 @@ describe("channel header team avatar stack", () => {
 
     const stack = harness.container.querySelector(".chat-team-stack");
     expect(stack).not.toBeNull();
-    expect(
-      harness.container.querySelectorAll(".chat-member-avatar"),
-    ).toHaveLength(1);
-    const memberAvatar = harness.container.querySelector(
-      ".chat-member-avatar",
-    ) as HTMLElement;
-    expect(memberAvatar.title).toBe("Myra");
+    const agentAvatars = harness.container.querySelectorAll(
+      '.chat-presence-avatar[data-agent="true"]',
+    );
+    expect(agentAvatars).toHaveLength(1);
+    const agentAvatar = agentAvatars[0] as HTMLElement;
+    expect(agentAvatar.title).toBe("Myra");
+    expect(agentAvatar.textContent).toBe("M");
     const presenceAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar",
+      ".chat-presence-avatar:not([data-agent])",
     );
     expect(presenceAvatars).toHaveLength(1);
     expect((presenceAvatars[0] as HTMLElement).title).toBe("Alice");

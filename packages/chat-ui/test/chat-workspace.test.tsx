@@ -1349,7 +1349,7 @@ describe("Channel header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("participant chips render as react-ui Avatar primitives, each carrying its handle as a hover tooltip", async () => {
+  test("agent participant chips share the roster's circular avatar, keeping the handle as a hover tooltip", async () => {
     stubFetch(undefined, CHANNEL_WITH_AGENT_WIRE);
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -1357,12 +1357,12 @@ describe("Channel header polish (CL-6106)", () => {
     });
     await harness.settle();
 
-    const chip = harness.container.querySelector(".chat-member-avatar");
+    const chip = harness.container.querySelector(
+      '.chat-presence-avatar[data-agent="true"]',
+    );
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("researcher");
-    const avatar = chip?.querySelector('[role="img"]');
-    expect(avatar).not.toBeNull();
-    expect(avatar?.getAttribute("aria-label")).toBe("researcher");
+    expect((chip as HTMLElement).textContent).toBe("R");
     harness.unmount();
   });
 
