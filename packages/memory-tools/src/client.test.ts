@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { addMemory, listMemory, searchMemory } from "./client";
+import {
+  addMemory,
+  listMemory,
+  MemoryUnavailableError,
+  searchMemory,
+} from "./client";
 
 const CONFIG = {
   hubMemoryUrl: "https://hub.example.com",
@@ -79,6 +84,23 @@ test("searchMemory throws when the response doesn't match the expected shape", a
   ).rejects.toThrow(/did not match the expected shape/);
 });
 
+test("searchMemory throws MemoryUnavailableError when the hub reports the memory plane isn't mounted", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "unavailable",
+          message: "Memory plane is not configured on this hub",
+        },
+      }),
+      { status: 503 },
+    )) as unknown as typeof fetch;
+
+  await expect(
+    searchMemory({ ...CONFIG, fetchImpl }, { query: "q" }),
+  ).rejects.toBeInstanceOf(MemoryUnavailableError);
+});
+
 test("addMemory posts title/text/kind and returns the created ids", async () => {
   const captured: { url: string; init: RequestInit | undefined } = {
     url: "",
@@ -114,6 +136,23 @@ test("addMemory throws on a non-ok HTTP response", async () => {
   await expect(
     addMemory({ ...CONFIG, fetchImpl }, { title: "Note", text: "hello" }),
   ).rejects.toThrow(/500/);
+});
+
+test("addMemory throws MemoryUnavailableError when the hub reports the memory plane isn't mounted", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "unavailable",
+          message: "Memory plane is not configured on this hub",
+        },
+      }),
+      { status: 503 },
+    )) as unknown as typeof fetch;
+
+  await expect(
+    addMemory({ ...CONFIG, fetchImpl }, { title: "Note", text: "hello" }),
+  ).rejects.toBeInstanceOf(MemoryUnavailableError);
 });
 
 test("listMemory GETs the list endpoint with the limit query param", async () => {

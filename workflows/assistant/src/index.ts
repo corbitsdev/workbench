@@ -143,7 +143,10 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "the team's firm memory (memory_search, memory_add, memory_list) — " +
   "use it to recall facts and decisions from earlier conversations and " +
   "to record ones worth keeping, never to fabricate a recollection " +
-  "when a search comes back empty. Any MCP server connected under " +
+  "when a search comes back empty. Firm memory may not be set up on " +
+  "every deployment; if a memory tool says so, proceed without it and " +
+  "never treat that as a failure worth mentioning. Any MCP server " +
+  "connected under " +
   "Plugins is reachable with mcp_list_servers, mcp_list_tools, " +
   "mcp_read, and mcp_call — discover once with mcp_list_tools (pattern " +
   "search when unsure which server has the tool you want); use " +

@@ -15,6 +15,15 @@ export interface WorkflowMemoryClientConfig {
   readonly fetchImpl?: typeof fetch;
 }
 
+/**
+ * Thrown specifically for the hub's `createUnavailableWorkflowMemoryRoutes`
+ * response (503, `error.code === "unavailable"`) — the honest "memory
+ * plane isn't mounted" signal, distinct from a real transport/HTTP
+ * failure. Callers (`./tool.ts`) use this to degrade calmly instead of
+ * surfacing a tool error.
+ */
+export class MemoryUnavailableError extends Error {}
+
 export type SearchMemoryInput = {
   readonly query: string;
   readonly limit?: number;
@@ -83,6 +92,22 @@ function endpoint(config: WorkflowMemoryClientConfig, path: string): string {
   return `${config.hubMemoryUrl}/api/workflow-memory${path}`;
 }
 
+async function throwForFailedResponse(
+  response: Response,
+  action: string,
+): Promise<never> {
+  if (response.status === 503) {
+    const body: unknown = await response.json().catch(() => null);
+    const code = (body as { error?: { code?: string } } | null)?.error?.code;
+    if (code === "unavailable") {
+      throw new MemoryUnavailableError(
+        "Memory plane is not configured on this hub",
+      );
+    }
+  }
+  throw new Error(`${action} failed: ${response.status} ${response.statusText}`);
+}
+
 /** Searches the tenant's memory. Throws on any transport, HTTP, or shape failure. */
 export async function searchMemory(
   config: WorkflowMemoryClientConfig,
@@ -95,9 +120,7 @@ export async function searchMemory(
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    throw new Error(
-      `Memory search failed: ${response.status} ${response.statusText}`,
-    );
+    await throwForFailedResponse(response, "Memory search");
   }
   const body: unknown = await response.json();
   const parsed = MemorySearchResponse(body);
@@ -121,9 +144,7 @@ export async function addMemory(
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    throw new Error(
-      `Memory add failed: ${response.status} ${response.statusText}`,
-    );
+    await throwForFailedResponse(response, "Memory add");
   }
   const body: unknown = await response.json();
   const parsed = AddedMemoryEntryResponse(body);
@@ -147,9 +168,7 @@ export async function listMemory(
     headers: authHeaders(config),
   });
   if (!response.ok) {
-    throw new Error(
-      `Memory list failed: ${response.status} ${response.statusText}`,
-    );
+    await throwForFailedResponse(response, "Memory list");
   }
   const body: unknown = await response.json();
   const parsed = MemoryTimelineResponse(body);

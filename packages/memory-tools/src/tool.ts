@@ -20,7 +20,15 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
-import { addMemory, listMemory, searchMemory } from "./client";
+import {
+  addMemory,
+  listMemory,
+  MemoryUnavailableError,
+  searchMemory,
+} from "./client";
+
+const MEMORY_NOT_SET_UP_MESSAGE =
+  "Memory isn't set up on this server yet — proceeding without it.";
 
 export const MEMORY_SEARCH_TOOL = "memory_search";
 export const MEMORY_ADD_TOOL = "memory_add";
@@ -68,6 +76,13 @@ async function runMemorySearch(
       content: JSON.stringify({ items }),
     };
   } catch (err) {
+    if (err instanceof MemoryUnavailableError) {
+      return {
+        callId: call.id,
+        isError: false,
+        content: JSON.stringify({ items: [], note: MEMORY_NOT_SET_UP_MESSAGE }),
+      };
+    }
     return errorResult(call.id, err);
   }
 }
@@ -92,6 +107,16 @@ async function runMemoryAdd(
     const added = await addMemory(clientConfig(env), addInput);
     return { callId: call.id, isError: false, content: JSON.stringify(added) };
   } catch (err) {
+    if (err instanceof MemoryUnavailableError) {
+      return {
+        callId: call.id,
+        isError: false,
+        content: JSON.stringify({
+          saved: false,
+          note: `${MEMORY_NOT_SET_UP_MESSAGE} This entry was not saved.`,
+        }),
+      };
+    }
     return errorResult(call.id, err);
   }
 }

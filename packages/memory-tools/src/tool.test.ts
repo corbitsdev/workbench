@@ -164,6 +164,57 @@ test("memory_list returns recent entries on a successful call", async () => {
   }
 });
 
+test("memory_search degrades calmly when the memory plane isn't mounted, without isError", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "unavailable",
+          message: "Memory plane is not configured on this hub",
+        },
+      }),
+      { status: 503 },
+    )) as unknown as typeof fetch;
+  try {
+    const bundle = memoryTools(testEnv());
+    const result = await bundle.run(
+      callFor(MEMORY_SEARCH_TOOL, { query: "q" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(result.content).toMatch(/isn't set up on this server yet/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("memory_add degrades calmly when the memory plane isn't mounted, without isError", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "unavailable",
+          message: "Memory plane is not configured on this hub",
+        },
+      }),
+      { status: 503 },
+    )) as unknown as typeof fetch;
+  try {
+    const bundle = memoryTools(testEnv());
+    const result = await bundle.run(
+      callFor(MEMORY_ADD_TOOL, { title: "Note", text: "hello" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(result.content).toMatch(/isn't set up on this server yet/);
+    expect(result.content).toMatch(/not saved/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("returns an honest error result on an unreachable hub, never fabricating a memory result", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => {

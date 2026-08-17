@@ -2,6 +2,7 @@ export {
   addMemory,
   listMemory,
   searchMemory,
+  MemoryUnavailableError,
   type AddedMemoryEntry,
   type AddMemoryInput,
   type MemorySearchItem,
