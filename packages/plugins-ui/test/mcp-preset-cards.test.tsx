@@ -56,7 +56,9 @@ const PRESETS = [
 describe("McpPresetCardsSection", () => {
   test("renders one card per preset with its outcome sentence and the MCP hint", async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ data: PRESETS }))) as unknown as typeof fetch;
+      new Response(
+        JSON.stringify({ data: PRESETS }),
+      )) as unknown as typeof fetch;
 
     const container = mountSection();
     await settle();
@@ -73,11 +75,8 @@ describe("McpPresetCardsSection", () => {
   test("connect calls the preset connect route with the preset's slug", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     let connected = false;
-    globalThis.fetch = (async (
-      url: string,
-      init?: RequestInit,
-    ) => {
-      calls.push({ url, init });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, ...(init !== undefined ? { init } : {}) });
       if (init?.method === "POST") {
         connected = true;
         return new Response(
@@ -125,11 +124,8 @@ describe("McpPresetCardsSection", () => {
   test("disconnect calls DELETE on the preset's slug", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     let deleted = false;
-    globalThis.fetch = (async (
-      url: string,
-      init?: RequestInit,
-    ) => {
-      calls.push({ url, init });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, ...(init !== undefined ? { init } : {}) });
       if (init?.method === "DELETE") {
         deleted = true;
         return new Response(null, { status: 204 });
@@ -154,7 +150,9 @@ describe("McpPresetCardsSection", () => {
     ) as HTMLButtonElement;
 
     await act(async () => {
-      disconnectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      disconnectButton.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
     const confirmButton = [...container.querySelectorAll("button")].find(
@@ -167,8 +165,6 @@ describe("McpPresetCardsSection", () => {
 
     const deleteCall = calls.find((call) => call.init?.method === "DELETE");
     expect(deleteCall).not.toBeUndefined();
-    expect(deleteCall?.url).toBe(
-      "/api/tenants/tenant_test/mcp-servers/exa",
-    );
+    expect(deleteCall?.url).toBe("/api/tenants/tenant_test/mcp-servers/exa");
   });
 });
