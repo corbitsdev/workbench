@@ -11,6 +11,7 @@ import { AgentUnreachableError } from "../src/platform-port";
 import {
   dispatchGreetingKickoff,
   greetingKickoffBrief,
+  kickoffDate,
 } from "../src/channel-service";
 import {
   buildDeps,
@@ -39,8 +40,13 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     expect(kickoff?.channelId).toBe("ins_agent1");
     expect(kickoff?.fromChannelId).toBe("chan_1");
     expect(kickoff?.content).toEqual({
-      content: greetingKickoffBrief({}),
+      content: greetingKickoffBrief({ openedOn: kickoffDate(new Date()) }),
     });
+  });
+
+  test("kickoffDate formats as dd/mm/yyyy", () => {
+    expect(kickoffDate(new Date(2026, 7, 17))).toBe("17/08/2026");
+    expect(kickoffDate(new Date(2026, 0, 3))).toBe("03/01/2026");
   });
 
   test("the kickoff brief carries who opened the workbench and what it is called, and asks for a teammate's hello — never a menu", () => {
@@ -83,6 +89,21 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
   test("an absent workbench name is omitted from the brief entirely", () => {
     const brief = greetingKickoffBrief({ senderName: "Ada" });
     expect(brief).not.toContain("titled");
+    expect(brief).not.toContain("undefined");
+  });
+
+  test("the brief carries the opening date when given one", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "Ada",
+      openedOn: "17/08/2026",
+    });
+    expect(brief).toContain("17/08/2026");
+    expect(brief).toMatch(/today/i);
+  });
+
+  test("an absent opening date is omitted from the brief entirely", () => {
+    const brief = greetingKickoffBrief({ senderName: "Ada" });
+    expect(brief).not.toMatch(/today/i);
     expect(brief).not.toContain("undefined");
   });
 
