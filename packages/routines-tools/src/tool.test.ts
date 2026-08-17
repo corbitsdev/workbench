@@ -127,6 +127,108 @@ test("routine_create rejects an invalid trigger without calling out", async () =
   expect(result.isError).toBe(true);
 });
 
+test("routine_create rejects a genuinely invalid trigger with a correct example in the message", async () => {
+  const bundle = routinesTools(testEnv());
+  const result = await bundle.run(
+    callFor(ROUTINE_CREATE_TOOL, {
+      name: "x",
+      definitionId: "def_1",
+      instruction: "do it",
+      trigger: { kind: "yearly" },
+    }),
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(
+    /Example of a valid trigger: \{"kind":"daily","hour":8,"minute":0\}/,
+  );
+});
+
+test("routine_create decodes a JSON-string-encoded daily trigger with a bare time field", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_CREATE_TOOL, {
+        name: "Morning digest",
+        definitionId: "def_1",
+        instruction: "Summarize overnight activity",
+        trigger:
+          '{"kind": "daily", "type": "daily", "time": "08:00", "hour": 8}',
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect((seenBody as { trigger: unknown }).trigger).toEqual({
+      kind: "daily",
+      hour: 8,
+      minute: 0,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_create decodes a JSON-string-encoded cron trigger using expr for expression", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_CREATE_TOOL, {
+        name: "Morning digest",
+        definitionId: "def_1",
+        instruction: "Summarize overnight activity",
+        trigger: '{"kind": "cron", "expr": "0 8 * * *"}',
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect((seenBody as { trigger: unknown }).trigger).toEqual({
+      kind: "cron",
+      expression: "0 8 * * *",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_update coerces a type field to kind on a plain-object trigger", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()));
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_UPDATE_TOOL, {
+        id: "rtn_1",
+        trigger: { type: "daily", hour: 8, minute: 0 },
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect((seenBody as { trigger: unknown }).trigger).toEqual({
+      kind: "daily",
+      hour: 8,
+      minute: 0,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("routine_list, on success, returns the listed routines as JSON", async () => {
   let seenUrl: string | undefined;
   const originalFetch = globalThis.fetch;

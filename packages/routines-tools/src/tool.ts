@@ -92,6 +92,97 @@ const RoutineRunNowInput = type({
   id: "string > 0",
 });
 
+/** A correct, minimal trigger literal — surfaced in validation error
+ * messages so a model that sent a malformed trigger has one concrete
+ * shape to self-correct against on its next call. */
+const TRIGGER_EXAMPLE = '{"kind":"daily","hour":8,"minute":0}';
+
+/**
+ * Local models are observed sending object-valued tool arguments —
+ * `trigger` chief among them — as a JSON-encoded string rather than a
+ * structured object. Decodes one level; a value double-encoded (a
+ * string containing a string containing JSON) gets one extra decode
+ * attempt. Anything that isn't a JSON-encoded string, or that fails to
+ * parse, passes through unchanged so the real validator reports it.
+ */
+function decodeMaybeJsonString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    const once: unknown = JSON.parse(value);
+    if (typeof once === "string") {
+      try {
+        return JSON.parse(once);
+      } catch {
+        return once;
+      }
+    }
+    return once;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Tolerates the near-miss trigger shapes local models send in place of
+ * `RoutineTrigger`'s canonical fields: `trigger` as a JSON string
+ * (`decodeMaybeJsonString` above), `type` where `kind` belongs, `expr`
+ * where the cron trigger's `expression` belongs, and a daily/weekly
+ * `time: "HH:MM"` string in place of separate `hour`/`minute` numbers.
+ * Never guesses at free-text schedules ("every day at 8") — only
+ * decodes and renames fields a model plausibly meant literally.
+ */
+function coerceTriggerInput(value: unknown): unknown {
+  const decoded = decodeMaybeJsonString(value);
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    Array.isArray(decoded)
+  ) {
+    return decoded;
+  }
+  const trigger = { ...(decoded as Record<string, unknown>) };
+  if (trigger.kind === undefined && typeof trigger.type === "string") {
+    trigger.kind = trigger.type;
+  }
+  delete trigger.type;
+  if (
+    trigger.kind === "cron" &&
+    trigger.expression === undefined &&
+    typeof trigger.expr === "string"
+  ) {
+    trigger.expression = trigger.expr;
+  }
+  delete trigger.expr;
+  if (
+    (trigger.kind === "daily" || trigger.kind === "weekly") &&
+    typeof trigger.time === "string"
+  ) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(trigger.time);
+    if (match) {
+      trigger.hour = trigger.hour ?? Number(match[1]);
+      trigger.minute = trigger.minute ?? Number(match[2]);
+    }
+  }
+  delete trigger.time;
+  return trigger;
+}
+
+/** Applies `coerceTriggerInput` to a call's `trigger` argument, if
+ * present, before the strict `TriggerInput` schema sees it. */
+function coerceRoutineArguments(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!("trigger" in args)) return args;
+  return { ...args, trigger: coerceTriggerInput(args.trigger) };
+}
+
+function invalidInputError(toolName: string, summary: string): Error {
+  return new Error(
+    `${toolName} received invalid input: ${summary} Example of a ` +
+      `valid trigger: ${TRIGGER_EXAMPLE}`,
+  );
+}
+
 function errorResult(callId: string, err: unknown): ToolResult {
   return {
     callId,
@@ -143,11 +234,13 @@ async function runRoutineCreate(
   env: WorkflowRoutineEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  const parsed = RoutineCreateInput(call.arguments);
+  const parsed = RoutineCreateInput(
+    coerceRoutineArguments(call.arguments as Record<string, unknown>),
+  );
   if (parsed instanceof type.errors) {
     return errorResult(
       call.id,
-      new Error(`routine_create received invalid input: ${parsed.summary}`),
+      invalidInputError(ROUTINE_CREATE_TOOL, parsed.summary),
     );
   }
   try {
@@ -174,11 +267,13 @@ async function runRoutineUpdate(
   env: WorkflowRoutineEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  const parsed = RoutineUpdateInput(call.arguments);
+  const parsed = RoutineUpdateInput(
+    coerceRoutineArguments(call.arguments as Record<string, unknown>),
+  );
   if (parsed instanceof type.errors) {
     return errorResult(
       call.id,
-      new Error(`routine_update received invalid input: ${parsed.summary}`),
+      invalidInputError(ROUTINE_UPDATE_TOOL, parsed.summary),
     );
   }
   const patch: {
