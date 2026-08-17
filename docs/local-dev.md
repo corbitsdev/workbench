@@ -48,3 +48,20 @@ This is safe to re-run.
 The memory plane (embeddings-backed recall) needs `EMBED_BASE_URL` set;
 without it, `apps/hub/src/memory-mount.ts` skips mounting the memory plane
 and logs that it did, rather than failing hub startup.
+
+## Isolated capacity (exclusive per-workbench sidecars)
+
+Set `SIDECAR_PROVISIONER=docker` and `DOCKER_PROVISIONER_IMAGE` (see
+`.env.example`) to register `@corbits/docker-provisioner` at hub start. This
+flips the Workbench Settings › Capacity toggle from "not available on this
+server" to available, and lets a tenant's "run this workbench on its own
+sidecar" setting provision a real Docker container per exclusive allocation
+via the vendored sidecar-allocation subsystem — no additional orchestration
+needed on top of what's already wired in `apps/hub/src/index.ts`.
+
+`DOCKER_PROVISIONER_IMAGE` must point at a built image of `apps/sidecar`
+that the local `docker` CLI can run. There is no `Dockerfile` for
+`apps/sidecar` in this repo yet, so building that image is the one
+remaining step before an exclusive allocation can actually boot a
+container end-to-end; until it exists, `docker run` will fail with an
+unknown-image error and the allocation will retry as `docker_run_failed`.
