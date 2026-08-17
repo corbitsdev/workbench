@@ -213,6 +213,12 @@ export function ChatPage({
           ...(channelId !== null ? { channelId } : {}),
         })
       }
+      // The header's Insights affordance: this workbench's end-to-end
+      // timeline (per-workbench Insights), never the global landing.
+      onOpenInsights={() => {
+        if (channelId === null) return;
+        navigate(`/insights/workbench/${channelId}`);
+      }}
       // `/routine`: opens the editor directly on a brand-new routine
       // bound to this channel.
       onCreateRoutineInSpace={(inSpaceChannelId) =>
