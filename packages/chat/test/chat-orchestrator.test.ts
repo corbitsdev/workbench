@@ -162,6 +162,61 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("the host's reply mentioning a specialist fans out to that specialist too — the delegation hop", async () => {
+    const sentMail: {
+      tenantId: string;
+      channelId: string;
+      content: unknown;
+      fromChannelId?: string;
+    }[] = [];
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_myra1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", [
+            "ins_myra1@ten1.workbench.test",
+            "ins_echo1@ten1.workbench.test",
+          ]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push(input as never);
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_myra1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "@ins_echo1 can you take this one" },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(2);
+    expect(sentMail[0]).toMatchObject({
+      tenantId: "ten_1",
+      channelId: "ins_channel1",
+      fromChannelId: "ins_myra1",
+    });
+    expect(sentMail[1]).toMatchObject({
+      tenantId: "ten_1",
+      channelId: "ins_echo1",
+      fromChannelId: "ins_channel1",
+    });
+
+    orchestrator.dispose();
+  });
+
   test("posts into every channel when the store shows the address in more than one", async () => {
     const sentMail: { channelId: string }[] = [];
     const events = createSidecarEmitter();

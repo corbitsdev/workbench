@@ -1674,16 +1674,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         if (existing === undefined) {
           return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
         }
-        if (kindOf(existing.settings) === "chat") {
-          return c.json(
-            ErrorEnvelope(
-              "conflict",
-              "a chat has exactly one agent, fixed at creation; invite is " +
-                "only for channels",
-            ),
-            409,
-          );
-        }
 
         let currentSettings = existing.settings;
         const invitable =
@@ -1793,6 +1783,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             principalId: principal.id,
             channelId,
             messageParts,
+            ...(parsed.inReplyToMessageId !== undefined
+              ? { inReplyToMessageId: parsed.inReplyToMessageId }
+              : {}),
           },
         );
       } catch (err) {
@@ -2351,17 +2344,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (existing === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
-      }
-
-      if (kindOf(existing.settings) === "chat") {
-        return c.json(
-          ErrorEnvelope(
-            "conflict",
-            "a chat has exactly one agent, fixed at creation; invite is " +
-              "only for channels",
-          ),
-          409,
-        );
       }
 
       try {

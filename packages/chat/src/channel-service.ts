@@ -27,7 +27,6 @@ import {
 } from "./participants";
 import {
   benchContextWindowOf,
-  kindOf,
   participantsOf,
   resolveContextWindow,
 } from "./channel-settings";
@@ -773,7 +772,10 @@ async function loadChannelContext(input: {
 
 export type SendChannelMessageDeps = {
   readonly store: Pick<ChatStore, "getChannelSettings" | "getBenchSettings">;
-  readonly platform: Pick<ChannelMail, "sendMail" | "listMail" | "fetchBlob">;
+  readonly platform: Pick<
+    ChannelMail,
+    "sendMail" | "listMail" | "fetchBlob" | "getMail"
+  >;
 };
 
 export type SendChannelMessageInput = {
@@ -781,6 +783,12 @@ export type SendChannelMessageInput = {
   readonly principalId: string;
   readonly channelId: string;
   readonly messageParts: PartType[];
+  /**
+   * A plain reply's parent message id. Deterministic routing: a reply
+   * to an agent's message reaches that agent even when the reply text
+   * mentions nobody — the reply gesture is itself an address.
+   */
+  readonly inReplyToMessageId?: string;
 };
 
 export type SendChannelMessageResult = {
@@ -789,13 +797,45 @@ export type SendChannelMessageResult = {
 };
 
 /**
+ * Resolves which agent participant a reply targets: the agent that
+ * authored the parent message, when the parent is found and was
+ * authored by a known agent participant. Undefined for a reply to a
+ * human message, an unknown message id, or no reply at all.
+ */
+async function replyTargetAgent(
+  deps: Pick<SendChannelMessageDeps["platform"], "getMail">,
+  input: {
+    tenantId: string;
+    channelId: string;
+    inReplyToMessageId: string;
+    participants: readonly ParticipantRecord[];
+  },
+): Promise<string | undefined> {
+  const parent = await deps.getMail({
+    tenantId: input.tenantId,
+    channelId: input.channelId,
+    messageId: input.inReplyToMessageId,
+  });
+  if (parent === undefined) return undefined;
+  const sender = senderOf(parent.mail);
+  const match = input.participants.find(
+    (participant) =>
+      isAgentAddress(participant.address) &&
+      localPartOf(participant.address) === localPartOf(sender.address),
+  );
+  return match?.address;
+}
+
+/**
  * Sends a message into a channel and fans it out to every recipient
- * its kind and mentions resolve to: a chat delivers to its one agent
- * unconditionally, no @mention required (its agent is chosen at
- * creation, fixed for the chat's lifetime); a channel (or anything
- * else) keeps the mention-only fan-out. Never hardcoded to "one agent"
- * even for a chat — a chat has exactly one by construction, but this
- * still iterates every agent participant the settings carry.
+ * its mentions, reply target, and host-default resolve to — routing
+ * never branches on the channel's `kind` (a chat and a channel are
+ * routed identically): an `@mention` always reaches its agent; a plain
+ * reply to an agent's message reaches that agent too, even unmentioned;
+ * and a message naming no agent at all (no mention, no agent reply
+ * target) defaults to the workbench's host — its first agent
+ * participant — so a single-agent workbench still auto-responds and a
+ * multi-agent one routes through its host instead of going silent.
  */
 export async function sendChannelMessage(
   deps: SendChannelMessageDeps,
@@ -814,21 +854,34 @@ export async function sendChannelMessage(
   );
   const participants =
     settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
-  const kind =
-    settingsRow !== undefined ? kindOf(settingsRow.settings) : "chat";
-  const recipients =
-    kind === "chat"
-      ? participants
-          .filter((participant) => isAgentAddress(participant.address))
-          .map((participant) => participant.address)
-      : mentionedParticipants(input.messageParts, participants);
 
-  // Situates a mentioned agent in the conversation it is being dropped
-  // into — a chat's one agent already receives every message and has
-  // full history via its own mailbox, so this only applies to a
-  // channel's mention fan-out.
+  const recipientSet = new Set(
+    mentionedParticipants(input.messageParts, participants),
+  );
+  if (input.inReplyToMessageId !== undefined) {
+    const target = await replyTargetAgent(deps.platform, {
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      inReplyToMessageId: input.inReplyToMessageId,
+      participants,
+    });
+    if (target !== undefined) recipientSet.add(target);
+  }
+  // No mention and no agent reply target: the default-routing case,
+  // where the host receives every such message unconditionally — the
+  // same standing relationship a chat's one agent has always had, so
+  // it needs no re-situating context either.
+  const isDefaultRouting = recipientSet.size === 0;
+  if (isDefaultRouting) {
+    const host = participants.find((participant) =>
+      isAgentAddress(participant.address),
+    );
+    if (host !== undefined) recipientSet.add(host.address);
+  }
+  const recipients = [...recipientSet];
+
   const contextText =
-    kind === "channel" && recipients.length > 0
+    !isDefaultRouting && recipients.length > 0
       ? await loadChannelContext({
           platform: deps.platform,
           tenantId: input.tenantId,
