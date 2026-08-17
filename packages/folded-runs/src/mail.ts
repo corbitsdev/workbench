@@ -28,19 +28,19 @@ export type SendFoldedMailParams = {
 };
 
 /**
- * Signs and persists one message into a folded run's mailbox, and
- * notifies the run's own live subscribers. `sendUserMessage` (the
- * signing/MIME step) and the `session_mail` row share one clock read
- * so the MIME `Date` header and the row's `createdAt` never disagree
- * by however long signing and serialization take.
+ * The signing/delivery step: turns `params` into a signed MIME message
+ * and hands it to the agent via `sessionService.sendUserMessage`
+ * (vendor delivers synchronously). This is the only unsafe-to-repeat
+ * side effect in `sendFoldedMail` — a second call for the same mailId
+ * delivers a second, distinct message to the agent — so it is the only
+ * part `sendFoldedMailWithRetry` below is allowed to retry.
  */
-export async function sendFoldedMail(
-  deps: Pick<FoldedRunsDeps, "db" | "sessionService" | "sidecarRouter">,
+async function deliverFoldedMailMIME(
+  deps: Pick<FoldedRunsDeps, "sessionService">,
   params: SendFoldedMailParams,
-): Promise<SentFoldedMail> {
-  const mailId = crypto.randomUUID();
-  const now = new Date();
-
+  mailId: string,
+  now: Date,
+): Promise<Uint8Array> {
   const userMessageParams = {
     agentAddress: params.agentAddress,
     from: params.from,
@@ -59,8 +59,22 @@ export async function sendFoldedMail(
     params.replyTo !== undefined
       ? { ...withAttachments, inReplyTo: params.replyTo }
       : withAttachments;
-  const rawMIME = await deps.sessionService.sendUserMessage(withReplyTo);
+  return deps.sessionService.sendUserMessage(withReplyTo);
+}
 
+/**
+ * Persists an already-delivered message into the run's mailbox and
+ * notifies the run's own live subscribers. Called exactly once per
+ * delivered `mailId` — never retried — so a failure here can never
+ * cause a second delivery.
+ */
+async function recordFoldedMail(
+  deps: Pick<FoldedRunsDeps, "db" | "sidecarRouter">,
+  params: SendFoldedMailParams,
+  mailId: string,
+  now: Date,
+  rawMIME: Uint8Array,
+): Promise<SentFoldedMail> {
   await deps.db.insert(sessionMail).values({
     id: mailId,
     sessionId: params.sessionId,
@@ -84,6 +98,23 @@ export async function sendFoldedMail(
   return { id: mailId, createdAt: now.toISOString() };
 }
 
+/**
+ * Signs and persists one message into a folded run's mailbox, and
+ * notifies the run's own live subscribers. `sendUserMessage` (the
+ * signing/MIME step) and the `session_mail` row share one clock read
+ * so the MIME `Date` header and the row's `createdAt` never disagree
+ * by however long signing and serialization take.
+ */
+export async function sendFoldedMail(
+  deps: Pick<FoldedRunsDeps, "db" | "sessionService" | "sidecarRouter">,
+  params: SendFoldedMailParams,
+): Promise<SentFoldedMail> {
+  const mailId = crypto.randomUUID();
+  const now = new Date();
+  const rawMIME = await deliverFoldedMailMIME(deps, params, mailId, now);
+  return recordFoldedMail(deps, params, mailId, now, rawMIME);
+}
+
 /** `sendFoldedMailWithRetry`'s default bound: one initial attempt plus two retries. */
 export const DEFAULT_SEND_FOLDED_MAIL_ATTEMPTS = 3;
 
@@ -92,30 +123,53 @@ export type SendFoldedMailAttemptResult =
   | { ok: false; error: unknown; attempts: number };
 
 /**
- * `sendFoldedMail`, retried a bounded number of times against a
- * transient failure (a sidecar hiccup, a momentary DB blip), and never
- * throwing — a caller mid-launch (a routine fire, a webhook delivery)
- * has already committed a real run; a first-turn mail that still fails
- * after every retry must not un-launch that run or hide it from
- * correlation. The caller decides what "still failed" means for it
- * (log with the run's own id, surface a delivery-failed marker, ...);
- * this function only bounds the retry and reports the outcome.
+ * `sendFoldedMail`, with only its delivery step retried a bounded
+ * number of times against a transient failure (a sidecar hiccup, a
+ * momentary DB blip), and never throwing — a caller mid-launch (a
+ * routine fire, a webhook delivery) has already committed a real run;
+ * a first-turn mail that still fails after every retry must not
+ * un-launch that run or hide it from correlation. The caller decides
+ * what "still failed" means for it (log with the run's own id, surface
+ * a delivery-failed marker, ...); this function only bounds the retry
+ * and reports the outcome.
+ *
+ * Delivery and the `session_mail` write are retried separately, on
+ * purpose: once `deliverFoldedMailMIME` succeeds, the message has
+ * already reached the agent, so `recordFoldedMail` runs exactly once
+ * against that one delivered `mailId` — a write failure there is
+ * reported as a failed attempt, never retried, so it can never trigger
+ * a second, duplicate delivery.
  */
 export async function sendFoldedMailWithRetry(
   deps: Pick<FoldedRunsDeps, "db" | "sessionService" | "sidecarRouter">,
   params: SendFoldedMailParams,
   maxAttempts: number = DEFAULT_SEND_FOLDED_MAIL_ATTEMPTS,
 ): Promise<SendFoldedMailAttemptResult> {
+  const mailId = crypto.randomUUID();
+  const now = new Date();
+
   let lastError: unknown;
+  let attemptsUsed = 0;
+  let rawMIME: Uint8Array | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    attemptsUsed = attempt;
     try {
-      const mail = await sendFoldedMail(deps, params);
-      return { ok: true, mail };
+      rawMIME = await deliverFoldedMailMIME(deps, params, mailId, now);
+      break;
     } catch (err) {
       lastError = err;
     }
   }
-  return { ok: false, error: lastError, attempts: maxAttempts };
+  if (rawMIME === undefined) {
+    return { ok: false, error: lastError, attempts: attemptsUsed };
+  }
+
+  try {
+    const mail = await recordFoldedMail(deps, params, mailId, now, rawMIME);
+    return { ok: true, mail };
+  } catch (err) {
+    return { ok: false, error: err, attempts: attemptsUsed };
+  }
 }
 
 function encodeCursor(createdAt: Date, id: string): string {
