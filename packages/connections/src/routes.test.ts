@@ -123,6 +123,9 @@ function buildApp(
     ensureCredentialFn?: Parameters<
       typeof createConnectionRoutes
     >[0]["ensureCredentialFn"];
+    seedCatalogFn?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["seedCatalogFn"];
     oauthEnv?: Readonly<Record<string, string | undefined>>;
     providerHealth?: Parameters<
       typeof createConnectionRoutes
@@ -142,6 +145,8 @@ function buildApp(
     routeArgs.ensureProviderFn = overrides.ensureProviderFn;
   if (overrides.ensureCredentialFn !== undefined)
     routeArgs.ensureCredentialFn = overrides.ensureCredentialFn;
+  if (overrides.seedCatalogFn !== undefined)
+    routeArgs.seedCatalogFn = overrides.seedCatalogFn;
   if (overrides.oauthEnv !== undefined) routeArgs.oauthEnv = overrides.oauthEnv;
   if (overrides.providerHealth !== undefined)
     routeArgs.providerHealth = overrides.providerHealth;
@@ -334,6 +339,158 @@ describe("POST /:connectorId/complete", () => {
     expect(response.status).toBe(200);
     expect(providerArgs?.apiBaseUrl).toBe("http://localhost:11434");
     expect(credentialSecret).toBe("ollama");
+  });
+
+  test("connecting an inference provider seeds its catalog with the proved key", async () => {
+    // "anthropic" is a real `PROVIDER_TEST_CONFIG` key, so
+    // `isInferenceProvider` recognizes it -- unlike `accepting-connector`
+    // above, which is a fake id `PROVIDER_TEST_CONFIG` has never heard of.
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      anthropic: {
+        id: "anthropic",
+        displayName: "Anthropic",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        probe: async () => ({ ok: true }),
+      },
+    };
+    const seedCatalogCalls: unknown[] = [];
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/anthropic/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-ant-good" }),
+    });
+    expect(response.status).toBe(200);
+    expect(seedCatalogCalls).toHaveLength(1);
+    const args = seedCatalogCalls[0] as {
+      provider: string;
+      apiKey: string;
+      credentialVerified: boolean;
+      baseURLOverride?: string;
+    };
+    expect(args.provider).toBe("anthropic");
+    expect(args.apiKey).toBe("sk-ant-good");
+    expect(args.credentialVerified).toBe(true);
+    expect(args.baseURLOverride).toBeUndefined();
+  });
+
+  test("connecting Ollama seeds its catalog with baseURLOverride and the placeholder secret", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      ollama: {
+        id: "ollama",
+        displayName: "Ollama",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        credentialInputKind: "url",
+        credentialPlaceholder: "http://localhost:11434",
+        probe: async () => ({ ok: true }),
+      },
+    };
+    const seedCatalogCalls: unknown[] = [];
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        apiKey: "https://home-mac-studio.tail87f5aa.ts.net",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(seedCatalogCalls).toHaveLength(1);
+    const args = seedCatalogCalls[0] as {
+      provider: string;
+      apiKey: string;
+      baseURLOverride?: string;
+    };
+    expect(args.provider).toBe("ollama");
+    expect(args.baseURLOverride).toBe(
+      "https://home-mac-studio.tail87f5aa.ts.net",
+    );
+    // Ollama has no auth layer of its own -- the fixed placeholder
+    // secret is what gets stored/seeded, never the URL itself.
+    expect(args.apiKey).toBe("ollama");
+  });
+
+  test("connecting a non-inference connector never seeds a catalog", async () => {
+    const seedCatalogCalls: unknown[] = [];
+    const app = buildApp({
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+    });
+    const response = await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(response.status).toBe(200);
+    expect(seedCatalogCalls).toHaveLength(0);
+  });
+
+  test("a catalog seed failure 500s with an honest error and never confirms connected", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      anthropic: {
+        id: "anthropic",
+        displayName: "Anthropic",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        probe: async () => ({ ok: true }),
+      },
+    };
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => {
+        throw new Error("hub unreachable while seeding catalog");
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/anthropic/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-ant-good" }),
+    });
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("connection_setup_failed");
   });
 
   test("a storage failure after a good probe 500s", async () => {

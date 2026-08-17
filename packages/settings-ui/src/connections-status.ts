@@ -13,21 +13,25 @@ export type ConnectorStatusResult =
 
 /**
  * The backend names a connector's provider row after the connector's
- * `displayName` (see the backend's `ensureProvider` call) — matching on
- * that name is how a card finds its provider without a new list route.
- * If a tenant reconnected more than once, more than one credential can
- * point at the same provider; the tiebreak here is newest `createdAt`
- * (falling back to `updatedAt` for a tie) — "most recently created" reads
- * as "the connection currently in effect" better than "most recently
- * touched," since a stale credential can still be touched by an unrelated
- * update.
+ * lowercase `id` (see `packages/connections/src/routes.ts`'s and
+ * `@workbench/hub-client`'s `seed.ts`'s own `ensureProvider` calls,
+ * both of which pass `descriptor.id`/`seed.provider.name`, never a
+ * display label) — matching on that id is how a card finds its provider
+ * without a new list route. `displayName` is UI-only and never reaches
+ * a provider row, so matching on it here would leave every card reading
+ * "not connected" forever. If a tenant reconnected more than once, more
+ * than one credential can point at the same provider; the tiebreak here
+ * is newest `createdAt` (falling back to `updatedAt` for a tie) — "most
+ * recently created" reads as "the connection currently in effect" better
+ * than "most recently touched," since a stale credential can still be
+ * touched by an unrelated update.
  */
 export function connectorStatus(
-  connectorDisplayName: string,
+  connectorId: string,
   credentials: readonly Credential[],
   providers: readonly Provider[],
 ): ConnectorStatusResult {
-  const provider = providers.find((p) => p.name === connectorDisplayName);
+  const provider = providers.find((p) => p.name === connectorId);
   if (provider === undefined) return { status: "not_connected" };
 
   const matches = credentials.filter((c) => c.providerId === provider.id);
