@@ -5,7 +5,10 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 
-import { PlannerMyraUnavailableError } from "./planner-run";
+import {
+  PlannerInferenceUnavailableError,
+  PlannerMyraUnavailableError,
+} from "./planner-run";
 import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 import { PlannerReferenceOutOfInventoryError } from "./task-spec";
 import { SkillRegistryError } from "@corbits/skills";
@@ -167,6 +170,30 @@ describe("POST /", () => {
     };
     expect(body.error.code).toBe("planning_failed");
     expect(body.error.message).not.toContain("wfd_unknown");
+  });
+
+  test("PlannerInferenceUnavailableError maps to a 503 inference_unavailable, not planning_failed", async () => {
+    const deps = buildDeps({
+      dispatch: async () => {
+        throw new PlannerInferenceUnavailableError("tnt_1");
+      },
+    });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const response = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ outcome: "Summarize the doc" }),
+    });
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("inference_unavailable");
+    expect(body.error.message).toBe(
+      "The model couldn't be reached — try again in a moment",
+    );
   });
 
   test("a second concurrent request from the same principal is rejected while the first is in flight, and a later request succeeds once it settles", async () => {
