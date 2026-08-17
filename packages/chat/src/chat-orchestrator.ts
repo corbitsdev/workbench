@@ -25,6 +25,7 @@ import {
   connectorReplyContent,
   findFoldedRunByAddress,
   messageRunEnded,
+  messageRunStarted,
 } from "@corbits/folded-runs";
 import type { Memory } from "@corbits/memory";
 import {
@@ -601,7 +602,15 @@ export function createChatOrchestrator(
   // no turnId to key a redelivered `message.run.ended` on more
   // precisely): set the moment a notice is posted for an address's
   // silent turn, cleared the moment that address's next `connector.reply`
-  // arrives so a genuinely new turn is never suppressed by a stale entry.
+  // arrives OR the next `message.run.started` opens so a genuinely new
+  // turn is never suppressed by a stale entry. The `message.run.started`
+  // clear matters independently of a reply landing: two turns in a row
+  // can each end with zero `connector.reply` (an inference turn that
+  // produced no text is not rare under load — see the notice's own
+  // wording below), and without re-arming on every turn's OPEN, the
+  // second silent turn's own notice would be swallowed by the guard
+  // still set from the first, leaving the user staring at a thread that
+  // looks permanently dead with no trace anywhere it ever tried again.
   const notifiedDropAddresses = new Set<string>();
 
   const unsubscribe = deps.events.on(
@@ -612,6 +621,11 @@ export function createChatOrchestrator(
       // from under itself by the idle sweep just because it hasn't
       // replied yet.
       deps.recordActivity?.(agentAddress);
+
+      if (messageRunStarted(event)) {
+        notifiedDropAddresses.delete(agentAddress);
+        return;
+      }
 
       const content = connectorReplyContent(event);
       if (content !== undefined) {

@@ -465,65 +465,85 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       if (USE_OLLAMA) {
-        // The conversation must continue past the greeting: a second turn
-        // ("hi") must get a real answer. This is where a run that ends
-        // after its opening turn, or a mail rejected as terminal, shows.
-        await hop("a second turn gets a real answer", async () => {
-          const settleMs = Number(process.env["E2E_TURN2_DELAY_MS"] ?? "0");
-          if (settleMs > 0) await Bun.sleep(settleMs);
-          const sent = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
-            { parts: [{ kind: "text", text: "hi" }] },
-            user.cookies,
-          );
-          expectStatus("send hi", sent, 201);
-          const sentAt = Date.now();
-          const deadline = Date.now() + 180_000;
-          for (;;) {
-            const res = await api(
+        // The conversation must continue past the greeting, across
+        // several rapid-fire turns: N=6 sequential messages, each sent
+        // the instant the previous reply lands (zero settle delay,
+        // overridable only for local debugging via
+        // E2E_TURN2_DELAY_MS) — the real user pattern that a run
+        // settling to "completed" between turns (see
+        // `@corbits/folded-runs`' `isFoldedRunSettled`) and a chat
+        // orchestrator that only re-arms its silent-turn notice on a
+        // real reply (see `chat-orchestrator.ts`'s
+        // `notifiedDropAddresses`) can both go silently wrong under.
+        // This is where a run that ends after its opening turn, a
+        // mail rejected as terminal, or two consecutive silent turns
+        // swallowing each other's notice, all show.
+        const RAPID_TURN_COUNT = 6;
+        for (let turn = 1; turn <= RAPID_TURN_COUNT; turn++) {
+          await hop(`rapid turn ${turn} gets a real answer`, async () => {
+            const settleMs = Number(process.env["E2E_TURN2_DELAY_MS"] ?? "0");
+            if (settleMs > 0) await Bun.sleep(settleMs);
+            const sent = await api(
               hub.baseUrl,
-              "GET",
+              "POST",
               `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
-              undefined,
+              {
+                parts: [
+                  {
+                    kind: "text",
+                    text: `turn ${turn}: say the number ${turn}`,
+                  },
+                ],
+              },
               user.cookies,
             );
-            const items = arrayField(
-              res.data,
-              "items",
-              "list chat messages",
-            ) as {
-              sender: { address: string };
-              createdAt: string;
-              parts: { kind: string; text?: string }[];
-            }[];
-            const agentTexts = items
-              .filter(
-                (item) =>
-                  item.sender.address === agentAddress &&
-                  item.parts.some((p) => p.kind === "text") &&
-                  new Date(item.createdAt).getTime() > sentAt,
-              )
-              .map((item) => item.parts.map((p) => p.text ?? "").join(""));
-            if (agentTexts.length >= 1) {
-              console.log(
-                `  Myra's answer to "hi" (ollama): ${agentTexts.join(" ||| ")}`,
+            expectStatus(`send turn ${turn}`, sent, 201);
+            const sentAt = Date.now();
+            const deadline = Date.now() + 180_000;
+            for (;;) {
+              const res = await api(
+                hub.baseUrl,
+                "GET",
+                `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+                undefined,
+                user.cookies,
               );
-              return;
+              const items = arrayField(
+                res.data,
+                "items",
+                "list chat messages",
+              ) as {
+                sender: { address: string };
+                createdAt: string;
+                parts: { kind: string; text?: string }[];
+              }[];
+              const agentTexts = items
+                .filter(
+                  (item) =>
+                    item.sender.address === agentAddress &&
+                    item.parts.some((p) => p.kind === "text") &&
+                    new Date(item.createdAt).getTime() > sentAt,
+                )
+                .map((item) => item.parts.map((p) => p.text ?? "").join(""));
+              if (agentTexts.length >= 1) {
+                console.log(
+                  `  Myra's answer to turn ${turn} (ollama): ${agentTexts.join(" ||| ")}`,
+                );
+                return;
+              }
+              if (Date.now() > deadline) {
+                throw new Error(
+                  `no answer to turn ${turn} within 180s; agent messages: ` +
+                    `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
+                    `${hub.output().slice(-60000)}\nsidecar output (tail):\n` +
+                    `${sidecar.output().slice(-6000)}`,
+                );
+              }
+              await Bun.sleep(2000);
             }
-            if (Date.now() > deadline) {
-              throw new Error(
-                `no answer to "hi" within 180s; agent messages: ` +
-                  `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
-                  `${hub.output().slice(-60000)}\nsidecar output (tail):\n` +
-                  `${sidecar.output().slice(-6000)}`,
-              );
-            }
-            await Bun.sleep(2000);
-          }
-        });
+          });
+        }
       }
-    }, 420_000);
+    }, 900_000);
   },
 );

@@ -44,6 +44,7 @@ export {
 export {
   connectorReplyContent,
   messageRunEnded,
+  messageRunStarted,
   type MessageRunEnded,
 } from "./agent-events";
 export {

@@ -287,6 +287,66 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-turn-drop-root: two silent turns back to back (no reply either
+  // time — a real, if rare, inference outcome under load, not just a
+  // redelivery of the same bracket-close) must each get their own
+  // notice. Before this fix, `notifiedDropAddresses` only cleared on a
+  // real `connector.reply`, so the second silent turn's notice was
+  // swallowed by the guard the first silent turn left set — a user
+  // sending consecutive messages during a rough patch saw exactly one
+  // notice ever, then total silence with no trace anywhere.
+  test("message.run.ended posts a notice for EACH silent turn, not just the first", async () => {
+    const sentMail: unknown[] = [];
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push(input);
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    // Turn 1: silent completion, no reply — posts the notice.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(1);
+
+    // Turn 2 opens (a genuinely new message, not a redelivery) —
+    // re-arms the notice guard for this fresh turn.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "message.run.started", data: { messageId: "m2" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Turn 2 also ends silently — must post its OWN notice, not be
+    // swallowed by turn 1's already-set guard.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(2);
+
+    orchestrator.dispose();
+  });
+
   test("message.run.ended posts the extracted error text for a failed turn", async () => {
     const sentMail: unknown[] = [];
     const events = createSidecarEmitter();
@@ -321,9 +381,7 @@ describe("createChatOrchestrator", () => {
     expect(sentMail).toHaveLength(1);
     expect(
       decodeParts((sentMail[0] as { content: MailContent }).content),
-    ).toEqual([
-      { kind: "text", text: "provider timed out" },
-    ]);
+    ).toEqual([{ kind: "text", text: "provider timed out" }]);
 
     orchestrator.dispose();
   });

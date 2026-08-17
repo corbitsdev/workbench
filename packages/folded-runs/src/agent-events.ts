@@ -29,6 +29,20 @@ export type MessageRunEnded = {
   readonly errorMessage: string | undefined;
 };
 
+/** A `message.run.started` bracket open — the harness's own per-message
+ * start signal, minted fresh (`messageRunId`) for every dequeued
+ * message, including a redelivery of the same `messageId` — or
+ * undefined for any other event. Chat's orchestrator uses this to
+ * re-arm its silent-turn notice per turn rather than only on a real
+ * reply (see `chat-orchestrator.ts`'s `notifiedDropAddresses`). */
+export function messageRunStarted(event: unknown): boolean {
+  return (
+    typeof event === "object" &&
+    event !== null &&
+    (event as { type?: unknown }).type === "message.run.started"
+  );
+}
+
 /** A `message.run.ended` bracket close — the harness's own per-message
  * terminal signal (`status: "completed" | "failed"`) — or undefined for
  * any other event. */
