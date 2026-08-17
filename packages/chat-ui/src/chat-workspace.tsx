@@ -976,8 +976,11 @@ function ChatWorkspaceInner({
 
   const { typingState, handleStreamEvent: handleTypingEvent } =
     useTypingIndicator(currentUser?.principalId, activeChannelId);
-  const { streamingReply, handleStreamEvent: handleStreamingReplyEvent } =
-    useStreamingReply(activeChannelId);
+  const {
+    streamingReply,
+    handleStreamEvent: handleStreamingReplyEvent,
+    noteAwaitingReply,
+  } = useStreamingReply(activeChannelId);
 
   useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
@@ -1047,6 +1050,16 @@ function ChatWorkspaceInner({
         await sendMessage(tenantId, activeChannelId, parts, inviteOption);
       }
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
+      // A message just landed in a channel with an agent in it: a reply
+      // is owed, so show the typing indicator now rather than sitting
+      // silent until the turn's first stream event arrives.
+      if (
+        (activeChannel?.participants ?? []).some((participant) =>
+          isAgentAddress(participant.address),
+        )
+      ) {
+        noteAwaitingReply();
+      }
       await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });
     } catch (cause) {

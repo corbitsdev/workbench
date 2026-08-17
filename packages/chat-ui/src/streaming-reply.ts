@@ -69,6 +69,14 @@ export function nextStreamingReplyState(
 
   const innerType = innerEventType(event.data);
   if (innerType === "inference.start") return { text: "" };
+  // `reactor.start` is the earliest "the agent is on it" signal — it
+  // fires before any tokens, often seconds before a slow model's
+  // `inference.start` — so it opens the indicator without waiting for
+  // the first inference call.
+  if (innerType === "reactor.start") return current ?? { text: "" };
+  if (innerType === "reactor.done" || innerType === "reactor.error") {
+    return null;
+  }
   if (innerType === "inference.done" || innerType === "inference.error") {
     return null;
   }
@@ -87,9 +95,27 @@ export function nextStreamingReplyState(
  * `useTypingIndicator` — an in-progress reply from the channel just left
  * belongs to that channel's timeline, not the new one.
  */
+/**
+ * Opens an empty pending reply without an agent event: the caller just
+ * sent a message to a channel with an agent in it, so a reply is owed
+ * even though no `reactor.start` has streamed yet. Never resets a reply
+ * already streaming.
+ */
+export function openPendingReply(
+  current: StreamingReplyState,
+): StreamingReplyState {
+  return current ?? { text: "" };
+}
+
+/** How long an empty pending reply may sit with no tokens before the
+ * indicator clears itself — the backstop for a turn whose stream events
+ * never arrive (agent down, SSE dropped mid-reconnect). */
+const PENDING_REPLY_CLEAR_MS = 120_000;
+
 export function useStreamingReply(channelId: string | null): {
   readonly streamingReply: StreamingReplyState;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
+  readonly noteAwaitingReply: () => void;
 } {
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
@@ -98,13 +124,27 @@ export function useStreamingReply(channelId: string | null): {
     setStreamingReply(null);
   }, [channelId]);
 
+  useEffect(() => {
+    if (streamingReply === null || streamingReply.text !== "") return;
+    const timer = setTimeout(() => {
+      setStreamingReply((current) =>
+        current === streamingReply ? null : current,
+      );
+    }, PENDING_REPLY_CLEAR_MS);
+    return () => clearTimeout(timer);
+  }, [streamingReply]);
+
   function handleStreamEvent(eventType: string, data: unknown) {
     setStreamingReply((current) =>
       nextStreamingReplyState(current, { eventType, data }),
     );
   }
 
-  return { streamingReply, handleStreamEvent };
+  function noteAwaitingReply() {
+    setStreamingReply(openPendingReply);
+  }
+
+  return { streamingReply, handleStreamEvent, noteAwaitingReply };
 }
 
 /**
