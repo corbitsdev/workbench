@@ -56,6 +56,7 @@ import { listMcpServers, type McpServerListing } from "./registry-client";
 
 export const MCP_LIST_SERVERS_TOOL = "mcp_list_servers";
 export const MCP_LIST_TOOLS_TOOL = "mcp_list_tools";
+export const MCP_READ_TOOL = "mcp_read";
 export const MCP_CALL_TOOL = "mcp_call";
 
 /** `mcp:<slug>` -- the credential handle convention every connected
@@ -370,6 +371,86 @@ async function runListTools(
   }
 }
 
+/** `mcp_read`'s live authz gate: a tool only executes read-only when
+ * the target server's OWN `tools/list` (fetched fresh here, never
+ * trusted from the model's claim) marks it `readOnlyHint === true`. */
+export function readOnlyGate(
+  tools: readonly McpToolInfo[],
+  toolName: string,
+): { allowed: true; tool: McpToolInfo } | { allowed: false; reason: string } {
+  const tool = tools.find((candidate) => candidate.name === toolName);
+  if (tool === undefined) {
+    return {
+      allowed: false,
+      reason:
+        `MCP server has no tool named "${toolName}". Call ` +
+        `${MCP_LIST_TOOLS_TOOL} to see its tools.`,
+    };
+  }
+  if (tool.annotations?.readOnlyHint !== true) {
+    return {
+      allowed: false,
+      reason:
+        `Tool "${toolName}" is not marked read-only. Use ${MCP_CALL_TOOL} ` +
+        "instead, which asks for human approval.",
+    };
+  }
+  return { allowed: true, tool };
+}
+
+async function runRead(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
+  const parsed = CallInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`${MCP_READ_TOOL} received invalid input: ${parsed.summary}`),
+    );
+  }
+  try {
+    const server = await findServer(env, parsed.server);
+    if (server === null) {
+      return errorResult(
+        call.id,
+        new Error(
+          `MCP server "${parsed.server}" is not connected. Call ` +
+            `${MCP_LIST_SERVERS_TOOL} to see the connected servers.`,
+        ),
+      );
+    }
+    const fetchImpl = await resolveMcpFetch(env, parsed.server);
+    if (fetchImpl === null) {
+      return errorResult(
+        call.id,
+        new Error(`MCP server "${parsed.server}" is not connected.`),
+      );
+    }
+    const result = await withMcpConnection(
+      { url: server.url, fetchImpl },
+      async (client) => {
+        const tools = await listMcpTools(client);
+        const gate = readOnlyGate(tools, parsed.tool);
+        if (!gate.allowed) {
+          return { isError: true as const, content: gate.reason };
+        }
+        return callMcpTool(client, {
+          name: parsed.tool,
+          arguments: (parsed.arguments as Record<string, unknown>) ?? {},
+        });
+      },
+    );
+    return {
+      callId: call.id,
+      isError: result.isError,
+      content:
+        typeof result.content === "string"
+          ? result.content
+          : JSON.stringify(result.content),
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
+
 async function runCall(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = CallInput(call.arguments);
   if (parsed instanceof type.errors) {
@@ -427,6 +508,7 @@ export const mcpTools = defineTool<McpToolsEnv>({
   definitions: [
     { name: MCP_LIST_SERVERS_TOOL },
     { name: MCP_LIST_TOOLS_TOOL },
+    { name: MCP_READ_TOOL },
     { name: MCP_CALL_TOOL, approval: "ask" },
   ],
   factory: (env) => ({
@@ -483,13 +565,44 @@ export const mcpTools = defineTool<McpToolsEnv>({
         },
       },
       {
+        name: MCP_READ_TOOL,
+        description:
+          "Calls a READ-ONLY tool on a connected MCP server — no human " +
+          "approval needed. Only works when the server's own tools/list " +
+          "marks the tool `readOnlyHint: true`; this is re-checked live " +
+          `at call time, never assumed. Use for reads. Call ` +
+          `${MCP_LIST_TOOLS_TOOL} once first to find the tool and its ` +
+          `exact name and input schema. If this errors telling you the ` +
+          `tool isn't read-only, use ${MCP_CALL_TOOL} instead.`,
+        inputSchema: {
+          type: "object",
+          properties: {
+            server: {
+              type: "string",
+              description: `The server's slug, from ${MCP_LIST_SERVERS_TOOL}.`,
+            },
+            tool: {
+              type: "string",
+              description: `The tool's exact name, from ${MCP_LIST_TOOLS_TOOL}.`,
+            },
+            arguments: {
+              type: "object",
+              description: "The tool's input, matching its inputSchema.",
+            },
+          },
+          required: ["server", "tool"],
+        },
+      },
+      {
         name: MCP_CALL_TOOL,
         description:
-          "Calls one tool on a connected MCP server. Always requires " +
-          "human approval before it runs, regardless of the downstream " +
-          `tool. Call ${MCP_LIST_TOOLS_TOOL} once first to find the ` +
-          "tool (pattern search when unsure which server) and get its " +
-          "exact name and input schema — never invent either.",
+          "Calls any tool — read or write — on a connected MCP server. " +
+          "Always requires human approval before it runs, regardless of " +
+          `the downstream tool; prefer ${MCP_READ_TOOL} for read-only ` +
+          `tools, which needs no approval. Call ${MCP_LIST_TOOLS_TOOL} ` +
+          "once first to find the tool (pattern search when unsure " +
+          "which server) and get its exact name and input schema — " +
+          "never invent either.",
         inputSchema: {
           type: "object",
           properties: {
@@ -516,6 +629,8 @@ export const mcpTools = defineTool<McpToolsEnv>({
           return runListServers(env, call);
         case MCP_LIST_TOOLS_TOOL:
           return runListTools(env, call);
+        case MCP_READ_TOOL:
+          return runRead(env, call);
         case MCP_CALL_TOOL:
           return runCall(env, call);
         default:

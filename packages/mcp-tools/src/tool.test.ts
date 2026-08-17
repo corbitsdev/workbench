@@ -6,9 +6,12 @@ import {
   MCP_CALL_TOOL,
   MCP_LIST_SERVERS_TOOL,
   MCP_LIST_TOOLS_TOOL,
+  MCP_READ_TOOL,
   mcpTools,
+  readOnlyGate,
 } from "./tool";
 import type { McpToolsEnv } from "./tool";
+import type { McpToolInfo } from "./mcp-client";
 
 function fakeEnv(
   overrides?: Partial<McpToolsEnv>,
@@ -23,13 +26,42 @@ function fakeEnv(
   } as unknown as McpToolsEnv;
 }
 
-test("declares three tools: mcp_list_servers, mcp_list_tools, mcp_call", () => {
+test("declares four tools: mcp_list_servers, mcp_list_tools, mcp_read, mcp_call", () => {
   const bundle = mcpTools(fakeEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     MCP_LIST_SERVERS_TOOL,
     MCP_LIST_TOOLS_TOOL,
+    MCP_READ_TOOL,
     MCP_CALL_TOOL,
   ]);
+});
+
+test("readOnlyGate allows a tool the live tools/list marks readOnlyHint: true", () => {
+  const tools: readonly McpToolInfo[] = [
+    {
+      name: "search",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+  ];
+  const gate = readOnlyGate(tools, "search");
+  expect(gate.allowed).toBe(true);
+});
+
+test("readOnlyGate refuses a tool without readOnlyHint, pointing to mcp_call", () => {
+  const tools: readonly McpToolInfo[] = [
+    { name: "delete_row", inputSchema: {} },
+  ];
+  const gate = readOnlyGate(tools, "delete_row");
+  expect(gate.allowed).toBe(false);
+  if (!gate.allowed) {
+    expect(gate.reason).toContain(MCP_CALL_TOOL);
+  }
+});
+
+test("readOnlyGate never trusts a model's claim about a tool it can't find", () => {
+  const gate = readOnlyGate([], "made_up_tool");
+  expect(gate.allowed).toBe(false);
 });
 
 test("mcp_list_servers degrades to an honest error when the hub is unreachable, never a fabricated empty list", async () => {

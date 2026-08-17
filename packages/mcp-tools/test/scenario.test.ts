@@ -14,6 +14,7 @@ import {
   MCP_CALL_TOOL,
   MCP_LIST_SERVERS_TOOL,
   MCP_LIST_TOOLS_TOOL,
+  MCP_READ_TOOL,
   mcpCredentialHandle,
   mcpTools,
 } from "../src/tool";
@@ -92,6 +93,78 @@ test("mcp_call declares approval: ask, unconditionally", () => {
   expect(toolApprovalEffect(findDeclaration(MCP_LIST_TOOLS_TOOL))).toBe(
     "allow",
   );
+  expect(toolApprovalEffect(findDeclaration(MCP_READ_TOOL))).toBe("allow");
+});
+
+test("mcp_read executes a readOnlyHint tool without approval", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/api/workflow-connections/mcp-servers")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ slug: "notion", name: "Notion", url: stub.url }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const bundle = mcpTools(fakeEnv());
+    const result = await bundle.run(
+      {
+        id: "r1",
+        name: MCP_READ_TOOL,
+        arguments: { server: "notion", tool: "echo", arguments: { text: "hi" } },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(result.content as string)).toEqual([
+      { type: "text", text: "hi" },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mcp_read refuses a non-readOnlyHint tool and points to mcp_call, never trusting the model's claim", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/api/workflow-connections/mcp-servers")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ slug: "notion", name: "Notion", url: stub.url }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const bundle = mcpTools(fakeEnv());
+    const result = await bundle.run(
+      {
+        id: "r2",
+        name: MCP_READ_TOOL,
+        arguments: { server: "notion", tool: "write_note", arguments: {} },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(MCP_CALL_TOOL);
+    expect(stub.calls).toEqual([]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("connect -> list servers -> list tools -> call, end to end", async () => {

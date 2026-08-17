@@ -123,11 +123,13 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "use it to recall facts and decisions from earlier conversations and " +
   "to record ones worth keeping, never to fabricate a recollection " +
   "when a search comes back empty. Any MCP server connected under " +
-  "Plugins is reachable with mcp_list_servers, mcp_list_tools, and " +
-  "mcp_call — discover once with mcp_list_tools (pattern search when " +
-  "unsure which server has the tool you want), then mcp_call; never " +
-  "guess a tool name or its arguments, and never dump a server's " +
-  "whole catalog into a reply. " +
+  "Plugins is reachable with mcp_list_servers, mcp_list_tools, " +
+  "mcp_read, and mcp_call — discover once with mcp_list_tools (pattern " +
+  "search when unsure which server has the tool you want); use " +
+  "mcp_read for read-only tools (no approval needed) and mcp_call for " +
+  "anything that changes state (asks for approval); never guess a " +
+  "tool name or its arguments, and never dump a server's whole " +
+  "catalog into a reply. " +
   ASSISTANT_WELCOME_CLAUSE +
   " " +
   ASSISTANT_TRIAGE_CLAUSE +

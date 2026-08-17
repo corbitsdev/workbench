@@ -21,6 +21,7 @@ export {
   MCP_CALL_TOOL,
   MCP_LIST_SERVERS_TOOL,
   MCP_LIST_TOOLS_TOOL,
+  MCP_READ_TOOL,
   mcpCredentialHandle,
   mcpTools,
 } from "./tool";
