@@ -77,6 +77,8 @@ export type CreateHubChatPlatformDeps = {
   sidecarRouter: SidecarRouter;
   /** See `FoldedRunsDeps.hubPublicKey`. */
   hubPublicKey: string;
+  /** See `FoldedRunsDeps.toolGrantsForPins`. */
+  toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
@@ -190,6 +192,7 @@ export function createHubChatPlatform(
     sidecarRouter: deps.sidecarRouter,
     eventCollectors: deps.eventCollectors,
     hubPublicKey: deps.hubPublicKey,
+    toolGrantsForPins: deps.toolGrantsForPins,
     ...(deps.credentialCipher !== undefined
       ? { credentialCipher: deps.credentialCipher }
       : {}),

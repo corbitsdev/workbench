@@ -26,6 +26,7 @@ import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
 import { InferenceSource } from "@intx/types/runtime";
+import type { WireGrantRule } from "@intx/types/grant-wire";
 import {
   wrapHarnessAsSingleStepWorkflow,
   type FoldedBody,
@@ -104,6 +105,7 @@ export async function deployAtHead(
     | "eventCollectors"
     | "credentialCipher"
     | "hubPublicKey"
+    | "toolGrantsForPins"
   >,
   params: {
     tenantId: string;
@@ -153,6 +155,26 @@ export async function deployAtHead(
     params.instanceId,
   );
 
+  // Every pinned tool package's `tool:<qualifiedId>` grant, minted
+  // against this run's own principal so the child's authz gate
+  // (`vendor/intx/inference/src/authz-extension.ts`) has a matching
+  // grant for every call the pinned package can make. See
+  // `ToolGrantsForPins`'s doc for why this has to happen here rather
+  // than relying on the deploy-time capability walk.
+  const grants: WireGrantRule[] = deps
+    .toolGrantsForPins(params.foldedBody.toolPackagePins)
+    .map((declaration) => ({
+      id: generateId("grant"),
+      resource: declaration.resource,
+      action: declaration.action,
+      effect: declaration.effect,
+      origin: "system" as const,
+      conditions: null,
+      expiresAt: null,
+      roleId: null,
+      principalId: params.principalId,
+    }));
+
   const config = {
     sessionId: params.sessionId,
     agentId: params.instanceId,
@@ -161,7 +183,7 @@ export async function deployAtHead(
     agentAddress: params.triggerAddress,
     systemPrompt: params.foldedBody.systemPrompt,
     tools: [],
-    grants: [],
+    grants,
     sources: resolution.sources,
     defaultSource: resolution.defaultSource,
   };

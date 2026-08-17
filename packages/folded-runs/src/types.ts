@@ -4,13 +4,55 @@
 // registry — arrives as an injected port; this package never imports
 // a hub or a host-specific package such as `@corbits/chat`.
 import type { DB } from "@intx/db";
-import type { CredentialCipher } from "@intx/types";
+import type { CredentialCipher, GrantEffect } from "@intx/types";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type {
   AssetService,
   EventCollectorRegistry,
   SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
+
+/**
+ * One `tool:<qualifiedId>` / `invoke` grant a pinned tool package
+ * contributes to a folded run's deploy-time `config.grants`. `resource`
+ * is already prefixed (`tool:<factory.id>:<definition.name>`, the exact
+ * shape the workflow child's authz gate matches against — see
+ * `vendor/intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`
+ * and `vendor/intx/inference/src/authz-extension.ts`'s
+ * `beforeTool`); `effect` is the tool's static approval floor
+ * (`@intx/agent`'s `toolApprovalEffect`: `"ask"` for a tool declared
+ * `approval: "ask"`, `"allow"` otherwise).
+ */
+export type PinnedToolGrantDeclaration = {
+  readonly resource: string;
+  readonly action: "invoke";
+  readonly effect: GrantEffect;
+};
+
+/**
+ * Derives the `tool:` grant declarations a folded run's pinned tool
+ * packages need at deploy time. `deployAtHead` calls this with the
+ * launch's `toolPackagePins` and folds the result into
+ * `HarnessConfig.grants`, the array the sidecar writes verbatim to
+ * `state/grants.json` (the file the spawned child's `authorize` closure
+ * actually reads — see `apps/sidecar/src/workflow-host-wiring/index.ts`'s
+ * "Grants bridge" write and `vendor/intx/workflow-host/src/supervisor/credentials.ts`'s
+ * `assembleCredentialsSnapshot`). Without this, a pinned tool package's
+ * calls fail closed with "No matching grants" — the deploy-time
+ * capability walk (`vendor/intx/workflow-deploy/src/capability-walk.ts`)
+ * only derives `tool:` grants for inline tool factories, never for
+ * `toolPackagePins`.
+ *
+ * The composition root (`apps/hub`) supplies the real implementation,
+ * built from `@corbits/tool-registry-publish`'s
+ * `describeCorbitsToolPackages()` — `folded-runs` never imports that
+ * package itself, so this package stays ignorant of which tool
+ * packages exist.
+ */
+export type ToolGrantsForPins = (
+  pins: readonly ToolPackagePin[],
+) => readonly PinnedToolGrantDeclaration[];
 
 export type FoldedRunsDeps = {
   db: DB["db"];
@@ -37,6 +79,8 @@ export type FoldedRunsDeps = {
    * `triggers: "unbounded"` budget) and that deploy carries the hub key.
    */
   hubPublicKey: string;
+  /** See `ToolGrantsForPins`'s own doc. */
+  toolGrantsForPins: ToolGrantsForPins;
 };
 
 export type SentFoldedMail = {

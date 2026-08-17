@@ -250,12 +250,16 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import {
+  CORBITS_TOOLS_REGISTRY,
+  describeCorbitsToolPackages,
+} from "@corbits/tool-registry-publish";
 import { readHubConfig, type HubConfig } from "./config";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
+import { createToolGrantsForPins } from "./tool-grants";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -449,6 +453,20 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
+  // CL-6149: a folded run's pinned tool packages (`toolPackagePins`)
+  // carry no grants of their own — the deploy-time capability walk
+  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
+  // `tool:` grants for inline tool factories, so a pinned package's
+  // tools failed every call closed with "No matching grants". Every
+  // `@corbits/*-tools` package's namespaced tool ids and approval marks
+  // are read once here (`describeCorbitsToolPackages`), so
+  // `toolGrantsForPins` — the port every `FoldedRunsDeps` below is
+  // built with — can synchronously turn a launch's pins into the
+  // `tool:<qualifiedId>` grants `@corbits/folded-runs`' `deployAtHead`
+  // mints against the run's own principal.
+  const toolGrantsForPins = createToolGrantsForPins(
+    await describeCorbitsToolPackages(),
+  );
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -804,6 +822,7 @@ export async function createHub(config: HubConfig) {
     eventCollectors,
     credentialCipher,
     hubPublicKey,
+    toolGrantsForPins,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
   });
@@ -1330,6 +1349,7 @@ export async function createHub(config: HubConfig) {
             sidecarRouter,
             eventCollectors,
             hubPublicKey,
+            toolGrantsForPins,
             cryptoProviderCache: foldedRunCryptoProviders,
           },
           trigger,
@@ -1458,6 +1478,7 @@ export async function createHub(config: HubConfig) {
       eventCollectors,
       credentialCipher,
       hubPublicKey,
+      toolGrantsForPins,
     },
     cryptoProviders: createCryptoProviderCache(),
     notify: taskNotifyDeps,
@@ -1656,6 +1677,7 @@ export async function createHub(config: HubConfig) {
     eventCollectors,
     credentialCipher,
     hubPublicKey,
+    toolGrantsForPins,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
     joinDeliveryChannel: (input) =>
