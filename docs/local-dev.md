@@ -60,8 +60,21 @@ via the vendored sidecar-allocation subsystem — no additional orchestration
 needed on top of what's already wired in `apps/hub/src/index.ts`.
 
 `DOCKER_PROVISIONER_IMAGE` must point at a built image of `apps/sidecar`
-that the local `docker` CLI can run. There is no `Dockerfile` for
-`apps/sidecar` in this repo yet, so building that image is the one
-remaining step before an exclusive allocation can actually boot a
-container end-to-end; until it exists, `docker run` will fail with an
-unknown-image error and the allocation will retry as `docker_run_failed`.
+that the local `docker` CLI can run. Build one from the repo root (the
+build context has to be the repo root, not `apps/sidecar`, because the
+workspace's `@intx/*`/`@corbits/*` deps are `workspace:*` and resolve from
+source):
+
+```sh
+bun run build:sidecar-image
+```
+
+Then point the provisioner at it and flip the toggle:
+
+```sh
+DOCKER_PROVISIONER_IMAGE=corbits-sidecar:dev
+SIDECAR_PROVISIONER=docker
+```
+
+Restart `bun run dev` after setting these, then enable the Workbench
+Settings › Capacity toggle to provision an exclusive per-workbench sidecar.

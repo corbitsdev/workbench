@@ -30,7 +30,8 @@
     "check:browser-safe-subpaths": "bun run scripts/checks/browser-safe-subpaths.ts",
     "check:web-utilities": "bun run scripts/checks/web-tailwind-utilities.ts",
     "check:ui-vocabulary": "bun run scripts/checks/ui-vocabulary.ts",
-    "check:react-ui-drift": "bun run scripts/checks/react-ui-drift.ts"
+    "check:react-ui-drift": "bun run scripts/checks/react-ui-drift.ts",
+    "build:sidecar-image": "docker build -f apps/sidecar/Dockerfile -t corbits-sidecar:dev ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
