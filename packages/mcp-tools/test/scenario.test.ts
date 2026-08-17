@@ -265,7 +265,7 @@ test("mcp_call against an unconnected server degrades to an honest error, never 
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toMatch(/not connected/i);
+    expect(result.content).toMatch(/not reachable from this run/i);
   } finally {
     globalThis.fetch = originalFetch;
   }

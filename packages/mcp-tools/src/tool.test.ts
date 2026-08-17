@@ -193,7 +193,7 @@ test("mcp_call against a server with no bound credential degrades honestly", asy
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toMatch(/not connected/i);
+    expect(result.content).toMatch(/not reachable from this run/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
