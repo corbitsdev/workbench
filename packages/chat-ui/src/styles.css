@@ -1634,7 +1634,7 @@
   position: relative;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
-  padding: 0.75rem 0.85rem 0.85rem;
+  padding: 0.6rem 0.75rem 0.7rem;
 }
 
 .chat-composer-attachments {
@@ -1652,7 +1652,7 @@
   gap: 0.25rem;
   max-width: 100%;
   border: 1px solid var(--border);
-  border-radius: var(--ui-radius-md, 0.375rem);
+  border-radius: 0;
   background: var(--card, var(--background));
   padding: 0.2rem 0.35rem 0.2rem 0.5rem;
   font-size: 0.75rem;
@@ -1924,17 +1924,23 @@
 .chat-composer-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   border: 1px solid var(--border);
-  border-radius: var(--ui-radius-md, 0.375rem);
+  border-radius: 0;
   background: var(--card, var(--background));
-  padding: 0.5rem 0.6rem;
-  transition: border-color 120ms var(--chat-ease);
+  padding: 0.45rem 0.55rem;
+  transition:
+    border-color 120ms var(--chat-ease),
+    box-shadow 120ms var(--chat-ease);
 }
 
-/* A calm single-pixel accent border on focus — no glow, no double ring. */
+/* Hairline -> foreground-strength on focus: color and an inset hairline
+   reinforce, never a border-width or padding change, so the row never
+   resizes (CL-6250). The accent color stays out of this — it is reserved
+   for inset/text emphasis elsewhere, not a full input outline. */
 .chat-composer-row:focus-within {
-  border-color: var(--primary);
+  border-color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--foreground);
 }
 
 .chat-composer-input {
@@ -1953,6 +1959,17 @@
   color: var(--foreground);
 }
 
+/* Growth is measured in JS (scrollHeight, capped at max-height above) and
+   applied as an inline `height`; this transition is what turns that
+   per-keystroke instant write into a contained ~120ms glide instead of an
+   instant reflow of the composer's flex siblings (CL-6250 — "the whole
+   thing moves"). Shrink-on-delete rides the same transition. */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-composer-input {
+    transition: height 120ms var(--chat-ease);
+  }
+}
+
 .chat-composer-input:focus {
   outline: none;
 }
@@ -1963,10 +1980,21 @@
 }
 
 .chat-composer-hint {
+  min-height: 1rem;
   padding: 0.3rem 0.15rem 0;
   font-size: 0.7rem;
   color: var(--muted-foreground);
   text-align: right;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms var(--chat-ease);
+}
+
+/* Always mounted (see composer.tsx) so this space is reserved whether or
+   not the hint is showing — visibility toggles, box height never does. */
+.chat-composer-hint[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
 }
 
 .chat-composer-status {
@@ -1990,9 +2018,24 @@
 /* Send button states: "empty" reads as a muted, inert glyph in both themes
    rather than inheriting the ambient text color at half opacity; "ready"
    and "sending" both keep the primary fill, so the spinner swap is what
-   tells them apart. */
+   tells them apart. Press feedback (brightness dip + scale-down) is the
+   Button base variant's own `active:` state (react-ui, not duplicated
+   here) — it already fires on both of these. */
 [data-send-state="empty"] svg {
   color: var(--muted-foreground);
+}
+
+/* Extends the attach/send hit area to >=40px without visually bloating the
+   36px icon button: a borderless ::after grows the clickable box, since
+   it's still inside the button's own hit-test region (CL-6250). */
+.chat-composer-icon-button {
+  position: relative;
+}
+
+.chat-composer-icon-button::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
 }
 
 .chat-composer-send-spinner {
@@ -2085,10 +2128,31 @@
   flex-direction: column;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: var(--ui-radius-md, 0.375rem);
+  border-radius: 0;
   margin-bottom: 0.35rem;
   background: var(--popover, var(--card, var(--background)));
   box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+/* Entrance for the mention/slash/help popovers: all three anchor
+   `bottom: 100%` (they open above the caret line), so a single
+   caret-side-aware direction — rising up from the input — covers every
+   case (CL-6250). */
+@keyframes chat-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-popover-enter {
+    animation: chat-popover-enter 110ms var(--chat-ease);
+  }
 }
 
 .chat-mention-option {

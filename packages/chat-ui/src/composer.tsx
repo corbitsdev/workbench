@@ -665,7 +665,7 @@ export const Composer = forwardRef<
   return (
     <div className="chat-composer">
       {slash !== null && (
-        <div className="chat-mention-popover" role="listbox">
+        <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {slashCandidates.length === 0 ? (
             <div className="chat-mention-empty">
               {CHAT_STRINGS.composerSlashEmpty}
@@ -694,7 +694,7 @@ export const Composer = forwardRef<
         </div>
       )}
       {slash === null && mention !== null && (
-        <div className="chat-mention-popover" role="listbox">
+        <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {mentionOptions.length === 0 ? (
             <div className="chat-mention-empty">
               {CHAT_STRINGS.mentionEmpty}
@@ -736,7 +736,10 @@ export const Composer = forwardRef<
         </div>
       )}
       {helpOpen && (
-        <div className="chat-mention-popover chat-slash-help" role="note">
+        <div
+          className="chat-mention-popover chat-slash-help chat-popover-enter"
+          role="note"
+        >
           <div className="chat-slash-help-title">
             {CHAT_STRINGS.composerHelpTitle}
           </div>
@@ -797,6 +800,7 @@ export const Composer = forwardRef<
           type="button"
           variant="ghost"
           size="icon"
+          className="chat-composer-icon-button"
           disabled={!canAttach}
           onClick={() => fileInputRef.current?.click()}
           aria-label={CHAT_STRINGS.composerAttach}
@@ -824,6 +828,7 @@ export const Composer = forwardRef<
           type="button"
           variant={sendVisualState === "empty" ? "ghost" : "primary"}
           size="icon"
+          className="chat-composer-icon-button"
           disabled={!canSend}
           data-send-state={sendVisualState}
           onClick={() => void send()}
@@ -844,11 +849,14 @@ export const Composer = forwardRef<
           )}
         </Button>
       </div>
-      {focused && value.trim().length > 0 && (
-        <div className="chat-composer-hint">
-          {CHAT_STRINGS.composerKeyboardHint}
-        </div>
-      )}
+      {/* Always mounted so its reserved height never toggles the composer's
+       * box size — only opacity/visibility change (CL-6250). */}
+      <div
+        className="chat-composer-hint"
+        data-visible={focused && value.trim().length > 0}
+      >
+        {CHAT_STRINGS.composerKeyboardHint}
+      </div>
       <div
         className="chat-composer-status"
         aria-live="polite"
