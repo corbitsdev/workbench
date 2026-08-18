@@ -15,6 +15,8 @@ import {
   listRuns,
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
+  listVisibleAgentDefinitions,
+  openAgentDm,
   listMessages,
   listPinnedMessages,
   sendMessage,
@@ -370,6 +372,81 @@ describe("listInvitableDefinitions", () => {
     await expect(
       listInvitableDefinitions("tenant_1", "chan_1"),
     ).rejects.toBeInstanceOf(ChatApiError);
+  });
+});
+
+describe("listVisibleAgentDefinitions", () => {
+  test("fetches the tenant's visible agent definitions, own and inherited", async () => {
+    const calls = stubFetch(() =>
+      json({
+        definitions: [
+          {
+            id: "wfd_outreach",
+            name: "Outreach",
+            tenantId: "tnt_root",
+            tenantName: "Acme",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "wfd_local",
+            name: "Local Agent",
+            tenantId: "tnt_1",
+            tenantName: "Acme / Engineering",
+            createdAt: "2026-01-02T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    const definitions = await listVisibleAgentDefinitions("tnt_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/agent-definitions/visible");
+    expect(definitions).toEqual([
+      {
+        id: "wfd_outreach",
+        name: "Outreach",
+        tenantId: "tnt_root",
+        tenantName: "Acme",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "wfd_local",
+        name: "Local Agent",
+        tenantId: "tnt_1",
+        tenantName: "Acme / Engineering",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("throws a ChatApiError on a malformed response", async () => {
+    stubFetch(() => json({ definitions: [{ id: "wfd_outreach" }] }));
+    await expect(listVisibleAgentDefinitions("tnt_1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
+  });
+});
+
+describe("openAgentDm", () => {
+  test("creates a chat channel with reuseExisting so a second open finds the same channel", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "c_dm",
+          title: "Outreach",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        },
+        201,
+      ),
+    );
+    const channel = await openAgentDm("tnt_root", "wfd_outreach");
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_root/chat/channels");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      kind: "chat",
+      definitionId: "wfd_outreach",
+      reuseExisting: true,
+    });
+    expect(channel.id).toBe("c_dm");
   });
 });
 

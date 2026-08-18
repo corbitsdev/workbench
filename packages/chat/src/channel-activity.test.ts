@@ -58,6 +58,44 @@ describe("summarizeChannelActivity", () => {
     });
   });
 
+  test("carries a message's preview through when the aggregate has one", () => {
+    const result = summarizeChannelActivity(
+      new Map([["ch_general", "sess_1"]]),
+      [
+        {
+          sessionId: "sess_1",
+          lastActivityAt: "2026-01-01T00:05:00.000Z",
+          preview: "See you at the standup",
+        },
+      ],
+      [],
+    );
+    expect(result).toEqual({
+      ch_general: {
+        unreadCount: 0,
+        lastActivityAt: "2026-01-01T00:05:00.000Z",
+        preview: "See you at the standup",
+      },
+    });
+  });
+
+  test("an attachment-only message with an empty preview omits the field rather than an empty string", () => {
+    const result = summarizeChannelActivity(
+      new Map([["ch_general", "sess_1"]]),
+      [
+        {
+          sessionId: "sess_1",
+          lastActivityAt: "2026-01-01T00:05:00.000Z",
+          preview: "",
+        },
+      ],
+      [],
+    );
+    expect(result).toEqual({
+      ch_general: { unreadCount: 0, lastActivityAt: "2026-01-01T00:05:00.000Z" },
+    });
+  });
+
   test("a channel with no messages yet reports unreadCount: 0 and no lastActivityAt", () => {
     const result = summarizeChannelActivity(
       new Map([["ch_new", "sess_1"]]),

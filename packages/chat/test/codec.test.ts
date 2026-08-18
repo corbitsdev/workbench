@@ -3,6 +3,7 @@ import {
   decodeMail,
   decodeParts,
   encodeParts,
+  extractTextPreview,
   senderOf,
   type FetchBlob,
   type MailContent,
@@ -375,6 +376,52 @@ describe("senderOf", () => {
       attachments: [],
     };
     expect(() => senderOf(mail)).toThrow(/no envelope "from"/);
+  });
+});
+
+describe("extractTextPreview", () => {
+  test("returns a short message's text verbatim", () => {
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "See you at the standup" } },
+      attachments: [],
+    };
+    expect(extractTextPreview(mail)).toBe("See you at the standup");
+  });
+
+  test("truncates past 80 characters with an ellipsis", () => {
+    const long = "a".repeat(120);
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: long } },
+      attachments: [],
+    };
+    const preview = extractTextPreview(mail);
+    expect(preview).toBe(`${"a".repeat(80)}…`);
+  });
+
+  test("collapses internal whitespace", () => {
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "line one\n\nline two" } },
+      attachments: [],
+    };
+    expect(extractTextPreview(mail)).toBe("line one line two");
+  });
+
+  test("an attachment-only message previews as empty, never a fabricated placeholder", () => {
+    const mail: MailReadContent = {
+      textBody: [],
+      bodyValues: {},
+      attachments: [
+        { blobId: "blob_1", name: "report.pdf", type: "application/pdf", size: 1024 },
+      ],
+    };
+    expect(extractTextPreview(mail)).toBe("");
+  });
+
+  test("a mail shape this cannot parse previews as empty rather than throwing", () => {
+    expect(extractTextPreview({ not: "mail" })).toBe("");
   });
 });
 

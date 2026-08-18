@@ -10,7 +10,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
-import type { MailContent } from "../src/codec";
+import { extractTextPreview, type MailContent } from "../src/codec";
 
 export const TENANT = {
   id: "tnt_1",
@@ -185,7 +185,7 @@ export function fakePlatform(
     async listChannelActivity(input) {
       const result: Record<
         string,
-        { lastActivityAt?: string; unreadCount: number }
+        { lastActivityAt?: string; unreadCount: number; preview?: string }
       > = {};
       for (const channel of input.channels) {
         const items = mailByChannel.get(channel.channelId) ?? [];
@@ -193,16 +193,22 @@ export function fakePlatform(
           result[channel.channelId] = { unreadCount: 0 };
           continue;
         }
-        const lastActivityAt = items[items.length - 1]?.createdAt;
+        const latest = items[items.length - 1];
+        const lastActivityAt = latest?.createdAt;
         const unreadCount = items.filter(
           (item) =>
             channel.sinceCreatedAt === undefined ||
             item.createdAt > channel.sinceCreatedAt,
         ).length;
+        if (lastActivityAt === undefined || latest === undefined) {
+          result[channel.channelId] = { unreadCount };
+          continue;
+        }
+        const preview = extractTextPreview(latest.mail);
         result[channel.channelId] =
-          lastActivityAt === undefined
-            ? { unreadCount }
-            : { unreadCount, lastActivityAt };
+          preview.length === 0
+            ? { unreadCount, lastActivityAt }
+            : { unreadCount, lastActivityAt, preview };
       }
       return result;
     },

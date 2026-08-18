@@ -1105,6 +1105,25 @@ describe("GET /channels", () => {
     expect(bobRow?.live).toBe(true);
   });
 
+  test("carries a bounded text preview of the newest message", async () => {
+    const deps = buildDeps();
+    const app = createChatRoutes(deps);
+    const appAlice = mountAs(app, "prn_alice");
+    const appBob = mountAs(app, "prn_bob");
+    const { body: channel } = await createChannel(appAlice, {
+      kind: "channel",
+      name: "General",
+    });
+
+    await sendText(appAlice, channel.id, "See you at the standup");
+
+    const bobList = (await (
+      await appBob.request("/channels?kind=channel")
+    ).json()) as { items: { id: string; preview?: string }[] };
+    const bobRow = bobList.items.find((item) => item.id === channel.id);
+    expect(bobRow?.preview).toBe("See you at the standup");
+  });
+
   test("the unread badge clears once the caller's read cursor catches up", async () => {
     const deps = buildDeps();
     const app = createChatRoutes(deps);
