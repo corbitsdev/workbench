@@ -771,9 +771,24 @@
   color: var(--foreground);
 }
 
-.chat-workbench-loading-stage {
+.chat-workbench-loading-tip {
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-workbench-loading-tip {
+    animation: chat-workbench-loading-tip-fade 0.4s ease;
+  }
+}
+
+@keyframes chat-workbench-loading-tip-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .chat-timeline-empty {

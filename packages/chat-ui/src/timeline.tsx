@@ -1342,6 +1342,31 @@ function ThreadAffordance({
   );
 }
 
+const WORKBENCH_LOADING_TIP_INTERVAL_MS = 4000;
+
+/** A small, honest product tip under the loading headline — rotates on a
+ * timer regardless of motion preference; the fade between tips is the
+ * only thing `prefers-reduced-motion` turns off (the CSS keyframe is
+ * scoped to `no-preference`, so a reduced-motion reader still sees each
+ * tip in turn, just without the crossfade). */
+function WorkbenchLoadingTip() {
+  const tips = CHAT_STRINGS.workbenchLoadingTips;
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setIndex((current) => (current + 1) % tips.length);
+    }, WORKBENCH_LOADING_TIP_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [tips.length]);
+
+  return (
+    <span key={index} className="chat-workbench-loading-tip" aria-live="polite">
+      {tips[index]}
+    </span>
+  );
+}
+
 /** A workbench's scroll position, captured/restored across a
  * `WorkbenchTimeline` unmount-remount (e.g. opening/closing Settings) — see
  * `WorkbenchTimeline`'s `scrollRestore`/`onScrollSnapshot`. */
@@ -1496,13 +1521,12 @@ export function WorkbenchTimeline({
   }, []);
 
   if (items.length === 0) {
-    // A freshly minted agent chat answers before its launches finish
-    // (async mint): the agent participant streams in seconds later. An
-    // empty agent chat is therefore SETTING UP, never "say something" —
-    // that copy invites racing the greeting.
-    const agentJoined = participants.some((participant) =>
-      isAgentAddress(participant.address),
-    );
+    // A freshly created agent chat answers before it finishes setting up
+    // in the background: the agent participant streams in seconds later.
+    // An empty agent chat is therefore SETTING UP, never "say something" —
+    // that copy invites racing the greeting. Which internal stage that is
+    // never reaches the reader — one honest headline for every wait, with
+    // a rotating tip so the pause feels useful rather than dead.
     if (settingUpAgent === true) {
       return (
         <div className="chat-timeline-empty">
@@ -1515,11 +1539,7 @@ export function WorkbenchTimeline({
             <span className="chat-workbench-loading-title">
               {CHAT_STRINGS.workbenchLoadingTitle}
             </span>
-            <span className="chat-workbench-loading-stage">
-              {agentJoined
-                ? CHAT_STRINGS.workbenchLoadingAgentJoined
-                : CHAT_STRINGS.workbenchLoadingStarting}
-            </span>
+            <WorkbenchLoadingTip />
           </div>
         </div>
       );

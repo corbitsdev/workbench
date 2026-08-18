@@ -42,9 +42,16 @@ export const CHAT_STRINGS = {
   composerDictateStop: "Stop dictating",
   filePartLabel: "Attachment",
   emptyTimelineTitle: "No messages yet",
-  workbenchLoadingTitle: "Setting up your workbench",
-  workbenchLoadingStarting: "Starting the runtime\u2026",
-  workbenchLoadingAgentJoined: "Myra is joining\u2026",
+  // One honest headline for every waiting state \u2014 the reader never needs
+  // to know which internal stage this is; that distinction stays in logs,
+  // never in front of them.
+  workbenchLoadingTitle: "Loading your workbench\u2026",
+  workbenchLoadingTips: [
+    "Tip: @mention an agent to bring them into the conversation",
+    "Tip: every message can become a thread",
+    "Tip: routines run work for you on a schedule",
+    "Tip: press / for commands",
+  ],
   emptyTimelineDescription: "Say something to get the conversation going.",
   mentionEmpty: "No matches",
   mentionAgentsGroupLabel: "Agents",
