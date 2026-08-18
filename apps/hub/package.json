@@ -34,6 +34,7 @@
     "@corbits/config-profiles": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
+    "@corbits/run-key-history": "workspace:*",
     "@corbits/sidecar-placement": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",

@@ -52,6 +52,7 @@ import {
   applyTasksMigrations,
   listTaskFoldedRunIds,
 } from "../packages/tasks/src/migrations";
+import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -87,6 +88,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
   { name: "@corbits/tasks", apply: applyTasksMigrations },
+  { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
 ];
 
 /**

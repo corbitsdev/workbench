@@ -156,6 +156,10 @@ import {
   launchTaskLeg,
 } from "@corbits/tasks";
 import {
+  createDrizzleRunKeyHistoryStore,
+  createRunKeyHistoryListener,
+} from "@corbits/run-key-history";
+import {
   createMyraAgentDefinitionDrafting,
   createPlannerRoutes,
   createWorkflowDispatchRoutes,
@@ -568,6 +572,18 @@ export async function createHub(config: HubConfig) {
     db,
     eventCollectors,
     agentRepoStore,
+  });
+  // A second, independent listener on the same `agent.deploy.ack` event
+  // `createHubSessionOrchestrator` already reacts to above: that vendor
+  // listener owns `workflow_run.public_key`'s live value, this one
+  // maintains a decoupled append-only history so a historical signature
+  // stays re-provable after a key rotation. It never reads
+  // `workflow_run` — only its own last-recorded entry per address — so
+  // it cannot race vendor's independent write to that row on the same
+  // event.
+  createRunKeyHistoryListener({
+    events: sidecarRouter.events,
+    store: createDrizzleRunKeyHistoryStore(db),
   });
   // CL-6225: the launch path re-reads every tool-package tarball and
   // rebuilds a full git pack of every attached asset on every agent
