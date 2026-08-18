@@ -181,3 +181,85 @@ describe("failed pending message's inline recovery affordance", () => {
     ).toBe("Not sent");
   });
 });
+
+// CL-6252 #6: the reply backstop's synthetic event item renders through
+// the same event-line path every other system line uses, with an honest
+// message rather than the strip just silently vanishing.
+describe("the reply-timed-out notice renders as an event line", () => {
+  test("shows the honest 'no reply arrived' copy", async () => {
+    const items: MessageItem[] = [
+      {
+        id: "notice_1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "event", event: "chat.reply-timed-out", data: {} }],
+        sender: { name: null, address: "" },
+      },
+    ];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(<ChannelTimeline items={items} />);
+    });
+
+    expect(container.querySelector(".chat-event-line")?.textContent).toContain(
+      "No reply arrived — the agent may be unavailable.",
+    );
+  });
+});
+
+// CL-6252 #5: `initialsOf("You")` reads as "YO" — a fabricated pair with no
+// relationship to the signed-in person. The own-message avatar now derives
+// its initials from `currentUser.name`/`handle`, falling back to "•" (never
+// "YO") when neither is known, while the "You" label itself is untouched.
+describe("own-message avatar initials never fabricate 'YO'", () => {
+  function ownItem(): MessageItem[] {
+    return [
+      {
+        id: "m1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: null, address: "prn_self1@agents.example" },
+      },
+    ];
+  }
+
+  async function mountOwn(currentUser: {
+    principalId: string;
+    name?: string;
+    handle?: string;
+  }) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <ChannelTimeline items={ownItem()} currentUser={currentUser} />,
+      );
+    });
+    return container;
+  }
+
+  test("a name on currentUser drives real initials, not the 'You' label", async () => {
+    const el = await mountOwn({ principalId: "prn_self1", name: "Sawyer Cutler" });
+    expect(el.querySelector(".chat-sender-avatar")?.textContent).toBe("SC");
+    expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe(
+      "Sawyer Cutler",
+    );
+  });
+
+  test("no name but a handle falls back to that handle's first letter", async () => {
+    const el = await mountOwn({
+      principalId: "prn_self1",
+      handle: "sawyer@example.com",
+    });
+    expect(el.querySelector(".chat-sender-avatar")?.textContent).toBe("S");
+    expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe("You");
+  });
+
+  test("no name and no handle falls back to the honest unknown glyph, never 'YO'", async () => {
+    const el = await mountOwn({ principalId: "prn_self1" });
+    expect(el.querySelector(".chat-sender-avatar")?.textContent).toBe("•");
+    expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe("You");
+  });
+});

@@ -11,11 +11,14 @@ import { createRoot } from "react-dom/client";
 import { useStreamingReply } from "../src/streaming-reply";
 import type { StreamingReplyState } from "../src/streaming-reply";
 
-function mount(initialChannelId: string | null) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function mount(initialChannelId: string | null, clearMs?: number) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   let latestState: StreamingReplyState = null;
+  let latestTimedOut = false;
   let send: (eventType: string, data: unknown) => void = () => {};
   let setChannelId: (id: string | null) => void = () => {};
   let awaitReply: () => void = () => {};
@@ -23,9 +26,10 @@ function mount(initialChannelId: string | null) {
   function Host() {
     const [channelId, updateChannelId] = useState(initialChannelId);
     setChannelId = updateChannelId;
-    const { streamingReply, handleStreamEvent, noteAwaitingReply } =
-      useStreamingReply(channelId);
+    const { streamingReply, replyTimedOut, handleStreamEvent, noteAwaitingReply } =
+      useStreamingReply(channelId, clearMs);
     latestState = streamingReply;
+    latestTimedOut = replyTimedOut;
     send = handleStreamEvent;
     awaitReply = noteAwaitingReply;
     return null;
@@ -48,7 +52,9 @@ function mount(initialChannelId: string | null) {
       act(() => {
         awaitReply();
       }),
+    settle: (ms: number) => act(() => sleep(ms)),
     get: () => latestState,
+    timedOut: () => latestTimedOut,
     unmount: () => act(() => root.unmount()),
   };
 }
@@ -121,6 +127,53 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
     harness.send("chat.agent", delta("Hello"));
     harness.send("chat.typing", { principalId: "prn_other" });
     expect(harness.get()).toEqual({ text: "Hello" });
+    harness.unmount();
+  });
+});
+
+describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
+  test("a pending reply with no tokens for the whole clearMs marks replyTimedOut", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.timedOut()).toBe(false);
+
+    await harness.settle(60);
+    expect(harness.get()).toBeNull();
+    expect(harness.timedOut()).toBe(true);
+    harness.unmount();
+  });
+
+  test("a token arriving before the backstop never marks it timed out", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    harness.send("chat.agent", delta("Hi"));
+
+    await harness.settle(60);
+    expect(harness.get()).toEqual({ text: "Hi" });
+    expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+
+  test("switching channels clears a stale timed-out flag from the one just left", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    await harness.settle(60);
+    expect(harness.timedOut()).toBe(true);
+
+    harness.switchChannel("chan_b");
+    expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+
+  test("noteAwaitingReply for a fresh turn clears a leftover timed-out flag", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    await harness.settle(60);
+    expect(harness.timedOut()).toBe(true);
+
+    harness.awaitReply();
+    expect(harness.timedOut()).toBe(false);
     harness.unmount();
   });
 });

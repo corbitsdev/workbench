@@ -7,12 +7,14 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  appendReplyTimedOutNotice,
   canInviteAgent,
   composerPlaceholderFor,
   mergePendingSends,
   mergeStreamingReply,
   nextMessagesState,
   resolveMessageFeedTarget,
+  withScrollSnapshot,
 } from "../src/chat-workspace";
 import type { MessagesState, PendingSend } from "../src/chat-workspace";
 import {
@@ -426,6 +428,64 @@ describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
         rootThreadId: null,
       }),
     ).toEqual({ kind: "channel-mail" });
+  });
+});
+
+describe("appendReplyTimedOutNotice (CL-6252 #6: an honest note when the reply backstop fires)", () => {
+  const serverItems = [
+    {
+      id: "m1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [{ kind: "text" as const, text: "hello" }],
+      sender: { name: null, address: "prn_alice@acme.example" },
+    },
+  ];
+
+  test("not timed out leaves the timeline untouched", () => {
+    expect(appendReplyTimedOutNotice(serverItems, false)).toBe(serverItems);
+  });
+
+  test("timed out appends an event-kind notice item", () => {
+    const withNotice = appendReplyTimedOutNotice(serverItems, true);
+    expect(withNotice).toHaveLength(2);
+    expect(withNotice[1]?.parts).toEqual([
+      { kind: "event", event: "chat.reply-timed-out", data: {} },
+    ]);
+  });
+});
+
+describe("withScrollSnapshot (CL-6252 #3: settings toggle preserves scroll position)", () => {
+  test("records a new channel's snapshot without disturbing another channel's", () => {
+    const withA = withScrollSnapshot(new Map(), "ch_a", {
+      scrollTop: 120,
+      pinned: false,
+    });
+    const withBoth = withScrollSnapshot(withA, "ch_b", {
+      scrollTop: 0,
+      pinned: true,
+    });
+
+    expect(withBoth.get("ch_a")).toEqual({ scrollTop: 120, pinned: false });
+    expect(withBoth.get("ch_b")).toEqual({ scrollTop: 0, pinned: true });
+  });
+
+  test("overwrites a channel's previous snapshot rather than keeping the stale one", () => {
+    const first = withScrollSnapshot(new Map(), "ch_a", {
+      scrollTop: 50,
+      pinned: false,
+    });
+    const second = withScrollSnapshot(first, "ch_a", {
+      scrollTop: 300,
+      pinned: true,
+    });
+
+    expect(second.get("ch_a")).toEqual({ scrollTop: 300, pinned: true });
+  });
+
+  test("never mutates the map it was given", () => {
+    const original = new Map();
+    withScrollSnapshot(original, "ch_a", { scrollTop: 10, pinned: false });
+    expect(original.size).toBe(0);
   });
 });
 

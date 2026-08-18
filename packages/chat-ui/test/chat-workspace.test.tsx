@@ -114,14 +114,20 @@ if (textareaValueSetter === undefined) {
 }
 const setTextareaValue = textareaValueSetter;
 
-function mount(props: Parameters<typeof ChatWorkspace>[0]) {
+// `root.render` only starts the query client's fetches; their promises
+// settle on later microtasks that a synchronous `act(() => {...})` never
+// waits for, so the state updates those fetches drive would otherwise land
+// outside any `act` call. Awaiting an async `act` here flushes that
+// microtask queue before `mount` (and every `test(...)` that awaits it)
+// hands control back to the caller.
+async function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
-  act(() => {
+  await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
@@ -135,7 +141,7 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
     settle: () => act(() => sleep(30)),
     unmount: () => root.unmount(),
     rerender: (nextProps: Parameters<typeof ChatWorkspace>[0]) =>
-      act(() => {
+      act(async () => {
         root.render(
           createElement(
             QueryClientProvider,
@@ -150,7 +156,7 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
 describe("ChatWorkspace settings surface", () => {
   test("a direct /c/:id/settings URL renders the settings surface once channels resolve", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: true,
@@ -167,7 +173,7 @@ describe("ChatWorkspace settings surface", () => {
   test("settingsOpen for a channel id absent from the resolved list falls back to the ordinary chat view and corrects the URL", async () => {
     stubFetch();
     const settingsOpenChanges: boolean[] = [];
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_missing",
       settingsOpen: true,
@@ -185,7 +191,7 @@ describe("ChatWorkspace settings surface", () => {
 
   test("a controlled settingsSection renders that tab active, not General", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: true,
@@ -203,7 +209,7 @@ describe("ChatWorkspace settings surface", () => {
   test("clicking a different tab reports the new section, not just local UI state", async () => {
     stubFetch();
     const sectionChanges: string[] = [];
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: true,
@@ -229,7 +235,7 @@ describe("ChatWorkspace settings surface", () => {
   test("the gear button opens settings on the General section", async () => {
     stubFetch();
     const opens: (string | undefined)[] = [];
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: false,
@@ -252,7 +258,7 @@ describe("ChatWorkspace settings surface", () => {
 describe("connection state is never rendered as chrome", () => {
   test("a dropped stream shows no reconnecting banner or status text", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -271,7 +277,7 @@ describe("connection state is never rendered as chrome", () => {
   test("sending a message succeeds over HTTP while the stream is down", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -427,7 +433,7 @@ function stubThreadedFetch() {
 describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
   test("opening a depth-1 thread shows a two-segment breadcrumb: channel / thread", async () => {
     stubThreadedFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -454,7 +460,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
   test("an opened thread shows the message it hangs off above its replies", async () => {
     stubThreadedFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -481,7 +487,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
   test("forking a message inside a thread opens a sub-thread with a three-segment breadcrumb and an origin banner", async () => {
     stubThreadedFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -528,7 +534,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
   test("the threads menu indents sub-threads under their depth-1 parent", async () => {
     stubThreadedFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -587,7 +593,7 @@ function typeInComposer(container: HTMLElement, text: string) {
 describe("composer slash commands — each wired command's real action", () => {
   test("/invite opens the invite-agent dialog", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -606,7 +612,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const settingsOpenChanges: boolean[] = [];
     const sectionsOpened: (string | undefined)[] = [];
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: false,
@@ -629,7 +635,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/run calls the host's routine create/run hop", async () => {
     stubFetch();
     let opened = 0;
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onOpenRoutines: () => {
@@ -650,7 +656,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/routine opens the New Routine panel pre-bound to the active channel", async () => {
     stubFetch();
     const opened: string[] = [];
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onCreateRoutineInSpace: (channelId: string) => {
@@ -670,7 +676,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("/routine with no host-supplied hop wired falls back to the same unavailable toast /run uses", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -687,7 +693,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("the header's Routines button calls onOpenRoutines, not the per-space create hop", async () => {
     stubFetch();
     let opened = 0;
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onOpenRoutines: () => {
@@ -714,7 +720,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("the header's Routines button is hidden when onOpenRoutines is not wired", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -729,7 +735,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("the 'New routine' header button is hidden when the host has not wired the hop", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -745,7 +751,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("'Insights' header button calls the host's onOpenInsights hop", async () => {
     stubFetch();
     let opened = 0;
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onOpenInsights: () => {
@@ -769,7 +775,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("the 'Insights' header button is hidden when the host has not wired the hop", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -785,7 +791,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/summarize addresses the channel's actual first agent participant and sends", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages, CHANNEL_WITH_AGENT_WIRE);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -805,7 +811,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/summarize with no agent in the channel never sends a mention it can't back", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages, CHANNEL_WIRE);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -822,7 +828,7 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/help shows an ephemeral hint listing commands and never sends a message", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -840,7 +846,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("/thread, /status, and /pin never appear in the popover — no real action behind them today", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -866,7 +872,7 @@ describe("composer slash commands — each wired command's real action", () => {
 
   test("an unmatched command's popover offers no items, and typing / at a channel with no agent still opens it", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -942,7 +948,7 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
 
   test("a 404 on the channel's remembered root thread falls back to the channel's live feed", async () => {
     stubFetchWithStaleThread("recovered after a stale thread 404");
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1010,7 +1016,7 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
     stubFetchWithMissingChannel();
     const notFoundIds: string[] = [];
     let backToSpacesClicks = 0;
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onChannelNotFound: (channelId: string) => notFoundIds.push(channelId),
@@ -1087,7 +1093,7 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
   test("renders Sign in (not Try again) and calls onSignIn on click", async () => {
     stubFetchWithUnauthorizedMessages();
     let signInClicks = 0;
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onSignIn: () => {
@@ -1152,7 +1158,7 @@ describe("chat error copy never leaks a raw API path", () => {
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
 
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1229,7 +1235,7 @@ describe("optimistic send (CL-6103)", () => {
 
   test("the send button is muted while empty and turns primary once there's a draft", async () => {
     stubFetchWithSendOutcome(() => false);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       currentUser: { principalId: "prn_alice" },
@@ -1253,7 +1259,7 @@ describe("optimistic send (CL-6103)", () => {
 
   test("submitting shows a pending bubble synchronously, clears the composer, and drops it on success", async () => {
     stubFetchWithSendOutcome(() => false);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       currentUser: { principalId: "prn_alice" },
@@ -1288,7 +1294,7 @@ describe("optimistic send (CL-6103)", () => {
   test("a failed send shows the error inline on the bubble itself, with working Retry and Discard", async () => {
     let fail = true;
     stubFetchWithSendOutcome(() => fail);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       currentUser: { principalId: "prn_alice" },
@@ -1327,7 +1333,7 @@ describe("optimistic send (CL-6103)", () => {
 
   test("Discard removes the failed pending bubble and returns its text to the composer", async () => {
     stubFetchWithSendOutcome(() => true);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       currentUser: { principalId: "prn_alice" },
@@ -1453,7 +1459,7 @@ describe("loadMessages request ordering (CL-6251)", () => {
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
 
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       currentUser: { principalId: "prn_alice" },
@@ -1494,7 +1500,7 @@ describe("loadMessages request ordering (CL-6251)", () => {
 describe("Channel header polish (CL-6106)", () => {
   test("the threads dropdown is hidden entirely when the channel has no threads yet", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1506,7 +1512,7 @@ describe("Channel header polish (CL-6106)", () => {
 
   test("the threads dropdown appears once the channel has a thread", async () => {
     stubThreadedFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1522,7 +1528,7 @@ describe("Channel header polish (CL-6106)", () => {
 
   test("agent participant chips share the roster's circular avatar, keeping the handle as a hover tooltip", async () => {
     stubFetch(undefined, CHANNEL_WITH_AGENT_WIRE);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1539,7 +1545,7 @@ describe("Channel header polish (CL-6106)", () => {
 
   test("the Routines and Insights header buttons render as quiet ghost buttons, not outlined controls", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       onOpenRoutines: () => {},
@@ -1560,7 +1566,7 @@ describe("Channel header polish (CL-6106)", () => {
 
   test("the settings control is icon-only, at the far right, with a tooltip", async () => {
     stubFetch();
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
     });
@@ -1681,7 +1687,7 @@ describe("switching channels never carries a stale root-thread id across", () =>
   test("switching to another channel loads that channel's own thread, not the previous one's", async () => {
     const wrongRequests: string[] = [];
     stubFetchTwoChannels(wrongRequests);
-    const harness = mount({
+    const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_a",
     });
@@ -1689,7 +1695,7 @@ describe("switching channels never carries a stale root-thread id across", () =>
     await harness.settle();
     expect(harness.container.textContent).toContain("A message");
 
-    harness.rerender({
+    await harness.rerender({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_b",
     });

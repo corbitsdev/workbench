@@ -178,6 +178,46 @@ describe("reactions still render as chips regardless of the hover toolbar", () =
   });
 });
 
+describe("the reaction picker", () => {
+  test("a pointerdown outside the open picker closes it", async () => {
+    const el = await mount({
+      items: textMessage(),
+      reactionActions: { onToggle: () => undefined },
+    });
+
+    const trigger = el.querySelector(".chat-reaction-add") as HTMLButtonElement;
+    await act(async () => trigger.click());
+    expect(el.querySelector(".chat-reaction-picker")).not.toBeNull();
+
+    await act(async () => {
+      document.body.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+    });
+
+    expect(el.querySelector(".chat-reaction-picker")).toBeNull();
+  });
+
+  test("a pointerdown on the picker itself never closes it", async () => {
+    const el = await mount({
+      items: textMessage(),
+      reactionActions: { onToggle: () => undefined },
+    });
+
+    const trigger = el.querySelector(".chat-reaction-add") as HTMLButtonElement;
+    await act(async () => trigger.click());
+
+    const option = el.querySelector(
+      ".chat-reaction-picker-option",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      option.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+
+    expect(el.querySelector(".chat-reaction-picker")).not.toBeNull();
+  });
+});
+
 describe("the ellipsis menu", () => {
   test("opens with Reply in thread and Copy text, and clicking Reply in thread calls onOpenThread", async () => {
     const opened: string[] = [];

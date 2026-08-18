@@ -9,3 +9,13 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
+
+// React's `act(...)` warns unless the environment explicitly opts in — see
+// `@corbits/command-palette`'s `test/dom-setup.ts` for the same flag. Every
+// suite here that mounts a component (rather than calling
+// `renderToStaticMarkup`) already wraps its state-driving calls in `act(...)`;
+// this just tells React those wrappers are real.
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;

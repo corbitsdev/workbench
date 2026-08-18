@@ -11,7 +11,9 @@ import { createRoot } from "react-dom/client";
 
 import { useTurnActivity, TurnActivityStrip } from "../src/turn-activity";
 
-function mount(initialChannelId: string | null) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function mount(initialChannelId: string | null, staleMs?: number) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -21,7 +23,10 @@ function mount(initialChannelId: string | null) {
   function Host() {
     const [channelId, updateChannelId] = useState(initialChannelId);
     setChannelId = updateChannelId;
-    const { activity, handleStreamEvent } = useTurnActivity(channelId);
+    const { activity, handleStreamEvent } = useTurnActivity(
+      channelId,
+      staleMs,
+    );
     send = handleStreamEvent;
     return createElement(TurnActivityStrip, { activity });
   }
@@ -39,6 +44,7 @@ function mount(initialChannelId: string | null) {
       act(() => {
         setChannelId(id);
       }),
+    settle: (ms: number) => act(() => sleep(ms)),
     container,
     unmount: () => act(() => root.unmount()),
   };
@@ -139,6 +145,43 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     ).not.toBeNull();
 
     harness.switchChannel("chan_b");
+    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    harness.unmount();
+  });
+
+  test("a stale turn with no terminal event clears itself after the backstop", async () => {
+    const harness = mount("chan_a", 30);
+    harness.send("chat.agent", {
+      type: "tool.start",
+      seq: 1,
+      data: { call: { id: "c1", name: "search", arguments: {} } },
+    });
+    expect(harness.container.querySelector(".chat-turn-activity")).not.toBeNull();
+
+    // No `tool.done`/`reactor.done` ever arrives — a dropped SSE mid-turn.
+    await harness.settle(60);
+    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    harness.unmount();
+  });
+
+  test("a fresh event re-arms the backstop instead of clearing on its own clock", async () => {
+    const harness = mount("chan_a", 30);
+    harness.send("chat.agent", {
+      type: "tool.start",
+      seq: 1,
+      data: { call: { id: "c1", name: "search", arguments: {} } },
+    });
+
+    await harness.settle(20);
+    harness.send("chat.agent", {
+      type: "inference.tool_call.start",
+      seq: 2,
+      data: { callId: "c2", name: "web_search" },
+    });
+    await harness.settle(20);
+    expect(harness.container.querySelector(".chat-turn-activity")).not.toBeNull();
+
+    await harness.settle(30);
     expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
     harness.unmount();
   });
