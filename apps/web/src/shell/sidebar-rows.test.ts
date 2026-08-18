@@ -1,12 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
+import type { Workbench } from "@corbits/chat-ui";
 
-import {
-  buildSidebarRows,
-  identityColorClass,
-  unopenedAgentRows,
-} from "./sidebar-rows";
+import { buildSidebarRows } from "./sidebar-rows";
 
 function workbench(overrides: Partial<Workbench> = {}): Workbench {
   return {
@@ -19,44 +15,8 @@ function workbench(overrides: Partial<Workbench> = {}): Workbench {
   } as Workbench;
 }
 
-function agent(
-  overrides: Partial<VisibleAgentDefinition> = {},
-): VisibleAgentDefinition {
-  return {
-    id: "wfd_outreach",
-    name: "Outreach",
-    tenantId: "tnt_root",
-    tenantName: "Acme",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-describe("unopenedAgentRows", () => {
-  test("an agent with no existing chat gets a synthetic row", () => {
-    const rows = unopenedAgentRows([], [agent()]);
-    expect(rows).toEqual([{ kind: "agent", agent: agent() }]);
-  });
-
-  test("an agent already opened as a chat is never duplicated", () => {
-    const chats = [
-      workbench({ id: "ch_dm", kind: "chat", definitionId: "wfd_outreach" }),
-    ];
-    const rows = unopenedAgentRows(chats, [agent()]);
-    expect(rows).toEqual([]);
-  });
-
-  test("a chat with a different definitionId doesn't suppress an unrelated agent", () => {
-    const chats = [
-      workbench({ id: "ch_dm", kind: "chat", definitionId: "wfd_other" }),
-    ];
-    const rows = unopenedAgentRows(chats, [agent()]);
-    expect(rows).toEqual([{ kind: "agent", agent: agent() }]);
-  });
-});
-
 describe("buildSidebarRows", () => {
-  test("mixes bench and agent rows into one recency-sorted stream", () => {
+  test("mixes workbenches and conversational DMs into one recency-sorted stream", () => {
     const older = workbench({
       id: "ch_old",
       lastActivityAt: "2026-01-01T00:00:00.000Z",
@@ -66,18 +26,22 @@ describe("buildSidebarRows", () => {
       kind: "chat",
       lastActivityAt: "2026-01-03T00:00:00.000Z",
     });
-    const midAgent = agent({
-      id: "wfd_mid",
-      createdAt: "2026-01-02T00:00:00.000Z",
+
+    const rows = buildSidebarRows([older], [newer]);
+
+    expect(rows.map((row) => row.workbench.id)).toEqual(["ch_new", "ch_old"]);
+    expect(rows.every((row) => row.kind === "workbench")).toBe(true);
+  });
+
+  test("never synthesizes a row for an agent that has not been opened as a DM", () => {
+    const older = workbench({
+      id: "ch_old",
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const rows = buildSidebarRows([older], [newer], [midAgent]);
+    const rows = buildSidebarRows([older], []);
 
-    expect(
-      rows.map((row) =>
-        row.kind === "workbench" ? row.workbench.id : row.agent.id,
-      ),
-    ).toEqual(["ch_new", "wfd_mid", "ch_old"]);
+    expect(rows).toEqual([{ kind: "workbench", workbench: older }]);
   });
 
   test("pinned workbench rows float above every unpinned row regardless of recency", () => {
@@ -86,14 +50,15 @@ describe("buildSidebarRows", () => {
       pinned: true,
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
-    const freshAgent = agent({
-      id: "wfd_fresh",
-      createdAt: "2026-01-05T00:00:00.000Z",
+    const recent = workbench({
+      id: "ch_recent",
+      lastActivityAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const rows = buildSidebarRows([pinned], [], [freshAgent]);
+    const rows = buildSidebarRows([pinned, recent], []);
 
     expect(rows[0]).toEqual({ kind: "workbench", workbench: pinned });
+    expect(rows[1]).toEqual({ kind: "workbench", workbench: recent });
   });
 
   test("an agent already opened as a DM appears once, as its workbench row", () => {
@@ -104,7 +69,7 @@ describe("buildSidebarRows", () => {
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const rows = buildSidebarRows([], [dm], [agent()]);
+    const rows = buildSidebarRows([], [dm]);
 
     expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
@@ -125,7 +90,7 @@ describe("buildSidebarRows", () => {
       lastActivityAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const rows = buildSidebarRows([], [staleDm, freshDm], []);
+    const rows = buildSidebarRows([], [staleDm, freshDm]);
 
     expect(rows).toEqual([{ kind: "workbench", workbench: freshDm }]);
   });
@@ -134,34 +99,11 @@ describe("buildSidebarRows", () => {
     const groupOne = workbench({ id: "ch_group_1", title: "Launch plan" });
     const groupTwo = workbench({ id: "ch_group_2", title: "Launch plan" });
 
-    const rows = buildSidebarRows([], [groupOne, groupTwo], []);
+    const rows = buildSidebarRows([], [groupOne, groupTwo]);
 
-    expect(
-      rows.map((row) => (row.kind === "workbench" ? row.workbench.id : null)),
-    ).toEqual(["ch_group_1", "ch_group_2"]);
-  });
-});
-
-describe("identityColorClass", () => {
-  test("is deterministic for the same name", () => {
-    expect(identityColorClass("Outreach")).toBe(identityColorClass("Outreach"));
-  });
-
-  test("returns one of the five brand-compatible buckets", () => {
-    const classes = ["Outreach", "Researcher", "Myra", "Echo", "Assist"].map(
-      identityColorClass,
-    );
-    for (const cls of classes) {
-      expect(cls).toMatch(/^shell-agent-color-[0-4]$/);
-    }
-  });
-
-  test("different names can land in different buckets", () => {
-    const classes = new Set(
-      ["Outreach", "Researcher", "Myra", "Echo", "Assist"].map(
-        identityColorClass,
-      ),
-    );
-    expect(classes.size).toBeGreaterThan(1);
+    expect(rows.map((row) => row.workbench.id)).toEqual([
+      "ch_group_1",
+      "ch_group_2",
+    ]);
   });
 });

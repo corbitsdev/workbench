@@ -1,7 +1,7 @@
 // The one sidebar: create + search in the header, the workbench list as
-// the entire body, and the activity band + switcher + utility row in a
-// fixed footer region. It never renders a page-nav list and it has no
-// collapse affordance.
+// the entire body, and the utility row in a fixed footer region. It never
+// renders a page-nav list, an approvals/activity band, or a collapse
+// affordance.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -52,13 +52,11 @@ function json(body: unknown): Response {
   });
 }
 
-function stubFetch(needsYou: unknown = { items: [] }): void {
+function stubFetch(): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/approvals/needs-you"))
-      return Promise.resolve(json(needsYou));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
@@ -214,10 +212,8 @@ describe("Sidebar", () => {
     });
   });
 
-  // CL-6253: agents-as-contacts — every visible agent definition (own +
-  // inherited) renders as a sidebar row alongside benches, in the same
-  // recency-sorted stream, mixed in via `buildSidebarRows`
-  // (`./shell/sidebar-rows.ts`).
+  // Sidebar = workbenches + conversational DMs only. Visible agent
+  // definitions that have never been opened do not get a synthetic row.
   describe("agent DM rows", () => {
     const workbench = {
       id: "ch_1",
@@ -242,23 +238,9 @@ describe("Sidebar", () => {
       createdAt: "2026-01-02T00:00:00.000Z",
     };
 
-    function stubAgentSidebar(
-      onPost?: (path: string, body: unknown) => void,
-    ): void {
+    function stubAgentSidebar(): void {
       globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
         const path = typeof input === "string" ? input : String(input);
-        if (init?.method === "POST" && path.includes("/chat/workbenches")) {
-          onPost?.(path, JSON.parse(String(init.body)));
-          return Promise.resolve(
-            json({
-              id: "ch_dm_outreach",
-              title: "Outreach",
-              kind: "chat",
-              pinned: false,
-              participants: [],
-            }),
-          );
-        }
         if (path.includes("/api/me/principals"))
           return Promise.resolve(json(membership));
         if (path.includes("/chat/workbenches?kind=workbench"))
@@ -304,141 +286,35 @@ describe("Sidebar", () => {
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 0));
         });
-        if (container.innerHTML.includes("data-ctx-agent")) break;
+        if (container.textContent?.includes("Research brief")) break;
       }
       return { container, root };
     }
 
-    test("renders an unopened agent alongside bench rows in one recency-sorted stream", async () => {
+    test("does not render a synthetic row for an unopened agent", async () => {
       stubAgentSidebar();
       const { container, root } = await mountSidebar();
 
-      const rows = [...container.querySelectorAll(".shell-ch-row")];
-      const labels = rows.map((row) => row.textContent ?? "");
-      // Own agent (created 2026-01-05) is newer than the workbench's own
-      // last activity (2026-01-01); the inherited agent (2026-01-02)
-      // sorts between them — one stream, not two sections.
-      expect(labels[0]).toContain("Outreach");
-      expect(labels[1]).toContain("Researcher");
-      expect(labels[2]).toContain("Research brief");
-
-      act(() => root.unmount());
-      container.remove();
-    });
-
-    test("an agent row carries a deterministic identity-color class on its avatar", async () => {
-      stubAgentSidebar();
-      const { container, root } = await mountSidebar();
-
-      const avatar = container.querySelector(
-        '[data-ctx-agent="wfd_outreach"] .shell-agent-avatar',
+      const labels = [...container.querySelectorAll(".shell-ch-row")].map(
+        (row) => row.textContent ?? "",
       );
-      expect(avatar).not.toBeNull();
-      expect(avatar?.className).toMatch(/\bshell-agent-color-[0-4]\b/);
-
-      act(() => root.unmount());
-      container.remove();
-    });
-
-    test("clicking an own-tenant agent row mints its DM and navigates to it", async () => {
-      const posted: { path: string; body: unknown }[] = [];
-      stubAgentSidebar((path, body) => posted.push({ path, body }));
-      const navigated: string[] = [];
-      const { container, root } = await mountSidebar((to) =>
-        navigated.push(to),
+      expect(labels.some((label) => label.includes("Research brief"))).toBe(
+        true,
       );
-
-      const row = container.querySelector<HTMLButtonElement>(
-        '[data-ctx-agent="wfd_outreach"] .shell-ch-row',
-      );
-      expect(row?.disabled).toBe(false);
-      await act(async () => {
-        row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-
-      expect(posted).toHaveLength(1);
-      expect(posted[0]?.path).toContain("/api/tenants/tnt_1/chat/workbenches");
-      expect(posted[0]?.body).toEqual({
-        kind: "chat",
-        definitionId: "wfd_outreach",
-        reuseExisting: true,
-      });
-      expect(navigated).toEqual(["/w/ch_dm_outreach"]);
-
-      act(() => root.unmount());
-      container.remove();
-    });
-
-    test("an inherited agent from a tenant the caller isn't a member of renders disabled with a join caption", async () => {
-      stubAgentSidebar();
-      const { container, root } = await mountSidebar();
-
-      const row = container.querySelector<HTMLButtonElement>(
-        '[data-ctx-agent="wfd_ancestor_agent"] .shell-ch-row',
-      );
-      expect(row?.disabled).toBe(true);
-      expect(
-        container.querySelector(
-          '[data-ctx-agent="wfd_ancestor_agent"] .shell-ch-preview',
-        )?.textContent,
-      ).toContain("Corbits HQ");
+      expect(labels.some((label) => label.includes("Outreach"))).toBe(false);
+      expect(labels.some((label) => label.includes("Researcher"))).toBe(false);
+      expect(container.querySelector("[data-ctx-agent]")).toBeNull();
 
       act(() => root.unmount());
       container.remove();
     });
   });
 
-  test("activity band slot sits between the scrollable body and the footer", async () => {
-    stubFetch({
-      items: [
-        {
-          id: "appr_1",
-          headline: "Write to Firecrawl",
-          agentName: "Myra",
-          benchName: "Corbits Bench",
-          arguments: {},
-        },
-      ],
-    });
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    await act(async () => {
-      root.render(
-        <TestQueryProvider>
-          <BenchProvider>
-            <Sidebar path="/w" user={user} onNavigate={noop} onSignOut={noop} />
-          </BenchProvider>
-        </TestQueryProvider>,
-      );
-    });
-    for (let i = 0; i < 40; i++) {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-      if (container.innerHTML.includes("panel-band-activity")) break;
-    }
-
-    const slot = container.querySelector(".panel-activity-slot");
-    const body = container.querySelector('[data-slot="sidebar-panel-body"]');
-    const footer = container.querySelector(
-      '[data-slot="sidebar-panel-footer"]',
-    );
-    expect(slot).not.toBeNull();
-    expect(slot?.querySelector(".panel-band-activity")).not.toBeNull();
-    expect(body?.contains(slot ?? document.body)).toBe(false);
-    const position = slot?.compareDocumentPosition(body ?? document.body);
-    const positionFooter = slot?.compareDocumentPosition(
-      footer ?? document.body,
-    );
-    expect((position ?? 0) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    expect(
-      (positionFooter ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    act(() => root.unmount());
-    container.remove();
+  test("does not render the activity or approvals band", () => {
+    const markup = renderSidebar("/w");
+    expect(markup).not.toContain("panel-activity-slot");
+    expect(markup).not.toContain("panel-band-activity");
+    expect(markup).not.toContain('aria-label="Activity"');
   });
 
   test("shows an honest empty state once no scope resolves", async () => {

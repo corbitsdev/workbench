@@ -446,23 +446,6 @@ select:disabled,
   display: none;
 }
 
-/* Fixed slot above the footer dock — the activity band sits here on every
-   page, outside the scrollable body, so it never shifts with page-specific
-   content length. Renders no border when the band hides itself (empty). */
-.panel-activity-slot {
-  flex-shrink: 0;
-}
-
-.shell-sidebar .panel-band-activity {
-  padding: 0.5rem 0.7rem 0.6rem;
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  /* A long approval card must never take the sidebar hostage: the band
-     caps at a third of the viewport and scrolls inside itself, so the
-     workbench list above and the footer dock below stay reachable. */
-  max-height: 34vh;
-  overflow-y: auto;
-}
-
 .panel-page-header {
   display: flex;
   align-items: flex-start;
@@ -555,14 +538,6 @@ select:disabled,
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
-}
-
-/* Stacks the activity band's ApprovalCards — a plain flex column so
-   consecutive cards read as a list rather than running edge to edge. */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
 .panel-muted {
@@ -2300,16 +2275,6 @@ select:disabled,
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.approvals-reject-message {
-  width: 100%;
-  border-radius: var(--radius, 0.375rem);
-  border: 1px solid var(--input);
-  background: var(--card);
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  resize: vertical;
 }
 
 .flex-col-gap {

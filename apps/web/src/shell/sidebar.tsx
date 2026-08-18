@@ -1,10 +1,10 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// needs-you activity band, the utility icon row (plugins, insights), and
-// below it the account row — avatar + name, the whole row is the trigger
-// for a menu that pops upward with weekly usage, settings, feedback, and
-// log out. Always present; there is no collapse affordance and no second
-// nav column.
+// utility icon row (plugins, insights), and below it the account row —
+// avatar + name, the whole row is the trigger for a menu that pops upward
+// with weekly usage, settings, feedback, and log out. Always present;
+// there is no collapse affordance and no second nav column. Approvals
+// belong in the conversation, not as a standing band here.
 //
 // Inbox is gone (CL-6151, owner decision: tasks + approvals don't flow
 // into workbenches) — Insights took its footer slot instead.
@@ -53,7 +53,6 @@ import { requestNewWorkbench } from "../command-palette-actions";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
 import type { SessionUser } from "../session";
-import { ActivityBand } from "./activity-band";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
 import { WorkbenchList } from "./workbench-list";
@@ -125,8 +124,7 @@ export function Sidebar({
     >
       {/* Owner's shape: logo with "+" on the first row, the search box
           (inside the list) below, then the plain "Workbenches" label. No
-          header icon cluster — search is the box, notifications live in
-          the footer. */}
+          header icon cluster — search is the box. */}
       <div className="shell-sidebar-brand-row">
         <SidebarBrandMark />
         <Button
@@ -145,10 +143,6 @@ export function Sidebar({
       <SidebarPanelBody>
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
-
-      <div className="panel-activity-slot">
-        <ActivityBand />
-      </div>
 
       <SidebarPanelFooter>
         {/* Footer order: Plugins, Insights, then the account row anchors
