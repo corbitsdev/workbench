@@ -108,10 +108,12 @@ export async function listMcpProviders(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
+  opts?: { inherited?: boolean },
 ): Promise<readonly ProviderRow[]> {
+  const inherited = opts?.inherited ?? false;
   const listed = await api(
     "GET",
-    `/api/tenants/${tenantId}/providers?inherited=false`,
+    `/api/tenants/${tenantId}/providers?inherited=${inherited}`,
     undefined,
     cookies,
   );
@@ -332,6 +334,34 @@ export function createMcpServerRoutes(
       const providers = await listMcpProviders(api, cookies, tenant.id);
       const provider = providers.find((p) => p.name === providerName(slug));
       if (provider === undefined) {
+        // The tenant's own list (own-tenant only, matching `GET /`) has
+        // no such slug — but CL-6191's inheritance means an ancestor's
+        // connection can still resolve for this tenant's tools, so a
+        // second, inherited-inclusive lookup distinguishes "no such
+        // server anywhere in the chain" from "it exists, but only at an
+        // ancestor" — the latter is refused with a specific, actionable
+        // error rather than a generic not-found, mirroring
+        // `@corbits/skills`' `requireOwnTenant`. Either way nothing is
+        // mutated: disconnecting an inherited connection is a hard cut,
+        // never a shadow-delete row.
+        const inheritedProviders = await listMcpProviders(
+          api,
+          cookies,
+          tenant.id,
+          { inherited: true },
+        );
+        const inheritedProvider = inheritedProviders.find(
+          (p) => p.name === providerName(slug),
+        );
+        if (inheritedProvider !== undefined) {
+          return c.json(
+            ErrorEnvelope(
+              "forbidden",
+              `"${slug}" is inherited from a parent workbench — disconnect it from the workbench that owns it, not from a child.`,
+            ),
+            403,
+          );
+        }
         return c.json(
           ErrorEnvelope("not_found", `No MCP server connected at "${slug}"`),
           404,
