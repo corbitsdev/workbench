@@ -295,24 +295,28 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
-// CL-5477: chat residents no longer carry their own idle-sleep lifecycle
-// (see the removed `lifecycle` binding on `createHubChatPlatform` below).
-// The sidecar's own park/wake now owns chat idleness: an idle deployment
-// parks in-process (child torn down, identity/anchor/record/slug intact)
-// and wakes on the next inbound frame, so the hub never needs to
-// undeploy-and-hope-the-wake-path-can-revive-it. This is what actually
-// fixes the problem `CHAT_IDLE_SLEEP_MS`'s emergency 60s→8h bump
-// (8ca85543) only band-aided: that commit widened the window a lossy
-// undeploy could hide behind; this removes the lossy undeploy.
+// Chat residents carry a real hub-driven idle-reap again (reversing
+// CL-5477's removal): the sidecar's own park/wake scheme it was meant to
+// replace has itself been retired in favor of a simpler reap-and-relaunch
+// model. `createHubChatPlatform`'s `lifecycle` binding below tags every
+// idle eviction with `@corbits/agent-lifecycle`'s
+// `IDLE_HIBERNATE_UNDEPLOY_REASON`, which the sidecar's `agent.undeploy`
+// handler matches to choose the state-preserving teardown flavor
+// (`reclaimDirs: false` — deployment record, step-state, and slug all
+// survive) rather than the destructive default a caller-initiated
+// undeploy gets. That is what makes this safe to re-enable where the old
+// bare `"idle"`-tagged undeploy this ticket's `CHAT_IDLE_SLEEP_MS`
+// emergency bump (8ca85543) band-aided around was genuinely lossy: a
+// later `wakeByAddress` relaunch resumes the same run rather than
+// starting a fresh one.
 //
-// `TASK_IDLE_UNDEPLOY_MS` remains for `taskLifecycle` below, which is a
-// genuinely different case: a spawn-and-return task's `wake` is
-// unreachable by construction (a one-shot task never sends a follow-up
-// after its opening prompt), so there is nothing a park/wake cycle could
-// ever revive — undeploying an idle task-launched resident is not lossy,
-// it is exactly the intended cleanup once the task's single turn has
-// settled. 8h is generous for that cleanup lag, not a same-value
-// coincidence with the old chat threshold.
+// `TASK_IDLE_UNDEPLOY_MS` remains for `taskLifecycle` below and stays a
+// genuinely different, longer threshold: a spawn-and-return task's
+// `wake` is unreachable by construction (a one-shot task never sends a
+// follow-up after its opening prompt), so there is nothing a relaunch
+// could ever revive — undeploying an idle task-launched resident is
+// exactly the intended cleanup once the task's single turn has settled,
+// not a case this state-preserving reap needs to cover.
 const TASK_IDLE_UNDEPLOY_MS = 8 * 60 * 60 * 1000;
 
 // Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
@@ -911,12 +915,14 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     mcpCredentialBindingsFor,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
-    // CL-5477: no `lifecycle` binding — chat residents are no longer
-    // undeployed on idle by the hub. The sidecar's own park/wake now owns
-    // idleness (see the `TASK_IDLE_UNDEPLOY_MS` comment above this
-    // function). `createHubChatPlatform`'s `lifecycle` is optional
-    // precisely so a host can opt out; every `lifecycle?.` call inside the
-    // adapter is a no-op with it unset.
+    // Chat residents are undeployed on idle again (see the comment above
+    // this function): `chatIdleReapMs` (env-overridable via
+    // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is a genuinely
+    // separate threshold from `TASK_IDLE_UNDEPLOY_MS` — chat's reap is
+    // state-preserving (`IDLE_HIBERNATE_UNDEPLOY_REASON`) so a much
+    // shorter window is safe here, unlike the destructive undeploy a
+    // task-launched resident gets.
+    lifecycle: { idleSleepMs: config.chatIdleReapMs },
     //
     // A hand-authored definition with no model requirements of its own
     // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`

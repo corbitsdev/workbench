@@ -160,10 +160,41 @@ const HubEnv = type({
   "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
     "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
   ),
+  "WORKBENCH_CHAT_IDLE_REAP_MS?": type("string").describe(
+    "how long a chat resident (channel host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
+
+/**
+ * Production default for `WORKBENCH_CHAT_IDLE_REAP_MS`: 30 minutes,
+ * matching the old sidecar-side `WORKBENCH_CHILD_IDLE_REAP_MS` default
+ * this replaces for chat.
+ */
+export const DEFAULT_CHAT_IDLE_REAP_MS = 30 * 60_000;
+
+/**
+ * Parse an optional positive-integer-milliseconds env value, defaulting
+ * to `fallback` when unset. Rejects zero and negative values — unlike
+ * the sidecar's now-deleted reap knob, there is no "disable reaping"
+ * mode here.
+ */
+function parsePositiveMsEnv(
+  raw: string | undefined,
+  name: string,
+  fallback: number,
+): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(
+      `invalid hub environment: ${name} must be a positive integer (milliseconds); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return n;
+}
 
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
@@ -227,6 +258,9 @@ export type HubConfig = {
   /** Overrides the ws(s):// URL a provisioned sidecar dials back to reach
    * this hub. Unset derives it from baseUrl instead. */
   readonly sidecarWebSocketUrl?: string;
+  /** How long an idle chat resident may sit before the hub reaps it via
+   * a state-preserving undeploy. Defaults to `DEFAULT_CHAT_IDLE_REAP_MS`. */
+  readonly chatIdleReapMs: number;
   /** Every curated provider's key found under its conventional env var
    * name (`@workbench/onboarding`'s `PROVIDER_ENV_VARS`). Empty when
    * none are set — the env-key auto-plant then does nothing. */
@@ -394,6 +428,11 @@ export function readHubConfig(
       password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,
       orgSlug: parsed.ORG_SLUG ?? DEFAULT_PLANT_ORG_SLUG,
     },
+    chatIdleReapMs: parsePositiveMsEnv(
+      parsed.WORKBENCH_CHAT_IDLE_REAP_MS,
+      "WORKBENCH_CHAT_IDLE_REAP_MS",
+      DEFAULT_CHAT_IDLE_REAP_MS,
+    ),
   };
   if (parsed.OPERATOR_TENANT_ID !== undefined)
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
