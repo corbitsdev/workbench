@@ -63,6 +63,20 @@ describe("mountMemory", () => {
       }),
     ).rejects.toThrow(/EMBED_BASE_URL/);
   });
+
+  test("fails loudly at config parse when EMBED_BASE_URL is set but blank, rather than silently treating it as unset", async () => {
+    stashEnv();
+    process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
+    process.env["EMBED_BASE_URL"] = "";
+    const app = new Hono();
+    await expect(
+      mountMemory({
+        app,
+        grantStore: createInMemoryGrantStore([]),
+        conditionRegistry: {},
+      }),
+    ).rejects.toThrow(/EMBED_BASE_URL/);
+  });
 });
 
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
