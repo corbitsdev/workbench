@@ -38,10 +38,12 @@ function readableLabel(handle: string): string {
 }
 
 /**
- * The mentionable candidates for a channel: its agent-address participants
- * (the same set `mentionedParticipants` fans a copy to on the server), each
- * keyed by its own settings-held handle so a picked candidate always
- * inserts text the server will actually match.
+ * The mentionable agent candidates for a channel: its agent-address
+ * participants (the same set `mentionedParticipants` fans a copy to on the
+ * server), each keyed by its own settings-held handle so a picked candidate
+ * always inserts text the server will actually match. Kept agent-only so
+ * the composer's `/summarize` path (which needs an agent address) stays
+ * honest when it reads from the same helper via the `agents` prop.
  */
 export function mentionCandidatesFromParticipants(
   participants: readonly ParticipantRecord[],
@@ -71,21 +73,19 @@ export type MentionInviteIntent =
       readonly name: string;
     };
 
+/** Popover section a row belongs to — Agents first, then People. */
+export type MentionSection = "agents" | "people";
+
 /**
- * A single popover row, tagged with which group it belongs to:
- * "participant" (the channel's existing agent participants — unchanged
- * from before) or "bring-in" (a workspace member or invitable agent who
- * isn't in the channel yet). Only a "bring-in" row carries `invite` —
- * picking it both inserts the mention text and marks the intent the
- * send path acts on.
+ * A single popover row. `invite` is present only for workspace members /
+ * invitable definitions not yet in the channel — picking that row both
+ * inserts the mention and marks the intent the send path acts on.
  */
-export type MentionOption =
-  | { readonly group: "participant"; readonly candidate: MentionCandidate }
-  | {
-      readonly group: "bring-in";
-      readonly candidate: MentionCandidate;
-      readonly invite: MentionInviteIntent;
-    };
+export type MentionOption = {
+  readonly section: MentionSection;
+  readonly candidate: MentionCandidate;
+  readonly invite?: MentionInviteIntent;
+};
 
 /** A workspace member not yet in this workbench — the same reduced shape
  * `NewChannelDialog`'s `listMembers` already returns (see
@@ -105,9 +105,9 @@ export type BringInAgentDefinition = {
 };
 
 /**
- * The "Bring in…" group's candidates: every workspace member not
- * already a participant, plus every invitable agent definition — each
- * paired with the `MentionInviteIntent` picking it will carry. A
+ * Bring-in candidates split into Agents / People sections: every workspace
+ * member not already a participant, plus every invitable agent definition —
+ * each paired with the `MentionInviteIntent` picking it will carry. A
  * member's handle is derived from their display name the same way the
  * server derives a freshly-joined human participant's own handle
  * (`handleFromName`), so the inserted mention text is exactly what the
@@ -121,61 +121,80 @@ export function bringInOptionsFromMembersAndAgents(
   const participantAddresses = new Set(
     participants.map((participant) => participant.address),
   );
-  const memberOptions: MentionOption[] = members
+  const people: MentionOption[] = members
     .filter((member) => !participantAddresses.has(member.id))
     .map((member) => {
       const handle = handleFromName(member.displayName, member.id);
       return {
-        group: "bring-in",
+        section: "people" as const,
         candidate: { id: member.id, handle, label: member.displayName },
         invite: {
-          kind: "person",
+          kind: "person" as const,
           principalId: member.id,
           name: member.displayName,
         },
       };
     });
-  const agentOptions: MentionOption[] = invitableAgents.map((agent) => {
-    const displayName = agent.description ?? agent.name;
-    const handle = handleFromName(displayName, agent.id);
+  const agents: MentionOption[] = invitableAgents.map((agent) => {
+    const handle = handleFromName(agent.name, agent.id);
     return {
-      group: "bring-in",
-      candidate: { id: agent.id, handle, label: displayName },
-      invite: { kind: "agent", definitionId: agent.id },
+      section: "agents" as const,
+      candidate: { id: agent.id, handle, label: agent.name },
+      invite: { kind: "agent" as const, definitionId: agent.id },
     };
   });
-  return [...memberOptions, ...agentOptions];
+  return [...agents, ...people];
 }
 
 /**
- * The full popover option list: existing participants first, then the
- * "Bring in…" group — mirrors the order `mentionCandidatesFromParticipants`
- * already contributes candidates in, so switching a channel from having
- * no bring-in candidates to having some never reorders the participant
- * rows a sender already knows.
+ * Full popover list: Agents (in-channel agents, then invitable), then People
+ * (in-channel humans, then bring-in members). Section order matches the
+ * cleaned-up picker chrome; within a section, already-in-channel rows stay
+ * ahead of bring-in so a sender's familiar handles don't jump.
  */
 export function mentionOptionsFromChannel(
   participants: readonly ParticipantRecord[],
   members: readonly BringInMember[],
   invitableAgents: readonly BringInAgentDefinition[],
 ): readonly MentionOption[] {
-  const participantOptions: MentionOption[] = mentionCandidatesFromParticipants(
+  const agentParticipants: MentionOption[] = participants
+    .filter((participant) => isAgentAddress(participant.address))
+    .map((participant) => ({
+      section: "agents" as const,
+      candidate: {
+        id: participant.address,
+        handle: participant.handle,
+        label: readableLabel(participant.handle),
+      },
+    }));
+  const peopleParticipants: MentionOption[] = participants
+    .filter((participant) => !isAgentAddress(participant.address))
+    .map((participant) => ({
+      section: "people" as const,
+      candidate: {
+        id: participant.address,
+        handle: participant.handle,
+        label: readableLabel(participant.handle),
+      },
+    }));
+  const bringIn = bringInOptionsFromMembersAndAgents(
+    members,
+    invitableAgents,
     participants,
-  ).map((candidate) => ({ group: "participant", candidate }));
+  );
+  const bringInAgents = bringIn.filter((option) => option.section === "agents");
+  const bringInPeople = bringIn.filter((option) => option.section === "people");
   return [
-    ...participantOptions,
-    ...bringInOptionsFromMembersAndAgents(
-      members,
-      invitableAgents,
-      participants,
-    ),
+    ...agentParticipants,
+    ...bringInAgents,
+    ...peopleParticipants,
+    ...bringInPeople,
   ];
 }
 
 /**
  * `MentionOption`s whose candidate handle or label starts with the
- * query, case-insensitively — the grouped analog of
- * `filterMentionCandidates`, used once the popover has both groups to
+ * query, case-insensitively — used once the popover has both sections to
  * show.
  */
 export function filterMentionOptions(
@@ -220,8 +239,8 @@ export function activeMentionQuery(
 /**
  * Candidates whose handle or label starts with the query, case-insensitively
  * — matching on the label too so typing a readable prefix still finds the
- * handle it would insert. An empty query matches everyone — the popover
- * opens on a bare "@".
+ * handle it would insert. An empty query matches everyone —
+ * the popover opens on a bare "@".
  */
 export function filterMentionCandidates(
   candidates: readonly MentionCandidate[],

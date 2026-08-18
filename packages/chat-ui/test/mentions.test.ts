@@ -112,23 +112,29 @@ describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => 
     );
     expect(options).toEqual([
       {
-        group: "bring-in",
+        section: "people",
         candidate: { id: "prn_bob", handle: "bob", label: "Bob" },
         invite: { kind: "person", principalId: "prn_bob", name: "Bob" },
       },
     ]);
   });
 
-  test("an invitable agent definition becomes a bring-in candidate with an agent invite intent", () => {
+  test("an invitable agent uses its name — never its description — as the label", () => {
     const options = bringInOptionsFromMembersAndAgents(
       [],
-      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+      [
+        {
+          id: "wfd_echo",
+          name: "echo",
+          description: "You turn a conversation into a website proposal…",
+        },
+      ],
       participants,
     );
     expect(options).toEqual([
       {
-        group: "bring-in",
-        candidate: { id: "wfd_echo", handle: "echo", label: "Echo" },
+        section: "agents",
+        candidate: { id: "wfd_echo", handle: "echo", label: "echo" },
         invite: { kind: "agent", definitionId: "wfd_echo" },
       },
     ]);
@@ -136,25 +142,30 @@ describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => 
 });
 
 describe("mentionOptionsFromChannel and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
-  test("lists existing participants first, then the bring-in group", () => {
+  test("lists Agents then People, in-channel ahead of bring-in within each section", () => {
     const options = mentionOptionsFromChannel(
-      [{ address: "researcher@agents.example", handle: "researcher" }],
+      [
+        { address: "researcher@agents.example", handle: "researcher" },
+        { address: "prn_alice", handle: "alice" },
+      ],
       [{ id: "prn_bob", displayName: "Bob" }],
       [{ id: "wfd_echo", name: "echo", description: "Echo" }],
     );
-    expect(options.map((option) => option.group)).toEqual([
-      "participant",
-      "bring-in",
-      "bring-in",
+    expect(options.map((option) => option.section)).toEqual([
+      "agents",
+      "agents",
+      "people",
+      "people",
     ]);
     expect(options.map((option) => option.candidate.handle)).toEqual([
       "researcher",
-      "bob",
       "echo",
+      "alice",
+      "bob",
     ]);
   });
 
-  test("filterMentionOptions narrows both groups by the same prefix rule", () => {
+  test("filterMentionOptions narrows both sections by the same prefix rule", () => {
     const options = mentionOptionsFromChannel(
       [{ address: "researcher@agents.example", handle: "researcher" }],
       [{ id: "prn_reed", displayName: "Reed" }],

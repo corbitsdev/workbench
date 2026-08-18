@@ -153,8 +153,8 @@ function mountWithMentions(onSend: (payload: ComposerSendPayload) => Promise<boo
   return container;
 }
 
-describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)", () => {
-  test("renders the existing-participant group and a separate Bring in… group", async () => {
+describe("Composer mention popover — Agents and People (CL-5879)", () => {
+  test("renders Agents and People sections with name and @handle", async () => {
     mountWithMentions(() => Promise.resolve(true));
     typeInto(textarea(), "@");
     await settle();
@@ -162,18 +162,21 @@ describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)
     const options = Array.from(
       container?.querySelectorAll(".chat-mention-option") ?? [],
     );
-    const handles = options.map((option) => option.textContent);
-    expect(handles).toEqual([
-      "@researcherResearcher",
-      "@bobBob",
-      "@echoEcho",
+    const rows = options.map((option) => ({
+      name: option.querySelector(".chat-mention-name")?.textContent,
+      handle: option.querySelector(".chat-mention-handle")?.textContent,
+      section: option.getAttribute("data-mention-section"),
+    }));
+    expect(rows).toEqual([
+      { name: "Researcher", handle: "@researcher", section: "agents" },
+      { name: "echo", handle: "@echo", section: "agents" },
+      { name: "Bob", handle: "@bob", section: "people" },
     ]);
 
-    const groupLabels = container?.querySelectorAll(
-      ".chat-mention-group-label",
-    );
-    expect(groupLabels?.length).toBe(1);
-    expect(groupLabels?.[0]?.textContent).toBe("Bring in…");
+    const groupLabels = Array.from(
+      container?.querySelectorAll(".chat-mention-group-label") ?? [],
+    ).map((label) => label.textContent);
+    expect(groupLabels).toEqual(["Agents", "People"]);
   });
 
   test("picking a not-yet-participant candidate inserts the mention and marks invite intent on send", async () => {
@@ -189,8 +192,9 @@ describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)
       container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
         [],
     );
-    const bobOption = options.find((option) =>
-      option.textContent?.startsWith("@bob"),
+    const bobOption = options.find(
+      (option) =>
+        option.querySelector(".chat-mention-handle")?.textContent === "@bob",
     );
     if (bobOption === undefined) throw new Error("bob option not found");
     act(() => {
@@ -226,8 +230,10 @@ describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)
       container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
         [],
     );
-    const researcherOption = options.find((option) =>
-      option.textContent?.startsWith("@researcher"),
+    const researcherOption = options.find(
+      (option) =>
+        option.querySelector(".chat-mention-handle")?.textContent ===
+        "@researcher",
     );
     if (researcherOption === undefined) {
       throw new Error("researcher option not found");

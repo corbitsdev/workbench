@@ -6,7 +6,7 @@
 // model (working/stop) this surface does not use, and its send affordance
 // does not compose with an inline mention popover.
 
-import { Button } from "@corbits/react-ui";
+import { Avatar, Button } from "@corbits/react-ui";
 import { Loader2, Paperclip, Send, X } from "lucide-react";
 import {
   forwardRef,
@@ -486,9 +486,9 @@ export const Composer = forwardRef<
 
   /**
    * Splices the picked candidate's handle into the draft exactly as
-   * before; a "bring in" pick additionally records its invite intent
-   * (de-duplicated by kind+id) so `send()` carries it through to the
-   * server's pre-invite step.
+   * before; a bring-in pick (one carrying `invite`) additionally records
+   * its invite intent (de-duplicated by kind+id) so `send()` carries it
+   * through to the server's pre-invite step.
    */
   function pickMention(option: MentionOption) {
     const textarea = textareaRef.current;
@@ -502,19 +502,20 @@ export const Composer = forwardRef<
     );
     setValue(result.text);
     setMention(null);
-    if (option.group === "bring-in") {
+    if (option.invite !== undefined) {
+      const invite = option.invite;
       setPendingInvites((current) => {
         const key =
-          option.invite.kind === "agent"
-            ? `agent:${option.invite.definitionId}`
-            : `person:${option.invite.principalId}`;
+          invite.kind === "agent"
+            ? `agent:${invite.definitionId}`
+            : `person:${invite.principalId}`;
         const alreadyPending = current.some(
-          (invite) =>
-            (invite.kind === "agent"
-              ? `agent:${invite.definitionId}`
-              : `person:${invite.principalId}`) === key,
+          (pending) =>
+            (pending.kind === "agent"
+              ? `agent:${pending.definitionId}`
+              : `person:${pending.principalId}`) === key,
         );
-        return alreadyPending ? current : [...current, option.invite];
+        return alreadyPending ? current : [...current, invite];
       });
     }
     requestAnimationFrame(() => {
@@ -700,38 +701,53 @@ export const Composer = forwardRef<
               {CHAT_STRINGS.mentionEmpty}
             </div>
           ) : (
-            mentionOptions.map((option, index) => (
-              <div key={`${option.group}:${option.candidate.id}`}>
-                {(index === 0 ||
-                  mentionOptions[index - 1]?.group !== option.group) &&
-                option.group === "bring-in" ? (
-                  <div className="chat-mention-group-label">
-                    {CHAT_STRINGS.mentionBringInGroupLabel}
+            <div className="chat-mention-list">
+              {mentionOptions.map((option, index) => {
+                const prev = mentionOptions[index - 1];
+                const showSection =
+                  index === 0 || prev?.section !== option.section;
+                const isAgent = option.section === "agents";
+                return (
+                  <div key={`${option.section}:${option.candidate.id}`}>
+                    {showSection ? (
+                      <div className="chat-mention-group-label">
+                        {option.section === "agents"
+                          ? CHAT_STRINGS.mentionAgentsGroupLabel
+                          : CHAT_STRINGS.mentionPeopleGroupLabel}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === highlight}
+                      className="chat-mention-option"
+                      data-highlighted={index === highlight}
+                      data-mention-section={option.section}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        pickMention(option);
+                      }}
+                    >
+                      <Avatar
+                        initials={option.candidate.label}
+                        label={option.candidate.label}
+                        tone={isAgent ? "agent" : "neutral"}
+                        size="sm"
+                        className="chat-mention-avatar"
+                      />
+                      <span className="chat-mention-meta">
+                        <span className="chat-mention-name">
+                          {option.candidate.label}
+                        </span>
+                        <span className="chat-mention-handle">
+                          @{option.candidate.handle}
+                        </span>
+                      </span>
+                    </button>
                   </div>
-                ) : null}
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={index === highlight}
-                  className="chat-mention-option"
-                  data-highlighted={index === highlight}
-                  data-mention-group={option.group}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    pickMention(option);
-                  }}
-                >
-                  <span className="chat-mention-handle">
-                    @{option.candidate.handle}
-                  </span>
-                  {option.candidate.label !== option.candidate.handle && (
-                    <span className="chat-mention-label">
-                      {option.candidate.label}
-                    </span>
-                  )}
-                </button>
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
         </div>
       )}
