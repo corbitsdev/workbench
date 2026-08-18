@@ -3,6 +3,10 @@
 // InsightsRoute defers to, covered here directly against both membership
 // shapes `/scope` (packages/insights/src/routes.ts) can now report: a
 // workspace member (parent present) and a non-member (parent absent).
+// CL-5879 retired the `/insights/workbench/:tenantId` deep link that used
+// to override this default outright — per-workbench Insights is now its
+// own `/insights/channel/:channelId` route (see `InsightsChannelPage`),
+// so this landing scope never takes a workbench override anymore.
 import { describe, expect, test } from "bun:test";
 
 import { resolveInsightsScope } from "./insights-page";
@@ -29,7 +33,6 @@ describe("resolveInsightsScope", () => {
   test("workspace member default landing: parent aggregate, labeled 'All workbenches'", () => {
     const result = resolveInsightsScope({
       mode: "landing",
-      workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: workspaceMemberScope,
     });
@@ -40,7 +43,6 @@ describe("resolveInsightsScope", () => {
   test("parentless landing IS the aggregate: every workbench's runs land on the root tenancy", () => {
     const result = resolveInsightsScope({
       mode: "landing",
-      workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: nonMemberScope,
     });
@@ -51,7 +53,6 @@ describe("resolveInsightsScope", () => {
   test("scope not yet resolved: falls back to the current workbench id, never blocks", () => {
     const result = resolveInsightsScope({
       mode: "landing",
-      workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: null,
     });
@@ -59,30 +60,9 @@ describe("resolveInsightsScope", () => {
     expect(result.scopeLabel).toBe("tnt_bench_a");
   });
 
-  test("explicit workbench deep link overrides the default outright, for either membership shape", () => {
-    const memberResult = resolveInsightsScope({
-      mode: "landing",
-      workbenchId: "tnt_bench_b",
-      selectedTenantId: "tnt_bench_a",
-      scopeData: workspaceMemberScope,
-    });
-    expect(memberResult.effectiveTenantId).toBe("tnt_bench_b");
-    expect(memberResult.scopeLabel).toBe("Sales bench");
-
-    const nonMemberResult = resolveInsightsScope({
-      mode: "landing",
-      workbenchId: "tnt_bench_a",
-      selectedTenantId: "tnt_bench_a",
-      scopeData: nonMemberScope,
-    });
-    expect(nonMemberResult.effectiveTenantId).toBe("tnt_bench_a");
-    expect(nonMemberResult.scopeLabel).toBe("Support bench");
-  });
-
   test("non-landing modes always stay tied to the current workbench, ignoring scope", () => {
     const runsResult = resolveInsightsScope({
       mode: "runs",
-      workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: workspaceMemberScope,
     });
@@ -90,7 +70,6 @@ describe("resolveInsightsScope", () => {
 
     const runResult = resolveInsightsScope({
       mode: "run",
-      workbenchId: null,
       selectedTenantId: "tnt_bench_a",
       scopeData: workspaceMemberScope,
     });
@@ -100,7 +79,6 @@ describe("resolveInsightsScope", () => {
   test("no selected tenant and unresolved scope: never fabricates a tenant to view", () => {
     const result = resolveInsightsScope({
       mode: "landing",
-      workbenchId: null,
       selectedTenantId: null,
       scopeData: null,
     });

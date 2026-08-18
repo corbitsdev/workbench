@@ -40,7 +40,10 @@ import {
   type TimelineFilter,
 } from "../workbench-timeline-merge";
 
-const FILTERS: readonly { readonly id: TimelineFilter; readonly label: string }[] = [
+const FILTERS: readonly {
+  readonly id: TimelineFilter;
+  readonly label: string;
+}[] = [
   { id: "all", label: "All" },
   { id: "messages", label: "Messages" },
   { id: "runs", label: "Runs" },
@@ -312,10 +315,12 @@ export function WorkbenchTimelineView({
 /**
  * Fetch composition for one workbench's Timeline. `benchTenantId` is the
  * owning bench — chat's own channel-tenancy keeps messages/threads
- * addressed at the parent bench's tenant id even though the channel is
- * itself a tenant (see docs/channel-tenancy.md) — while `channelId` is the
- * workbench's own id, the same id `insightsUsagePath` etc. already treat as
- * a tenant id in its own right.
+ * addressed at the parent bench's tenant id even though the channel also
+ * mints its own workbench tenant (see docs/channel-tenancy.md) — while
+ * `channelId` is the channel's own id, resolved to that workbench tenant
+ * one level up in `InsightsChannelPage` (`../insights-channel-scope.ts`)
+ * for the tenant-scoped Insights endpoints; this component only ever reads
+ * messages/threads/routines/tasks/approvals off the owning bench.
  */
 export function WorkbenchTimelineRoute({
   benchTenantId,
@@ -378,7 +383,9 @@ export function WorkbenchTimelineRoute({
     },
   );
   const tasksQuery = useTenantQuery(
-    benchTenantId === null ? ["tenant", "none", "tasks"] : tenantKeys.tasks(benchTenantId),
+    benchTenantId === null
+      ? ["tenant", "none", "tasks"]
+      : tenantKeys.tasks(benchTenantId),
     benchTenantId !== null,
     () => listTasks(benchTenantId as string),
   );

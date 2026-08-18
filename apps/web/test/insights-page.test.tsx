@@ -75,7 +75,7 @@ function renderLanding(args: {
             workbenches={emptyWorkbenches}
             range={range}
             scope={null}
-            activeWorkbenchId={null}
+            resolveWorkbenchChannelId={() => null}
             scopeLabel="All workbenches"
           />
         </BenchProvider>
@@ -171,7 +171,7 @@ function renderAtPath(path: string): string {
             workbenches={emptyWorkbenches}
             range={range}
             scope={null}
-            activeWorkbenchId={null}
+            resolveWorkbenchChannelId={() => null}
             scopeLabel="All workbenches"
           />
         </BenchProvider>
@@ -182,7 +182,6 @@ function renderAtPath(path: string): string {
 
 function renderLandingWithScope(args: {
   readonly scope: InsightsScope | null;
-  readonly activeWorkbenchId: string | null;
   readonly scopeLabel: string;
 }): string {
   return renderToStaticMarkup(
@@ -199,7 +198,7 @@ function renderLandingWithScope(args: {
             workbenches={emptyWorkbenches}
             range={range}
             scope={args.scope}
-            activeWorkbenchId={args.activeWorkbenchId}
+            resolveWorkbenchChannelId={() => null}
             scopeLabel={args.scopeLabel}
           />
         </BenchProvider>
@@ -222,7 +221,6 @@ describe("InsightsPage scope switcher", () => {
   test("renders an All workbenches option plus one per sibling when the workbench has a parent", () => {
     const markup = renderLandingWithScope({
       scope: scopeWithSiblings,
-      activeWorkbenchId: null,
       scopeLabel: "All workbenches",
     });
     expect(markup).toContain("All workbenches");
@@ -230,35 +228,27 @@ describe("InsightsPage scope switcher", () => {
     expect(markup).toContain(">Sales<");
   });
 
-  test("marks the All workbenches option active by default", () => {
+  // CL-5879: selecting a sibling now always navigates away to that
+  // workbench's own `/insights/channel/:channelId` view (see the
+  // "activity by workbench" tests below) rather than switching this same
+  // landing's scope inline — so "All workbenches" is the only option ever
+  // marked active here.
+  test("marks the All workbenches option active", () => {
     const markup = renderLandingWithScope({
       scope: scopeWithSiblings,
-      activeWorkbenchId: null,
       scopeLabel: "All workbenches",
     });
     expect(markup).toContain(
       'aria-pressed="true" data-active="true" class="insights-scope-switcher-option">All workbenches</button>',
     );
-  });
-
-  test("marks a specific workbench option active when scoped to it", () => {
-    const markup = renderLandingWithScope({
-      scope: scopeWithSiblings,
-      activeWorkbenchId: "tnt_b",
-      scopeLabel: "Sales",
-    });
     expect(markup).toContain(
-      'aria-pressed="true" data-active="true" class="insights-scope-switcher-option">Sales</button>',
-    );
-    expect(markup).toContain(
-      'aria-pressed="false" data-active="false" class="insights-scope-switcher-option">All workbenches</button>',
+      'aria-pressed="false" data-active="false" class="insights-scope-switcher-option">Support</button>',
     );
   });
 
   test("hides the switcher entirely for a workbench with no parent (nothing to switch to)", () => {
     const markup = renderLandingWithScope({
       scope: { tenantId: "tnt_a", name: "Solo", parent: null, workbenches: [] },
-      activeWorkbenchId: null,
       scopeLabel: "All workbenches",
     });
     expect(markup).not.toContain("insights-scope-switcher");
@@ -267,7 +257,6 @@ describe("InsightsPage scope switcher", () => {
   test("hides the switcher while scope has not resolved yet", () => {
     const markup = renderLandingWithScope({
       scope: null,
-      activeWorkbenchId: null,
       scopeLabel: "All workbenches",
     });
     expect(markup).not.toContain("insights-scope-switcher");
@@ -922,7 +911,9 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               workbenches={{ kind: "ready", data: { items: workbenches } }}
               range={range}
               scope={null}
-              activeWorkbenchId={null}
+              resolveWorkbenchChannelId={(tenantId) =>
+                tenantId === "tnt_b" ? "ch_b" : null
+              }
               scopeLabel="All workbenches"
             />
           </BenchProvider>
@@ -944,15 +935,19 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
   test("ranks workbenches by turns and links each bar to its own scoped view", () => {
     const el = mountGlobalLanding(() => undefined);
     expect(el.textContent).toContain("Activity by workbench");
-    const rows = [...el.querySelectorAll("table[aria-label='Activity by workbench'] tbody tr")];
-    expect(rows.map((r) => r.textContent?.match(/Support|Sales|Quiet workbench/)?.[0])).toEqual([
-      "Support",
-      "Sales",
-      "Quiet workbench",
-    ]);
+    const rows = [
+      ...el.querySelectorAll(
+        "table[aria-label='Activity by workbench'] tbody tr",
+      ),
+    ];
+    expect(
+      rows.map(
+        (r) => r.textContent?.match(/Support|Sales|Quiet workbench/)?.[0],
+      ),
+    ).toEqual(["Support", "Sales", "Quiet workbench"]);
   });
 
-  test("clicking a workbench bar navigates to /insights/workbench/:tenantId", () => {
+  test("clicking a workbench bar resolves its channel and navigates to /insights/channel/:channelId", () => {
     const navigated: string[] = [];
     const el = mountGlobalLanding((path) => navigated.push(path));
     const salesRow = [...el.querySelectorAll("tbody tr")].find((row) =>
@@ -962,7 +957,39 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
     act(() => {
       salesRow?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigated).toEqual(["/insights/workbench/tnt_b"]);
+    expect(navigated).toEqual(["/insights/channel/ch_b"]);
+  });
+
+  test("a workbench with no resolvable channel never gets a broken link", () => {
+    const navigated: string[] = [];
+    const el = mount(
+      <TestQueryProvider>
+        <NavigationProvider navigate={(path) => navigated.push(path)}>
+          <BenchProvider>
+            <InsightsPage
+              path="/insights"
+              summary={{ kind: "ready", data: usageWithSpend }}
+              activity={{ kind: "ready", data: [] }}
+              byTool={{ kind: "ready", data: [] }}
+              runs={emptyRuns}
+              routines={emptyRoutines}
+              workbenches={{ kind: "ready", data: { items: workbenches } }}
+              range={range}
+              scope={null}
+              resolveWorkbenchChannelId={() => null}
+              scopeLabel="All workbenches"
+            />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+    const salesRow = [...el.querySelectorAll("tbody tr")].find((row) =>
+      row.textContent?.includes("Sales"),
+    );
+    act(() => {
+      salesRow?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigated).toEqual([]);
   });
 
   test("an all-zero workbenches window shows the honest empty note, not a fabricated chart", () => {
@@ -980,7 +1007,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               workbenches={{ kind: "ready", data: { items: [] } }}
               range={range}
               scope={null}
-              activeWorkbenchId={null}
+              resolveWorkbenchChannelId={() => null}
               scopeLabel="All workbenches"
             />
           </BenchProvider>

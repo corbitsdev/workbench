@@ -29,6 +29,7 @@ import {
   isChannelSettingsPath,
 } from "../channel-path";
 import { reportChannelNotFound } from "../channel-not-found-event";
+import { channelInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -213,11 +214,14 @@ export function ChatPage({
           ...(channelId !== null ? { channelId } : {}),
         })
       }
-      // The header's Insights affordance: this workbench's end-to-end
-      // timeline (per-workbench Insights), never the global landing.
+      // The header's Insights affordance: this conversation's own scoped
+      // timeline, never the global landing. Passes the channel id as-is —
+      // the route itself resolves the channel's workbench tenant (see
+      // `insights-channel-scope.ts`), since a channel id is never a
+      // tenant id.
       onOpenInsights={() => {
         if (channelId === null) return;
-        navigate(`/insights/workbench/${channelId}`);
+        navigate(channelInsightsPath(channelId));
       }}
       // `/routine`: opens the editor directly on a brand-new routine
       // bound to this channel.
