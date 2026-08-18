@@ -9,6 +9,8 @@
 import { createHash } from "node:crypto";
 import { AssetResponse, AssetWithOriginResponse } from "@intx/types";
 import { type, type Type } from "arktype";
+import { checkToolPackageFreshness } from "./freshness-check";
+import { materializePackages } from "./materialize";
 import { packToolPackageTarball, type PackedTarball } from "./pack";
 import { CORBITS_TOOL_PACKAGE_DIRS, CORBITS_TOOLS_REGISTRY } from "./registry";
 
@@ -245,6 +247,11 @@ export async function publishCorbitsToolsRegistry(
   const fetchImpl = args.fetchImpl ?? fetch;
   const log = args.log ?? ((): void => undefined);
 
+  // Fail before packing if any `@corbits/*-tools` src/ moved without a
+  // version bump. Publish skips an already-present filename, so a forgotten
+  // bump would otherwise ship nothing and leave running agents on old tools.
+  await checkToolPackageFreshness();
+
   const assetId = await ensureRegistryAsset(
     args.api,
     args.cookies,
@@ -257,9 +264,17 @@ export async function publishCorbitsToolsRegistry(
     assetId,
   );
 
+  // Packs are independent; PUTs stay serial because they mutate one
+  // package-registry git asset.
+  const packed = await materializePackages({
+    packageDirs: CORBITS_TOOL_PACKAGE_DIRS,
+    materialize: packToolPackageTarball,
+  });
+
   const summaries: PublishSummary[] = [];
-  for (const packageDir of CORBITS_TOOL_PACKAGE_DIRS) {
-    const tarball = await packToolPackageTarball(packageDir);
+  for (const item of packed) {
+    if (item.status !== "ok") continue;
+    const tarball = item.value;
     if (
       !shouldPublishTarball(
         tarball.filename,

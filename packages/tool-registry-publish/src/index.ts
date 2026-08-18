@@ -19,3 +19,11 @@ export {
   type PublishCorbitsToolsRegistryArgs,
   type PublishSummary,
 } from "./publish";
+export {
+  checkToolPackageFreshness,
+  staleToolPackages,
+  StaleToolPackageError,
+  type CheckToolPackageFreshnessArgs,
+  type StaleToolPackage,
+  type ToolPackageSnapshot,
+} from "./freshness-check";
