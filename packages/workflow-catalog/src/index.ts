@@ -41,6 +41,18 @@ export type WorkflowCatalogEntry = {
   /** Schedulable as a Routine. False for conversational agents / chat hosts. */
   readonly automatable: boolean;
   /**
+   * A real chat partner a person can open a DM with and converse
+   * freely — as opposed to a mail-triggered utility whose only sane
+   * input is its declared trigger contract (a topic, a transcript, a
+   * scheduler-computed digest line, …). `automatable` alone can't tell
+   * these apart: several utilities (`echo`, `last-30-days-research`,
+   * `pain-point-collateral`, …) are non-automatable on-demand runs, not
+   * conversational agents. Only the seeded `assistant`/Myra definition
+   * is `true` today; every other catalog entry — the whole reason this
+   * catalog exists — is a workflow utility, never `true`.
+   */
+  readonly conversational: boolean;
+  /**
    * Where a run's result actually lands — the honest end-to-end
    * contract a routine's "Deliver results to" step depends on. Every
    * entry states this plainly, whether or not it is automatable:
@@ -94,6 +106,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "echo",
     displayName: "Echo",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Replies with the exact text it received — a wiring check for the mail-triggered contract, not a real assistant.",
@@ -105,6 +118,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "assistant",
     displayName: "Myra",
     automatable: false,
+    conversational: true,
     deliveryMode: "workbench",
     whatItDoes:
       "A general-purpose assistant for the workspace — answers questions, drafts text, and reasons through problems in conversation.",
@@ -116,6 +130,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "heartbeat",
     displayName: "Heartbeat",
     automatable: true,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Completes immediately on every trigger with no real reply — a lightweight target for testing scheduling and mail triggers.",
@@ -127,6 +142,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "workbench-digest",
     displayName: "Workbench digest",
     automatable: true,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Relays a scheduler-computed digest line straight into a workbench, unchanged — the digest content itself comes entirely from its trigger.",
@@ -138,6 +154,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "granola-call",
     displayName: "Granola call notes",
     automatable: true,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Polls Granola for recent calls and starts one process-granola-call run per call that doesn't yet have published notes.",
@@ -149,6 +166,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "process-granola-call",
     displayName: "Process Granola call",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
@@ -161,6 +179,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "morning-brief",
     displayName: "Morning brief",
     automatable: true,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
@@ -173,6 +192,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "pain-point-collateral",
     displayName: "Pain-point collateral",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Extracts a customer's real pain points from a call transcript and drafts one piece of targeted collateral, held for approval before it's finalized.",
@@ -209,6 +229,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "collateral-generation",
     displayName: "Collateral generation",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
@@ -221,6 +242,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "reddit-opportunity-scanner",
     displayName: "Reddit opportunity scanner",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Scores Reddit posts as outreach opportunities for a target website, after a review of the search plan and one approval on the final list.",
@@ -232,6 +254,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "last-30-days-research",
     displayName: "Last 30 days research report",
     automatable: false,
+    conversational: false,
     deliveryMode: "workbench",
     whatItDoes:
       "Researches a topic over the last 30 days across web search and GitHub, and writes a cited report with sourced findings.",
@@ -265,6 +288,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: RECURRING_TASK_ASSET_NAME,
     displayName: "Recurring task",
     automatable: true,
+    conversational: false,
     // A task result always lands in its creator's Inbox — never a
     // workbench — the same delivery every manual task uses. The create
     // dialog reads this to skip the "Deliver results to" workbench step
@@ -324,6 +348,20 @@ const byAssetName = new Map(
 
 export function isAutomatableWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.automatable === true;
+}
+
+/**
+ * Whether a workflow definition name is fit to offer as a DM/chat target
+ * (the sidebar's agent rows, a taskable-agent picker, …) rather than a
+ * triggered automation utility. A name absent from this catalog is an
+ * agent-directory-created definition — "Agent definitions created at
+ * runtime are never listed here" (see `WORKFLOW_CATALOG`'s own comment) —
+ * and is always conversational; a name present here is conversational
+ * only when its entry says so (`assistant`/Myra today).
+ */
+export function isConversationalWorkflowName(name: string): boolean {
+  const entry = byAssetName.get(name);
+  return entry === undefined || entry.conversational;
 }
 
 /**

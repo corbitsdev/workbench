@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { getAncestorChain, schema } from "@intx/db";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
 
 export type VisibleAgentDefinition = {
   readonly id: string;
@@ -55,9 +56,14 @@ export async function listVisibleAgentDefinitions(
 
     for (const row of rows) {
       // A definition with no materialized asset isn't launchable yet; a
-      // workbench host is a silent per-workbench anchor, never a DM target.
+      // workbench host is a silent per-workbench anchor, never a DM target;
+      // a seeded workflow-catalog utility (Echo, Workbench digest,
+      // Recurring task, Last 30 days research, …) is a mail-triggered
+      // automation, not a conversational agent — DMing it produces
+      // nonsense, so only a genuinely conversational definition is listed.
       if (row.assetId === null) continue;
       if (isWorkbenchHostDefinitionName(row.name)) continue;
+      if (!isConversationalWorkflowName(row.name)) continue;
       // Leaf-to-root order means the closer tenant's definition for this
       // name was already recorded — an ancestor's same-name row never
       // overwrites it.
