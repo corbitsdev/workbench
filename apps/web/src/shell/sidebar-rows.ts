@@ -61,8 +61,9 @@ function dedupeAgentChatsByTitle(chats: readonly Workbench[]): Workbench[] {
     const chatActivity = chat.lastActivityAt
       ? Date.parse(chat.lastActivityAt)
       : 0;
-    const currentActivity =
-      current?.lastActivityAt ? Date.parse(current.lastActivityAt) : 0;
+    const currentActivity = current?.lastActivityAt
+      ? Date.parse(current.lastActivityAt)
+      : 0;
     if (current === undefined || chatActivity > currentActivity) {
       newestByTitle.set(chat.title, chat);
     }

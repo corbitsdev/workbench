@@ -136,10 +136,9 @@ describe("buildSidebarRows", () => {
 
     const rows = buildSidebarRows([], [groupOne, groupTwo], []);
 
-    expect(rows.map((row) => (row.kind === "workbench" ? row.workbench.id : null))).toEqual([
-      "ch_group_1",
-      "ch_group_2",
-    ]);
+    expect(
+      rows.map((row) => (row.kind === "workbench" ? row.workbench.id : null)),
+    ).toEqual(["ch_group_1", "ch_group_2"]);
   });
 });
 
