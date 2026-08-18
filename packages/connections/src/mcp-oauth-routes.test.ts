@@ -56,8 +56,12 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
  * metadata, RFC 8414 authorization-server metadata, RFC 7591 dynamic
  * client registration, an authorize endpoint that auto-approves (no real
  * consent UI to drive in a test), and a token endpoint that only accepts
- * the exact `code_verifier` PKCE minted. */
-function startStubAuthorizationServer(): {
+ * the exact `code_verifier` PKCE minted. `tokenGrant` controls whether the
+ * token response also issues a refresh token — an authorization server
+ * that doesn't (the Hugging-Face-precedent case) is the default. */
+function startStubAuthorizationServer(
+  tokenGrant: { refreshToken?: string; expiresIn?: number } = {},
+): {
   origin: string;
   resourcePath: string;
   stop: () => void;
@@ -141,6 +145,12 @@ function startStubAuthorizationServer(): {
         return Response.json({
           access_token: `token_for_${code}`,
           token_type: "bearer",
+          ...(tokenGrant.refreshToken !== undefined
+            ? { refresh_token: tokenGrant.refreshToken }
+            : {}),
+          ...(tokenGrant.expiresIn !== undefined
+            ? { expires_in: tokenGrant.expiresIn }
+            : {}),
         });
       }
       return new Response("not found", { status: 404 });
@@ -170,8 +180,10 @@ function fakeHub() {
     tenantId: string;
     providerId: string;
     name: string;
-    type: "api_key";
+    type: "api_key" | "oauth_token";
     secret: string;
+    refreshSecret?: string;
+    expiresAt?: string;
     status: "active";
     createdAt: string;
     updatedAt: string;
@@ -180,19 +192,33 @@ function fakeHub() {
 
   const apiCall: ApiCall = async (method, path, body) => {
     if (method === "GET" && path.endsWith("/providers?inherited=false")) {
-      return { status: 200, data: { data: providers, nextCursor: null }, cookies: [] };
+      return {
+        status: 200,
+        data: { data: providers, nextCursor: null },
+        cookies: [],
+      };
     }
     if (method === "GET" && path.endsWith("/credentials")) {
-      return { status: 200, data: { data: credentials, nextCursor: null }, cookies: [] };
+      return {
+        status: 200,
+        data: { data: credentials, nextCursor: null },
+        cookies: [],
+      };
     }
     if (method === "POST" && path.endsWith("/providers")) {
-      const input = body as { name: string; plugin: string; apiBaseUrl?: string };
+      const input = body as {
+        name: string;
+        plugin: string;
+        apiBaseUrl?: string;
+      };
       const row = {
         id: `prv_${nextId++}`,
         tenantId: TENANT.id,
         name: input.name,
         plugin: input.plugin,
-        ...(input.apiBaseUrl !== undefined ? { apiBaseUrl: input.apiBaseUrl } : {}),
+        ...(input.apiBaseUrl !== undefined
+          ? { apiBaseUrl: input.apiBaseUrl }
+          : {}),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -200,14 +226,27 @@ function fakeHub() {
       return { status: 201, data: row, cookies: [] };
     }
     if (method === "POST" && path.endsWith("/credentials")) {
-      const input = body as { providerId: string; name: string; secret: string };
+      const input = body as {
+        providerId: string;
+        name: string;
+        secret: string;
+        type: "api_key" | "oauth_token";
+        refreshSecret?: string;
+        expiresAt?: string;
+      };
       const row = {
         id: `crd_${nextId++}`,
         tenantId: TENANT.id,
         providerId: input.providerId,
         name: input.name,
-        type: "api_key" as const,
+        type: input.type,
         secret: input.secret,
+        ...(input.refreshSecret !== undefined
+          ? { refreshSecret: input.refreshSecret }
+          : {}),
+        ...(input.expiresAt !== undefined
+          ? { expiresAt: input.expiresAt }
+          : {}),
         status: "active" as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -219,6 +258,34 @@ function fakeHub() {
   };
 
   return { apiCall, providers, credentials };
+}
+
+/** Drives `/start` → the stub authorization server's auto-approved
+ * `/authorize` → `/callback`, returning the callback's response. Shared by
+ * every test that needs a completed connect, not just the ones asserting
+ * on the redirect itself. */
+async function runConnectFlow(
+  app: Hono<TenantEnv>,
+  as: { origin: string; resourcePath: string },
+): Promise<Response> {
+  const startResponse = await app.request(
+    `/exa/start?url=${encodeURIComponent(as.resourcePath)}&name=Exa`,
+    { redirect: "manual" },
+  );
+  const cookieHeader = startResponse.headers.get("set-cookie") ?? "";
+  const cookie = cookieHeader.split(";")[0] ?? "";
+  const authorizeLocation = startResponse.headers.get("location") ?? "";
+
+  const authorizeResponse = await fetch(authorizeLocation, {
+    redirect: "manual",
+  });
+  const redirectToCallback = authorizeResponse.headers.get("location") ?? "";
+  const callbackUrl = new URL(redirectToCallback);
+
+  return app.request(`${callbackUrl.pathname}${callbackUrl.search}`, {
+    headers: { cookie },
+    redirect: "manual",
+  });
 }
 
 describe("MCP OAuth connect flow", () => {
@@ -272,24 +339,7 @@ describe("MCP OAuth connect flow", () => {
       });
       const app = mountAs(routes);
 
-      const startResponse = await app.request(
-        `/exa/start?url=${encodeURIComponent(as.resourcePath)}&name=Exa`,
-        { redirect: "manual" },
-      );
-      const cookieHeader = startResponse.headers.get("set-cookie") ?? "";
-      const cookie = cookieHeader.split(";")[0] ?? "";
-      const authorizeLocation = startResponse.headers.get("location") ?? "";
-
-      const authorizeResponse = await fetch(authorizeLocation, {
-        redirect: "manual",
-      });
-      const redirectToCallback = authorizeResponse.headers.get("location") ?? "";
-      const callbackUrl = new URL(redirectToCallback);
-
-      const callbackResponse = await app.request(
-        `${callbackUrl.pathname}${callbackUrl.search}`,
-        { headers: { cookie }, redirect: "manual" },
-      );
+      const callbackResponse = await runConnectFlow(app, as);
 
       expect(callbackResponse.status).toBe(302);
       const finalLocation = callbackResponse.headers.get("location") ?? "";
@@ -303,6 +353,78 @@ describe("MCP OAuth connect flow", () => {
       expect(hub.providers[0]?.plugin).toBe("mcp-streamable-http");
       expect(hub.credentials).toHaveLength(1);
       expect(hub.credentials[0]?.secret).toBe(probedToken);
+    } finally {
+      as.stop();
+    }
+  });
+
+  test("callback stores an oauth_token credential with the issued refresh token and expiry", async () => {
+    const as = startStubAuthorizationServer({
+      refreshToken: "refresh_abc123",
+      expiresIn: 3600,
+    });
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 3,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const before = Date.now();
+      const callbackResponse = await runConnectFlow(app, as);
+      const after = Date.now();
+
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "outcome=connected",
+      );
+      expect(hub.credentials).toHaveLength(1);
+      const stored = hub.credentials[0];
+      expect(stored?.type).toBe("oauth_token");
+      expect(stored?.refreshSecret).toBe("refresh_abc123");
+      expect(stored?.expiresAt).toBeDefined();
+      const expiresAtMs = new Date(stored?.expiresAt ?? "").getTime();
+      expect(expiresAtMs).toBeGreaterThanOrEqual(before + 3600 * 1000);
+      expect(expiresAtMs).toBeLessThanOrEqual(after + 3600 * 1000);
+    } finally {
+      as.stop();
+    }
+  });
+
+  test("callback stores no refreshSecret or expiresAt when the server issues no refresh token", async () => {
+    const as = startStubAuthorizationServer();
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 3,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const callbackResponse = await runConnectFlow(app, as);
+
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "outcome=connected",
+      );
+      expect(hub.credentials).toHaveLength(1);
+      const stored = hub.credentials[0];
+      expect(stored?.type).toBe("oauth_token");
+      expect(stored?.refreshSecret).toBeUndefined();
+      expect(stored?.expiresAt).toBeUndefined();
     } finally {
       as.stop();
     }
