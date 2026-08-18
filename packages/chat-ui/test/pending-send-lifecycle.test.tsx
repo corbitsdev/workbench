@@ -57,6 +57,29 @@ describe("pending send lifecycle", () => {
     expect(el.querySelector(".chat-pending-glyph")).not.toBeNull();
   });
 
+  // CL-6251 reopened: a pending send used to render through its own
+  // avatar-less, timestamp-less tier below the real timeline — the exact
+  // mechanism the owner read as "unsent -> sent". It now renders through
+  // the same path (`MessageParts`/`TextBubble`) any confirmed message
+  // does: full avatar, sender name, and local timestamp, with only the
+  // clock glyph as the one "still sending" cue.
+  test("a sending message renders full-fidelity — avatar, sender name, and a real timestamp — not a stripped-down bubble", async () => {
+    const el = await mount([
+      {
+        id: "pending_1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "text", text: "hello there" }],
+        sender: { name: null, address: "prn_self1@agents.example" },
+        pendingStatus: "sending",
+        pendingNonce: "nonce_1",
+      },
+    ]);
+
+    expect(el.querySelector(".chat-sender-avatar-button")).not.toBeNull();
+    expect(el.querySelector(".chat-bubble-time")?.textContent).not.toBe("");
+    expect(el.querySelector(".chat-message-actions")).toBeNull();
+  });
+
   test("a failed send keeps the bubble text visible and adds a retry row, without removing it", async () => {
     const el = await mount(
       [

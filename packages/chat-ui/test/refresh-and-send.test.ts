@@ -590,6 +590,24 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
     expect(merged[1]?.parts).toEqual([{ kind: "text", text: "hi" }]);
   });
 
+  test("CL-6251 reopened: a pending item's own clientId matches its nonce, so it keys identically to whichever confirmed message later reconciles it", () => {
+    const pending: PendingSend[] = [
+      {
+        nonce: "pending_1",
+        text: "hi",
+        attachments: [],
+        createdAt: "2026-01-01T00:01:00.000Z",
+        status: "sending",
+      },
+    ];
+    const merged = mergePendingSends(serverItems, pending, "prn_alice");
+    // The timeline keys every item by `clientId ?? id` (see
+    // `ChannelTimeline`'s render loop) so a pending bubble and its later
+    // confirmed copy — same `clientId` — update one DOM node in place
+    // rather than unmount/remount as two unrelated items.
+    expect(merged[1]?.clientId).toBe("pending_1");
+  });
+
   test('a pending send\'s sender local part matches the signed-in principal, so it renders as "You"', () => {
     const pending: PendingSend[] = [
       {
