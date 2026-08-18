@@ -36,6 +36,32 @@ the run's own tenant + principal before touching the plane.
 A transport, HTTP, or shape failure comes back as a completed result
 with `isError: true` — never fabricate a memory or a search result.
 
+## When the memory plane isn't configured (CL-6168)
+
+`apps/hub/src/memory-mount.ts` decides whether the memory plane is
+mounted at hub boot, from its own `EMBED_BASE_URL` config parse — never
+by making a call and seeing what happens. An unmounted plane is reflected
+two ways, both driven by that one boot-time decision:
+
+- The hub's tool inventory (`listMyraUsableToolPackages` in
+  `apps/hub/src/index.ts`) simply never offers `@corbits/memory-tools` to
+  an agent, the same way `@corbits/mcp-tools` is only offered when an MCP
+  server connection exists — so an unconfigured hub never tempts Myra
+  into believing memory works.
+- If a tool call reaches `/api/workflow-memory` anyway,
+  `createUnavailableWorkflowMemoryRoutes` answers a `503` with
+  `error.code: "unavailable"`, which `memory_search`/`memory_add`/
+  `memory_list` each translate into a plain-language, `isError: false`
+  result ("Memory isn't set up on this server yet — proceeding without
+  it.") instead of surfacing HTTP noise. Any OTHER failure (a real
+  network error, an unexpected shape, an actual 5xx) still comes back as
+  `isError: true` — the distinction is the hub's own honest signal, not a
+  transport error being swallowed.
+
+See the root `.env.example`'s `EMBED_BASE_URL` section for the local-dev
+option (a local Ollama instance, no API key needed) alongside the
+managed-provider one.
+
 ## Usage
 
 ```ts
