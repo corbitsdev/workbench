@@ -69,51 +69,8 @@ export const DEFAULT_MAX_GRANTS_AGE_MS = 24 * 60 * 60 * 1000;
 
 // `assembleRunCredentialsSnapshot` and the `onRunStart` wiring below are
 // ported from upstream Interchange's sidecar (apps/sidecar/src/
-// workflow-host-wiring.ts at the vendored pin 55c4431e), adapted only to
-// this directory's `deploymentId` naming (upstream: `anchorRunId`) for the
-// deployment-level id. Before this port, `createSidecarWorkflowSupervisor`
-// never wired `onRunStart`, so the vendor supervisor's per-run grants
-// barrier (`pushRunGrants`) never armed and a one-shot post-spawn
-// `deliverCredentials` push stood in as an interim substitute (removed by
-// this port).
-
-/**
- * The single seam behind BOTH compensations for one known gap: this hub
- * does not yet ship the per-run `run.grants` frame before a run starts
- * (CL-6194 reopened), so a run's per-run grants file is routinely absent
- * for every chat-minted channel host, not evidence of a failed write.
- *
- * While `true` (the gap is open):
- *  - `assembleRunCredentialsSnapshot` below returns an empty-per-step
- *    snapshot instead of failing closed on a missing grants file.
- *  - `spawnWorkflowDeployment` in `workflow-host-wiring/index.ts` makes a
- *    one-shot post-spawn `deliverCredentials` push to seed the child's
- *    real material, compensating for the empty snapshot above.
- *
- * Both read this SAME exported binding rather than keeping two
- * independently-reasoned judgment calls, so closing the gap (flipping this
- * to `false` once the hub produces the file, then deleting both
- * compensations along with this flag) cannot leave one half behind: with
- * the gap closed, `assembleRunCredentialsSnapshot` fails closed on a
- * missing file AND the post-spawn push no longer fires.
- *
- * A `let`, not a `const`: production never flips it, but
- * `setGrantsFrameGapOpenForTest` lets the regression test pinning "both
- * compensations die together" toggle the one seam both branches read,
- * rather than two independent code paths.
- */
-export let CL_6194_GRANTS_FRAME_GAP_OPEN = true;
-
-/**
- * Test-only seam mutator for `CL_6194_GRANTS_FRAME_GAP_OPEN`. Production
- * code never calls this; it exists so a test can prove the two
- * compensations gated on the seam die together without reaching into the
- * module's live binding directly (an ES module namespace import's bindings
- * are read-only from outside the module).
- */
-export function setGrantsFrameGapOpenForTest(open: boolean): void {
-  CL_6194_GRANTS_FRAME_GAP_OPEN = open;
-}
+// workflow-host-wiring.ts), adapted only to this directory's `deploymentId`
+// naming (upstream: `anchorRunId`) for the deployment-level id.
 
 export type AssembleRunCredentialsSnapshotOpts = {
   /** Substrate handle the sink reads the per-run grants file from. */
@@ -156,31 +113,9 @@ export async function assembleRunCredentialsSnapshot(
     runId: opts.runId,
   });
   if (runGrants === undefined) {
-    // Upstream fails closed here (its hub writes `runs/<runId>/grants.json`
-    // on every run birth path). See `CL_6194_GRANTS_FRAME_GAP_OPEN`'s doc
-    // comment for why this hub cannot yet do the same.
-    if (!CL_6194_GRANTS_FRAME_GAP_OPEN) {
-      throw new Error(
-        `assembleRunCredentialsSnapshot: run ${opts.runId} of deployment ${opts.deploymentId} has no grants file; failing closed`,
-      );
-    }
-    // Return one empty-grants entry PER STEP -- an entryless snapshot
-    // makes every credential lookup fail with "credentialsSnapshot has no
-    // entry for stepId" (observed live 18/08, a second regression), which
-    // is worse than an empty one the post-spawn push in
-    // `workflow-host-wiring/index.ts` then seeds with real material.
-    const emptyHash = await hashGrants([]);
-    return {
-      steps: opts.stepOrder.map((stepId) => ({
-        stepId,
-        address: opts.deriveStepAddress({
-          runId: opts.deploymentId,
-          stepId,
-        }),
-        grants: [],
-        contentHash: emptyHash,
-      })),
-    };
+    throw new Error(
+      `assembleRunCredentialsSnapshot: run ${opts.runId} of deployment ${opts.deploymentId} has no grants file; failing closed`,
+    );
   }
   const contentHash = await hashGrants(runGrants);
   const steps: CredentialsSnapshotStep[] = opts.stepOrder.map((stepId) => ({
