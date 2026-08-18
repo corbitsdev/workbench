@@ -67,6 +67,11 @@ const ChannelWire = type({
   // parent · <parent name>" for true siblings, "shared · <owning tenant
   // name>" otherwise. Absent for every ordinary, non-projected channel.
   "sharedLabel?": "string",
+  // The channel's own workbench tenant (every channel minted through
+  // POST /channels carries a tenancy link; null only on true legacy
+  // rows) — what per-workbench surfaces like Insights scope on, since
+  // the CHANNEL id is a run id, never a tenant id.
+  "tenancy?": type({ tenantId: "string" }).or("null"),
 });
 
 const Channel = ChannelWire.pipe((wire) => ({

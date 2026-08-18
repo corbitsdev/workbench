@@ -85,6 +85,37 @@ describe("listChannels", () => {
     ]);
   });
 
+  test("parses a row's own workbench tenancy, and a legacy row's null", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "c1",
+            title: "General",
+            kind: "channel",
+            pinned: true,
+            participants: [],
+            tenancy: { tenantId: "tnt_1" },
+          },
+          {
+            id: "c2",
+            title: "Legacy",
+            kind: "channel",
+            pinned: false,
+            participants: [],
+            tenancy: null,
+          },
+        ],
+      }),
+    );
+    const channels = await listChannels("tenant_1", "channel");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels?kind=channel",
+    );
+    expect(channels[0]?.tenancy).toEqual({ tenantId: "tnt_1" });
+    expect(channels[1]?.tenancy).toBeNull();
+  });
+
   test("throws a ChatApiError on a malformed response", async () => {
     stubFetch(() => json({ items: [{ id: "c1" }] }));
     await expect(listChannels("tenant_1", "chat")).rejects.toBeInstanceOf(

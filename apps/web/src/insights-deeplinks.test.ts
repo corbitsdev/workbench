@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import type { WorkflowRun } from "./api";
 import {
+  channelInsightsPath,
   INSIGHTS_RUNS_PATH,
   runDeepLinkTarget,
   runDetailPath,
-  workbenchInsightsPath,
 } from "./insights-deeplinks";
 
 function run(id: string): WorkflowRun {
@@ -43,14 +43,12 @@ describe("runDeepLinkTarget", () => {
   });
 });
 
-describe("workbenchInsightsPath", () => {
-  test("builds the /insights/workbench/:tenantId path", () => {
-    expect(workbenchInsightsPath("tnt_42")).toBe("/insights/workbench/tnt_42");
+describe("channelInsightsPath", () => {
+  test("builds the /insights/channel/:channelId path", () => {
+    expect(channelInsightsPath("ch_42")).toBe("/insights/channel/ch_42");
   });
 
-  test("encodes a tenant id so a slash or space cannot break out of the segment", () => {
-    expect(workbenchInsightsPath("a/b c")).toBe(
-      "/insights/workbench/a%2Fb%20c",
-    );
+  test("encodes a channel id so a slash or space cannot break out of the segment", () => {
+    expect(channelInsightsPath("a/b c")).toBe("/insights/channel/a%2Fb%20c");
   });
 });
