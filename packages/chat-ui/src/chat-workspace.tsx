@@ -69,6 +69,7 @@ import { mentionCandidatesFromParticipants } from "./mentions";
 import type { BringInMember, MentionInviteIntent } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
+import { displayWorkbenchTitle } from "./workbench-display-title";
 import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
@@ -561,6 +562,8 @@ function ChatWorkspaceInner({
   onSettingsOpenChange,
   settingsSection = "general",
   onSettingsSectionChange,
+  settingsEntityId = null,
+  onSettingsEntityIdChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
   onFixConnection,
@@ -605,6 +608,12 @@ function ChatWorkspaceInner({
   readonly onSettingsSectionChange?: (
     section: WorkbenchSettingsSectionId,
   ) => void;
+  /** Section sub-selection while settings are open — host-controlled from
+   * the URL (`/w/:id/settings/:section/:entityId`). */
+  readonly settingsEntityId?: string | null;
+  /** Fired when a settings section opens or closes its own detail, so the
+   * host can deepen or clear the entity segment in the URL. */
+  readonly onSettingsEntityIdChange?: (entityId: string | null) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** See `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
@@ -1398,6 +1407,10 @@ function ChatWorkspaceInner({
           (workbench) => workbench.id === activeWorkbenchId,
         )
       : undefined;
+  const activeWorkbenchDisplayTitle =
+    activeWorkbench !== undefined
+      ? displayWorkbenchTitle(activeWorkbench.title, activeWorkbench.id)
+      : undefined;
   const isActiveChat =
     activeWorkbench !== undefined &&
     isKnownWorkbenchKind(activeWorkbench.kind) &&
@@ -1520,10 +1533,17 @@ function ChatWorkspaceInner({
             tenantId={tenantId}
             workbenchId={activeWorkbenchId}
             workbenchTitle={
-              activeWorkbench.title || CHAT_STRINGS.unnamedWorkbench
+              displayWorkbenchTitle(
+                activeWorkbench.title,
+                activeWorkbench.id,
+              ) || CHAT_STRINGS.unnamedWorkbench
             }
             section={settingsSection}
             onSectionChange={(next) => onSettingsSectionChange?.(next)}
+            entityId={settingsEntityId}
+            {...(onSettingsEntityIdChange !== undefined
+              ? { onEntityIdChange: onSettingsEntityIdChange }
+              : {})}
             onBack={() => onSettingsOpenChange?.(false)}
             onInviteParticipant={() => {
               onSettingsOpenChange?.(false);
@@ -1584,7 +1604,8 @@ function ChatWorkspaceInner({
                       className="chat-thread-breadcrumb-link"
                       onClick={closeThread}
                     >
-                      {activeWorkbench?.title || CHAT_STRINGS.unnamedWorkbench}
+                      {activeWorkbenchDisplayTitle ||
+                        CHAT_STRINGS.unnamedWorkbench}
                     </button>
                     <span
                       className="chat-thread-breadcrumb-sep"
@@ -1622,7 +1643,8 @@ function ChatWorkspaceInner({
                 ) : (
                   <div className="chat-workbench-identity">
                     <h2 className="chat-workbench-title">
-                      {activeWorkbench?.title || CHAT_STRINGS.unnamedWorkbench}
+                      {activeWorkbenchDisplayTitle ||
+                        CHAT_STRINGS.unnamedWorkbench}
                     </h2>
                     {activeChatAgent !== undefined ? <AgentBadge /> : null}
                   </div>
@@ -1952,6 +1974,8 @@ export function ChatWorkspace({
   onSettingsOpenChange,
   settingsSection,
   onSettingsSectionChange,
+  settingsEntityId,
+  onSettingsEntityIdChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
   onFixConnection,
@@ -1983,7 +2007,7 @@ export function ChatWorkspace({
   /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   /** Whether the routed workbench's settings surface should replace the
-   * conversation stage — host-controlled from the URL (`/c/:id/settings`). */
+   * conversation stage — host-controlled from the URL (`/w/:id/settings`). */
   readonly settingsOpen?: boolean;
   /** Fired when the settings surface should open or close, so the host can
    * reflect it in the URL — see `ChatWorkspaceInner`'s prop of the same
@@ -1993,13 +2017,19 @@ export function ChatWorkspace({
     section?: WorkbenchSettingsSectionId,
   ) => void;
   /** Which workbench settings tab is active — host-controlled from the URL
-   * (`/c/:id/settings/:section`). */
+   * (`/w/:id/settings/:section`). */
   readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
   readonly onSettingsSectionChange?: (
     section: WorkbenchSettingsSectionId,
   ) => void;
+  /** Section sub-selection — host-controlled from the URL
+   * (`/w/:id/settings/:section/:entityId`). */
+  readonly settingsEntityId?: string | null;
+  /** Fired when a settings section opens or closes its own detail, so the
+   * host can deepen or clear the entity segment in the URL. */
+  readonly onSettingsEntityIdChange?: (entityId: string | null) => void;
   /** Open a message's artifact chip — see `WorkbenchTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   /** The chip's "Open in Library" affordance — see `WorkbenchTimeline`'s
@@ -2071,6 +2101,10 @@ export function ChatWorkspace({
           {...(settingsSection !== undefined ? { settingsSection } : {})}
           {...(onSettingsSectionChange !== undefined
             ? { onSettingsSectionChange }
+            : {})}
+          {...(settingsEntityId !== undefined ? { settingsEntityId } : {})}
+          {...(onSettingsEntityIdChange !== undefined
+            ? { onSettingsEntityIdChange }
             : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(blockResponses !== undefined ? { blockResponses } : {})}

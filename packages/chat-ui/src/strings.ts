@@ -65,6 +65,7 @@ export const CHAT_STRINGS = {
   composerHelpClose: "Close",
   runRoutineUnavailable: "Open Routines to run one",
   unnamedWorkbench: "Untitled conversation",
+  newWorkbenchTitle: "New workbench",
   unnamedRun: "Untitled agent",
   fallbackPartLabel: (kind: string) => `[${kind}]`,
   senderYou: "You",

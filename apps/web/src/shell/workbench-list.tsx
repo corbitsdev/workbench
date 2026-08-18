@@ -19,6 +19,7 @@ import {
 import { toast } from "@corbits/react-ui";
 import {
   CHAT_STRINGS,
+  displayWorkbenchTitle,
   workbenchesQueryKeyPrefix,
   patchWorkbenchSettings,
 } from "@corbits/chat-ui";
@@ -272,7 +273,8 @@ function WorkbenchRow({
     );
   }
 
-  const displayTitle = title || CHAT_STRINGS.unnamedWorkbench;
+  const displayTitle =
+    displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
@@ -479,7 +481,8 @@ export function WorkbenchList({
 
   const rowName = (row: SidebarRow): string =>
     row.kind === "workbench"
-      ? row.workbench.title || CHAT_STRINGS.unnamedWorkbench
+      ? displayWorkbenchTitle(row.workbench.title, row.workbench.id) ||
+        CHAT_STRINGS.unnamedWorkbench
       : row.agent.name;
 
   const q = query.trim().toLowerCase();
