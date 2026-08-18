@@ -89,7 +89,9 @@ import {
   applyInsightsMigrations,
   createDrizzleRunTraceReader,
   createInsightsRoutes,
+  createPostgresTurnLatencyStore,
   createPostgresUsageStore,
+  createTurnLatencyTracker,
   createUsageSink,
   withTurnPartPersistGuard,
 } from "@corbits/insights";
@@ -190,6 +192,7 @@ import {
   DEFAULT_ASSET_REF,
   ensureWorkflowDefinitionForAsset,
   type AgentRepoStore,
+  type EventCollectorRegistry,
   type WsHandle,
 } from "@intx/hub-sessions";
 import { createLaunchCaches } from "./launch-caches";
@@ -536,11 +539,23 @@ export async function createHub(config: HubConfig) {
   // event can arrive.
   await applyInsightsMigrations(config.databaseUrl);
   const insightsUsage = createPostgresUsageStore(config.databaseUrl);
+  const insightsLatency = createPostgresTurnLatencyStore(config.databaseUrl);
   const usageSink = createUsageSink({
     store: insightsUsage.store,
     generateId: () => generateId("inferenceTurn"),
   });
-  const eventCollectors = createEventCollectorRegistry({
+  // CL-6257: per-message-run stage latency (message-received →
+  // reactor.start → inference.start → first-token → reply-posted). The
+  // vendored event collector never persists the events this reads (see
+  // @corbits/insights' latency-tracker.ts header) and isn't ours to edit,
+  // so this observes the same InferenceEvent stream from outside it by
+  // wrapping `eventCollectors` below — the same seam `withTurnPartPersistGuard`
+  // already uses on the `db` handle passed into the vendored registry.
+  const turnLatency = createTurnLatencyTracker({
+    store: insightsLatency.store,
+    generateId: () => generateId("inferenceTurn"),
+  });
+  const baseEventCollectors = createEventCollectorRegistry({
     // `withTurnPartPersistGuard` (see @corbits/insights) wraps
     // `withTurnPartWriteDefaults`: it retries a turn_part insert once on
     // the collector's known turn_id/session_id FK race and makes any
@@ -567,6 +582,34 @@ export async function createHub(config: HubConfig) {
         });
     },
   });
+  // Wraps every `EventCollectorRegistry` call the vendored session
+  // orchestrator makes: `create`/`dispatch`/`abandon` also feed
+  // `turnLatency`, which is the only place tenantId/sessionId land
+  // against an agentAddress for the raw event stream (the registry keeps
+  // that mapping private). Every other method passes straight through.
+  const eventCollectors: EventCollectorRegistry = {
+    ...baseEventCollectors,
+    create(agentAddress, tenantId, sessionId, runId) {
+      turnLatency.onSessionCreate(agentAddress, tenantId, sessionId);
+      baseEventCollectors.create(agentAddress, tenantId, sessionId, runId);
+    },
+    dispatch(agentAddress, event) {
+      turnLatency.onEvent(agentAddress, event);
+      baseEventCollectors.dispatch(agentAddress, event);
+      // Mirrors the registry's own `isTerminal` check (event-collector-registry.ts)
+      // so `turnLatency`'s per-agentAddress session map is cleared on the
+      // same terminal events that make the registry drop its own collector
+      // — otherwise a session that ends without `abandon()` never frees.
+      const isTerminal =
+        event.type === "reactor.done" ||
+        (event.type === "reactor.error" && event.data.fatal);
+      if (isTerminal) turnLatency.onSessionEnd(agentAddress);
+    },
+    abandon(agentAddress) {
+      turnLatency.onSessionEnd(agentAddress);
+      baseEventCollectors.abandon(agentAddress);
+    },
+  };
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
     router: sidecarRouter,
@@ -1178,6 +1221,7 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       runTraceReader: createDrizzleRunTraceReader(db),
+      latencyStore: insightsLatency.store,
       // Same `db` handle every other platform-table reader in this file
       // uses — lets /usage, /activity, /tools, and /scope roll up a
       // workspace parent's child workbenches (see resolveScope in
@@ -2783,6 +2827,7 @@ export async function createHub(config: HubConfig) {
       routineScheduler.stop();
       credentialExpirySweep.stop();
       await insightsUsage.close();
+      await insightsLatency.close();
       await preferences.close();
       await benchSettings.close();
       await closeMailbox();
