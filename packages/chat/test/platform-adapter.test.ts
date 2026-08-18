@@ -33,7 +33,6 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { channelLaunch } from "../src/schema";
-import { AgentUnreachableError } from "../src/platform-port";
 import { foldedRun } from "@corbits/folded-runs";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
@@ -1629,456 +1628,96 @@ describe("createHubChatPlatform", () => {
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
     });
 
-    // CL-6147: a folded run settles `workflow_run.status` to
-    // "completed" after every handled mail (idle until its next
-    // message), but stays resident on the sidecar -- still
-    // routable -- until the idle-sleep sweep tears it down. Before
-    // this fix, `sendMail` only ever woke a non-routable target, so
-    // every message sent inside that window reached a terminal
-    // occurrence and was rejected by the workflow-host supervisor.
-    // These prove the folded-run-aware decision in isolation from the
-    // idle-sleep lifecycle itself (`@corbits/agent-lifecycle`'s own
-    // contract, proven elsewhere).
-    describe("folded-run-aware wake decision (CL-6147)", () => {
-      function completedFoldedRunDb(
-        opts: { foldedRunMarker?: boolean; runStatus?: string } = {},
-      ) {
-        return createFakeDb({
-          assetRow: {
-            tenantId: "ten_1",
-            creatorPrincipalId: "prin_creator",
-            name: "channel-1",
-            displayName: null,
+    // CL-6267: the sidecar's own park/wake handler now owns respawning
+    // a parked-but-still-announced deployment the moment mail routes
+    // to it, so `sendMail` never deploys or undeploys anything for a
+    // routable address -- regardless of the underlying run's status --
+    // it just proceeds straight to the send.
+    test("sendMail never deploys or undeploys a routable channel, even a completed folded run — the sidecar's park handler owns respawn", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
           },
+        ],
+        defaultSource: "off_1",
+      };
+
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address: "ins_channel1@ten1.workbench.test",
+          principalId: "prin_run1",
           definitionId: "wfd_channel1",
-          workflowRunRow: {
-            id: "ins_channel1",
-            address: "ins_channel1@ten1.workbench.test",
-            principalId: "prin_run1",
-            definitionId: "wfd_channel1",
-            status: opts.runStatus ?? "completed",
+          status: "completed",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_channel1",
+          tenantId: "ten_1",
+          status: "deployed",
+          assetId: "asst_channel1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
           },
-          workflowDefinitionRow: {
-            id: "wfd_channel1",
-            tenantId: "ten_1",
-            status: "deployed",
-            assetId: "asst_channel1",
-          },
-          channelLaunchRow: {
-            tenantId: "ten_1",
-            instanceId: "ins_channel1",
-            foldedBody: {
-              systemPrompt: "host prompt",
-              model: "claude-sonnet-5",
-              toolPackagePins: [],
-              grantRequirements: [],
-              credentialBindings: [],
-            },
-          },
-          ...(opts.foldedRunMarker !== undefined
-            ? { foldedRunMarker: opts.foldedRunMarker }
-            : {}),
-        });
-      }
-
-      test("a failed run with its zombie still routable is undeployed and woken — the brick recovers on the next message", async () => {
-        resolveDefinitionSourcesResult = {
-          ok: true,
-          sources: [
-            {
-              id: "off_1",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "off_1",
-        };
-        const db = completedFoldedRunDb({ runStatus: "failed" });
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        // The anchored-out survivor from the original brick: still
-        // holding a WS route, acks withheld, pushing against a moved
-        // anchor.
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: ["ins_channel1@ten1.workbench.test"],
-        });
-        const eventCollectors = createFakeEventCollectors();
-        const assetService = createFakeAssetService({
-          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService,
-          sidecarRouter,
-          eventCollectors,
-          lifecycle: { idleSleepMs: 60_000 },
-          reclaimRetryDelaysMs: [1, 2],
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        expect(sidecarRouter.sendAgentUndeployCalls.length).toBeGreaterThan(0);
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
       });
 
-      // CL-6203: the wake-redeploy brick. A "running" run behind a
-      // routability blip must never be redeployed over — that moves its
-      // deployment anchor while the process is alive, and the survivor
-      // bricks the channel with rejected pack pushes.
-      test("a running run that becomes routable during the settle window is never redeployed", async () => {
-        resolveDefinitionSourcesResult = {
-          ok: true,
-          sources: [
-            {
-              id: "off_1",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "off_1",
-        };
-        const db = completedFoldedRunDb({ runStatus: "running" });
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: [],
-        });
-        // The blip resolves itself two ticks into the settle window —
-        // exactly the live-process case the redeploy must not clobber.
-        setTimeout(() => {
-          sidecarRouter.routableAddresses.push(
-            "ins_channel1@ten1.workbench.test",
-          );
-        }, 5);
-        const eventCollectors = createFakeEventCollectors();
-        const assetService = createFakeAssetService({
-          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService,
-          sidecarRouter,
-          eventCollectors,
-          lifecycle: { idleSleepMs: 60_000 },
-          reclaimRetryDelaysMs: [2, 10, 20],
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
-        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
+      const sessionService = createFakeSessionService();
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: ["ins_channel1@ten1.workbench.test"],
+      });
+      const eventCollectors = createFakeEventCollectors();
+      const assetService = createFakeAssetService({
+        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
       });
 
-      test("a running run that never settles is undeployed BEFORE the redeploy, so no survivor pushes against the moved anchor", async () => {
-        resolveDefinitionSourcesResult = {
-          ok: true,
-          sources: [
-            {
-              id: "off_1",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "off_1",
-        };
-        const db = completedFoldedRunDb({ runStatus: "running" });
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: [],
-        });
-        const eventCollectors = createFakeEventCollectors();
-        const assetService = createFakeAssetService({
-          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService,
-          sidecarRouter,
-          eventCollectors,
-          lifecycle: { idleSleepMs: 60_000 },
-          reclaimRetryDelaysMs: [1, 2],
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        // The resident is stopped, and the redeploy still happens —
-        // the awaited undeploy in `wakeByAddress` structurally
-        // precedes the deploy call.
-        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(1);
-        expect(sidecarRouter.sendAgentUndeployCalls[0]?.reason).toContain(
-          "moved deployment anchor",
-        );
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService,
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 60_000 },
       });
 
-      test("sendMail redeploys a settled (completed) folded run before sending, even though it is still routable", async () => {
-        resolveDefinitionSourcesResult = {
-          ok: true,
-          sources: [
-            {
-              id: "off_1",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "off_1",
-        };
-
-        const db = completedFoldedRunDb();
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        // Still resident on the sidecar -- routable -- unlike the
-        // non-routable case above: `ensureAwake` alone would no-op
-        // here and hand the terminal occurrence's address straight to
-        // `sendFoldedMail`.
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: ["ins_channel1@ten1.workbench.test"],
-        });
-        const eventCollectors = createFakeEventCollectors();
-        const assetService = createFakeAssetService({
-          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService,
-          sidecarRouter,
-          eventCollectors,
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        // The settled occurrence was explicitly undeployed first...
-        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(1);
-        expect(sidecarRouter.sendAgentUndeployCalls[0]?.address).toBe(
-          "ins_channel1@ten1.workbench.test",
-        );
-        // ...which is what let the ordinary not-routable wake path
-        // below actually redeploy despite routability...
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
-        const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
-          agentAddress: string;
-          runId: string;
-        };
-        expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-        expect(deployed.runId).toBe("ins_channel1");
-        // ...before the send.
-        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      const sent = await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "hi" },
       });
 
-      test("sendMail redeploys a settled folded run even with no lifecycle configured", async () => {
-        resolveDefinitionSourcesResult = {
-          ok: true,
-          sources: [
-            {
-              id: "off_1",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "off_1",
-        };
-
-        const db = completedFoldedRunDb();
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: ["ins_channel1@ten1.workbench.test"],
-        });
-        const assetService = createFakeAssetService({
-          assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService,
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          // No `lifecycle` here: the settled check must not depend on
-          // the idle-sleep lifecycle being configured at all.
-        });
-
-        await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
-        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-      });
-
-      test("sendMail does not redeploy a routable, still-running folded run", async () => {
-        const db = createFakeDb({
-          assetRow: {
-            tenantId: "ten_1",
-            creatorPrincipalId: "prin_creator",
-            name: "channel-1",
-            displayName: null,
-          },
-          definitionId: "wfd_channel1",
-          workflowRunRow: {
-            id: "ins_channel1",
-            address: "ins_channel1@ten1.workbench.test",
-            principalId: "prin_run1",
-            status: "running",
-          },
-        });
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: ["ins_channel1@ten1.workbench.test"],
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService: createFakeAssetService(),
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
-        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-      });
-
-      test("sendMail does not treat a completed run with no folded_run marker as settled", async () => {
-        // A plain top-level deployment's own genuine "done forever"
-        // also reads `status === 'completed'` -- only the `folded_run`
-        // marker (see `@corbits/folded-runs`' `isFoldedRunSettled`)
-        // distinguishes a folded run's "idle until next message" from
-        // that. Absent it, this must fall back to the ordinary
-        // routability-only decision, not force a redeploy.
-        const db = completedFoldedRunDb({ foldedRunMarker: false });
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: ["ins_channel1@ten1.workbench.test"],
-        });
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService: createFakeAssetService({
-            assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
-          }),
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hi" },
-        });
-
-        expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
-        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-      });
+      expect(sent.id).toBeTruthy();
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+      expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
+      expect(sessionService.sendUserMessageCalls).toHaveLength(1);
     });
 
     test("waking a host launch pins the noop source again, never touching the catalog", async () => {
@@ -2323,332 +1962,6 @@ describe("createHubChatPlatform", () => {
       } finally {
         globalThis.setInterval = originalSetInterval;
       }
-    });
-  });
-
-  // CL-6120: a hub restart empties this process's own routable-address
-  // index before the sidecar's reconnect challenge has a chance to
-  // repopulate it. A wake racing ahead of that reclaim gets an
-  // "is already deployed" rejection from the still-live agent — proof
-  // the agent was never actually stopped, but NOT proof the address is
-  // routable yet. These tests drive that race directly: the fake
-  // `sessionService.deployInstanceAtHead` throws the same
-  // `SessionLaunchError` the real sidecar rejection carries, and the
-  // fake `sidecarRouter`'s `routableAddresses` stands in for the same
-  // in-memory index `routeMail` delivers against
-  // (`getRoutableAddresses`), so the assertions below are checking the
-  // adapter against the *actual* delivery predicate, not the error
-  // text alone. `setTimeout` is stubbed to run instantly so these
-  // settle-window waits (up to ~8s of real backoff) don't slow the
-  // suite down.
-  describe("post-restart reclaim race", () => {
-    function alreadyDeployedError(): SessionLaunchError {
-      return new SessionLaunchError(
-        "provision",
-        new Error("agent ins_channel1@ten1.workbench.test is already deployed"),
-        true,
-      );
-    }
-
-    function withInstantTimers<T>(run: () => Promise<T>): Promise<T> {
-      const original = globalThis.setTimeout;
-      // @ts-expect-error -- narrower stand-in is fine for these tests
-      globalThis.setTimeout = (fn: () => void) => {
-        fn();
-        return 0 as unknown as ReturnType<typeof setTimeout>;
-      };
-      return run().finally(() => {
-        globalThis.setTimeout = original;
-      });
-    }
-
-    function buildReclaimDb() {
-      return createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "channel-1",
-          displayName: null,
-        },
-        definitionId: "wfd_channel1",
-        workflowRunRow: {
-          id: "ins_channel1",
-          address: "ins_channel1@ten1.workbench.test",
-          principalId: "prin_run1",
-          definitionId: "wfd_channel1",
-        },
-        workflowDefinitionRow: {
-          id: "wfd_channel1",
-          tenantId: "ten_1",
-          status: "deployed",
-          assetId: "asst_channel1",
-        },
-        channelLaunchRow: {
-          tenantId: "ten_1",
-          instanceId: "ins_channel1",
-          // Pinned to the noop source so every wake in this describe
-          // block never touches the tenant catalog -- unrelated to
-          // the reclaim/redeploy race under test here, and a prior
-          // test file-wide can leave `resolveDefinitionSourcesResult`
-          // (a module-level mutable) set to `ok: false`.
-          noopInference: true,
-          foldedBody: {
-            systemPrompt: "host prompt",
-            model: "claude-sonnet-5",
-            toolPackagePins: [],
-            grantRequirements: [],
-            credentialBindings: [],
-          },
-        },
-      });
-    }
-
-    test("a wake that hits 'is already deployed' but settles routable within the budget needs no redeploy", async () => {
-      const db = buildReclaimDb();
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      let deployAttempts = 0;
-      const sessionService = createFakeSessionService();
-      sessionService.deploySingleStepAtHead = async () => {
-        deployAttempts += 1;
-        if (deployAttempts === 1) throw alreadyDeployedError();
-        return { publicKey: "test-public-key" };
-      };
-      const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: [],
-      });
-
-      // The very first settle-window poll finds the address still
-      // routing through the sidecar's own reclaim -- exactly the race
-      // this adapter tolerates without ever forcing a redeploy.
-      const originalSetTimeout = globalThis.setTimeout;
-      let sawFirstDelay = false;
-      // @ts-expect-error -- narrower stand-in is fine for this test
-      globalThis.setTimeout = (fn: () => void) => {
-        if (!sawFirstDelay) {
-          sawFirstDelay = true;
-          sidecarRouter.routableAddresses.push(
-            "ins_channel1@ten1.workbench.test",
-          );
-        }
-        fn();
-        return 0 as unknown as ReturnType<typeof setTimeout>;
-      };
-
-      try {
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService: createFakeAssetService(),
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hello" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        // The rejection alone was never trusted as proof of liveness
-        // -- the address had to actually show up as routable -- but
-        // once it did, no second (forced) deploy attempt and no
-        // undeploy fired.
-        expect(deployAttempts).toBe(1);
-        expect(sidecarRouter.sendAgentUndeployCalls).toEqual([]);
-      } finally {
-        globalThis.setTimeout = originalSetTimeout;
-      }
-    });
-
-    test("a wake that never becomes routable within the budget forces a real redeploy, and the send still succeeds", async () => {
-      await withInstantTimers(async () => {
-        const db = buildReclaimDb();
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        let deployAttempts = 0;
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: [],
-        });
-        sessionService.deploySingleStepAtHead = async () => {
-          deployAttempts += 1;
-          if (deployAttempts === 1) throw alreadyDeployedError();
-          // The forced redeploy is what actually brings the agent
-          // back up and routable -- mirroring the sidecar's own
-          // register frame repopulating `addressIndex` in production.
-          sidecarRouter.routableAddresses.push(
-            "ins_channel1@ten1.workbench.test",
-          );
-          return { publicKey: "test-public-key" };
-        };
-        // `routeMail` (modeled here by `sendUserMessage`) only
-        // succeeds once the address is actually routable -- the exact
-        // predicate this fix makes the wake decision agree with.
-        sessionService.sendUserMessage = async (params: unknown) => {
-          const { agentAddress } = params as { agentAddress: string };
-          if (!sidecarRouter.routableAddresses.includes(agentAddress)) {
-            throw new Error(
-              `Failed to deliver message to ${agentAddress}: agent is unreachable`,
-            );
-          }
-          sessionService.sendUserMessageCalls.push(params);
-          return new TextEncoder().encode("raw-mime-bytes");
-        };
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService: createFakeAssetService(),
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        const sent = await platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hello" },
-        });
-
-        expect(sent.id).toBeTruthy();
-        // The settle window elapsed with the address still unroutable,
-        // so the adapter fell back to the same redeploy the "not
-        // live" branch performs -- never just swallowed the rejection.
-        expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(1);
-        expect(deployAttempts).toBe(2);
-        expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-      });
-    });
-
-    test("a send that stays unreachable through every retry rejects with a clean AgentUnreachableError, not a raw stack trace", async () => {
-      await withInstantTimers(async () => {
-        const db = buildReclaimDb();
-        db.inserted.push({
-          table: agentSession,
-          values: { id: "ses_run1", principalId: "prin_run1" },
-        });
-
-        let deployAttempts = 0;
-        const sessionService = createFakeSessionService();
-        const sidecarRouter = createFakeSidecarRouter({
-          routableAddresses: [],
-        });
-        sessionService.deploySingleStepAtHead = async () => {
-          deployAttempts += 1;
-          if (deployAttempts === 1) throw alreadyDeployedError();
-          // Every later (forced) redeploy "succeeds" from the
-          // sidecar's point of view, but the agent never actually
-          // reconnects -- routableAddresses stays empty forever, so
-          // every delivery attempt keeps failing exactly like a
-          // genuinely broken instance would.
-          return { publicKey: "test-public-key" };
-        };
-        sessionService.sendUserMessage = async () => {
-          throw new Error(
-            "Failed to deliver message to ins_channel1@ten1.workbench.test: agent is unreachable",
-          );
-        };
-
-        const platform = createHubChatPlatform({
-          hubPublicKey: "hub-key",
-          toolGrantsForPins: () => [],
-          db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-          sessionService,
-          assetService: createFakeAssetService(),
-          sidecarRouter,
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-
-        await expect(
-          platform.sendMail({
-            tenantId: "ten_1",
-            channelId: "ins_channel1",
-            principalId: "prin_sender",
-            content: { content: "hello" },
-          }),
-        ).rejects.toThrow(AgentUnreachableError);
-      });
-    });
-
-    // Proves the actual churn reduction: `deployAtHead` (and its
-    // unconditional `eventCollectors.create`) is entered exactly twice
-    // for this whole restart episode -- once for the initial raced
-    // attempt, once for the forced redeploy -- never once per mail
-    // send's own retry attempt the way the old blind-trust version did.
-    test("a full reclaim-then-redeploy episode opens the event collector exactly twice, not once per mail retry", async () => {
-      const db = buildReclaimDb();
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      let deployAttempts = 0;
-      const sessionService = createFakeSessionService();
-      const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: [],
-      });
-      sessionService.deploySingleStepAtHead = async () => {
-        deployAttempts += 1;
-        if (deployAttempts === 1) throw alreadyDeployedError();
-        sidecarRouter.routableAddresses.push(
-          "ins_channel1@ten1.workbench.test",
-        );
-        return { publicKey: "test-public-key" };
-      };
-      sessionService.sendUserMessage = async (params: unknown) => {
-        const { agentAddress } = params as { agentAddress: string };
-        if (!sidecarRouter.routableAddresses.includes(agentAddress)) {
-          throw new Error(
-            `Failed to deliver message to ${agentAddress}: agent is unreachable`,
-          );
-        }
-        sessionService.sendUserMessageCalls.push(params);
-        return new TextEncoder().encode("raw-mime-bytes");
-      };
-
-      const eventCollectors = createFakeEventCollectors();
-      const platform = createHubChatPlatform({
-        hubPublicKey: "hub-key",
-        toolGrantsForPins: () => [],
-        db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-        sessionService,
-        assetService: createFakeAssetService(),
-        sidecarRouter,
-        eventCollectors,
-        lifecycle: { idleSleepMs: 60_000 },
-      });
-
-      await withInstantTimers(() =>
-        platform.sendMail({
-          tenantId: "ten_1",
-          channelId: "ins_channel1",
-          principalId: "prin_sender",
-          content: { content: "hello" },
-        }),
-      );
-
-      expect(deployAttempts).toBe(2);
-      expect(eventCollectors.createCalls).toHaveLength(2);
     });
   });
 
