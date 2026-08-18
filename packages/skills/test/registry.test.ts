@@ -274,3 +274,126 @@ describe("versions", () => {
     ).rejects.toThrow(/only the author/);
   });
 });
+
+describe("tenant inheritance", () => {
+  const PARENT_TENANT = "tenant_parent";
+  const CHILD_TENANT = "tenant_child";
+  const PARENT_HIERARCHY = { [CHILD_TENANT]: PARENT_TENANT };
+
+  const PARENT_AUTHOR = {
+    tenantId: PARENT_TENANT,
+    principalId: "principal_parent_author",
+  };
+  const CHILD_MEMBER = {
+    tenantId: CHILD_TENANT,
+    principalId: "principal_child_member",
+  };
+
+  function createInheritingRegistry(): {
+    registry: SkillRegistry;
+    assets: FakeSkillAssets;
+  } {
+    const inheritingAssets = createFakeSkillAssets({
+      tenantParents: PARENT_HIERARCHY,
+    });
+    const inheritingAccess = createFakeSkillAccess(PARENT_HIERARCHY);
+    return {
+      assets: inheritingAssets,
+      registry: createSkillRegistry({
+        assets: inheritingAssets,
+        access: inheritingAccess,
+      }),
+    };
+  }
+
+  test("a tenant-scoped skill authored on a parent is visible and loadable from a child tenant", async () => {
+    const { registry: inheriting } = createInheritingRegistry();
+    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+
+    expect((await inheriting.list(CHILD_MEMBER)).map((s) => s.name)).toEqual([
+      "triage",
+    ]);
+    const loaded = await inheriting.load(CHILD_MEMBER, "triage");
+    expect(loaded.body).toBe(CREATE_INPUT.body);
+  });
+
+  test("a child's own skill shadows a same-named skill inherited from its parent", async () => {
+    const { registry: inheriting } = createInheritingRegistry();
+    await inheriting.create(PARENT_AUTHOR, {
+      ...CREATE_INPUT,
+      description: "The parent's version.",
+      body: "Parent body.",
+      scope: "tenant",
+    });
+    await inheriting.create(CHILD_MEMBER, {
+      ...CREATE_INPUT,
+      description: "The child's own version.",
+      body: "Child body.",
+      scope: "tenant",
+    });
+
+    const loaded = await inheriting.load(CHILD_MEMBER, "triage");
+    expect(loaded.body).toBe("Child body.");
+    expect((await inheriting.list(CHILD_MEMBER)).map((s) => s.name)).toEqual([
+      "triage",
+    ]);
+  });
+
+  test("a private skill authored on the parent is invisible from the child, except to its own creator", async () => {
+    const { registry: inheriting } = createInheritingRegistry();
+    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "private" });
+
+    expect(await inheriting.list(CHILD_MEMBER)).toHaveLength(0);
+    expect(inheriting.load(CHILD_MEMBER, "triage")).rejects.toThrow(
+      SkillRegistryError,
+    );
+
+    const parentAuthorInChild = {
+      tenantId: CHILD_TENANT,
+      principalId: PARENT_AUTHOR.principalId,
+    };
+    const loaded = await inheriting.load(parentAuthorInChild, "triage");
+    expect(loaded.body).toBe(CREATE_INPUT.body);
+  });
+
+  test("updating an inherited skill from the child is refused loudly, never forked into a child-owned copy", async () => {
+    const { registry: inheriting, assets } = createInheritingRegistry();
+    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+
+    const parentAuthorInChild = {
+      tenantId: CHILD_TENANT,
+      principalId: PARENT_AUTHOR.principalId,
+    };
+    await expect(
+      inheriting.update(parentAuthorInChild, "triage", {
+        description: CREATE_INPUT.description,
+        body: "an attempted child-side edit",
+      }),
+    ).rejects.toThrow(/inherited from a parent workbench/);
+
+    // Confirm nothing was forked into the child tenant.
+    const childOwnedNames = (await assets.listForTenant(CHILD_TENANT)).filter(
+      (a) => a.tenantId === CHILD_TENANT,
+    );
+    expect(childOwnedNames).toHaveLength(0);
+    const loaded = await inheriting.load(CHILD_MEMBER, "triage");
+    expect(loaded.body).toBe(CREATE_INPUT.body);
+  });
+
+  test("restore and setScope on an inherited skill are refused the same way", async () => {
+    const { registry: inheriting } = createInheritingRegistry();
+    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+    const parentAuthorInChild = {
+      tenantId: CHILD_TENANT,
+      principalId: PARENT_AUTHOR.principalId,
+    };
+    const first = (await inheriting.versions(CHILD_MEMBER, "triage"))[0];
+
+    await expect(
+      inheriting.restore(parentAuthorInChild, "triage", first?.commitSha ?? ""),
+    ).rejects.toThrow(/inherited from a parent workbench/);
+    await expect(
+      inheriting.setScope(parentAuthorInChild, "triage", "private"),
+    ).rejects.toThrow(/inherited from a parent workbench/);
+  });
+});

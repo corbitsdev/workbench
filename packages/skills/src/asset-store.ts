@@ -27,7 +27,24 @@ export type SkillAssetStore = {
     readonly displayName: string;
     readonly creatorPrincipalId: string;
   }): Promise<SkillAssetRow>;
+  /**
+   * Resolves a skill by name the way every native asset resolves: walking
+   * the tenant's ancestor chain and returning the first match, so a
+   * tenant's own skill shadows a same-named one inherited from a parent.
+   */
   findByName(tenantId: string, name: string): Promise<SkillAssetRow | null>;
+  /**
+   * The flat, non-inheriting lookup: only an asset declared directly on
+   * `tenantId`. Used for the one case that must never see an ancestor's
+   * asset — deciding whether `create` is naming a fresh skill or resuming
+   * this tenant's own half-finished one.
+   */
+  findOwnByName(tenantId: string, name: string): Promise<SkillAssetRow | null>;
+  /**
+   * Every skill visible to `tenantId`, including those inherited from
+   * ancestors, with a descendant's own asset shadowing a same-named
+   * ancestor asset.
+   */
   listForTenant(tenantId: string): Promise<readonly SkillAssetRow[]>;
   writeSkillMd(input: {
     readonly assetId: string;

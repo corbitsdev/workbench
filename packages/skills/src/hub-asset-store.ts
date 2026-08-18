@@ -90,6 +90,17 @@ export function createHubSkillAssetStore(
       return row === undefined ? null : rowToSkillAsset(row);
     },
 
+    async findOwnByName(tenantId, name) {
+      const row = await db.query.asset.findFirst({
+        where: and(
+          eq(assetTable.tenantId, tenantId),
+          eq(assetTable.kind, SKILL_ASSET_KIND),
+          eq(assetTable.name, name),
+        ),
+      });
+      return row === undefined ? null : rowToSkillAsset(row);
+    },
+
     async listForTenant(tenantId) {
       const rows = await db.query.asset.findMany({
         where: and(
