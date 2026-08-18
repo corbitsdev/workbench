@@ -439,7 +439,8 @@ function readErrorEnvelope(
 /**
  * Hands a user's own key to the hub, which stores it immediately — no
  * live call to the provider gates this (CL-6123) — then seeds the
- * caller's personal bench and deploys every default routine against it.
+ * caller's personal bench: deploys every default workflow, then plants
+ * the disabled-by-default preset routines against them (CL-6201).
  * The credential itself is stored through the hub's native `POST
  * /api/tenants/:id/credentials` route — this call only tells the hub
  * which provider and key to use, and reports the outcome. A wrong key
@@ -523,7 +524,8 @@ export type CompleteSetupOutcome =
  * The follow-up call the wizard makes once it lands back from a
  * one-click connect: the OAuth callback itself only stored the key
  * (fast, so the browser is never left waiting on a redirect), and this
- * is what actually deploys the default routines against it.
+ * is what actually deploys the default workflows and their preset
+ * routines against it.
  * `"unseeded"` is not a failure — it means the workbench genuinely has
  * nothing to finish setting up with yet, and the wizard falls back to
  * the ordinary credential step rather than treating it as broken.

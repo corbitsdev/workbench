@@ -155,7 +155,7 @@ function ProviderPicker({
  * round-trip's outcome (OpenRouter or Hugging Face) — a fresh connect
  * lands on the finishing-setup phase (the OAuth callback only stored
  * the key; this page's own follow-up call is what actually deploys the
- * default routines), and a failed round trip lands on the
+ * default workflows and their preset routines), and a failed round trip lands on the
  * credential step with the failure spelled out. Either way, the mount
  * effect below re-checks the account's real state before trusting a
  * connect outcome carried in the URL — see its own comment. */
