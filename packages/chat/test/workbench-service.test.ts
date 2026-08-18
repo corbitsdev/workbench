@@ -85,10 +85,57 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     },
   );
 
+  test.each(["run_0123456789abcdef", "wfd_a1b2c3d4e5f6", "ins_agent1"])(
+    "an id-shaped workbench name (%s) is omitted from the brief entirely",
+    (workbenchName) => {
+      const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
+      expect(brief).not.toContain(workbenchName);
+      expect(brief).not.toContain("titled");
+      expect(brief).not.toContain("undefined");
+    },
+  );
+
+  test("an explicit human title is still included alongside a real name", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "Ada",
+      workbenchName: "Myra",
+    });
+    expect(brief).toContain('titled "Myra"');
+  });
+
   test("an absent workbench name is omitted from the brief entirely", () => {
     const brief = greetingKickoffBrief({ senderName: "Ada" });
     expect(brief).not.toContain("titled");
     expect(brief).not.toContain("undefined");
+  });
+
+  test("a direct chat greets as a conversation, never a workbench, and drops any name it was given", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "alice",
+      workbenchName: "Myra",
+      isDirectChat: true,
+    });
+    expect(brief).toContain("direct chat with alice");
+    expect(brief).not.toContain("workbench");
+    expect(brief).not.toContain("Myra");
+    expect(brief).not.toContain("titled");
+    expect(brief).toMatch(/ask what they need/i);
+  });
+
+  test("a direct chat with no resolved sender name still reads naturally", () => {
+    const brief = greetingKickoffBrief({ isDirectChat: true });
+    expect(brief).toContain("direct chat with someone");
+    expect(brief).not.toContain("undefined");
+  });
+
+  test("a group workbench greeting is unaffected by isDirectChat being absent/false", () => {
+    const brief = greetingKickoffBrief({
+      senderName: "Ada",
+      workbenchName: "GTM research",
+      isDirectChat: false,
+    });
+    expect(brief).toContain('titled "GTM research"');
+    expect(brief).toMatch(/what they are working on/i);
   });
 
   test("the brief carries the opening date when given one", () => {
