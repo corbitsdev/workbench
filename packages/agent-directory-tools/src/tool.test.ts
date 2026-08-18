@@ -38,11 +38,22 @@ test("requires the sanctioned env keys", () => {
   ]);
 });
 
-test('list_agents declares no approval; create_agent declares approval: "ask"', () => {
+test("list_agents and create_agent declare no approval key", () => {
   expect(agentDirectoryTools.definitions).toEqual([
     { name: LIST_AGENTS_TOOL },
-    { name: CREATE_AGENT_TOOL, approval: "ask" },
+    { name: CREATE_AGENT_TOOL },
   ]);
+});
+
+test("create_agent's description does not say a human must approve before anything is created", () => {
+  const bundle = agentDirectoryTools(testEnv());
+  const definition = bundle.definitions.find(
+    (d) => d.name === CREATE_AGENT_TOOL,
+  );
+  expect(definition).toBeDefined();
+  expect((definition as { description: string }).description).not.toMatch(
+    /human must approve/i,
+  );
 });
 
 test("create_agent's input schema requires name and systemPrompt only", () => {

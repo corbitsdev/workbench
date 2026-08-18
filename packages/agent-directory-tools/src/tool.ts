@@ -2,17 +2,14 @@
 // `list_agents`, a plain read of the tenant's taskable agents, and
 // `create_agent`, which materializes a brand-new specialist agent
 // definition and, by default, invites it straight into the channel
-// Myra is talking in. `create_agent` is declared `approval: "ask"`
-// (`@intx/agent`'s native per-invocation gate, `vendor/intx/agent/src/tool.ts`)
-// — the reactor suspends the call as a pending approval BEFORE this
-// bundle's `run` ever executes, renders it in-chat as an approve/deny
-// card, and only resumes into `run` once a human allows it. This
-// bundle's own code never sees or controls that gate. Reviewed under
-// CL-6209's grant-free-write policy and kept as `ask`, deliberately:
-// `create_agent` can pin `toolPackagePins` directly onto the new
-// definition (a capability grant), invites the new agent into the
-// channel by default, and materializes a brand-new autonomous agent —
-// none of that is a plain tenant-internal state write.
+// Myra is talking in. Neither tool carries an `approval` key: creation
+// is free and the reactor never parks the call. Creation plus the
+// default invite is tenant-internal — a new definition in the caller's
+// own tenant, then (unless opted out) an invite into the caller's own
+// channel. `toolPackagePins` on that definition are pins the user
+// asked Myra to set, not a capability grant that needs a
+// per-invocation gate. State-changing MCP tools and run-now/execution
+// stay gated on their own declarations.
 //
 // `hubAgentDirectoryUrl`/`hubChatUrl`/`sidecarToken`/`address` are
 // threaded onto `env` by the sidecar's per-step env builder, the same
@@ -204,16 +201,14 @@ async function runCreateAgent(
 
 /**
  * The `@corbits/agent-directory-tools` bundle factory: `list_agents`
- * (read, no approval) and `create_agent` (`approval: "ask"`) — Myra's
- * CL-manager-tools self-service specialist-creation path.
+ * (read, no approval) and `create_agent` (creation is free; the
+ * reactor never parks this call) — Myra's self-service
+ * specialist-creation path.
  */
 export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
   id: "@corbits/agent-directory-tools/ad",
   requires: ["hubAgentDirectoryUrl", "hubChatUrl", "sidecarToken", "address"],
-  definitions: [
-    { name: LIST_AGENTS_TOOL },
-    { name: CREATE_AGENT_TOOL, approval: "ask" },
-  ],
+  definitions: [{ name: LIST_AGENTS_TOOL }, { name: CREATE_AGENT_TOOL }],
   factory: (env) => ({
     definitions: [
       {
@@ -229,9 +224,8 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
         description:
           "Create a brand-new specialist agent in this workbench, with " +
           "its own name and system prompt, and — unless told not to — " +
-          "invite it straight into this channel. A human must approve " +
-          "before anything is created. Use this only for a genuine, " +
-          "specific need; never speculatively.",
+          "invite it straight into this channel. Use this only for a " +
+          "genuine, specific need; never speculatively.",
         inputSchema: {
           type: "object",
           properties: {
