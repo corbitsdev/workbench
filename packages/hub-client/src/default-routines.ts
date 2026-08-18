@@ -181,6 +181,18 @@ export async function ensureDefaultRoutines(
       body,
       cookies,
     );
+    if (created.status === 400 && /is required/.test(JSON.stringify(created.data))) {
+      // The definition declares a required trigger input this preset has
+      // nothing honest to pre-fill (last-30-days-research's "Topic").
+      // Seeding must never fabricate a value and must never fail the
+      // whole onboarding flow over an optional nicety — the workflow
+      // stays deployed and creatable by hand with a real topic.
+      log(
+        `routine "${preset.name}" skipped: its definition requires input ` +
+          `this preset cannot honestly pre-fill (${JSON.stringify(created.data)})`,
+      );
+      continue;
+    }
     if (created.status !== 201) {
       throw new CliError(
         `the hub rejected creation of the default routine "${preset.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
