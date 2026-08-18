@@ -108,6 +108,108 @@ describe("Sidebar", () => {
     );
   });
 
+  // CL-6178: the global pages (Plugins, Insights) used to be the one place
+  // the sidebar dropped the workbench list — reaching a conversation from
+  // there took an extra hop back through `/`. The list is not page-scoped
+  // (see `workbench-list.tsx`'s own header comment), so it renders exactly
+  // the same on these routes as it does on a chat route, just with no row
+  // marked active.
+  describe("the workbench list on global pages", () => {
+    const channel = {
+      id: "ch_1",
+      title: "Research brief",
+      kind: "channel",
+      pinned: false,
+      participants: [],
+    };
+
+    function stubChannels(): void {
+      globalThis.fetch = ((input: RequestInfo | URL) => {
+        const path = typeof input === "string" ? input : String(input);
+        if (path.includes("/api/me/principals"))
+          return Promise.resolve(json(membership));
+        if (path.includes("/chat/channels?kind=channel"))
+          return Promise.resolve(json({ items: [channel] }));
+        if (path.includes("/chat/channels?kind=chat"))
+          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/approvals/needs-you"))
+          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/top-level-runs"))
+          return Promise.resolve(json({ data: [], nextCursor: null }));
+        return Promise.resolve(json({ items: [] }));
+      }) as typeof fetch;
+    }
+
+    async function mountAt(
+      path: string,
+      onNavigate: (to: string) => void = noop,
+    ): Promise<{
+      container: HTMLDivElement;
+      root: ReturnType<typeof createRoot>;
+    }> {
+      stubChannels();
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <BenchProvider>
+              <Sidebar
+                path={path}
+                user={user}
+                onNavigate={onNavigate}
+                onSignOut={noop}
+              />
+            </BenchProvider>
+          </TestQueryProvider>,
+        );
+      });
+      for (let i = 0; i < 40; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        if (container.innerHTML.includes("shell-ch-row")) break;
+      }
+      return { container, root };
+    }
+
+    for (const path of ["/plugins", "/insights"]) {
+      test(`renders the same workbench rows on ${path} as on a chat route, with none active`, async () => {
+        const { container, root } = await mountAt(path);
+
+        expect(
+          container.querySelector('[aria-label="Search workbenches"]'),
+        ).not.toBeNull();
+        const row = container.querySelector(".shell-ch-row");
+        expect(row).not.toBeNull();
+        expect(row?.textContent).toContain("Research brief");
+        expect(
+          container.querySelector('.shell-ch-row[data-active="true"]'),
+        ).toBeNull();
+
+        act(() => root.unmount());
+        container.remove();
+      });
+    }
+
+    test("selecting a row from a global page navigates to that conversation", async () => {
+      const navigated: string[] = [];
+      const { container, root } = await mountAt("/plugins", (to) =>
+        navigated.push(to),
+      );
+
+      const row = container.querySelector<HTMLButtonElement>(".shell-ch-row");
+      await act(async () => {
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      expect(navigated).toEqual(["/c/ch_1"]);
+
+      act(() => root.unmount());
+      container.remove();
+    });
+  });
+
   test("activity band slot sits between the scrollable body and the footer", async () => {
     stubFetch({
       items: [
