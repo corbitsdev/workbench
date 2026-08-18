@@ -7,7 +7,9 @@ export function DangerSection() {
   return (
     <div className="channel-settings-pane">
       <div className="chat-settings-callout chat-settings-callout-danger">
-        <strong>{CHAT_STRINGS.channelSettingsArchiveTitle}</strong>
+        <span className="chat-settings-callout-label">
+          {CHAT_STRINGS.channelSettingsArchiveTitle}
+        </span>
         <p>{CHAT_STRINGS.channelSettingsArchiveBody}</p>
       </div>
     </div>

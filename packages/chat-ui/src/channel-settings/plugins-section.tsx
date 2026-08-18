@@ -1,13 +1,16 @@
 // The workbench Plugins section (CL-6215, following CL-6099 workstream 1):
-// every registered TOOL/plugin connector's status for this exact workbench
-// tenant (Granola, Exa, Linear, GitHub, ScrapeCreators, ...), with
-// provenance ("Connected here" vs "Using shared key") straight from
-// `@workbench/connections/plugins`'s `listPluginsForTenant` — the same
+// a marketplace-style directory, not a grid of cards — one row per
+// registered TOOL/plugin connector (Granola, Exa, Linear, GitHub,
+// ScrapeCreators, ...), with provenance ("Inherited" vs owned here) straight
+// from `@workbench/connections/plugins`'s `listPluginsForTenant` — the same
 // chain-aware resolver the global Connections settings section and the
 // Plugins gallery both already read, so this view can never disagree with
 // theirs about what "inherited" means. A connected-here plugin can be
 // removed; an inherited one can be overridden by connecting this
 // workbench's own key, which shadows the ancestor's from that point on.
+// "Active" (connected here or inherited) lists first; "Available" (nothing
+// connected anywhere) lists below — plugins can be added at any time, so
+// the page always shows the full catalog, not just what's already wired up.
 //
 // `listPluginsForTenant`'s registry also carries the inference-provider
 // connectors (Anthropic, OpenAI, Groq, Ollama, Opencode Zen, ...) — those
@@ -16,7 +19,6 @@
 // connector names at least one tool package it feeds; every inference
 // provider names none (see `packages/connections/src/registry.ts`).
 import {
-  Badge,
   Button,
   ConfirmButton,
   Dialog,
@@ -33,6 +35,7 @@ import {
   listPluginsForTenant,
   type ResolvedPlugin,
 } from "@workbench/connections/plugins";
+import type { ConnectorDescriptor } from "@workbench/connections/registry";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -56,27 +59,131 @@ function isToolConnector(plugin: ResolvedPlugin): boolean {
   return plugin.descriptor.feedsTools.length > 0;
 }
 
-/** One status per card, not two: an actionable problem ("Needs attention")
- * always wins, since it's the thing to act on regardless of whose key is
- * in use; otherwise a connected offering reads by provenance ("Connected
- * here" vs "Using shared key"), and nothing connected anywhere reads
- * "Not connected". Replaces the old two-badge layout (a connection-status
- * chip plus a separate "Set here"/"Workbench default" provenance chip) —
- * a person reading the card only ever needs the one word that matters. */
-export function pluginCardStatus(plugin: ResolvedPlugin): {
-  readonly label: string;
-  readonly tone: "success" | "danger" | "neutral";
+/** Whether a plugin has anything to remove or override — a connected-here
+ * credential can be removed outright; everything else (inherited, broken,
+ * or never connected) only ever gets a Connect/Override action. */
+function ownedHere(plugin: ResolvedPlugin): boolean {
+  return plugin.status !== "not_connected" && plugin.provenance === "this-workbench";
+}
+
+/** Needs-attention is the one colored state on this page (owner rule: grey
+ * is for text/structure, orange is the only accent, and it only ever marks
+ * something to act on) — everything else, including ownership, reads as
+ * plain caption text. */
+function needsAttention(plugin: ResolvedPlugin): boolean {
+  return plugin.status === "needs_attention";
+}
+
+function isInherited(plugin: ResolvedPlugin): boolean {
+  return plugin.status !== "not_connected" && plugin.provenance === "inherited";
+}
+
+/** Every registered tool connector, split into what's already active
+ * (connected here or inherited from an ancestor workbench) and what's
+ * merely available to add — the marketplace framing the owner asked for:
+ * plugins can be added at any time, so the catalog is always the whole
+ * list, not just what's wired up. */
+export function splitPluginDirectory(plugins: readonly ResolvedPlugin[]): {
+  readonly active: readonly ResolvedPlugin[];
+  readonly available: readonly ResolvedPlugin[];
 } {
-  if (plugin.status === "needs_attention") {
-    return { label: "Needs attention", tone: "danger" };
+  return {
+    active: plugins.filter((plugin) => plugin.status !== "not_connected"),
+    available: plugins.filter((plugin) => plugin.status === "not_connected"),
+  };
+}
+
+function matchesQuery(plugin: ResolvedPlugin, query: string): boolean {
+  if (query === "") return true;
+  const haystack =
+    `${plugin.descriptor.displayName} ${plugin.descriptor.description ?? ""}`.toLowerCase();
+  return haystack.includes(query.toLowerCase());
+}
+
+function PluginLogo({
+  descriptor,
+}: {
+  readonly descriptor: ConnectorDescriptor;
+}) {
+  if (descriptor.icon !== undefined) {
+    return (
+      <span className="plugins-directory-logo" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill={`#${descriptor.icon.hex}`}
+        >
+          <path d={descriptor.icon.path} />
+        </svg>
+      </span>
+    );
   }
-  if (plugin.provenance === "this-workbench") {
-    return { label: "Connected here", tone: "success" };
-  }
-  if (plugin.provenance === "inherited") {
-    return { label: "Using shared key", tone: "neutral" };
-  }
-  return { label: "Not connected", tone: "neutral" };
+  return (
+    <span
+      className="plugins-directory-logo plugins-directory-logo-initial"
+      aria-hidden="true"
+    >
+      {descriptor.displayName.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+function PluginRow({
+  plugin,
+  onConnect,
+  onRemove,
+}: {
+  readonly plugin: ResolvedPlugin;
+  readonly onConnect: (plugin: ResolvedPlugin) => void;
+  readonly onRemove: (plugin: ResolvedPlugin) => void;
+}) {
+  return (
+    <div className="plugins-directory-row">
+      <PluginLogo descriptor={plugin.descriptor} />
+      <div className="plugins-directory-text">
+        <div className="plugins-directory-name-row">
+          <span className="plugins-directory-name">
+            {plugin.descriptor.displayName}
+          </span>
+          {needsAttention(plugin) ? (
+            <span className="plugins-directory-needs-attention">
+              Needs attention
+            </span>
+          ) : isInherited(plugin) ? (
+            <span className="plugins-directory-ownership">Inherited</span>
+          ) : null}
+        </div>
+        {plugin.descriptor.description !== undefined ? (
+          <p className="plugins-directory-description">
+            {plugin.descriptor.description}
+          </p>
+        ) : null}
+      </div>
+      <div className="plugins-directory-action">
+        {ownedHere(plugin) ? (
+          <ConfirmButton
+            variant="ghost"
+            size="sm"
+            className="plugins-directory-remove-action"
+            confirmLabel="Click again to remove"
+            onConfirm={() => onRemove(plugin)}
+          >
+            Remove
+          </ConfirmButton>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="plugins-directory-connect-action"
+            onClick={() => onConnect(plugin)}
+          >
+            {plugin.provenance === "inherited" ? "Override" : "Connect"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function PluginsSection({
@@ -91,6 +198,7 @@ export function PluginsSection({
   const [connectTarget, setConnectTarget] = useState<ResolvedPlugin | null>(
     null,
   );
+  const [search, setSearch] = useState("");
 
   function load() {
     setQuery({ kind: "loading" });
@@ -128,68 +236,75 @@ export function PluginsSection({
 
   return (
     <QueryView query={query} label="Plugins">
-      {(plugins) => (
-        <div className="channel-settings-pane">
-          <p className="chat-settings-field-hint">
-            Connections added here are used only by this workbench. Inference
-            provider keys live in Shared Settings, not here.
-          </p>
-          {rowError !== null ? (
-            <p className="chat-dialog-error" role="alert">
-              {rowError}
+      {(plugins) => {
+        const filtered = plugins.filter((plugin) => matchesQuery(plugin, search));
+        const { active, available } = splitPluginDirectory(filtered);
+        return (
+          <div className="channel-settings-pane plugins-directory">
+            <p className="chat-settings-field-hint">
+              Connections added here are used only by this workbench.
+              Inference provider keys live in Shared Settings, not here.
             </p>
-          ) : null}
-          <div className="settings-connections-grid">
-            {plugins.map((plugin) => {
-              const status = pluginCardStatus(plugin);
-              return (
-                <div
-                  key={plugin.descriptor.id}
-                  className="settings-connection-card"
-                >
-                  <span className="settings-connection-card-title">
-                    {plugin.descriptor.displayName}
-                  </span>
-                  <Badge tone={status.tone}>{status.label}</Badge>
-                  <div className="settings-connection-card-actions">
-                    {plugin.status !== "not_connected" &&
-                    plugin.provenance === "this-workbench" ? (
-                      <ConfirmButton
-                        variant="destructive"
-                        size="sm"
-                        confirmLabel="Remove"
-                        onConfirm={() => handleRemove(plugin)}
-                      >
-                        Remove
-                      </ConfirmButton>
-                    ) : (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => setConnectTarget(plugin)}
-                      >
-                        {plugin.provenance === "inherited"
-                          ? "Override"
-                          : "Connect"}
-                      </Button>
-                    )}
-                  </div>
+            {rowError !== null ? (
+              <p className="chat-dialog-error" role="alert">
+                {rowError}
+              </p>
+            ) : null}
+            <Input
+              className="plugins-directory-search"
+              placeholder="Search plugins"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label="Search plugins"
+            />
+            {active.length === 0 && available.length === 0 ? (
+              <p className="chat-settings-field-hint">
+                No plugins match &ldquo;{search}&rdquo;.
+              </p>
+            ) : null}
+            {active.length > 0 ? (
+              <div className="plugins-directory-group">
+                <div className="plugins-directory-group-label">Active</div>
+                <div className="plugins-directory-list">
+                  {active.map((plugin) => (
+                    <PluginRow
+                      key={plugin.descriptor.id}
+                      plugin={plugin}
+                      onConnect={setConnectTarget}
+                      onRemove={handleRemove}
+                    />
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            ) : null}
+            {available.length > 0 ? (
+              <div className="plugins-directory-group">
+                <div className="plugins-directory-group-label">Available</div>
+                <div className="plugins-directory-list">
+                  {available.map((plugin) => (
+                    <PluginRow
+                      key={plugin.descriptor.id}
+                      plugin={plugin}
+                      onConnect={setConnectTarget}
+                      onRemove={handleRemove}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
-          <ConnectDialog
-            tenantId={tenantId}
-            plugin={connectTarget}
-            onClose={() => setConnectTarget(null)}
-            onConnected={() => {
-              setConnectTarget(null);
-              load();
-            }}
-          />
-        </div>
-      )}
+            <ConnectDialog
+              tenantId={tenantId}
+              plugin={connectTarget}
+              onClose={() => setConnectTarget(null)}
+              onConnected={() => {
+                setConnectTarget(null);
+                load();
+              }}
+            />
+          </div>
+        );
+      }}
     </QueryView>
   );
 }

@@ -516,6 +516,7 @@
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
+        "simple-icons": "^16.28.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -676,6 +677,7 @@
         "@corbits/channel-digest-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
         "@corbits/heartbeat-workflow": "workspace:*",
+        "@corbits/last-30-days-research-workflow": "workspace:*",
         "@corbits/recurring-task-workflow": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
@@ -3015,6 +3017,8 @@
     "simple-concat": ["simple-concat@1.0.1", "", {}, "sha512-cSFtAPtRhljv69IK0hTVZQ+OfE9nePi/rtJmw5UjHeVyVroEqJXP1sFztKUy1qU+xvz3u/sfYJLa947b7nAN2Q=="],
 
     "simple-get": ["simple-get@4.0.1", "", { "dependencies": { "decompress-response": "^6.0.0", "once": "^1.3.1", "simple-concat": "^1.0.0" } }, "sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA=="],
+
+    "simple-icons": ["simple-icons@16.28.0", "", {}, "sha512-sQPR5AtK/ijRjou7zw7mlLp08oB6FH7i0lOy5XJ2zp9mJs/yejgiOn7KvQoe2q4YJIx6VmgUSW5AOefebPt5kg=="],
 
     "smart-buffer": ["smart-buffer@4.2.0", "", {}, "sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg=="],
 

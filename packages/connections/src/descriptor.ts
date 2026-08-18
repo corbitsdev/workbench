@@ -115,4 +115,16 @@ export interface ConnectorDescriptor {
    * local-machine origin Ollama listens on by default. Ignored for an
    * `"api-key"` connector. */
   readonly credentialPlaceholder?: string;
+  /** One line describing what this connector is for — the plugins
+   * directory's (CL-6215) subtitle under the connector's name. Absent for
+   * every inference-provider descriptor today (that surface names the
+   * provider and nothing else); present on every tool/plugin connector so
+   * the directory never renders a bare name with nothing under it. */
+  readonly description?: string;
+  /** This connector's brand mark, sourced from `simple-icons` (CC0 SVG
+   * brand data) where the brand has a listing there. Absent means the
+   * plugins directory falls back to a monochrome initial tile rather than
+   * going without a logo tile at all — see `registry.ts`'s own comment on
+   * which connectors this covers. */
+  readonly icon?: { readonly path: string; readonly hex: string };
 }

@@ -33,6 +33,14 @@ import {
   HUGGINGFACE_AUTHORIZE_URL,
   HUGGINGFACE_SCOPE,
 } from "./huggingface-connect";
+// simple-icons ships one brand per named export, tree-shaken by any bundler
+// that respects its `sideEffects: false` — importing the two brands this
+// registry actually has a listing for pulls in only those two icons' data,
+// not the whole ~3000-brand package. Granola, Exa, and ScrapeCreators have
+// no simple-icons listing (CL-6215's plugins-directory rebuild): those
+// three descriptors carry no `icon`, so the directory renders their
+// monochrome initial tile instead.
+import { siGithub, siLinear } from "simple-icons";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
   testExaCredential,
@@ -202,6 +210,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://www.granola.ai",
       feedsTools: ["@corbits/granola-tools"],
       probe: (apiKey) => testGranolaCredential(apiKey),
+      description: "Pull meeting notes and transcripts into your agents.",
     },
     exa: {
       id: "exa",
@@ -214,6 +223,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://exa.ai",
       feedsTools: ["@corbits/web-search-tools"],
       probe: (apiKey) => testExaCredential(apiKey),
+      description: "Neural web search built for agents.",
     },
     scrapecreators: {
       id: "scrapecreators",
@@ -224,6 +234,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://scrapecreators.com",
       feedsTools: ["@corbits/reddit-tools"],
       probe: (apiKey) => testScrapeCreatorsCredential(apiKey),
+      description: "Read Reddit threads and comments.",
     },
     linear: {
       id: "linear",
@@ -233,6 +244,8 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://linear.app/settings/api",
       feedsTools: ["@corbits/linear-tools"],
       probe: (apiKey) => testLinearCredential(apiKey),
+      description: "Read and write issues, projects, and comments.",
+      icon: { path: siLinear.path, hex: siLinear.hex },
     },
     github: {
       id: "github",
@@ -245,6 +258,8 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://github.com/settings/tokens",
       feedsTools: ["@corbits/github-tools"],
       probe: (apiKey) => testGitHubCredential(apiKey),
+      description: "Read repos, issues, and pull requests.",
+      icon: { path: siGithub.path, hex: siGithub.hex },
     },
     "granola-webhook": {
       id: "granola-webhook",

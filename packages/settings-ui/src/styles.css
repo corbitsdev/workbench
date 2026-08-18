@@ -158,7 +158,7 @@
   align-items: center;
   gap: 0.25rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius, 0);
   background: var(--card, var(--background));
   padding: 0.2rem 0.55rem;
   font-size: 0.8125rem;
@@ -185,7 +185,7 @@
   align-items: flex-start;
   gap: 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius, 0);
   background: transparent;
   padding: 0.55rem 0.75rem;
   text-align: left;
@@ -206,7 +206,7 @@
   width: 1.1rem;
   height: 1.1rem;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
+  border-radius: var(--radius, 0);
   font-size: 0.75rem;
   line-height: 1;
 }
@@ -235,7 +235,7 @@
   flex-direction: column;
   gap: 0.2rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius, 0);
   background: var(--card, var(--background));
   padding: 0.65rem 0.75rem;
   text-align: left;
@@ -276,7 +276,7 @@
 .settings-grant-preview {
   margin: 0.25rem 0 0;
   padding: 0.65rem 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius, 0);
   border: 1px dashed var(--border);
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
   font-size: 0.875rem;
@@ -311,7 +311,7 @@
   flex-direction: column;
   gap: 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius, 0);
   background: var(--card, var(--background));
   padding: 0.85rem 1rem;
 }
@@ -392,7 +392,7 @@
   flex-direction: column;
   gap: 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius, 0);
   padding: 0.75rem;
 }
 

@@ -8,7 +8,7 @@
 // retention, role selects, per-channel grants) are separate tickets — this
 // only re-houses what the panel already rendered.
 
-import { toast } from "@corbits/react-ui";
+import { Button, toast } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { useEffect, useState } from "react";
 
@@ -235,16 +235,24 @@ export function ChannelSettingsSurface({
             {activeSection.label}
           </span>
         </div>
-        <button
-          type="button"
-          className="channel-settings-save"
-          disabled={saveDisabled}
-          onClick={handleSave}
-        >
-          {saving
-            ? CHAT_STRINGS.channelSettingsSaving
-            : CHAT_STRINGS.channelSettingsSave}
-        </button>
+        {/* One primary action visible per view where possible (CL-6215
+            EMIL #4): the Agents section has its own scoped "Save
+            instructions" action per agent, so the top-bar Save — which
+            only ever writes the General section's fields — stays hidden
+            rather than sitting alongside a second, unrelated primary. */}
+        {activeSection.id !== "agents" ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={saveDisabled}
+            onClick={handleSave}
+          >
+            {saving
+              ? CHAT_STRINGS.channelSettingsSaving
+              : CHAT_STRINGS.channelSettingsSave}
+          </Button>
+        ) : null}
       </div>
 
       <QueryView query={query} label={CHAT_STRINGS.channelSettingsLoadError}>

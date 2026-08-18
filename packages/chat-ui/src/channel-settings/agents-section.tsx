@@ -13,7 +13,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  Badge,
   Button,
   EmptyState,
   Input,
@@ -29,7 +28,7 @@ import {
 } from "@corbits/react-ui";
 import { getResolvedCatalog, providerDisplayName } from "@corbits/inference-settings";
 import type { ModelInfo } from "@corbits/inference-settings";
-import { ArrowLeft, CircleAlert, UserPlus } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleAlert, UserPlus } from "lucide-react";
 
 import {
   addAgentCapability,
@@ -142,18 +141,28 @@ export function AgentsSection({
                   onClick={() => setSelected(agent)}
                 >
                   @{agent.handle}
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="chat-settings-agent-picker-row-chevron"
+                  />
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <Button variant="outline" size="sm" onClick={onInvite}>
-          <UserPlus />
+        <button
+          type="button"
+          className="chat-settings-invite-agent-action"
+          onClick={onInvite}
+        >
+          <UserPlus aria-hidden="true" />
           {CHAT_STRINGS.inviteAgentAction}
-        </Button>
+        </button>
       </div>
       <div className="chat-settings-callout">
-        <strong>{CHAT_STRINGS.channelSettingsAutonomyTitle}</strong>
+        <span className="chat-settings-callout-label">
+          {CHAT_STRINGS.channelSettingsAutonomyTitle}
+        </span>
         <p>{CHAT_STRINGS.channelSettingsAutonomyBody}</p>
       </div>
     </div>
@@ -499,20 +508,24 @@ function CapabilitiesBlock({
         <ul className="chat-settings-capability-list">
           {detail.toolPackagePins.map((pin) => (
             <li key={`tool-${pin.name}`}>
-              <Badge tone="neutral">{pin.name}</Badge>
+              <span className="chat-settings-capability-chip">
+                {pin.name}
+              </span>
             </li>
           ))}
           {detail.skills.map((skillName) => (
             <li key={`skill-${skillName}`}>
-              <Badge tone="neutral">{skillName}</Badge>
+              <span className="chat-settings-capability-chip">
+                {skillName}
+              </span>
             </li>
           ))}
           {detail.model !== undefined ? (
             <li key="model">
-              <Badge tone="neutral">
+              <span className="chat-settings-capability-chip">
                 {CHAT_STRINGS.channelSettingsAgentDetailModelLabel}:{" "}
                 {detail.model}
-              </Badge>
+              </span>
             </li>
           ) : null}
         </ul>
@@ -551,12 +564,19 @@ function CapabilitiesBlock({
             </select>
           </label>
           <label className="chat-settings-field">
+            <span>
+              {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityChoiceLabel}
+            </span>
             <select
               value={choice}
               onChange={(event) => setChoice(event.target.value)}
               disabled={optionsLoading || options.length === 0}
             >
-              <option value="" />
+              <option value="">
+                {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityChoicePlaceholder(
+                  kind,
+                )}
+              </option>
               {kind === "model"
                 ? modelOptions.map((option) => (
                     <option key={option.canonicalName} value={option.canonicalName}>
@@ -599,6 +619,85 @@ function CapabilitiesBlock({
 }
 
 // --- History ---
+
+/** The backend's own commit message already names the kind of change
+ * (`packages/agent-directory/src/routes.ts` and its sibling capability/
+ * skill-pin route files), but it's written as a full sentence naming the
+ * agent — redundant on a page that's already scoped to this one agent, and
+ * repetitive across rows. This turns it into the short change summary the
+ * history table actually shows (CL-6215 EMIL #8), falling back to the raw
+ * message for anything this doesn't recognize rather than hiding it. */
+export function summarizeHistoryMessage(message: string): string {
+  if (/^Update agent instructions for /.test(message)) {
+    return "Instructions updated";
+  }
+  if (/^Update agent skills for /.test(message)) {
+    return "Skills updated";
+  }
+  const skillMatch = /^Add (.+) skill to /.exec(message);
+  if (skillMatch !== null) {
+    return `Added skill: ${skillMatch[1]}`;
+  }
+  const toolMatch = /^Add (.+) to /.exec(message);
+  if (toolMatch !== null) {
+    return `Added tool: ${toolMatch[1]}`;
+  }
+  const modelMatch = /^Set .+'s model to (.+)$/.exec(message);
+  if (modelMatch !== null) {
+    return `Model set to ${modelMatch[1]}`;
+  }
+  if (/^Restore agent .+ to /.test(message)) {
+    return "Restored from history";
+  }
+  if (/^Define agent /.test(message)) {
+    return "Agent created";
+  }
+  return message;
+}
+
+export type HistoryDisplayRow = {
+  readonly commitSha: string;
+  readonly summary: string;
+  readonly author: string;
+  readonly committedAtIso: string;
+  readonly current: boolean;
+  readonly repeatCount: number;
+};
+
+/** Softens a run of consecutive, identically-summarized rows (seed data's
+ * repeated "Update agent instructions for X" is the case that prompted
+ * this) into one row with a repeat count, rather than a wall of visually
+ * identical entries — restoring that row still targets its newest
+ * commit. Never collapses across the current version, so "current" always
+ * stays its own row. */
+export function collapseHistoryVersions(
+  versions: readonly AgentVersion[],
+): readonly HistoryDisplayRow[] {
+  const rows: HistoryDisplayRow[] = [];
+  for (const version of versions) {
+    const summary = summarizeHistoryMessage(version.message);
+    const last = rows[rows.length - 1];
+    if (
+      last !== undefined &&
+      !last.current &&
+      !version.current &&
+      last.summary === summary &&
+      last.author === version.author
+    ) {
+      rows[rows.length - 1] = { ...last, repeatCount: last.repeatCount + 1 };
+      continue;
+    }
+    rows.push({
+      commitSha: version.commitSha,
+      summary,
+      author: version.author,
+      committedAtIso: version.committedAtIso,
+      current: version.current,
+      repeatCount: 1,
+    });
+  }
+  return rows;
+}
 
 type HistoryState =
   | { readonly kind: "loading" }
@@ -687,31 +786,41 @@ function HistoryBlock({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {state.versions.map((version) => (
-              <TableRow key={version.commitSha}>
-                <TableCell className="text-sm" title={version.commitSha}>
-                  {version.message}
-                  {version.current ? (
-                    <Badge tone="success" className="ml-2">
+            {collapseHistoryVersions(state.versions).map((row) => (
+              <TableRow
+                key={row.commitSha}
+                className={
+                  row.current ? "chat-settings-history-row-current" : undefined
+                }
+              >
+                <TableCell className="text-sm" title={row.commitSha}>
+                  {row.summary}
+                  {row.repeatCount > 1 ? (
+                    <span className="chat-settings-history-repeat-count">
+                      ×{row.repeatCount}
+                    </span>
+                  ) : null}
+                  {row.current ? (
+                    <span className="chat-settings-history-current-label">
                       {CHAT_STRINGS.channelSettingsAgentDetailHistoryCurrent}
-                    </Badge>
+                    </span>
                   ) : null}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {version.author}
+                  {row.author}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {formatRelativeTime(version.committedAtIso, Date.now())}
+                  {formatRelativeTime(row.committedAtIso, Date.now())}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={version.current || restoring !== null}
-                    onClick={() => handleRestore(version.commitSha)}
+                    disabled={row.current || restoring !== null}
+                    onClick={() => handleRestore(row.commitSha)}
                   >
-                    {restoring === version.commitSha
+                    {restoring === row.commitSha
                       ? CHAT_STRINGS.channelSettingsAgentDetailHistoryRestoring
                       : CHAT_STRINGS.channelSettingsAgentDetailHistoryRestore}
                   </Button>

@@ -248,7 +248,11 @@ export const CHAT_STRINGS = {
   channelSettingsAgentDetailLoadError: "Couldn't load this agent's instructions",
   channelSettingsAgentDetailSaveError: "Couldn't save these changes — try again.",
   channelSettingsAgentDetailSavedToast: "Instructions saved",
-  channelSettingsAgentDetailSave: "Save",
+  // Scoped rather than a bare "Save" (CL-6215 EMIL #4) — the top-bar Save
+  // right above it in the same view saves the conversation's own General
+  // fields, a different scope entirely; this one only ever writes this
+  // agent's instructions.
+  channelSettingsAgentDetailSave: "Save instructions",
   channelSettingsAgentDetailSaving: "Saving…",
   channelSettingsAgentDetailCancel: "Cancel",
   channelSettingsAgentDetailNoAgents:
@@ -262,6 +266,15 @@ export const CHAT_STRINGS = {
   channelSettingsAgentDetailAddCapabilityKindTool: "Tool",
   channelSettingsAgentDetailAddCapabilityKindSkill: "Skill",
   channelSettingsAgentDetailAddCapabilityKindModel: "Provider + model",
+  channelSettingsAgentDetailAddCapabilityChoiceLabel: "Which one",
+  channelSettingsAgentDetailAddCapabilityChoicePlaceholder: (
+    kind: "toolPackage" | "skill" | "model",
+  ) =>
+    kind === "toolPackage"
+      ? "Choose a tool…"
+      : kind === "skill"
+        ? "Choose a skill…"
+        : "Choose a model…",
   channelSettingsAgentDetailAddCapabilityButton: "Add",
   channelSettingsAgentDetailAddCapabilityAdding: "Adding…",
   channelSettingsAgentDetailAddCapabilityError:

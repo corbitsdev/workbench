@@ -83,7 +83,8 @@
   gap: 0.55rem;
   min-height: 3rem;
   height: 3rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
   padding: 0 0.9rem;
 }
 
@@ -124,7 +125,7 @@
   padding: 0;
   color: var(--accent, var(--foreground));
   font: inherit;
-  font-weight: 600;
+  font-weight: 640;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -143,21 +144,19 @@
   white-space: nowrap;
 }
 
-.channel-settings-save {
-  appearance: none;
-  border: 1px solid var(--foreground);
-  background: var(--foreground);
-  color: var(--background);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  padding: 0.4rem 0.85rem;
-  cursor: pointer;
-}
-
-.channel-settings-save:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* One primary-action language for the whole surface (CL-6215 EMIL #4): the
+   top-bar Save is now a react-ui primary Button, the same visual language
+   as the agent-detail Save below rather than a bespoke black pill. */
+.channel-settings-topbar [data-slot="button"]:disabled,
+.chat-settings-field-actions [data-slot="button"]:disabled {
+  /* A disabled primary action reads as neutral-gray, never a dimmed
+     orange — dimmed orange still reads as "another orange" on a page
+     where orange means "act here" (CL-6215 EMIL #3). Scoped to this
+     surface's own buttons rather than react-ui's shared disabled state. */
+  opacity: 1;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--muted-foreground);
 }
 
 .channel-settings-shell {
@@ -173,7 +172,8 @@
   flex-shrink: 0;
   gap: 0.1rem;
   width: 14rem;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
   padding: 1rem 0.75rem;
   overflow-y: auto;
 }
@@ -187,14 +187,14 @@
 
 .channel-settings-nav-group-danger {
   margin-top: 0.5rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .channel-settings-nav-group-label {
   padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
@@ -218,7 +218,13 @@
 
 .channel-settings-nav-item[aria-current="page"] {
   background: var(--muted);
-  font-weight: 600;
+  font-weight: 640;
+}
+
+.channel-settings-nav-item:focus-visible,
+.channel-settings-breadcrumb button:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
 }
 
 .channel-settings-panel-area {
@@ -284,14 +290,21 @@
   gap: 0.5rem;
 }
 
+/* Sidebar-row pattern (CL-6215 DRAPER): a row's "you can act here" signal
+   is the 2px inset accent edge, never a background wash — the same rule
+   the shell's own channel list follows (`apps/web/src/app.css`'s
+   `.shell-ch-row` / sidebar-item-row overrides). A persistent trailing
+   chevron marks the row as a drill-in, not a toggle (CL-6215 EMIL #1). */
 .chat-settings-agent-picker-row {
   display: flex;
   width: 100%;
+  min-height: 2.5rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
   background: transparent;
   padding: 0.5rem 0.125rem;
   font: inherit;
@@ -299,10 +312,31 @@
   color: var(--foreground);
   text-align: left;
   cursor: pointer;
+  transition:
+    background 150ms var(--chat-ease),
+    box-shadow 150ms var(--chat-ease),
+    color 150ms var(--chat-ease);
+}
+
+.chat-settings-agent-picker-row-chevron {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted-foreground);
 }
 
 .chat-settings-agent-picker-row:hover {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--shell-accent, var(--primary));
+}
+
+.chat-settings-agent-picker-row:hover .chat-settings-agent-picker-row-chevron {
+  color: var(--shell-accent, var(--primary));
+}
+
+.chat-settings-agent-picker-row:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
 }
 
 .chat-settings-agent-back {
@@ -323,24 +357,36 @@
   color: var(--foreground);
 }
 
+.chat-settings-agent-back:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
+}
+
 .channel-settings-pane {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
+/* DRAPER: no radius, no filled box for a callout — a hairline top border
+   and an uppercase caption label read as "structural note", not a card. */
 .chat-settings-callout {
-  border: 1px solid var(--border);
-  border-radius: var(--ui-radius-md, 0.375rem);
-  padding: 0.75rem;
-  background: var(--muted);
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 0;
+  padding: 0.75rem 0 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.chat-settings-callout strong {
-  font-size: 0.8125rem;
+.chat-settings-callout-label {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 .chat-settings-callout p {
@@ -350,7 +396,7 @@
 }
 
 .chat-settings-callout-danger {
-  border-color: color-mix(in oklab, var(--destructive) 40%, var(--border));
+  border-top-color: color-mix(in oklab, var(--destructive) 40%, var(--border));
 }
 
 .chat-settings-field-actions {
@@ -371,7 +417,7 @@
 .chat-settings-agent-block-title {
   margin: 0;
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 640;
 }
 
 .chat-settings-agent-block-section {
@@ -379,13 +425,13 @@
   flex-direction: column;
   gap: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .chat-settings-agent-block-section h4 {
   margin: 0;
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 640;
 }
 
 .chat-settings-capability-list {
@@ -395,6 +441,56 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* A static fact ("this agent has @corbits/github-tools") is not a button
+   and should not wear button chrome — no border, a muted tint fill only,
+   never the bordered-and-transparent look `Button variant="outline"` and
+   `Badge tone="neutral"` share (CL-6215 EMIL #2). */
+.chat-settings-capability-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Invite agent (CL-6215 EMIL #5): a quiet, small, self-start control — the
+   giant bordered pill it used to render was a flex-stretch accident
+   (`.chat-settings-field`'s column has no `align-self`, and flex's default
+   `align-items: stretch` filled the whole row). */
+.chat-settings-invite-agent-action {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.chat-settings-invite-agent-action svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.chat-settings-invite-agent-action:hover {
+  color: var(--shell-accent, var(--primary));
+}
+
+.chat-settings-invite-agent-action:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
 }
 
 .chat-settings-capability-add {
@@ -407,6 +503,153 @@
 .chat-settings-capability-add .chat-settings-field {
   flex: 1 1 10rem;
   min-width: 8rem;
+}
+
+/* History (CL-6215 EMIL #8/#9): the current version reads through a
+   hairline inset accent on the row, the same signal every selected/active
+   row in this surface uses — never a colored Badge. */
+.chat-settings-history-row-current {
+  box-shadow: inset 2px 0 0 0 var(--shell-accent, var(--primary));
+}
+
+.chat-settings-history-current-label {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.chat-settings-history-repeat-count {
+  margin-left: 0.35rem;
+  color: var(--muted-foreground);
+}
+
+/* Plugins directory (CL-6215 DRAPER): a marketplace-style list, not a grid
+   of grey cards — one row per connector, search on top, Active before
+   Available. */
+.plugins-directory-search {
+  max-width: 22rem;
+}
+
+.plugins-directory-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.plugins-directory-group-label {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.plugins-directory-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.plugins-directory-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.125rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.plugins-directory-list .plugins-directory-row:last-child {
+  border-bottom: 0;
+}
+
+.plugins-directory-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 0;
+  background: var(--card, var(--background));
+}
+
+.plugins-directory-logo-initial {
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.plugins-directory-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.plugins-directory-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.plugins-directory-name {
+  font-size: 0.875rem;
+  font-weight: 640;
+}
+
+.plugins-directory-description {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+/* Needs-attention is the one colored state on this page — every other
+   status (ownership included) reads as plain caption text. */
+.plugins-directory-needs-attention {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--shell-accent, var(--primary));
+}
+
+.plugins-directory-ownership {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.plugins-directory-action {
+  flex-shrink: 0;
+}
+
+/* Connect/Override read as quiet accent-text actions, not filled buttons —
+   `--shell-accent` only ever appears as text or a 2px inset edge, never a
+   filled rectangle. */
+.plugins-directory-connect-action {
+  color: var(--shell-accent, var(--primary));
+  font-weight: 650;
+}
+
+/* Remove keeps `ConfirmButton`'s confirm-step behavior but never the red
+   fill it renders once armed — overriding the literal Tailwind utility
+   class it emits for that state, since that state is not otherwise
+   reachable from a variant prop. */
+.plugins-directory-remove-action {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.plugins-directory-remove-action.bg-destructive {
+  background: transparent;
+  color: var(--destructive);
 }
 
 .chat-settings-choice-row {

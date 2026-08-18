@@ -100,7 +100,9 @@ export function GeneralSection({
         {CHAT_STRINGS.channelSettingsContextWindowDescription}
       </p>
       <div className="chat-settings-callout">
-        <strong>{CHAT_STRINGS.channelSettingsDeliveryTitle}</strong>
+        <span className="chat-settings-callout-label">
+          {CHAT_STRINGS.channelSettingsDeliveryTitle}
+        </span>
         <p>{CHAT_STRINGS.channelSettingsDeliveryBody}</p>
       </div>
     </div>
