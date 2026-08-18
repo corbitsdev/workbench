@@ -62,6 +62,7 @@ import { defaultSubprocessSpawner } from "./transport";
 
 export { defaultSubprocessSpawner };
 import {
+  CL_6194_GRANTS_FRAME_GAP_OPEN,
   createSidecarWorkflowSupervisor,
   type SidecarWorkflowSupervisor,
 } from "./supervisor";
@@ -1029,14 +1030,13 @@ export function createSidecarDeployRouter(deps: {
       );
       routersRegistered = true;
 
-      // Seed the child's credential material NOW: this hub does not yet
-      // ship the per-run `run.grants` frame upstream's onRunStart barrier
-      // consumes (CL-6194 reopened), so without this push the delivered
-      // material would sit on the supervisor bindings forever and every
-      // `credentials.resolve(handle)` would fail "no credential is bound".
-      // Delete this push again only once the hub writes
-      // `runs/<runId>/grants.json` on every birth path.
-      if (spec.credentials !== undefined) {
+      // Seed the child's credential material NOW, compensating for
+      // `assembleRunCredentialsSnapshot`'s empty snapshot while
+      // `CL_6194_GRANTS_FRAME_GAP_OPEN` is open (see its doc comment):
+      // without this push the delivered material would sit on the
+      // supervisor bindings forever and every `credentials.resolve(handle)`
+      // would fail "no credential is bound".
+      if (CL_6194_GRANTS_FRAME_GAP_OPEN && spec.credentials !== undefined) {
         await wired.supervisor.deliverCredentials({
           delivery: spec.credentials,
         });
