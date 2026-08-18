@@ -70,6 +70,7 @@ import type { BringInMember, MentionInviteIntent } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
 import { useStreamingReply, typingAgentNames } from "./streaming-reply";
+import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
 import type {
@@ -1016,12 +1017,15 @@ function ChatWorkspaceInner({
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
   } = useStreamingReply(activeChannelId);
+  const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
+    useTurnActivity(activeChannelId);
 
   useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
     (eventType, data) => {
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
+      handleTurnActivityEvent(eventType, data);
       if (eventType !== "chat.typing") refreshUnlessUnauthorized();
       if (eventType === "chat.pin" && activeChannelId !== null) {
         void loadPins(activeChannelId);
@@ -1660,6 +1664,7 @@ function ChatWorkspaceInner({
                       onDiscard: discardPendingSend,
                     }}
                   />
+                  <TurnActivityStrip activity={turnActivity} />
                   {typingState !== null ? (
                     <TypingIndicator
                       label={typingLabel(

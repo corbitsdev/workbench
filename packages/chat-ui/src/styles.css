@@ -1517,6 +1517,60 @@
   color: var(--muted-foreground);
 }
 
+/* The live turn-activity strip (CL-6196): tool-call chips, a thinking
+   row, and a retry note, shown above the composer while a turn streams.
+   Square, zero-radius, hairline borders — matches `.chat-block`'s
+   generative-UI language rather than the rounded typing-dot pill. */
+.chat-turn-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.35rem 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.chat-turn-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+.chat-turn-activity-marker {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: none;
+  border-radius: 0;
+  background: var(--primary);
+}
+
+.chat-turn-activity-row[data-status="running"] .chat-turn-activity-marker {
+  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+.chat-turn-activity-row[data-status="done"] .chat-turn-activity-marker {
+  background: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+.chat-turn-activity-label {
+  overflow-wrap: anywhere;
+}
+
+.chat-turn-activity-elapsed {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-turn-activity-thinking {
+  font-style: italic;
+}
+
+.chat-turn-activity-retry {
+  color: var(--warn, #b7791f);
+}
+
 /* Mock `.typing`: an agent-or-member row with a three-dot pulse, shown
    between the timeline and the composer while `chat.typing` is fresh. */
 .chat-typing-indicator {

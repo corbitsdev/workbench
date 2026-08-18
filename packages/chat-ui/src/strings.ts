@@ -184,6 +184,8 @@ export const CHAT_STRINGS = {
     const others = names.length - 2;
     return `${names[0]}, ${names[1]} and ${others} ${others === 1 ? "other" : "others"} are typing…`;
   },
+  turnActivityThinking: "Thinking…",
+  turnActivityRetry: (attempt: number) => `Retrying (attempt ${attempt})…`,
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",
