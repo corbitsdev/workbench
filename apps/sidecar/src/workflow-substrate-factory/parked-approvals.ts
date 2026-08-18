@@ -1,6 +1,6 @@
 // Parked-approval recovery reads, ported from upstream Interchange's
-// sidecar (apps/sidecar/src/workflow-substrate-factory.ts at the vendored
-// pin 55c4431e) — the durable-storage half of the child's
+// sidecar (apps/sidecar/src/workflow-substrate-factory.ts) — the
+// durable-storage half of the child's
 // `loadParkedApproval` / `readParkedApprovalOps` bindings. The child owns
 // enumeration (it walks its reduced run state for `awaiting-signal` steps
 // on control-plane channels); the snapshot lives in per-step durable

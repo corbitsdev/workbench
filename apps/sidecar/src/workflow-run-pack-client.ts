@@ -338,8 +338,8 @@ export function createMultistepGrantsRouter(): MultistepGrantsRouter {
 }
 
 // The `MultistepCredentialsRouter` family below is ported from upstream
-// Interchange's sidecar (apps/sidecar/src/workflow-host-wiring.ts at the
-// vendored pin 55c4431e, `credentials.update` handler), adapted only to
+// Interchange's sidecar (apps/sidecar/src/workflow-host-wiring.ts,
+// `credentials.update` handler), adapted only to
 // this directory's split (the router type lives beside its `Grants` /
 // `Sources` siblings here rather than inline in the wiring module). Before
 // this port, no handler registry existed for `credentials.update`, so an

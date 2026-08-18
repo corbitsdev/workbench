@@ -2,7 +2,7 @@
 // launching an interactive workbench instance, sending and listing its
 // mail, fetching attachment blobs, and subscribing to its live event
 // stream. The hub builds this from the same `SessionService`/db calls
-// `createInstanceRoutes` uses (see `vendor/intx/hub-api/src/routes/instances.ts`),
+// `createRunRoutes` uses (see `vendor/intx/hub-api/src/routes/runs.ts`),
 // but that machinery — grant materialization, credential resolution,
 // model-source resolution, multi-table transactions — is internal
 // wiring specific to the hub, not a single callable service. Rather
