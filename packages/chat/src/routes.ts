@@ -77,6 +77,7 @@ import {
 import {
   bridgeChannelStream,
   createChannelSubscriberRegistry,
+  createPlatformChannelFanout,
   type ChannelSubscriberRegistry,
 } from "./channel-events";
 import type { ChatPlatform } from "./platform-port";
@@ -777,6 +778,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const registry = deps.channelSubscribers ?? createChannelSubscriberRegistry();
   const publish = registry.publish;
+  // One upstream platform subscription per channel, fanned out to every
+  // SSE connection on that channel — see `createPlatformChannelFanout`.
+  const platformEvents = createPlatformChannelFanout(deps.platform);
 
   app.post(
     "/channels",
@@ -3079,7 +3083,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       return streamSSE(c, async (stream) => {
         const unbridge = bridgeChannelStream({
           registry,
-          platform: deps.platform,
+          platform: platformEvents,
           channelId,
           stream,
           authorize: () =>

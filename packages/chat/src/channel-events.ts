@@ -41,6 +41,59 @@ export interface ChannelSubscriberRegistry {
   publish(channelId: string, event: ChatChannelEvent): void;
 }
 
+/**
+ * Wraps a `ChannelEvents` so every channel has at most one live upstream
+ * subscription, fanned out in-process to however many local callers ask
+ * for it — the fix for CL-6186. Without this, each SSE connection called
+ * `platform.subscribeToChannel` directly: N browser tabs open on the same
+ * channel meant N folded-run lookups and N sidecar subscriptions for the
+ * same channel, and a reconnect storm (every tab's `EventSource` retrying
+ * at once after a hub restart) turned into a proportional storm of DB
+ * lookups and sidecar subscribes that starved both. Ref-counted per
+ * channel instead: the first subscriber triggers the one upstream call,
+ * every later subscriber for that channel just joins the fan-out, and the
+ * upstream subscription is released only once the last local subscriber
+ * for that channel goes away.
+ */
+export function createPlatformChannelFanout(
+  platform: ChannelEvents,
+): ChannelEvents {
+  interface Entry {
+    subscribers: Set<ChannelSubscriber>;
+    unsubscribeUpstream: () => void;
+  }
+  const entriesByChannel = new Map<string, Entry>();
+
+  return {
+    subscribeToChannel(channelId, onEvent) {
+      let entry = entriesByChannel.get(channelId);
+      if (entry === undefined) {
+        const subscribers = new Set<ChannelSubscriber>();
+        const unsubscribeUpstream = platform.subscribeToChannel(
+          channelId,
+          (event) => {
+            for (const subscriber of subscribers) subscriber(event);
+          },
+        );
+        entry = { subscribers, unsubscribeUpstream };
+        entriesByChannel.set(channelId, entry);
+      }
+      entry.subscribers.add(onEvent);
+
+      return () => {
+        const current = entriesByChannel.get(channelId);
+        if (current === undefined || !current.subscribers.delete(onEvent)) {
+          return;
+        }
+        if (current.subscribers.size === 0) {
+          current.unsubscribeUpstream();
+          entriesByChannel.delete(channelId);
+        }
+      };
+    },
+  };
+}
+
 export function createChannelSubscriberRegistry(): ChannelSubscriberRegistry {
   const subscribersByChannel = new Map<string, Set<ChannelSubscriber>>();
   return {
@@ -118,12 +171,22 @@ export function bridgeChannelStream(input: {
     void deliver(event);
   });
 
-  unsubscribePlatform = input.platform.subscribeToChannel(
-    input.channelId,
-    (event) => {
-      void deliver(event);
-    },
-  );
+  // The platform side resolves a folded run before it can subscribe
+  // (see `subscribeToChannel` in `platform-adapter.ts`); a transient
+  // failure there (the run isn't back yet after a hub restart, a slow
+  // DB) must degrade this stream to registry-only rather than take the
+  // whole SSE connection down — a client still gets typing/settings
+  // events and its own poll fallback covers the rest.
+  try {
+    unsubscribePlatform = input.platform.subscribeToChannel(
+      input.channelId,
+      (event) => {
+        void deliver(event);
+      },
+    );
+  } catch {
+    unsubscribePlatform = () => undefined;
+  }
 
   return teardown;
 }
