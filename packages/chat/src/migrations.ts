@@ -245,6 +245,18 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    name: "0017_message_client_ids",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."message_client_ids" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "client_id" text NOT NULL,
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+    `,
+  },
 ];
 
 /**

@@ -118,6 +118,13 @@ const MessageItem = type({
   // `false`, mirroring how `unreadCount` on `Channel` works.
   "reactions?": ReactionSummaryWire.array(),
   "pinned?": "boolean",
+  // The client-generated send identity (CL-6251) this message's own
+  // sender's composer submitted it with, echoed back once the server
+  // records it — see `sendMessage`'s `clientId` option and
+  // `packages/chat/src/client-ids.ts`. Absent for every message not
+  // sent with one (anything from before this feature, or from a peer
+  // whose own client never set it) — never a fabricated id.
+  "clientId?": "string",
 });
 export type MessageItem = typeof MessageItem.infer;
 
@@ -131,6 +138,7 @@ const SentMessage = type({
   id: "string",
   createdAt: "string",
   "threadId?": "string",
+  "clientId?": "string",
 });
 
 const ReadState = type({
@@ -399,6 +407,13 @@ export type SendMessageOptions = {
   /** Every not-yet-participant a mention in this message names, invited
    * server-side before the send so the mention fans out normally. */
   readonly invite?: readonly MessageInviteInput[];
+  /** This composer submit's own client-generated send identity
+   * (CL-6251) — the pending bubble's `nonce`, carried on the wire so
+   * the server can echo it back (in this call's own response, and on
+   * every later `GET .../messages` page) and the pending bubble can
+   * reconcile with the confirmed message by identity rather than by
+   * guessing from content or timing. */
+  readonly clientId?: string;
 };
 
 export function sendMessage(
@@ -410,6 +425,7 @@ export function sendMessage(
   readonly id: string;
   readonly createdAt: string;
   readonly threadId?: string;
+  readonly clientId?: string;
 }> {
   const body: Record<string, unknown> = { parts };
   if (options?.threadId !== undefined) body["threadId"] = options.threadId;
@@ -419,6 +435,7 @@ export function sendMessage(
   if (options?.invite !== undefined && options.invite.length > 0) {
     body["invite"] = options.invite;
   }
+  if (options?.clientId !== undefined) body["clientId"] = options.clientId;
   return request(
     `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
     SentMessage,

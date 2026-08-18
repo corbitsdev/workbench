@@ -356,6 +356,29 @@ export const pinnedMessages = chatSchema.table(
 );
 
 /**
+ * One row per message, recording the client-generated send identity
+ * (CL-6251) a composer submit carried on `POST .../messages` —
+ * presence-as-truth the same way `messageReactions`/`pinnedMessages`
+ * are, here recording which `clientId` a message id was sent under so
+ * the sender's own optimistic bubble can reconcile with the confirmed
+ * message by identity rather than content/timing.
+ */
+export const messageClientIds = chatSchema.table(
+  "message_client_ids",
+  {
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id").notNull(),
+    clientId: text("client_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.channelId, table.messageId],
+    }),
+  ],
+);
+
+/**
  * Durable redelivery-dedup claim for the finalized-turn write surfaces in
  * `./chat-orchestrator.ts` (CL-6039): `postFinalizedTurnMemoryEntries`,
  * `postFinalizedTurnArtifacts`, and `postDailyTranscriptDigest` each claim

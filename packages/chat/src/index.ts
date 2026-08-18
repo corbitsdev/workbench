@@ -144,6 +144,17 @@ export type {
 export { createInMemoryPinStore, createDrizzlePinStore } from "./pins";
 export type { PinRow, PinStore, PinDb, PinMessageInput } from "./pins";
 
+export {
+  createInMemoryClientIdStore,
+  createDrizzleClientIdStore,
+} from "./client-ids";
+export type {
+  ClientIdRow,
+  ClientIdStore,
+  ClientIdDb,
+  RecordClientIdInput,
+} from "./client-ids";
+
 export { createNoopInferenceRoutes } from "./noop-inference";
 export { joinRunParticipant } from "./run-participant";
 export type {

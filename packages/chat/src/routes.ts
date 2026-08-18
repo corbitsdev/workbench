@@ -38,6 +38,7 @@ import {
 } from "./reactions";
 import { isKnownReactionEmoji } from "./reaction-emoji";
 import type { PinRow, PinStore } from "./pins";
+import type { ClientIdStore } from "./client-ids";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import {
@@ -199,6 +200,15 @@ export type CreateChatRoutesDeps = {
    * field is simply absent.
    */
   pins?: PinStore;
+  /**
+   * Client-send-identity storage — see `./client-ids.ts` (CL-6251).
+   * Omitted entirely, `POST .../messages` still accepts and echoes a
+   * `clientId` in its own 201 response, but every message page's
+   * `clientId` field is simply absent — a host that never wires this
+   * loses cross-load reconciliation of its own optimistic sends, not
+   * the send itself.
+   */
+  clientIds?: ClientIdStore;
   /**
    * The `/name args` and `@name args` command registry — see
    * `@corbits/commands`. Omitted entirely, a message is always posted
@@ -571,14 +581,18 @@ type WireMessageItem = {
 };
 
 /**
- * Attaches `reactions` and `pinned` onto a page of message items, each
- * in one batched query over the whole page rather than one round trip
- * per message — "extend, don't fork" the wire type the timeline
- * already consumes. Both fields are entirely absent (not `[]`/`false`)
- * when the corresponding store isn't injected, matching how
- * `blockResponses`'s absence 404s rather than silently no-opping: a
- * host that never wired reactions/pins gets a wire shape with no trace
- * of either feature, not a feature that always answers empty.
+ * Attaches `reactions`, `pinned`, and `clientId` onto a page of message
+ * items, each in one batched query over the whole page rather than one
+ * round trip per message — "extend, don't fork" the wire type the
+ * timeline already consumes. Every field is entirely absent (not
+ * `[]`/`false`/omitted-key) when the corresponding store isn't
+ * injected, matching how `blockResponses`'s absence 404s rather than
+ * silently no-opping: a host that never wired reactions/pins/clientIds
+ * gets a wire shape with no trace of that feature, not a feature that
+ * always answers empty. `clientId` (CL-6251) is only ever present for
+ * a message this same sender's own composer submitted with one — see
+ * `./client-ids.ts` — and is what lets that sender's pending bubble
+ * reconcile with this confirmed item by identity.
  */
 async function enrichWithReactionsAndPins<T extends WireMessageItem>(
   deps: CreateChatRoutesDeps,
@@ -587,7 +601,11 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
   principalId: string,
   items: readonly T[],
 ): Promise<
-  readonly (T & { reactions?: readonly ReactionSummary[]; pinned?: boolean })[]
+  readonly (T & {
+    reactions?: readonly ReactionSummary[];
+    pinned?: boolean;
+    clientId?: string;
+  })[]
 > {
   const reactionsByMessage =
     deps.reactions !== undefined
@@ -608,17 +626,38 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
           ),
         )
       : undefined;
+  const clientIdByMessage =
+    deps.clientIds !== undefined
+      ? new Map(
+          (
+            await deps.clientIds.listClientIdsForMessages(
+              tenantId,
+              channelId,
+              items.map((item) => item.id),
+            )
+          ).map((row) => [row.messageId, row.clientId]),
+        )
+      : undefined;
 
-  if (reactionsByMessage === undefined && pinnedIds === undefined) {
+  if (
+    reactionsByMessage === undefined &&
+    pinnedIds === undefined &&
+    clientIdByMessage === undefined
+  ) {
     return items;
   }
   return items.map((item) => {
     const result: T & {
       reactions?: readonly ReactionSummary[];
       pinned?: boolean;
+      clientId?: string;
     } = { ...item };
     if (reactionsByMessage !== undefined) {
       result.reactions = reactionsByMessage.get(item.id) ?? [];
+    }
+    if (clientIdByMessage !== undefined) {
+      const clientId = clientIdByMessage.get(item.id);
+      if (clientId !== undefined) result.clientId = clientId;
     }
     if (pinnedIds !== undefined) {
       result.pinned = pinnedIds.has(item.id);
@@ -909,8 +948,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               ?.description
           : undefined);
       const triggerAddress = formatRunAddress(channelId, tenant.domain);
-      const inferencePreferences =
-        (await inferencePreferencesPromise) ?? [];
+      const inferencePreferences = (await inferencePreferencesPromise) ?? [];
       const definition = serializeChannelHostWorkflow(
         buildChannelHostWorkflow({
           triggerAddress,
@@ -1595,6 +1633,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         "threadId?": "string",
         "inReplyToMessageId?": "string",
         "invite?": MessageInviteEntry.array(),
+        // The sender's own client-generated send identity (CL-6251):
+        // echoed back in this response and, when `clientIds` is
+        // wired, recorded against the resulting message id so a later
+        // `GET .../messages` page carries it too — whichever arrives
+        // at the sender first, the confirmed message reconciles the
+        // pending bubble it was optimistically rendered as.
+        "clientId?": "string",
       });
       const parsed = PostMessageBody(raw);
       if (parsed instanceof type.errors) {
@@ -1789,6 +1834,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         throw err;
       }
 
+      if (parsed.clientId !== undefined && deps.clientIds !== undefined) {
+        await deps.clientIds.recordClientId({
+          tenantId: ownerTenantId,
+          channelId,
+          messageId: sent.id,
+          clientId: parsed.clientId,
+        });
+      }
+
       if (deps.threads !== undefined) {
         const root = await deps.threads.ensureRootThread(
           ownerTenantId,
@@ -1831,12 +1885,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             id: sent.id,
             createdAt: sent.createdAt,
             threadId: targetThreadId,
+            ...(parsed.clientId !== undefined
+              ? { clientId: parsed.clientId }
+              : {}),
           },
           201,
         );
       }
 
-      return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
+      return c.json(
+        {
+          id: sent.id,
+          createdAt: sent.createdAt,
+          ...(parsed.clientId !== undefined
+            ? { clientId: parsed.clientId }
+            : {}),
+        },
+        201,
+      );
     },
   );
 

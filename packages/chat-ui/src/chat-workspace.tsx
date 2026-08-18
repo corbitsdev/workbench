@@ -340,6 +340,17 @@ function nextPendingSendNonce(): string {
  * a sender built from the signed-in principal, the same address shape
  * `senderDisplay` already matches against `currentUser.principalId` to
  * render "You".
+ *
+ * A pending send's `nonce` is also the `clientId` it sent on the wire
+ * (see `sendPending` in `chat-workspace.tsx`) — CL-6251's fix for the
+ * double-render defect: once `items` contains a confirmed message
+ * carrying that same `clientId` (from the POST response landing, or
+ * from a later `GET .../messages` page — whichever arrives first), the
+ * pending bubble is identity-matched and dropped here rather than
+ * rendered alongside its own confirmed copy. This is never a
+ * heuristic guess from content/timing; a message with no `clientId` at
+ * all (sent before this feature, or by a peer) never matches any
+ * pending entry.
  */
 export function mergePendingSends(
   items: readonly MessageItem[],
@@ -347,15 +358,26 @@ export function mergePendingSends(
   currentUserPrincipalId: string | undefined,
 ): readonly TimelineMessageItem[] {
   if (pendingSends.length === 0) return items;
+  const confirmedClientIds = new Set(
+    items
+      .map((item) => item.clientId)
+      .filter((clientId): clientId is string => clientId !== undefined),
+  );
+  const unresolvedSends = pendingSends.filter(
+    (pending) => !confirmedClientIds.has(pending.nonce),
+  );
+  if (unresolvedSends.length === 0) return items;
   const senderAddress = `${currentUserPrincipalId ?? "you"}@pending.local`;
-  const pendingItems: TimelineMessageItem[] = pendingSends.map((pending) => ({
-    id: pending.nonce,
-    createdAt: pending.createdAt,
-    parts: partsForSend(pending.text, pending.attachments),
-    sender: { name: null, address: senderAddress },
-    pendingStatus: pending.status,
-    pendingNonce: pending.nonce,
-  }));
+  const pendingItems: TimelineMessageItem[] = unresolvedSends.map(
+    (pending) => ({
+      id: pending.nonce,
+      createdAt: pending.createdAt,
+      parts: partsForSend(pending.text, pending.attachments),
+      sender: { name: null, address: senderAddress },
+      pendingStatus: pending.status,
+      pendingNonce: pending.nonce,
+    }),
+  );
   return [...items, ...pendingItems];
 }
 
@@ -646,6 +668,16 @@ function ChatWorkspaceInner({
 
   const unauthorizedRef = useRef(false);
   const composerRef = useRef<ComposerHandle>(null);
+  // `loadMessages` calls overlap constantly — every SSE event fires a
+  // background refresh, and a send fires its own on top — with no
+  // guarantee the responses resolve in call order. Without a guard,
+  // "last response to resolve wins" can let a stale fetch that started
+  // before a newer one clobber it once it resolves later, flickering a
+  // just-landed message back out (or a just-cleared pending bubble back
+  // in). This ticket makes it "last request ISSUED wins" instead: each
+  // call takes the next ticket, and only the call still holding the
+  // latest ticket when it resolves is allowed to touch state.
+  const messagesRequestSeqRef = useRef(0);
 
   const loadThreads = useCallback(
     async (channelId: string) => {
@@ -729,6 +761,7 @@ function ChatWorkspaceInner({
   const loadMessages = useCallback(
     async (channelId: string, options?: { readonly background?: boolean }) => {
       const background = options?.background ?? false;
+      const ticket = ++messagesRequestSeqRef.current;
       if (!background) setMessagesState({ kind: "loading" });
       try {
         // Root feed may race with loadThreads on channel switch: if we
@@ -859,6 +892,11 @@ function ChatWorkspaceInner({
           });
           items = await fetchTarget(fallbackTarget);
         }
+        // A newer `loadMessages` call has been issued since this one
+        // started — its own result (whenever it resolves) is the one
+        // that gets to land; this response is stale by definition and
+        // applying it now would only flicker the timeline backward.
+        if (ticket !== messagesRequestSeqRef.current) return;
         setMessagesState((current) =>
           nextMessagesState(current, { kind: "success", items }, background),
         );
@@ -872,6 +910,7 @@ function ChatWorkspaceInner({
           }
         }
       } catch (cause) {
+        if (ticket !== messagesRequestSeqRef.current) return;
         // A 401 is terminal for this session: keep polling and the app
         // would hammer the hub unauthenticated forever. Halt refreshes
         // until the user switches channels or signs back in.
@@ -1070,15 +1109,24 @@ function ChatWorkspaceInner({
     const parts = partsForSend(text, attachments);
     if (parts.length === 0) return;
     const inviteOption = invite !== undefined ? { invite } : {};
+    // The pending bubble's own nonce doubles as its wire `clientId` —
+    // no second id needed. The server echoes it back below and, once
+    // wired, records it against the message so the next `GET
+    // .../messages` page carries it too; `mergePendingSends` drops
+    // this pending entry the moment either arrival shows up with a
+    // matching `clientId`, so whichever wins this race, the other is
+    // a no-op.
     try {
       if (openThreadId !== null) {
         await sendMessage(tenantId, activeChannelId, parts, {
           threadId: openThreadId,
+          clientId: nonce,
           ...inviteOption,
         });
       } else if (pendingParentMessageId !== null) {
         const sent = await sendMessage(tenantId, activeChannelId, parts, {
           inReplyToMessageId: pendingParentMessageId,
+          clientId: nonce,
           ...inviteOption,
         });
         if (sent.threadId !== undefined) {
@@ -1086,7 +1134,10 @@ function ChatWorkspaceInner({
           setPendingParentMessageId(null);
         }
       } else {
-        await sendMessage(tenantId, activeChannelId, parts, inviteOption);
+        await sendMessage(tenantId, activeChannelId, parts, {
+          clientId: nonce,
+          ...inviteOption,
+        });
       }
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       // A message just landed in a channel with an agent in it: a reply
