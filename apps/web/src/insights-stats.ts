@@ -57,10 +57,11 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 /**
  * Purpose runs only — drop channel-host anchors the same way Home does.
  * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
- * `./insights-api.ts`), which already excludes every folded run (channel
- * host, invited agent, task) server-side via `@corbits/folded-runs`'s
- * `scope-routes.ts`. This filter is a client-side belt-and-suspenders pass
- * against the channel-host naming pattern alone, not a second scoping
+ * `./insights-api.ts`), which already excludes every folded run with no
+ * routine parent, and the resident never-fired deployment placeholder,
+ * server-side via `@corbits/folded-runs`'s `scope-routes.ts`'s
+ * `listTopLevelRunFires`. This filter is a client-side belt-and-suspenders
+ * pass against the channel-host naming pattern alone, not a second scoping
  * layer — a caller no longer needs to (and cannot) hand this a folded-run
  * id set. CL-6062 replaced the dead `/me/workflows/runs` feed (its
  * `anchorRunId IS NULL` filter never matched anything, since every
@@ -73,44 +74,62 @@ export function purposeRunsForInsights(
 }
 
 /**
+ * A run's human-facing name (CL-6249): its routine's name when it fired
+ * from one, honestly falling back to the definition name for a run with
+ * no routine/task parent — e.g. a directly launched workflow. Never
+ * mapped from a client-side lookup table; the route already resolved
+ * `routineName` server-side (`@corbits/folded-runs`'s
+ * `listTopLevelRunFires`).
+ */
+export function runDisplayName(run: InsightsRun): string {
+  return run.routineName ?? run.definitionName;
+}
+
+/**
  * Keep runs whose `createdAt` falls inside `[fromIso, toIso]` (inclusive).
  * Invalid timestamps are dropped so KPIs never invent rows.
  */
 export type DefinitionRunGroup = {
-  readonly definitionId: string;
-  readonly definitionName: string;
+  /** `routineId` when the newest run in the group fired from one,
+   * else `definitionId` — two different routines sharing one
+   * definition (e.g. two channel-digest schedules) never merge into
+   * one group. */
+  readonly groupKey: string;
+  readonly displayName: string;
   /** Newest run first. */
   readonly runs: readonly InsightsRun[];
 };
 
 /**
  * "Run history" grouping for the Insights runs page: the same feed already
- * fetched for the flat list, bucketed by definition and sorted newest-run
+ * fetched for the flat list, bucketed by routine (falling back to
+ * definition, for a run with no routine parent) and sorted newest-run
  * first — a client-side grouping of already-fetched data, no new endpoint.
  * Group order follows each group's own newest run, newest overall first.
  */
 export function groupRunsByDefinition(
   runs: readonly InsightsRun[],
 ): readonly DefinitionRunGroup[] {
-  const byDefinition = new Map<string, InsightsRun[]>();
+  const byGroupKey = new Map<string, InsightsRun[]>();
   for (const run of runs) {
-    const bucket = byDefinition.get(run.definitionId);
+    const groupKey = run.routineId ?? run.definitionId;
+    const bucket = byGroupKey.get(groupKey);
     if (bucket === undefined) {
-      byDefinition.set(run.definitionId, [run]);
+      byGroupKey.set(groupKey, [run]);
     } else {
       bucket.push(run);
     }
   }
-  const groups = [...byDefinition.entries()].map(([definitionId, group]) => {
+  const groups = [...byGroupKey.entries()].map(([groupKey, group]) => {
     const runs = [...group].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     );
-    // Name from the newest run, after sorting — a definition rename must
-    // show the current name in the group header, not whatever name its
-    // oldest fetched run happened to carry.
+    // Name from the newest run, after sorting — a routine or definition
+    // rename must show the current name in the group header, not
+    // whatever name its oldest fetched run happened to carry.
     return {
-      definitionId,
-      definitionName: runs[0]?.definitionName ?? definitionId,
+      groupKey,
+      displayName: runs[0] !== undefined ? runDisplayName(runs[0]) : groupKey,
       runs,
     };
   });

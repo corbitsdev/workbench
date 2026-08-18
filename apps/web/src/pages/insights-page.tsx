@@ -84,6 +84,7 @@ import {
   legDurationMs,
   legStatusTone,
   purposeRunsForInsights,
+  runDisplayName,
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
@@ -451,7 +452,7 @@ function RecentRunRows({
             <TableCell>
               <div className="flex min-w-0 flex-col gap-0.5">
                 <strong className="truncate text-sm font-semibold">
-                  {row.definitionName}
+                  {runDisplayName(row)}
                 </strong>
                 <span className="truncate text-xs text-muted-foreground">
                   {formatWhen(row.createdAt)}
@@ -688,20 +689,20 @@ export function runDurationLabel(run: InsightsRun): string {
 }
 
 function DefinitionRunTable({
-  definitionId,
-  definitionName,
+  groupKey,
+  displayName,
   runs,
   onOpenRun,
 }: {
-  readonly definitionId: string;
-  readonly definitionName: string;
+  readonly groupKey: string;
+  readonly displayName: string;
   readonly runs: readonly InsightsRun[];
   readonly onOpenRun: (id: string) => void;
 }) {
   return (
-    <section className="insights-panel" data-definition-group={definitionId}>
-      <h3>{definitionName}</h3>
-      <Table aria-label={definitionName} className="insights-data-table">
+    <section className="insights-panel" data-definition-group={groupKey}>
+      <h3>{displayName}</h3>
+      <Table aria-label={displayName} className="insights-data-table">
         <TableHeader>
           <TableRow>
             <TableHead>Status</TableHead>
@@ -776,9 +777,9 @@ export function InsightsRunsHistory({
                 <div className="insights-grid">
                   {groups.map((group) => (
                     <DefinitionRunTable
-                      key={group.definitionId}
-                      definitionId={group.definitionId}
-                      definitionName={group.definitionName}
+                      key={group.groupKey}
+                      groupKey={group.groupKey}
+                      displayName={group.displayName}
                       runs={group.runs}
                       onOpenRun={onOpenRun}
                     />
@@ -908,7 +909,7 @@ export function InsightsRunDetail({
           <StageCrumbs
             crumbs={[
               { label: "Runs", onSelect: onBack },
-              { label: run?.definitionName ?? runId },
+              { label: run !== null ? runDisplayName(run) : runId },
             ]}
           />
         }

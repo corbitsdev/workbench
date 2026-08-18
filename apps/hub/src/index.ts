@@ -19,7 +19,7 @@ import {
   tenant as tenantTable,
   workflowDefinition,
 } from "@intx/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
@@ -139,6 +139,8 @@ import {
   createMyraRoutineDrafting,
   createRoutineRoutes,
   createWorkflowRoutineRoutes,
+  routine as routineTable,
+  routineRun as routineRunTable,
   type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
@@ -1636,7 +1638,34 @@ export async function createHub(config: HubConfig) {
   // so the Agent Directory and the shell's "Running" bands stop
   // deriving that exclusion client-side from a tenant's channels alone
   // (see `@corbits/folded-runs`'s `scope-routes.ts`, which task-style
-  // runs — no channel involved — silently slipped past).
+  // runs — no channel involved — silently slipped past). The route's
+  // `feed=fires` mode (Insights, CL-6249) needs the one bridge
+  // `@corbits/folded-runs` cannot own itself — resolving a folded run id
+  // back to the routine that fired it — wired here, the one place in
+  // the hub that already depends on both packages. Plain `db` queries
+  // against `@corbits/routines`' own tables, not its `RoutineStore`:
+  // that store does not exist yet at this point in composition (built
+  // just below, for the routine grant/launcher wiring), and this lookup
+  // needs nothing from it beyond the two tables.
+  async function resolveRoutineFires(runIds: readonly string[]) {
+    const rows = await db
+      .select({
+        runId: routineRunTable.runId,
+        routineId: routineRunTable.routineId,
+        routineName: routineTable.name,
+      })
+      .from(routineRunTable)
+      .innerJoin(routineTable, eq(routineTable.id, routineRunTable.routineId))
+      .where(inArray(routineRunTable.runId, runIds));
+    const fires = new Map<string, { routineId: string; routineName: string }>();
+    for (const row of rows) {
+      fires.set(row.runId, {
+        routineId: row.routineId,
+        routineName: row.routineName,
+      });
+    }
+    return fires;
+  }
   app.route(
     `${TENANT_PREFIX}/top-level-runs`,
     createTopLevelRunRoutes({
@@ -1645,6 +1674,7 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      resolveRoutineFires,
     }),
   );
 

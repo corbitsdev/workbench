@@ -16,8 +16,9 @@
 // context on a run's detail view (packages/tasks/src/routes.ts):
 //   GET /tasks/by-run/:runId → { item: Task } | 404 (run has no owning task)
 //   GET /tasks/:id/legs → { items: TaskLeg[] } in position order
-// and one more reused as Insights' run feed: GET /top-level-runs →
-// Paginated<WorkflowRunResponse> (packages/folded-runs/src/scope-routes.ts).
+// and one more reused as Insights' run feed: GET /top-level-runs?feed=fires
+// → Paginated<WorkflowRunResponse & { routineId, routineName }>
+// (packages/folded-runs/src/scope-routes.ts's `listTopLevelRunFires`).
 
 import { type } from "arktype";
 import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
@@ -246,23 +247,39 @@ export function insightsTaskLegsPath(tenantId: string, taskId: string): string {
   return `/api/tenants/${tenantId}/tasks/${encodeURIComponent(taskId)}/legs`;
 }
 
-export type InsightsRun = typeof WorkflowRunResponse.infer;
+/**
+ * `WorkflowRunResponse` plus the two fields only the `feed=fires` mode of
+ * `/top-level-runs` reports (CL-6249): the routine that fired this run,
+ * when it has one. Both are `null` for a run with no routine/task
+ * parent — a directly launched workflow — so a caller falls back to
+ * `definitionName` honestly instead of inventing a routine.
+ */
+export const InsightsRunSchema = WorkflowRunResponse.and(
+  type({
+    routineId: "string | null",
+    routineName: "string | null",
+  }),
+);
+export type InsightsRun = typeof InsightsRunSchema.infer;
 
-/** GET /top-level-runs envelope. */
-export const TopLevelRunsSchema = paginatedSchema(WorkflowRunResponse);
+/** GET /top-level-runs?feed=fires envelope. */
+export const TopLevelRunsSchema = paginatedSchema(InsightsRunSchema);
 
 // The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`) —
 // same limit `agents-api.ts`'s `listTopLevelRuns` uses for this route.
 const TOP_LEVEL_RUNS_LIMIT = 100;
 
 /**
- * Insights' run feed (CL-6062): the tenant's genuine top-level deployment
- * runs, every folded run (channel host, invited agent, task) already
- * excluded server-side by `@corbits/folded-runs`'s `scope-routes.ts`. Used
- * in place of the dead `/me/workflows/runs` — its `anchorRunId IS NULL`
- * filter never matches, because every addressed run self-anchors at
- * creation, so that feed always came back empty.
+ * Insights' run feed (CL-6062, `feed=fires` added by CL-6249): the
+ * tenant's genuine *executed* runs — a routine's fire (folded run though
+ * it is) included, and the resident, never-triggered deployment
+ * placeholder for a definition (`status: "deployed"` forever) excluded —
+ * both decided server-side by `@corbits/folded-runs`'s
+ * `scope-routes.ts`'s `listTopLevelRunFires`, never by a definitionName
+ * slug guess here. Used in place of the dead `/me/workflows/runs` — its
+ * `anchorRunId IS NULL` filter never matches, because every addressed run
+ * self-anchors at creation, so that feed always came back empty.
  */
 export function insightsTopLevelRunsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/top-level-runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
+  return `/api/tenants/${tenantId}/top-level-runs?limit=${TOP_LEVEL_RUNS_LIMIT}&feed=fires`;
 }
