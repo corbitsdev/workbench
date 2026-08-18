@@ -65,11 +65,11 @@ test("routine_list has no approval key — a read never needs a human gate", () 
   expect(listDef).toEqual({ name: ROUTINE_LIST_TOOL });
 });
 
-test('routine_create, routine_update, and routine_run_now all declare approval: "ask"', () => {
+test("routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: \"ask\"", () => {
   expect(routinesTools.definitions).toEqual([
     { name: ROUTINE_LIST_TOOL },
-    { name: ROUTINE_CREATE_TOOL, approval: "ask" },
-    { name: ROUTINE_UPDATE_TOOL, approval: "ask" },
+    { name: ROUTINE_CREATE_TOOL },
+    { name: ROUTINE_UPDATE_TOOL },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
   ]);
 });
@@ -254,7 +254,7 @@ test("routine_list, on success, returns the listed routines as JSON", async () =
   }
 });
 
-test("routine_create, on approval, posts the instruction as input.instruction and returns a plain success message", async () => {
+test("routine_create posts the instruction as input.instruction and returns a plain success message", async () => {
   let seenBody: unknown;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
@@ -285,7 +285,7 @@ test("routine_create, on approval, posts the instruction as input.instruction an
   }
 });
 
-test("routine_update, on approval, patches the routine and returns a plain success message", async () => {
+test("routine_update patches the routine and returns a plain success message", async () => {
   let seenUrl: string | undefined;
   let seenBody: unknown;
   const originalFetch = globalThis.fetch;
