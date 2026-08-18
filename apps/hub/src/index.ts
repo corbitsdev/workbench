@@ -72,6 +72,7 @@ import {
   listConnectedProviders,
   provisionSpaceChannel,
   startWorkflowCommand,
+  sendChannelMessage,
 } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import {
@@ -1860,6 +1861,18 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
+      channelNotice: {
+        postChannelNotice: (input) =>
+          sendChannelMessage(
+            { store: chatStore, platform: chatPlatform },
+            {
+              tenantId: input.tenantId,
+              principalId: input.principalId,
+              channelId: input.channelId,
+              messageParts: [{ kind: "text", text: input.text }],
+            },
+          ).then(() => undefined),
+      },
       // Myra-backed drafting (CL-5917): a real one-shot inference call,
       // mirroring `@corbits/task-planner`'s own Myra auto-dispatch
       // wiring below (`plannerInventorySources`/`dispatchWithPlanner`)
@@ -1956,6 +1969,18 @@ export async function createHub(config: HubConfig) {
     createWorkflowRoutineRoutes({
       store: routineStore,
       launcher: routineLauncher,
+      channelNotice: {
+        postChannelNotice: (input) =>
+          sendChannelMessage(
+            { store: chatStore, platform: chatPlatform },
+            {
+              tenantId: input.tenantId,
+              principalId: input.principalId,
+              channelId: input.channelId,
+              messageParts: [{ kind: "text", text: input.text }],
+            },
+          ).then(() => undefined),
+      },
       authenticator: createWorkflowRunAuthenticator({ db }),
       definitionInTenant: async (tenantId, definitionId) => {
         const row = await db.query.workflowDefinition.findFirst({
