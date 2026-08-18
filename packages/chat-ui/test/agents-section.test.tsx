@@ -1,9 +1,13 @@
-// DOM-mounted composition tests for the Assistant settings section: it
-// reads and saves through `@corbits/agent-directory`'s routes rather
-// than the channel settings PATCH every other section uses, so its
-// load/save/error sequencing needs a real effect-driven mount (see
-// dom-setup.ts) the same way chat-workspace.test.tsx's settings-surface
-// tests do. Stubs `global.fetch` directly, never `mock.module`.
+// DOM-mounted composition tests for the Agents master-detail settings
+// section (CL-6215): the list (every invited agent, Invite agent, the
+// autonomy callout) is the whole surface until a row is clicked; its
+// detail is the old, separate "Myra" tab's editor — name/instructions,
+// Capabilities (including a model picker fed from the tenant's resolved
+// inference catalog), and History — generalized to any agent. This reads
+// and saves through `@corbits/agent-directory`'s routes rather than the
+// channel settings PATCH every other section uses, so its load/save/error
+// sequencing needs a real effect-driven mount. Stubs `global.fetch`
+// directly, never `mock.module`.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -47,8 +51,12 @@ type VersionFixture = {
   readonly current: boolean;
 };
 
+type ModelFixture = { readonly canonicalName: string; readonly displayName?: string };
+type OfferingFixture = { readonly providerName: string };
+
 function stubFetch(options: {
   readonly agents?: readonly AgentFixture[];
+  readonly channelKind?: string;
   readonly saveFails?: boolean;
   readonly versions?: readonly VersionFixture[];
   readonly capabilityInventory?: {
@@ -56,6 +64,9 @@ function stubFetch(options: {
     readonly skills: readonly { name: string }[];
     readonly models: readonly { canonicalName: string }[];
   };
+  readonly catalogModels?: readonly (ModelFixture & {
+    readonly offerings: readonly OfferingFixture[];
+  })[];
   readonly addCapabilityFails?: boolean;
   readonly restoreFails?: boolean;
   readonly onSave?: (
@@ -80,6 +91,9 @@ function stubFetch(options: {
     skills: [],
     models: [],
   };
+  const catalogModels =
+    options.catalogModels ??
+    [{ canonicalName: "anthropic/claude-sonnet", offerings: [{ providerName: "anthropic" }] }];
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
@@ -93,7 +107,7 @@ function stubFetch(options: {
       return json({
         id: "ch_1",
         title: "Talk to Myra",
-        kind: "chat",
+        kind: options.channelKind ?? "chat",
         pinned: false,
         participants: agents.map((agent) => ({
           address: agent.address,
@@ -105,6 +119,25 @@ function stubFetch(options: {
     }
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
+    }
+    if (/\/models$/.test(path)) {
+      return json(
+        catalogModels.map((model, index) => ({
+          id: `model_${String(index)}`,
+          canonicalName: model.canonicalName,
+          displayName: model.displayName ?? null,
+          offerings: model.offerings.map((offering, offeringIndex) => ({
+            offeringId: `offering_${String(index)}_${String(offeringIndex)}`,
+            providerId: `provider_${String(index)}_${String(offeringIndex)}`,
+            providerName: offering.providerName,
+            plugin: "anthropic",
+            priority: offeringIndex,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          })),
+        })),
+      );
     }
     if (/\/chat\/channels\/[^/]+\/agents\/refresh$/.test(path)) {
       const body = JSON.parse(String(init?.body)) as { address: string };
@@ -259,7 +292,7 @@ function baseProps(
     channelTitle: "Talk to Myra",
     onBack: () => undefined,
     onInviteParticipant: () => undefined,
-    section: "assistant" as const,
+    section: "agents" as const,
     ...overrides,
   };
 }
@@ -282,7 +315,75 @@ function findButton(el: HTMLElement, text: string) {
     HTMLButtonElement | undefined;
 }
 
-describe("Assistant settings section", () => {
+function openAgent(el: HTMLElement, handle: string) {
+  const row = Array.from(
+    el.querySelectorAll(".chat-settings-agent-picker-row"),
+  ).find((button) => button.textContent === `@${handle}`) as
+    HTMLButtonElement | undefined;
+  act(() => {
+    row?.click();
+  });
+}
+
+describe("Agents section — list", () => {
+  test("lists every agent participant, with Invite agent and the autonomy note", async () => {
+    const second: AgentFixture = {
+      address: "researcher@acme.example",
+      handle: "researcher",
+      definitionId: "wfd_researcher",
+      name: "Researcher",
+      systemPrompt: "Dig up sources.",
+      toolPackagePins: [],
+      skills: [],
+    };
+    stubFetch({ agents: [MYRA, second] });
+    const el = mount(baseProps());
+    await settle();
+
+    const rows = Array.from(
+      el.querySelectorAll(".chat-settings-agent-picker-row"),
+    ).map((row) => row.textContent);
+    expect(rows.sort()).toEqual(["@myra", "@researcher"]);
+    expect(findButton(el, "Invite agent")).toBeDefined();
+    expect(el.textContent).toContain("Autonomy");
+  });
+
+  test("no agents invited yet reads honestly, not as an empty list", async () => {
+    // A channel (not a DM chat), so the empty agent list itself is under
+    // test rather than the separate DM trim that hides Agents entirely.
+    stubFetch({ agents: [], channelKind: "channel" });
+    const el = mount(baseProps());
+    await settle();
+
+    expect(el.textContent).toContain("No agents invited yet.");
+  });
+
+  test("clicking a row opens that agent's detail, not every agent's at once", async () => {
+    const second: AgentFixture = {
+      address: "researcher@acme.example",
+      handle: "researcher",
+      definitionId: "wfd_researcher",
+      name: "Researcher",
+      systemPrompt: "Dig up sources.",
+      toolPackagePins: [],
+      skills: [],
+    };
+    stubFetch({ agents: [MYRA, second] });
+    const el = mount(baseProps());
+    await settle();
+
+    openAgent(el, "researcher");
+    await settle();
+
+    const titles = Array.from(
+      el.querySelectorAll(".chat-settings-agent-block-title"),
+    ).map((node) => node.textContent);
+    expect(titles).toEqual(["Researcher"]);
+    expect(el.querySelector(".chat-settings-agent-back")).not.toBeNull();
+  });
+});
+
+describe("Agents section — detail", () => {
   test("loads the agent's name and instructions, saves them, and refreshes its running instance", async () => {
     let saved: { name: string; systemPrompt: string } | undefined;
     const { refreshCalls } = stubFetch({
@@ -291,6 +392,8 @@ describe("Assistant settings section", () => {
       },
     });
     const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
     await settle();
 
     const nameInput = el.querySelector(
@@ -324,6 +427,8 @@ describe("Assistant settings section", () => {
     stubFetch({ saveFails: true });
     const el = mount(baseProps());
     await settle();
+    openAgent(el, "myra");
+    await settle();
 
     const textarea = el.querySelector(
       ".channel-settings-panel-area textarea",
@@ -343,18 +448,7 @@ describe("Assistant settings section", () => {
     expect(textarea?.value).toBe("Try to save this.");
   });
 
-  test("a channel with no agent participant never shows the Myra tab", async () => {
-    stubFetch({ agents: [] });
-    const el = mount(baseProps({ section: "general" }));
-    await settle();
-
-    const navLabels = Array.from(
-      el.querySelectorAll(".channel-settings-nav-item"),
-    ).map((item) => item.textContent);
-    expect(navLabels).not.toContain("Myra");
-  });
-
-  test("a two-agent channel shows both entries and edits the right one", async () => {
+  test("back returns to the list without losing the other agent's own state", async () => {
     const second: AgentFixture = {
       address: "researcher@acme.example",
       handle: "researcher",
@@ -364,75 +458,35 @@ describe("Assistant settings section", () => {
       toolPackagePins: [],
       skills: [],
     };
-    const saves: {
-      definitionId: string;
-      body: { name: string; systemPrompt: string };
-    }[] = [];
-    stubFetch({
-      agents: [MYRA, second],
-      onSave: (definitionId, body) => {
-        saves.push({ definitionId, body });
-      },
-    });
+    stubFetch({ agents: [MYRA, second] });
     const el = mount(baseProps());
     await settle();
 
-    const titles = Array.from(
-      el.querySelectorAll(".chat-settings-agent-block-title"),
-    ).map((node) => node.textContent);
-    expect(titles.sort()).toEqual(["Myra", "Researcher"]);
-
-    const researcherBlock = Array.from(
-      el.querySelectorAll(".chat-settings-agent-block"),
-    ).find(
-      (block) =>
-        block.querySelector(".chat-settings-agent-block-title")?.textContent ===
-        "Researcher",
-    );
-    expect(researcherBlock).toBeDefined();
-    const researcherTextarea = researcherBlock?.querySelector(
-      "textarea",
-    ) as HTMLTextAreaElement | null;
-    expect(researcherTextarea?.value).toBe("Dig up sources.");
-
-    setTextareaValue(researcherTextarea, "Dig up sources, then cite them.");
+    openAgent(el, "myra");
     await settle();
-
-    const researcherSave = Array.from(
-      researcherBlock?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Save") as
-      HTMLButtonElement | undefined;
+    const back = el.querySelector(".chat-settings-agent-back") as
+      HTMLButtonElement | null;
     act(() => {
-      researcherSave?.click();
+      back?.click();
     });
     await settle();
 
-    expect(saves).toEqual([
-      {
-        definitionId: "wfd_researcher",
-        body: {
-          name: "Researcher",
-          systemPrompt: "Dig up sources, then cite them.",
-        },
-      },
-    ]);
+    expect(
+      Array.from(el.querySelectorAll(".chat-settings-agent-picker-row")).map(
+        (row) => row.textContent,
+      ).sort(),
+    ).toEqual(["@myra", "@researcher"]);
 
-    // Myra's own block is untouched by editing the researcher's.
-    const myraBlock = Array.from(
-      el.querySelectorAll(".chat-settings-agent-block"),
-    ).find(
-      (block) =>
-        block.querySelector(".chat-settings-agent-block-title")?.textContent ===
-        "Myra",
-    );
-    const myraTextarea = myraBlock?.querySelector(
-      "textarea",
+    openAgent(el, "researcher");
+    await settle();
+    const researcherTextarea = el.querySelector(
+      ".channel-settings-panel-area textarea",
     ) as HTMLTextAreaElement | null;
-    expect(myraTextarea?.value).toBe("Be a helpful assistant.");
+    expect(researcherTextarea?.value).toBe("Dig up sources.");
   });
 });
 
-describe("Assistant settings section — Capabilities", () => {
+describe("Agents section — Capabilities", () => {
   test("lists current tools/skills/model and offers only what's not already attached", async () => {
     const withCapabilities: AgentFixture = {
       ...MYRA,
@@ -451,6 +505,8 @@ describe("Assistant settings section — Capabilities", () => {
       },
     });
     const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
     await settle();
 
     const listText = el.querySelector(
@@ -471,6 +527,44 @@ describe("Assistant settings section — Capabilities", () => {
     expect(toolOptions).toContain("@corbits/granola-tools");
   });
 
+  test("the model picker is the tenant's resolved catalog, labeled by its connected provider", async () => {
+    stubFetch({
+      catalogModels: [
+        {
+          canonicalName: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          offerings: [{ providerName: "anthropic" }],
+        },
+        // No offerings anywhere in the ancestor chain — not actually
+        // launchable, so it never appears in the picker.
+        { canonicalName: "ghost/unconnected-model", offerings: [] },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const kindSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[0] as HTMLSelectElement | null;
+    act(() => {
+      if (kindSelect !== null) {
+        kindSelect.value = "model";
+        kindSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await settle();
+
+    const choiceSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[1] as HTMLSelectElement | null;
+    const labels = Array.from(choiceSelect?.options ?? [])
+      .map((option) => option.textContent)
+      .filter((text) => text !== "");
+    expect(labels).toEqual(["Claude Sonnet · Anthropic"]);
+  });
+
   test("adding a capability calls the capabilities route, refreshes the running instance, and reflects the addition", async () => {
     let addedBody: unknown;
     const { refreshCalls } = stubFetch({
@@ -484,6 +578,8 @@ describe("Assistant settings section — Capabilities", () => {
       },
     });
     const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
     await settle();
 
     const kindSelect = el.querySelectorAll(
@@ -531,6 +627,8 @@ describe("Assistant settings section — Capabilities", () => {
     });
     const el = mount(baseProps());
     await settle();
+    openAgent(el, "myra");
+    await settle();
 
     const choiceSelect = el.querySelectorAll(
       ".chat-settings-capability-add select",
@@ -553,7 +651,7 @@ describe("Assistant settings section — Capabilities", () => {
   });
 });
 
-describe("Assistant settings section — History", () => {
+describe("Agents section — History", () => {
   test("lists version history newest first, with the current version's restore disabled", async () => {
     stubFetch({
       versions: [
@@ -575,6 +673,8 @@ describe("Assistant settings section — History", () => {
     });
     const el = mount(baseProps());
     await settle();
+    openAgent(el, "myra");
+    await settle();
 
     const rows = el.querySelectorAll("table tbody tr");
     expect(rows.length).toBe(2);
@@ -587,13 +687,7 @@ describe("Assistant settings section — History", () => {
 
   test("restoring a version calls restore, refreshes the running instance, and updates the editor", async () => {
     let restoredSha: string | undefined;
-    const withCapabilities: AgentFixture = {
-      ...MYRA,
-      name: "Myra",
-      systemPrompt: "You are now polite.",
-    };
     const { refreshCalls } = stubFetch({
-      agents: [withCapabilities],
       versions: [
         {
           commitSha: "sha2",
@@ -615,6 +709,8 @@ describe("Assistant settings section — History", () => {
       },
     });
     const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
     await settle();
 
     const restoreButtons = Array.from(
@@ -650,6 +746,8 @@ describe("Assistant settings section — History", () => {
       ],
     });
     const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
     await settle();
 
     const restoreButtons = Array.from(

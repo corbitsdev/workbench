@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { pluginCardStatus } from "./keys-plugins-section";
+import { pluginCardStatus } from "./plugins-section";
 
 function plugin(overrides: Record<string, unknown> = {}): ResolvedPlugin {
   return {
