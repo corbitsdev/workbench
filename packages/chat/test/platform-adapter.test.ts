@@ -1960,6 +1960,76 @@ describe("createHubChatPlatform", () => {
       globalThis.setInterval = originalSetInterval;
     });
 
+    // CL-6164 regression pin: the anchor's `workflow_run` row must stay
+    // "running" (never end/un-anchor) across an idle-reap-then-relaunch
+    // cycle. Reap is a sidecar-local `sendAgentUndeploy` call -- it never
+    // touches `workflow_run` at all -- and `wakeByAddress` only reads the
+    // run, never updates its `status`/`endedAt`. This test pins that
+    // invariant against a regression, not against a bug this lane found:
+    // see the final report for the file/line evidence.
+    test("idle-reap-then-relaunch never updates workflow_run's status or endedAt", async () => {
+      const originalSetInterval = globalThis.setInterval;
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        const timer = originalSetInterval(...args);
+        timer.unref?.();
+        return timer;
+      }) as typeof setInterval;
+
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address,
+          principalId: "prin_run1",
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: [address],
+      });
+      const eventCollectors = createFakeEventCollectors({
+        busyAddresses: new Set(),
+      });
+
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
+      });
+
+      await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "hello" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([
+        { address, reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
+      ]);
+      expect(db.updated.some((call) => call.table === workflowRun)).toBe(false);
+      globalThis.setInterval = originalSetInterval;
+    });
+
     test("createHubChatPlatform installs no sweep interval when lifecycle is not configured", () => {
       const originalSetInterval = globalThis.setInterval;
       let setIntervalCalls = 0;
@@ -2029,6 +2099,169 @@ describe("createHubChatPlatform", () => {
       } finally {
         globalThis.setInterval = originalSetInterval;
       }
+    });
+  });
+
+  // `ensureAwake` is the primitive a caller outside this adapter (the
+  // hub's `mail.outbound.undelivered` handler) uses to wake a chat
+  // resident before re-attempting delivery itself, over both
+  // lifecycle configurations `sendMail` itself branches on.
+  describe("ensureAwake", () => {
+    test("no-ops for an already-routable address", async () => {
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+      });
+      const sessionService = createFakeSessionService();
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter({
+          routableAddresses: [address],
+        }),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await platform.ensureAwake(address);
+
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+    });
+
+    test("redeploys a non-routable address when lifecycle is configured", async () => {
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address,
+          principalId: "prin_run1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          noopInference: true,
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        eventCollectors: createFakeEventCollectors(),
+        lifecycle: { idleSleepMs: 60_000 },
+      });
+
+      await platform.ensureAwake(address);
+
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    });
+
+    test("redeploys a non-routable address when lifecycle is not configured", async () => {
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address,
+          principalId: "prin_run1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          noopInference: true,
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await platform.ensureAwake(address);
+
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    });
+
+    test("rejects for an address this adapter has no folded run for", async () => {
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+      });
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await expect(
+        platform.ensureAwake("ins_unknown@ten1.workbench.test"),
+      ).rejects.toThrow();
     });
   });
 
