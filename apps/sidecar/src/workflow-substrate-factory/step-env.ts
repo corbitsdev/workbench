@@ -37,8 +37,23 @@ import {
   type StepToolCacheConfig,
   type StepToolMaterialization,
 } from "../step-agent-tools";
+import {
+  SUMMARIZE_OLDER_TURNS_NAME,
+  createSummarizeOlderTurnsCompactor,
+} from "./compactors";
 import { createStepInferenceSourceResolver } from "./config";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
+
+// Registered once and reused across every step env this builder produces:
+// the compactor is a pure, stateless `Compactor` (see `./compactors`), so
+// one instance can serve every step's `env.compactors` map. Registering it
+// here (CL-6204) makes the name resolvable to any director that names it
+// via `caps.compact("summarize-older-turns", reason)`; see `./compactors`'s
+// header comment for the remaining gap -- no director in this codebase
+// fires that action yet.
+const stepCompactors = {
+  [SUMMARIZE_OLDER_TURNS_NAME]: createSummarizeOlderTurnsCompactor(),
+};
 
 const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
@@ -335,6 +350,7 @@ export function createSidecarStepBuildEnv(
       workdir,
       audit: storage,
       directors: createDefaultDirectorRegistry(),
+      compactors: stepCompactors,
       // Resolve inference adapters through the child's boot-built
       // registry (built-ins + operator custom adapters), so a
       // custom-provider step source resolves in the child the same way
