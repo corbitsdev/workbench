@@ -387,6 +387,21 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -578,6 +593,21 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -666,8 +696,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
     });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
-    // channel-digest, recurring-task — on top of the one failed attempt.
-    expect(assetCreateAttempts).toBe(5);
+    // channel-digest, recurring-task, last-30-days-research — on top of
+    // the one failed attempt.
+    expect(assetCreateAttempts).toBe(6);
   });
 
   test("a fully seeded personal bench reports existing-member with seeded: true", async () => {
@@ -927,6 +958,21 @@ describe("provisionPersonalTenantIfNeeded", () => {
           data: { id: "tok_1", secret: "s3cret" },
           cookies: [],
         };
+      }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
       }
       if (
         method === "GET" &&

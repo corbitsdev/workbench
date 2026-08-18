@@ -209,7 +209,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -253,7 +253,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
@@ -297,7 +297,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedCatalogCalls[0]?.provider).toBe("groq");
@@ -564,6 +564,21 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -629,6 +644,7 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "channel-digest",
         "recurring-task",
+        "last-30-days-research",
       ]);
     }
   });
@@ -746,6 +762,21 @@ describe("completeCredentialSetup", () => {
           data: { id: "tok_1", secret: "s3cret" },
           cookies: [],
         };
+      }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
       }
       if (
         method === "GET" &&
@@ -1046,8 +1077,8 @@ describe("completeCredentialSetup", () => {
     // Every ensure-then-create helper hit its 409 branch on the second
     // pass and listed the row it already created on the first — nothing
     // was ever created twice.
-    expect(assetCreatePosts).toBe(4);
-    expect(deploymentCreatePosts).toBe(4);
+    expect(assetCreatePosts).toBe(5);
+    expect(deploymentCreatePosts).toBe(5);
     expect(catalogModelCreatePosts).toBe(1);
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(1);
@@ -1056,8 +1087,8 @@ describe("completeCredentialSetup", () => {
     // existing row rather than leaving it untouched (the CL-6103 fix,
     // updated by CL-6123 to no longer require a probe first).
     expect(credentialRotatePatches).toBe(1);
-    expect(assets.length).toBe(4);
-    expect(deployments.length).toBe(4);
+    expect(assets.length).toBe(5);
+    expect(deployments.length).toBe(5);
   });
 
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
@@ -1286,7 +1317,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded",
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
     });
     expectNoConfirmation(seedTenantCalls);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -1383,6 +1414,21 @@ describe("ensureSeeded (the slow half)", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -1445,9 +1491,9 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(first.kind).toBe("seeded");
     expect(second.kind).toBe("seeded");
-    expect(assetCreatePosts).toBe(4);
-    expect(deploymentCreatePosts).toBe(4);
-    expect(assets.length).toBe(4);
-    expect(deployments.length).toBe(4);
+    expect(assetCreatePosts).toBe(5);
+    expect(deploymentCreatePosts).toBe(5);
+    expect(assets.length).toBe(5);
+    expect(deployments.length).toBe(5);
   });
 });

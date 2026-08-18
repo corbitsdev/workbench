@@ -538,6 +538,16 @@ describe("POST /complete-setup", () => {
     hub.post(`/api/tenants/${TENANT_ID}/git-tokens`, (c) =>
       c.json({ id: "tok_1", secret: "s3cret" }, 201),
     );
+    hub.get(`/api/tenants/${TENANT_ID}/skills/:name`, (c) =>
+      c.json({}, 404),
+    );
+    hub.post(`/api/tenants/${TENANT_ID}/skills`, (c) => c.json({}, 201));
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/definitions`, (c) =>
+      c.json({ data: [], nextCursor: null }, 200),
+    );
+    hub.get(`/api/tenants/${TENANT_ID}/routines`, (c) =>
+      c.json({ items: [] }, 200),
+    );
     // The corbits-tools registry publish `seedTenant` now runs ahead of
     // any workflow deploy: stands in for the real tarball-upload REST
     // route so that publish succeeds without asserting anything about
