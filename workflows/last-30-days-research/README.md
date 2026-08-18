@@ -87,6 +87,12 @@ upstream for broken auth and is skipped entirely, as before).
 `CORBITS_VOCABULARY`) on every reasoning step — the brand-correctness
 guidance applies here exactly as it did in the OG.
 
+**Intake.** The OG parks on `awaitSignal("intake")` so a human stepper
+can fill topic/focus after the run starts. Workbench collects those
+fields on the routine _before_ launch and delivers them as the first-turn
+mail. There is no intake gate: `ground` is the first step and every
+reasoning step that needs the topic/focus reads `{ from: "trigger.payload" }`.
+
 **Report structure.** This port keeps its own established four-heading
 contract (Overview / Key findings / Sources consulted / Citations)
 rather than adopting the OG's TL;DR/per-theme-heading structure, since
@@ -138,9 +144,9 @@ resolution honors a step's own `inference.sources` (rather than only the
 `stepOrder[0]` step's) has not been proven against this repo's deploy
 pipeline and should be verified before a production deploy.
 
-The `topic`/`focus` trigger fields have no create-time UI collection
-point yet beyond `packages/workflow-catalog`'s `triggerFields` metadata —
-see `apps/web/src/pages/routines-page.tsx` for that stepper.
+The `topic`/`focus` fields are collected on the routine before launch
+(`routine_create` / `routine_update` `input`) and delivered as the
+first-turn mail. There is no post-launch intake stepper.
 
 ## Usage
 
