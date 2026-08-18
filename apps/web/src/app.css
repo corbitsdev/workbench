@@ -829,29 +829,14 @@ select:disabled,
   background: var(--background);
 }
 
-.shell-routine-header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
-.shell-routine-title {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
 .shell-routine-toolbar {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.7rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .shell-routine-new {
@@ -1012,14 +997,28 @@ select:disabled,
   justify-content: flex-start;
 }
 
-/* Shared by every canvas pane (profile, artifact): the focus-cycle and
-   close controls, plus an optional title for content that has one. */
+/* Shared by every canvas pane (profile, artifact, routine): an optional
+   back control and title on the left, pane-specific actions on the
+   right — the focus-cycle/close controls for profile and artifact, a
+   "Runs" shortcut or save-state label for the routine pane. A hairline
+   divider closes off the header the same way every other row boundary
+   in this column does. */
 .shell-canvas-pane-header {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-canvas-pane-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .shell-canvas-pane-title {
@@ -2847,8 +2846,7 @@ tr.insights-row-clickable:hover {
 .workbench-timeline-day-divider::after {
   content: "";
   flex: 1;
-  border-top: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .workbench-timeline-rail {
@@ -2874,8 +2872,7 @@ tr.insights-row-clickable:hover {
   align-items: baseline;
   gap: 0.6rem;
   padding: 0.4rem 0;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground) 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .workbench-timeline-entry[data-indented="true"] {
@@ -2970,8 +2967,7 @@ tr.insights-row-clickable:hover {
 
 .workbench-timeline-kpi-day {
   padding-top: 0.5rem;
-  border-top: 1px solid
-    color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
 .workbench-timeline-kpi-day:first-of-type {

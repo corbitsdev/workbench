@@ -59,7 +59,7 @@ import type { BadgeTone, StatusDotTone } from "@corbits/react-ui";
 import { listChannelAgents } from "@corbits/chat-ui";
 import { listTasks } from "@corbits/tasks-ui";
 import type { Task, TaskStatus } from "@corbits/tasks-ui";
-import { ChevronLeft, Clock, Plus, X } from "lucide-react";
+import { Clock, Plus, X } from "lucide-react";
 
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
@@ -106,6 +106,7 @@ import {
   useOpenRoutineInCanvas,
 } from "./canvas-availability";
 import type { RoutinePanelSubject } from "./canvas-availability";
+import { CanvasPaneHeader } from "./canvas-column";
 
 function instructionFromInput(input: Record<string, unknown>): string {
   const value = input["instruction"];
@@ -448,23 +449,16 @@ function RoutineListPanel({
 
   return (
     <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--ui-border)] px-3 py-2">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Back"
-            title="Back"
-          >
-            <ChevronLeft />
+      <CanvasPaneHeader
+        className="px-3 pt-2"
+        title="Routines"
+        onBack={onClose}
+        trailing={
+          <Button variant="ghost" size="sm" onClick={onOpenRuns}>
+            Runs
           </Button>
-          <span className="text-sm font-medium">Routines</span>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onOpenRuns}>
-          Runs
-        </Button>
-      </div>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <button
           type="button"
@@ -605,20 +599,11 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
       traceQuery.kind === "ready" ? toTraceSpans(traceQuery.data) : [];
     return (
       <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-        <div className="flex items-center gap-1 border-b border-[var(--ui-border)] px-3 py-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedRunId(null)}
-            aria-label="Back to runs"
-            title="Back to runs"
-          >
-            <ChevronLeft />
-          </Button>
-          <span className="truncate text-sm font-medium">
-            {selectedRun?.definitionName ?? selectedRunId}
-          </span>
-        </div>
+        <CanvasPaneHeader
+          className="px-3 pt-2"
+          title={selectedRun?.definitionName ?? selectedRunId}
+          onBack={() => setSelectedRunId(null)}
+        />
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {traceQuery.kind === "loading" ? (
             <Skeleton className="query-skeleton" />
@@ -649,18 +634,7 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
 
   return (
     <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-[var(--ui-border)] px-3 py-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          aria-label="Back"
-          title="Back"
-        >
-          <ChevronLeft />
-        </Button>
-        <span className="text-sm font-medium">Runs</span>
-      </div>
+      <CanvasPaneHeader className="px-3 pt-2" title="Runs" onBack={onBack} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {runsQuery.kind === "loading" ? (
           <Skeleton className="query-skeleton" />
@@ -1124,29 +1098,22 @@ function RoutineEditorPanel({
 
   return (
     <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--ui-border)] px-3 py-2">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            aria-label="Back"
-            title="Back"
-          >
-            <ChevronLeft />
-          </Button>
-          <span className="text-sm font-medium">Routine</span>
-        </div>
-        {saveState === "saving" ? (
-          <span className="text-xs text-[var(--ui-fg-muted)]" role="status">
-            Saving…
-          </span>
-        ) : saveState === "saved" ? (
-          <span className="text-xs text-[var(--ui-fg-muted)]" role="status">
-            Saved
-          </span>
-        ) : null}
-      </div>
+      <CanvasPaneHeader
+        className="px-3 pt-2"
+        title="Routine"
+        onBack={onBack}
+        trailing={
+          saveState === "saving" ? (
+            <span className="text-xs text-[var(--ui-fg-muted)]" role="status">
+              Saving…
+            </span>
+          ) : saveState === "saved" ? (
+            <span className="text-xs text-[var(--ui-fg-muted)]" role="status">
+              Saved
+            </span>
+          ) : null
+        }
+      />
       <div className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2">
         <Switch
           checked={enabled}

@@ -37,8 +37,16 @@ import {
   type ArtifactSaveState,
 } from "@corbits/artifact-ui";
 import type { ProfileSubject, SharedChannelSummary } from "@corbits/chat-ui";
-import { ExternalLink, Maximize2, Minimize2, UserRound, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type * as Y from "yjs";
 
 import { useBench } from "../bench-context";
@@ -203,31 +211,67 @@ function mentionAction(
   };
 }
 
-/** Shared header row for every canvas pane: an optional title, the mock's
- * focus-cycle control (`data-action="canvas-focus"`), and its explicit
- * close (`data-action="canvas-close"`) — one row, every content type. */
-function CanvasPaneHeader({
+/** Shared header row for every canvas pane: an optional leading back
+ * control, an optional title, an optional pane-specific `trailing` slot,
+ * and — for the panes that use them — the mock's focus-cycle control and
+ * its explicit close. `onBack` and the focus/close controls are mutually
+ * exclusive in practice (a pane is either master-detail-driven, like the
+ * routine pane, or focus/close-driven, like profile and artifact), but
+ * both are optional so this one component covers every canvas pane's
+ * header rather than each pane hand-rolling its own. */
+export function CanvasPaneHeader({
   title,
+  onBack,
   focus,
   onClose,
   onToggleFocus,
   previewSrc,
+  trailing,
+  className,
 }: {
   readonly title?: string;
-  readonly focus: boolean;
-  readonly onClose: () => void;
-  readonly onToggleFocus: () => void;
+  /** Present for the routine pane's master-detail chrome: a back chevron
+   * in place of the focus/close controls profile and artifact use. */
+  readonly onBack?: () => void;
+  readonly focus?: boolean;
+  readonly onClose?: () => void;
+  readonly onToggleFocus?: () => void;
   /** When set (an `"html"`-kind artifact with a resolved preview route),
    * adds an "Open in new tab" action pointed at the same sandboxed URL the
    * pane's iframe already loads. */
   readonly previewSrc?: string;
+  /** Extra trailing content specific to one pane (the routine list's
+   * "Runs" shortcut, or the editor's save-state label), rendered before
+   * any shared focus/close controls. */
+  readonly trailing?: ReactNode;
+  readonly className?: string;
 }) {
   return (
-    <div className="shell-canvas-pane-header">
-      {title !== undefined ? (
-        <span className="shell-canvas-pane-title">{title}</span>
-      ) : null}
+    <div
+      className={
+        className === undefined
+          ? "shell-canvas-pane-header"
+          : `shell-canvas-pane-header ${className}`
+      }
+    >
+      <div className="shell-canvas-pane-heading">
+        {onBack !== undefined ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            aria-label="Back"
+            title="Back"
+          >
+            <ChevronLeft />
+          </Button>
+        ) : null}
+        {title !== undefined ? (
+          <span className="shell-canvas-pane-title">{title}</span>
+        ) : null}
+      </div>
       <div className="shell-canvas-pane-actions">
+        {trailing}
         {previewSrc !== undefined ? (
           <Button variant="ghost" size="sm" asChild>
             <a href={previewSrc} target="_blank" rel="noreferrer">
@@ -236,18 +280,27 @@ function CanvasPaneHeader({
             </a>
           </Button>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleFocus}
-          aria-label={focus ? "Exit focus" : "Focus"}
-          title={focus ? "Exit focus" : "Focus"}
-        >
-          {focus ? <Minimize2 /> : <Maximize2 />}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-          <X />
-        </Button>
+        {onToggleFocus !== undefined ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleFocus}
+            aria-label={focus === true ? "Exit focus" : "Focus"}
+            title={focus === true ? "Exit focus" : "Focus"}
+          >
+            {focus === true ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        ) : null}
+        {onClose !== undefined ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X />
+          </Button>
+        ) : null}
       </div>
     </div>
   );
