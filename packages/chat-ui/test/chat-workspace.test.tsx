@@ -1359,6 +1359,138 @@ describe("optimistic send (CL-6103)", () => {
   });
 });
 
+// CL-6251: `loadMessages` calls overlap constantly (every stream event fires
+// a background refresh on top of whatever a send already triggered) with no
+// guarantee they resolve in the order they were issued. Before the fix,
+// "last response to resolve wins" let a stale, slower-resolving refresh
+// clobber a newer one that already landed — flickering a just-sent message
+// back out of the timeline. This drives two overlapping background
+// refreshes with their GET responses deliberately reordered and asserts the
+// later-issued request's result is the one that sticks.
+describe("loadMessages request ordering (CL-6251)", () => {
+  test("a slow, stale refresh resolving after a newer one never reverts the timeline", async () => {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    let messagesGetCount = 0;
+    let postCount = 0;
+    // Set once the two competing background refreshes are about to be
+    // triggered — every GET before this index is an incidental load the
+    // race doesn't care about (see the mock below).
+    let raceStartIndex = Number.POSITIVE_INFINITY;
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_WIRE] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+        if (init?.method === "POST") {
+          postCount += 1;
+          return json({
+            id: `msg_new_${postCount}`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          });
+        }
+        const callIndex = messagesGetCount;
+        messagesGetCount += 1;
+        // Every load before the race starts (the initial mount load, plus
+        // however many redundant foreground loads the channel-resolution
+        // effects happen to run) reports empty — nothing about those is
+        // under test here.
+        if (callIndex < raceStartIndex) {
+          return json({ items: [] });
+        }
+        const firstMessage = {
+          id: "msg_new_1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          parts: [{ kind: "text", text: "first" }],
+          sender: { name: null, address: "prn_alice@acme.example" },
+        };
+        const secondMessage = {
+          id: "msg_new_2",
+          createdAt: "2026-01-01T00:00:01.000Z",
+          parts: [{ kind: "text", text: "second" }],
+          sender: { name: null, address: "prn_alice@acme.example" },
+        };
+        // The first call once the race starts is the stream-drop's
+        // background refresh (the older ticket, issued first) —
+        // deliberately kept slow, and reports only the first message,
+        // correct as of its own request time, before the send below had
+        // landed. Every call after that is the send's own post-send
+        // refresh (the newer ticket, issued second) — resolves fast, and
+        // reports both messages, correct as of ITS request time.
+        if (callIndex === raceStartIndex) {
+          await sleep(60);
+          return json({ items: [firstMessage] });
+        }
+        await sleep(5);
+        return json({ items: [firstMessage, secondMessage] });
+      }
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+    // The initial load resolves through `listThreads` first, then
+    // `listMessages` — slower than the flat single-fetch mocks other
+    // tests use, so it needs longer than one `settle()` to leave the
+    // loading skeleton before the composer mounts.
+    await act(() => sleep(100));
+
+    // Drop the stream: `onerror` starts polling, which fires one
+    // immediate background refresh — the older, deliberately-slow one.
+    raceStartIndex = messagesGetCount;
+    act(() => firstStream().fail());
+
+    // Right behind it, a send fires its own post-send background
+    // refresh — `ticket` #3, the newer, fast one.
+    const sendButton = harness.container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Send"]',
+    );
+    if (sendButton === null) throw new Error("send button not found");
+    typeInComposer(harness.container, "second");
+    act(() => sendButton.click());
+
+    // Long enough for the fast (newer-ticket) refresh to land and for the
+    // slow (stale-ticket) one to resolve after it.
+    await act(() => sleep(90));
+
+    expect(
+      harness.container.querySelector("#chat-message-msg_new_2"),
+    ).not.toBeNull();
+    expect(harness.container.textContent).toContain("second");
+    harness.unmount();
+  });
+});
+
 describe("Channel header polish (CL-6106)", () => {
   test("the threads dropdown is hidden entirely when the channel has no threads yet", async () => {
     stubFetch();
@@ -1524,12 +1656,14 @@ describe("switching channels never carries a stale root-thread id across", () =>
         wrongRequests.push(path);
         return notFound();
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path))
+        return json({ items: [] });
       if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/pins$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
       if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
         return json({
           ...CHANNEL_A,

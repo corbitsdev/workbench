@@ -546,6 +546,101 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
   });
 });
 
+describe("mergePendingSends (CL-6251: clientId reconciliation never double-renders a send)", () => {
+  const serverItems = [
+    {
+      id: "m1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [{ kind: "text" as const, text: "hello" }],
+      sender: { name: null, address: "prn_alice@acme.example" },
+    },
+  ];
+  const pending: PendingSend[] = [
+    {
+      nonce: "pending_1",
+      text: "hi",
+      attachments: [],
+      createdAt: "2026-01-01T00:01:00.000Z",
+      status: "sending",
+    },
+  ];
+
+  test("stream-first: a confirmed item carrying this send's clientId lands before the POST resolves — no duplicate", () => {
+    const itemsWithConfirmedCopy = [
+      ...serverItems,
+      {
+        id: "m2",
+        createdAt: "2026-01-01T00:01:05.000Z",
+        parts: [{ kind: "text" as const, text: "hi" }],
+        sender: { name: null, address: "prn_alice@acme.example" },
+        clientId: "pending_1",
+      },
+    ];
+    const merged = mergePendingSends(
+      itemsWithConfirmedCopy,
+      pending,
+      "prn_alice",
+    );
+    expect(merged).toHaveLength(2);
+    expect(
+      merged.filter((item) => item.pendingStatus !== undefined),
+    ).toHaveLength(0);
+  });
+
+  test("POST-first: the pending entry is still present when the confirmed item hasn't loaded yet — renders once, as pending", () => {
+    const merged = mergePendingSends(serverItems, pending, "prn_alice");
+    expect(merged).toHaveLength(2);
+    expect(merged[1]?.pendingStatus).toBe("sending");
+  });
+
+  test("a confirmed item with a different clientId (another send, or none at all) never suppresses this pending entry", () => {
+    const itemsWithUnrelatedClientId = [
+      {
+        id: "m2",
+        createdAt: "2026-01-01T00:01:05.000Z",
+        parts: [{ kind: "text" as const, text: "unrelated" }],
+        sender: { name: null, address: "prn_alice@acme.example" },
+        clientId: "pending_other",
+      },
+    ];
+    const merged = mergePendingSends(
+      itemsWithUnrelatedClientId,
+      pending,
+      "prn_alice",
+    );
+    expect(merged).toHaveLength(2);
+    expect(merged[1]?.pendingStatus).toBe("sending");
+  });
+
+  test("a failed send's single bubble stays exactly one bubble even once its clientId is confirmed (e.g. a stale retry landed)", () => {
+    const failedPending: PendingSend[] = [
+      {
+        nonce: "pending_1",
+        text: "hi",
+        attachments: [],
+        createdAt: "2026-01-01T00:01:00.000Z",
+        status: "failed",
+      },
+    ];
+    const itemsWithConfirmedCopy = [
+      {
+        id: "m2",
+        createdAt: "2026-01-01T00:01:05.000Z",
+        parts: [{ kind: "text" as const, text: "hi" }],
+        sender: { name: null, address: "prn_alice@acme.example" },
+        clientId: "pending_1",
+      },
+    ];
+    const merged = mergePendingSends(
+      itemsWithConfirmedCopy,
+      failedPending,
+      "prn_alice",
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.pendingStatus).toBeUndefined();
+  });
+});
+
 describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into the timeline)", () => {
   const agent = { address: "myra@ins_abc123", handle: "myra" };
   const serverItems = [

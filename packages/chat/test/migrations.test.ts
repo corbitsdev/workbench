@@ -37,6 +37,7 @@ const migrationNames = [
   "0014_channel_share",
   "0015_channel_share_member",
   "0016_finalized_turn_write_claim",
+  "0017_message_client_ids",
 ];
 
 describeIfDb("applyChatMigrations", () => {
