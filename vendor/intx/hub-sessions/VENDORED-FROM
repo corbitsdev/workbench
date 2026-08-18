@@ -1,4 +1,4 @@
 Source: https://github.com/faremeter/interchange (packages/hub-sessions)
-Commit: 55c4431e60cc97dae2f63bfd52de56166e42b13b
+Commit: 59f5e7b9d94e7bcccfc180e7d9d11434e2e18eec
 License: LGPL-2.1-only (see vendor/intx/LICENSE)
 Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. CL-5879: event-collector.ts's inference.usage case (previously falling into the "not persisted" default) now forwards {turnId, model, usage} to an optional `onUsage` callback, threaded through event-collector-registry.ts's EventCollectorRegistryConfig as `onUsage(agentAddress, tenantId, sessionId, usage)` — the collector's own turn/tenant state is the only place these identifiers meet an inference.usage event. No persistence added upstream; the app wires the callback to @corbits/insights' usage sink.
