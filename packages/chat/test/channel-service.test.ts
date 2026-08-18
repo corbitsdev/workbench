@@ -69,22 +69,21 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     });
     expect(brief).toContain('titled "Copywriter test"');
     expect(brief).toMatch(/label the person chose, not a request/i);
-    expect(brief).toMatch(/never treat it as their brief or answer it as a question/i);
+    expect(brief).toMatch(
+      /never treat it as their brief or answer it as a question/i,
+    );
     expect(brief).not.toContain("undefined");
   });
 
-  test.each([
-    "New Workbench",
-    "Untitled",
-    "Session A",
-    "Room 3",
-    "test run",
-  ])("a generic workbench name (%s) is omitted from the brief entirely", (workbenchName) => {
-    const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
-    expect(brief).not.toContain(workbenchName);
-    expect(brief).not.toContain("titled");
-    expect(brief).not.toContain("undefined");
-  });
+  test.each(["New Workbench", "Untitled", "Session A", "Room 3", "test run"])(
+    "a generic workbench name (%s) is omitted from the brief entirely",
+    (workbenchName) => {
+      const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
+      expect(brief).not.toContain(workbenchName);
+      expect(brief).not.toContain("titled");
+      expect(brief).not.toContain("undefined");
+    },
+  );
 
   test("an absent workbench name is omitted from the brief entirely", () => {
     const brief = greetingKickoffBrief({ senderName: "Ada" });
@@ -412,6 +411,153 @@ describe("message fan-out", () => {
       content: "hello, no mention here",
       replyTo: channel.id,
     });
+  });
+
+  test("a mention fan-out under the context window carries no dropped-history recap", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 5 }),
+    });
+
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "one" }] }),
+    });
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    expect(contextText).not.toContain("Earlier in this conversation");
+  });
+
+  test("a mention fan-out beyond the context window prepends a recap of the dropped history", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 2 }),
+    });
+
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "the launch date is March 3rd" }],
+      }),
+    });
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "kept one" }] }),
+    });
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "kept two" }] }),
+    });
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+
+    expect(contextText).toContain("Earlier in this conversation");
+    // 2, not 1: the channel's own join event (from inviting ins_echo1 at
+    // creation) is itself a dropped mail row, alongside "the launch
+    // date" message — both fall outside the window of 2.
+    expect(contextText).toContain("2 older messages");
+    expect(contextText).toContain("the launch date is March 3rd");
+    expect(contextText).toContain("user: kept one"); // still in-window
+    expect(contextText).toContain("user: kept two"); // still in-window
+    // The recap line itself precedes the still-in-window items.
+    const lines = contextText.split("\n");
+    const recapIndex = lines.findIndex((line) =>
+      line.includes("Earlier in this conversation"),
+    );
+    const keptIndex = lines.findIndex((line) => line === "user: kept two");
+    expect(recapIndex).toBeGreaterThan(-1);
+    expect(recapIndex).toBeLessThan(keptIndex);
+    expect(lines[recapIndex]).toMatch(/^system: /);
+  });
+
+  test("an agents-only dropped span still yields an honest count line, never a fabricated quote", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example", "ins_echo2@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 1 }),
+    });
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    // Simulates an agent's own posted reply landing in the mailbox, the
+    // way the orchestrator's `postReply` delivers it — no principalId.
+    await platform.sendMail({
+      tenantId: TENANT.id,
+      channelId: channel.id,
+      fromChannelId: "ins_echo2",
+      content: { content: "agent-only reply, no facts a human said" },
+    });
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "kept" }] }),
+    });
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
+    expect(response.status).toBe(201);
+
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+
+    // 2, not 1: the channel's own join event (from the two participants
+    // at creation) is itself a dropped mail row, alongside the agent's
+    // reply — both fall outside the window of 1.
+    expect(contextText).toContain("2 older messages");
+    expect(contextText).not.toContain("agent-only reply");
+    expect(contextText).toContain("no human messages");
   });
 
   test("a timeline load failure does not break the send; it fans out un-situated", async () => {
