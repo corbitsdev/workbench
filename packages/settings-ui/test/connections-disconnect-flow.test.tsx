@@ -111,6 +111,9 @@ describe("Connections disconnect", () => {
       if (url === "/api/tenants/ten_1/models") {
         return Promise.resolve(json(RESOLVED_MODELS));
       }
+      if (url === "/api/tenants/ten_1/catalog/offerings") {
+        return Promise.resolve(json({ data: [], nextCursor: null }));
+      }
       if (url === "/api/tenants/ten_1/connections/anthropic/disconnect") {
         return Promise.resolve(json(undefined, 204));
       }
@@ -174,6 +177,9 @@ describe("Connections disconnect", () => {
       }
       if (url === "/api/tenants/ten_1/models") {
         return json([]);
+      }
+      if (url === "/api/tenants/ten_1/catalog/offerings") {
+        return json({ data: [], nextCursor: null });
       }
       if (url === "/api/tenants/ten_1/connections/anthropic/disconnect") {
         return json(

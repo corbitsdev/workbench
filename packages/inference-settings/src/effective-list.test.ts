@@ -4,6 +4,7 @@ import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 
 import {
   buildEffectiveInferenceRows,
+  computeMakeDefaultPatches,
   computeReorderPatches,
   defaultModelForProvider,
   providerDisplayName,
@@ -322,5 +323,51 @@ describe("restrictedOfferings", () => {
 
   test("an empty offering list yields no restricted rows", () => {
     expect(restrictedOfferings([])).toEqual([]);
+  });
+});
+
+describe("computeMakeDefaultPatches", () => {
+  test("lowers the target strictly below the current lowest other priority", () => {
+    const rows = [row("a", 5), row("b", 2), row("c", 8)];
+    expect(computeMakeDefaultPatches(rows, "c")).toEqual([
+      { offeringId: "c", priority: 1 },
+    ]);
+  });
+
+  // Regression for the tie case: `defaultModelForProvider` breaks ties by
+  // iteration order, so tying the current minimum is not enough to win —
+  // the target must land strictly below it.
+  test("breaks a tie with the current minimum by going strictly below it", () => {
+    const rows = [row("a", 0), row("b", 0)];
+    expect(computeMakeDefaultPatches(rows, "b")).toEqual([
+      { offeringId: "b", priority: -1 },
+    ]);
+  });
+
+  test("is a no-op when the target is already strictly ahead of every other offering", () => {
+    const rows = [row("a", 5), row("b", 1)];
+    expect(computeMakeDefaultPatches(rows, "b")).toEqual([]);
+  });
+
+  test("leaves every other row untouched", () => {
+    const rows = [row("a", 5), row("b", 2), row("c", 8)];
+    const patches = computeMakeDefaultPatches(rows, "c");
+    expect(patches).toEqual([{ offeringId: "c", priority: 1 }]);
+    expect(patches?.some((patch) => patch.offeringId !== "c")).toBe(false);
+  });
+
+  test("returns null for an inherited offering (not shadowed yet)", () => {
+    const rows = [row("a", 5, "inherited"), row("b", 2)];
+    expect(computeMakeDefaultPatches(rows, "a")).toBeNull();
+  });
+
+  test("returns null when the target offering isn't in the list", () => {
+    const rows = [row("a", 5), row("b", 2)];
+    expect(computeMakeDefaultPatches(rows, "missing")).toBeNull();
+  });
+
+  test("is a no-op for the sole offering of a provider", () => {
+    const rows = [row("a", 5)];
+    expect(computeMakeDefaultPatches(rows, "a")).toEqual([]);
   });
 });

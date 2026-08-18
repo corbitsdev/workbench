@@ -39,6 +39,9 @@ describe("Connections status chips", () => {
       if (url === "/api/tenants/ten_1/models") {
         return json([]);
       }
+      if (url === "/api/tenants/ten_1/catalog/offerings") {
+        return json({ data: [], nextCursor: null });
+      }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;
 
