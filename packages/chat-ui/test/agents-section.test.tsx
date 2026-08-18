@@ -688,6 +688,104 @@ describe("Agents section — Capabilities", () => {
   });
 });
 
+describe("Agents section — Model select (CL-6272.3)", () => {
+  function modelSelect(el: HTMLElement) {
+    return el.querySelector(
+      ".chat-settings-agent-model-select select",
+    ) as HTMLSelectElement | null;
+  }
+
+  test("shows the current model and options labeled 'Model · Provider'", async () => {
+    stubFetch({
+      agents: [{ ...MYRA, model: "anthropic/claude-sonnet" }],
+      catalogModels: [
+        {
+          canonicalName: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          offerings: [{ providerName: "anthropic" }],
+        },
+        {
+          canonicalName: "opencode-zen/gpt",
+          displayName: "GPT",
+          offerings: [{ providerName: "opencode-zen" }],
+        },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const select = modelSelect(el);
+    expect(select?.value).toBe("anthropic/claude-sonnet");
+    const labels = Array.from(select?.options ?? []).map(
+      (option) => option.textContent,
+    );
+    expect(labels).toEqual(["Claude Sonnet · Anthropic", "GPT · Opencode Zen"]);
+  });
+
+  test("choosing a different model saves immediately through addAgentCapability and refreshes the running instance", async () => {
+    let addedBody: unknown;
+    const { refreshCalls } = stubFetch({
+      agents: [{ ...MYRA, model: "anthropic/claude-sonnet" }],
+      catalogModels: [
+        {
+          canonicalName: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          offerings: [{ providerName: "anthropic" }],
+        },
+        {
+          canonicalName: "opencode-zen/gpt",
+          displayName: "GPT",
+          offerings: [{ providerName: "opencode-zen" }],
+        },
+      ],
+      onAddCapability: (_definitionId, body) => {
+        addedBody = body;
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const select = modelSelect(el);
+    act(() => {
+      if (select !== null) {
+        select.value = "opencode-zen/gpt";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await settle();
+
+    expect(addedBody).toEqual({
+      kind: "model",
+      canonicalName: "opencode-zen/gpt",
+    });
+    expect(refreshCalls).toEqual([MYRA.address]);
+    expect(modelSelect(el)?.value).toBe("opencode-zen/gpt");
+  });
+
+  test("with no model set yet, the select offers an honest unset option", async () => {
+    stubFetch({
+      catalogModels: [
+        {
+          canonicalName: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          offerings: [{ providerName: "anthropic" }],
+        },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    expect(modelSelect(el)?.value).toBe("");
+    expect(modelSelect(el)?.options[0]?.textContent).toBe("No model set");
+  });
+});
+
 describe("Agents section — History", () => {
   test("lists version history newest first, with the current version's restore disabled", async () => {
     stubFetch({

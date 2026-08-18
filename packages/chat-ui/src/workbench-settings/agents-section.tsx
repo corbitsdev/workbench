@@ -191,6 +191,23 @@ function AgentDetailEditor({
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [catalogState, setCatalogState] = useState<CatalogState>({
+    kind: "loading",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    getResolvedCatalog(tenantId)
+      .then((models) => {
+        if (!cancelled) setCatalogState({ kind: "ready", models });
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,6 +294,16 @@ function AgentDetailEditor({
   return (
     <div className="chat-settings-agent-block">
       <h3 className="chat-settings-agent-block-title">{label}</h3>
+
+      <ModelSelect
+        tenantId={tenantId}
+        workbenchId={workbenchId}
+        agent={agent}
+        detail={state.detail}
+        catalogState={catalogState}
+        onChanged={(detail) => setState({ kind: "ready", detail })}
+      />
+
       <label className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsAgentDetailNameLabel}</span>
         <Input value={name} onChange={(event) => setName(event.target.value)} />
@@ -326,6 +353,7 @@ function AgentDetailEditor({
         workbenchId={workbenchId}
         agent={agent}
         detail={state.detail}
+        catalogState={catalogState}
         onChanged={(detail) => setState({ kind: "ready", detail })}
       />
 
@@ -389,23 +417,125 @@ function connectedModelOptions(
     });
 }
 
-function CapabilitiesBlock({
+/**
+ * The obvious, top-of-detail way to change an agent's model (CL-6272.3) —
+ * the "Add a capability" flow below stays for tools/skills/models added
+ * one at a time, but a model is a property every agent already has one
+ * of, not an optional add-on, so it gets its own labeled control that
+ * shows the current model and saves the moment a different one is
+ * chosen. Saves through the exact same `addAgentCapability({ kind:
+ * "model" })` path the Add-a-capability flow already uses — one write
+ * path, two entry points.
+ */
+function ModelSelect({
   tenantId,
   workbenchId,
   agent,
   detail,
+  catalogState,
   onChanged,
 }: {
   readonly tenantId: string;
   readonly workbenchId: string;
   readonly agent: WorkbenchAgent;
   readonly detail: AgentDetail;
+  readonly catalogState: CatalogState;
+  readonly onChanged: (detail: AgentDetail) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const options =
+    catalogState.kind === "ready"
+      ? connectedModelOptions(catalogState.models, undefined)
+      : [];
+
+  // The currently-set model may no longer carry a connected offering
+  // (its provider was disconnected) — still list it, disabled, rather
+  // than silently drop the value the select is showing.
+  const currentOptions =
+    detail.model !== undefined &&
+    !options.some((option) => option.canonicalName === detail.model)
+      ? [{ canonicalName: detail.model, label: detail.model }, ...options]
+      : options;
+
+  function handleChange(canonicalName: string) {
+    if (canonicalName === "" || canonicalName === detail.model) return;
+    setSaving(true);
+    setError(null);
+    addAgentCapability(tenantId, agent.definitionId, {
+      kind: "model",
+      canonicalName,
+    })
+      .then((capabilities) =>
+        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(
+          () => capabilities,
+        ),
+      )
+      .then((capabilities) => {
+        toast(CHAT_STRINGS.workbenchSettingsAgentDetailSavedToast);
+        onChanged({ ...detail, ...capabilities });
+      })
+      .catch(() =>
+        setError(CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityError),
+      )
+      .finally(() => setSaving(false));
+  }
+
+  return (
+    <label className="chat-settings-field chat-settings-agent-model-select">
+      <span>{CHAT_STRINGS.workbenchSettingsAgentDetailModelLabel}</span>
+      <select
+        value={detail.model ?? ""}
+        onChange={(event) => handleChange(event.target.value)}
+        disabled={saving || catalogState.kind === "loading"}
+      >
+        {detail.model === undefined ? (
+          <option value="">
+            {CHAT_STRINGS.workbenchSettingsAgentDetailModelUnset}
+          </option>
+        ) : null}
+        {currentOptions.map((option) => (
+          <option key={option.canonicalName} value={option.canonicalName}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {saving ? (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.workbenchSettingsAgentDetailSaving}
+        </p>
+      ) : null}
+      {catalogState.kind === "ready" && options.length === 0 ? (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.workbenchSettingsAgentDetailNoConnectedModels}
+        </p>
+      ) : null}
+      {error !== null ? (
+        <p className="chat-dialog-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </label>
+  );
+}
+
+function CapabilitiesBlock({
+  tenantId,
+  workbenchId,
+  agent,
+  detail,
+  catalogState,
+  onChanged,
+}: {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly agent: WorkbenchAgent;
+  readonly detail: AgentDetail;
+  readonly catalogState: CatalogState;
   readonly onChanged: (detail: AgentDetail) => void;
 }) {
   const [inventoryState, setInventoryState] = useState<InventoryState>({
-    kind: "loading",
-  });
-  const [catalogState, setCatalogState] = useState<CatalogState>({
     kind: "loading",
   });
   const [kind, setKind] = useState<CapabilityAddition["kind"]>("toolPackage");
@@ -421,20 +551,6 @@ function CapabilitiesBlock({
       })
       .catch(() => {
         if (!cancelled) setInventoryState({ kind: "error" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getResolvedCatalog(tenantId)
-      .then((models) => {
-        if (!cancelled) setCatalogState({ kind: "ready", models });
-      })
-      .catch(() => {
-        if (!cancelled) setCatalogState({ kind: "error" });
       });
     return () => {
       cancelled = true;

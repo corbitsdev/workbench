@@ -269,6 +269,7 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailNoCapabilities:
     "No tools, skills, or model set yet.",
   workbenchSettingsAgentDetailModelLabel: "Model",
+  workbenchSettingsAgentDetailModelUnset: "No model set",
   workbenchSettingsAgentDetailAddCapabilityLabel: "Add a capability",
   workbenchSettingsAgentDetailAddCapabilityKindTool: "Tool",
   workbenchSettingsAgentDetailAddCapabilityKindSkill: "Skill",
