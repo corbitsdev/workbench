@@ -14,6 +14,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
+import { generateId } from "@intx/hub-common";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
@@ -368,6 +369,57 @@ export async function launchAndCorrelate(
 }
 
 /**
+ * A `{kind: "once"}` trigger fires the instant its routine is created —
+ * its `nextFireAt` is (and stays) `null` (see `computeNextFireAt`), so
+ * no scheduler will ever pick it up; this is the only fire that routine
+ * ever gets. A no-op for every other trigger shape.
+ *
+ * Launch failure must never fail the create itself — the routine row
+ * already exists by the time this runs. A synthetic `once-failed` run
+ * is recorded instead, mirroring `markFailedFire`'s own
+ * `schedule-failed` convention, so the failure is visible in run
+ * history without a second bookkeeping path or a misleading 500 on an
+ * otherwise-successful create.
+ *
+ * Exported: `./workflow-routine-routes.ts`'s `POST /routines` (Myra's
+ * own routine-management surface, the path task-dispatch tooling mints
+ * run-once routines through) calls this exact same helper after its own
+ * `createRoutine`, never a second, drifting fire path.
+ */
+export async function fireOnceTriggerIfNeeded(
+  deps: { store: RoutineStore; launcher: RoutineLauncher },
+  input: { tenantId: string; principalId: string; row: RoutineRow },
+): Promise<void> {
+  const { row } = input;
+  if (row.trigger === null || row.trigger.kind !== "once") return;
+  try {
+    await launchAndCorrelate(deps, {
+      tenantId: input.tenantId,
+      principalId: input.principalId,
+      definitionId: row.definitionId,
+      input: row.input,
+      routineId: row.id,
+      triggeredBy: "once",
+      deliveryWorkbenchId: row.deliveryWorkbenchId,
+      routineName: row.name,
+    });
+  } catch (err) {
+    log.error(
+      "Run-once launch failed for routine {routineId}; recording a " +
+        "failed run rather than failing the create",
+      { routineId: row.id, err },
+    );
+    await deps.store.recordRoutineRun({
+      tenantId: input.tenantId,
+      routineId: row.id,
+      runId: generateId("workflowRun"),
+      triggeredBy: "once-failed",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * `true` when `trigger` is not a webhook binding (nothing to check), or
  * when it is and the referenced webhook-triggers row checks out for this
  * tenant and definition. See `webhookTriggerInTenant`'s doc comment on
@@ -618,6 +670,11 @@ export function createRoutineRoutes(
           },
         );
       }
+
+      await fireOnceTriggerIfNeeded(
+        { store: deps.store, launcher: deps.launcher },
+        { tenantId: tenant.id, principalId: principal.id, row },
+      );
 
       if (row.enabled) {
         await postRoutineEnabledNotice(deps, {

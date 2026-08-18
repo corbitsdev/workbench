@@ -31,6 +31,7 @@ import { type } from "arktype";
 import { RoutineTrigger } from "./trigger";
 import type { RoutineRow, RoutineStore, UpdateRoutineInput } from "./store";
 import {
+  fireOnceTriggerIfNeeded,
   isDeliveryWorkbenchRequired,
   launchAndCorrelate,
   postRoutineEnabledNotice,
@@ -405,6 +406,11 @@ export function createWorkflowRoutineRoutes(
         },
       );
     }
+
+    await fireOnceTriggerIfNeeded(
+      { store: deps.store, launcher: deps.launcher },
+      { tenantId: scope.tenantId, principalId: scope.principalId, row },
+    );
 
     if (row.enabled) {
       await postRoutineEnabledNotice(deps, {

@@ -238,6 +238,70 @@ describe("createRoutineRoutes", () => {
     expect(launcher.lastInput).toEqual({ topic: "AI coding agents" });
   });
 
+  test("a {kind: 'once'} trigger fires immediately on create, recording an 'once'-triggered run", async () => {
+    const launcher = fakeLauncher();
+    const deps = buildDeps({ launcher });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "once" },
+      input: { topic: "AI coding agents" },
+    });
+
+    expect(response.status).toBe(201);
+    expect(body["trigger"]).toEqual({ kind: "once" });
+    expect(launcher.calls).toBe(1);
+    expect(launcher.lastInput).toEqual({ topic: "AI coding agents" });
+
+    const runsResponse = await app.request(
+      `/routines/${body["id"] as string}/runs`,
+    );
+    const runsBody = (await runsResponse.json()) as {
+      items: { triggeredBy: string }[];
+    };
+    expect(runsBody.items[0]?.triggeredBy).toBe("once");
+  });
+
+  test("a {kind: 'once'} trigger's failed launch still returns 201, recording an 'once-failed' run", async () => {
+    const launcher: RoutineLauncher = {
+      async launchRoutineRun() {
+        throw new Error("boom");
+      },
+    };
+    const deps = buildDeps({ launcher });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "once" },
+    });
+
+    expect(response.status).toBe(201);
+
+    const runsResponse = await app.request(
+      `/routines/${body["id"] as string}/runs`,
+    );
+    const runsBody = (await runsResponse.json()) as {
+      items: { triggeredBy: string; error: string | null }[];
+    };
+    expect(runsBody.items[0]?.triggeredBy).toBe("once-failed");
+    expect(runsBody.items[0]?.error).toBe("boom");
+  });
+
+  test("a {kind: 'once'} routine's nextFireAt is null and stays null (never claimed by a scheduler)", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "once" },
+    });
+    const getResponse = await app.request(`/routines/${body["id"] as string}`);
+    const getBody = (await getResponse.json()) as Record<string, unknown>;
+    expect(getBody["trigger"]).toEqual({ kind: "once" });
+
+    const due = await deps.store.listDueRoutines(new Date(8640000000000000));
+    expect(due.find((r) => r.id === body["id"])).toBeUndefined();
+  });
+
   test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");
