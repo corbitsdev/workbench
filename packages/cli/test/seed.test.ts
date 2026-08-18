@@ -123,6 +123,20 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
         return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 404, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        return { status: 201, data: {} };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      )
+        return { status: 200, data: { data: [], nextCursor: null } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+        return { status: 200, data: { items: [] } };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,
@@ -302,6 +316,20 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
         return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 404, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        return { status: 201, data: {} };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      )
+        return { status: 200, data: { data: [], nextCursor: null } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+        return { status: 200, data: { items: [] } };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,
