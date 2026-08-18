@@ -5,10 +5,12 @@ import {
   ROUTINE_WEEKDAY_NAMES,
   RoutineTrigger,
   RoutineTriggerWire,
+  computeNextFireAt,
   cronExpressionForTrigger,
   cronTriggerForWeekdays,
   routineCadenceLabel,
   routineCadenceSummary,
+  routineTriggerCategory,
 } from "./trigger";
 
 describe("RoutineTrigger vs RoutineTriggerWire (Postel's law)", () => {
@@ -200,6 +202,31 @@ describe("interval trigger 'days' unit", () => {
     expect(
       routineCadenceSummary({ kind: "interval", unit: "days", every: 1 }),
     ).toBe("Every 1 day");
+  });
+});
+
+describe("{kind: 'once'} trigger", () => {
+  test("is accepted by the strict RoutineTrigger schema", () => {
+    const out = RoutineTrigger({ kind: "once" });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  test("is accepted by the liberal RoutineTriggerWire schema", () => {
+    const out = RoutineTriggerWire({ kind: "once" });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  test("never computes a next fire — it is not a scheduled trigger", () => {
+    expect(computeNextFireAt({ kind: "once" }, new Date())).toBeNull();
+  });
+
+  test("categorizes as 'demand', same as manual — not 'schedule'", () => {
+    expect(routineTriggerCategory({ kind: "once" })).toBe("demand");
+  });
+
+  test("reads as 'Runs once' in both the label and summary", () => {
+    expect(routineCadenceLabel({ kind: "once" })).toBe("Runs once");
+    expect(routineCadenceSummary({ kind: "once" })).toBe("Runs once");
   });
 });
 
