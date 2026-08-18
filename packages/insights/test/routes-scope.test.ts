@@ -6,7 +6,7 @@
 // child workbench's own route still returns just its own numbers in this
 // fixture, where childA/childB have no children of their own — not a
 // general "workbenches are leaves" claim: a workbench that has minted a
-// channel child tenancy has descendants too, and its /usage rolls those
+// workbench child tenancy has descendants too, and its /usage rolls those
 // up the same way (see the recursion coverage in
 // insights-scope-verification.test.ts). /scope proves the read-only
 // counterpart a switcher reads: parent identity, own identity, and the

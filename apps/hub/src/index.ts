@@ -50,14 +50,14 @@ import {
 
 import {
   createArtifactDeliveryHandler,
-  createChannelHostInferencePreferencesResolver,
-  createChannelSubscriberRegistry,
-  createChannelTenancyRoutes,
+  createWorkbenchHostInferencePreferencesResolver,
+  createWorkbenchSubscriberRegistry,
+  createWorkbenchTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
   joinRunParticipant,
   createDrizzleBlockResponseStore,
-  createDrizzleChannelTenancyStore,
+  createDrizzleWorkbenchTenancyStore,
   createDrizzleChatStore,
   createDrizzleClientIdStore,
   createDrizzlePinStore,
@@ -68,11 +68,11 @@ import {
   createNoopInferenceRoutes,
   findExistingAgentChat,
   createWorkflowParticipantRoutes,
-  isChannelHostDefinitionName,
+  isWorkbenchHostDefinitionName,
   listConnectedProviders,
-  provisionSpaceChannel,
+  provisionSpaceWorkbench,
   startWorkflowCommand,
-  sendChannelMessage,
+  sendWorkbenchMessage,
 } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import {
@@ -130,7 +130,7 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
-  deliveryChannelRequiredForWorkflowName,
+  deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
   validateTriggerFieldsInput,
   workflowCatalogEntry,
@@ -464,7 +464,7 @@ export async function createHub(config: HubConfig) {
     reservedPackageRegistryNames: new Set(REGISTRIES.keys()),
   });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
-  // A folded run (a channel host, an invited agent, a task) settles
+  // A folded run (a workbench host, an invited agent, a task) settles
   // "completed" between message occurrences as part of its own normal
   // wake/redeploy cycle — not "done forever" the way a one-shot
   // workflow deployment's "completed" is. The platform's own
@@ -811,7 +811,7 @@ export async function createHub(config: HubConfig) {
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
   // One in-process presence room registry for this process, constructed
-  // here in the composition root — the same pattern `channelSubscribers`
+  // here in the composition root — the same pattern `workbenchSubscribers`
   // above uses. Presence rooms are ephemeral and process-local by design
   // (see `@corbits/presence`'s docs/presence.md); the registry is built
   // here rather than inside `createPresenceRoutes` itself so the
@@ -819,7 +819,7 @@ export async function createHub(config: HubConfig) {
   // engine, mounted further down once its own DB handle resolves) can
   // share the exact same registry the routes below serve traffic
   // through — the same way `startWorkflowCommand` shares
-  // `channelSubscribers`.
+  // `workbenchSubscribers`.
   const presenceRoomRegistry = createPresenceRoomRegistry();
   // Indirection so the join route can call into artifact-doc seeding
   // before the artifacts engine (mounted later, once its DB handle is
@@ -899,26 +899,26 @@ export async function createHub(config: HubConfig) {
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. `config.baseUrl` (not
   // `localhost`) is what makes the URL usable: the sidecar that
-  // deploys a channel host's instance is a separate process (often a
+  // deploys a workbench host's instance is a separate process (often a
   // separate machine) from this hub, so only the hub's own public
   // origin resolves for it.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
-  const chatTenancy = createDrizzleChannelTenancyStore(db, {
+  const chatTenancy = createDrizzleWorkbenchTenancyStore(db, {
     conditionRegistry: chatConditionRegistry,
   });
   // Mounted outside the tenant prefix, like `/api/onboarding`: the bench
   // switcher asks this across every tenant a signed-in user belongs to,
   // not one tenant at a time (see `apps/web/src/bench-context.tsx`).
   app.route(
-    "/api/channel-tenancies",
-    createChannelTenancyRoutes({ tenancy: chatTenancy }),
+    "/api/workbench-tenancies",
+    createWorkbenchTenancyRoutes({ tenancy: chatTenancy }),
   );
   // Shared by the chat platform's invite-launch fallback below and
-  // `chatDeps.channelHostInferencePreferences` further down — one
+  // `chatDeps.workbenchHostInferencePreferences` further down — one
   // resolver, derived once, rather than two independent instances of
   // the same tenant-catalog derivation drifting apart.
-  const channelHostInferencePreferencesResolver =
-    createChannelHostInferencePreferencesResolver((tenantId) =>
+  const workbenchHostInferencePreferencesResolver =
+    createWorkbenchHostInferencePreferencesResolver((tenantId) =>
       listConnectedProviders(db, tenantId),
     );
   const chatPlatform = createHubChatPlatform({
@@ -945,11 +945,12 @@ export async function createHub(config: HubConfig) {
     // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
     // doc) still launches on invite by falling back to this same
     // tenant-catalog default, instead of 409ing `not_launchable`.
-    channelHostInferencePreferences: channelHostInferencePreferencesResolver,
+    workbenchHostInferencePreferences:
+      workbenchHostInferencePreferencesResolver,
   });
   wireMailRedelivery({ sidecarRouter, chatPlatform });
   // Built once, beside the platform, for the process's lifetime: turns
-  // an invited agent's `connector.reply` events into channel messages,
+  // an invited agent's `connector.reply` events into workbench messages,
   // and a gate-blocked run's approval park into an in-chat approve
   // block, by subscribing to the sidecar's own event stream, replacing
   // the old per-agent reply-bridge machinery armed (and re-armed) from
@@ -995,14 +996,14 @@ export async function createHub(config: HubConfig) {
   artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(
     artifactDeliveryHandlerDeps,
   );
-  // The one SSE subscriber registry for this process's channel events
-  // (see `@corbits/chat`'s `channel-events.ts`), constructed here in
+  // The one SSE subscriber registry for this process's workbench events
+  // (see `@corbits/chat`'s `workbench-events.ts`), constructed here in
   // the composition root and shared by both consumers below: the
-  // chat router bridges it onto `/channels/:id/stream`, and the
+  // chat router bridges it onto `/workbenches/:id/stream`, and the
   // workflow-command path publishes through the same instance so a
   // command-started workflow's join event reaches an open stream
   // immediately, exactly like `POST .../invite`'s does.
-  const channelSubscribers = createChannelSubscriberRegistry();
+  const workbenchSubscribers = createWorkbenchSubscriberRegistry();
   // The "/name args" and "@name args" command registry: every tenant's
   // invitable workflow definitions, exposed as commands by
   // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
@@ -1010,7 +1011,7 @@ export async function createHub(config: HubConfig) {
   // no re-registration step. `startWorkflow` is `@corbits/chat`'s own
   // `startWorkflowCommand`, sharing the exact invite-then-send core
   // `POST .../invite` uses, including its live `publish` — bound to
-  // `channelSubscribers` above, the same registry `createChatRoutes`
+  // `workbenchSubscribers` above, the same registry `createChatRoutes`
   // is given below.
   const commandRegistry = createCommandRegistry();
   commandRegistry.registerCommandPlugin(
@@ -1022,7 +1023,7 @@ export async function createHub(config: HubConfig) {
           {
             store: chatStore,
             platform: chatPlatform,
-            publish: channelSubscribers.publish,
+            publish: workbenchSubscribers.publish,
           },
           input,
         ),
@@ -1033,11 +1034,11 @@ export async function createHub(config: HubConfig) {
   // picker that offers agents to a person AND every taskability gate —
   // chat's invite/new-chat pickers, the task composer, and task-planner's
   // {use} target validation alike: automatable catalog workflows
-  // (routines material) and channel-host anchor definitions (chat's own
+  // (routines material) and workbench-host anchor definitions (chat's own
   // plumbing, never a person-facing agent) belong in neither.
   const isConversationalAgentDefinition = (definition: { name: string }) =>
     !isAutomatableWorkflowName(definition.name) &&
-    !isChannelHostDefinitionName(definition.name);
+    !isWorkbenchHostDefinitionName(definition.name);
 
   // A second, narrower ruling layered on top of the taskability gate
   // above, for LISTING/PICKER surfaces only — never for taskability
@@ -1067,19 +1068,20 @@ export async function createHub(config: HubConfig) {
     reactions: reactionStore,
     pins: pinStore,
     clientIds: createDrizzleClientIdStore(db),
-    channelSubscribers,
+    workbenchSubscribers,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
     }),
     isInvitableDefinition: isPickerListableDefinition,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-    // Derived per tenant, per channel creation, from that tenant's own
+    // Derived per tenant, per workbench creation, from that tenant's own
     // connected catalog providers (see `@corbits/chat`'s
-    // `createChannelHostInferencePreferencesResolver`) — never a fixed
+    // `createWorkbenchHostInferencePreferencesResolver`) — never a fixed
     // provider/model pair, so a bench whose only credential is, say,
-    // OpenRouter still gets a channel host that can resolve a source.
-    channelHostInferencePreferences: channelHostInferencePreferencesResolver,
+    // OpenRouter still gets a workbench host that can resolve a source.
+    workbenchHostInferencePreferences:
+      workbenchHostInferencePreferencesResolver,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
@@ -1098,26 +1100,26 @@ export async function createHub(config: HubConfig) {
     // The same native undeploy call the idle-sleep lifecycle uses to
     // tear an invited agent's instance down (see `chatPlatform`'s own
     // `lifecycle.undeploy` above) — wired here too so removing an agent
-    // from a channel's participants releases its running instance the
+    // from a workbench's participants releases its running instance the
     // same way, rather than leaving it deployed with nothing routing
     // messages to it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
-  // Myra's own channel-invite surface (`@corbits/agent-directory-tools`'
+  // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'
   // `create_agent`'s `invite: true` default): the workflow-run-
-  // authenticated counterpart to `POST .../invite` above, self-CHANNEL
+  // authenticated counterpart to `POST .../invite` above, self-WORKBENCH
   // scoped — see `@corbits/chat`'s `workflow-participant-routes.ts` for
   // the [Intx/repo gap] this resolves around (no direct run-address ->
-  // channel index; resolved by scanning the tenant's channel
+  // workbench index; resolved by scanning the tenant's workbench
   // participant lists).
   app.route(
     "/api/workflow-chat",
     createWorkflowParticipantRoutes({
       store: chatStore,
       platform: chatPlatform,
-      publish: channelSubscribers.publish,
+      publish: workbenchSubscribers.publish,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
   );
@@ -1135,8 +1137,9 @@ export async function createHub(config: HubConfig) {
     chatStore,
     chatPlatform,
     chatTenancy,
-    channelSubscribers,
-    channelHostInferencePreferences: chatDeps.channelHostInferencePreferences,
+    workbenchSubscribers,
+    workbenchHostInferencePreferences:
+      chatDeps.workbenchHostInferencePreferences,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
   });
   // Tells the routine trigger popover whether a Slack-bound webhook
@@ -1339,11 +1342,11 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       // A definition created with no `model` still declares one — the
-      // same tenant-catalog default a fresh channel host resolves —
+      // same tenant-catalog default a fresh workbench host resolves —
       // rather than staying empty and 409ing `not_launchable` at
       // invite time.
       tenantDefaultModel: async (tenantId) =>
-        (await channelHostInferencePreferencesResolver(tenantId))[0]?.model,
+        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model,
     }),
   );
   // Myra's own agent-creation surface (`@corbits/agent-directory-tools`'
@@ -1362,7 +1365,7 @@ export async function createHub(config: HubConfig) {
       capabilityInventory,
       authenticator: createWorkflowRunAuthenticator({ db }),
       tenantDefaultModel: async (tenantId) =>
-        (await channelHostInferencePreferencesResolver(tenantId))[0]?.model,
+        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model,
     }),
   );
   // The workflow-run-authenticated variant of the capabilities route
@@ -1407,10 +1410,10 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      channelBelongsToTenant: async (tenantId, channelId) =>
-        (await chatStore.getChannelSettings(tenantId, channelId)) !==
+      workbenchBelongsToTenant: async (tenantId, workbenchId) =>
+        (await chatStore.getWorkbenchSettings(tenantId, workbenchId)) !==
           undefined ||
-        (await chatStore.hasLaunchedInstance(tenantId, channelId)),
+        (await chatStore.hasLaunchedInstance(tenantId, workbenchId)),
     }),
   );
 
@@ -1574,7 +1577,7 @@ export async function createHub(config: HubConfig) {
 
   // Spawn-and-return agent tasks (`@corbits/tasks`, CL-6049): a prompt
   // plus an agent definition launches a one-shot folded run with no
-  // channel, and its finalized reply lands in the Inbox through the
+  // workbench, and its finalized reply lands in the Inbox through the
   // same notify delivery adapter `credentialExpirySweep` uses above.
   // Own idle-sleep-and-UNDEPLOY lifecycle instance (the same
   // `@corbits/agent-lifecycle` package chat's platform adapter used to
@@ -1637,16 +1640,16 @@ export async function createHub(config: HubConfig) {
     notify: taskNotifyDeps,
     recordActivity: (address) => taskLifecycle.recordActivity(address),
     launchLeg: (input) => launchTaskLeg(taskLauncherDeps, input),
-    channel: {
-      async post({ tenantId, channelId, text }) {
+    workbench: {
+      async post({ tenantId, workbenchId, text }) {
         await chatPlatform.sendMail({
           tenantId,
-          channelId,
-          fromChannelId: channelId,
+          workbenchId,
+          fromWorkbenchId: workbenchId,
           content: { content: text },
         });
       },
-      async resolveFallbackChannelId(tenantId) {
+      async resolveFallbackWorkbenchId(tenantId) {
         try {
           const myraDefinitionId = await resolveMyraDefinitionIdFromDb(
             db,
@@ -1657,7 +1660,7 @@ export async function createHub(config: HubConfig) {
             tenantId,
             myraDefinitionId,
           );
-          return chat?.channelId;
+          return chat?.workbenchId;
         } catch {
           return undefined;
         }
@@ -1689,12 +1692,12 @@ export async function createHub(config: HubConfig) {
     }),
   );
 
-  // Every genuine top-level deployment run, folded runs (channel hosts,
+  // Every genuine top-level deployment run, folded runs (workbench hosts,
   // invited agents, tasks) excluded — the scoped listing CL-6061 adds
   // so the Agent Directory and the shell's "Running" bands stop
-  // deriving that exclusion client-side from a tenant's channels alone
+  // deriving that exclusion client-side from a tenant's workbenches alone
   // (see `@corbits/folded-runs`'s `scope-routes.ts`, which task-style
-  // runs — no channel involved — silently slipped past). The route's
+  // runs — no workbench involved — silently slipped past). The route's
   // `feed=fires` mode (Insights, CL-6249) needs the one bridge
   // `@corbits/folded-runs` cannot own itself — resolving a folded run id
   // back to the routine that fired it — wired here, the one place in
@@ -1749,13 +1752,13 @@ export async function createHub(config: HubConfig) {
   const routineStore = createDrizzleRoutineStore(db);
   const routineDraftStore = createDrizzleDraftStore(db);
   // The honest end-to-end delivery-destination rule: a workflow that
-  // never posts to a channel (e.g. recurring-task, always delivering
+  // never posts to a workbench (e.g. recurring-task, always delivering
   // to its creator's Inbox — see @corbits/workflow-catalog's
   // `deliveryMode`) must never be forced to collect, or block on
-  // missing, a `deliveryChannelId` it would just discard. An unknown
+  // missing, a `deliveryWorkbenchId` it would just discard. An unknown
   // definitionId (row missing, or its asset name isn't catalog-known)
-  // defaults to channel-required — the safe, prior behavior.
-  async function routineDeliveryChannelRequired(
+  // defaults to workbench-required — the safe, prior behavior.
+  async function routineDeliveryWorkbenchRequired(
     tenantId: string,
     definitionId: string,
   ): Promise<boolean> {
@@ -1767,7 +1770,7 @@ export async function createHub(config: HubConfig) {
       columns: { name: true },
     });
     if (row === undefined) return true;
-    return deliveryChannelRequiredForWorkflowName(row.name);
+    return deliveryWorkbenchRequiredForWorkflowName(row.name);
   }
   // Create-time boundary check for a routine's stored `input` against
   // its own definition's declared trigger fields (shape, then — for an
@@ -1880,22 +1883,22 @@ export async function createHub(config: HubConfig) {
     mcpCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
-    joinDeliveryChannel: (input) =>
+    joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
-  const routineChannelNotice = {
-    postChannelNotice: (input: {
+  const routineWorkbenchNotice = {
+    postWorkbenchNotice: (input: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       principalId: string;
       text: string;
     }) =>
-      sendChannelMessage(
+      sendWorkbenchMessage(
         { store: chatStore, platform: chatPlatform },
         {
           tenantId: input.tenantId,
           principalId: input.principalId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           messageParts: [{ kind: "text", text: input.text }],
         },
       ).then(() => undefined),
@@ -1908,7 +1911,7 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
-      channelNotice: routineChannelNotice,
+      workbenchNotice: routineWorkbenchNotice,
       // Myra-backed drafting (CL-5917): a real one-shot inference call,
       // mirroring `@corbits/task-planner`'s own Myra auto-dispatch
       // wiring below (`plannerInventorySources`/`dispatchWithPlanner`)
@@ -1943,7 +1946,7 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       // A run-now or a scheduled fire's result is a message into the
-      // routine's delivery channel root timeline — never a pre-opened
+      // routine's delivery workbench root timeline — never a pre-opened
       // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
       // for the multi-message contract.
       runSummaryResolver: createHubRunSummaryResolver(db),
@@ -1970,21 +1973,21 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
-      deliveryChannelRequired: routineDeliveryChannelRequired,
-      // A routine created with no `deliveryChannelId` gets a brand-new
+      deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
+      // A routine created with no `deliveryWorkbenchId` gets a brand-new
       // space of its own, named after it, rather than a dead-end
-      // 400 — the same channel-provisioning core `POST /chat/channels`
-      // uses (`@corbits/chat`'s `provisionSpaceChannel`), reused here
+      // 400 — the same workbench-provisioning core `POST /chat/workbenches`
+      // uses (`@corbits/chat`'s `provisionSpaceWorkbench`), reused here
       // instead of reimplemented.
       deliverySpace: {
         createDeliverySpace: (input) =>
-          provisionSpaceChannel(
+          provisionSpaceWorkbench(
             {
               tenancy: chatTenancy,
               platform: chatPlatform,
               store: chatStore,
-              channelHostInferencePreferences:
-                chatDeps.channelHostInferencePreferences,
+              workbenchHostInferencePreferences:
+                chatDeps.workbenchHostInferencePreferences,
               turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
             },
             input,
@@ -2005,7 +2008,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowRoutineRoutes({
       store: routineStore,
       launcher: routineLauncher,
-      channelNotice: routineChannelNotice,
+      workbenchNotice: routineWorkbenchNotice,
       authenticator: createWorkflowRunAuthenticator({ db }),
       definitionInTenant: async (tenantId, definitionId) => {
         const row = await db.query.workflowDefinition.findFirst({
@@ -2051,31 +2054,31 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
-      deliveryChannelRequired: routineDeliveryChannelRequired,
+      deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       // A routine created from inside a workbench delivers into that
-      // workbench: the creating run is a channel participant, so its
-      // address (runId@domain) resolves straight to the channel.
-      resolveRunChannel: async (tenantId, runId) => {
+      // workbench: the creating run is a workbench participant, so its
+      // address (runId@domain) resolves straight to the workbench.
+      resolveRunWorkbench: async (tenantId, runId) => {
         const row = await db.query.tenant.findFirst({
           where: eq(tenantTable.id, tenantId),
           columns: { domain: true },
         });
         if (row === undefined) return undefined;
-        const hit = await chatStore.findChannelByParticipantAddress(
+        const hit = await chatStore.findWorkbenchByParticipantAddress(
           tenantId,
           `${runId}@${row.domain}`,
         );
-        return hit?.channelId;
+        return hit?.workbenchId;
       },
       deliverySpace: {
         createDeliverySpace: (input) =>
-          provisionSpaceChannel(
+          provisionSpaceWorkbench(
             {
               tenancy: chatTenancy,
               platform: chatPlatform,
               store: chatStore,
-              channelHostInferencePreferences:
-                chatDeps.channelHostInferencePreferences,
+              workbenchHostInferencePreferences:
+                chatDeps.workbenchHostInferencePreferences,
               turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
             },
             input,
@@ -2106,14 +2109,14 @@ export async function createHub(config: HubConfig) {
   const routineScheduler = createRoutineScheduler({
     store: routineStore,
     launcher: routineLauncher,
-    deliveryChannelRequired: routineDeliveryChannelRequired,
+    deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
   });
 
   // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated
   // task plan via `@corbits/task-planner`, dispatched exactly like a
   // manually-launched task. Every inventory lister below generalizes a
   // pattern that already lives elsewhere in this composition root
-  // (`isConversationalAgentDefinition`, `chatDeps.channelHostInferencePreferences`'s
+  // (`isConversationalAgentDefinition`, `chatDeps.workbenchHostInferencePreferences`'s
   // per-tenant connected-provider derivation) — this package owns the
   // inventory's shape, never the listing logic.
   const memoryToolPackageName = "@corbits/memory-tools";

@@ -13,7 +13,7 @@ describe("bare `#` scope against entity-search-backed sources", () => {
       query,
       sources: [
         {
-          category: "channels",
+          category: "workbenches",
           entities: [
             { id: "eng", name: "Engineering" },
             { id: "design", name: "Design" },
@@ -41,9 +41,9 @@ describe("bare `#` scope against entity-search-backed sources", () => {
       recents: [],
       sources: [
         {
-          id: "channels",
-          heading: "Channels",
-          kind: "channels",
+          id: "workbenches",
+          heading: "Workbenches",
+          kind: "workbenches",
           // What entity-search alone would hand a bare `#`: nothing, since
           // it never even fetches for an empty query.
           items: [],
@@ -57,25 +57,25 @@ describe("bare `#` scope against entity-search-backed sources", () => {
       recents: [],
       sources: [
         {
-          id: "channels",
-          heading: "Channels",
-          kind: "channels",
+          id: "workbenches",
+          heading: "Workbenches",
+          kind: "workbenches",
           // What the provider now supplies for a bare scope: the raw,
           // unfiltered list fetched directly (see isBareScopeQuery above).
           items: [
-            { id: "entity:channels:eng", title: "Engineering" },
-            { id: "entity:channels:design", title: "Design" },
+            { id: "entity:workbenches:eng", title: "Engineering" },
+            { id: "entity:workbenches:design", title: "Design" },
           ],
         },
       ],
     });
     expect(unfilteredItems).toEqual([
       {
-        id: "channels",
-        heading: "Channels",
+        id: "workbenches",
+        heading: "Workbenches",
         items: [
-          { id: "entity:channels:eng", title: "Engineering" },
-          { id: "entity:channels:design", title: "Design" },
+          { id: "entity:workbenches:eng", title: "Engineering" },
+          { id: "entity:workbenches:design", title: "Design" },
         ],
       },
     ]);

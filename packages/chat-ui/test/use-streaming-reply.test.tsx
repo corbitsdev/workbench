@@ -1,7 +1,7 @@
 // Real React wiring for `useStreamingReply`, mounted against a DOM (see
 // dom-setup.ts) rather than reasoned about via `nextStreamingReplyState`
 // alone — the pure reducer is only "correct" if the effect around it
-// actually resets on channel switch, same as `use-typing-indicator.test.tsx`
+// actually resets on workbench switch, same as `use-typing-indicator.test.tsx`
 // verifies for `useTypingIndicator`.
 
 import { describe, expect, test } from "bun:test";
@@ -13,21 +13,25 @@ import type { StreamingReplyState } from "../src/streaming-reply";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function mount(initialChannelId: string | null, clearMs?: number) {
+function mount(initialWorkbenchId: string | null, clearMs?: number) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   let latestState: StreamingReplyState = null;
   let latestTimedOut = false;
   let send: (eventType: string, data: unknown) => void = () => {};
-  let setChannelId: (id: string | null) => void = () => {};
+  let setWorkbenchId: (id: string | null) => void = () => {};
   let awaitReply: () => void = () => {};
 
   function Host() {
-    const [channelId, updateChannelId] = useState(initialChannelId);
-    setChannelId = updateChannelId;
-    const { streamingReply, replyTimedOut, handleStreamEvent, noteAwaitingReply } =
-      useStreamingReply(channelId, clearMs);
+    const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
+    setWorkbenchId = updateWorkbenchId;
+    const {
+      streamingReply,
+      replyTimedOut,
+      handleStreamEvent,
+      noteAwaitingReply,
+    } = useStreamingReply(workbenchId, clearMs);
     latestState = streamingReply;
     latestTimedOut = replyTimedOut;
     send = handleStreamEvent;
@@ -44,9 +48,9 @@ function mount(initialChannelId: string | null, clearMs?: number) {
       act(() => {
         send(eventType, data);
       }),
-    switchChannel: (id: string | null) =>
+    switchWorkbench: (id: string | null) =>
       act(() => {
-        setChannelId(id);
+        setWorkbenchId(id);
       }),
     awaitReply: () =>
       act(() => {
@@ -99,12 +103,12 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
     harness.unmount();
   });
 
-  test("switching channels clears whatever was streaming in the one just left", () => {
+  test("switching workbenches clears whatever was streaming in the one just left", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", delta("Hello"));
     expect(harness.get()).toEqual({ text: "Hello" });
 
-    harness.switchChannel("chan_b");
+    harness.switchWorkbench("chan_b");
     expect(harness.get()).toBeNull();
     harness.unmount();
   });
@@ -155,13 +159,13 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.unmount();
   });
 
-  test("switching channels clears a stale timed-out flag from the one just left", async () => {
+  test("switching workbenches clears a stale timed-out flag from the one just left", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     await harness.settle(60);
     expect(harness.timedOut()).toBe(true);
 
-    harness.switchChannel("chan_b");
+    harness.switchWorkbench("chan_b");
     expect(harness.timedOut()).toBe(false);
     harness.unmount();
   });

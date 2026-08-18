@@ -154,7 +154,7 @@ in any order:
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `smoke-auth.test.ts`       | Email sign-up mints a session cookie that authorizes a session-gated route                                          |
 | `smoke-onboarding.test.ts` | `POST /api/onboarding/provision` mints a personal bench and reports it unseeded when no seed model is configured    |
-| `smoke-chat.test.ts`       | A channel is created, a message posts and reads back intact, and the invited-agent listing has its documented shape |
+| `smoke-chat.test.ts`       | A workbench is created, a message posts and reads back intact, and the invited-agent listing has its documented shape |
 | `smoke-library.test.ts`    | An artifact uploads through the multipart route and round-trips through list and get-by-id                          |
 | `smoke-webhook.test.ts`    | A signed delivery to the public webhook ingress route launches a real run for a routine bound to that trigger       |
 

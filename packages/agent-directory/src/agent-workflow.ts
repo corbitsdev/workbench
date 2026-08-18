@@ -1,13 +1,13 @@
 // Builds the single-step, folded workflow definition a hand-authored
 // agent materializes as: exactly the shape `@corbits/chat`'s own
-// `buildChannelHostWorkflow`/`@corbits/assistant-workflow`'s
+// `buildWorkbenchHostWorkflow`/`@corbits/assistant-workflow`'s
 // `buildAssistantWorkflow` produce, but with the system prompt and
 // model left to the caller instead of fixed at build time — this is
 // the one difference that makes a defined-by-a-person agent possible
 // alongside the platform's own fixed starter agents.
 //
 // This package is installable data, exactly like `@corbits/chat`'s
-// channel-host builder: nothing imports it statically, and a host
+// workbench-host builder: nothing imports it statically, and a host
 // publishes the serialized definition as a workflow asset before
 // deploying or launching it.
 
@@ -356,7 +356,7 @@ const AGENT_DEFINITION_TURN_TIMEOUT_MS = 2 * 60 * 1000;
  * Serializes a definition to the JSON a workflow asset carries.
  * Re-implemented rather than shared: `assertJsonPortable` is
  * module-private in every builder package that carries a copy of it,
- * by design (see `@corbits/chat`'s `channel-workflow.ts`), so this
+ * by design (see `@corbits/chat`'s `workbench-workflow.ts`), so this
  * copy stays consistent with that convention rather than reaching
  * into another package's internals.
  */
@@ -388,8 +388,8 @@ export type CreateAgentDefinitionCoreDeps = {
   /**
    * Resolves the tenant's current catalog default model — the same
    * first-connected-provider model `@corbits/chat`'s
-   * `channelHostInferencePreferences` derives for a fresh channel host
-   * (see `createChannelHostInferencePreferencesResolver`) — for a
+   * `workbenchHostInferencePreferences` derives for a fresh workbench host
+   * (see `createWorkbenchHostInferencePreferencesResolver`) — for a
    * `create_agent`/`POST /agent-definitions` call that supplies no
    * `model` of its own. Without this, such a definition's `inference.sources`
    * stays empty and a later invite launch 409s as `not_launchable`
@@ -470,7 +470,9 @@ export async function createAgentDefinitionCore(
   const model =
     input.model ?? (await deps.tenantDefaultModel?.(input.tenantId));
   const definition = buildAgentDefinitionWorkflow(
-    model !== undefined ? { ...baseDefinitionInput, model } : baseDefinitionInput,
+    model !== undefined
+      ? { ...baseDefinitionInput, model }
+      : baseDefinitionInput,
   );
   // The definition's own system prompt is what the caller supplied; the
   // pinned-skills index and any directly-named tool-package pins are

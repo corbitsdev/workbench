@@ -1,12 +1,12 @@
-// CL-6067: a channel must never surface a stuck disconnected state to
+// CL-6067: a workbench must never surface a stuck disconnected state to
 // the user after a hub restart — the prior hub process's in-memory
-// routing (which run addresses are live) is gone, but the channel's
+// routing (which run addresses are live) is gone, but the workbench's
 // own row in Postgres is not, and a message sent after the restart
-// must still reach the channel's anchor instance with no manual
+// must still reach the workbench's anchor instance with no manual
 // intervention (no re-invite, no re-launch, no user-visible error).
 //
 // This is the regression-shaped e2e the ticket asks for: launch a
-// channel against a real hub+sidecar, stop the hub process, start a
+// workbench against a real hub+sidecar, stop the hub process, start a
 // fresh hub process against the same database and port (mirroring a
 // process restart, not a fresh deploy), and prove a message sent
 // afterward is accepted and shows up on the timeline with no action
@@ -40,7 +40,7 @@ import {
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
   console.warn(
-    "channel-reconnect e2e: DATABASE_URL is not set; suite skipped. Set " +
+    "workbench-reconnect e2e: DATABASE_URL is not set; suite skipped. Set " +
       "DATABASE_URL (see .env.example) to run it; CI sets E2E_REQUIRED=1 " +
       "so this skip can never pass silently there.",
   );
@@ -72,7 +72,7 @@ const textPart = (text: string): Part[] => [{ kind: "text", text }];
 
 const { tempDir, track } = createCleanupHarness();
 
-describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
+describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
   let hubPort: number;
   let sessionSecret: string;
   let hub: HubHandle;
@@ -80,7 +80,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
   let api: ApiCall;
   let cookies: string[];
   let tenantId: string;
-  let channelId: string;
+  let workbenchId: string;
   let dbUrl: string;
 
   beforeAll(async () => {
@@ -93,7 +93,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
     expect(report.action).toBe("migrated");
     expect(report.migrations).toBeGreaterThan(0);
 
-    const sidecarId = "channel-reconnect-e2e-sidecar";
+    const sidecarId = "workbench-reconnect-e2e-sidecar";
     const sidecarToken = crypto.randomUUID();
     await provisionSidecar(url, sidecarId, sidecarToken);
 
@@ -106,7 +106,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
       databaseUrl: url,
       port: hubPort,
       sessionSecret,
-      dataDir: await tempDir("e2e-channel-reconnect-hub-data-"),
+      dataDir: await tempDir("e2e-workbench-reconnect-hub-data-"),
     });
     track(hub);
 
@@ -114,16 +114,16 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
       hubPort,
       sidecarId,
       token: sidecarToken,
-      dataDir: await tempDir("e2e-channel-reconnect-sidecar-data-"),
+      dataDir: await tempDir("e2e-workbench-reconnect-sidecar-data-"),
     });
     track(sidecar);
 
     api = createHubAPI(hub.baseUrl);
 
-    const email = `channel-reconnect-e2e-${crypto.randomUUID()}@example.invalid`;
+    const email = `workbench-reconnect-e2e-${crypto.randomUUID()}@example.invalid`;
     const password = `pw-${crypto.randomUUID()}`;
     const signedUp = await api("POST", "/api/auth/sign-up/email", {
-      name: "Channel Reconnect Tester",
+      name: "Workbench Reconnect Tester",
       email,
       password,
     });
@@ -134,13 +134,13 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
     const created = await api(
       "POST",
       "/api/tenants",
-      { name: "Channel Reconnect E2E", slug },
+      { name: "Workbench Reconnect E2E", slug },
       cookies,
     );
     expectStatus("create tenant", created, 201);
     tenantId = stringField(created.data, "id", "create tenant");
 
-    // A channel host's folded launch pins a real inference source chain
+    // A workbench host's folded launch pins a real inference source chain
     // against the tenant catalog before it will launch at all, exactly
     // as chat.test.ts's own boot does — the placeholder key is never
     // used to call a model.
@@ -153,7 +153,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
     });
   }, 120_000);
 
-  async function createChannel(
+  async function createWorkbench(
     body: Record<string, unknown>,
   ): Promise<ApiResult> {
     const deadline = Date.now() + 60_000;
@@ -161,19 +161,19 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
     for (;;) {
       if (sidecar.exited()) {
         throw new Error(
-          `sidecar exited before channel creation; output:\n${sidecar.output()}`,
+          `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
         );
       }
       res = await api(
         "POST",
-        `/api/tenants/${tenantId}/chat/channels`,
+        `/api/tenants/${tenantId}/chat/workbenches`,
         body,
         cookies,
       );
       if (res.status !== 500) break;
       if (Date.now() > deadline) {
         throw new Error(
-          `channel never became launchable (hub kept answering 500): ` +
+          `workbench never became launchable (hub kept answering 500): ` +
             `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
         );
       }
@@ -185,7 +185,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
   async function postMessage(text: string): Promise<ApiResult> {
     return api(
       "POST",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
       { parts: textPart(text) },
       cookies,
     );
@@ -194,7 +194,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
   async function listMessages(): Promise<ListedMessage[]> {
     const res = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
       undefined,
       cookies,
     );
@@ -206,13 +206,13 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
     ) as unknown as ListedMessage[];
   }
 
-  test("channel creation launches the anchor", async () => {
-    const res = await createChannel({
-      kind: "channel",
+  test("workbench creation launches the anchor", async () => {
+    const res = await createWorkbench({
+      kind: "workbench",
       name: "reconnect-demo",
     });
-    expectStatus("create channel", res, 201);
-    channelId = stringField(res.data, "id", "create channel");
+    expectStatus("create workbench", res, 201);
+    workbenchId = stringField(res.data, "id", "create workbench");
   }, 90_000);
 
   test("a message before the restart reaches the timeline", async () => {
@@ -245,7 +245,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
       databaseUrl: dbUrl,
       port: hubPort,
       sessionSecret,
-      dataDir: await tempDir("e2e-channel-reconnect-hub-data-restart-"),
+      dataDir: await tempDir("e2e-workbench-reconnect-hub-data-restart-"),
     });
     track(restarted);
     hub = restarted;
@@ -253,7 +253,7 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
 
     // The sidecar's own reconnect scheduler (@intx/hub-agent) re-dials
     // the fresh hub process on its own; this suite only needs to wait
-    // for a send to stop 502-ing the way `createChannel` already does
+    // for a send to stop 502-ing the way `createWorkbench` already does
     // for a not-yet-connected sidecar, never driving the sidecar
     // itself.
     const after = `after restart ${crypto.randomUUID()}`;

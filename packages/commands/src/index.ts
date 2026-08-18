@@ -1,5 +1,5 @@
 // `@corbits/commands`: the global "/" and "@" command system for
-// channels. A registry of `{name, description, argumentHint?, handler}`
+// workbenches. A registry of `{name, description, argumentHint?, handler}`
 // commands, the grammar that parses `/name args` and `@name args` off a
 // raw message string, dispatch that resolves and runs a parsed
 // invocation, the built-in registrar that turns a tenant's workflow

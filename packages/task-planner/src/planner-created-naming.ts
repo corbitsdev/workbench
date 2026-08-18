@@ -1,6 +1,6 @@
 // The naming contract for agent definitions Myra creates on the fly
 // (CL-6051's `{create}` branch), mirroring `@corbits/chat`'s
-// `channel-host-naming.ts` in shape and doc style: one function that
+// `workbench-host-naming.ts` in shape and doc style: one function that
 // mints a compliant handle deterministically, one predicate that
 // recognizes it later. A planner-created agent exists for exactly one
 // task — it must never clutter a picker meant for agents a person

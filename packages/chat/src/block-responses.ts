@@ -7,7 +7,7 @@
 // the *same* block in the *same* message; it can never be hijacked into, or
 // tallied against, an unrelated message that happens to reuse the id.
 //
-// One row per (tenant, channel, message, block, principal): a second
+// One row per (tenant, workbench, message, block, principal): a second
 // response from the same principal to the same block overwrites the first
 // — "upsert = change vote" for polls, "upsert = resubmit" for forms.
 
@@ -30,7 +30,7 @@ export type BlockResponsePayload =
 
 export interface BlockResponseRow {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly messageId: string;
   readonly blockId: string;
   readonly principalId: string;
@@ -41,7 +41,7 @@ export interface BlockResponseRow {
 
 export interface UpsertBlockResponseInput {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly messageId: string;
   readonly blockId: string;
   readonly principalId: string;
@@ -61,7 +61,7 @@ export interface BlockResponseStore {
    */
   listBlockResponses(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     messageId: string,
     blockId: string,
   ): Promise<readonly BlockResponseRow[]>;
@@ -95,21 +95,21 @@ export function aggregatePollResponses(
 
 function responseKey(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
   principalId: string,
 ): string {
-  return `${tenantId}::${channelId}::${messageId}::${blockId}::${principalId}`;
+  return `${tenantId}::${workbenchId}::${messageId}::${blockId}::${principalId}`;
 }
 
 function blockKey(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
 ): string {
-  return `${tenantId}::${channelId}::${messageId}::${blockId}`;
+  return `${tenantId}::${workbenchId}::${messageId}::${blockId}`;
 }
 
 export function createInMemoryBlockResponseStore(): BlockResponseStore {
@@ -120,7 +120,7 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
     async upsertBlockResponse(input) {
       const key = responseKey(
         input.tenantId,
-        input.channelId,
+        input.workbenchId,
         input.messageId,
         input.blockId,
         input.principalId,
@@ -129,7 +129,7 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
       const now = new Date();
       const row: BlockResponseRow = {
         tenantId: input.tenantId,
-        channelId: input.channelId,
+        workbenchId: input.workbenchId,
         messageId: input.messageId,
         blockId: input.blockId,
         principalId: input.principalId,
@@ -140,7 +140,7 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
       rows.set(key, row);
       const blk = blockKey(
         input.tenantId,
-        input.channelId,
+        input.workbenchId,
         input.messageId,
         input.blockId,
       );
@@ -150,9 +150,9 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
       return row;
     },
 
-    async listBlockResponses(tenantId, channelId, messageId, blockId) {
+    async listBlockResponses(tenantId, workbenchId, messageId, blockId) {
       const keys = byBlock.get(
-        blockKey(tenantId, channelId, messageId, blockId),
+        blockKey(tenantId, workbenchId, messageId, blockId),
       );
       if (keys === undefined) return [];
       return [...keys].flatMap((key) => {
@@ -170,7 +170,7 @@ export type BlockResponseDb<
 function mapRow(row: typeof blockResponses.$inferSelect): BlockResponseRow {
   return {
     tenantId: row.tenantId,
-    channelId: row.channelId,
+    workbenchId: row.workbenchId,
     messageId: row.messageId,
     blockId: row.blockId,
     principalId: row.principalId,
@@ -190,7 +190,7 @@ export function createDrizzleBlockResponseStore<
         .insert(blockResponses)
         .values({
           tenantId: input.tenantId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           messageId: input.messageId,
           blockId: input.blockId,
           principalId: input.principalId,
@@ -201,7 +201,7 @@ export function createDrizzleBlockResponseStore<
         .onConflictDoUpdate({
           target: [
             blockResponses.tenantId,
-            blockResponses.channelId,
+            blockResponses.workbenchId,
             blockResponses.messageId,
             blockResponses.blockId,
             blockResponses.principalId,
@@ -215,14 +215,14 @@ export function createDrizzleBlockResponseStore<
       return mapRow(row);
     },
 
-    async listBlockResponses(tenantId, channelId, messageId, blockId) {
+    async listBlockResponses(tenantId, workbenchId, messageId, blockId) {
       const rows = await db
         .select()
         .from(blockResponses)
         .where(
           and(
             eq(blockResponses.tenantId, tenantId),
-            eq(blockResponses.channelId, channelId),
+            eq(blockResponses.workbenchId, workbenchId),
             eq(blockResponses.messageId, messageId),
             eq(blockResponses.blockId, blockId),
           ),

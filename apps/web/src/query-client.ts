@@ -5,8 +5,8 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
-import { channelsQueryKey } from "@corbits/chat-ui";
-import type { ChannelKind } from "@corbits/chat-ui";
+import { workbenchesQueryKey } from "@corbits/chat-ui";
+import type { WorkbenchKind } from "@corbits/chat-ui";
 
 /**
  * Retry policy shared by every query in the app: no session and a
@@ -78,8 +78,8 @@ export const meKeys = {
   profile: ["me", "profile"] as const,
   principals: ["me", "principals"] as const,
   runs: ["me", "runs"] as const,
-  channelTenancyKinds: (tenantIds: readonly string[]) =>
-    ["me", "channel-tenancy-kinds", [...tenantIds].sort()] as const,
+  workbenchTenancyKinds: (tenantIds: readonly string[]) =>
+    ["me", "workbench-tenancy-kinds", [...tenantIds].sort()] as const,
 };
 
 /** Tenant-scoped keys — removed wholesale when the user leaves a bench. */
@@ -116,13 +116,13 @@ export const tenantKeys = {
   settingsAccess: (tenantId: string, principalId: string) =>
     ["tenant", tenantId, "settings-access", principalId] as const,
   /** Delegates to `@corbits/chat-ui`'s own key builder — that package owns
-   * both the channels endpoint and `ChannelKind`, so this is the one array
-   * shape every channel-listing surface (bench-activity, command palette,
+   * both the workbenches endpoint and `WorkbenchKind`, so this is the one array
+   * shape every workbench-listing surface (bench-activity, command palette,
    * the Routines picker, `ChatWorkspace`'s own sidebar) keys against,
    * rather than each side of the app/package boundary keeping its own copy
    * of the literal that could drift apart. */
-  channels: (tenantId: string, kind: ChannelKind) =>
-    channelsQueryKey(tenantId, kind),
+  workbenches: (tenantId: string, kind: WorkbenchKind) =>
+    workbenchesQueryKey(tenantId, kind),
   tasks: (tenantId: string) => ["tenant", tenantId, "tasks"] as const,
   task: (tenantId: string, taskId: string) =>
     ["tenant", tenantId, "tasks", taskId] as const,
@@ -133,18 +133,32 @@ export const tenantKeys = {
   topLevelRuns: (tenantId: string) =>
     ["tenant", tenantId, "top-level-runs"] as const,
   /** A workbench's own timeline reads (CL-6224): `tenantId` is the owning
-   * bench chat's channel-tenancy addresses these routes at (see
-   * docs/channel-tenancy.md), `channelId` the workbench's own id. */
-  channelMessages: (tenantId: string, channelId: string) =>
-    ["tenant", tenantId, "chat", "channels", channelId, "messages"] as const,
-  channelThreads: (tenantId: string, channelId: string) =>
-    ["tenant", tenantId, "chat", "channels", channelId, "threads"] as const,
-  workbenchTimelineRoutineRuns: (tenantId: string, channelId: string) =>
+   * bench chat's workbench-tenancy addresses these routes at (see
+   * docs/workbench-tenancy.md), `workbenchId` the workbench's own id. */
+  workbenchMessages: (tenantId: string, workbenchId: string) =>
+    [
+      "tenant",
+      tenantId,
+      "chat",
+      "workbenches",
+      workbenchId,
+      "messages",
+    ] as const,
+  workbenchThreads: (tenantId: string, workbenchId: string) =>
+    [
+      "tenant",
+      tenantId,
+      "chat",
+      "workbenches",
+      workbenchId,
+      "threads",
+    ] as const,
+  workbenchTimelineRoutineRuns: (tenantId: string, workbenchId: string) =>
     [
       "tenant",
       tenantId,
       "workbench-timeline-routine-runs",
-      channelId,
+      workbenchId,
     ] as const,
 };
 

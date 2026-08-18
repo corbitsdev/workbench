@@ -26,31 +26,31 @@ function resolve(origin: Element | null) {
 }
 
 describe("SHELL_CONTEXT_MENU_TARGETS", () => {
-  test("resolves a channel row", () => {
+  test("resolves a workbench row", () => {
     const container = mount(
-      '<div data-ctx-channel="ch-1" data-ctx-channel-title="Launch" data-ctx-channel-pinned="true"><span id="inner"></span></div>',
+      '<div data-ctx-workbench="ch-1" data-ctx-workbench-title="Launch" data-ctx-workbench-pinned="true"><span id="inner"></span></div>',
     );
     expect(resolve(container.querySelector("#inner"))).toEqual({
-      type: "channel",
+      type: "workbench",
       id: "ch-1",
       title: "Launch",
       pinned: true,
     });
   });
 
-  test("channel row defaults title to the id and pinned to false when unset", () => {
-    const container = mount('<div data-ctx-channel="ch-2"></div>');
+  test("workbench row defaults title to the id and pinned to false when unset", () => {
+    const container = mount('<div data-ctx-workbench="ch-2"></div>');
     expect(resolve(container)).toEqual({
-      type: "channel",
+      type: "workbench",
       id: "ch-2",
       title: "ch-2",
       pinned: false,
     });
   });
 
-  test("resolves the profile face nested inside a channel row ahead of the channel itself", () => {
+  test("resolves the profile face nested inside a workbench row ahead of the workbench itself", () => {
     const container = mount(
-      '<div data-ctx-channel="ch-1"><span id="face" data-ctx-profile-address="agent:echo" data-ctx-profile-handle="echo"></span></div>',
+      '<div data-ctx-workbench="ch-1"><span id="face" data-ctx-profile-address="agent:echo" data-ctx-profile-handle="echo"></span></div>',
     );
     expect(resolve(container.querySelector("#face"))).toEqual({
       type: "profile",

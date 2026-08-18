@@ -31,7 +31,7 @@ describe("launchAgentChat", () => {
   test("creates a chat for the given definitionId with no reuseExisting flag, and navigates to it", async () => {
     const navigated: string[] = [];
     const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/channels")) {
+      if (path.endsWith("/chat/workbenches")) {
         return json({
           id: "chan-1",
           title: "Echo",
@@ -45,17 +45,17 @@ describe("launchAgentChat", () => {
 
     await launchAgentChat("tnt_1", "wfd_echo", (to) => navigated.push(to));
 
-    const call = calls.find((c) => c.path.endsWith("/chat/channels"));
+    const call = calls.find((c) => c.path.endsWith("/chat/workbenches"));
     expect(JSON.parse(String(call?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_echo",
     });
-    expect(navigated).toEqual(["/c/chan-1"]);
+    expect(navigated).toEqual(["/w/chan-1"]);
   });
 
   test("passes an explicit name through when given one", async () => {
     const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/channels")) {
+      if (path.endsWith("/chat/workbenches")) {
         return json({
           id: "chan-2",
           title: "New Workbench",
@@ -69,7 +69,7 @@ describe("launchAgentChat", () => {
 
     await launchAgentChat("tnt_1", "wfd_assistant", () => {}, "New Workbench");
 
-    const call = calls.find((c) => c.path.endsWith("/chat/channels"));
+    const call = calls.find((c) => c.path.endsWith("/chat/workbenches"));
     expect(JSON.parse(String(call?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_assistant",

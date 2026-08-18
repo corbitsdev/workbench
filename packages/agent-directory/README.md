@@ -45,7 +45,7 @@ request and holds no state of its own. Every function is generic over the host's
 concrete row type (constrained to the minimal shape it reads), so a host's
 richer types pass through untouched.
 
-**Depends on:** `@corbits/chat/channel-host-naming` directly — a domain
+**Depends on:** `@corbits/chat/workbench-host-naming` directly — a domain
 package's naming contract, not app state, so it is a package dependency
 rather than something a host injects.
 

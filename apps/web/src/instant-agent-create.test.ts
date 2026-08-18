@@ -48,7 +48,7 @@ describe("createAgentAndLaunch", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [assistantDefinitionWire], nextCursor: null });
       }
-      if (path.endsWith("/chat/channels")) {
+      if (path.endsWith("/chat/workbenches")) {
         return json({
           id: "chan-1",
           title: NEW_WORKBENCH_TITLE,
@@ -63,7 +63,7 @@ describe("createAgentAndLaunch", () => {
     await createAgentAndLaunch("tnt_1", (to) => navigated.push(to));
 
     const createCall = calls.find((call) =>
-      call.path.endsWith("/chat/channels"),
+      call.path.endsWith("/chat/workbenches"),
     );
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
       kind: "chat",
@@ -73,7 +73,7 @@ describe("createAgentAndLaunch", () => {
     expect(calls.some((call) => call.path.includes("/agent-definitions"))).toBe(
       false,
     );
-    expect(navigated).toEqual(["/c/chan-1"]);
+    expect(navigated).toEqual(["/w/chan-1"]);
   });
 
   test("throws when the tenant has no deployed setup template", async () => {

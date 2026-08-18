@@ -1,15 +1,15 @@
-// Proves `createHubChatPlatform`'s `listChannelActivity` — the bulk
-// channelId -> sessionId resolution (workflow_run -> agent_session,
+// Proves `createHubChatPlatform`'s `listWorkbenchActivity` — the bulk
+// workbenchId -> sessionId resolution (workflow_run -> agent_session,
 // mirroring `resolveFoldedRunSessionId`'s per-run semantics but in two
 // `inArray` round trips for the whole list) and the two grouped SQL
 // aggregates it runs against `session_mail` (latest message per
-// session, and unread count per session gated by that channel's own
+// session, and unread count per session gated by that workbench's own
 // read cursor). The read-cursor merge math itself is unit-tested in
-// `../src/channel-activity.test.ts`; this file proves the query
+// `../src/workbench-activity.test.ts`; this file proves the query
 // sequence against a database wires the right rows into it.
 //
 // `sessionService`/`assetService`/`sidecarRouter`/`eventCollectors`
-// are never touched by `listChannelActivity` (no lifecycle is
+// are never touched by `listWorkbenchActivity` (no lifecycle is
 // configured here, so `createHubChatPlatform` never calls into any of
 // them at construction time either) — they are cast stand-ins rather
 // than the fuller fakes `platform-adapter.test.ts` builds for the
@@ -84,8 +84,8 @@ function buildPlatform(plan: Parameters<typeof fakeDb>[0]) {
   });
 }
 
-describe("listChannelActivity", () => {
-  test("resolves each channel's session via its run's principal and reports latest activity + unread count", async () => {
+describe("listWorkbenchActivity", () => {
+  test("resolves each workbench's session via its run's principal and reports latest activity + unread count", async () => {
     const platform = buildPlatform({
       workflowRunRows: [
         { id: "ch_general", principalId: "prn_general_host" },
@@ -112,11 +112,17 @@ describe("listChannelActivity", () => {
       ],
     });
 
-    const result = await platform.listChannelActivity({
+    const result = await platform.listWorkbenchActivity({
       tenantId: "tnt_1",
-      channels: [
-        { channelId: "ch_general", sinceCreatedAt: "2026-01-01T00:00:00.000Z" },
-        { channelId: "ch_random", sinceCreatedAt: "2026-01-01T00:00:30.000Z" },
+      workbenches: [
+        {
+          workbenchId: "ch_general",
+          sinceCreatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          workbenchId: "ch_random",
+          sinceCreatedAt: "2026-01-01T00:00:30.000Z",
+        },
       ],
     });
 
@@ -129,31 +135,31 @@ describe("listChannelActivity", () => {
     });
   });
 
-  test("omits a channel whose run has no principal, rather than fabricating a zero", async () => {
+  test("omits a workbench whose run has no principal, rather than fabricating a zero", async () => {
     const platform = buildPlatform({
       workflowRunRows: [{ id: "ch_orphaned", principalId: null }],
       agentSessionRows: [],
       sessionMailGroupedResults: [[], []],
     });
 
-    const result = await platform.listChannelActivity({
+    const result = await platform.listWorkbenchActivity({
       tenantId: "tnt_1",
-      channels: [{ channelId: "ch_orphaned" }],
+      workbenches: [{ workbenchId: "ch_orphaned" }],
     });
 
     expect(result).toEqual({});
   });
 
-  test("an empty channel list makes no queries and returns immediately", async () => {
+  test("an empty workbench list makes no queries and returns immediately", async () => {
     const platform = buildPlatform({
       workflowRunRows: [],
       agentSessionRows: [],
       sessionMailGroupedResults: [],
     });
 
-    const result = await platform.listChannelActivity({
+    const result = await platform.listWorkbenchActivity({
       tenantId: "tnt_1",
-      channels: [],
+      workbenches: [],
     });
 
     expect(result).toEqual({});

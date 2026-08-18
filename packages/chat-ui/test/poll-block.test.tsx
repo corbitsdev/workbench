@@ -18,7 +18,7 @@ import type {
   BlockResponseSubmitResult,
 } from "../src/blocks/block-responses";
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 function messageWithPollBlock(): MessageItem[] {
   return [
@@ -102,7 +102,7 @@ async function mount(actions: BlockResponseActions) {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithPollBlock()}
         blockResponses={actions}
       />,
@@ -117,7 +117,7 @@ describe("poll card round-trip", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<ChannelTimeline items={messageWithPollBlock()} />);
+      root?.render(<WorkbenchTimeline items={messageWithPollBlock()} />);
     });
 
     const buttons = container.querySelectorAll(".chat-block-choice");

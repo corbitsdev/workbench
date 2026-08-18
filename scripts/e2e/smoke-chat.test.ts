@@ -1,6 +1,6 @@
-// Smoke scenario 3/5 (CL-6004): chat round-trip. A channel is created,
+// Smoke scenario 3/5 (CL-6004): chat round-trip. A workbench is created,
 // a message is posted and read back with its content intact, and the
-// channel's invited-agent listing answers with the documented shape.
+// workbench's invited-agent listing answers with the documented shape.
 // This deliberately stops short of `chat.test.ts`'s full battery
 // (mentions, read-state, multi-principal fan-out, agent invite) — it
 // is a fast canary that the basic surface is alive, not a re-run of
@@ -117,31 +117,31 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         return stringField(res.data, "id", "create tenant");
       });
 
-      const channelId = await hop("channel creation", async () => {
-        // Launching a channel boots its anchor instance in-process,
+      const workbenchId = await hop("workbench creation", async () => {
+        // Launching a workbench boots its anchor instance in-process,
         // which needs the sidecar's dial-in to have completed; retry
         // through the transient 500 the same way chat.test.ts does.
         const deadline = Date.now() + 60_000;
         for (;;) {
           if (sidecar.exited()) {
             throw new Error(
-              `sidecar exited before channel creation; output:\n${sidecar.output()}`,
+              `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
             );
           }
           const res = await api(
             hub.baseUrl,
             "POST",
-            `/api/tenants/${tenantId}/chat/channels`,
-            { kind: "channel", name: "Smoke Channel" },
+            `/api/tenants/${tenantId}/chat/workbenches`,
+            { kind: "workbench", name: "Smoke Workbench" },
             cookies,
           );
           if (res.status !== 500) {
-            expectStatus("create channel", res, 201);
-            return stringField(res.data, "id", "create channel");
+            expectStatus("create workbench", res, 201);
+            return stringField(res.data, "id", "create workbench");
           }
           if (Date.now() > deadline) {
             throw new Error(
-              `channel never became launchable (hub kept answering 500): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+              `workbench never became launchable (hub kept answering 500): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
             );
           }
           await Bun.sleep(1000);
@@ -153,7 +153,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         const res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
+          `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
           { parts: [{ kind: "text", text: messageText }] },
           cookies,
         );
@@ -165,7 +165,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         const res = await api(
           hub.baseUrl,
           "GET",
-          `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
+          `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
           undefined,
           cookies,
         );
@@ -182,25 +182,25 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         );
         if (!found) {
           throw new Error(
-            `posted message not found in the channel's timeline: ${JSON.stringify(items)}`,
+            `posted message not found in the workbench's timeline: ${JSON.stringify(items)}`,
           );
         }
       });
 
-      await hop("the channel is listed", async () => {
+      await hop("the workbench is listed", async () => {
         const res = await api(
           hub.baseUrl,
           "GET",
-          `/api/tenants/${tenantId}/chat/channels`,
+          `/api/tenants/${tenantId}/chat/workbenches`,
           undefined,
           cookies,
         );
-        expectStatus("list channels", res, 200);
+        expectStatus("list workbenches", res, 200);
         const items = (res.data as { items: { id: string }[] }).items;
-        const found = items.some((item) => item.id === channelId);
+        const found = items.some((item) => item.id === workbenchId);
         if (!found) {
           throw new Error(
-            `created channel missing from the channel listing: ${JSON.stringify(items)}`,
+            `created workbench missing from the workbench listing: ${JSON.stringify(items)}`,
           );
         }
       });
@@ -211,7 +211,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           const res = await api(
             hub.baseUrl,
             "GET",
-            `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+            `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
             undefined,
             cookies,
           );

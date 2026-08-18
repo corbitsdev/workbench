@@ -1,7 +1,7 @@
 // Shared test harness for `createChatRoutes`' HTTP surface: a fake
 // `ChatPlatform`, a tenant/principal-injecting mount, and the small
-// request helpers every split test file (routes, channel-settings,
-// channel-service) drives the same app through. Not a production
+// request helpers every split test file (routes, workbench-settings,
+// workbench-service) drives the same app through. Not a production
 // module — lives in `test/` only.
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -9,7 +9,7 @@ import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
-import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
+import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { extractTextPreview, type MailContent } from "../src/codec";
 
 export const TENANT = {
@@ -38,10 +38,10 @@ export function principal(id: string) {
 export function fakePlatform(
   opts: {
     invitable?: { id: string; name: string; description?: string }[];
-    launchChannel?: (input: {
+    launchWorkbench?: (input: {
       tenantId: string;
       creatorPrincipalId: string;
-      channelId: string;
+      workbenchId: string;
       triggerAddress: string;
       definition: string;
     }) => Promise<{ instanceId: string }>;
@@ -51,7 +51,7 @@ export function fakePlatform(
       definitionId: string;
     }) => Promise<{ instanceId: string; address: string }>;
     fetchBlob?: (
-      channelId: string,
+      workbenchId: string,
       blobId: string,
     ) => Promise<string | Uint8Array>;
     resolveDefinitionIdByAddress?: (
@@ -59,24 +59,24 @@ export function fakePlatform(
     ) => Promise<string | undefined>;
     refreshAgentInstanceFromDefinition?: (
       tenantId: string,
-      channelId: string,
+      workbenchId: string,
       address: string,
     ) => Promise<void>;
     sendMail?: (input: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       principalId?: string;
       content: MailContent;
-      fromChannelId?: string;
+      fromWorkbenchId?: string;
     }) => Promise<{ id: string; createdAt: string }>;
   } = {},
 ): ChatPlatform & {
-  refreshCalls: { tenantId: string; channelId: string; address: string }[];
+  refreshCalls: { tenantId: string; workbenchId: string; address: string }[];
   sentMail: {
-    channelId: string;
+    workbenchId: string;
     principalId?: string;
     content: MailContent;
-    fromChannelId?: string;
+    fromWorkbenchId?: string;
   }[];
   launchInviteCalls: {
     tenantId: string;
@@ -85,24 +85,24 @@ export function fakePlatform(
   }[];
 } {
   const sentMail: {
-    channelId: string;
+    workbenchId: string;
     principalId?: string;
     content: MailContent;
-    fromChannelId?: string;
+    fromWorkbenchId?: string;
   }[] = [];
   const launchInviteCalls: {
     tenantId: string;
     creatorPrincipalId: string;
     definitionId: string;
   }[] = [];
-  const mailByChannel = new Map<
+  const mailByWorkbench = new Map<
     string,
     { id: string; createdAt: string; mail: unknown }[]
   >();
   let mailCounter = 0;
   const refreshCalls: {
     tenantId: string;
-    channelId: string;
+    workbenchId: string;
     address: string;
   }[] = [];
 
@@ -110,8 +110,9 @@ export function fakePlatform(
     sentMail,
     launchInviteCalls,
     refreshCalls,
-    async launchChannel(input) {
-      if (opts.launchChannel !== undefined) return opts.launchChannel(input);
+    async launchWorkbench(input) {
+      if (opts.launchWorkbench !== undefined)
+        return opts.launchWorkbench(input);
       return { instanceId: "launched" };
     },
     async launchInvite(input) {
@@ -131,12 +132,12 @@ export function fakePlatform(
       }
       return undefined;
     },
-    async refreshAgentInstanceFromDefinition(tenantId, channelId, address) {
-      refreshCalls.push({ tenantId, channelId, address });
+    async refreshAgentInstanceFromDefinition(tenantId, workbenchId, address) {
+      refreshCalls.push({ tenantId, workbenchId, address });
       if (opts.refreshAgentInstanceFromDefinition !== undefined) {
         return opts.refreshAgentInstanceFromDefinition(
           tenantId,
-          channelId,
+          workbenchId,
           address,
         );
       }
@@ -144,7 +145,7 @@ export function fakePlatform(
     async sendMail(input) {
       if (opts.sendMail !== undefined) return opts.sendMail(input);
       const sentMailEntryBase = {
-        channelId: input.channelId,
+        workbenchId: input.workbenchId,
         content: input.content,
       };
       const withPrincipal =
@@ -152,14 +153,14 @@ export function fakePlatform(
           ? { ...sentMailEntryBase, principalId: input.principalId }
           : sentMailEntryBase;
       sentMail.push(
-        input.fromChannelId !== undefined
-          ? { ...withPrincipal, fromChannelId: input.fromChannelId }
+        input.fromWorkbenchId !== undefined
+          ? { ...withPrincipal, fromWorkbenchId: input.fromWorkbenchId }
           : withPrincipal,
       );
       const id = `mail_${++mailCounter}`;
       const createdAt = new Date().toISOString();
-      const list = mailByChannel.get(input.channelId) ?? [];
-      const fromLocal = input.principalId ?? input.fromChannelId ?? "unknown";
+      const list = mailByWorkbench.get(input.workbenchId) ?? [];
+      const fromLocal = input.principalId ?? input.fromWorkbenchId ?? "unknown";
       list.push({
         id,
         createdAt,
@@ -170,54 +171,54 @@ export function fakePlatform(
           from: [{ name: null, email: `${fromLocal}@acme.example` }],
         },
       });
-      mailByChannel.set(input.channelId, list);
+      mailByWorkbench.set(input.workbenchId, list);
       return { id, createdAt };
     },
     async listMail(input) {
       // Matches the real platform's contract: a page is newest-first.
-      const items = mailByChannel.get(input.channelId) ?? [];
+      const items = mailByWorkbench.get(input.workbenchId) ?? [];
       return { items: [...items].reverse() };
     },
     async getMail(input) {
-      const items = mailByChannel.get(input.channelId) ?? [];
+      const items = mailByWorkbench.get(input.workbenchId) ?? [];
       return items.find((item) => item.id === input.messageId);
     },
-    async listChannelActivity(input) {
+    async listWorkbenchActivity(input) {
       const result: Record<
         string,
         { lastActivityAt?: string; unreadCount: number; preview?: string }
       > = {};
-      for (const channel of input.channels) {
-        const items = mailByChannel.get(channel.channelId) ?? [];
+      for (const workbench of input.workbenches) {
+        const items = mailByWorkbench.get(workbench.workbenchId) ?? [];
         if (items.length === 0) {
-          result[channel.channelId] = { unreadCount: 0 };
+          result[workbench.workbenchId] = { unreadCount: 0 };
           continue;
         }
         const latest = items[items.length - 1];
         const lastActivityAt = latest?.createdAt;
         const unreadCount = items.filter(
           (item) =>
-            channel.sinceCreatedAt === undefined ||
-            item.createdAt > channel.sinceCreatedAt,
+            workbench.sinceCreatedAt === undefined ||
+            item.createdAt > workbench.sinceCreatedAt,
         ).length;
         if (lastActivityAt === undefined || latest === undefined) {
-          result[channel.channelId] = { unreadCount };
+          result[workbench.workbenchId] = { unreadCount };
           continue;
         }
         const preview = extractTextPreview(latest.mail);
-        result[channel.channelId] =
+        result[workbench.workbenchId] =
           preview.length === 0
             ? { unreadCount, lastActivityAt }
             : { unreadCount, lastActivityAt, preview };
       }
       return result;
     },
-    async fetchBlob(channelId, blobId) {
+    async fetchBlob(workbenchId, blobId) {
       if (opts.fetchBlob !== undefined)
-        return opts.fetchBlob(channelId, blobId);
+        return opts.fetchBlob(workbenchId, blobId);
       return "";
     },
-    subscribeToChannel() {
+    subscribeToWorkbench() {
       return () => undefined;
     },
   };
@@ -244,27 +245,27 @@ export function buildDeps(
   return {
     store: createInMemoryChatStore(),
     platform: fakePlatform(),
-    tenancy: createInMemoryChannelTenancyStore(),
+    tenancy: createInMemoryWorkbenchTenancyStore(),
     requireGrant: () => async (_c, next) => {
       await next();
     },
     isInvitableDefinition: () => true,
     turnTimeoutMs: 60_000,
-    channelHostInferencePreferences: async () => [
+    workbenchHostInferencePreferences: async () => [
       { provider: "anthropic", model: "claude-sonnet-5" },
     ],
     ...overrides,
   };
 }
 
-export interface ChannelView {
+export interface WorkbenchView {
   id: string;
   title: string;
   kind: string;
   pinned: boolean;
   participants: { address: string; handle: string }[];
-  /** Present on create/reopen responses: the channel's own tenancy
-   * link, or null (with `legacy: true`) for a pre-tenancy channel. */
+  /** Present on create/reopen responses: the workbench's own tenancy
+   * link, or null (with `legacy: true`) for a pre-tenancy workbench. */
   tenancy?: {
     tenantId: string;
     parentTenantId: string;
@@ -272,24 +273,24 @@ export interface ChannelView {
   } | null;
 }
 
-export async function createChannel(
+export async function createWorkbench(
   app: Hono<TenantEnv>,
   body: Record<string, unknown>,
-): Promise<{ response: Response; body: ChannelView }> {
-  const response = await app.request("/channels", {
+): Promise<{ response: Response; body: WorkbenchView }> {
+  const response = await app.request("/workbenches", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  return { response, body: (await response.json()) as ChannelView };
+  return { response, body: (await response.json()) as WorkbenchView };
 }
 
 export async function sendText(
   app: Hono<TenantEnv>,
-  channelId: string,
+  workbenchId: string,
   text: string,
 ): Promise<Response> {
-  return app.request(`/channels/${channelId}/messages`, {
+  return app.request(`/workbenches/${workbenchId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ parts: [{ kind: "text", text }] }),

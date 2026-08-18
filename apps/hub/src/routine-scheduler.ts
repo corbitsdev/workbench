@@ -38,8 +38,8 @@ export type RoutineSchedulerDeps = {
   launcher: RoutineLauncher;
   /** See `@corbits/routines`' `fireScheduledRoutine` — passed straight
    * through so a scheduled fire enforces the same honest
-   * channel-required-or-not rule a manual "run now" does. */
-  deliveryChannelRequired?: (
+   * workbench-required-or-not rule a manual "run now" does. */
+  deliveryWorkbenchRequired?: (
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
@@ -57,7 +57,10 @@ const log = getLogger(["hub", "routine-scheduler"]);
  * waiting on `setInterval`.
  */
 export async function tickRoutineScheduler(
-  deps: Pick<RoutineSchedulerDeps, "store" | "launcher" | "deliveryChannelRequired">,
+  deps: Pick<
+    RoutineSchedulerDeps,
+    "store" | "launcher" | "deliveryWorkbenchRequired"
+  >,
   at: Date,
 ): Promise<void> {
   const dueRoutines = await deps.store.listDueRoutines(at);
@@ -72,8 +75,8 @@ export async function tickRoutineScheduler(
         store: deps.store,
         launcher: deps.launcher,
       };
-      if (deps.deliveryChannelRequired !== undefined) {
-        fireDeps.deliveryChannelRequired = deps.deliveryChannelRequired;
+      if (deps.deliveryWorkbenchRequired !== undefined) {
+        fireDeps.deliveryWorkbenchRequired = deps.deliveryWorkbenchRequired;
       }
       await fireScheduledRoutine(fireDeps, {
         tenantId: claimed.tenantId,

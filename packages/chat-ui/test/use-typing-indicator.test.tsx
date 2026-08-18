@@ -1,7 +1,7 @@
 // Real-timer wiring for `useTypingIndicator`, mounted against a DOM (see
 // dom-setup.ts) rather than reasoned about via `nextTypingState` alone —
 // the pure function is only "correct" if the effects around it actually
-// arm, re-arm, reset on channel switch, and tear down a real timer.
+// arm, re-arm, reset on workbench switch, and tear down a real timer.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement, useState } from "react";
@@ -19,21 +19,21 @@ const TEST_TIMEOUT_MS = 120;
 
 function mount(
   selfPrincipalId: string | undefined,
-  initialChannelId: string | null,
+  initialWorkbenchId: string | null,
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   let latestState: TypingState = null;
   let send: (eventType: string, data: unknown) => void = () => {};
-  let setChannelId: (id: string | null) => void = () => {};
+  let setWorkbenchId: (id: string | null) => void = () => {};
 
   function Host() {
-    const [channelId, updateChannelId] = useState(initialChannelId);
-    setChannelId = updateChannelId;
+    const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
+    setWorkbenchId = updateWorkbenchId;
     const { typingState, handleStreamEvent } = useTypingIndicator(
       selfPrincipalId,
-      channelId,
+      workbenchId,
       TEST_TIMEOUT_MS,
     );
     latestState = typingState;
@@ -54,9 +54,9 @@ function mount(
       act(() => {
         send(eventType, {});
       }),
-    switchChannel: (id: string | null) =>
+    switchWorkbench: (id: string | null) =>
       act(() => {
-        setChannelId(id);
+        setWorkbenchId(id);
       }),
     settle: (ms: number) => act(() => sleep(ms)),
     get: () => latestState,
@@ -112,12 +112,12 @@ describe("useTypingIndicator (real timer wiring)", () => {
     }
   });
 
-  test("switching channels clears whoever was typing in the one just left", () => {
+  test("switching workbenches clears whoever was typing in the one just left", () => {
     const harness = mount("prn_self1", "chan_a");
     harness.ping("prn_other1");
     expect(harness.get()?.principalId).toBe("prn_other1");
 
-    harness.switchChannel("chan_b");
+    harness.switchWorkbench("chan_b");
     expect(harness.get()).toBeNull();
     harness.unmount();
   });

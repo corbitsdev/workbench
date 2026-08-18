@@ -173,7 +173,7 @@ describe("listGranolaRoutines", () => {
             scope: "bench",
             input: {},
             enabled: true,
-            deliveryChannelId: null,
+            deliveryWorkbenchId: null,
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-01-01T00:00:00.000Z",
           },
@@ -230,7 +230,7 @@ describe("bindRoutineWebhookTrigger", () => {
         scope: "bench",
         input: {},
         enabled: true,
-        deliveryChannelId: null,
+        deliveryWorkbenchId: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       });

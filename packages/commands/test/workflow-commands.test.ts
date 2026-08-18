@@ -6,7 +6,7 @@ import { dispatchSlashCommand } from "../src/dispatch";
 const CTX = {
   tenantId: "tenant-1",
   principalId: "principal-1",
-  channelId: "channel-1",
+  workbenchId: "workbench-1",
 };
 
 describe("createWorkflowCommandPlugin", () => {
@@ -55,7 +55,7 @@ describe("createWorkflowCommandPlugin", () => {
       {
         tenantId: CTX.tenantId,
         principalId: CTX.principalId,
-        channelId: CTX.channelId,
+        workbenchId: CTX.workbenchId,
         definitionId: "def-echo",
         args: "summarize the thread",
       },

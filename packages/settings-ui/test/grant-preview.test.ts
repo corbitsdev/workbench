@@ -11,12 +11,12 @@ describe("grantPreviewSentence", () => {
     expect(
       grantPreviewSentence({
         targetLabel: null,
-        resource: "channel",
+        resource: "workbench",
         action: "write",
         effect: "ask",
         expiresLabel: null,
       }),
-    ).toBe("Someone must ask before they can write on channel.");
+    ).toBe("Someone must ask before they can write on workbench.");
   });
 
   test("uses allow / deny verbs", () => {

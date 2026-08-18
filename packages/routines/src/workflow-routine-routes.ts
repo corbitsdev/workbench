@@ -31,12 +31,12 @@ import { type } from "arktype";
 import { RoutineTrigger } from "./trigger";
 import type { RoutineRow, RoutineStore, UpdateRoutineInput } from "./store";
 import {
-  isDeliveryChannelRequired,
+  isDeliveryWorkbenchRequired,
   launchAndCorrelate,
   postRoutineEnabledNotice,
   routineView,
   webhookTriggerValid,
-  type ChannelNoticePort,
+  type WorkbenchNoticePort,
   type DeliverySpacePort,
   type RoutineLauncher,
 } from "./routes";
@@ -112,20 +112,20 @@ export type CreateWorkflowRoutineRoutesDeps = {
     definitionId: string,
   ) => Promise<boolean>;
   /**
-   * Resolves the creating run's own channel — the workbench the person
+   * Resolves the creating run's own workbench — the workbench the person
    * was talking in when they asked for the routine. A routine created
-   * with no `deliveryChannelId` delivers there by default; a brand-new
+   * with no `deliveryWorkbenchId` delivers there by default; a brand-new
    * space (via `deliverySpace` below) is only ever minted for a run
-   * with no home channel of its own.
+   * with no home workbench of its own.
    */
-  resolveRunChannel?: (
+  resolveRunWorkbench?: (
     tenantId: string,
     runId: string,
   ) => Promise<string | undefined>;
   /**
    * Same contract as `CreateRoutineRoutesDeps.deliverySpace`: provisions
-   * a brand-new space for a routine created with no `deliveryChannelId`
-   * by a run that `resolveRunChannel` cannot place in a channel, named
+   * a brand-new space for a routine created with no `deliveryWorkbenchId`
+   * by a run that `resolveRunWorkbench` cannot place in a workbench, named
    * after the routine.
    */
   deliverySpace?: DeliverySpacePort | undefined;
@@ -137,12 +137,12 @@ export type CreateWorkflowRoutineRoutesDeps = {
    * `WorkflowCapabilityRunScope`'s minimal `{tenantId, principalId,
    * runId}` shape). Omitted disables auto-provisioning even when
    * `deliverySpace` is wired — a routine needing delivery with no
-   * channel named still 400s, exactly like a host that never wired
+   * workbench named still 400s, exactly like a host that never wired
    * `deliverySpace` at all.
    */
   resolveTenantDomain?: (tenantId: string) => Promise<string>;
-  /** Same contract as `CreateRoutineRoutesDeps.deliveryChannelRequired`. */
-  deliveryChannelRequired?: (
+  /** Same contract as `CreateRoutineRoutesDeps.deliveryWorkbenchRequired`. */
+  deliveryWorkbenchRequired?: (
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
@@ -154,8 +154,8 @@ export type CreateWorkflowRoutineRoutesDeps = {
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
-  /** Same contract as `CreateRoutineRoutesDeps.channelNotice`. */
-  channelNotice?: ChannelNoticePort | undefined;
+  /** Same contract as `CreateRoutineRoutesDeps.workbenchNotice`. */
+  workbenchNotice?: WorkbenchNoticePort | undefined;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -191,7 +191,7 @@ const CreateWorkflowRoutineBody = type({
   definitionId: "string",
   trigger: RoutineTrigger,
   "input?": "Record<string, unknown>",
-  "deliveryChannelId?": "string",
+  "deliveryWorkbenchId?": "string",
   "runOnceNow?": "boolean",
 });
 
@@ -287,29 +287,29 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
-    // Delivery target precedence: the channel the caller named, then
-    // the creating run's own channel (a routine asked for inside a
+    // Delivery target precedence: the workbench the caller named, then
+    // the creating run's own workbench (a routine asked for inside a
     // workbench reports back into that workbench), then a freshly
     // provisioned space as the last resort.
-    const namedChannelId =
-      body.deliveryChannelId !== undefined && body.deliveryChannelId !== ""
-        ? body.deliveryChannelId
+    const namedWorkbenchId =
+      body.deliveryWorkbenchId !== undefined && body.deliveryWorkbenchId !== ""
+        ? body.deliveryWorkbenchId
         : undefined;
-    const deliveryRequired = await isDeliveryChannelRequired(
+    const deliveryRequired = await isDeliveryWorkbenchRequired(
       deps,
       scope.tenantId,
       definitionId,
     );
 
-    const homeChannelId =
-      deliveryRequired && namedChannelId === undefined
-        ? await deps.resolveRunChannel?.(scope.tenantId, scope.runId)
+    const homeWorkbenchId =
+      deliveryRequired && namedWorkbenchId === undefined
+        ? await deps.resolveRunWorkbench?.(scope.tenantId, scope.runId)
         : undefined;
 
     const needsDelivery =
       deliveryRequired &&
-      namedChannelId === undefined &&
-      homeChannelId === undefined;
+      namedWorkbenchId === undefined &&
+      homeWorkbenchId === undefined;
 
     if (
       needsDelivery &&
@@ -319,7 +319,7 @@ export function createWorkflowRoutineRoutes(
       return c.json(
         ErrorEnvelope(
           "bad_request",
-          "deliveryChannelId is required for this workflow",
+          "deliveryWorkbenchId is required for this workflow",
         ),
         400,
       );
@@ -340,7 +340,7 @@ export function createWorkflowRoutineRoutes(
     // (deleted) if the row then fails to write — the same mint-then-
     // compensate shape `./routes.ts`'s own `POST /routines` uses.
     let provisionedSpace:
-      { channelId: string; compensate: () => Promise<void> } | undefined;
+      { workbenchId: string; compensate: () => Promise<void> } | undefined;
     if (
       needsDelivery &&
       deps.deliverySpace !== undefined &&
@@ -360,8 +360,11 @@ export function createWorkflowRoutineRoutes(
         name: body.name,
       });
     }
-    const deliveryChannelId =
-      namedChannelId ?? homeChannelId ?? provisionedSpace?.channelId ?? null;
+    const deliveryWorkbenchId =
+      namedWorkbenchId ??
+      homeWorkbenchId ??
+      provisionedSpace?.workbenchId ??
+      null;
 
     let row: RoutineRow;
     try {
@@ -372,7 +375,7 @@ export function createWorkflowRoutineRoutes(
         trigger: body.trigger,
         scope: "bench",
         input: body.input ?? {},
-        deliveryChannelId,
+        deliveryWorkbenchId,
         createdBy: scope.principalId,
       });
     } catch (err) {
@@ -397,7 +400,7 @@ export function createWorkflowRoutineRoutes(
           input: row.input,
           routineId: row.id,
           triggeredBy: "manual",
-          deliveryChannelId: row.deliveryChannelId,
+          deliveryWorkbenchId: row.deliveryWorkbenchId,
           routineName: row.name,
         },
       );
@@ -407,7 +410,7 @@ export function createWorkflowRoutineRoutes(
       await postRoutineEnabledNotice(deps, {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
-        channelId: row.deliveryChannelId,
+        workbenchId: row.deliveryWorkbenchId,
         name: row.name,
         trigger: row.trigger,
         verb: "Created",
@@ -467,7 +470,7 @@ export function createWorkflowRoutineRoutes(
       await postRoutineEnabledNotice(deps, {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
-        channelId: row.deliveryChannelId,
+        workbenchId: row.deliveryWorkbenchId,
         name: row.name,
         trigger: row.trigger,
         verb: "Enabled",
@@ -497,17 +500,18 @@ export function createWorkflowRoutineRoutes(
     // trigger would call — see `launchAndCorrelate`'s own doc comment;
     // never a second launch code path for Myra's own surface either.
     if (
-      (await isDeliveryChannelRequired(
+      (await isDeliveryWorkbenchRequired(
         deps,
         scope.tenantId,
         existing.definitionId,
       )) &&
-      (existing.deliveryChannelId === null || existing.deliveryChannelId === "")
+      (existing.deliveryWorkbenchId === null ||
+        existing.deliveryWorkbenchId === "")
     ) {
       return c.json(
         ErrorEnvelope(
           "bad_request",
-          "routine has no deliveryChannelId; set one before running",
+          "routine has no deliveryWorkbenchId; set one before running",
         ),
         400,
       );
@@ -522,7 +526,7 @@ export function createWorkflowRoutineRoutes(
         input: body.input ?? existing.input,
         routineId,
         triggeredBy: "manual",
-        deliveryChannelId: existing.deliveryChannelId,
+        deliveryWorkbenchId: existing.deliveryWorkbenchId,
         routineName: existing.name,
       },
     );

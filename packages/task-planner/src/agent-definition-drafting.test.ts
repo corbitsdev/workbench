@@ -84,7 +84,7 @@ const INPUT = {
   tenantId: "tnt_1",
   principalId: "prn_alice",
   name: "Incident Bot",
-  purpose: "Summarize incident reports for the on-call channel",
+  purpose: "Summarize incident reports for the on-call workbench",
 };
 
 describe("parseAgentDefinitionDraftReply", () => {

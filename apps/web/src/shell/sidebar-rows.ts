@@ -1,27 +1,27 @@
 // The sidebar's ONE recency-sorted stream (CL-6253): agent-DM rows sit
-// alongside bench (channel/chat) rows rather than in a section of their
-// own. An agent already has a DM channel the moment someone has opened
-// it once — that channel is just another `Channel` row, already handled
+// alongside bench (workbench/chat) rows rather than in a section of their
+// own. An agent already has a DM workbench the moment someone has opened
+// it once — that workbench is just another `Workbench` row, already handled
 // by `workbench-list.tsx`'s existing machinery. This module only decides
 // which VISIBLE agent definitions still need a synthetic row (never
-// opened, so no channel exists yet) and how those synthetic rows sort
+// opened, so no workbench exists yet) and how those synthetic rows sort
 // and render alongside the real ones.
 
-import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
+import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
 
 export type SidebarRow =
-  | { readonly kind: "channel"; readonly channel: Channel }
+  | { readonly kind: "workbench"; readonly workbench: Workbench }
   | { readonly kind: "agent"; readonly agent: VisibleAgentDefinition };
 
 /**
  * Every visible agent definition that has never been opened as a DM —
  * its id doesn't match any existing chat's `definitionId`. An agent
- * that HAS a DM already is represented by that chat's own `Channel` row
+ * that HAS a DM already is represented by that chat's own `Workbench` row
  * (with its own preview/recency), never duplicated as a synthetic row
  * too.
  */
 export function unopenedAgentRows(
-  chats: readonly Channel[],
+  chats: readonly Workbench[],
   agents: readonly VisibleAgentDefinition[],
 ): readonly SidebarRow[] {
   const openedDefinitionIds = new Set(
@@ -34,37 +34,39 @@ export function unopenedAgentRows(
     .map((agent) => ({ kind: "agent", agent }) as const);
 }
 
-/** A row's own recency signal: a channel's `lastActivityAt` (0 when
+/** A row's own recency signal: a workbench's `lastActivityAt` (0 when
  * absent, sorting it last within its half), or an unopened agent's
  * `createdAt` — never a fabricated "just now". */
 function recencyOf(row: SidebarRow): number {
-  if (row.kind === "channel") {
-    return row.channel.lastActivityAt
-      ? Date.parse(row.channel.lastActivityAt)
+  if (row.kind === "workbench") {
+    return row.workbench.lastActivityAt
+      ? Date.parse(row.workbench.lastActivityAt)
       : 0;
   }
   return Date.parse(row.agent.createdAt);
 }
 
 function isPinned(row: SidebarRow): boolean {
-  return row.kind === "channel" && row.channel.pinned;
+  return row.kind === "workbench" && row.workbench.pinned;
 }
 
 /**
- * Every bench (channel + chat) row plus every never-opened agent row,
+ * Every bench (workbench + chat) row plus every never-opened agent row,
  * pinned first, then most-recent first within each half — the same
- * ordering rule `orderWorkbenchRows` applies to channels alone, widened
+ * ordering rule `orderWorkbenchRows` applies to workbenches alone, widened
  * to the union. Stable within ties (agents with no activity at all sort
  * by their own insertion order, mirroring `orderWorkbenchRows`).
  */
 export function buildSidebarRows(
-  channels: readonly Channel[],
-  chats: readonly Channel[],
+  workbenches: readonly Workbench[],
+  chats: readonly Workbench[],
   agents: readonly VisibleAgentDefinition[],
 ): readonly SidebarRow[] {
   const rows: SidebarRow[] = [
-    ...channels.map((channel) => ({ kind: "channel", channel }) as const),
-    ...chats.map((channel) => ({ kind: "channel", channel }) as const),
+    ...workbenches.map(
+      (workbench) => ({ kind: "workbench", workbench }) as const,
+    ),
+    ...chats.map((workbench) => ({ kind: "workbench", workbench }) as const),
     ...unopenedAgentRows(chats, agents),
   ];
   const byRecency = (a: SidebarRow, b: SidebarRow) =>

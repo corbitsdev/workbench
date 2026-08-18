@@ -5,7 +5,7 @@
 //
 // Draft state machine: draft → reviewed → approved | discarded.
 // Only `approved` creates a runnable routine (definition pin + schedule
-// + delivery channel captured at approval).
+// + delivery workbench captured at approval).
 
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -32,7 +32,7 @@ export type RoutineDraftRow = {
   readonly proposedTrigger: RoutineTriggerT | null;
   readonly proposedName: string | null;
   readonly definitionId: string | null;
-  readonly deliveryChannelId: string;
+  readonly deliveryWorkbenchId: string;
   readonly scope: "personal" | "bench";
   readonly autonomy: Record<string, unknown> | null;
   readonly createdBy: string;
@@ -44,7 +44,7 @@ export type RoutineDraftRow = {
 export type CreateDraftInput = {
   readonly tenantId: string;
   readonly prompt: string;
-  readonly deliveryChannelId: string;
+  readonly deliveryWorkbenchId: string;
   readonly scope: "personal" | "bench";
   readonly createdBy: string;
 };
@@ -178,7 +178,7 @@ function mapDraft(row: typeof routineDraft.$inferSelect): RoutineDraftRow {
     proposedTrigger: asTrigger(row.proposedTrigger),
     proposedName: row.proposedName ?? null,
     definitionId: row.definitionId ?? null,
-    deliveryChannelId: row.deliveryChannelId,
+    deliveryWorkbenchId: row.deliveryWorkbenchId,
     scope: row.scope === "personal" ? "personal" : "bench",
     autonomy:
       row.autonomy !== null && typeof row.autonomy === "object"
@@ -210,7 +210,7 @@ export function createInMemoryDraftStore(): RoutineDraftStore {
         proposedTrigger: null,
         proposedName: null,
         definitionId: null,
-        deliveryChannelId: input.deliveryChannelId,
+        deliveryWorkbenchId: input.deliveryWorkbenchId,
         scope: input.scope,
         autonomy: null,
         createdBy: input.createdBy,
@@ -309,7 +309,7 @@ export function createDrizzleDraftStore<
           proposedTrigger: null,
           proposedName: null,
           definitionId: null,
-          deliveryChannelId: input.deliveryChannelId,
+          deliveryWorkbenchId: input.deliveryWorkbenchId,
           scope: input.scope,
           autonomy: null,
           createdBy: input.createdBy,

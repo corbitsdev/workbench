@@ -27,8 +27,8 @@ describe("in-memory draft store", () => {
     const store = createInMemoryDraftStore();
     const draft = await store.createDraft({
       tenantId: "t1",
-      prompt: "Summarize Acme Co channel daily",
-      deliveryChannelId: "ch_1",
+      prompt: "Summarize Acme Co workbench daily",
+      deliveryWorkbenchId: "ch_1",
       scope: "bench",
       createdBy: "user_1",
     });

@@ -4,9 +4,9 @@
 // (the native CRUD for one-directional trust rows). This module adds the
 // one thing that route doesn't: the workbench-owned notion of "bilateral"
 // — both tenants have separately opted in — which is what
-// `packages/chat/src/channel-share.ts` gates channel projection on.
+// `packages/chat/src/workbench-share.ts` gates workbench projection on.
 //
-// Mirrors `channel-tenancy.ts`'s shape: a store interface, a drizzle
+// Mirrors `workbench-tenancy.ts`'s shape: a store interface, a drizzle
 // implementation, and an in-memory test double with `registerTenant` test
 // support.
 import { and, eq, inArray } from "drizzle-orm";
@@ -35,7 +35,7 @@ export interface FederationTrustStore {
 
   /** When both tenants share the same non-null `parentId`, the parent
    * tenant's id and name — the "shared via parent · <name>" context a
-   * channel-list row can show. `undefined` for unrelated tenants or a
+   * workbench-list row can show. `undefined` for unrelated tenants or a
    * tenant with no parent. */
   resolveSharedViaParent(
     tenantA: string,
@@ -176,7 +176,7 @@ export function createDrizzleFederationTrustStore<
  * An in-memory `FederationTrustStore`, for tests and any host wiring chat
  * routes without a database. `registerTenant` is test-support only —
  * standing up a fake native `tenant` row (name + optional parent) without
- * a database, mirroring `createInMemoryChannelTenancyStore`'s
+ * a database, mirroring `createInMemoryWorkbenchTenancyStore`'s
  * `registerExistingTenant`. `seedDirectionalTrust` lets a test construct
  * the "only one direction exists" case directly, without going through
  * `establishBilateralTrust` (which always writes both).

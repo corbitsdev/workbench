@@ -1,11 +1,11 @@
 // The workbench-owned answer to "which of this tenant's workflow runs
 // are genuine top-level deployments, not folded-run plumbing?" — the
 // question `packages/chat-ui/src/folded-run-ids.ts` used to answer by
-// deriving an exclusion set from a tenant's *channels*, which silently
-// missed every task-style folded run (a task creates no channel at
+// deriving an exclusion set from a tenant's *workbenches*, which silently
+// missed every task-style folded run (a task creates no workbench at
 // all). This route answers it server-side instead, straight off
 // `workflow_run` plus this package's own `folded_run` marker table (see
-// `./schema.ts`), so every folded run — channel host, invited agent, or
+// `./schema.ts`), so every folded run — workbench host, invited agent, or
 // task — is excluded uniformly with no per-consumer opt-in.
 //
 // The listing predicate mirrors vendor's own "top-level run" predicate
@@ -22,7 +22,7 @@
 // rather than "which deployments exist." A deployment's anchor row that
 // never got triggered is not a run at all (it stays `status: "deployed"`
 // forever — see `listTopLevelRunFires`'s own comment), so that feed drops
-// it; but a routine's fire — channel-digest, recurring-task, or any
+// it; but a routine's fire — workbench-digest, recurring-task, or any
 // other — genuinely ran, so that feed puts it back even though it is a
 // folded run, via the host-supplied `resolveRoutineFires` port.
 import { and, desc, eq, inArray, isNotNull, ne, notExists } from "drizzle-orm";
@@ -197,7 +197,7 @@ export async function listTopLevelRuns(
  * feed — unlike `listTopLevelRuns` — must show it. So a folded run here
  * is kept only when `resolveRoutineFires` (the host's
  * `@corbits/routines` bridge) confirms it is one, carrying that
- * routine's id/name; every other folded run (channel host, invited
+ * routine's id/name; every other folded run (workbench host, invited
  * agent, an ad-hoc task with no routine parent) still drops, same as
  * `listTopLevelRuns`. A non-folded row (a plain deployment that got
  * triggered directly) always keeps its place and reports no routine

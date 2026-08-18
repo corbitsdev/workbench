@@ -152,8 +152,8 @@ describe("parseBlock", () => {
           { id: "name", label: "Name", input: "text", value: "v1.4" },
           { id: "notes", label: "Notes", input: "textarea", required: true },
           {
-            id: "channel",
-            label: "Channel",
+            id: "workbench",
+            label: "Workbench",
             input: "select",
             options: ["stable", "beta"],
             value: "beta",

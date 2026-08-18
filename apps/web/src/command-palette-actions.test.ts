@@ -28,7 +28,7 @@ function json(body: unknown, status = 200): Response {
 /**
  * Stubs the two calls `createAgentAndLaunch` makes: the account's
  * deployed definitions (finds the seeded `assistant`) and `POST
- * /channels` (mints the workbench). Every "new-channel"/"new-agent" test
+ * /workbenches` (mints the workbench). Every "new-workbench"/"new-agent" test
  * below wires this so `requestNewWorkbench` resolves for real instead of
  * hitting a real network call.
  */
@@ -53,7 +53,7 @@ function stubInstantCreate(): void {
         }),
       );
     }
-    if (path.endsWith("/chat/channels")) {
+    if (path.endsWith("/chat/workbenches")) {
       return Promise.resolve(
         json({
           id: "chan_new",
@@ -127,20 +127,20 @@ describe("ACTION_COMMANDS", () => {
 });
 
 describe("runActionCommand", () => {
-  test("new-channel mints a fresh Myra workbench directly — no dialog, no pending flag (CL-6138)", async () => {
+  test("new-workbench mints a fresh Myra workbench directly — no dialog, no pending flag (CL-6138)", async () => {
     stubInstantCreate();
     const { ctx, navigated, dispatched } = context({ path: "/library" });
-    await runActionCommand("new-channel", ctx);
+    await runActionCommand("new-workbench", ctx);
     expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/c/chan_new"]);
+    expect(navigated).toEqual(["/w/chan_new"]);
   });
 
-  test("new-agent is the same one creation verb as new-channel — mints a fresh Myra workbench directly", async () => {
+  test("new-agent is the same one creation verb as new-workbench — mints a fresh Myra workbench directly", async () => {
     stubInstantCreate();
-    const { ctx, navigated, dispatched } = context({ path: "/c/abc" });
+    const { ctx, navigated, dispatched } = context({ path: "/w/abc" });
     await runActionCommand("new-agent", ctx);
     expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/c/chan_new"]);
+    expect(navigated).toEqual(["/w/chan_new"]);
   });
 
   test("requestNewWorkbench does nothing without a selected bench", async () => {
@@ -192,10 +192,10 @@ describe("runActionCommand", () => {
     expect(canvasClosed()).toBe(true);
   });
 
-  test("go-channels navigates to /c", async () => {
+  test("go-workbenches navigates to /c", async () => {
     const { ctx, navigated } = context({ path: "/agents" });
-    await runActionCommand("go-channels", ctx);
-    expect(navigated).toEqual(["/c"]);
+    await runActionCommand("go-workbenches", ctx);
+    expect(navigated).toEqual(["/w"]);
   });
 
   test("go-insights navigates to /insights", async () => {

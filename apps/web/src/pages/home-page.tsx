@@ -4,20 +4,20 @@
 // `instant-agent-create.ts` gives every other "+ New workbench" control, so
 // a fresh bench's very first workbench comes from the exact same path as
 // every one after it. A bench that already has one or more lands in (or
-// creates) the Myra channel in the main stage, unchanged. Home as a
+// creates) the Myra workbench in the main stage, unchanged. Home as a
 // dashboard does not earn its keep — `/` only exists as this hop onto
-// `/c/:channelId`. Deep links to other pages are unchanged.
+// `/w/:workbenchId`. Deep links to other pages are unchanged.
 
 import { BootScreen, Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { listAllChannels } from "@corbits/chat-ui";
+import { listAllWorkbenches } from "@corbits/chat-ui";
 
 import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
+import { workbenchPath } from "../workbench-path";
 import { createAgentAndLaunch } from "../instant-agent-create";
-import { ensureMyraChannel } from "../myra-channel";
+import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
 
 type LandState =
@@ -34,10 +34,10 @@ export function HomeRoute() {
     if (selectedTenantId === null) return;
     let cancelled = false;
     setState({ kind: "checking" });
-    void listAllChannels(selectedTenantId).then(
-      (channels) => {
+    void listAllWorkbenches(selectedTenantId).then(
+      (workbenches) => {
         if (cancelled) return;
-        if (channels.length === 0) {
+        if (workbenches.length === 0) {
           createAgentAndLaunch(selectedTenantId, navigate).catch(
             (cause: unknown) => {
               if (cancelled) return;
@@ -49,10 +49,10 @@ export function HomeRoute() {
           );
           return;
         }
-        void ensureMyraChannel(selectedTenantId).then((result) => {
+        void ensureMyraWorkbench(selectedTenantId).then((result) => {
           if (cancelled) return;
           if (result.kind === "ready") {
-            navigate(channelPath(result.channelId));
+            navigate(workbenchPath(result.workbenchId));
             return;
           }
           setState({ kind: "error", message: result.message });

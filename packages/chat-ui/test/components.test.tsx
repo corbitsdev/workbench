@@ -17,7 +17,7 @@ import {
   TypingIndicator,
 } from "../src/typing-indicator";
 
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
 
@@ -30,7 +30,7 @@ const composerSlashHandlers = {
   onCreateRoutineInSpace: () => {},
 };
 
-describe("ChannelTimeline", () => {
+describe("WorkbenchTimeline", () => {
   const items: MessageItem[] = [
     {
       id: "m1",
@@ -60,7 +60,7 @@ describe("ChannelTimeline", () => {
   ];
 
   test("renders a text part as a bubble", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
     expect(markup).toContain("hello there");
   });
 
@@ -73,11 +73,13 @@ describe("ChannelTimeline", () => {
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Researcher");
   });
 
-  test("renders the tenant-monogram badge when the sender carries shared-channel tenant context", () => {
+  test("renders the tenant-monogram badge when the sender carries shared-workbench tenant context", () => {
     const withSender: MessageItem[] = [
       {
         id: "m4b",
@@ -92,7 +94,9 @@ describe("ChannelTimeline", () => {
         },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("chat-sender-tenant-badge");
     expect(markup).toContain("BC");
   });
@@ -106,7 +110,9 @@ describe("ChannelTimeline", () => {
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).not.toContain("chat-sender-tenant-badge");
   });
 
@@ -119,7 +125,9 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_a1b2c3@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -133,7 +141,9 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "ins_unknown1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -148,7 +158,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={withSender}
         participants={[
           { address: "ins_cd03d8e3@agents.example", handle: "echo" },
@@ -170,7 +180,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={withSender}
         participants={[{ address: "ins_myra1@agents.example", handle: "myra" }]}
       />,
@@ -191,7 +201,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={withSender}
         currentUser={{ principalId: "prn_self1" }}
       />,
@@ -201,7 +211,7 @@ describe("ChannelTimeline", () => {
   });
 
   test("renders an event part as a friendly humanized line", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
     expect(markup).toContain("member joined");
     expect(markup).not.toContain("member.joined");
   });
@@ -222,7 +232,7 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withFile} />);
     expect(markup).toContain("report.pdf");
     expect(markup).toContain("application/pdf");
     expect(markup).toContain("Attachment");
@@ -247,7 +257,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+      <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
     );
     expect(markup).toMatch(
       /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
@@ -271,7 +281,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+      <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
     );
     expect(markup).toContain("matrix.csv");
     expect(markup).not.toMatch(
@@ -295,7 +305,7 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withFile} />);
     expect(markup).toMatch(
       /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
     );
@@ -317,7 +327,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={bothSenders}
         currentUser={{ principalId: "prn_self1" }}
       />,
@@ -341,7 +351,9 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={acrossDays} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={acrossDays} />,
+    );
     expect(markup).toContain("chat-day-divider");
   });
 
@@ -353,7 +365,7 @@ describe("ChannelTimeline", () => {
         parts: [
           {
             kind: "event",
-            event: "channel.agent-joined",
+            event: "workbench.agent-joined",
             data: {
               address: "ins_newagent1@agents.example",
               definitionId: "wfd_echo",
@@ -365,7 +377,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={joinItems}
         participants={[
           { address: "ins_newagent1@agents.example", handle: "echo" },
@@ -378,7 +390,7 @@ describe("ChannelTimeline", () => {
   });
 
   test("renders any other part kind as a labeled fallback block, never the raw payload", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
     expect(markup).toContain("[tool-trace]");
     expect(markup).toContain("Unsupported content");
     expect(markup).not.toContain("search");
@@ -386,7 +398,7 @@ describe("ChannelTimeline", () => {
   });
 
   test("shows the empty timeline state with no messages", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={[]} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={[]} />);
     expect(markup).toContain("No messages yet");
   });
 
@@ -408,7 +420,7 @@ describe("ChannelTimeline", () => {
 
   test("offers Fix this connection on a classified failure reply when a handler is wired", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={classifiedFailureItems}
         onFixConnection={() => {}}
       />,
@@ -418,7 +430,7 @@ describe("ChannelTimeline", () => {
 
   test("renders Fix this connection as a react-ui outline button, not a bare link", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={classifiedFailureItems}
         onFixConnection={() => {}}
       />,
@@ -433,14 +445,14 @@ describe("ChannelTimeline", () => {
 
   test("offers nothing when no onFixConnection handler is wired, even on a classified reply", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline items={classifiedFailureItems} />,
+      <WorkbenchTimeline items={classifiedFailureItems} />,
     );
     expect(markup).not.toContain("Fix this connection");
   });
 
   test("offers nothing on an ordinary reply, even with a handler wired", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline items={items} onFixConnection={() => {}} />,
+      <WorkbenchTimeline items={items} onFixConnection={() => {}} />,
     );
     expect(markup).not.toContain("Fix this connection");
   });
@@ -517,7 +529,7 @@ describe("no raw identifiers on screen", () => {
         parts: [
           {
             kind: "event",
-            event: "channel.agent-joined",
+            event: "workbench.agent-joined",
             data: {
               address: "ins_cd03d8e3@agents.example",
               definitionId: "wfd_echo",
@@ -531,7 +543,7 @@ describe("no raw identifiers on screen", () => {
 
     const markup = [
       renderToStaticMarkup(
-        <ChannelTimeline
+        <WorkbenchTimeline
           items={messageItems}
           participants={participants}
           currentUser={{ principalId: "prn_teammate1" }}
@@ -558,7 +570,7 @@ describe("no raw identifiers on screen", () => {
 });
 
 describe("rowMenuLabels", () => {
-  test("offers Unpin for a pinned channel", () => {
+  test("offers Unpin for a pinned workbench", () => {
     expect(rowMenuLabels({ pinned: true })).toEqual([
       "Rename",
       "Unpin",
@@ -566,7 +578,7 @@ describe("rowMenuLabels", () => {
     ]);
   });
 
-  test("offers Pin for an unpinned channel", () => {
+  test("offers Pin for an unpinned workbench", () => {
     expect(rowMenuLabels({ pinned: false })).toEqual([
       "Rename",
       "Pin",

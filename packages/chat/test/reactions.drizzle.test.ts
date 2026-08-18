@@ -7,7 +7,7 @@
 // `await` between the has/set, so two "concurrent" calls just run
 // sequentially on the JS event loop). This exercises the real
 // `createDrizzleReactionStore` path, where two concurrent toggles for
-// the same (tenant, channel, message, emoji, principal) really do race
+// the same (tenant, workbench, message, emoji, principal) really do race
 // at the database: proves the fix (`INSERT ... ON CONFLICT DO NOTHING`,
 // never select-then-branch) never throws a raw PK-violation and always
 // leaves a consistent, non-crashed final state.
@@ -30,7 +30,7 @@ const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
 const TENANT = "tnt_1";
-const CHANNEL = "run_channel1";
+const WORKBENCH = "run_workbench1";
 
 describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
   const scratchUrl = scratchUrlFor(
@@ -78,7 +78,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
       const store = createDrizzleReactionStore(drizzle(sql));
       const input = {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m_race",
         emoji: "👍",
         principalId: "prn_alice",
@@ -96,7 +96,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
       const outcomes = [first.added, second.added].sort();
       expect(outcomes).toEqual([false, true]);
 
-      const rows = await store.listReactionsForMessages(TENANT, CHANNEL, [
+      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
         "m_race",
       ]);
       expect(rows).toHaveLength(0);
@@ -115,7 +115,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
         principals.map((principalId) =>
           store.toggleReaction({
             tenantId: TENANT,
-            channelId: CHANNEL,
+            workbenchId: WORKBENCH,
             messageId: "m_race_multi",
             emoji: "🚀",
             principalId,
@@ -124,7 +124,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
       );
       expect(results.every((result) => result.added)).toBe(true);
 
-      const rows = await store.listReactionsForMessages(TENANT, CHANNEL, [
+      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
         "m_race_multi",
       ]);
       expect(rows).toHaveLength(5);

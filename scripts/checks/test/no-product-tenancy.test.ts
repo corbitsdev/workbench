@@ -50,11 +50,11 @@ test("allowlisted product schema files pass at their max count", () => {
     {
       relPath: "packages/chat/src/schema.ts",
       contents: [
-        `export const a = chatSchema.table("channel_settings", {});`,
+        `export const a = chatSchema.table("workbench_settings", {});`,
         `export const bench = chatSchema.table("chat_bench_settings", {});`,
-        `export const b = chatSchema.table("channel_read_state", {});`,
-        `export const c = chatSchema.table("channel_launch", {});`,
-        `export const d = chatSchema.table("channel_tenancy", {});`,
+        `export const b = chatSchema.table("workbench_read_state", {});`,
+        `export const c = chatSchema.table("workbench_launch", {});`,
+        `export const d = chatSchema.table("workbench_tenancy", {});`,
       ].join("\n"),
     },
     {

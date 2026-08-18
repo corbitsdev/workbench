@@ -7,13 +7,13 @@ function fakeStore(existing: Record<string, unknown>) {
   return {
     updates,
     store: {
-      getChannelSettings: async () => ({
+      getWorkbenchSettings: async () => ({
         tenantId: "ten_1",
-        channelId: "chn_1",
-        kind: "channel",
+        workbenchId: "chn_1",
+        kind: "workbench",
         settings: existing,
       }),
-      updateChannelSettings: async (input: {
+      updateWorkbenchSettings: async (input: {
         settings: Record<string, unknown>;
       }) => {
         updates.push(input);
@@ -24,7 +24,7 @@ function fakeStore(existing: Record<string, unknown>) {
 }
 
 describe("joinRunParticipant", () => {
-  test("appends the run address as a channel participant, keeping the others", async () => {
+  test("appends the run address as a workbench participant, keeping the others", async () => {
     const { store, updates } = fakeStore({
       "chat/participants": [{ address: "wfr_myra@acme.test", handle: "myra" }],
       "chat/name": "GTM",
@@ -33,7 +33,7 @@ describe("joinRunParticipant", () => {
       { store: store as never },
       {
         tenantId: "ten_1",
-        channelId: "chn_1",
+        workbenchId: "chn_1",
         principalId: "usr_1",
         address: "wfr_run@acme.test",
         handle: "daily-digest",
@@ -52,10 +52,10 @@ describe("joinRunParticipant", () => {
     ]);
   });
 
-  test("throws when the channel does not exist in the tenant", async () => {
+  test("throws when the workbench does not exist in the tenant", async () => {
     const store = {
-      getChannelSettings: async () => undefined,
-      updateChannelSettings: async () => {
+      getWorkbenchSettings: async () => undefined,
+      updateWorkbenchSettings: async () => {
         throw new Error("must not be called");
       },
     };
@@ -64,7 +64,7 @@ describe("joinRunParticipant", () => {
         { store: store as never },
         {
           tenantId: "ten_1",
-          channelId: "chn_missing",
+          workbenchId: "chn_missing",
           principalId: "usr_1",
           address: "wfr_run@acme.test",
           handle: "x",

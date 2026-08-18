@@ -145,4 +145,4 @@ that — it only needs to reply with one clean markdown brief.
 See [`workflows/README.md`](../README.md#status-note) for what
 registration/automatable/seeded mean — this one is `automatable: true`
 but not seeded, since it needs real Granola/Linear credentials to be
-useful, unlike `channel-digest`.
+useful, unlike `workbench-digest`.

@@ -55,7 +55,7 @@ function buildDeps(
       stepCount: 1,
       resultMailId: null,
       plannerRunId: null,
-      channelId: null,
+      workbenchId: null,
       createdAt: new Date(),
       completedAt: null,
     }),

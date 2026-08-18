@@ -1,31 +1,31 @@
-// Thread identity for channels. Messages remain platform mail; this
+// Thread identity for workbenches. Messages remain platform mail; this
 // module owns which thread a message belongs to, auto-opens reply
 // threads on first reply, and creates delivery threads for routine
 // run deliveries.
 //
-// Platform mail `MailContent.replyTo` still carries a *channel* id for
+// Platform mail `MailContent.replyTo` still carries a *workbench* id for
 // mention fan-out (see codec.ts). Message-id reply correlation is a
 // workbench concern here — do not fork Interchange mail to change that.
 
 import { and, eq, asc } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { channelThreadMessages, channelThreads } from "./schema";
+import { workbenchThreadMessages, workbenchThreads } from "./schema";
 
 export type ThreadKind = "root" | "reply" | "delivery";
 
 /**
- * Two levels, stop: channel → thread → sub-thread, no unbounded
+ * Two levels, stop: workbench → thread → sub-thread, no unbounded
  * nesting (owner ruling, CL-5908). `parentThreadId` is the thread this
  * one hangs directly off — null for the root thread, the root
  * thread's id for a depth-1 thread, and a depth-1 thread's id for a
  * depth-2 sub-thread. A depth-2 thread's id never appears as another
  * thread's `parentThreadId` — see `resolveThreadAnchor`.
  */
-export type ChannelThread = {
+export type WorkbenchThread = {
   readonly id: string;
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly kind: ThreadKind;
   readonly parentMessageId: string | null;
   readonly parentThreadId: string | null;
@@ -61,8 +61,8 @@ export type ThreadAnchor = {
  * root thread if the message isn't assigned to any thread yet).
  */
 export function resolveThreadAnchor(
-  root: ChannelThread,
-  container: ChannelThread,
+  root: WorkbenchThread,
+  container: WorkbenchThread,
 ): ThreadAnchor {
   if (container.id === root.id) {
     return { parentThreadId: root.id, blocked: false };
@@ -78,14 +78,14 @@ export function resolveThreadAnchor(
 
 export type CreateDeliveryThreadInput = {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly runRef: string;
   readonly title?: string;
 };
 
 export type OpenReplyThreadInput = {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly parentMessageId: string;
   readonly title?: string;
 };
@@ -97,41 +97,44 @@ export type ForkThreadInput = OpenReplyThreadInput;
 
 export type AssignMessageInput = {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly threadId: string;
   readonly messageId: string;
 };
 
 export interface ThreadStore {
-  ensureRootThread(tenantId: string, channelId: string): Promise<ChannelThread>;
+  ensureRootThread(
+    tenantId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchThread>;
   createDeliveryThread(
     input: CreateDeliveryThreadInput,
-  ): Promise<ChannelThread>;
+  ): Promise<WorkbenchThread>;
   /** Opens (or reuses) the depth-1 reply thread for a message. Throws
    * `ThreadDepthCapError` if the message already lives in a depth-2
    * sub-thread — a caller wanting the depth-cap-redirect behavior wants
    * `forkThread`, not this. */
-  openReplyThread(input: OpenReplyThreadInput): Promise<ChannelThread>;
+  openReplyThread(input: OpenReplyThreadInput): Promise<WorkbenchThread>;
   /** Opens (or reuses) a sub-thread rooted at a message, honoring the
    * two-level cap: forking from a message already inside a sub-thread
    * creates a sibling sub-thread under that sub-thread's parent rather
    * than a third level (CL-5948). Never throws for depth. */
-  forkThread(input: ForkThreadInput): Promise<ChannelThread>;
+  forkThread(input: ForkThreadInput): Promise<WorkbenchThread>;
   getThread(
     tenantId: string,
     threadId: string,
-  ): Promise<ChannelThread | undefined>;
+  ): Promise<WorkbenchThread | undefined>;
   listThreads(
     tenantId: string,
-    channelId: string,
-  ): Promise<readonly ChannelThread[]>;
+    workbenchId: string,
+  ): Promise<readonly WorkbenchThread[]>;
   assignMessage(input: AssignMessageInput): Promise<void>;
   listMessageIds(
     tenantId: string,
     threadId: string,
   ): Promise<readonly string[]>;
   /**
-   * Every membership row this channel has, as `messageId -> threadId`.
+   * Every membership row this workbench has, as `messageId -> threadId`.
    * A message with no row is absent rather than defaulted to the root
    * thread: the "root feed by default" contract belongs to whoever
    * reads a thread's messages (see the threads route in `./routes.ts`),
@@ -139,11 +142,11 @@ export interface ThreadStore {
    */
   listThreadAssignments(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
   ): Promise<ReadonlyMap<string, string>>;
   threadIdForMessage(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     messageId: string,
   ): Promise<string | undefined>;
 }
@@ -183,30 +186,33 @@ export function resolveTargetThread(args: {
 }
 
 export function createInMemoryThreadStore(): ThreadStore {
-  const threads = new Map<string, ChannelThread>();
-  const byChannel = new Map<string, string[]>();
+  const threads = new Map<string, WorkbenchThread>();
+  const byWorkbench = new Map<string, string[]>();
   const messageToThread = new Map<string, string>();
   const threadMessages = new Map<string, string[]>();
 
-  const channelKey = (tenantId: string, channelId: string) =>
-    `${tenantId}::${channelId}`;
-  const messageKey = (tenantId: string, channelId: string, messageId: string) =>
-    `${tenantId}::${channelId}::${messageId}`;
+  const workbenchKey = (tenantId: string, workbenchId: string) =>
+    `${tenantId}::${workbenchId}`;
+  const messageKey = (
+    tenantId: string,
+    workbenchId: string,
+    messageId: string,
+  ) => `${tenantId}::${workbenchId}::${messageId}`;
 
   async function ensureRootThread(
     tenantId: string,
-    channelId: string,
-  ): Promise<ChannelThread> {
-    const key = channelKey(tenantId, channelId);
-    const ids = byChannel.get(key) ?? [];
+    workbenchId: string,
+  ): Promise<WorkbenchThread> {
+    const key = workbenchKey(tenantId, workbenchId);
+    const ids = byWorkbench.get(key) ?? [];
     for (const id of ids) {
       const t = threads.get(id);
       if (t?.kind === "root") return t;
     }
-    const row: ChannelThread = {
+    const row: WorkbenchThread = {
       id: newThreadId(),
       tenantId,
-      channelId,
+      workbenchId,
       kind: "root",
       parentMessageId: null,
       parentThreadId: null,
@@ -215,19 +221,19 @@ export function createInMemoryThreadStore(): ThreadStore {
       createdAt: new Date(),
     };
     threads.set(row.id, row);
-    byChannel.set(key, [...ids, row.id]);
+    byWorkbench.set(key, [...ids, row.id]);
     return row;
   }
 
   /** The thread a message currently lives in, or `root` if unassigned. */
   async function containerThreadFor(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     parentMessageId: string,
-    root: ChannelThread,
-  ): Promise<ChannelThread> {
+    root: WorkbenchThread,
+  ): Promise<WorkbenchThread> {
     const containerId = messageToThread.get(
-      messageKey(tenantId, channelId, parentMessageId),
+      messageKey(tenantId, workbenchId, parentMessageId),
     );
     if (containerId === undefined) return root;
     return threads.get(containerId) ?? root;
@@ -236,10 +242,10 @@ export function createInMemoryThreadStore(): ThreadStore {
   async function anchoredReplyThread(
     input: OpenReplyThreadInput,
     mode: "reply" | "fork",
-  ): Promise<ChannelThread> {
-    const key = channelKey(input.tenantId, input.channelId);
-    const root = await ensureRootThread(input.tenantId, input.channelId);
-    const ids = byChannel.get(key) ?? [];
+  ): Promise<WorkbenchThread> {
+    const key = workbenchKey(input.tenantId, input.workbenchId);
+    const root = await ensureRootThread(input.tenantId, input.workbenchId);
+    const ids = byWorkbench.get(key) ?? [];
     for (const id of ids) {
       const t = threads.get(id);
       if (t?.kind === "reply" && t.parentMessageId === input.parentMessageId) {
@@ -248,16 +254,16 @@ export function createInMemoryThreadStore(): ThreadStore {
     }
     const container = await containerThreadFor(
       input.tenantId,
-      input.channelId,
+      input.workbenchId,
       input.parentMessageId,
       root,
     );
     const anchor = resolveThreadAnchor(root, container);
     if (anchor.blocked && mode === "reply") throw new ThreadDepthCapError();
-    const row: ChannelThread = {
+    const row: WorkbenchThread = {
       id: newThreadId(),
       tenantId: input.tenantId,
-      channelId: input.channelId,
+      workbenchId: input.workbenchId,
       kind: "reply",
       parentMessageId: input.parentMessageId,
       parentThreadId: anchor.parentThreadId,
@@ -266,7 +272,7 @@ export function createInMemoryThreadStore(): ThreadStore {
       createdAt: new Date(),
     };
     threads.set(row.id, row);
-    byChannel.set(key, [...ids, row.id]);
+    byWorkbench.set(key, [...ids, row.id]);
     return row;
   }
 
@@ -274,16 +280,16 @@ export function createInMemoryThreadStore(): ThreadStore {
     ensureRootThread,
 
     async createDeliveryThread(input) {
-      const key = channelKey(input.tenantId, input.channelId);
-      const ids = byChannel.get(key) ?? [];
+      const key = workbenchKey(input.tenantId, input.workbenchId);
+      const ids = byWorkbench.get(key) ?? [];
       for (const id of ids) {
         const t = threads.get(id);
         if (t?.kind === "delivery" && t.runRef === input.runRef) return t;
       }
-      const row: ChannelThread = {
+      const row: WorkbenchThread = {
         id: newThreadId(),
         tenantId: input.tenantId,
-        channelId: input.channelId,
+        workbenchId: input.workbenchId,
         kind: "delivery",
         parentMessageId: null,
         parentThreadId: null,
@@ -292,7 +298,7 @@ export function createInMemoryThreadStore(): ThreadStore {
         createdAt: new Date(),
       };
       threads.set(row.id, row);
-      byChannel.set(key, [...ids, row.id]);
+      byWorkbench.set(key, [...ids, row.id]);
       return row;
     },
 
@@ -305,8 +311,8 @@ export function createInMemoryThreadStore(): ThreadStore {
       return t;
     },
 
-    async listThreads(tenantId, channelId) {
-      const ids = byChannel.get(channelKey(tenantId, channelId)) ?? [];
+    async listThreads(tenantId, workbenchId) {
+      const ids = byWorkbench.get(workbenchKey(tenantId, workbenchId)) ?? [];
       return ids
         .flatMap((id) => {
           const t = threads.get(id);
@@ -317,7 +323,7 @@ export function createInMemoryThreadStore(): ThreadStore {
 
     async assignMessage(input) {
       messageToThread.set(
-        messageKey(input.tenantId, input.channelId, input.messageId),
+        messageKey(input.tenantId, input.workbenchId, input.messageId),
         input.threadId,
       );
       const list = threadMessages.get(input.threadId) ?? [];
@@ -332,12 +338,12 @@ export function createInMemoryThreadStore(): ThreadStore {
       return threadMessages.get(threadId) ?? [];
     },
 
-    async threadIdForMessage(tenantId, channelId, messageId) {
-      return messageToThread.get(messageKey(tenantId, channelId, messageId));
+    async threadIdForMessage(tenantId, workbenchId, messageId) {
+      return messageToThread.get(messageKey(tenantId, workbenchId, messageId));
     },
 
-    async listThreadAssignments(tenantId, channelId) {
-      const prefix = `${channelKey(tenantId, channelId)}::`;
+    async listThreadAssignments(tenantId, workbenchId) {
+      const prefix = `${workbenchKey(tenantId, workbenchId)}::`;
       const assignments = new Map<string, string>();
       for (const [key, threadId] of messageToThread) {
         if (!key.startsWith(prefix)) continue;
@@ -360,11 +366,13 @@ function requireReturningRow<T>(rows: readonly T[], what: string): T {
   return row;
 }
 
-function mapThreadRow(row: typeof channelThreads.$inferSelect): ChannelThread {
+function mapThreadRow(
+  row: typeof workbenchThreads.$inferSelect,
+): WorkbenchThread {
   return {
     id: row.id,
     tenantId: row.tenantId,
-    channelId: row.channelId,
+    workbenchId: row.workbenchId,
     kind: asKind(row.kind),
     parentMessageId: row.parentMessageId ?? null,
     parentThreadId: row.parentThreadId ?? null,
@@ -379,27 +387,27 @@ export function createDrizzleThreadStore<
 >(db: ThreadDb<TSchema>): ThreadStore {
   async function ensureRootThread(
     tenantId: string,
-    channelId: string,
-  ): Promise<ChannelThread> {
+    workbenchId: string,
+  ): Promise<WorkbenchThread> {
     const existing = await db
       .select()
-      .from(channelThreads)
+      .from(workbenchThreads)
       .where(
         and(
-          eq(channelThreads.tenantId, tenantId),
-          eq(channelThreads.channelId, channelId),
-          eq(channelThreads.kind, "root"),
+          eq(workbenchThreads.tenantId, tenantId),
+          eq(workbenchThreads.workbenchId, workbenchId),
+          eq(workbenchThreads.kind, "root"),
         ),
       )
       .limit(1);
     if (existing[0]) return mapThreadRow(existing[0]);
     const id = newThreadId();
     const inserted = await db
-      .insert(channelThreads)
+      .insert(workbenchThreads)
       .values({
         id,
         tenantId,
-        channelId,
+        workbenchId,
         kind: "root",
         parentMessageId: null,
         parentThreadId: null,
@@ -413,18 +421,18 @@ export function createDrizzleThreadStore<
   /** The thread a message currently lives in, or `root` if unassigned. */
   async function containerThreadFor(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     parentMessageId: string,
-    root: ChannelThread,
-  ): Promise<ChannelThread> {
+    root: WorkbenchThread,
+  ): Promise<WorkbenchThread> {
     const rows = await db
-      .select({ threadId: channelThreadMessages.threadId })
-      .from(channelThreadMessages)
+      .select({ threadId: workbenchThreadMessages.threadId })
+      .from(workbenchThreadMessages)
       .where(
         and(
-          eq(channelThreadMessages.tenantId, tenantId),
-          eq(channelThreadMessages.channelId, channelId),
-          eq(channelThreadMessages.messageId, parentMessageId),
+          eq(workbenchThreadMessages.tenantId, tenantId),
+          eq(workbenchThreadMessages.workbenchId, workbenchId),
+          eq(workbenchThreadMessages.messageId, parentMessageId),
         ),
       )
       .limit(1);
@@ -432,11 +440,11 @@ export function createDrizzleThreadStore<
     if (containerId === undefined) return root;
     const containerRows = await db
       .select()
-      .from(channelThreads)
+      .from(workbenchThreads)
       .where(
         and(
-          eq(channelThreads.tenantId, tenantId),
-          eq(channelThreads.id, containerId),
+          eq(workbenchThreads.tenantId, tenantId),
+          eq(workbenchThreads.id, containerId),
         ),
       )
       .limit(1);
@@ -446,24 +454,24 @@ export function createDrizzleThreadStore<
   async function anchoredReplyThread(
     input: OpenReplyThreadInput,
     mode: "reply" | "fork",
-  ): Promise<ChannelThread> {
+  ): Promise<WorkbenchThread> {
     const existing = await db
       .select()
-      .from(channelThreads)
+      .from(workbenchThreads)
       .where(
         and(
-          eq(channelThreads.tenantId, input.tenantId),
-          eq(channelThreads.channelId, input.channelId),
-          eq(channelThreads.kind, "reply"),
-          eq(channelThreads.parentMessageId, input.parentMessageId),
+          eq(workbenchThreads.tenantId, input.tenantId),
+          eq(workbenchThreads.workbenchId, input.workbenchId),
+          eq(workbenchThreads.kind, "reply"),
+          eq(workbenchThreads.parentMessageId, input.parentMessageId),
         ),
       )
       .limit(1);
     if (existing[0]) return mapThreadRow(existing[0]);
-    const root = await ensureRootThread(input.tenantId, input.channelId);
+    const root = await ensureRootThread(input.tenantId, input.workbenchId);
     const container = await containerThreadFor(
       input.tenantId,
-      input.channelId,
+      input.workbenchId,
       input.parentMessageId,
       root,
     );
@@ -471,11 +479,11 @@ export function createDrizzleThreadStore<
     if (anchor.blocked && mode === "reply") throw new ThreadDepthCapError();
     const id = newThreadId();
     const inserted = await db
-      .insert(channelThreads)
+      .insert(workbenchThreads)
       .values({
         id,
         tenantId: input.tenantId,
-        channelId: input.channelId,
+        workbenchId: input.workbenchId,
         kind: "reply",
         parentMessageId: input.parentMessageId,
         parentThreadId: anchor.parentThreadId,
@@ -492,24 +500,24 @@ export function createDrizzleThreadStore<
     async createDeliveryThread(input) {
       const existing = await db
         .select()
-        .from(channelThreads)
+        .from(workbenchThreads)
         .where(
           and(
-            eq(channelThreads.tenantId, input.tenantId),
-            eq(channelThreads.channelId, input.channelId),
-            eq(channelThreads.kind, "delivery"),
-            eq(channelThreads.runRef, input.runRef),
+            eq(workbenchThreads.tenantId, input.tenantId),
+            eq(workbenchThreads.workbenchId, input.workbenchId),
+            eq(workbenchThreads.kind, "delivery"),
+            eq(workbenchThreads.runRef, input.runRef),
           ),
         )
         .limit(1);
       if (existing[0]) return mapThreadRow(existing[0]);
       const id = newThreadId();
       const inserted = await db
-        .insert(channelThreads)
+        .insert(workbenchThreads)
         .values({
           id,
           tenantId: input.tenantId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           kind: "delivery",
           parentMessageId: null,
           parentThreadId: null,
@@ -526,37 +534,37 @@ export function createDrizzleThreadStore<
     async getThread(tenantId, threadId) {
       const rows = await db
         .select()
-        .from(channelThreads)
+        .from(workbenchThreads)
         .where(
           and(
-            eq(channelThreads.tenantId, tenantId),
-            eq(channelThreads.id, threadId),
+            eq(workbenchThreads.tenantId, tenantId),
+            eq(workbenchThreads.id, threadId),
           ),
         )
         .limit(1);
       return rows[0] ? mapThreadRow(rows[0]) : undefined;
     },
 
-    async listThreads(tenantId, channelId) {
+    async listThreads(tenantId, workbenchId) {
       const rows = await db
         .select()
-        .from(channelThreads)
+        .from(workbenchThreads)
         .where(
           and(
-            eq(channelThreads.tenantId, tenantId),
-            eq(channelThreads.channelId, channelId),
+            eq(workbenchThreads.tenantId, tenantId),
+            eq(workbenchThreads.workbenchId, workbenchId),
           ),
         )
-        .orderBy(asc(channelThreads.createdAt));
+        .orderBy(asc(workbenchThreads.createdAt));
       return rows.map(mapThreadRow);
     },
 
     async assignMessage(input) {
       await db
-        .insert(channelThreadMessages)
+        .insert(workbenchThreadMessages)
         .values({
           tenantId: input.tenantId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           threadId: input.threadId,
           messageId: input.messageId,
         })
@@ -565,44 +573,44 @@ export function createDrizzleThreadStore<
 
     async listMessageIds(tenantId, threadId) {
       const rows = await db
-        .select({ messageId: channelThreadMessages.messageId })
-        .from(channelThreadMessages)
+        .select({ messageId: workbenchThreadMessages.messageId })
+        .from(workbenchThreadMessages)
         .where(
           and(
-            eq(channelThreadMessages.tenantId, tenantId),
-            eq(channelThreadMessages.threadId, threadId),
+            eq(workbenchThreadMessages.tenantId, tenantId),
+            eq(workbenchThreadMessages.threadId, threadId),
           ),
         )
-        .orderBy(asc(channelThreadMessages.createdAt));
+        .orderBy(asc(workbenchThreadMessages.createdAt));
       return rows.map((r) => r.messageId);
     },
 
-    async threadIdForMessage(tenantId, channelId, messageId) {
+    async threadIdForMessage(tenantId, workbenchId, messageId) {
       const rows = await db
-        .select({ threadId: channelThreadMessages.threadId })
-        .from(channelThreadMessages)
+        .select({ threadId: workbenchThreadMessages.threadId })
+        .from(workbenchThreadMessages)
         .where(
           and(
-            eq(channelThreadMessages.tenantId, tenantId),
-            eq(channelThreadMessages.channelId, channelId),
-            eq(channelThreadMessages.messageId, messageId),
+            eq(workbenchThreadMessages.tenantId, tenantId),
+            eq(workbenchThreadMessages.workbenchId, workbenchId),
+            eq(workbenchThreadMessages.messageId, messageId),
           ),
         )
         .limit(1);
       return rows[0]?.threadId;
     },
 
-    async listThreadAssignments(tenantId, channelId) {
+    async listThreadAssignments(tenantId, workbenchId) {
       const rows = await db
         .select({
-          messageId: channelThreadMessages.messageId,
-          threadId: channelThreadMessages.threadId,
+          messageId: workbenchThreadMessages.messageId,
+          threadId: workbenchThreadMessages.threadId,
         })
-        .from(channelThreadMessages)
+        .from(workbenchThreadMessages)
         .where(
           and(
-            eq(channelThreadMessages.tenantId, tenantId),
-            eq(channelThreadMessages.channelId, channelId),
+            eq(workbenchThreadMessages.tenantId, tenantId),
+            eq(workbenchThreadMessages.workbenchId, workbenchId),
           ),
         );
       return new Map(rows.map((row) => [row.messageId, row.threadId]));
@@ -612,12 +620,12 @@ export function createDrizzleThreadStore<
 
 /**
  * Contract routines delivery uses: create (or reuse) a delivery thread
- * for a run in a channel, then the launcher posts into that thread.
+ * for a run in a workbench, then the launcher posts into that thread.
  */
 export async function createDeliveryThread(
   store: ThreadStore,
   input: CreateDeliveryThreadInput,
-): Promise<ChannelThread> {
-  await store.ensureRootThread(input.tenantId, input.channelId);
+): Promise<WorkbenchThread> {
+  await store.ensureRootThread(input.tenantId, input.workbenchId);
   return store.createDeliveryThread(input);
 }

@@ -1,5 +1,5 @@
 // Selectable card grid used by guided dialogs (grant effect, credential
-// provider, workbench type, channel kind). Mirrors the KindCardGrid shape
+// provider, workbench type, workbench kind). Mirrors the KindCardGrid shape
 // from `@corbits/react-ui` so the dialogs keep working when the pin lags
 // the component export — styling lives in styles.css.
 

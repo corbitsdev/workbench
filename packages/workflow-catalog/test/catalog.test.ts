@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 
 import {
-  deliveryChannelRequiredForWorkflowName,
+  deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
   RECURRING_TASK_ASSET_NAME,
   validateTriggerFieldsInput,
@@ -15,8 +15,8 @@ import {
 } from "../src/index";
 
 describe("workflow catalog", () => {
-  test("marks channel-digest, heartbeat, and morning-brief automatable, not echo or assistant", () => {
-    expect(isAutomatableWorkflowName("channel-digest")).toBe(true);
+  test("marks workbench-digest, heartbeat, and morning-brief automatable, not echo or assistant", () => {
+    expect(isAutomatableWorkflowName("workbench-digest")).toBe(true);
     expect(isAutomatableWorkflowName("heartbeat")).toBe(true);
     expect(isAutomatableWorkflowName("morning-brief")).toBe(true);
     expect(isAutomatableWorkflowName("echo")).toBe(false);
@@ -65,14 +65,14 @@ describe("workflow catalog", () => {
     );
   });
 
-  test("rejects agent handles and channel-host names as automatable", () => {
+  test("rejects agent handles and workbench-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
-    expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);
+    expect(isAutomatableWorkflowName("workbench-host-abc")).toBe(false);
     expect(isAutomatableWorkflowName("wfd_deadbeef")).toBe(false);
   });
 
   test("prefers catalog display names over raw asset names", () => {
-    expect(workflowDisplayName("channel-digest")).toBe("Channel digest");
+    expect(workflowDisplayName("workbench-digest")).toBe("Workbench digest");
     expect(workflowDisplayName("heartbeat")).toBe("Heartbeat");
     expect(workflowDisplayName("morning-brief")).toBe("Morning brief");
     expect(workflowDisplayName("echo")).toBe("Echo");
@@ -106,7 +106,7 @@ describe("workflow catalog", () => {
   describe("deliveryMode", () => {
     test("every catalog entry declares a delivery mode", () => {
       for (const entry of WORKFLOW_CATALOG) {
-        expect(["channel", "inbox"]).toContain(entry.deliveryMode);
+        expect(["workbench", "inbox"]).toContain(entry.deliveryMode);
       }
     });
 
@@ -119,18 +119,18 @@ describe("workflow catalog", () => {
       ]);
     });
 
-    test("deliveryChannelRequiredForWorkflowName is false only for recurring-task", () => {
+    test("deliveryWorkbenchRequiredForWorkflowName is false only for recurring-task", () => {
       expect(
-        deliveryChannelRequiredForWorkflowName(RECURRING_TASK_ASSET_NAME),
+        deliveryWorkbenchRequiredForWorkflowName(RECURRING_TASK_ASSET_NAME),
       ).toBe(false);
-      expect(deliveryChannelRequiredForWorkflowName("channel-digest")).toBe(
+      expect(deliveryWorkbenchRequiredForWorkflowName("workbench-digest")).toBe(
         true,
       );
-      expect(deliveryChannelRequiredForWorkflowName("heartbeat")).toBe(true);
+      expect(deliveryWorkbenchRequiredForWorkflowName("heartbeat")).toBe(true);
     });
 
-    test("an unknown workflow name defaults to channel-required", () => {
-      expect(deliveryChannelRequiredForWorkflowName("unknown-workflow")).toBe(
+    test("an unknown workflow name defaults to workbench-required", () => {
+      expect(deliveryWorkbenchRequiredForWorkflowName("unknown-workflow")).toBe(
         true,
       );
     });
@@ -200,7 +200,9 @@ describe("workflow catalog", () => {
     expect(byAssetName.get("echo")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("assistant")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("heartbeat")?.requiredConnections).toEqual([]);
-    expect(byAssetName.get("channel-digest")?.requiredConnections).toEqual([]);
+    expect(byAssetName.get("workbench-digest")?.requiredConnections).toEqual(
+      [],
+    );
   });
 
   describe("triggerFields", () => {
@@ -287,13 +289,13 @@ describe("workflow catalog", () => {
     });
 
     test("workflows with no named trigger inputs declare no triggerFields", () => {
-      // Heartbeat and channel-digest take no human-supplied content at
+      // Heartbeat and workbench-digest take no human-supplied content at
       // create time — heartbeat ignores its trigger entirely, and
-      // channel-digest's content is computed server-side by the scheduler,
+      // workbench-digest's content is computed server-side by the scheduler,
       // not typed in by a person.
       expect(workflowCatalogEntry("heartbeat")?.triggerFields).toBeUndefined();
       expect(
-        workflowCatalogEntry("channel-digest")?.triggerFields,
+        workflowCatalogEntry("workbench-digest")?.triggerFields,
       ).toBeUndefined();
     });
   });

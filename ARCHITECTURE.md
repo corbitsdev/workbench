@@ -63,7 +63,7 @@ parent's current state.
 
 See [docs/TENANCY.md](docs/TENANCY.md) for the full contract, including
 the workbench-owned discriminator that distinguishes a "real" bench from a
-channel's own child tenancy (native tenants carry no `kind` field), and
+workbench's own child tenancy (native tenants carry no `kind` field), and
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the term mapping between product
 nouns and platform primitives.
 
@@ -72,7 +72,7 @@ nouns and platform primitives.
 A workbench is not a parallel messaging system bolted onto Interchange —
 it is an ordinary folded, credential-free interactive workflow run whose
 only job is to hold a mailbox. Creating a workbench launches that run (its
-**channel host**, sometimes called its anchor); the host's system prompt
+**workbench host**, sometimes called its anchor); the host's system prompt
 forbids it from ever replying or acting — it exists purely to give the
 conversation a durable, listable mailbox. Reading that mailbox back in
 order is the conversation's timeline.
@@ -88,7 +88,7 @@ participant model built on top of this run. Per-workbench settings (name,
 participants, capacity, connector overrides, notification prefs — see
 PRODUCT.md's "Workbench settings") are composition on top of this same
 run and its tenant, not a separate object; the surface lives in
-`packages/chat-ui`'s `channel-settings`.
+`packages/chat-ui`'s `workbench-settings`.
 
 **Direction (CL-6093):** today a workbench's run is "settle-and-wake" —
 the anchor run settles between deliveries and wakes on the next mail
@@ -104,12 +104,12 @@ one path, deltas to pixels:
    `vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`) carries those
    events out of the run.
 3. `packages/chat/src/platform-adapter.ts` subscribes to that stream and
-   wraps each event as a `chat.agent` payload; `packages/chat/src/channel-events.ts`
+   wraps each event as a `chat.agent` payload; `packages/chat/src/workbench-events.ts`
    merges it with in-process ephemeral events (typing, settings changes)
-   onto one SSE stream, served from `GET /channels/:id/stream`
+   onto one SSE stream, served from `GET /workbenches/:id/stream`
    (`packages/chat/src/routes.ts`), re-checking access on every delivered
    event.
-4. On the web, `packages/chat-ui/src/use-channel-stream.ts` holds the
+4. On the web, `packages/chat-ui/src/use-workbench-stream.ts` holds the
    `EventSource` (with backoff reconnect and a polling fallback), and
    `packages/chat-ui/src/streaming-reply.ts` narrows `chat.agent` payloads
    to `inference.text.delta` and reduces them into one growing string.
@@ -148,7 +148,7 @@ does not maintain a parallel scheduler.
 - [docs/TENANCY.md](docs/TENANCY.md) — tenancy contracts and Interchange
   gaps
 - [docs/CHAT.md](docs/CHAT.md) — the conversation/message/thread model
-- [docs/channel-tenancy.md](docs/channel-tenancy.md) — channel tenant
+- [docs/workbench-tenancy.md](docs/workbench-tenancy.md) — workbench tenant
   mint, listing, and move mechanics
 - [docs/needs-you.md](docs/needs-you.md) — the approval surfacing model
 - [VENDORED.md](VENDORED.md) — the vendoring ledger for `@intx/*`

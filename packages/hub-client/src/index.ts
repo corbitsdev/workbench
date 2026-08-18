@@ -37,13 +37,13 @@ export {
 } from "./seed";
 export {
   CATALOG_SEEDS,
-  deriveChannelHostInferencePreferences,
+  deriveWorkbenchHostInferencePreferences,
 } from "./catalog-seed-data";
 export type {
   CatalogModelSpec,
   CatalogProviderSeed,
   CatalogProviderSpec,
-  ChannelHostInferencePreference,
+  WorkbenchHostInferencePreference,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
 export {

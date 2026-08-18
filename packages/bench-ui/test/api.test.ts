@@ -10,7 +10,7 @@ import {
   BenchApiError,
   createBench,
   inviteMember,
-  listChannelTenantIds,
+  listWorkbenchTenantIds,
   listMembers,
   listMyMemberships,
 } from "../src/api";
@@ -177,11 +177,11 @@ describe("inviteMember", () => {
   });
 });
 
-describe("listChannelTenantIds", () => {
+describe("listWorkbenchTenantIds", () => {
   test("posts the tenant ids and returns them as a set", async () => {
-    const calls = stubFetch(() => json({ channelTenantIds: ["tnt_2"] }));
-    const result = await listChannelTenantIds(["tnt_1", "tnt_2"]);
-    expect(calls[0]?.path).toBe("/api/channel-tenancies/kinds");
+    const calls = stubFetch(() => json({ workbenchTenantIds: ["tnt_2"] }));
+    const result = await listWorkbenchTenantIds(["tnt_1", "tnt_2"]);
+    expect(calls[0]?.path).toBe("/api/workbench-tenancies/kinds");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       tenantIds: ["tnt_1", "tnt_2"],
@@ -190,8 +190,8 @@ describe("listChannelTenantIds", () => {
   });
 
   test("never round-trips for an empty request", async () => {
-    const calls = stubFetch(() => json({ channelTenantIds: [] }));
-    const result = await listChannelTenantIds([]);
+    const calls = stubFetch(() => json({ workbenchTenantIds: [] }));
+    const result = await listWorkbenchTenantIds([]);
     expect(calls).toHaveLength(0);
     expect(result).toEqual(new Set());
   });

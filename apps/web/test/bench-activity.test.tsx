@@ -2,7 +2,7 @@
 // on bench changes, not on route changes, and reports "empty" rather than
 // fetching anything when there is no bench selected yet. Every listing it
 // reads goes through the shared `tenantKeys` factories (see
-// `../src/query-client.ts`), so this hook's two mounts (`ChannelsBand` and
+// `../src/query-client.ts`), so this hook's two mounts (`WorkbenchesBand` and
 // `LiveActivityBand`) share one cache rather than each firing its own
 // fetch — proven end to end in `fetch-dedupe.test.tsx`.
 
@@ -29,7 +29,7 @@ const json = (body: unknown) =>
 function stubTenantFetch(
   calls: string[],
   data: {
-    readonly channels?: readonly unknown[];
+    readonly workbenches?: readonly unknown[];
     readonly chats?: readonly unknown[];
     readonly runs?: readonly unknown[];
     readonly tasks?: readonly unknown[];
@@ -47,7 +47,7 @@ function stubTenantFetch(
       return Promise.resolve(json({ definitions: data.agents ?? [] }));
     if (path.includes("kind=chat"))
       return Promise.resolve(json({ items: data.chats ?? [] }));
-    return Promise.resolve(json({ items: data.channels ?? [] }));
+    return Promise.resolve(json({ items: data.workbenches ?? [] }));
   }) as typeof fetch;
 }
 
@@ -93,22 +93,22 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("fetches channels, chats, and running routines for the selected bench", async () => {
+  test("fetches workbenches, chats, and running routines for the selected bench", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls);
     const { latest, root, container } = await mountHook("tnt_1");
     await settle();
     expect(latest()).toEqual({
       kind: "ready",
-      channels: [],
+      workbenches: [],
       chats: [],
       agents: [],
       routines: [],
       workingTasks: [],
     });
-    // Per-kind channel fetches — the shared query key each listing surface
-    // subscribes to (see `tenantKeys.channels`).
-    expect(calls.some((path) => path.includes("kind=channel"))).toBe(true);
+    // Per-kind workbench fetches — the shared query key each listing surface
+    // subscribes to (see `tenantKeys.workbenches`).
+    expect(calls.some((path) => path.includes("kind=workbench"))).toBe(true);
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
     expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
     expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
@@ -119,14 +119,14 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("splits channels by kind and shows only genuine top-level runs", async () => {
+  test("splits workbenches by kind and shows only genuine top-level runs", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls, {
-      channels: [
+      workbenches: [
         {
           id: "run_host1",
           title: "General",
-          kind: "channel",
+          kind: "workbench",
           pinned: true,
           participants: [
             { address: "run_invited1@tnt1.example", handle: "echo" },
@@ -142,7 +142,7 @@ describe("useBenchActivity", () => {
           participants: [],
         },
       ],
-      // The channel host and the invited agent never appear here: the
+      // The workbench host and the invited agent never appear here: the
       // hub's `/top-level-runs` route excludes every folded run
       // server-side (see `@corbits/folded-runs`'s `scope-routes.ts`),
       // so this mock reflects exactly what that route returns — only
@@ -151,7 +151,7 @@ describe("useBenchActivity", () => {
         {
           id: "run_deployment1",
           definitionId: "def_researcher",
-          channelId: "ch_1",
+          workbenchId: "ch_1",
           definitionName: "researcher",
           tenantId: "tnt_1",
           address: "run_deployment1@tnt1.example",
@@ -165,7 +165,7 @@ describe("useBenchActivity", () => {
     await settle();
     const state = latest();
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
-    expect(state.channels.map((c) => c.id)).toEqual(["run_host1"]);
+    expect(state.workbenches.map((c) => c.id)).toEqual(["run_host1"]);
     expect(state.chats.map((c) => c.id)).toEqual(["run_chat1"]);
     expect(state.routines.map((r) => r.id)).toEqual(["run_deployment1"]);
     root.unmount();
@@ -209,7 +209,7 @@ describe("useBenchActivity", () => {
         {
           id: "tsk_running",
           definitionId: "wfd_myra_task_1",
-          channelId: "ch_1",
+          workbenchId: "ch_1",
           agentName: "Incident triage",
           prompt: "Summarize the thread",
           modelPreference: null,
@@ -224,7 +224,7 @@ describe("useBenchActivity", () => {
         {
           id: "tsk_done",
           definitionId: "def_researcher",
-          channelId: "ch_1",
+          workbenchId: "ch_1",
           agentName: "Researcher",
           prompt: "Draft the summary",
           modelPreference: null,

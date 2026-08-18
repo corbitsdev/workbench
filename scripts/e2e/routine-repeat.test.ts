@@ -303,16 +303,16 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
       return heartbeat.id;
     });
 
-    const channelId = await hop("delivery channel creation", async () => {
+    const workbenchId = await hop("delivery workbench creation", async () => {
       const res = await api(
         hub.baseUrl,
         "POST",
-        `/api/tenants/${tenantId}/chat/channels`,
-        { kind: "channel", name: "Routine results" },
+        `/api/tenants/${tenantId}/chat/workbenches`,
+        { kind: "workbench", name: "Routine results" },
         user.cookies,
       );
-      expectStatus("create delivery channel", res, 201);
-      return stringField(res.data, "id", "create delivery channel");
+      expectStatus("create delivery workbench", res, 201);
+      return stringField(res.data, "id", "create delivery workbench");
     });
 
     const routineId = await hop("routine creation", async () => {
@@ -325,7 +325,7 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
           definitionId,
           trigger: { kind: "interval", unit: "hours", every: 1 },
           scope: "bench",
-          deliveryChannelId: channelId,
+          deliveryWorkbenchId: workbenchId,
         },
         user.cookies,
       );

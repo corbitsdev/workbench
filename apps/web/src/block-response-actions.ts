@@ -19,7 +19,7 @@ import {
 
 export function createChatBlockResponseActions(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
 ): BlockResponseActions {
   async function submit(
     call: () => Promise<void>,
@@ -47,7 +47,7 @@ export function createChatBlockResponseActions(
       try {
         const result = await getBlockResponses(
           tenantId,
-          channelId,
+          workbenchId,
           messageId,
           blockId,
         );
@@ -70,19 +70,25 @@ export function createChatBlockResponseActions(
     },
     submitPoll(messageId, blockId, choiceIds) {
       return submit(() =>
-        submitPollResponse(tenantId, channelId, messageId, blockId, choiceIds),
+        submitPollResponse(
+          tenantId,
+          workbenchId,
+          messageId,
+          blockId,
+          choiceIds,
+        ),
       );
     },
     submitForm(messageId, blockId, values) {
       return submit(() =>
-        submitFormResponse(tenantId, channelId, messageId, blockId, values),
+        submitFormResponse(tenantId, workbenchId, messageId, blockId, values),
       );
     },
     submitQuestion(messageId, blockId, answer, optionIndex) {
       return submit(() =>
         submitQuestionResponse(
           tenantId,
-          channelId,
+          workbenchId,
           messageId,
           blockId,
           answer,

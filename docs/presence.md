@@ -1,17 +1,17 @@
 # Presence
 
 Presence is the multiplayer-visual substrate: who's here, where their
-cursor is, whether they're typing — for a channel or a canvas artifact,
+cursor is, whether they're typing — for a workbench or a canvas artifact,
 right now, with nothing kept once everyone leaves. `packages/presence`
 (`@corbits/presence`) owns it end to end; `apps/hub` only mounts its routes,
-and `apps/web` only composes its client into the channel header and the
+and `apps/web` only composes its client into the workbench header and the
 canvas artifact pane. This document covers what phase 1 built and the seam
 phase 2 (co-editing) builds on top of it.
 
 ## Rooms
 
 A room is keyed by `(tenantId, surface)`, where `surface` is a free-form
-string the caller owns — `channel:<id>` for a channel's who's-here stack,
+string the caller owns — `workbench:<id>` for a workbench's who's-here stack,
 `artifact:<id>` for a canvas artifact's co-viewer cursors. Two tenants can
 never share a room even if they pick the identical `surface` string: the
 tenant id is part of the key, not a namespace prefix a caller could get
@@ -76,7 +76,7 @@ and `c.get("principal")` already resolved.
 - `POST /rooms/:surface/leave` — explicit leave.
 - `GET /rooms/:surface/stream` — an SSE stream of `presence.state` events,
   each carrying the room's full member snapshot as JSON. Mirrors
-  `@corbits/chat`'s `bridgeChannelStream`: a failed write unsubscribes
+  `@corbits/chat`'s `bridgeWorkbenchStream`: a failed write unsubscribes
   immediately rather than waiting for `onAbort`.
 
 There is no background sweep timer. Every join/heartbeat/leave call
@@ -102,9 +102,9 @@ dependency-injectable for testing. `apps/web/src/presence/use-presence-room.ts`
 is the thin React hook that wraps it — the only place apps/web talks to the
 presence package directly. Two composition sites use it today:
 
-- `apps/web/src/pages/chat-page.tsx` connects to `channel:<channelId>` and
+- `apps/web/src/pages/chat-page.tsx` connects to `workbench:<workbenchId>` and
   hands the snapshot to `@corbits/chat-ui`'s `ChatWorkspace` as
-  `presenceMembers`, rendered as a live avatar stack beside the channel
+  `presenceMembers`, rendered as a live avatar stack beside the workbench
   header's static participant list.
 - `apps/web/src/shell/app-shell.tsx` connects to `artifact:<artifactId>`
   when the canvas has one open, publishes the pointer's fractional position
@@ -176,10 +176,10 @@ here too, not just on the write path. `POST /rooms/:surface/join` and
 grants Library's own artifact routes check — but only for a surface
 `isDocCarryingSurface` (default: the `artifact:<id>` convention
 `artifact-persistence.ts` owns) says actually carries doc content. A
-presence-only surface (a channel's who's-here stack, never
+presence-only surface (a workbench's who's-here stack, never
 `artifact:...`) stays exactly as ungated on all four routes as phase 1
 left it: waving a cursor was never a write or a read of anything sensitive,
-and gating it would require an unrelated grant a channel viewer has no
+and gating it would require an unrelated grant a workbench viewer has no
 reason to hold. `apps/hub/src/index.ts` wires the required `requireGrant`
 with the same `chatGrantStore`/`chatConditionRegistry` every other
 extension route uses.
@@ -198,7 +198,7 @@ co-edited document's history reads identically to any other revision.
 
 - **Convention**: a surface of the form `artifact:<artifactId>` is a
   canvas artifact; `artifactIdForSurface` is the one place that convention
-  lives. Any other surface (e.g. `channel:<id>`) is invisible to
+  lives. Any other surface (e.g. `workbench:<id>`) is invisible to
   persistence — `onDocChange`/`onEmpty` fire for it same as any room, but
   `artifactIdForSurface` returns `null` and nothing is scheduled.
 - **Seed on join**: `seedOnJoin`, called from the join route's `onJoin`

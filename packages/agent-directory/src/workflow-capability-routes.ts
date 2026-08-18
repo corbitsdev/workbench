@@ -47,7 +47,7 @@ import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import {
   reindexPinnedSkills,
@@ -105,7 +105,7 @@ function definitionNotFound(definitionId: string) {
   );
 }
 
-/** Same host-guard `./routes.ts` applies: a channel host is never a
+/** Same host-guard `./routes.ts` applies: a workbench host is never a
  * target a workflow run may mutate through this surface either. */
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
@@ -113,7 +113,7 @@ function hostGuardedRow(
   return (
     row !== undefined &&
     row.assetId !== null &&
-    !isChannelHostDefinitionName(row.name)
+    !isWorkbenchHostDefinitionName(row.name)
   );
 }
 

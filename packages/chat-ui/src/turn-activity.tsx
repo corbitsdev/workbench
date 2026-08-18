@@ -81,7 +81,9 @@ function innerData(data: unknown): Record<string, unknown> | null {
   return record === null ? null : asRecord(record.data);
 }
 
-function parseToolCallStart(data: unknown): { callId: string; name: string } | null {
+function parseToolCallStart(
+  data: unknown,
+): { callId: string; name: string } | null {
   const inner = innerData(data);
   if (inner === null) return null;
   const { callId, name } = inner;
@@ -89,9 +91,11 @@ function parseToolCallStart(data: unknown): { callId: string; name: string } | n
   return { callId, name };
 }
 
-function parseToolCallEnd(
-  data: unknown,
-): { callId: string; name: string; arguments: Record<string, unknown> | undefined } | null {
+function parseToolCallEnd(data: unknown): {
+  callId: string;
+  name: string;
+  arguments: Record<string, unknown> | undefined;
+} | null {
   const inner = innerData(data);
   if (inner === null) return null;
   const { callId, name } = inner;
@@ -99,9 +103,11 @@ function parseToolCallEnd(
   return { callId, name, arguments: asRecord(inner.arguments) ?? undefined };
 }
 
-function parseToolStart(
-  data: unknown,
-): { callId: string; name: string; arguments: Record<string, unknown> | undefined } | null {
+function parseToolStart(data: unknown): {
+  callId: string;
+  name: string;
+  arguments: Record<string, unknown> | undefined;
+} | null {
   const inner = innerData(data);
   const call = inner === null ? null : asRecord(inner.call);
   if (call === null) return null;
@@ -309,14 +315,14 @@ const TURN_ACTIVITY_STALE_MS = 120_000;
  * Owns the turn-activity state end to end, mirroring
  * `useStreamingReply`'s shape exactly: feed it every stream event and it
  * tracks the active turn's tool calls, thinking, and retries, clearing
- * the moment the turn ends. `channelId` resets it immediately on a
- * channel switch — activity from the channel just left belongs to that
- * channel, not the new one. `staleMs` (default `TURN_ACTIVITY_STALE_MS`)
+ * the moment the turn ends. `workbenchId` resets it immediately on a
+ * workbench switch — activity from the workbench just left belongs to that
+ * workbench, not the new one. `staleMs` (default `TURN_ACTIVITY_STALE_MS`)
  * is a test seam, mirroring `useTypingIndicator`'s own configurable
  * timeout.
  */
 export function useTurnActivity(
-  channelId: string | null,
+  workbenchId: string | null,
   staleMs: number = TURN_ACTIVITY_STALE_MS,
 ): {
   readonly activity: TurnActivityState;
@@ -326,7 +332,7 @@ export function useTurnActivity(
 
   useEffect(() => {
     setActivity(null);
-  }, [channelId]);
+  }, [workbenchId]);
 
   // Reset (clear + re-arm) on every event that actually changes the
   // activity object — an ignored event never resets the clock, since

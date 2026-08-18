@@ -182,10 +182,10 @@ describe("sendFoldedMail", () => {
       {
         tenantId: "ten_1",
         sessionId: "ses_1",
-        agentAddress: "ins_channel1@ten1.workbench.test",
+        agentAddress: "ins_workbench1@ten1.workbench.test",
         from: "prn_sender@ten1.workbench.test",
         domain: "ten1.workbench.test",
-        content: "hello channel",
+        content: "hello workbench",
         cryptoProvider: {} as never,
       },
     );
@@ -198,8 +198,8 @@ describe("sendFoldedMail", () => {
       sessionId: string;
       from: string;
     };
-    expect(call.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-    expect(call.content).toBe("hello channel");
+    expect(call.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
+    expect(call.content).toBe("hello workbench");
     expect(call.sessionId).toBe("ses_1");
     expect(call.from).toBe("prn_sender@ten1.workbench.test");
 
@@ -213,7 +213,7 @@ describe("sendFoldedMail", () => {
 
     expect(dispatchAgentEventCalls).toHaveLength(1);
     expect(dispatchAgentEventCalls[0]?.address).toBe(
-      "ins_channel1@ten1.workbench.test",
+      "ins_workbench1@ten1.workbench.test",
     );
   });
 });
@@ -233,10 +233,10 @@ function fakeMailDeps(sendUserMessage: () => Promise<Uint8Array>) {
 const SEND_PARAMS = {
   tenantId: "ten_1",
   sessionId: "ses_1",
-  agentAddress: "ins_channel1@ten1.workbench.test",
+  agentAddress: "ins_workbench1@ten1.workbench.test",
   from: "prn_sender@ten1.workbench.test",
   domain: "ten1.workbench.test",
-  content: "hello channel",
+  content: "hello workbench",
   cryptoProvider: {} as never,
 };
 

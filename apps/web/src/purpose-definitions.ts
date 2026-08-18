@@ -1,10 +1,10 @@
 // Definitions the Routines picker may offer: automatable workflows only.
-// Channel-host plumbing and agent handles never appear — the catalog is the
+// Workbench-host plumbing and agent handles never appear — the catalog is the
 // allowlist (mirrored from each workflow package's package.json
-// corbits.workflow.automatable flag); isChannelHostDefinitionName is a
+// corbits.workflow.automatable flag); isWorkbenchHostDefinitionName is a
 // second belt for host names that slip past the catalog.
 
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import {
   isAutomatableWorkflowName,
   workflowCatalogEntry,
@@ -16,7 +16,7 @@ export function purposeDefinitions<T extends { readonly name: string }>(
 ): readonly T[] {
   return definitions.filter(
     (definition) =>
-      !isChannelHostDefinitionName(definition.name) &&
+      !isWorkbenchHostDefinitionName(definition.name) &&
       isAutomatableWorkflowName(definition.name),
   );
 }
@@ -31,8 +31,8 @@ export type CatalogFields = {
   /** Where this workflow's result actually lands — see
    * `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`.
    * The create dialog reads this to decide whether to collect (and
-   * require) a delivery channel at all. */
-  readonly deliveryMode: "channel" | "inbox";
+   * require) a delivery workbench at all. */
+  readonly deliveryMode: "workbench" | "inbox";
   readonly whatItDoes: string;
   readonly requiredConnections: readonly string[];
   readonly exampleOutput: string;

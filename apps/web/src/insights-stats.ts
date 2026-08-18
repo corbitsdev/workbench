@@ -2,7 +2,7 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import type { BadgeTone } from "@corbits/react-ui";
 
 import type { InsightsRun, RunTraceSpan, TaskLeg } from "./insights-api";
@@ -55,13 +55,13 @@ export type InsightsStats = {
 export const INSIGHTS_RECENT_LIMIT = 12;
 
 /**
- * Purpose runs only — drop channel-host anchors the same way Home does.
+ * Purpose runs only — drop workbench-host anchors the same way Home does.
  * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
  * `./insights-api.ts`), which already excludes every folded run with no
  * routine parent, and the resident never-fired deployment placeholder,
  * server-side via `@corbits/folded-runs`'s `scope-routes.ts`'s
  * `listTopLevelRunFires`. This filter is a client-side belt-and-suspenders
- * pass against the channel-host naming pattern alone, not a second scoping
+ * pass against the workbench-host naming pattern alone, not a second scoping
  * layer — a caller no longer needs to (and cannot) hand this a folded-run
  * id set. CL-6062 replaced the dead `/me/workflows/runs` feed (its
  * `anchorRunId IS NULL` filter never matched anything, since every
@@ -70,7 +70,9 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 export function purposeRunsForInsights(
   runs: readonly InsightsRun[],
 ): readonly InsightsRun[] {
-  return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
+  return runs.filter(
+    (run) => !isWorkbenchHostDefinitionName(run.definitionName),
+  );
 }
 
 /**
@@ -92,7 +94,7 @@ export function runDisplayName(run: InsightsRun): string {
 export type DefinitionRunGroup = {
   /** `routineId` when the newest run in the group fired from one,
    * else `definitionId` — two different routines sharing one
-   * definition (e.g. two channel-digest schedules) never merge into
+   * definition (e.g. two workbench-digest schedules) never merge into
    * one group. */
   readonly groupKey: string;
   readonly displayName: string;

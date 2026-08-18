@@ -294,7 +294,7 @@ async function countMatching(page: Page, selector: string): Promise<number> {
  * click mints a fresh Myra workbench against the account's default setup
  * template and navigates straight into it, no dialog, no agent picker, no
  * describe composer. Waits for the URL to actually land on a fresh
- * `/c/:id` distinct from wherever the click started, rather than assuming
+ * `/w/:id` distinct from wherever the click started, rather than assuming
  * a fixed delay covers the mint + navigate round trip.
  */
 async function createMyraChat(page: Page): Promise<void> {
@@ -310,7 +310,7 @@ async function createMyraChat(page: Page): Promise<void> {
       .waitForFunction(
         (previous: string) => {
           const current = window.location.pathname;
-          return current.startsWith("/c/") && current !== previous;
+          return current.startsWith("/w/") && current !== previous;
         },
         { timeout: 8_000 },
         before,
@@ -597,13 +597,13 @@ async function run(): Promise<void> {
       "04-bare-root-lands-in-myra-conversation",
       async () => {
         // `testAndPersistCredential`/`ensureSeeded` above deployed the
-        // default workflows but never created a single chat channel —
+        // default workflows but never created a single chat workbench —
         // this account has zero workbenches at this point, so `/` (bare
         // root, `HomeRoute`) must auto-mint the first one and land in it
         // rather than stranding the account on a spinner.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(
-          () => window.location.pathname.startsWith("/c/"),
+          () => window.location.pathname.startsWith("/w/"),
           { timeout: 45_000 },
         );
         firstWorkbenchPath = await page.evaluate(
@@ -686,7 +686,7 @@ async function run(): Promise<void> {
         await page.waitForFunction(
           (previous: string) => {
             const current = window.location.pathname;
-            return current.startsWith("/c/") && current !== previous;
+            return current.startsWith("/w/") && current !== previous;
           },
           { timeout: 15_000 },
           firstWorkbenchPath,
@@ -717,7 +717,7 @@ async function run(): Promise<void> {
         for (let attempt = 0; attempt < 10; attempt += 1) {
           mintedRows = await countMatching(
             page,
-            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
+            '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
           );
           if (mintedRows === 2) break;
           await new Promise((resolve) => setTimeout(resolve, 800));
@@ -742,9 +742,9 @@ async function run(): Promise<void> {
       "07-send-hi-to-myra",
       async () => {
         const rowSelector =
-          '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"] button.shell-ch-row';
+          '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"] button.shell-ch-row';
         await clickStable(page, rowSelector);
-        // A freshly created channel launches its anchor instance on first
+        // A freshly created workbench launches its anchor instance on first
         // open (the same real hop chat.test.ts retries against a
         // transient 500 for up to 60s) before the composer can render —
         // bounded, not instant. A client-side click straight out of the
@@ -774,7 +774,7 @@ async function run(): Promise<void> {
             timeout: 20_000,
           });
           await page.waitForSelector(
-            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
+            '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
             {
               timeout: 15_000,
             },
@@ -941,7 +941,7 @@ async function run(): Promise<void> {
         });
         const rowAppeared = await page
           .waitForSelector(
-            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
+            '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
             {
               timeout: 15_000,
             },
@@ -958,7 +958,7 @@ async function run(): Promise<void> {
         }
         await clickStable(
           page,
-          '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"] button.shell-ch-row',
+          '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"] button.shell-ch-row',
         );
         const couldNotLoad = await page
           .waitForFunction(

@@ -4,7 +4,7 @@
 // share) simply has no builder and so contributes no items.
 
 import {
-  patchChannelSettings,
+  patchWorkbenchSettings,
   profileSubjectFromParticipant,
 } from "@corbits/chat-ui";
 import type { ProfileSubject } from "@corbits/chat-ui";
@@ -26,8 +26,8 @@ import {
 } from "lucide-react";
 import { toast } from "@corbits/react-ui";
 
-import { channelPath } from "../../channel-path";
-import { requestChannelRename } from "../../channel-rename-events";
+import { workbenchPath } from "../../workbench-path";
+import { requestWorkbenchRename } from "../../workbench-rename-events";
 import { requestOpenCommandPalette } from "../../command-palette-events";
 import { runRoutineNow } from "../../routines-api";
 import { SETTINGS_PATH } from "../../routes";
@@ -51,8 +51,8 @@ async function copyLink(path: string, label: string): Promise<void> {
   }
 }
 
-function channelMenu(
-  target: Extract<ShellContextMenuTarget, { type: "channel" }>,
+function workbenchMenu(
+  target: Extract<ShellContextMenuTarget, { type: "workbench" }>,
   actions: ShellContextMenuActions,
 ): ContextMenu {
   const entries: ContextMenuEntry[] = [
@@ -60,7 +60,7 @@ function channelMenu(
       id: "rename",
       label: "Rename conversation",
       icon: <Pencil />,
-      onSelect: () => requestChannelRename(target.id),
+      onSelect: () => requestWorkbenchRename(target.id),
     }),
   ];
   if (actions.tenantId !== null) {
@@ -71,7 +71,7 @@ function channelMenu(
         label: target.pinned ? "Unpin conversation" : "Pin conversation",
         icon: target.pinned ? <PinOff /> : <Pin />,
         onSelect: () => {
-          void patchChannelSettings(tenantId, target.id, {
+          void patchWorkbenchSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
           }).then(
             () =>
@@ -90,7 +90,7 @@ function channelMenu(
       id: "copy-link",
       label: "Copy link",
       icon: <LinkIcon />,
-      onSelect: () => void copyLink(channelPath(target.id), target.title),
+      onSelect: () => void copyLink(workbenchPath(target.id), target.title),
     }),
   );
   return { label: target.title, entries };
@@ -213,10 +213,10 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
         onSelect: () => requestOpenCommandPalette(),
       }),
       contextMenuItem({
-        id: "channels",
+        id: "workbenches",
         label: "Go to workbenches",
         icon: <Hash />,
-        onSelect: () => actions.navigate(channelPath(null)),
+        onSelect: () => actions.navigate(workbenchPath(null)),
       }),
       contextMenuSeparator,
       contextMenuItem({
@@ -234,8 +234,8 @@ export function shellContextMenuFor(
   actions: ShellContextMenuActions,
 ): ContextMenu {
   switch (target.type) {
-    case "channel":
-      return channelMenu(target, actions);
+    case "workbench":
+      return workbenchMenu(target, actions);
     case "profile":
       return profileMenu(target, actions);
     case "routine":

@@ -1,5 +1,5 @@
 // Proves `createHubChatPlatform` maps each `ChatPlatform` port method
-// onto the right in-process service call. `launchChannel` in
+// onto the right in-process service call. `launchWorkbench` in
 // particular proves the folded interactive-instance shape: it extracts
 // the folded body, resolves inference sources against the tenant
 // catalog, writes the same principal/session/run rows a folded launch
@@ -13,7 +13,7 @@
 // join, this file replaces just that one export of `@intx/hub-api`
 // with a controllable stub — spreading through every other export
 // unchanged — so a real tenant catalog is never required to prove
-// `launchChannel`'s own wiring. `resolveDefinitionSources` itself is
+// `launchWorkbench`'s own wiring. `resolveDefinitionSources` itself is
 // `@intx/hub-api`'s own contract, not this package's, and is not
 // re-proven here.
 //
@@ -32,7 +32,7 @@ import {
   workflowDefinitionVersion,
   workflowRun,
 } from "@intx/db/schema";
-import { channelLaunch } from "../src/schema";
+import { workbenchLaunch } from "../src/schema";
 import { foldedRun } from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import { SessionLaunchError } from "@intx/hub-sessions";
@@ -43,9 +43,9 @@ import type {
 } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
-  buildChannelHostWorkflow,
-  serializeChannelHostWorkflow,
-} from "../src/channel-workflow";
+  buildWorkbenchHostWorkflow,
+  serializeWorkbenchHostWorkflow,
+} from "../src/workbench-workflow";
 
 const actualHubApi = await import("@intx/hub-api");
 const actualDrizzleOrm = await import("drizzle-orm");
@@ -235,7 +235,7 @@ function createFakeDb(opts: {
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
-  channelLaunchRow?:
+  workbenchLaunchRow?:
     | {
         tenantId: string;
         instanceId: string;
@@ -252,12 +252,15 @@ function createFakeDb(opts: {
     return {
       set(values: unknown) {
         updated.push({ table, values });
-        // `channelLaunchRow` backs every subsequent `select().from(channelLaunch)`
+        // `workbenchLaunchRow` backs every subsequent `select().from(workbenchLaunch)`
         // by reference (see below) — mutating it in place here is what lets a
         // test prove a write is actually visible to a later read, not just that
         // `update` was called with the right shape.
-        if (table === channelLaunch && opts.channelLaunchRow !== undefined) {
-          Object.assign(opts.channelLaunchRow, values as object);
+        if (
+          table === workbenchLaunch &&
+          opts.workbenchLaunchRow !== undefined
+        ) {
+          Object.assign(opts.workbenchLaunchRow, values as object);
         }
         return { where: async () => undefined };
       },
@@ -300,10 +303,10 @@ function createFakeDb(opts: {
       return {
         from(table: unknown) {
           if (table === asset) return selectChain([opts.assetRow]);
-          if (table === channelLaunch) {
+          if (table === workbenchLaunch) {
             return selectChain(
-              opts.channelLaunchRow !== undefined
-                ? [opts.channelLaunchRow]
+              opts.workbenchLaunchRow !== undefined
+                ? [opts.workbenchLaunchRow]
                 : [],
             );
           }
@@ -416,7 +419,7 @@ function createFakeSessionService(): SessionService & {
     },
     async deployWorkflowDefinition() {
       throw new Error(
-        "deployWorkflowDefinition must not be called: launchChannel " +
+        "deployWorkflowDefinition must not be called: launchWorkbench " +
           "launches a folded instance via deployInstanceAtHead",
       );
     },
@@ -440,10 +443,10 @@ function createFakeAssetService(opts: { assetBlob?: Uint8Array } = {}) {
     async createAsset(params: unknown) {
       createAssetCalls.push(params);
       return {
-        id: "asst_channel1",
+        id: "asst_workbench1",
         tenantId: "ten_1",
         kind: "workflow" as const,
-        name: "channel",
+        name: "workbench",
         displayName: null,
         creatorPrincipalId: "prin_creator",
         createdAt: new Date(),
@@ -521,16 +524,16 @@ function createFakeSidecarRouter(
   };
 }
 
-const CHANNEL_WORKFLOW_JSON = serializeChannelHostWorkflow(
-  buildChannelHostWorkflow({
-    triggerAddress: "ins_channel1@ten1.workbench.test",
+const WORKBENCH_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
+  buildWorkbenchHostWorkflow({
+    triggerAddress: "ins_workbench1@ten1.workbench.test",
     inferencePreferences: [{ provider: "anthropic", model: "claude-sonnet-5" }],
     turnTimeoutMs: 60_000,
   }),
 );
 
 describe("createHubChatPlatform", () => {
-  test("launchChannel extracts the folded body, pins the noop inference source, and deploys via deployInstanceAtHead without touching the catalog", async () => {
+  test("launchWorkbench extracts the folded body, pins the noop inference source, and deploys via deployInstanceAtHead without touching the catalog", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     // Deliberately left `ok: false`: a host launch must never reach
     // `resolveDefinitionSources` at all, so this stub result — which
@@ -539,17 +542,17 @@ describe("createHubChatPlatform", () => {
     // succeed.
     resolveDefinitionSourcesResult = {
       ok: false,
-      message: "the catalog must not be consulted for a channel host",
+      message: "the catalog must not be consulted for a workbench host",
     };
 
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
     });
     const sessionService = createFakeSessionService();
     const assetService = createFakeAssetService();
@@ -568,25 +571,25 @@ describe("createHubChatPlatform", () => {
       eventCollectors,
     });
 
-    const launched = await platform.launchChannel({
+    const launched = await platform.launchWorkbench({
       tenantId: "ten_1",
       creatorPrincipalId: "prin_creator",
-      channelId: "ins_channel1",
-      triggerAddress: "ins_channel1@ten1.workbench.test",
-      definition: CHANNEL_WORKFLOW_JSON,
+      workbenchId: "ins_workbench1",
+      triggerAddress: "ins_workbench1@ten1.workbench.test",
+      definition: WORKBENCH_WORKFLOW_JSON,
     });
 
-    expect(launched.instanceId).toBe("ins_channel1");
+    expect(launched.instanceId).toBe("ins_workbench1");
 
     // The anchor's event collector is opened before the deploy call, so
     // its runtime status/readiness (health, SSE replay) is never
     // permanently "not_ready".
     expect(eventCollectors.createCalls).toEqual([
       [
-        "ins_channel1@ten1.workbench.test",
+        "ins_workbench1@ten1.workbench.test",
         "ten_1",
         expect.any(String),
-        "ins_channel1",
+        "ins_workbench1",
       ],
     ]);
     expect(eventCollectors.abandonCalls).toEqual([]);
@@ -595,7 +598,7 @@ describe("createHubChatPlatform", () => {
       {
         tenantId: "ten_1",
         kind: "workflow",
-        name: "ins-channel1",
+        name: "ins-workbench1",
         creatorPrincipalId: "prin_creator",
       },
     ]);
@@ -623,9 +626,9 @@ describe("createHubChatPlatform", () => {
         tenantId: string;
       };
     };
-    expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-    expect(deployed.agentId).toBe("ins_channel1");
-    expect(deployed.runId).toBe("ins_channel1");
+    expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
+    expect(deployed.agentId).toBe("ins_workbench1");
+    expect(deployed.runId).toBe("ins_workbench1");
     expect(deployed.config.systemPrompt.length).toBeGreaterThan(0);
     expect(deployed.config.sources).toEqual([
       {
@@ -642,31 +645,31 @@ describe("createHubChatPlatform", () => {
     // The launch row records this as a host launch, so a later wake
     // pins the same noop source rather than resolving against the
     // catalog.
-    const channelLaunchInsert = db.inserted.find(
-      (row) => row.table === channelLaunch,
+    const workbenchLaunchInsert = db.inserted.find(
+      (row) => row.table === workbenchLaunch,
     );
-    expect(channelLaunchInsert?.values).toMatchObject({
+    expect(workbenchLaunchInsert?.values).toMatchObject({
       noopInference: true,
     });
 
     // The run is written in the folded shape: no deploymentId, a real
     // principal, and a session keyed off that shared principal --
-    // never a manual `session_<channelId>` insert.
+    // never a manual `session_<workbenchId>` insert.
     const principalInsert = db.inserted.find((row) => row.table === principal);
     expect(principalInsert?.values).toMatchObject({
       tenantId: "ten_1",
       kind: "workflow",
-      refId: "ins_channel1",
+      refId: "ins_workbench1",
       status: "active",
     });
 
     const runInsert = db.inserted.find((row) => row.table === workflowRun);
     expect(runInsert?.values).toMatchObject({
-      id: "ins_channel1",
-      definitionId: "wfd_channel1",
-      anchorRunId: "ins_channel1",
+      id: "ins_workbench1",
+      definitionId: "wfd_workbench1",
+      anchorRunId: "ins_workbench1",
       tenantId: "ten_1",
-      address: "ins_channel1@ten1.workbench.test",
+      address: "ins_workbench1@ten1.workbench.test",
       status: "running",
     });
 
@@ -674,7 +677,7 @@ describe("createHubChatPlatform", () => {
     const principalId = (principalInsert?.values as { id: string }).id;
     expect(sessionInsert?.values).toMatchObject({
       tenantId: "ten_1",
-      agentId: "wfd_channel1",
+      agentId: "wfd_workbench1",
       principalId,
       status: "active",
     });
@@ -683,7 +686,7 @@ describe("createHubChatPlatform", () => {
     );
   });
 
-  test("launchChannel rolls back the committed rows and abandons the collector when the deploy fails", async () => {
+  test("launchWorkbench rolls back the committed rows and abandons the collector when the deploy fails", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -702,10 +705,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
     });
     const sessionService = createFakeSessionService();
     const deployError = new Error("sidecar unreachable");
@@ -728,19 +731,19 @@ describe("createHubChatPlatform", () => {
     });
 
     await expect(
-      platform.launchChannel({
+      platform.launchWorkbench({
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        channelId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definition: CHANNEL_WORKFLOW_JSON,
+        workbenchId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definition: WORKBENCH_WORKFLOW_JSON,
       }),
     ).rejects.toThrow(deployError);
 
     // The collector opened before the deploy attempt is abandoned, not
     // left registered against an address nothing will ever deploy to.
     expect(eventCollectors.abandonCalls).toEqual([
-      "ins_channel1@ten1.workbench.test",
+      "ins_workbench1@ten1.workbench.test",
     ]);
 
     // The committed session is ended, and -- since this error is not a
@@ -760,7 +763,7 @@ describe("createHubChatPlatform", () => {
     expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });
   });
 
-  test("launchChannel marks the run failed (not deleted) when the deploy leaks a running child", async () => {
+  test("launchWorkbench marks the run failed (not deleted) when the deploy leaks a running child", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -779,10 +782,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
     });
     const sessionService = createFakeSessionService();
     sessionService.deploySingleStepAtHead = async () => {
@@ -804,12 +807,12 @@ describe("createHubChatPlatform", () => {
     });
 
     await expect(
-      platform.launchChannel({
+      platform.launchWorkbench({
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        channelId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definition: CHANNEL_WORKFLOW_JSON,
+        workbenchId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definition: WORKBENCH_WORKFLOW_JSON,
       }),
     ).rejects.toThrow(SessionLaunchError);
 
@@ -818,15 +821,15 @@ describe("createHubChatPlatform", () => {
     expect(runUpdate?.values).toEqual({ status: "failed" });
   });
 
-  // A channel host's noop pin is a deliberate improvement over the
-  // pre-existing behavior: launching a channel no longer needs any
-  // catalog source seeded at all (see the primary launchChannel test
+  // A workbench host's noop pin is a deliberate improvement over the
+  // pre-existing behavior: launching a workbench no longer needs any
+  // catalog source seeded at all (see the primary launchWorkbench test
   // above, which proves this with `resolveDefinitionSourcesResult`
   // forced to `ok: false`). An invited agent's launch is unaffected —
   // its replies are real, so it still fails loud without a catalog
   // source; proven alongside `launchInvite`'s other tests below.
 
-  test("sendMail resolves the channel's run's session via the shared principal and delivers via sessionService", async () => {
+  test("sendMail resolves the workbench's run's session via the shared principal and delivers via sessionService", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -845,17 +848,17 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowRunRow: {
-        id: "ins_channel1",
-        address: "ins_channel1@ten1.workbench.test",
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
       },
     });
-    // Seed the session an earlier launchChannel would have written,
+    // Seed the session an earlier launchWorkbench would have written,
     // keyed to the run's principal.
     db.inserted.push({
       table: agentSession,
@@ -878,9 +881,9 @@ describe("createHubChatPlatform", () => {
 
     const sent = await platform.sendMail({
       tenantId: "ten_1",
-      channelId: "ins_channel1",
+      workbenchId: "ins_workbench1",
       principalId: "prin_sender",
-      content: { content: "hello channel" },
+      content: { content: "hello workbench" },
     });
 
     expect(sent.id).toBeTruthy();
@@ -890,8 +893,8 @@ describe("createHubChatPlatform", () => {
       content: string;
       sessionId: string;
     };
-    expect(call.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-    expect(call.content).toBe("hello channel");
+    expect(call.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
+    expect(call.content).toBe("hello workbench");
     expect(call.sessionId).toBe("ses_run1");
 
     const mailInsert = db.inserted.find((row) => row.table === sessionMail);
@@ -904,7 +907,7 @@ describe("createHubChatPlatform", () => {
 
     expect(sidecarRouter.dispatchAgentEventCalls).toHaveLength(1);
     expect(sidecarRouter.dispatchAgentEventCalls[0]?.address).toBe(
-      "ins_channel1@ten1.workbench.test",
+      "ins_workbench1@ten1.workbench.test",
     );
   });
 
@@ -928,10 +931,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -942,7 +945,7 @@ describe("createHubChatPlatform", () => {
     });
     const sessionService = createFakeSessionService();
     const assetService = createFakeAssetService({
-      assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+      assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
     });
     const sidecarRouter = createFakeSidecarRouter();
     const eventCollectors = createFakeEventCollectors();
@@ -990,16 +993,16 @@ describe("createHubChatPlatform", () => {
     });
 
     // Sources were resolved against the tenant catalog, not pinned to
-    // the noop endpoint — only a channel host gets that pin.
+    // the noop endpoint — only a workbench host gets that pin.
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
 
     // The launch row records this as not a host, so a later wake
     // resolves against the catalog rather than pinning the noop
     // source.
-    const channelLaunchInsert = db.inserted.find(
-      (row) => row.table === channelLaunch,
+    const workbenchLaunchInsert = db.inserted.find(
+      (row) => row.table === workbenchLaunch,
     );
-    expect(channelLaunchInsert?.values).toMatchObject({
+    expect(workbenchLaunchInsert?.values).toMatchObject({
       noopInference: false,
     });
   });
@@ -1030,10 +1033,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -1044,7 +1047,7 @@ describe("createHubChatPlatform", () => {
     });
     const sessionService = createFakeSessionService();
     const assetService = createFakeAssetService({
-      assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+      assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
     });
     const sidecarRouter = createFakeSidecarRouter();
     const eventCollectors = createFakeEventCollectors();
@@ -1083,10 +1086,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -1120,10 +1123,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: undefined,
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
@@ -1147,7 +1150,7 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(/No definition/);
   });
 
-  // Unlike a channel host, an invited agent's replies are real: its
+  // Unlike a workbench host, an invited agent's replies are real: its
   // launch still resolves against the tenant catalog and still fails
   // loud when the catalog has no launchable source — the noop pin
   // never applies here.
@@ -1161,10 +1164,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -1180,7 +1183,7 @@ describe("createHubChatPlatform", () => {
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService({
-        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
       }),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
@@ -1199,19 +1202,19 @@ describe("createHubChatPlatform", () => {
   // (`@corbits/agent-directory`'s `createAgentDefinitionCore`, absent
   // a `tenantDefaultModel` dep) serializes with an empty
   // `inference.sources` list — `foldedBody.model` reads back `null`.
-  // Without `channelHostInferencePreferences`, that used to 409 as
+  // Without `workbenchHostInferencePreferences`, that used to 409 as
   // `not_launchable`; this proves the fallback resolves and launches
-  // instead, exactly mirroring the model a fresh channel host would
+  // instead, exactly mirroring the model a fresh workbench host would
   // get for this tenant.
-  const NO_MODEL_WORKFLOW_JSON = serializeChannelHostWorkflow(
-    buildChannelHostWorkflow({
-      triggerAddress: "ins_channel1@ten1.workbench.test",
+  const NO_MODEL_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
+    buildWorkbenchHostWorkflow({
+      triggerAddress: "ins_workbench1@ten1.workbench.test",
       inferencePreferences: [],
       turnTimeoutMs: 60_000,
     }),
   );
 
-  test("launchInvite falls back to the channel-host inference preferences when the definition declares no model requirements", async () => {
+  test("launchInvite falls back to the workbench-host inference preferences when the definition declares no model requirements", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
@@ -1231,10 +1234,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -1254,7 +1257,7 @@ describe("createHubChatPlatform", () => {
       }),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
-      channelHostInferencePreferences: async (tenantId) =>
+      workbenchHostInferencePreferences: async (tenantId) =>
         tenantId === "ten_1"
           ? [{ provider: "anthropic", model: "claude-sonnet-5" }]
           : [],
@@ -1286,10 +1289,10 @@ describe("createHubChatPlatform", () => {
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRow: {
         id: "wfd_echo",
         tenantId: "ten_1",
@@ -1309,7 +1312,7 @@ describe("createHubChatPlatform", () => {
       }),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
-      channelHostInferencePreferences: async () => [],
+      workbenchHostInferencePreferences: async () => [],
     });
 
     await expect(
@@ -1327,15 +1330,15 @@ describe("createHubChatPlatform", () => {
     });
   });
 
-  test("listInvitableDefinitions lists deployed definitions, excluding channel hosts", async () => {
+  test("listInvitableDefinitions lists deployed definitions, excluding workbench hosts", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowDefinitionRows: [
         {
           id: "wfd_echo",
@@ -1375,18 +1378,18 @@ describe("createHubChatPlatform", () => {
     ]);
   });
 
-  test("subscribeToChannel resolves the run's address and subscribes on the sidecar router", async () => {
+  test("subscribeToWorkbench resolves the run's address and subscribes on the sidecar router", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
         creatorPrincipalId: "prin_creator",
-        name: "channel-1",
+        name: "workbench-1",
         displayName: null,
       },
-      definitionId: "wfd_channel1",
+      definitionId: "wfd_workbench1",
       workflowRunRow: {
-        id: "ins_channel1",
-        address: "ins_channel1@ten1.workbench.test",
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
       },
     });
@@ -1406,16 +1409,19 @@ describe("createHubChatPlatform", () => {
     });
 
     const events: unknown[] = [];
-    const unsubscribe = platform.subscribeToChannel("ins_channel1", (event) => {
-      events.push(event);
-    });
+    const unsubscribe = platform.subscribeToWorkbench(
+      "ins_workbench1",
+      (event) => {
+        events.push(event);
+      },
+    );
 
     // The lookup is async (`findFirst` resolves, then `.then` runs);
     // yield past both hops of the microtask queue.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sidecarRouter.subscribeAgentCalls).toEqual([
-      { address: "ins_channel1@ten1.workbench.test" },
+      { address: "ins_workbench1@ten1.workbench.test" },
     ]);
 
     unsubscribe();
@@ -1455,13 +1461,13 @@ describe("createHubChatPlatform", () => {
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
-          address: "ins_channel1@ten1.workbench.test",
+          id: "ins_workbench1",
+          address: "ins_workbench1@ten1.workbench.test",
           principalId: "prin_run1",
         },
         sessionMailRows,
@@ -1487,7 +1493,7 @@ describe("createHubChatPlatform", () => {
       ltCalls.length = 0;
       const page1 = await platform.listMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
       });
       expect(page1.items.map((item) => item.id)).toEqual(
         expectedIds.slice(0, 50),
@@ -1501,7 +1507,7 @@ describe("createHubChatPlatform", () => {
       }
       const page2 = await platform.listMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         cursor: nextCursorAfterPage1,
       });
       expect(page2.items.map((item) => item.id)).toEqual(
@@ -1516,7 +1522,7 @@ describe("createHubChatPlatform", () => {
       }
       const page3 = await platform.listMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         cursor: nextCursorAfterPage2,
       });
       // The last five rows, including the tie -- ordered by the id
@@ -1537,7 +1543,7 @@ describe("createHubChatPlatform", () => {
   // when `deps.lifecycle` is configured, and that `sendMail` actually
   // redeploys a non-routable target before sending.
   describe("lifecycle wiring", () => {
-    test("sendMail wakes a non-routable channel by redeploying before sending, then sends", async () => {
+    test("sendMail wakes a non-routable workbench by redeploying before sending, then sends", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         sources: [
@@ -1556,25 +1562,25 @@ describe("createHubChatPlatform", () => {
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
-          address: "ins_channel1@ten1.workbench.test",
+          id: "ins_workbench1",
+          address: "ins_workbench1@ten1.workbench.test",
           principalId: "prin_run1",
-          definitionId: "wfd_channel1",
+          definitionId: "wfd_workbench1",
         },
         workflowDefinitionRow: {
-          id: "wfd_channel1",
+          id: "wfd_workbench1",
           tenantId: "ten_1",
           status: "deployed",
-          assetId: "asst_channel1",
+          assetId: "asst_workbench1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
+          instanceId: "ins_workbench1",
           foldedBody: {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
@@ -1590,12 +1596,12 @@ describe("createHubChatPlatform", () => {
       });
 
       const sessionService = createFakeSessionService();
-      // Not in the sidecar's routable set: this channel is asleep (or
+      // Not in the sidecar's routable set: this workbench is asleep (or
       // never came back after a restart) when the send arrives.
       const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
       const eventCollectors = createFakeEventCollectors();
       const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
       });
 
       const platform = createHubChatPlatform({
@@ -1612,7 +1618,7 @@ describe("createHubChatPlatform", () => {
 
       const sent = await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "wake up" },
       });
@@ -1624,8 +1630,8 @@ describe("createHubChatPlatform", () => {
         agentAddress: string;
         runId: string;
       };
-      expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-      expect(deployed.runId).toBe("ins_channel1");
+      expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
+      expect(deployed.runId).toBe("ins_workbench1");
       // ...before the send.
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
     });
@@ -1635,7 +1641,7 @@ describe("createHubChatPlatform", () => {
     // to it, so `sendMail` never deploys or undeploys anything for a
     // routable address -- regardless of the underlying run's status --
     // it just proceeds straight to the send.
-    test("sendMail never deploys or undeploys a routable channel, even a completed folded run — the sidecar's park handler owns respawn", async () => {
+    test("sendMail never deploys or undeploys a routable workbench, even a completed folded run — the sidecar's park handler owns respawn", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         sources: [
@@ -1654,26 +1660,26 @@ describe("createHubChatPlatform", () => {
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
-          address: "ins_channel1@ten1.workbench.test",
+          id: "ins_workbench1",
+          address: "ins_workbench1@ten1.workbench.test",
           principalId: "prin_run1",
-          definitionId: "wfd_channel1",
+          definitionId: "wfd_workbench1",
           status: "completed",
         },
         workflowDefinitionRow: {
-          id: "wfd_channel1",
+          id: "wfd_workbench1",
           tenantId: "ten_1",
           status: "deployed",
-          assetId: "asst_channel1",
+          assetId: "asst_workbench1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
+          instanceId: "ins_workbench1",
           foldedBody: {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
@@ -1690,11 +1696,11 @@ describe("createHubChatPlatform", () => {
 
       const sessionService = createFakeSessionService();
       const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: ["ins_channel1@ten1.workbench.test"],
+        routableAddresses: ["ins_workbench1@ten1.workbench.test"],
       });
       const eventCollectors = createFakeEventCollectors();
       const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
       });
 
       const platform = createHubChatPlatform({
@@ -1711,7 +1717,7 @@ describe("createHubChatPlatform", () => {
 
       const sent = await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "hi" },
       });
@@ -1725,7 +1731,7 @@ describe("createHubChatPlatform", () => {
     test("waking a host launch pins the noop source again, never touching the catalog", async () => {
       resolveDefinitionSourcesCalls.length = 0;
       // Forced to fail if ever consulted, same posture as the
-      // launchChannel test above: proves the wake path skips the
+      // launchWorkbench test above: proves the wake path skips the
       // catalog entirely for a host launch, rather than merely
       // happening to succeed against it.
       resolveDefinitionSourcesResult = {
@@ -1737,25 +1743,25 @@ describe("createHubChatPlatform", () => {
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
-          address: "ins_channel1@ten1.workbench.test",
+          id: "ins_workbench1",
+          address: "ins_workbench1@ten1.workbench.test",
           principalId: "prin_run1",
-          definitionId: "wfd_channel1",
+          definitionId: "wfd_workbench1",
         },
         workflowDefinitionRow: {
-          id: "wfd_channel1",
+          id: "wfd_workbench1",
           tenantId: "ten_1",
           status: "deployed",
-          assetId: "asst_channel1",
+          assetId: "asst_workbench1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
+          instanceId: "ins_workbench1",
           noopInference: true,
           foldedBody: {
             systemPrompt: "host prompt",
@@ -1775,7 +1781,7 @@ describe("createHubChatPlatform", () => {
       const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
       const eventCollectors = createFakeEventCollectors();
       const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
       });
 
       const platform = createHubChatPlatform({
@@ -1792,7 +1798,7 @@ describe("createHubChatPlatform", () => {
 
       await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "wake up" },
       });
@@ -1834,17 +1840,17 @@ describe("createHubChatPlatform", () => {
         return timer;
       }) as typeof setInterval;
 
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
+          id: "ins_workbench1",
           address,
           principalId: "prin_run1",
         },
@@ -1884,7 +1890,7 @@ describe("createHubChatPlatform", () => {
       // alone would no longer spare it.
       await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "hello" },
       });
@@ -1903,17 +1909,17 @@ describe("createHubChatPlatform", () => {
         return timer;
       }) as typeof setInterval;
 
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
+          id: "ins_workbench1",
           address,
           principalId: "prin_run1",
         },
@@ -1947,7 +1953,7 @@ describe("createHubChatPlatform", () => {
 
       await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "hello" },
       });
@@ -1975,17 +1981,17 @@ describe("createHubChatPlatform", () => {
         return timer;
       }) as typeof setInterval;
 
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
+          id: "ins_workbench1",
           address,
           principalId: "prin_run1",
         },
@@ -2016,7 +2022,7 @@ describe("createHubChatPlatform", () => {
 
       await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "ins_channel1",
+        workbenchId: "ins_workbench1",
         principalId: "prin_sender",
         content: { content: "hello" },
       });
@@ -2043,10 +2049,10 @@ describe("createHubChatPlatform", () => {
           assetRow: {
             tenantId: "ten_1",
             creatorPrincipalId: "prin_creator",
-            name: "channel-1",
+            name: "workbench-1",
             displayName: null,
           },
-          definitionId: "wfd_channel1",
+          definitionId: "wfd_workbench1",
         });
         createHubChatPlatform({
           hubPublicKey: "hub-key",
@@ -2079,10 +2085,10 @@ describe("createHubChatPlatform", () => {
           assetRow: {
             tenantId: "ten_1",
             creatorPrincipalId: "prin_creator",
-            name: "channel-1",
+            name: "workbench-1",
             displayName: null,
           },
-          definitionId: "wfd_channel1",
+          definitionId: "wfd_workbench1",
         });
         createHubChatPlatform({
           hubPublicKey: "hub-key",
@@ -2108,15 +2114,15 @@ describe("createHubChatPlatform", () => {
   // lifecycle configurations `sendMail` itself branches on.
   describe("ensureAwake", () => {
     test("no-ops for an already-routable address", async () => {
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
       });
       const sessionService = createFakeSessionService();
       const platform = createHubChatPlatform({
@@ -2138,23 +2144,23 @@ describe("createHubChatPlatform", () => {
     });
 
     test("redeploys a non-routable address when lifecycle is configured", async () => {
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
+          id: "ins_workbench1",
           address,
           principalId: "prin_run1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
+          instanceId: "ins_workbench1",
           noopInference: true,
           foldedBody: {
             systemPrompt: "host prompt",
@@ -2189,23 +2195,23 @@ describe("createHubChatPlatform", () => {
     });
 
     test("redeploys a non-routable address when lifecycle is not configured", async () => {
-      const address = "ins_channel1@ten1.workbench.test";
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
         workflowRunRow: {
-          id: "ins_channel1",
+          id: "ins_workbench1",
           address,
           principalId: "prin_run1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
+          instanceId: "ins_workbench1",
           noopInference: true,
           foldedBody: {
             systemPrompt: "host prompt",
@@ -2243,10 +2249,10 @@ describe("createHubChatPlatform", () => {
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "channel-1",
+          name: "workbench-1",
           displayName: null,
         },
-        definitionId: "wfd_channel1",
+        definitionId: "wfd_workbench1",
       });
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
@@ -2267,7 +2273,7 @@ describe("createHubChatPlatform", () => {
 
   // Proves the actual lever an edited system prompt reaches a running
   // instance through: `wakeFoldedRun` (exercised via `sendMail`'s
-  // wake-on-send path above) replays `channel_launch.foldedBody`
+  // wake-on-send path above) replays `workbench_launch.foldedBody`
   // verbatim and never reads the definition's asset itself, so a
   // definition edit only reaches a running instance if something
   // recomputes that row from the definition's current asset content —
@@ -2294,7 +2300,7 @@ describe("createHubChatPlatform", () => {
       return createFakeDb({
         // Unused by this describe block's tests (no launch/asset-creation
         // path is exercised) — required only because `createFakeDb`'s
-        // options type demands them for the launchChannel-shaped tests
+        // options type demands them for the launchWorkbench-shaped tests
         // above.
         assetRow: {
           tenantId: "ten_1",
@@ -2315,7 +2321,7 @@ describe("createHubChatPlatform", () => {
           status: "deployed",
           assetId: "asst_agent1",
         },
-        channelLaunchRow: {
+        workbenchLaunchRow: {
           tenantId: "ten_1",
           instanceId: "run_agent1",
           foldedBody: {
@@ -2351,7 +2357,7 @@ describe("createHubChatPlatform", () => {
       );
 
       const launchUpdate = db.updated.find(
-        (row) => row.table === channelLaunch,
+        (row) => row.table === workbenchLaunch,
       );
       expect(
         (launchUpdate?.values as { foldedBody: { systemPrompt: string } })
@@ -2391,7 +2397,7 @@ describe("createHubChatPlatform", () => {
         }),
         // Not in the sidecar's routable set: the instance is asleep, so
         // the next send must wake it — reading whatever
-        // `channel_launch` holds at that moment.
+        // `workbench_launch` holds at that moment.
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2405,7 +2411,7 @@ describe("createHubChatPlatform", () => {
 
       await platform.sendMail({
         tenantId: "ten_1",
-        channelId: "run_agent1",
+        workbenchId: "run_agent1",
         principalId: "prin_sender",
         content: { content: "hello" },
       });

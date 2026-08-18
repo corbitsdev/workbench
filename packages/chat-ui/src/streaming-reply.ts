@@ -1,7 +1,7 @@
 // The in-progress agent reply, streamed token-by-token: `chat.agent` SSE
 // events already carry the vendored Interchange `InferenceEvent` union
 // verbatim (see `packages/chat/src/platform-adapter.ts`'s
-// `subscribeToChannel`, which wraps `sidecarRouter.subscribeAgent`'s raw
+// `subscribeToWorkbench`, which wraps `sidecarRouter.subscribeAgent`'s raw
 // callback payload with no filtering) — this module is the trust boundary
 // that narrows that `unknown` payload and the pure state machine that turns
 // a run of `inference.text.delta` events into one growing string.
@@ -91,14 +91,14 @@ export function nextStreamingReplyState(
  * Owns the streaming reply's state end to end: feed it every stream event
  * (`chat-workspace.tsx` already sees them all, same as
  * `useTypingIndicator`) and it tracks the active turn's growing text,
- * clearing itself the moment the turn ends. `channelId` resets it
- * immediately on a channel switch, same reasoning as
- * `useTypingIndicator` — an in-progress reply from the channel just left
- * belongs to that channel's timeline, not the new one.
+ * clearing itself the moment the turn ends. `workbenchId` resets it
+ * immediately on a workbench switch, same reasoning as
+ * `useTypingIndicator` — an in-progress reply from the workbench just left
+ * belongs to that workbench's timeline, not the new one.
  */
 /**
  * Opens an empty pending reply without an agent event: the caller just
- * sent a message to a channel with an agent in it, so a reply is owed
+ * sent a message to a workbench with an agent in it, so a reply is owed
  * even though no `reactor.start` has streamed yet. Never resets a reply
  * already streaming.
  */
@@ -114,14 +114,14 @@ export function openPendingReply(
 const PENDING_REPLY_CLEAR_MS = 120_000;
 
 export function useStreamingReply(
-  channelId: string | null,
+  workbenchId: string | null,
   clearMs: number = PENDING_REPLY_CLEAR_MS,
 ): {
   readonly streamingReply: StreamingReplyState;
   /** True once the backstop above has fired for the turn just cleared —
    * the host's cue to render `CHAT_STRINGS.replyTimedOutNotice` rather
    * than silently dropping back to no indicator at all. Reset on the
-   * next channel switch, stream event, or awaited reply, same lifecycle
+   * next workbench switch, stream event, or awaited reply, same lifecycle
    * as `streamingReply` itself. */
   readonly replyTimedOut: boolean;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
@@ -134,7 +134,7 @@ export function useStreamingReply(
   useEffect(() => {
     setStreamingReply(null);
     setReplyTimedOut(false);
-  }, [channelId]);
+  }, [workbenchId]);
 
   useEffect(() => {
     if (streamingReply === null || streamingReply.text !== "") return;
@@ -161,15 +161,20 @@ export function useStreamingReply(
     setStreamingReply(openPendingReply);
   }
 
-  return { streamingReply, replyTimedOut, handleStreamEvent, noteAwaitingReply };
+  return {
+    streamingReply,
+    replyTimedOut,
+    handleStreamEvent,
+    noteAwaitingReply,
+  };
 }
 
 /**
  * The handle(s) to show as "typing" above the composer while a reply is
  * owed but no tokens have streamed yet — mirrors `mergeStreamingReply`'s
  * attribution exactly (the
- * channel's first agent participant), since a `chat.agent` event carries no
- * sender of its own. Channels with more than one invited agent are the
+ * workbench's first agent participant), since a `chat.agent` event carries no
+ * sender of its own. Workbenches with more than one invited agent are the
  * same known approximation `mergeStreamingReply` already documents, not a
  * new gap: only the streaming turn's actual agent can be named once the
  * wire event carries one.

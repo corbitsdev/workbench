@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   classifyBenchMembership,
-  filterWorkbenchMemberships,
+  filterBenchMemberships,
 } from "./tenancy-kind";
 import type { BenchMembership } from "./api";
 
@@ -23,20 +23,20 @@ function membership(
 }
 
 describe("classifyBenchMembership", () => {
-  test("a named tenant absent from channelTenantIds is a workbench", () => {
+  test("a named tenant absent from workbenchTenantIds is a bench", () => {
     const result = classifyBenchMembership(
       membership({ tenantId: "tnt_a", tenantName: "Launch Team" }),
       new Set(),
     );
-    expect(result).toBe("workbench");
+    expect(result).toBe("bench");
   });
 
-  test("a named tenant present in channelTenantIds is a channel", () => {
+  test("a named tenant present in workbenchTenantIds is a workbench", () => {
     const result = classifyBenchMembership(
       membership({ tenantId: "tnt_a", tenantName: "Myra" }),
       new Set(["tnt_a"]),
     );
-    expect(result).toBe("channel");
+    expect(result).toBe("workbench");
   });
 
   test("a tenant whose name is a raw platform id is unknown, never a workbench", () => {
@@ -50,7 +50,7 @@ describe("classifyBenchMembership", () => {
     expect(result).toBe("unknown");
   });
 
-  test("a raw-named tenant is unknown even when it is also a channel tenancy", () => {
+  test("a raw-named tenant is unknown even when it is also a workbench tenancy", () => {
     const result = classifyBenchMembership(
       membership({ tenantId: "tnt_c", tenantName: "tnt_c" }),
       new Set(["tnt_c"]),
@@ -59,7 +59,7 @@ describe("classifyBenchMembership", () => {
   });
 });
 
-describe("filterWorkbenchMemberships", () => {
+describe("filterBenchMemberships", () => {
   test("keeps only workbench-kind memberships, in order", () => {
     const memberships = [
       membership({ tenantId: "tnt_a", tenantName: "Launch Team" }),
@@ -71,14 +71,14 @@ describe("filterWorkbenchMemberships", () => {
       }),
       membership({ tenantId: "tnt_e", tenantName: "Growth" }),
     ];
-    const channelTenantIds = new Set(["tnt_b", "tnt_c"]);
+    const workbenchTenantIds = new Set(["tnt_b", "tnt_c"]);
 
-    const result = filterWorkbenchMemberships(memberships, channelTenantIds);
+    const result = filterBenchMemberships(memberships, workbenchTenantIds);
 
     expect(result.map((m) => m.tenantId)).toEqual(["tnt_a", "tnt_e"]);
   });
 
   test("an empty membership list stays empty", () => {
-    expect(filterWorkbenchMemberships([], new Set())).toEqual([]);
+    expect(filterBenchMemberships([], new Set())).toEqual([]);
   });
 });

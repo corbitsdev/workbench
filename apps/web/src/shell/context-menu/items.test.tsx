@@ -52,9 +52,9 @@ beforeEach(() => {
   toastMock.mockClear();
 });
 
-describe("shellContextMenuFor: channel", () => {
+describe("shellContextMenuFor: workbench", () => {
   const target: ShellContextMenuTarget = {
-    type: "channel",
+    type: "workbench",
     id: "ch-1",
     title: "Launch Planning",
     pinned: false,
@@ -66,7 +66,7 @@ describe("shellContextMenuFor: channel", () => {
     expect(findItem(menu.entries, "pin").label).toBe("Pin conversation");
   });
 
-  test("labels the pin item Unpin for an already-pinned channel", () => {
+  test("labels the pin item Unpin for an already-pinned workbench", () => {
     const menu = shellContextMenuFor({ ...target, pinned: true }, actions());
     expect(findItem(menu.entries, "pin").label).toBe("Unpin conversation");
   });
@@ -76,12 +76,12 @@ describe("shellContextMenuFor: channel", () => {
     expect(itemIds(menu.entries)).toEqual(["rename", "copy-link"]);
   });
 
-  test("copy-link writes the channel's canonical URL to the clipboard", async () => {
+  test("copy-link writes the workbench's canonical URL to the clipboard", async () => {
     const menu = shellContextMenuFor(target, actions());
     findItem(menu.entries, "copy-link").onSelect();
     await Promise.resolve();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/c/ch-1`,
+      `${window.location.origin}/w/ch-1`,
     );
     expect(toastMock).toHaveBeenCalledWith("Launch Planning link copied");
   });
@@ -181,9 +181,9 @@ describe("shellContextMenuFor: account", () => {
 });
 
 describe("shellContextMenuFor: shell", () => {
-  test("offers search, channels, and theme", () => {
+  test("offers search, workbenches, and theme", () => {
     const menu = shellContextMenuFor({ type: "shell" }, actions());
-    expect(itemIds(menu.entries)).toEqual(["search", "channels", "theme"]);
+    expect(itemIds(menu.entries)).toEqual(["search", "workbenches", "theme"]);
   });
 
   test("theme item calls cycleTheme", () => {

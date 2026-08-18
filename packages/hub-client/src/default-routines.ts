@@ -33,7 +33,7 @@ const RoutineListItem = type({
   id: "string",
   name: "string",
   enabled: "boolean",
-  deliveryChannelId: "string | null",
+  deliveryWorkbenchId: "string | null",
 });
 
 /**
@@ -67,7 +67,7 @@ export type DefaultRoutinePreset = {
 export const DEFAULT_ROUTINE_PRESETS: readonly DefaultRoutinePreset[] = [
   {
     name: "Daily digest",
-    assetName: "channel-digest",
+    assetName: "workbench-digest",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     input: {
       summary:
@@ -114,12 +114,12 @@ async function resolveDeployedDefinitionId(
  * preset whose workflow is deployed and not already present (by name)
  * gets a routine row, created enabled (the store's own default) and
  * immediately disabled. Every preset after the first reuses the first
- * preset's own delivery channel — "the workbench's own channel" is
+ * preset's own delivery workbench — "the workbench's own workbench" is
  * whichever space the delivery-precedence chain
- * (`namedChannelId ?? homeChannelId ?? provisionedSpace?.channelId ??
+ * (`namedWorkbenchId ?? homeWorkbenchId ?? provisionedSpace?.workbenchId ??
  * null`, `packages/routines/src/routes.ts`) resolves the first preset
- * to, since no channel is named and no run-scoped home channel exists
- * at seed time — never a second channel per preset.
+ * to, since no workbench is named and no run-scoped home workbench exists
+ * at seed time — never a second workbench per preset.
  */
 export async function ensureDefaultRoutines(
   api: ApiCall,
@@ -139,9 +139,9 @@ export async function ensureDefaultRoutines(
     "routines response",
   ).items;
 
-  let sharedDeliveryChannelId =
-    existing.find((routine) => routine.deliveryChannelId !== null)
-      ?.deliveryChannelId ?? undefined;
+  let sharedDeliveryWorkbenchId =
+    existing.find((routine) => routine.deliveryWorkbenchId !== null)
+      ?.deliveryWorkbenchId ?? undefined;
 
   for (const preset of DEFAULT_ROUTINE_PRESETS) {
     const already = existing.find((routine) => routine.name === preset.name);
@@ -171,8 +171,8 @@ export async function ensureDefaultRoutines(
       scope: "bench",
       input: preset.input,
     };
-    if (sharedDeliveryChannelId !== undefined) {
-      body.deliveryChannelId = sharedDeliveryChannelId;
+    if (sharedDeliveryWorkbenchId !== undefined) {
+      body.deliveryWorkbenchId = sharedDeliveryWorkbenchId;
     }
 
     const created = await api(
@@ -181,7 +181,10 @@ export async function ensureDefaultRoutines(
       body,
       cookies,
     );
-    if (created.status === 400 && /is required/.test(JSON.stringify(created.data))) {
+    if (
+      created.status === 400 &&
+      /is required/.test(JSON.stringify(created.data))
+    ) {
       // The definition declares a required trigger input this preset has
       // nothing honest to pre-fill (last-30-days-research's "Topic").
       // Seeding must never fabricate a value and must never fail the
@@ -202,10 +205,10 @@ export async function ensureDefaultRoutines(
     const row = parseAs(RoutineListItem, created.data, "routine response");
 
     if (
-      sharedDeliveryChannelId === undefined &&
-      row.deliveryChannelId !== null
+      sharedDeliveryWorkbenchId === undefined &&
+      row.deliveryWorkbenchId !== null
     ) {
-      sharedDeliveryChannelId = row.deliveryChannelId;
+      sharedDeliveryWorkbenchId = row.deliveryWorkbenchId;
     }
 
     const disabled = await api(

@@ -257,12 +257,60 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  // Product rename (CL-6260): "channel" is retired as this package's own
+  // vocabulary in favor of "workbench" — every table and column above was
+  // named at creation time under the old word, so this migration is the
+  // one place that carries them forward. Plain renames only: no data
+  // moves, no column ever changes type, so this is a metadata-only
+  // operation on Postgres and safe to run against a live table.
+  {
+    name: "0018_rename_channel_to_workbench",
+    sql: `
+      ALTER TABLE "chat"."channel_settings" RENAME TO "workbench_settings";
+      ALTER TABLE "chat"."workbench_settings" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."channel_read_state" RENAME TO "workbench_read_state";
+      ALTER TABLE "chat"."workbench_read_state" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."channel_launch" RENAME TO "workbench_launch";
+
+      ALTER TABLE "chat"."channel_tenancy" RENAME TO "workbench_tenancy";
+      ALTER TABLE "chat"."workbench_tenancy" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_tenancy_parent_tenant_id_idx" RENAME TO "workbench_tenancy_parent_tenant_id_idx";
+
+      ALTER TABLE "chat"."channel_threads" RENAME TO "workbench_threads";
+      ALTER TABLE "chat"."workbench_threads" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_threads_channel_idx" RENAME TO "workbench_threads_workbench_idx";
+      ALTER INDEX "chat"."channel_threads_parent_thread_idx" RENAME TO "workbench_threads_parent_thread_idx";
+
+      ALTER TABLE "chat"."channel_thread_messages" RENAME TO "workbench_thread_messages";
+      ALTER TABLE "chat"."workbench_thread_messages" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_thread_messages_thread_idx" RENAME TO "workbench_thread_messages_thread_idx";
+
+      ALTER TABLE "chat"."block_responses" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."message_reactions" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."pinned_messages" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."pinned_messages_channel_idx" RENAME TO "pinned_messages_workbench_idx";
+
+      ALTER TABLE "chat"."channel_share" RENAME TO "workbench_share";
+      ALTER TABLE "chat"."workbench_share" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_share_projected_idx" RENAME TO "workbench_share_projected_idx";
+
+      ALTER TABLE "chat"."channel_share_member" RENAME TO "workbench_share_member";
+      ALTER TABLE "chat"."workbench_share_member" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."message_client_ids" RENAME COLUMN "channel_id" TO "workbench_id";
+    `,
+  },
 ];
 
 /**
  * Every folded run this package's own launches recorded in
- * `channel_launch` — one row per channel host or invited agent (see
- * `channel_launch`'s own doc comment in `./schema.ts`). Exists for
+ * `workbench_launch` (created as `channel_launch`; see the rename
+ * migration below) — one row per workbench host or invited agent (see
+ * `workbenchLaunch`'s own doc comment in `./schema.ts`). Exists for
  * `@corbits/folded-runs`' one-time backfill (CL-6061): before its own
  * `folded_run` marker table existed, this table was the only durable
  * record that a given run was folded. This package never writes to
@@ -272,18 +320,18 @@ export const chatMigrations: readonly ChatMigration[] = [
  * one place that already knows every installed package) is the one
  * that inserts them as markers via `@corbits/folded-runs`' own export.
  */
-export interface ChannelLaunchFoldedRunSeed {
+export interface WorkbenchLaunchFoldedRunSeed {
   readonly id: string;
   readonly tenantId: string;
 }
 
-export async function listChannelLaunchFoldedRunIds(
+export async function listWorkbenchLaunchFoldedRunIds(
   databaseUrl: string,
-): Promise<ChannelLaunchFoldedRunSeed[]> {
+): Promise<WorkbenchLaunchFoldedRunSeed[]> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     const rows = await sql.unsafe(
-      `SELECT "instance_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."channel_launch"`,
+      `SELECT "instance_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."workbench_launch"`,
     );
     return rows.map((row) => ({
       id: String(row["id"]),

@@ -195,7 +195,7 @@ async function findActiveCredential(
  *   hub itself) from starting.
  * - A proven key is planted through `seedCatalog` — the same function
  *   `workbench seed` and onboarding's own guided step use — so a
- *   channel or workflow can launch against it immediately. `seedCatalog`
+ *   workbench or workflow can launch against it immediately. `seedCatalog`
  *   is re-verified afterward: if a same-named but non-active credential
  *   already existed, `seedCatalog` 409-skips it rather than storing the
  *   proven key, and this is reported honestly as `"blocked"` — never

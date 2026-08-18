@@ -1,9 +1,9 @@
 // Proves the orchestrator's own wiring: a `connector.reply` on the
 // shared `agent.event` stream resolves the replying address to its
-// folded run, finds every channel whose participants carry that
+// folded run, finds every workbench whose participants carry that
 // address (defensively — more than one, if the store ever shows it),
 // and posts the reply into each via `platform.sendMail` with
-// `fromChannelId` set to the agent's own run id. Non-reply events are
+// `fromWorkbenchId` set to the agent's own run id. Non-reply events are
 // ignored for posting but still bump activity; an address the store
 // never produced (no folded run) is ignored outright; `dispose` stops
 // the subscription.
@@ -21,7 +21,7 @@ import {
 } from "../src/chat-orchestrator";
 import { parseBlock } from "../src/blocks";
 import { decodeParts, type MailContent } from "../src/codec";
-import type { ChannelSettingsRow } from "../src/store";
+import type { WorkbenchSettingsRow } from "../src/store";
 import { createInMemoryWriteClaimStore } from "../src/write-claims";
 
 // A fresh claim store per test, unless a test explicitly wants to share
@@ -93,15 +93,15 @@ function fakeMemory() {
   };
 }
 
-function channelRow(
-  channelId: string,
+function workbenchRow(
+  workbenchId: string,
   participantAddresses: string[],
-): ChannelSettingsRow {
+): WorkbenchSettingsRow {
   return {
     tenantId: "ten_1",
-    channelId,
+    workbenchId,
     settings: {
-      "chat/kind": "channel",
+      "chat/kind": "workbench",
       "chat/participants": participantAddresses.map((address) => ({
         address,
         handle: address.split("@")[0],
@@ -113,22 +113,22 @@ function channelRow(
 }
 
 describe("createChatOrchestrator", () => {
-  test("posts a connector.reply into the member channel resolved from the store", async () => {
+  test("posts a connector.reply into the member workbench resolved from the store", async () => {
     const sentMail: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       content: unknown;
-      fromChannelId?: string;
+      fromWorkbenchId?: string;
     }[] = [];
-    const listChannelSettingsCalls: string[] = [];
+    const listWorkbenchSettingsCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async (tenantId) => {
-          listChannelSettingsCalls.push(tenantId);
+        listWorkbenchSettings: async (tenantId) => {
+          listWorkbenchSettingsCalls.push(tenantId);
           return [
-            channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+            workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
           ];
         },
       },
@@ -151,12 +151,12 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(listChannelSettingsCalls).toEqual(["ten_1"]);
+    expect(listWorkbenchSettingsCalls).toEqual(["ten_1"]);
     expect(sentMail).toHaveLength(1);
     expect(sentMail[0]).toMatchObject({
       tenantId: "ten_1",
-      channelId: "ins_channel1",
-      fromChannelId: "ins_echo1",
+      workbenchId: "ins_workbench1",
+      fromWorkbenchId: "ins_echo1",
     });
 
     orchestrator.dispose();
@@ -165,16 +165,16 @@ describe("createChatOrchestrator", () => {
   test("the host's reply mentioning a specialist fans out to that specialist too — the delegation hop", async () => {
     const sentMail: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       content: unknown;
-      fromChannelId?: string;
+      fromWorkbenchId?: string;
     }[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_myra1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", [
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [
             "ins_myra1@ten1.workbench.test",
             "ins_echo1@ten1.workbench.test",
           ]),
@@ -205,23 +205,23 @@ describe("createChatOrchestrator", () => {
     expect(sentMail).toHaveLength(2);
     expect(sentMail[0]).toMatchObject({
       tenantId: "ten_1",
-      channelId: "ins_channel1",
-      fromChannelId: "ins_myra1",
+      workbenchId: "ins_workbench1",
+      fromWorkbenchId: "ins_myra1",
     });
     expect(sentMail[1]).toMatchObject({
       tenantId: "ten_1",
-      channelId: "ins_echo1",
-      fromChannelId: "ins_channel1",
+      workbenchId: "ins_echo1",
+      fromWorkbenchId: "ins_workbench1",
     });
 
     orchestrator.dispose();
   });
 
   test("a delegated specialist's reply threads under the delegating message; the host's own replies stay in main (CL-5879)", async () => {
-    const sentMail: { channelId: string; fromChannelId?: string }[] = [];
+    const sentMail: { workbenchId: string; fromWorkbenchId?: string }[] = [];
     const assignments: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       threadId: string;
       messageId: string;
     }[] = [];
@@ -255,8 +255,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: db as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", [
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [
             "ins_myra1@ten1.workbench.test",
             "ins_echo1@ten1.workbench.test",
           ]),
@@ -265,9 +265,9 @@ describe("createChatOrchestrator", () => {
       platform: {
         sendMail: async (input) => {
           sentMail.push({
-            channelId: input.channelId,
-            ...(input.fromChannelId !== undefined
-              ? { fromChannelId: input.fromChannelId }
+            workbenchId: input.workbenchId,
+            ...(input.fromWorkbenchId !== undefined
+              ? { fromWorkbenchId: input.fromWorkbenchId }
               : {}),
           });
           return {
@@ -282,7 +282,7 @@ describe("createChatOrchestrator", () => {
           return {
             id: "thr_1",
             tenantId: input.tenantId,
-            channelId: input.channelId,
+            workbenchId: input.workbenchId,
             kind: "reply",
             parentMessageId: input.parentMessageId,
             parentThreadId: "thr_root",
@@ -311,10 +311,10 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The delegating message is mail_1, posted into ins_channel1.
+    // The delegating message is mail_1, posted into ins_workbench1.
     expect(sentMail[0]).toMatchObject({
-      channelId: "ins_channel1",
-      fromChannelId: "ins_myra1",
+      workbenchId: "ins_workbench1",
+      fromWorkbenchId: "ins_myra1",
     });
     // No thread assignment yet — only the specialist's own reply threads.
     expect(assignments).toHaveLength(0);
@@ -330,38 +330,38 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The specialist's reply lands in the same main channel as the host...
+    // The specialist's reply lands in the same main workbench as the host...
     const specialistReply = sentMail.find(
-      (m) => m.fromChannelId === "ins_echo1",
+      (m) => m.fromWorkbenchId === "ins_echo1",
     );
-    expect(specialistReply).toMatchObject({ channelId: "ins_channel1" });
+    expect(specialistReply).toMatchObject({ workbenchId: "ins_workbench1" });
     // ...but is threaded under the delegating message (mail_1), not left
     // loose on the root feed.
     expect(openedThreadFor).toEqual(["mail_1"]);
     expect(assignments).toHaveLength(1);
     expect(assignments[0]).toMatchObject({
       tenantId: "ten_1",
-      channelId: "ins_channel1",
+      workbenchId: "ins_workbench1",
       threadId: "thr_1",
     });
 
     orchestrator.dispose();
   });
 
-  test("posts into every channel when the store shows the address in more than one", async () => {
-    const sentMail: { channelId: string }[] = [];
+  test("posts into every workbench when the store shows the address in more than one", async () => {
+    const sentMail: { workbenchId: string }[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
-          channelRow("ins_channel2", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+          workbenchRow("ins_workbench2", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
         sendMail: async (input) => {
-          sentMail.push({ channelId: input.channelId });
+          sentMail.push({ workbenchId: input.workbenchId });
           return { id: "mail_1", createdAt: new Date().toISOString() };
         },
       },
@@ -378,9 +378,9 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail.map((m) => m.channelId).sort()).toEqual([
-      "ins_channel1",
-      "ins_channel2",
+    expect(sentMail.map((m) => m.workbenchId).sort()).toEqual([
+      "ins_workbench1",
+      "ins_workbench2",
     ]);
 
     orchestrator.dispose();
@@ -388,7 +388,7 @@ describe("createChatOrchestrator", () => {
 
   // CL-6137 / turn-drop notice (stress round 3): a turn that never
   // emits `connector.reply` content is no longer invisible — the
-  // bracket close posts an honest in-channel notice — but a reply this
+  // bracket close posts an honest in-workbench notice — but a reply this
   // process already saw for the turn is never followed by a redundant
   // notice, and a redelivered bracket-close event posts at most one.
   test("message.run.ended posts a notice only for a turn that ended with no reply, once per redelivery", async () => {
@@ -397,8 +397,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -487,8 +487,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -539,8 +539,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -578,7 +578,7 @@ describe("createChatOrchestrator", () => {
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
-      store: { listChannelSettings: async () => [] },
+      store: { listWorkbenchSettings: async () => [] },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
       claims: fakeClaims(),
@@ -605,7 +605,7 @@ describe("createChatOrchestrator", () => {
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb(undefined) as never,
-      store: { listChannelSettings: async () => [] },
+      store: { listWorkbenchSettings: async () => [] },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
       claims: fakeClaims(),
@@ -631,8 +631,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
@@ -657,17 +657,17 @@ describe("createChatOrchestrator", () => {
   test("posts an approve block for a gate-blocked approval, keyed off the platform's own row", async () => {
     const sentMail: {
       tenantId: string;
-      channelId: string;
+      workbenchId: string;
       content: unknown;
-      fromChannelId?: string;
+      fromWorkbenchId?: string;
     }[] = [];
     const findByCorrelationIdCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -701,8 +701,8 @@ describe("createChatOrchestrator", () => {
     expect(sentMail).toHaveLength(1);
     expect(sentMail[0]).toMatchObject({
       tenantId: "ten_1",
-      channelId: "ins_channel1",
-      fromChannelId: "ins_echo1",
+      workbenchId: "ins_workbench1",
+      fromWorkbenchId: "ins_echo1",
     });
 
     const parts = decodeParts(sentMail[0]?.content as never);
@@ -725,8 +725,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
@@ -761,8 +761,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
@@ -801,8 +801,8 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
@@ -831,19 +831,22 @@ describe("createChatOrchestrator", () => {
 });
 
 describe("createArtifactDeliveryHandler", () => {
-  test("posts a FilePart into every member channel for a finalized turn naming a persisted artifact", async () => {
-    const sentMail: { channelId: string; content: unknown }[] = [];
+  test("posts a FilePart into every member workbench for a finalized turn naming a persisted artifact", async () => {
+    const sentMail: { workbenchId: string; content: unknown }[] = [];
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
         sendMail: async (input) => {
-          sentMail.push({ channelId: input.channelId, content: input.content });
+          sentMail.push({
+            workbenchId: input.workbenchId,
+            content: input.content,
+          });
           return { id: "mail_1", createdAt: new Date().toISOString() };
         },
       },
@@ -871,7 +874,7 @@ describe("createArtifactDeliveryHandler", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sentMail).toHaveLength(1);
-    expect(sentMail[0]?.channelId).toBe("ins_channel1");
+    expect(sentMail[0]?.workbenchId).toBe("ins_workbench1");
     const decodedParts = decodeParts(sentMail[0]?.content as MailContent);
     expect(decodedParts).toEqual([
       {
@@ -889,8 +892,8 @@ describe("createArtifactDeliveryHandler", () => {
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
@@ -919,8 +922,8 @@ describe("createArtifactDeliveryHandler", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -980,8 +983,8 @@ describe("createArtifactDeliveryHandler", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1025,8 +1028,8 @@ describe("createArtifactDeliveryHandler", () => {
         principalId: null,
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1084,8 +1087,8 @@ describe("createArtifactDeliveryHandler", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1156,8 +1159,8 @@ describe("createArtifactDeliveryHandler", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1226,23 +1229,23 @@ describe("createArtifactDeliveryHandler", () => {
     ).toEqual(["art_1", "art_2"]);
   });
 
-  test("a mid-loop sendMail failure loses no FilePart: the failed channel recovers on redelivery, the one that already succeeded is not duplicated", async () => {
-    const sentMail: { channelId: string }[] = [];
+  test("a mid-loop sendMail failure loses no FilePart: the failed workbench recovers on redelivery, the one that already succeeded is not duplicated", async () => {
+    const sentMail: { workbenchId: string }[] = [];
     let sendCalls = 0;
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
-          channelRow("ins_channel2", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
+          workbenchRow("ins_workbench2", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
         sendMail: async (input) => {
           sendCalls += 1;
           if (sendCalls === 2) throw new Error("simulated sendMail failure");
-          sentMail.push({ channelId: input.channelId });
+          sentMail.push({ workbenchId: input.workbenchId });
           return { id: "mail_1", createdAt: new Date().toISOString() };
         },
       },
@@ -1269,19 +1272,19 @@ describe("createArtifactDeliveryHandler", () => {
     handler("run_1@ten1.workbench.test", turn);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // One channel got its FilePart; the other's send threw, releasing
+    // One workbench got its FilePart; the other's send threw, releasing
     // its claim.
     expect(sentMail).toHaveLength(1);
 
-    // Redelivery: the channel that already succeeded is not resent; the
+    // Redelivery: the workbench that already succeeded is not resent; the
     // one whose send failed is retried and this time succeeds.
     handler("run_1@ten1.workbench.test", turn);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sentMail).toHaveLength(2);
-    expect(sentMail.map((m) => m.channelId).sort()).toEqual([
-      "ins_channel1",
-      "ins_channel2",
+    expect(sentMail.map((m) => m.workbenchId).sort()).toEqual([
+      "ins_workbench1",
+      "ins_workbench2",
     ]);
   });
 });
@@ -1298,8 +1301,8 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1443,7 +1446,7 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
 });
 
 describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
-  test("records at most one memory entry per channel per day for a connector.reply", async () => {
+  test("records at most one memory entry per workbench per day for a connector.reply", async () => {
     const { memory, added } = fakeMemory();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -1453,8 +1456,8 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1487,7 +1490,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
       principalId: "prn_1",
       kind: "transcript-digest",
       content: { text: "first reply of the day" },
-      attributes: { channelId: "ins_channel1" },
+      attributes: { workbenchId: "ins_workbench1" },
     });
 
     orchestrator.dispose();
@@ -1502,8 +1505,8 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1528,13 +1531,13 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
     orchestrator.dispose();
   });
 
-  // CL-6039: the digest's once-per-channel-per-day bound used to be the
-  // process-local `ingestedChannelDays` Set documented (before this
+  // CL-6039: the digest's once-per-workbench-per-day bound used to be the
+  // process-local `ingestedWorkbenchDays` Set documented (before this
   // change) as "resets on restart". Folded into the same durable
   // `claims` store the two posters above use, so — unlike before — a
   // restart no longer risks a second digest entry for a day already
   // ingested.
-  test("still records at most one digest entry per channel per day across a restart-shaped new orchestrator instance", async () => {
+  test("still records at most one digest entry per workbench per day across a restart-shaped new orchestrator instance", async () => {
     const { memory, added } = fakeMemory();
     const claims = fakeClaims();
     const deps = {
@@ -1544,8 +1547,8 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {
@@ -1593,11 +1596,11 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
   });
 
   // CL-6039 (critique follow-up), the digest's narrower version of the
-  // same finding: a channel-day claim survives a `memory.add` that
+  // same finding: a workbench-day claim survives a `memory.add` that
   // throws unless the write is explicitly released, which would have
   // left that day's digest permanently un-recordable (claimed, but
   // never written, and no later reply that day can win the same claim).
-  test("a memory.add failure releases the channel-day claim, so the next reply that day still records a digest entry", async () => {
+  test("a memory.add failure releases the workbench-day claim, so the next reply that day still records a digest entry", async () => {
     let addCalls = 0;
     const added: unknown[] = [];
     const memory = {
@@ -1616,8 +1619,8 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         principalId: "prn_1",
       }) as never,
       store: {
-        listChannelSettings: async () => [
-          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
       platform: {

@@ -47,7 +47,7 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Myra's asset name in the seeded workflow catalog — the same lookup
- * `apps/web/src/myra-channel.ts` does client-side, mirrored here for
+ * `apps/web/src/myra-workbench.ts` does client-side, mirrored here for
  * the hub side where no such "resolve Myra's definitionId for this
  * tenant" function existed yet. */
 const MYRA_ASSET_NAME = WORKFLOW_CATALOG.find(
@@ -181,9 +181,7 @@ export async function runPlanner(
 
   let reply = await runOnce();
   if (isInferenceFailureReply(reply.content)) {
-    await delay(
-      deps.inferenceRetryDelayMs ?? DEFAULT_INFERENCE_RETRY_DELAY_MS,
-    );
+    await delay(deps.inferenceRetryDelayMs ?? DEFAULT_INFERENCE_RETRY_DELAY_MS);
     reply = await runOnce();
     if (isInferenceFailureReply(reply.content)) {
       throw new PlannerInferenceUnavailableError(input.tenantId);

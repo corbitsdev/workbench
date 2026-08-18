@@ -14,7 +14,7 @@ import {
 import { canInviteMember } from "../src/invite-member-dialog";
 import { canCreateBench, deriveBenchSlug } from "../src/membership";
 import { MemberList } from "../src/member-list";
-import { filterWorkbenchMemberships } from "../src/tenancy-kind";
+import { filterBenchMemberships } from "../src/tenancy-kind";
 
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_|role_|grant_)[a-z0-9]/i;
@@ -119,7 +119,7 @@ describe("BenchSwitcherList", () => {
     expect(markup.match(/<svg/g) ?? []).toHaveLength(1);
   });
 
-  test("filtering to workbenches keeps a real bench and drops a channel and a raw-named tenant", () => {
+  test("filtering to workbenches keeps a real bench and drops a workbench and a raw-named tenant", () => {
     const memberships = [
       membership({ tenantId: "tnt_1", tenantName: "Launch Team" }),
       membership({ tenantId: "tnt_2", tenantName: "Myra" }),
@@ -130,10 +130,7 @@ describe("BenchSwitcherList", () => {
     ];
     const markup = renderToStaticMarkup(
       <BenchSwitcherList
-        memberships={filterWorkbenchMemberships(
-          memberships,
-          new Set(["tnt_2"]),
-        )}
+        memberships={filterBenchMemberships(memberships, new Set(["tnt_2"]))}
         activeTenantId="tnt_1"
         onSelect={noop}
         onCreate={noop}

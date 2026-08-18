@@ -1,9 +1,9 @@
-// Turns an invited agent's `connector.reply` events into channel
+// Turns an invited agent's `connector.reply` events into workbench
 // messages, and a run's `reactor.gate.blocked` approval parks into an
 // in-chat approve block — built once by the host and subscribed for the
 // process's lifetime, mirroring `vendor/intx/hub-sessions/src/hub-session-orchestrator.ts`'s
 // shape rather than the restart-race-prone per-agent bridge the reply
-// side replaces (armed at invite, re-armed lazily on every channel read,
+// side replaces (armed at invite, re-armed lazily on every workbench read,
 // re-armed again before every fan-out delivery — three places that
 // could each miss a beat across a host restart).
 //
@@ -56,7 +56,7 @@ const log = getLogger(["chat", "orchestrator"]);
 
 export type ChatOrchestratorDeps = {
   db: DB["db"];
-  store: Pick<ChatStore, "listChannelSettings">;
+  store: Pick<ChatStore, "listWorkbenchSettings">;
   platform: Pick<ChatPlatform, "sendMail">;
   events: SidecarEventEmitter;
   /**
@@ -64,7 +64,7 @@ export type ChatOrchestratorDeps = {
    * hub's IPC register co-write already wrote — the same read the "needs
    * you" list and the approve/reject routes key off. Only `findByCorrelationId`
    * is needed: this orchestrator never creates or resolves an approval, only
-   * reads one to describe it in a channel message.
+   * reads one to describe it in a workbench message.
    */
   approvals: Pick<ApprovalStore, "findByCorrelationId">;
   /**
@@ -81,8 +81,8 @@ export type ChatOrchestratorDeps = {
    * Two explicit, bounded call sites use it (CL-5852), never a generic
    * event bus: `postFinalizedTurnMemoryEntries` records one entry per
    * persisted artifact, and `postDailyTranscriptDigest` records at most
-   * one entry per channel per UTC day. Both derive `tenantId`/`principalId`
-   * from `resolveMemberChannels`' own resolved run scope, never from
+   * one entry per workbench per UTC day. Both derive `tenantId`/`principalId`
+   * from `resolveMemberWorkbenches`' own resolved run scope, never from
    * anything a model supplied.
    */
   memory?: Pick<Memory, "add">;
@@ -109,7 +109,7 @@ export type ChatOrchestratorDeps = {
   providerHealth?: ProviderHealthPort;
   /**
    * The same `ConnectedProviderLister` `./inference-preferences.ts`'s
-   * `createChannelHostInferencePreferencesResolver` takes — reused here
+   * `createWorkbenchHostInferencePreferencesResolver` takes — reused here
    * (rather than reaching for `deps.db` directly) so a test can inject a
    * plain in-memory list and so this file never grows its own
    * `@intx/db`-querying logic. Required alongside `providerHealth`: a
@@ -162,14 +162,14 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
 }
 
 /**
- * Resolves an agent address on the event stream to every chat channel it is
- * a member of, per the durable `channel_settings` store. Shared by every
- * poster below rather than assuming "exactly one channel": an agent is
- * invited to exactly one channel today by construction, but this resolves
+ * Resolves an agent address on the event stream to every chat workbench it is
+ * a member of, per the durable `workbench_settings` store. Shared by every
+ * poster below rather than assuming "exactly one workbench": an agent is
+ * invited to exactly one workbench today by construction, but this resolves
  * defensively so a store that ever showed more than one still gets every
- * member channel, not a guess at "the" one.
+ * member workbench, not a guess at "the" one.
  */
-async function resolveMemberChannels(
+async function resolveMemberWorkbenches(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
 ): Promise<
@@ -183,44 +183,44 @@ async function resolveMemberChannels(
        * than guessing an owner.
        */
       principalId: string | null;
-      agentChannelId: string;
-      channelIds: string[];
+      agentWorkbenchId: string;
+      workbenchIds: string[];
       /**
-       * Each member channel's own participant records, keyed by
-       * channel id — `postReply` needs these to run the same
+       * Each member workbench's own participant records, keyed by
+       * workbench id — `postReply` needs these to run the same
        * @mention fan-out human sends get, delegating the host's
        * reply to whichever specialists it @mentions.
        */
-      participantsByChannelId: Map<string, ParticipantRecord[]>;
+      participantsByWorkbenchId: Map<string, ParticipantRecord[]>;
     }
   | undefined
 > {
   const run = await findFoldedRunByAddress(deps.db, agentAddress);
   if (run === undefined) {
     // Not every agent address on the event stream belongs to a chat
-    // channel (an echo instance, say) — an address this package's own
+    // workbench (an echo instance, say) — an address this package's own
     // launch machinery never produced is silently not this
     // orchestrator's concern.
     return undefined;
   }
 
-  const channels = await deps.store.listChannelSettings(run.tenantId);
-  const memberChannels = channels.filter((channel) =>
-    parseParticipants(channel.settings["chat/participants"]).some(
+  const workbenches = await deps.store.listWorkbenchSettings(run.tenantId);
+  const memberWorkbenches = workbenches.filter((workbench) =>
+    parseParticipants(workbench.settings["chat/participants"]).some(
       (participant) => participant.address === agentAddress,
     ),
   );
-  if (memberChannels.length === 0) return undefined;
+  if (memberWorkbenches.length === 0) return undefined;
 
   return {
     tenantId: run.tenantId,
     principalId: run.principalId,
-    agentChannelId: run.id,
-    channelIds: memberChannels.map((channel) => channel.channelId),
-    participantsByChannelId: new Map(
-      memberChannels.map((channel) => [
-        channel.channelId,
-        parseParticipants(channel.settings["chat/participants"]),
+    agentWorkbenchId: run.id,
+    workbenchIds: memberWorkbenches.map((workbench) => workbench.workbenchId),
+    participantsByWorkbenchId: new Map(
+      memberWorkbenches.map((workbench) => [
+        workbench.workbenchId,
+        parseParticipants(workbench.settings["chat/participants"]),
       ]),
     ),
   };
@@ -230,13 +230,13 @@ async function resolveMemberChannels(
  * The delegating message a mentioned specialist's *next* reply should
  * thread under (CL-5879) — set the moment `postReply`'s own mention
  * fan-out below wakes that specialist, read (and cleared) the moment
- * that specialist's own `postReply` call posts into the same channel.
+ * that specialist's own `postReply` call posts into the same workbench.
  * Keyed by the specialist's run id (`localPartOf` its agent address,
- * the same id `resolveMemberChannels` calls `agentChannelId`): that id
+ * the same id `resolveMemberWorkbenches` calls `agentWorkbenchId`): that id
  * is stable across the fan-out send and the specialist's own later
- * reply, unlike a channel id, which the specialist's reply shares with
+ * reply, unlike a workbench id, which the specialist's reply shares with
  * the host's (see the module's own postReply doc below) but arrives
- * once per member channel rather than once per specialist.
+ * once per member workbench rather than once per specialist.
  *
  * Only the specialist's first reply after being delegated to is
  * threaded — the entry is deleted on read, matching this package's
@@ -246,7 +246,7 @@ async function resolveMemberChannels(
  */
 type PendingDelegationThread = {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly messageId: string;
 };
 
@@ -254,23 +254,23 @@ async function threadDelegatedReply(
   deps: ChatOrchestratorDeps,
   pendingDelegationThreads: Map<string, PendingDelegationThread>,
   agentAddress: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ): Promise<void> {
   if (deps.threads === undefined) return;
   const runId = localPartOf(agentAddress);
   const pending = pendingDelegationThreads.get(runId);
-  if (pending === undefined || pending.channelId !== channelId) return;
+  if (pending === undefined || pending.workbenchId !== workbenchId) return;
   pendingDelegationThreads.delete(runId);
 
   const reply = await deps.threads.openReplyThread({
     tenantId: pending.tenantId,
-    channelId: pending.channelId,
+    workbenchId: pending.workbenchId,
     parentMessageId: pending.messageId,
   });
   await deps.threads.assignMessage({
     tenantId: pending.tenantId,
-    channelId: pending.channelId,
+    workbenchId: pending.workbenchId,
     threadId: reply.id,
     messageId,
   });
@@ -282,52 +282,50 @@ async function postReply(
   agentAddress: string,
   content: string,
 ): Promise<void> {
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
-  for (const channelId of resolved.channelIds) {
+  for (const workbenchId of resolved.workbenchIds) {
     const sent = await deps.platform.sendMail({
       tenantId: resolved.tenantId,
-      channelId,
+      workbenchId,
       content: encodeParts([{ kind: "text", text: content }]),
-      fromChannelId: resolved.agentChannelId,
+      fromWorkbenchId: resolved.agentWorkbenchId,
     });
 
     await threadDelegatedReply(
       deps,
       pendingDelegationThreads,
       agentAddress,
-      channelId,
+      workbenchId,
       sent.id,
     );
 
     // The delegation hop: when the host's reply @mentions other agent
     // teammates, they must receive it exactly as they would a human's
     // @mention — otherwise a handoff only reaches the human side of
-    // the channel and the mentioned specialist never wakes up.
+    // the workbench and the mentioned specialist never wakes up.
     const participants =
-      resolved.participantsByChannelId.get(channelId) ?? [];
+      resolved.participantsByWorkbenchId.get(workbenchId) ?? [];
     const mentioned = mentionedParticipants(
       [{ kind: "text", text: content }],
       participants,
-    ).filter(
-      (address) => localPartOf(address) !== localPartOf(agentAddress),
-    );
+    ).filter((address) => localPartOf(address) !== localPartOf(agentAddress));
     for (const recipient of mentioned) {
       await deps.platform.sendMail({
         tenantId: resolved.tenantId,
-        channelId: localPartOf(recipient),
+        workbenchId: localPartOf(recipient),
         content: encodeParts([{ kind: "text", text: content }], {
-          replyTo: channelId,
+          replyTo: workbenchId,
         }),
-        fromChannelId: channelId,
+        fromWorkbenchId: workbenchId,
       });
       // The delegating host's own replies stay in main (never
       // recorded here for its own address) — only the mentioned
       // specialist's *next* reply threads, under this exact message.
       pendingDelegationThreads.set(localPartOf(recipient), {
         tenantId: resolved.tenantId,
-        channelId,
+        workbenchId,
         messageId: sent.id,
       });
     }
@@ -336,14 +334,14 @@ async function postReply(
 
 /**
  * Posts the platform-minted approve block for a gate-blocked run into every
- * channel the parked agent is a member of. `postedApprovalIds` is the
+ * workbench the parked agent is a member of. `postedApprovalIds` is the
  * process-local idempotency guard against a redelivered `agent.event`
  * (sidecar reconnect, wire-layer replay — see the module header): a second
  * delivery for an approval already carded is a no-op, and an approval this
  * process has never carded but that resolved before the event was handled
  * (a race with `POST .../resolve`, or a *very* stale replay) is a no-op
  * too, since a card for an already-resolved approval would render terminal
- * state a human never got to act on — nothing to add to the channel.
+ * state a human never got to act on — nothing to add to the workbench.
  */
 async function postApproveBlock(
   deps: ChatOrchestratorDeps,
@@ -356,10 +354,10 @@ async function postApproveBlock(
   if (postedApprovalIds.has(approval.id)) return;
   // Marked before the awaits below: two redelivered events racing this
   // function must not both pass the guard while the first resolves
-  // channels.
+  // workbenches.
   postedApprovalIds.add(approval.id);
 
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
   const data: ApproveBlockData = {
@@ -370,12 +368,12 @@ async function postApproveBlock(
     { kind: "block", block: { type: "approve", data } },
   ]);
 
-  for (const channelId of resolved.channelIds) {
+  for (const workbenchId of resolved.workbenchIds) {
     await deps.platform.sendMail({
       tenantId: resolved.tenantId,
-      channelId,
+      workbenchId,
       content,
-      fromChannelId: resolved.agentChannelId,
+      fromWorkbenchId: resolved.agentWorkbenchId,
     });
   }
 }
@@ -385,24 +383,24 @@ async function postApproveBlock(
  * `FilePart`s (CL-6000) — the delivery-side half of the sanctioned
  * workflow-artifact path: a finalize tool persists via the
  * workflow-artifacts HTTP surface and returns the artifact's id/title/kind
- * in its result; this turns that into the file chip the channel sees.
+ * in its result; this turns that into the file chip the workbench sees.
  * A turn whose tool calls name no persisted artifact sends nothing.
  *
- * Claims `(tenantId, "artifact", "${turnId}:${channelId}")` in the durable
- * `finalized_turn_write_claim` table (CL-6039) before each channel's
- * send, one claim per channel rather than one for the whole turn: a
+ * Claims `(tenantId, "artifact", "${turnId}:${workbenchId}")` in the durable
+ * `finalized_turn_write_claim` table (CL-6039) before each workbench's
+ * send, one claim per workbench rather than one for the whole turn: a
  * claim means "won the right to attempt this send", not "this send
  * succeeded", so a send that throws releases its own claim (in the
  * `catch` below) before this function's own log-and-drop catch in
  * `createArtifactDeliveryHandler` runs — a redelivery then retries only
- * the channel that never got its message, not every channel again. A
- * turn-wide claim would have made that choice for us: the first channel
- * to succeed would have no way to keep its claim while a later channel's
+ * the workbench that never got its message, not every workbench again. A
+ * turn-wide claim would have made that choice for us: the first workbench
+ * to succeed would have no way to keep its claim while a later workbench's
  * failure released the whole turn's, so a redelivery would either skip
- * an already-delivered channel forever (claim never released) or resend
- * to it (claim released) — this per-channel key sidesteps that
+ * an already-delivered workbench forever (claim never released) or resend
+ * to it (claim released) — this per-workbench key sidesteps that
  * trade-off entirely, at the cost of nothing this loop wasn't already
- * paying (one channel-scoped `sendMail` call).
+ * paying (one workbench-scoped `sendMail` call).
  */
 async function postFinalizedTurnArtifacts(
   deps: ChatOrchestratorDeps,
@@ -413,14 +411,14 @@ async function postFinalizedTurnArtifacts(
   const parts = artifactPartsForFinalizedTurn(toolCalls);
   if (parts.length === 0) return;
 
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
-  for (const channelId of resolved.channelIds) {
+  for (const workbenchId of resolved.workbenchIds) {
     const claim = {
       tenantId: resolved.tenantId,
       surface: "artifact" as const,
-      claimKey: `${turnId}:${channelId}`,
+      claimKey: `${turnId}:${workbenchId}`,
     };
     const claimed = await deps.claims.tryClaim(claim);
     if (!claimed) continue;
@@ -428,9 +426,9 @@ async function postFinalizedTurnArtifacts(
     try {
       await deps.platform.sendMail({
         tenantId: resolved.tenantId,
-        channelId,
+        workbenchId,
         content: encodeParts([...parts]),
-        fromChannelId: resolved.agentChannelId,
+        fromWorkbenchId: resolved.agentWorkbenchId,
       });
     } catch (error) {
       await deps.claims.release(claim);
@@ -455,7 +453,7 @@ async function postFinalizedTurnArtifacts(
  * durable `finalized_turn_write_claim` table (CL-6039) before each
  * artifact's `memory.add`, one claim per artifact rather than one for
  * the whole turn — same reasoning as `postFinalizedTurnArtifacts`'s
- * per-channel claim: a claim means "won the right to attempt this add",
+ * per-workbench claim: a claim means "won the right to attempt this add",
  * not "this add succeeded", so an add that throws releases its own
  * claim (in the `catch` below) before this function's own log-and-drop
  * catch in `createArtifactDeliveryHandler` runs. A turn-wide claim would
@@ -474,7 +472,7 @@ async function postFinalizedTurnMemoryEntries(
   const artifacts = persistedArtifactsForFinalizedTurn(toolCalls);
   if (artifacts.length === 0) return;
 
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined || resolved.principalId === null) return;
 
   for (const artifact of artifacts) {
@@ -505,27 +503,27 @@ async function postFinalizedTurnMemoryEntries(
 }
 
 /**
- * Bounded daily-channel-digest transcript ingestion (CL-5852 M3b): at
- * most one firm-memory entry per channel per UTC day, recording that
- * day's first reply as an honest, lightweight digest of channel
+ * Bounded daily-workbench-digest transcript ingestion (CL-5852 M3b): at
+ * most one firm-memory entry per workbench per UTC day, recording that
+ * day's first reply as an honest, lightweight digest of workbench
  * activity — never a fabricated summary. Chosen over an "on thread
  * completion" trigger because this repo's single-step conversational
  * workflows (`workflows/assistant`) keep one warm agent address across
- * an entire channel's lifetime (see that package's header comment): a
+ * an entire workbench's lifetime (see that package's header comment): a
  * "thread" never observably completes here, so there is no cheap event
- * to hook without inventing one. A once-per-channel-per-day bound is
+ * to hook without inventing one. A once-per-workbench-per-day bound is
  * the cheapest trigger already implied by an existing, honest concept
- * (`workflows/channel-digest`) rather than a new event bus. The bound is
- * enforced by claiming `(tenantId, "digest", "${channelId}:${date}")` in
+ * (`workflows/workbench-digest`) rather than a new event bus. The bound is
+ * enforced by claiming `(tenantId, "digest", "${workbenchId}:${date}")` in
  * the same durable `finalized_turn_write_claim` table the two posters
  * above claim into (CL-6039) — folded in from a process-local `Set` that
  * reset on restart (and so could double-ingest a day's first reply after
  * every restart) into the one durable claim table every finalized-turn
- * write surface now shares. Already one claim per channel-day (there was
+ * write surface now shares. Already one claim per workbench-day (there was
  * never a turn-wide version of this bound to narrow), but still needs
  * the same release-on-failure `postFinalizedTurnMemoryEntries` uses: an
  * add that throws releases its own claim before the caller's log-and-drop
- * catch runs, so a channel whose digest add failed gets a real retry on
+ * catch runs, so a workbench whose digest add failed gets a real retry on
  * the next reply rather than staying claimed with no digest ever
  * written.
  */
@@ -536,15 +534,15 @@ async function postDailyTranscriptDigest(
 ): Promise<void> {
   if (deps.memory === undefined) return;
 
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined || resolved.principalId === null) return;
 
   const today = new Date().toISOString().slice(0, 10);
-  for (const channelId of resolved.channelIds) {
+  for (const workbenchId of resolved.workbenchIds) {
     const claim = {
       tenantId: resolved.tenantId,
       surface: "digest" as const,
-      claimKey: `${channelId}:${today}`,
+      claimKey: `${workbenchId}:${today}`,
     };
     const claimed = await deps.claims.tryClaim(claim);
     if (!claimed) continue;
@@ -555,10 +553,10 @@ async function postDailyTranscriptDigest(
         principalId: resolved.principalId,
         kind: "transcript-digest",
         content: {
-          title: `Channel digest — ${today}`,
+          title: `Workbench digest — ${today}`,
           text: content,
         },
-        attributes: { channelId },
+        attributes: { workbenchId },
       });
     } catch (error) {
       await deps.claims.release(claim);
@@ -601,7 +599,7 @@ function firstClassifiedError(
  * A turn's `errors` carry a category and message, never which provider
  * served the turn (`vendor/intx/hub-sessions/src/event-collector.ts`'s
  * `TurnFinalized` has no provider field). This resolves the provider the
- * same way a channel host's own inference preferences are derived
+ * same way a workbench host's own inference preferences are derived
  * (`deps.listConnectedProviders`) and only reports when the tenant has
  * exactly one connected provider — with more than one connected, this
  * never guesses which one the turn actually used, matching the
@@ -627,7 +625,7 @@ async function postProviderHealthSignal(
   const classified = firstClassifiedError(errors);
   if (classified === undefined) return;
 
-  const resolved = await resolveMemberChannels(deps, agentAddress);
+  const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
   const connected = await deps.listConnectedProviders(resolved.tenantId);
@@ -770,7 +768,7 @@ export function createChatOrchestrator(
       }
 
       // A turn that ends with no `connector.reply` this process ever
-      // saw is otherwise invisible: nothing posts to any channel and
+      // saw is otherwise invisible: nothing posts to any workbench and
       // nothing logs, so an agent that silently produced zero visible
       // text (a first-turn tool call with no accompanying text, an
       // inference failure `default-director` doesn't fold into a
@@ -779,10 +777,10 @@ export function createChatOrchestrator(
       // kickoff-triggered greeting can fail in on a real, working
       // credential (CL-6137) — the kickoff's own `sendMail` already
       // logs loudly when *dispatch* itself fails
-      // (`dispatchGreetingKickoff` in `channel-service.ts`), but had no
+      // (`dispatchGreetingKickoff` in `workbench-service.ts`), but had no
       // counterpart for "dispatched fine, the turn ran, nothing ever
       // came back out." Beyond the error log, an honest notice now goes
-      // into the channel itself — a human staring at a stalled thread
+      // into the workbench itself — a human staring at a stalled thread
       // during saturated inference (stress round 3) must never see
       // nothing at all — guarded by `notifiedDropAddresses` so a
       // redelivered `message.run.ended` (sidecar reconnect, wire-layer
@@ -792,7 +790,7 @@ export function createChatOrchestrator(
         const hadReply = repliedAddresses.delete(agentAddress);
         if (!hadReply) {
           const errorMessage = ended.errorMessage ?? "no error reported";
-          log.error`chat orchestrator: agent ${agentAddress}'s turn ended (${ended.status}) with no reply ever posted to any channel: ${errorMessage}`;
+          log.error`chat orchestrator: agent ${agentAddress}'s turn ended (${ended.status}) with no reply ever posted to any workbench: ${errorMessage}`;
 
           if (!notifiedDropAddresses.has(agentAddress)) {
             notifiedDropAddresses.add(agentAddress);
@@ -805,13 +803,11 @@ export function createChatOrchestrator(
               pendingDelegationThreads,
               agentAddress,
               noticeContent,
-            ).catch(
-              (cause: unknown) => {
-                log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
-                  cause instanceof Error ? cause.message : String(cause)
-                }`;
-              },
-            );
+            ).catch((cause: unknown) => {
+              log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
+                cause instanceof Error ? cause.message : String(cause)
+              }`;
+            });
           }
         }
         return;

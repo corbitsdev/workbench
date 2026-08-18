@@ -15,7 +15,7 @@
  *      `@corbits/chat` composition, never reimplemented here.
  *   4. The message is posted into that channel through `deps.sendMessage`
  *      — the SAME path a human's message from the web UI takes
- *      (`sendChannelMessage` in `packages/chat/src/channel-service.ts`).
+ *      (`sendWorkbenchMessage` in `packages/chat/src/workbench-service.ts`).
  *      The channel's existing agent host generates the reply; this
  *      package never deploys or drives inference itself.
  *   5. The reply is relayed back to Slack via `thread.post` once it

@@ -1,7 +1,7 @@
 // The "invite agent" affordance: a small dialog listing the tenant's
-// deployed, launchable workflow definitions (never the channel's own
+// deployed, launchable workflow definitions (never the workbench's own
 // host — the server-side list already excludes it), each with an
-// "Invite" action that launches it into the current channel. The list
+// "Invite" action that launches it into the current workbench. The list
 // itself carries its own loading/empty/error states since it is fetched
 // fresh every time the dialog opens.
 
@@ -36,13 +36,13 @@ export function InviteAgentDialog({
   open,
   onOpenChange,
   tenantId,
-  channelId,
+  workbenchId,
   onInvite,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly onInvite: (definitionId: string) => Promise<void>;
 }) {
   const [state, setState] = useState<ListState>({ kind: "loading" });
@@ -54,7 +54,7 @@ export function InviteAgentDialog({
     let cancelled = false;
     setState({ kind: "loading" });
     setInviteError(null);
-    listInvitableDefinitions(tenantId, channelId)
+    listInvitableDefinitions(tenantId, workbenchId)
       .then((items) => {
         if (!cancelled) setState({ kind: "ready", items });
       })
@@ -69,7 +69,7 @@ export function InviteAgentDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId, channelId]);
+  }, [open, tenantId, workbenchId]);
 
   async function handleInvite(definitionId: string) {
     setInvitingId(definitionId);

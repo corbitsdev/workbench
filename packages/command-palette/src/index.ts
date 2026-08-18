@@ -1,7 +1,7 @@
 // `@corbits/command-palette`: what the global command palette can show.
 // `buildStaticCommands` turns the app shell's own route table into commands.
 // `searchEntities` is the pure match/paginate core over already-fetched
-// entity lists (channels, routines, agents — any source the consumer wires);
+// entity lists (workbenches, routines, agents — any source the consumer wires);
 // `useEntitySearch` is the one piece of React this package owns — debouncing
 // a typed query and fetching those lists, because that timing and caching is
 // inseparable from the pagination it resets. `parsePaletteQuery` and

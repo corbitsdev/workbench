@@ -5,7 +5,7 @@
 // once it has handled one, waiting to be woken for the next. For a
 // one-shot workflow deployment "completed" means done forever, but for
 // a folded run it means only "idle until its next message" — the same
-// row, same principal, same channel, still alive by this package's own
+// row, same principal, same workbench, still alive by this package's own
 // contract.
 //
 // The platform's reconnect-ownership challenge
@@ -16,7 +16,7 @@
 // occurrences when its sidecar reconnects (e.g. after a hub restart)
 // fails that gate, the challenge is rejected as an "Unknown run
 // address", and the sidecar tears its still-resident agent down —
-// stranding an otherwise-healthy channel until someone manually
+// stranding an otherwise-healthy workbench until someone manually
 // recreates it.
 //
 // `lookupFoldedRunReconnectKey` is the narrow patch: a second,

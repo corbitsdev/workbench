@@ -21,8 +21,8 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import type { Channel } from "@corbits/chat-ui";
-import { listChannels } from "@corbits/chat-ui";
+import type { Workbench } from "@corbits/chat-ui";
+import { listWorkbenches } from "@corbits/chat-ui";
 import { CopyButton, WebhookSecretPanel } from "@corbits/settings-ui";
 import { Clock, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -34,7 +34,7 @@ import { QueryView } from "@corbits/api-query";
 import { useAPIQuery, RunsSchema } from "../api";
 import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
+import { workbenchPath } from "../workbench-path";
 import { tenantKeys } from "../query-client";
 import { cadenceLabel } from "../routine-trigger";
 import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
@@ -79,12 +79,14 @@ const RUN_STATUS_TONE: Record<string, BadgeTone> = {
 /** One calm sentence under the routine name; deliver-to only when known. */
 function routineDetailSentence(
   routine: Routine,
-  channels: readonly Channel[],
+  workbenches: readonly Workbench[],
 ): string {
   const when = cadenceLabel(routine.trigger);
-  const channel = channels.find((c) => c.id === routine.deliveryChannelId);
-  if (channel !== undefined) {
-    return `${when}, delivers to ${channel.title}.`;
+  const workbench = workbenches.find(
+    (c) => c.id === routine.deliveryWorkbenchId,
+  );
+  if (workbench !== undefined) {
+    return `${when}, delivers to ${workbench.title}.`;
   }
   return `${when}.`;
 }
@@ -232,26 +234,26 @@ export function WebhookTriggerPanel({
 }
 
 /**
- * Recent-run rows deep-link to the channel the routine delivers to — a
- * routine has one `deliveryChannelId`, not a per-run one, so every row in
+ * Recent-run rows deep-link to the workbench the routine delivers to — a
+ * routine has one `deliveryWorkbenchId`, not a per-run one, so every row in
  * a given table shares the same destination. Rows render as plain data
- * when there is nowhere to deep-link (`deliveryChannelId` absent or no
- * `onOpenChannel` handler wired).
+ * when there is nowhere to deep-link (`deliveryWorkbenchId` absent or no
+ * `onOpenWorkbench` handler wired).
  */
 export function RunsTable({
   runs,
   now,
   emptyTitle,
   emptyDescription,
-  deliveryChannelId = null,
-  onOpenChannel,
+  deliveryWorkbenchId = null,
+  onOpenWorkbench,
 }: {
   readonly runs: readonly RoutineRun[];
   readonly now: number;
   readonly emptyTitle: string;
   readonly emptyDescription: string;
-  readonly deliveryChannelId?: string | null;
-  readonly onOpenChannel?: (channelId: string) => void;
+  readonly deliveryWorkbenchId?: string | null;
+  readonly onOpenWorkbench?: (workbenchId: string) => void;
 }) {
   if (runs.length === 0) {
     return (
@@ -262,9 +264,9 @@ export function RunsTable({
       />
     );
   }
-  const channelId =
-    deliveryChannelId !== null && onOpenChannel !== undefined
-      ? deliveryChannelId
+  const workbenchId =
+    deliveryWorkbenchId !== null && onOpenWorkbench !== undefined
+      ? deliveryWorkbenchId
       : null;
   return (
     <Table>
@@ -279,16 +281,16 @@ export function RunsTable({
         {runs.map((run) => {
           const status = run.run?.status;
           const rowProps =
-            channelId !== null
+            workbenchId !== null
               ? {
                   role: "link" as const,
                   tabIndex: 0,
                   className: "routine-run-row-linked",
-                  onClick: () => onOpenChannel?.(channelId),
+                  onClick: () => onOpenWorkbench?.(workbenchId),
                   onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
-                    onOpenChannel?.(channelId);
+                    onOpenWorkbench?.(workbenchId);
                   },
                 }
               : {};
@@ -331,7 +333,7 @@ export function RoutinesListPage({
   liveRuns: _liveRuns,
   now = Date.now(),
   definitions,
-  channels,
+  workbenches,
   selectedId,
   onSelect: _onSelect,
   webhookTrigger,
@@ -339,14 +341,14 @@ export function RoutinesListPage({
   onToggleEnabled,
   onRunNow,
   onOpenRuns,
-  onOpenChannel,
+  onOpenWorkbench,
 }: {
   readonly routines: APIQuery<readonly Routine[]>;
   readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
   readonly liveRuns: APIQuery<readonly WorkflowRun[]>;
   readonly now?: number;
   readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly channels: readonly Channel[];
+  readonly workbenches: readonly Workbench[];
   readonly selectedId: string | null;
   readonly onSelect: (routineId: string | null) => void;
   readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
@@ -354,7 +356,7 @@ export function RoutinesListPage({
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
   readonly onOpenRuns: () => void;
-  readonly onOpenChannel: (channelId: string) => void;
+  readonly onOpenWorkbench: (workbenchId: string) => void;
 }) {
   const openRoutine = useOpenRoutineInCanvas();
 
@@ -376,7 +378,7 @@ export function RoutinesListPage({
             ? routines.kind === "ready"
               ? `${routines.data.length} automations`
               : null
-            : routineDetailSentence(selected, channels)
+            : routineDetailSentence(selected, workbenches)
         }
         actions={
           selected === null ? (
@@ -511,8 +513,8 @@ export function RoutinesListPage({
                 now={now}
                 emptyTitle="No runs yet"
                 emptyDescription="This routine has not fired yet — manually or on a schedule."
-                deliveryChannelId={selected.deliveryChannelId}
-                onOpenChannel={onOpenChannel}
+                deliveryWorkbenchId={selected.deliveryWorkbenchId}
+                onOpenWorkbench={onOpenWorkbench}
               />
             </section>
           </div>
@@ -528,26 +530,26 @@ export function RoutineDetailPage({
   onBack,
   now = Date.now(),
   definitions = [],
-  channels = [],
+  workbenches = [],
   webhookTrigger = null,
   onRotateWebhookSecret,
   onOpenRuns,
-  onOpenChannel,
+  onOpenWorkbench,
 }: {
   readonly routine: APIQuery<Routine>;
   readonly runs: APIQuery<readonly RoutineRun[]>;
   readonly onBack: () => void;
   readonly now?: number;
   readonly definitions?: readonly WorkflowDefinitionSummary[];
-  readonly channels?: readonly Channel[];
+  readonly workbenches?: readonly Workbench[];
   readonly webhookTrigger?: APIQuery<WebhookTrigger> | null;
   readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
   readonly onOpenRuns: () => void;
-  readonly onOpenChannel: (channelId: string) => void;
+  readonly onOpenWorkbench: (workbenchId: string) => void;
 }) {
   const openRoutine = useOpenRoutineInCanvas();
-  const deliveryChannelId =
-    routine.kind === "ready" ? routine.data.deliveryChannelId : null;
+  const deliveryWorkbenchId =
+    routine.kind === "ready" ? routine.data.deliveryWorkbenchId : null;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -593,7 +595,7 @@ export function RoutineDetailPage({
                       {data.enabled ? "On" : "Off"}
                     </Badge>
                   </dd>
-                  {data.deliveryChannelId !== null ? (
+                  {data.deliveryWorkbenchId !== null ? (
                     <>
                       <dt className="text-[var(--ui-fg-muted)]">Delivers to</dt>
                       <dd>
@@ -603,11 +605,12 @@ export function RoutineDetailPage({
                           size="sm"
                           className="h-auto p-0 font-normal"
                           onClick={() =>
-                            onOpenChannel(data.deliveryChannelId as string)
+                            onOpenWorkbench(data.deliveryWorkbenchId as string)
                           }
                         >
-                          {channels.find((c) => c.id === data.deliveryChannelId)
-                            ?.title ?? "Open workbench"}
+                          {workbenches.find(
+                            (c) => c.id === data.deliveryWorkbenchId,
+                          )?.title ?? "Open workbench"}
                         </Button>
                       </dd>
                     </>
@@ -694,8 +697,8 @@ export function RoutineDetailPage({
                 now={now}
                 emptyTitle="No runs yet"
                 emptyDescription="This routine has not fired yet — manually or on a schedule."
-                deliveryChannelId={deliveryChannelId}
-                onOpenChannel={onOpenChannel}
+                deliveryWorkbenchId={deliveryWorkbenchId}
+                onOpenWorkbench={onOpenWorkbench}
               />
             )}
           </QueryView>
@@ -754,14 +757,15 @@ export function RoutinesRoute({
   const definitions =
     definitionsQuery.kind === "ready" ? definitionsQuery.data : [];
 
-  const channelsQuery = useTenantQuery(
+  const workbenchesQuery = useTenantQuery(
     tenantId === null
-      ? tenantKeys.channels("none", "channel")
-      : tenantKeys.channels(tenantId, "channel"),
+      ? tenantKeys.workbenches("none", "workbench")
+      : tenantKeys.workbenches(tenantId, "workbench"),
     tenantId !== null,
-    () => listChannels(tenantId ?? "", "channel"),
+    () => listWorkbenches(tenantId ?? "", "workbench"),
   );
-  const channels = channelsQuery.kind === "ready" ? channelsQuery.data : [];
+  const workbenches =
+    workbenchesQuery.kind === "ready" ? workbenchesQuery.data : [];
 
   const routineIds =
     routines.kind === "ready" ? routines.data.map((r) => r.id) : [];
@@ -885,14 +889,14 @@ export function RoutinesRoute({
         routine={detailRoutine}
         runs={detailRuns}
         definitions={definitions}
-        channels={channels}
+        workbenches={workbenches}
         webhookTrigger={
           selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
         }
         onRotateWebhookSecret={onRotateWebhookSecret}
         onBack={() => navigate(ROUTINES_PATH_PREFIX)}
         onOpenRuns={() => navigate("/insights/runs")}
-        onOpenChannel={(channelId) => navigate(channelPath(channelId))}
+        onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
       />
     );
   }
@@ -907,7 +911,7 @@ export function RoutinesRoute({
       runHistories={runHistories}
       liveRuns={liveRuns}
       definitions={definitions}
-      channels={channels}
+      workbenches={workbenches}
       selectedId={openRoutineId}
       onSelect={(id) =>
         navigate(
@@ -934,7 +938,7 @@ export function RoutinesRoute({
         toast(routineRunStartedToast(routine.name));
       }}
       onOpenRuns={() => navigate("/insights/runs")}
-      onOpenChannel={(channelId) => navigate(channelPath(channelId))}
+      onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
     />
   );
 }

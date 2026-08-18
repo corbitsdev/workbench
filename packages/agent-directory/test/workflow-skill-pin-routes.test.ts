@@ -27,7 +27,7 @@ import {
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
 const TARGET_DEFINITION_ID = "def_1";
-const CHANNEL_HOST_DEFINITION_ID = "def_host";
+const WORKBENCH_HOST_DEFINITION_ID = "def_host";
 const SIDECAR_TOKEN = "sidecar-token";
 const RUN_ADDRESS = "run_1@example.com";
 
@@ -203,13 +203,13 @@ test("a definition in a different tenant is a 404, never leaked across tenants",
   expect(response.status).toBe(404);
 });
 
-test("a channel-host definition is a 404, never a pinnable target", async () => {
-  lookupId = CHANNEL_HOST_DEFINITION_ID;
+test("a workbench-host definition is a 404, never a pinnable target", async () => {
+  lookupId = WORKBENCH_HOST_DEFINITION_ID;
   lookupTenant = TENANT_ID;
   const app = buildApp({
     db: fakeDbWithRows([
       {
-        id: CHANNEL_HOST_DEFINITION_ID,
+        id: WORKBENCH_HOST_DEFINITION_ID,
         tenantId: TENANT_ID,
         assetId: "ast_host",
         name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
@@ -217,7 +217,7 @@ test("a channel-host definition is a 404, never a pinnable target", async () => 
     ]),
   });
   const response = await postPin(app, {
-    definitionId: CHANNEL_HOST_DEFINITION_ID,
+    definitionId: WORKBENCH_HOST_DEFINITION_ID,
     skillName: "research",
   });
   expect(response.status).toBe(404);

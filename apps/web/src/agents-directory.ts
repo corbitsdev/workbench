@@ -1,5 +1,5 @@
 // Binds `@corbits/agent-directory/client`'s user-facing-agent logic
-// (channel-host filtering, search, orphan detection) to this app's
+// (workbench-host filtering, search, orphan detection) to this app's
 // concrete `AgentDefinition`/`AgentInstance` types. Shared by shell col2
 // and the agents page so neither layer imports the other; the actual
 // product rule lives in the package, not here.
@@ -23,10 +23,10 @@ export function purposeAgentDefinitions(
 
 /**
  * `instances` is expected to already come from `listTopLevelRuns`
- * (see `./agents-api.ts`), which excludes every folded run (channel
+ * (see `./agents-api.ts`), which excludes every folded run (workbench
  * host, invited agent, task) server-side — see
  * `@corbits/folded-runs`'s `scope-routes.ts`. This still applies the
- * shared name-based channel-host filter as defense in depth.
+ * shared name-based workbench-host filter as defense in depth.
  */
 export function purposeAgentInstances(
   instances: readonly AgentInstance[],

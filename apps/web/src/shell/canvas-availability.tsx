@@ -38,7 +38,7 @@ export type CanvasArtifactContent = {
  * start a brand-new one. Distinct from `CanvasArtifactContent` — the panel
  * fetches and owns its own routine data (name, instruction, trigger, run
  * history) from `routineId`, the same way `ProfileCanvasPane` fetches
- * shared channels from a `ProfileSubject`'s address rather than being
+ * shared workbenches from a `ProfileSubject`'s address rather than being
  * handed pre-resolved content. */
 export type RoutinePanelSubject = {
   /** Opens straight to the panel's default list view — the workbench's
@@ -58,14 +58,14 @@ export type RoutinePanelSubject = {
   readonly initialName?: string;
   readonly initialInstruction?: string;
   /** The conversation this routine belongs to — its own agent (the
-   * channel's host participant; every workbench's host is Myra) backs the
+   * workbench's host participant; every workbench's host is Myra) backs the
    * routine, and its own id is where the routine delivers. Carried through
    * list mode too, so "New routine" picked from the list still binds to
-   * the channel the panel was opened beside. Omitted only when there is no
+   * the workbench the panel was opened beside. Omitted only when there is no
    * open conversation to bind to (e.g. a deliberate `/routines` visit),
    * in which case the panel falls back to this workbench's own default
-   * (Myra) channel — never mints a new one. */
-  readonly channelId?: string;
+   * (Myra) workbench — never mints a new one. */
+  readonly workbenchId?: string;
 };
 
 /** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic

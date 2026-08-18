@@ -1,6 +1,6 @@
 // The one product table `@corbits/folded-runs` owns: a permanent marker
 // row for every folded run this package's own `launchFoldedRun` ever
-// creates — channel hosts, invited agents, and tasks alike. Exists
+// creates — workbench hosts, invited agents, and tasks alike. Exists
 // because `launchFoldedRun` self-anchors a folded run's `workflow_run`
 // row exactly like a real top-level deployment anchor does (see
 // `launch.ts`'s big comment on the `workflowRun` insert), so nothing in
@@ -20,10 +20,10 @@ export const foldedRunsSchema = pgSchema("folded_runs");
  * key — see `docs/package-migrations.md` on why a siloed package schema
  * references platform ids as plain text). A row's mere presence marks
  * that id as folded; there is no status or kind column because every
- * caller of `launchFoldedRun` (channel hosts, invited agents, tasks)
+ * caller of `launchFoldedRun` (workbench hosts, invited agents, tasks)
  * needs exactly the same thing recorded here — which specific kind of
  * folded run it is lives in each caller's own table
- * (`@corbits/chat`'s `channel_launch`, `@corbits/tasks`'s `task`), not
+ * (`@corbits/chat`'s `workbench_launch`, `@corbits/tasks`'s `task`), not
  * here.
  */
 export const foldedRun = foldedRunsSchema.table("folded_run", {

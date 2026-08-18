@@ -48,7 +48,7 @@ describe("resolveSeedWorkflows", () => {
     expect(names).toEqual([
       "echo",
       "assistant",
-      "channel-digest",
+      "workbench-digest",
       "recurring-task",
       "last-30-days-research",
     ]);
@@ -61,7 +61,7 @@ describe("resolveSeedWorkflows", () => {
     expect(names).toEqual([
       "echo",
       "assistant",
-      "channel-digest",
+      "workbench-digest",
       "recurring-task",
       "last-30-days-research",
       "heartbeat",

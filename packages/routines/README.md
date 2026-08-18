@@ -15,8 +15,8 @@ session orchestration directly — launching a run (manual "run now" or a
 scheduled fire) goes through `@corbits/folded-runs`, the same launch core
 `@corbits/chat`'s invite flow uses. It also depends on
 `@corbits/workflow-catalog` to resolve a definition's delivery mode
-(channel vs. inbox-only) so a routine's create/fire path never requires a
-`deliveryChannelId` a workflow would silently discard.
+(workbench vs. inbox-only) so a routine's create/fire path never requires a
+`deliveryWorkbenchId` a workflow would silently discard.
 
 ## Key modules
 

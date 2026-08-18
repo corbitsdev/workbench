@@ -15,7 +15,7 @@ const researcher = {
   description: "Answers research questions",
 };
 
-const channelHostDefinition = {
+const workbenchHostDefinition = {
   ...researcher,
   id: "wfd_2",
   name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
@@ -29,7 +29,7 @@ const instance = {
   address: "ins_1@acme.localhost",
 };
 
-const channelHostInstance = {
+const workbenchHostInstance = {
   ...instance,
   id: "ins_2",
   definitionId: "wfd_2",
@@ -37,8 +37,11 @@ const channelHostInstance = {
 };
 
 describe("purposeAgentDefinitions", () => {
-  test("drops the chat anchor machinery's channel-host definitions", () => {
-    const result = purposeAgentDefinitions([researcher, channelHostDefinition]);
+  test("drops the chat anchor machinery's workbench-host definitions", () => {
+    const result = purposeAgentDefinitions([
+      researcher,
+      workbenchHostDefinition,
+    ]);
     expect(result).toEqual([researcher]);
   });
 });
@@ -51,8 +54,8 @@ const invitedAgentInstance = {
 };
 
 describe("purposeAgentInstances", () => {
-  test("drops channel-host instances", () => {
-    const result = purposeAgentInstances([instance, channelHostInstance]);
+  test("drops workbench-host instances", () => {
+    const result = purposeAgentInstances([instance, workbenchHostInstance]);
     expect(result).toEqual([instance]);
   });
 
@@ -69,9 +72,9 @@ describe("purposeAgentInstances", () => {
     expect(result).toEqual([instance]);
   });
 
-  test("still drops a channel host when a folded-run-id set is also given", () => {
+  test("still drops a workbench host when a folded-run-id set is also given", () => {
     const result = purposeAgentInstances(
-      [instance, channelHostInstance, invitedAgentInstance],
+      [instance, workbenchHostInstance, invitedAgentInstance],
       new Set([invitedAgentInstance.id]),
     );
     expect(result).toEqual([instance]);

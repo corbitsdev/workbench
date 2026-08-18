@@ -6,7 +6,7 @@
 
 import {
   classifyBenchMembership,
-  listChannelTenantIds,
+  listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
@@ -49,22 +49,22 @@ const BenchContext = createContext<BenchState | null>(null);
 
 /** The membership this context currently treats as selected: the stored
  * choice if it still names a bench the account belongs to *and* still
- * classifies as a workbench, otherwise the first workbench-kind
+ * classifies as a bench, otherwise the first bench-kind
  * membership — the same personal-bench convention `chat-page.tsx` used
- * to apply inline, minus the channel and raw-id tenancies that same
+ * to apply inline, minus the workbench and raw-id tenancies that same
  * unfiltered "first membership" pick let default in.
  *
- * `channelTenantIds` may still be empty because the kinds lookup
+ * `workbenchTenantIds` may still be empty because the kinds lookup
  * hasn't resolved yet — never blocks boot on it (`isRawIdentifier`
  * inside `classifyBenchMembership` catches a raw-id tenant with no
  * fetch at all). A stored selection that was picked before the fetch
- * resolved, and turns out to be a channel, is re-evaluated on every
- * call, so the default self-corrects once `channelTenantIds` arrives
+ * resolved, and turns out to be a workbench, is re-evaluated on every
+ * call, so the default self-corrects once `workbenchTenantIds` arrives
  * rather than sticking with whatever `resolveSelection` picked first. */
 export function resolveSelection(
   memberships: readonly Principal[],
   stored: string | null,
-  channelTenantIds: ReadonlySet<string>,
+  workbenchTenantIds: ReadonlySet<string>,
 ): Principal | undefined {
   const storedMatch =
     stored !== null
@@ -72,12 +72,12 @@ export function resolveSelection(
       : undefined;
   if (
     storedMatch !== undefined &&
-    classifyBenchMembership(storedMatch, channelTenantIds) === "workbench"
+    classifyBenchMembership(storedMatch, workbenchTenantIds) === "bench"
   ) {
     return storedMatch;
   }
   return memberships.find(
-    (m) => classifyBenchMembership(m, channelTenantIds) === "workbench",
+    (m) => classifyBenchMembership(m, workbenchTenantIds) === "bench",
   );
 }
 
@@ -94,11 +94,11 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
       : [];
   // Never gates boot: `resolveSelection` below runs against `new Set()`
   // until this resolves, catching only the raw-id case immediately —
-  // the channel case self-corrects once `channelTenancyKinds.data` lands
+  // the workbench case self-corrects once `workbenchTenancyKinds.data` lands
   // and this component re-renders.
-  const channelTenancyKinds = useQuery({
-    queryKey: meKeys.channelTenancyKinds(tenantIds),
-    queryFn: () => listChannelTenantIds(tenantIds),
+  const workbenchTenancyKinds = useQuery({
+    queryKey: meKeys.workbenchTenancyKinds(tenantIds),
+    queryFn: () => listWorkbenchTenantIds(tenantIds),
     enabled: tenantIds.length > 0,
   });
 
@@ -107,7 +107,7 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
       ? resolveSelection(
           memberships.data.data,
           stored,
-          channelTenancyKinds.data ?? new Set(),
+          workbenchTenancyKinds.data ?? new Set(),
         )
       : undefined;
 

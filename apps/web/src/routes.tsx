@@ -3,7 +3,7 @@
 // drift apart. The sidebar itself lists workbenches (conversations), not
 // routes — Plugins, Insights, and Settings are reached from its footer, and
 // everything here also stays reachable by deep link and the palette.
-// Conversation deep links (`/c/:channelId`) stay routable; `/` is the Myra
+// Conversation deep links (`/w/:workbenchId`) stay routable; `/` is the Myra
 // land hop (ensure + open her conversation) for a bench with a workbench
 // already, or the guided first-workbench describe screen for a bench with
 // none (CL-6104) — never a Home dashboard.
@@ -25,7 +25,7 @@ import type { ReactElement, ReactNode } from "react";
 
 import { useEffect } from "react";
 
-import { CHANNEL_PATH_PREFIX, isChannelPath } from "./channel-path";
+import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { InsightsRoute } from "./pages/insights-page";
@@ -69,8 +69,8 @@ export type AppRoute = {
  * Other routes are exact path matches.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
-  if (routePath === CHANNEL_PATH_PREFIX) {
-    return isChannelPath(path) || path === "/";
+  if (routePath === WORKBENCH_PATH_PREFIX) {
+    return isWorkbenchPath(path) || path === "/";
   }
   if (
     routePath === "/routines" ||
@@ -107,7 +107,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     hasStageTopBar: false,
   },
   {
-    path: CHANNEL_PATH_PREFIX,
+    path: WORKBENCH_PATH_PREFIX,
     label: "Workbenches",
     icon: <MessageSquare />,
     render: (path: string, navigate: (to: string) => void) => (
@@ -198,7 +198,7 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
  * directly; the rest are palette- and deep-link-reachable.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
-  CHANNEL_PATH_PREFIX,
+  WORKBENCH_PATH_PREFIX,
   "/routines",
   "/library",
   "/insights",

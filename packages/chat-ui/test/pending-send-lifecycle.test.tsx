@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { PendingActions, TimelineMessageItem } from "../src/timeline";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -29,7 +29,7 @@ async function mount(
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={items}
         {...(pendingActions !== undefined ? { pendingActions } : {})}
       />,

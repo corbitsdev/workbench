@@ -27,9 +27,9 @@ import {
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
 import {
-  buildChannelDigestWorkflow,
-  serializeChannelDigestWorkflow,
-} from "@corbits/channel-digest-workflow";
+  buildWorkbenchDigestWorkflow,
+  serializeWorkbenchDigestWorkflow,
+} from "@corbits/workbench-digest-workflow";
 import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
@@ -70,7 +70,7 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 // fast rather than tie up a run slot for the full two minutes the
 // conversational workflows above allow.
 const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
-const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
+const WORKBENCH_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 // Never actually runs (its routine fire is intercepted and dispatched
 // as a task instead — see @corbits/recurring-task-workflow's own doc),
 // so this timeout only bounds the deploy-time definition, never a real
@@ -102,7 +102,7 @@ const NOOP_MODEL = "noop";
  * A `ModelSource` pointed at the hub's own `noop-inference` endpoint
  * instead of a real provider — the same substitution
  * `packages/chat/src/platform-adapter.ts`'s `noopSourcesOverride` makes
- * for channel-host launches, reused here so a workflow deployed with
+ * for workbench-host launches, reused here so a workflow deployed with
  * this source resolves every turn instantly against a constant,
  * locally served reply and never reaches a real model. `hubUrl` is the
  * same base URL `seedTenant` already receives, so no new configuration
@@ -176,7 +176,7 @@ export type DefaultWorkflow = {
    * `heartbeat`, which must stay free to run continuously: it names
    * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
    * Absent on every conversational workflow and on the seeded
-   * channel-digest automation, which deploy against the tenant's real
+   * workbench-digest automation, which deploy against the tenant's real
    * model.
    */
   modelSource?: (hubUrl: string) => ModelSource;
@@ -198,7 +198,7 @@ function catalogAutomatable(assetName: string): boolean {
 
 /**
  * The workflow set every real tenant starts with: the echo
- * walking-skeleton, the general-purpose assistant, and the channel-digest
+ * walking-skeleton, the general-purpose assistant, and the workbench-digest
  * automation the Routines picker can honestly offer. This is what
  * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
  * on first login for every real user — growing it is adding an entry
@@ -206,7 +206,7 @@ function catalogAutomatable(assetName: string): boolean {
  * never the place for a workflow that exists only to exercise the
  * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
  *
- * channel-digest is the seed automation: schedulable, not a chat host,
+ * workbench-digest is the seed automation: schedulable, not a chat host,
  * friendly display name. It uses the tenant's real model so a scheduled
  * run can produce a real digest line.
  */
@@ -242,17 +242,17 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       ),
   },
   {
-    assetName: "channel-digest",
-    displayName: catalogDisplayName("channel-digest"),
-    automatable: catalogAutomatable("channel-digest"),
+    assetName: "workbench-digest",
+    displayName: catalogDisplayName("workbench-digest"),
+    automatable: catalogAutomatable("workbench-digest"),
     buildJson: (tenantDomain, model) =>
-      serializeChannelDigestWorkflow(
-        buildChannelDigestWorkflow({
-          triggerAddress: `channel-digest@${tenantDomain}`,
+      serializeWorkbenchDigestWorkflow(
+        buildWorkbenchDigestWorkflow({
+          triggerAddress: `workbench-digest@${tenantDomain}`,
           inferencePreferences: [
             { provider: model.provider, model: model.model },
           ],
-          turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
+          turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
   },
@@ -308,7 +308,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
  * explicit, dev/CI-specific caller (`workbench seed` with
  * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
  *
- * channel-digest used to live here as a platform exercise; it is now the
+ * workbench-digest used to live here as a platform exercise; it is now the
  * seed automation in `DEFAULT_WORKFLOWS` so every personal bench has an
  * honest Routines-picker option.
  */
@@ -1268,7 +1268,7 @@ export type SeedCatalogArgs = {
   apiKey?: string;
   /**
    * Explicit opt-in to plant a placeholder credential when `apiKey` is
-   * not set, so a keyless dev or CI run can still launch channel
+   * not set, so a keyless dev or CI run can still launch workbench
    * anchors. Plain `workbench seed` never sets this — only callers that
    * need a launchable chain without a real key (the local dev
    * bootstrap, the e2e harness) pass it.
@@ -1368,7 +1368,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   if (credentialSecret === undefined) {
     log(
       `catalog models for ${seed.provider.name} seeded without a credential; ` +
-        `no channel or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
+        `no workbench or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
     );
     return;
   }

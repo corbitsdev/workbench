@@ -10,12 +10,12 @@
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { getAncestorChain, schema } from "@intx/db";
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 export type VisibleAgentDefinition = {
   readonly id: string;
   readonly name: string;
-  /** The tenant that actually owns this definition — where its DM channel
+  /** The tenant that actually owns this definition — where its DM workbench
    * must be minted, not necessarily the caller's own tenant. */
   readonly tenantId: string;
   /** The owning tenant's display name — lets a sidebar row honestly
@@ -23,7 +23,7 @@ export type VisibleAgentDefinition = {
    * <tenantName>") without a second round trip. */
   readonly tenantName: string;
   /** Recency fallback for a sidebar row that has never been opened as a
-   * DM: once a DM channel exists its own `lastActivityAt` takes over. */
+   * DM: once a DM workbench exists its own `lastActivityAt` takes over. */
   readonly createdAt: string;
 };
 
@@ -55,9 +55,9 @@ export async function listVisibleAgentDefinitions(
 
     for (const row of rows) {
       // A definition with no materialized asset isn't launchable yet; a
-      // channel host is a silent per-channel anchor, never a DM target.
+      // workbench host is a silent per-workbench anchor, never a DM target.
       if (row.assetId === null) continue;
-      if (isChannelHostDefinitionName(row.name)) continue;
+      if (isWorkbenchHostDefinitionName(row.name)) continue;
       // Leaf-to-root order means the closer tenant's definition for this
       // name was already recorded — an ancestor's same-name row never
       // overwrites it.

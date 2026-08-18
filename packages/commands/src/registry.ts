@@ -1,5 +1,5 @@
 // The command registry: a name -> `CommandDefinition` lookup any host
-// surface (a channel's message pipeline, an autocomplete listing, a
+// surface (a workbench's message pipeline, an autocomplete listing, a
 // direct execute endpoint) dispatches through. Sized to what workbench
 // needs today — `CommandResult` is a closed, small union, never the
 // TUI-shaped result types (`view`, `overlay`, `modal`, `paste-image`,
@@ -20,7 +20,7 @@ export type CommandResult =
       readonly type: "workflow-started";
       readonly definitionId: string;
       readonly address: string;
-      /** The channel-facing handle the started workflow now answers
+      /** The workbench-facing handle the started workflow now answers
        * to (its participant handle), for a result message to name. */
       readonly handle: string;
     }
@@ -29,7 +29,7 @@ export type CommandResult =
 export interface CommandContext {
   readonly tenantId: string;
   readonly principalId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
 }
 
 export interface CommandDefinition {

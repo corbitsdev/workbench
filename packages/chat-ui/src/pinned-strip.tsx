@@ -1,8 +1,8 @@
-// The pinned strip: a horizontal row at the top of the channel showing
+// The pinned strip: a horizontal row at the top of the workbench showing
 // every currently-pinned message, each a jump-to-message chip. Renders
 // nothing when there are no pins — an empty strip is chrome nobody
 // asked to see, the same "no items, no surface" rule the timeline's own
-// empty state follows for the reverse case (see `ChannelTimeline`).
+// empty state follows for the reverse case (see `WorkbenchTimeline`).
 
 import { Pin } from "lucide-react";
 

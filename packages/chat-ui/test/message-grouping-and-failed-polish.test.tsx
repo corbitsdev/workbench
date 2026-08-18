@@ -10,7 +10,7 @@ import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
 import type { PendingActions, TimelineMessageItem } from "../src/timeline";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -27,7 +27,7 @@ async function mount(items: readonly TimelineMessageItem[]) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(<ChannelTimeline items={items} />);
+    root?.render(<WorkbenchTimeline items={items} />);
   });
   return container;
 }
@@ -119,7 +119,9 @@ describe("consecutive same-author grouping", () => {
       {
         id: "m2",
         createdAt: "2026-01-01T00:00:10.000Z",
-        parts: [{ kind: "event", event: "channel.settings-changed", data: {} }],
+        parts: [
+          { kind: "event", event: "workbench.settings-changed", data: {} },
+        ],
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
       {
@@ -159,7 +161,7 @@ describe("failed pending message's inline recovery affordance", () => {
     root = createRoot(container);
     await act(async () => {
       root?.render(
-        <ChannelTimeline
+        <WorkbenchTimeline
           items={failedItem()}
           currentUser={{ principalId: "prn_self1" }}
           pendingActions={pendingActions}
@@ -199,7 +201,7 @@ describe("the reply-timed-out notice renders as an event line", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<ChannelTimeline items={items} />);
+      root?.render(<WorkbenchTimeline items={items} />);
     });
 
     expect(container.querySelector(".chat-event-line")?.textContent).toContain(
@@ -234,14 +236,17 @@ describe("own-message avatar initials never fabricate 'YO'", () => {
     root = createRoot(container);
     await act(async () => {
       root?.render(
-        <ChannelTimeline items={ownItem()} currentUser={currentUser} />,
+        <WorkbenchTimeline items={ownItem()} currentUser={currentUser} />,
       );
     });
     return container;
   }
 
   test("a name on currentUser drives real initials, not the 'You' label", async () => {
-    const el = await mountOwn({ principalId: "prn_self1", name: "Sawyer Cutler" });
+    const el = await mountOwn({
+      principalId: "prn_self1",
+      name: "Sawyer Cutler",
+    });
     expect(el.querySelector(".chat-sender-avatar")?.textContent).toBe("SC");
     expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe(
       "Sawyer Cutler",

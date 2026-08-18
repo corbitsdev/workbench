@@ -3,7 +3,7 @@
 // options as buttons, and an optional free-text field. Clicking an option
 // (or submitting free text) posts the answer through the same
 // `/blocks/:blockId/responses` round-trip the poll/form cards use, and the
-// route additionally relays it into the channel as this principal's own
+// route additionally relays it into the workbench as this principal's own
 // message (see `packages/chat/src/routes.ts`) -- the card itself never
 // asserts a resolved answer; it always re-reads `own` from the server,
 // same anti-spoof rule every other block card follows.

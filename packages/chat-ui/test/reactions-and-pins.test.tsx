@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { MessageItem, PinnedMessage } from "../src/api";
 import { PinnedStrip } from "../src/pinned-strip";
-import { ChannelTimeline, messageDomId } from "../src/timeline";
+import { WorkbenchTimeline, messageDomId } from "../src/timeline";
 import type { PinActions, ReactionActions } from "../src/timeline";
 
 function messageWithReactions(): MessageItem[] {
@@ -48,7 +48,7 @@ async function mount(
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={items}
         {...(reactionActions !== undefined ? { reactionActions } : {})}
         {...(pinActions !== undefined ? { pinActions } : {})}

@@ -9,7 +9,10 @@ import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { APIQuery } from "@corbits/api-query";
-import { RoutineDetailPage, RoutinesListPage } from "../src/pages/routines-page";
+import {
+  RoutineDetailPage,
+  RoutinesListPage,
+} from "../src/pages/routines-page";
 import type { Routine, RoutineRun } from "../src/routines-api";
 import {
   CanvasAvailabilityProvider,
@@ -62,7 +65,7 @@ const routine: Routine = {
     draftedSteps: [{ title: "Pull signups", detail: "CSV from warehouse" }],
   },
   enabled: true,
-  deliveryChannelId: "ch_1",
+  deliveryWorkbenchId: "ch_1",
   consecutiveFailures: 0,
   deadLetteredAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -72,7 +75,7 @@ const routine: Routine = {
 const researcherDefinition = {
   id: "wfd_1",
   assetName: "researcher",
-  deliveryMode: "channel" as const,
+  deliveryMode: "workbench" as const,
   name: "Researcher",
   status: "deployed",
   whatItDoes: "Pulls research from connected sources.",
@@ -86,7 +89,7 @@ const listProps = {
   runHistories: new Map<string, readonly RoutineRun[]>(),
   liveRuns: ready([]),
   definitions: [] as const,
-  channels: [] as const,
+  workbenches: [] as const,
   selectedId: null as string | null,
   onSelect: (_id: string | null) => {},
   webhookTrigger: null,
@@ -94,7 +97,7 @@ const listProps = {
   onToggleEnabled: () => {},
   onRunNow: () => Promise.resolve(),
   onOpenRuns: () => {},
-  onOpenChannel: (_channelId: string) => {},
+  onOpenWorkbench: (_workbenchId: string) => {},
 };
 
 describe("RoutinesListPage", () => {
@@ -142,11 +145,11 @@ describe("RoutinesListPage", () => {
         runHistories={runHistories}
         selectedId={routine.id}
         definitions={[researcherDefinition]}
-        channels={[
+        workbenches={[
           {
             id: "ch_1",
             title: "Ops",
-            kind: "channel",
+            kind: "workbench",
             pinned: false,
             participants: [],
           },
@@ -207,7 +210,7 @@ describe("RoutinesListPage", () => {
     expect(markup).not.toContain("Show three");
   });
 
-  test("a recent-run row deep-links to the routine's delivery channel", () => {
+  test("a recent-run row deep-links to the routine's delivery workbench", () => {
     const runHistories = new Map<string, readonly RoutineRun[]>([
       [
         routine.id,
@@ -243,7 +246,7 @@ describe("RoutineDetailPage", () => {
         runs={ready<readonly RoutineRun[]>([])}
         onBack={() => {}}
         onOpenRuns={() => {}}
-        onOpenChannel={(_channelId: string) => {}}
+        onOpenWorkbench={(_workbenchId: string) => {}}
       />,
     );
     expect(markup).toContain("Morning brief");
@@ -265,7 +268,7 @@ describe("RoutineDetailPage", () => {
         runs={ready<readonly RoutineRun[]>([run])}
         onBack={() => {}}
         onOpenRuns={() => {}}
-        onOpenChannel={(_channelId: string) => {}}
+        onOpenWorkbench={(_workbenchId: string) => {}}
       />,
     );
     expect(markup).toContain("manual");
@@ -290,7 +293,7 @@ describe("RoutineDetailPage", () => {
         runs={ready<readonly RoutineRun[]>([failedRun])}
         onBack={() => {}}
         onOpenRuns={() => {}}
-        onOpenChannel={(_channelId: string) => {}}
+        onOpenWorkbench={(_workbenchId: string) => {}}
       />,
     );
     expect(markup).toContain("Paused after 5 failed attempts");
@@ -307,7 +310,7 @@ describe("RoutineDetailPage", () => {
         runs={ready<readonly RoutineRun[]>([])}
         onBack={() => {}}
         onOpenRuns={() => {}}
-        onOpenChannel={(_channelId: string) => {}}
+        onOpenWorkbench={(_workbenchId: string) => {}}
       />,
     );
     expect(markup).not.toContain("Paused after");
@@ -372,7 +375,7 @@ describe("webhook trigger panel", () => {
         }
         onBack={() => {}}
         onOpenRuns={() => {}}
-        onOpenChannel={(_channelId: string) => {}}
+        onOpenWorkbench={(_workbenchId: string) => {}}
       />,
     );
     expect(markup).toContain("/api/webhooks/wht_1");
@@ -452,7 +455,7 @@ describe("webhook trigger panel", () => {
   });
 
   test("the routine detail's 'Delivers to' line links to its space", () => {
-    let openedChannelId: string | null = null;
+    let openedWorkbenchId: string | null = null;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
@@ -461,19 +464,19 @@ describe("webhook trigger panel", () => {
         createElement(RoutineDetailPage, {
           routine: ready(routine),
           runs: ready<readonly RoutineRun[]>([]),
-          channels: [
+          workbenches: [
             {
               id: "ch_1",
               title: "Ops",
-              kind: "channel" as const,
+              kind: "workbench" as const,
               pinned: false,
               participants: [],
             },
           ],
           onBack: () => {},
           onOpenRuns: () => {},
-          onOpenChannel: (channelId: string) => {
-            openedChannelId = channelId;
+          onOpenWorkbench: (workbenchId: string) => {
+            openedWorkbenchId = workbenchId;
           },
         }),
       );
@@ -487,7 +490,7 @@ describe("webhook trigger panel", () => {
       act(() => {
         link?.click();
       });
-      expect(openedChannelId as string | null).toBe("ch_1");
+      expect(openedWorkbenchId as string | null).toBe("ch_1");
     } finally {
       act(() => root.unmount());
       container.remove();

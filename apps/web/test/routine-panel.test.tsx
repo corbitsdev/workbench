@@ -5,9 +5,9 @@
 // never a route hop. Every write autosaves and is serialized through one
 // queue (`saveState` shows "Saving…"/"Saved"/an honest error). A routine
 // created from the panel always targets the conversation it was opened
-// beside — that channel's own host agent and its own id as the delivery
-// destination — or, with no channel in scope, this workbench's existing
-// Myra channel; never a newly minted one.
+// beside — that workbench's own host agent and its own id as the delivery
+// destination — or, with no workbench in scope, this workbench's existing
+// Myra workbench; never a newly minted one.
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act } from "react";
@@ -51,11 +51,11 @@ let routines: Record<string, unknown>[] = [];
 let createdRoutine: Record<string, unknown> | null = null;
 let updatedPatches: Record<string, unknown>[] = [];
 let createRoutineCalls: Record<string, unknown>[] = [];
-let createChannelCalls: Record<string, unknown>[] = [];
+let createWorkbenchCalls: Record<string, unknown>[] = [];
 let runNowCalls = 0;
 let slackConfigured = false;
 let networkDelayMs = 0;
-let channelAgentsByChannel: Record<
+let workbenchAgentsByWorkbench: Record<
   string,
   { address: string; handle: string; definitionId: string }[]
 > = {
@@ -63,7 +63,7 @@ let channelAgentsByChannel: Record<
     { address: "myra_1@wf_1.tnt_1", handle: "myra", definitionId: "wfd_1" },
   ],
 };
-let chatChannels: Record<string, unknown>[] = [];
+let chatWorkbenches: Record<string, unknown>[] = [];
 let runsByRoutineId: Record<string, Record<string, unknown>[]> = {};
 let tasks: Record<string, unknown>[] = [];
 let topLevelRuns: Record<string, unknown>[] = [];
@@ -80,7 +80,7 @@ function routineRecord(
     scope: "personal",
     input: {},
     enabled: false,
-    deliveryChannelId: null,
+    deliveryWorkbenchId: null,
     consecutiveFailures: 0,
     deadLetteredAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -102,8 +102,8 @@ async function routeFetch(
   if (url.includes("/api/me/principals")) {
     return jsonResponse({ data: [membership], nextCursor: null });
   }
-  if (url.includes("/api/channel-tenancies/kinds")) {
-    return jsonResponse({ channelTenantIds: [] });
+  if (url.includes("/api/workbench-tenancies/kinds")) {
+    return jsonResponse({ workbenchTenantIds: [] });
   }
   if (url.includes("/api/deployment-capabilities")) {
     return jsonResponse({ slackConfigured });
@@ -114,30 +114,30 @@ async function routeFetch(
       nextCursor: null,
     });
   }
-  const agentsMatch = url.match(/\/chat\/channels\/([^/]+)\/agents$/);
+  const agentsMatch = url.match(/\/chat\/workbenches\/([^/]+)\/agents$/);
   if (agentsMatch) {
     return jsonResponse({
-      items: channelAgentsByChannel[agentsMatch[1] as string] ?? [],
+      items: workbenchAgentsByWorkbench[agentsMatch[1] as string] ?? [],
     });
   }
   if (
-    url.includes("/chat/channels") &&
+    url.includes("/chat/workbenches") &&
     url.includes("kind=chat") &&
     method === "GET"
   ) {
-    return jsonResponse({ items: chatChannels });
+    return jsonResponse({ items: chatWorkbenches });
   }
   if (
-    url.includes("/chat/channels") &&
-    url.includes("kind=channel") &&
+    url.includes("/chat/workbenches") &&
+    url.includes("kind=workbench") &&
     method === "GET"
   ) {
     return jsonResponse({ items: [] });
   }
-  if (url.endsWith("/chat/channels") && method === "POST") {
+  if (url.endsWith("/chat/workbenches") && method === "POST") {
     const body: Record<string, unknown> = JSON.parse(String(init?.body));
-    createChannelCalls.push(body);
-    const channel = {
+    createWorkbenchCalls.push(body);
+    const workbench = {
       id: "ch_myra_new",
       title: body["name"],
       kind: "chat",
@@ -146,9 +146,9 @@ async function routeFetch(
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
-    chatChannels = [...chatChannels, channel];
-    channelAgentsByChannel = {
-      ...channelAgentsByChannel,
+    chatWorkbenches = [...chatWorkbenches, workbench];
+    workbenchAgentsByWorkbench = {
+      ...workbenchAgentsByWorkbench,
       ch_myra_new: [
         {
           address: "myra_2@wf_2.tnt_1",
@@ -157,7 +157,7 @@ async function routeFetch(
         },
       ],
     };
-    return jsonResponse(channel);
+    return jsonResponse(workbench);
   }
   if (url.includes("/webhook-triggers") && method === "POST") {
     const body: Record<string, unknown> = JSON.parse(String(init?.body));
@@ -230,7 +230,7 @@ async function routeFetch(
       id: `rtn_${createRoutineCalls.length}`,
       name: body["name"],
       definitionId: body["definitionId"],
-      deliveryChannelId: body["deliveryChannelId"] ?? null,
+      deliveryWorkbenchId: body["deliveryWorkbenchId"] ?? null,
       trigger: body["trigger"] ?? null,
       input: body["input"] ?? {},
     });
@@ -259,16 +259,16 @@ describe("RoutinePanel", () => {
     createdRoutine = null;
     updatedPatches = [];
     createRoutineCalls = [];
-    createChannelCalls = [];
+    createWorkbenchCalls = [];
     runNowCalls = 0;
     slackConfigured = false;
     networkDelayMs = 0;
-    chatChannels = [];
+    chatWorkbenches = [];
     runsByRoutineId = {};
     tasks = [];
     topLevelRuns = [];
     runTraces = {};
-    channelAgentsByChannel = {
+    workbenchAgentsByWorkbench = {
       ch_1: [
         { address: "myra_1@wf_1.tnt_1", handle: "myra", definitionId: "wfd_1" },
       ],
@@ -375,7 +375,7 @@ describe("RoutinePanel", () => {
         header?.querySelector(".shell-canvas-pane-title")?.textContent,
       ).toBe("Runs");
 
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       header = container.querySelector(".shell-canvas-pane-header");
       expect(header).not.toBeNull();
       expect(
@@ -414,16 +414,16 @@ describe("RoutinePanel", () => {
         routineRecord({
           id: "rtn_here",
           name: "Here digest",
-          deliveryChannelId: "ch_1",
+          deliveryWorkbenchId: "ch_1",
         }),
         routineRecord({
           id: "rtn_elsewhere",
           name: "Elsewhere digest",
-          deliveryChannelId: "ch_other",
+          deliveryWorkbenchId: "ch_other",
         }),
         routineRecord({ id: "rtn_unbound", name: "Unbound digest" }),
       ];
-      await renderPanel({ view: "list", channelId: "ch_1" });
+      await renderPanel({ view: "list", workbenchId: "ch_1" });
 
       expect(container.textContent).toContain("Here digest");
       expect(container.textContent).not.toContain("Elsewhere digest");
@@ -442,12 +442,12 @@ describe("RoutinePanel", () => {
       expect(openedSubjects).toContainEqual({ routineId: "rtn_a" });
     });
 
-    test("New routine opens the editor with a null routineId, carrying the channel through", async () => {
-      await renderPanel({ view: "list", channelId: "ch_1" });
+    test("New routine opens the editor with a null routineId, carrying the workbench through", async () => {
+      await renderPanel({ view: "list", workbenchId: "ch_1" });
       act(() => buttonWithText("New routine")?.click());
       expect(openedSubjects).toContainEqual({
         routineId: null,
-        channelId: "ch_1",
+        workbenchId: "ch_1",
       });
     });
 
@@ -551,7 +551,7 @@ describe("RoutinePanel", () => {
         {
           id: "tsk_1",
           definitionId: "def_1",
-          channelId: "ch_1",
+          workbenchId: "ch_1",
           agentName: "Myra",
           prompt: "Summarize the week",
           modelPreference: null,
@@ -566,7 +566,7 @@ describe("RoutinePanel", () => {
         {
           id: "tsk_2",
           definitionId: "def_1",
-          channelId: "ch_1",
+          workbenchId: "ch_1",
           agentName: "Myra",
           prompt: "Draft the memo",
           modelPreference: null,
@@ -602,7 +602,7 @@ describe("RoutinePanel", () => {
       return {
         id: "run_a",
         definitionId: "wfd_1",
-        channelId: "ch_1",
+        workbenchId: "ch_1",
         definitionName: "Myra",
         tenantId: "tnt_1",
         address: "myra_1@wf_1.tnt_1",
@@ -676,19 +676,19 @@ describe("RoutinePanel", () => {
   });
 
   describe("editor view", () => {
-    test("back chevron returns to the list, not close — carrying the channel through", async () => {
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+    test("back chevron returns to the list, not close — carrying the workbench through", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       const back = container.querySelector('[aria-label="Back"]');
       act(() => (back as HTMLButtonElement).click());
       expect(closed).toBe(false);
       expect(openedSubjects).toContainEqual({
         view: "list",
-        channelId: "ch_1",
+        workbenchId: "ch_1",
       });
     });
 
-    test("creating a routine targets the panel's own channel: its host agent, and delivers back into it", async () => {
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+    test("creating a routine targets the panel's own workbench: its host agent, and delivers back into it", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       fillAndBlur(name, "Morning digest");
@@ -696,12 +696,12 @@ describe("RoutinePanel", () => {
 
       expect(createRoutineCalls).toHaveLength(1);
       expect(createRoutineCalls[0]?.["definitionId"]).toBe("wfd_1");
-      expect(createRoutineCalls[0]?.["deliveryChannelId"]).toBe("ch_1");
+      expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_1");
       expect(toastMock).toHaveBeenCalled();
     });
 
-    test("no channel in scope: falls back to the workbench's existing Myra channel, never minting a new one", async () => {
-      chatChannels = [
+    test("no workbench in scope: falls back to the workbench's existing Myra workbench, never minting a new one", async () => {
+      chatWorkbenches = [
         {
           id: "ch_myra",
           title: "Myra",
@@ -712,8 +712,8 @@ describe("RoutinePanel", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ];
-      channelAgentsByChannel = {
-        ...channelAgentsByChannel,
+      workbenchAgentsByWorkbench = {
+        ...workbenchAgentsByWorkbench,
         ch_myra: [
           {
             address: "myra_9@wf_9.tnt_1",
@@ -729,13 +729,13 @@ describe("RoutinePanel", () => {
       await settle();
 
       expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["deliveryChannelId"]).toBe("ch_myra");
+      expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_myra");
       expect(createRoutineCalls[0]?.["definitionId"]).toBe("wfd_myra");
-      expect(createChannelCalls).toHaveLength(0);
+      expect(createWorkbenchCalls).toHaveLength(0);
     });
 
     test("rapid Name and Instruction blur in the same tick serialize into one create, then one update — never two creates", async () => {
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       const instruction = fieldByLabel(
@@ -772,7 +772,7 @@ describe("RoutinePanel", () => {
 
     test("shows Saving… while a write is in flight, then Saved", async () => {
       networkDelayMs = 30;
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -794,11 +794,11 @@ describe("RoutinePanel", () => {
 
     test("an honest inline error when the write fails", async () => {
       await renderPanel({ routineId: null });
-      // No channelId and no Myra channel exists, and no assistant
+      // No workbenchId and no Myra workbench exists, and no assistant
       // definition is deployed for this fixture tenant either — the
       // fallback fails honestly rather than silently minting anything.
-      const originalDefs = channelAgentsByChannel;
-      channelAgentsByChannel = { ...originalDefs, ch_myra_new: [] };
+      const originalDefs = workbenchAgentsByWorkbench;
+      workbenchAgentsByWorkbench = { ...originalDefs, ch_myra_new: [] };
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       fillAndBlur(name, "Morning digest");
@@ -823,7 +823,7 @@ describe("RoutinePanel", () => {
     });
 
     test("Test run is disabled until the routine is saved, then fires the run-once call", async () => {
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       expect(buttonWithText("Run now")?.hasAttribute("disabled")).toBe(true);
 
       act(() => root.unmount());
@@ -846,7 +846,7 @@ describe("RoutinePanel", () => {
 
     test("the trigger popover lists only honestly-working triggers — Slack hidden when not configured, shown when it is", async () => {
       slackConfigured = false;
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       act(() => openMenu(buttonWithText("+ Add trigger")));
       await settle();
       let items = [...document.querySelectorAll('[role="menuitem"]')].map(
@@ -862,7 +862,7 @@ describe("RoutinePanel", () => {
       document.body.appendChild(container);
       root = createRoot(container);
       slackConfigured = true;
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       act(() => openMenu(buttonWithText("+ Add trigger")));
       await settle();
       items = [...document.querySelectorAll('[role="menuitem"]')].map((el) =>
@@ -872,7 +872,7 @@ describe("RoutinePanel", () => {
     });
 
     test("picking a schedule preset commits the trigger in one click — no sub-menu chain", async () => {
-      await renderPanel({ routineId: null, channelId: "ch_1" });
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
       act(() => openMenu(buttonWithText("+ Add trigger")));
       await settle();
       const onSchedule = [

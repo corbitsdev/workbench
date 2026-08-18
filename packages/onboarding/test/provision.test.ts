@@ -387,7 +387,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -397,7 +400,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -593,7 +600,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -603,7 +613,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -696,7 +710,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
     });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
-    // channel-digest, recurring-task, last-30-days-research — on top of
+    // workbench-digest, recurring-task, last-30-days-research — on top of
     // the one failed attempt.
     expect(assetCreateAttempts).toBe(6);
   });
@@ -959,7 +973,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -969,7 +986,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };

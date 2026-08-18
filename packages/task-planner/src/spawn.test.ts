@@ -170,7 +170,7 @@ function storeOverInserts(db: {
     async linkPlannerRun(input) {
       plannerRunIds.set(input.id, input.plannerRunId);
     },
-    async recordChannel() {},
+    async recordWorkbench() {},
     async listLegs(tenantId, taskId) {
       return legRows().filter(
         (leg) => leg.tenantId === tenantId && leg.taskId === taskId,

@@ -458,7 +458,7 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       await hop(
-        "every default workflow — echo, channel-digest, and assistant — deploys and goes live",
+        "every default workflow — echo, workbench-digest, and assistant — deploys and goes live",
         async () => {
           await deploySeededWorkflows(DEFAULT_WORKFLOWS);
           for (const workflow of DEFAULT_WORKFLOWS) {

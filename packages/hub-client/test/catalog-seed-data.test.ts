@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   CATALOG_SEEDS,
-  deriveChannelHostInferencePreferences,
+  deriveWorkbenchHostInferencePreferences,
 } from "../src/catalog-seed-data";
 import {
   supportedCredentialProviders,
@@ -61,22 +61,22 @@ describe("CATALOG_SEEDS", () => {
   });
 });
 
-describe("deriveChannelHostInferencePreferences", () => {
+describe("deriveWorkbenchHostInferencePreferences", () => {
   test("anthropic-only bench prefers its curated default", () => {
-    expect(deriveChannelHostInferencePreferences(["anthropic"])).toEqual([
+    expect(deriveWorkbenchHostInferencePreferences(["anthropic"])).toEqual([
       { provider: "anthropic", model: "claude-sonnet-5" },
     ]);
   });
 
   test("openrouter-only bench gets an openrouter preference, not anthropic", () => {
-    expect(deriveChannelHostInferencePreferences(["openrouter"])).toEqual([
+    expect(deriveWorkbenchHostInferencePreferences(["openrouter"])).toEqual([
       { provider: "openrouter", model: "qwen/qwen3.8-27b" },
     ]);
   });
 
   test("a multi-provider bench orders anthropic first, in CATALOG_SEEDS order otherwise", () => {
     expect(
-      deriveChannelHostInferencePreferences([
+      deriveWorkbenchHostInferencePreferences([
         "groq",
         "openrouter",
         "anthropic",
@@ -90,7 +90,7 @@ describe("deriveChannelHostInferencePreferences", () => {
 
   test("a multi-provider bench without anthropic still orders by CATALOG_SEEDS declaration", () => {
     expect(
-      deriveChannelHostInferencePreferences(["huggingface", "xai"]),
+      deriveWorkbenchHostInferencePreferences(["huggingface", "xai"]),
     ).toEqual([
       { provider: "xai", model: "grok-4.6" },
       {
@@ -101,12 +101,12 @@ describe("deriveChannelHostInferencePreferences", () => {
   });
 
   test("a bench with zero connected providers gets an empty, honest list", () => {
-    expect(deriveChannelHostInferencePreferences([])).toEqual([]);
+    expect(deriveWorkbenchHostInferencePreferences([])).toEqual([]);
   });
 
   test("an unrecognized provider name is dropped, not guessed at", () => {
     expect(
-      deriveChannelHostInferencePreferences(["not-a-real-provider"]),
+      deriveWorkbenchHostInferencePreferences(["not-a-real-provider"]),
     ).toEqual([]);
   });
 });

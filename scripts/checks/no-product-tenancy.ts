@@ -41,17 +41,19 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 13,
+    maxOccurrences: 14,
     tables: [
-      "channel_settings",
+      // Created as channel_settings et al.; renamed to workbench_* by
+      // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
+      "workbench_settings",
       "chat_bench_settings",
-      "channel_read_state",
-      "channel_launch",
-      "channel_tenancy",
-      "channel_threads",
-      "channel_thread_messages",
-      "channel_share",
-      "channel_share_member",
+      "workbench_read_state",
+      "workbench_launch",
+      "workbench_tenancy",
+      "workbench_threads",
+      "workbench_thread_messages",
+      "workbench_share",
+      "workbench_share_member",
       "block_responses",
       "message_reactions",
       "pinned_messages",
@@ -59,6 +61,7 @@ const ALLOWLIST: readonly {
       // surfaces (CL-6039) — see finalizedTurnWriteClaim's doc comment
       // in schema.ts.
       "finalized_turn_write_claim",
+      "message_client_ids",
     ],
   },
   {

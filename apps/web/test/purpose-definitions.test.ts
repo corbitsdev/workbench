@@ -8,23 +8,23 @@ import {
 describe("purposeDefinitions", () => {
   test("keeps only automatable catalog workflows", () => {
     const kept = purposeDefinitions([
-      { id: "1", name: "channel-digest" },
+      { id: "1", name: "workbench-digest" },
       { id: "2", name: "heartbeat" },
       { id: "3", name: "echo" },
       { id: "4", name: "assistant" },
       { id: "5", name: "my-agent-handle" },
     ]);
-    expect(kept.map((d) => d.name)).toEqual(["channel-digest", "heartbeat"]);
+    expect(kept.map((d) => d.name)).toEqual(["workbench-digest", "heartbeat"]);
   });
 
-  test("drops channel-host definition names even if they look catalog-like", () => {
-    // isChannelHostDefinitionName owns the host naming contract; anything
+  test("drops workbench-host definition names even if they look catalog-like", () => {
+    // isWorkbenchHostDefinitionName owns the host naming contract; anything
     // it flags is out regardless of catalog membership.
     const kept = purposeDefinitions([
-      { id: "1", name: "channel-digest" },
-      { id: "2", name: "channel-host-xyz" },
+      { id: "1", name: "workbench-digest" },
+      { id: "2", name: "workbench-host-xyz" },
     ]);
-    expect(kept.map((d) => d.name)).toEqual(["channel-digest"]);
+    expect(kept.map((d) => d.name)).toEqual(["workbench-digest"]);
   });
 });
 

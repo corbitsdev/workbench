@@ -131,6 +131,15 @@ export const tasksMigrations: readonly TaskMigration[] = [
       ALTER TABLE "tasks"."task" ADD COLUMN IF NOT EXISTS "channel_id" text;
     `,
   },
+  // Product rename (CL-6260): follows @corbits/chat's own
+  // 0018_rename_channel_to_workbench — this package's `channel_id`
+  // named the same conversation, so it is renamed the same way.
+  {
+    name: "0007_rename_channel_id_to_workbench_id",
+    sql: `
+      ALTER TABLE "tasks"."task" RENAME COLUMN "channel_id" TO "workbench_id";
+    `,
+  },
 ];
 
 /**

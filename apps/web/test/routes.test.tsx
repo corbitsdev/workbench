@@ -4,9 +4,9 @@
 // and renders beside the one always-present sidebar. The one route with no
 // stage bar of its own (`/`, see `AppRoute.hasStageTopBar`) gets one from
 // `AppShell` itself, so every route ends up titled the same way — except
-// the conversation route (`/c`), whose own conversation header IS its page
+// the conversation route (`/w`), whose own conversation header IS its page
 // identity (CL-6089): it renders no generic `StageTopBar` at all, static
-// or otherwise, since a channel is never resolved in this unauthenticated
+// or otherwise, since a workbench is never resolved in this unauthenticated
 // static render.
 
 import { ThemeProvider } from "@corbits/react-ui";
@@ -61,9 +61,10 @@ function stagePageTitle(markup: string): string | undefined {
  * tests confirm the *right* footer affordance lights, and nothing else
  * does. */
 function activeFooterLabel(markup: string): string | undefined {
-  const lit = /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
-    markup,
-  );
+  const lit =
+    /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
+      markup,
+    );
   if (lit === null) return undefined;
   return /<span>([^<]+)<\/span>/.exec(lit[1] ?? "")?.[1];
 }
@@ -77,7 +78,7 @@ describe("route table", () => {
   test("covers every screen the app can route to", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
-      "/c",
+      "/w",
       "/inbox",
       "/routines",
       "/library",
@@ -99,10 +100,10 @@ describe("route table", () => {
     ]);
   });
 
-  test("legacy /chat paths still match the channels route", () => {
-    expect(matchesRoute("/c", "/chat")).toBe(true);
-    expect(matchesRoute("/c", "/chat/ch_1")).toBe(true);
-    expect(matchesRoute("/c", "/c/ch_1")).toBe(true);
+  test("legacy /chat paths still match the workbenches route", () => {
+    expect(matchesRoute("/w", "/chat")).toBe(true);
+    expect(matchesRoute("/w", "/chat/ch_1")).toBe(true);
+    expect(matchesRoute("/w", "/w/ch_1")).toBe(true);
   });
 
   test("/settings/:section stays on the settings route", () => {
@@ -146,9 +147,7 @@ describe("/inbox redirect", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(
-        inboxRoute.render("/inbox", (to) => navigated.push(to)),
-      );
+      root?.render(inboxRoute.render("/inbox", (to) => navigated.push(to)));
     });
     expect(navigated).toEqual(["/"]);
   });
@@ -171,8 +170,8 @@ describe("routes render", () => {
       // The conversation route titles itself via its own conversation
       // header, not a generic `StageTopBar` — asserting no stage bar
       // renders here is the regression guard for the double-header bug
-      // CL-6089 fixed (a "Workbenches" bar over the channel's own header).
-      if (route.path === "/c") {
+      // CL-6089 fixed (a "Workbenches" bar over the workbench's own header).
+      if (route.path === "/w") {
         expect(stagePageTitle(markup)).toBeUndefined();
         expect(markup).toContain('data-testid="shell-sidebar"');
         return;
@@ -201,10 +200,10 @@ describe("routes render", () => {
     expect(activeFooterLabel(markup)).toBeUndefined();
   });
 
-  test("a /c/:channelId deep link waits for tenant resolution", () => {
+  test("a /w/:workbenchId deep link waits for tenant resolution", () => {
     // Static rendering has no selected tenant, so the deep link cannot expose
-    // channel state before the outer workbench scope resolves.
-    const markup = renderApp("/c/ch_deep");
+    // workbench state before the outer workbench scope resolves.
+    const markup = renderApp("/w/ch_deep");
     expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="false"/);
   });
 });

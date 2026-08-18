@@ -34,7 +34,7 @@ import {
 } from "../packages/folded-runs/src/migrations";
 import {
   applyChatMigrations,
-  listChannelLaunchFoldedRunIds,
+  listWorkbenchLaunchFoldedRunIds,
 } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
@@ -128,7 +128,7 @@ async function applyInstalledPackageMigrations(
  * @corbits/tasks already depend on @corbits/folded-runs, so having it
  * read back their schemas would close that into a cycle. Instead each
  * launching package exposes its own read-only lister over its own
- * schema (listChannelLaunchFoldedRunIds, listTaskFoldedRunIds), this
+ * schema (listWorkbenchLaunchFoldedRunIds, listTaskFoldedRunIds), this
  * script — the one place that already knows and sequences every
  * installed package — combines their output, and
  * @corbits/folded-runs' own backfillFoldedRunMarkers is the only thing
@@ -138,12 +138,12 @@ async function applyInstalledPackageMigrations(
 async function backfillFoldedRunsFromInstalledPackages(
   databaseUrl: string,
 ): Promise<void> {
-  const [channelLaunchSeeds, taskSeeds] = await Promise.all([
-    listChannelLaunchFoldedRunIds(databaseUrl),
+  const [workbenchLaunchSeeds, taskSeeds] = await Promise.all([
+    listWorkbenchLaunchFoldedRunIds(databaseUrl),
     listTaskFoldedRunIds(databaseUrl),
   ]);
   const { applied, inserted } = await backfillFoldedRunMarkers(databaseUrl, [
-    ...channelLaunchSeeds,
+    ...workbenchLaunchSeeds,
     ...taskSeeds,
   ]);
   if (applied) {
@@ -565,7 +565,7 @@ export async function setupDatabase(
 // reset that only drops `schema` would leave those tables behind: the next
 // `bun run dev`/`workbench reset` would boot against fresh `tenant`/
 // `principal` rows while e.g. `mailbox.principal_mail` or
-// `chat.channel_settings` still held the old ones (and, once the old FKs
+// `chat.workbench_settings` still held the old ones (and, once the old FKs
 // are cascaded away, orphaned rows no package's `CREATE TABLE IF NOT
 // EXISTS` migration would ever revisit). Always dropped alongside the
 // target schema so a reset is a true clean slate for every installed

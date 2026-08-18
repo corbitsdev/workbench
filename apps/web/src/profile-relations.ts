@@ -1,40 +1,40 @@
-// What the profile card's Message action and shared-channels list need,
+// What the profile card's Message action and shared-workbenches list need,
 // resolved against real bench data (CL-5914, CL-5919). Generalizes
-// `myra-channel.ts`'s ensure-style reuse — find an existing 1:1 by
+// `myra-workbench.ts`'s ensure-style reuse — find an existing 1:1 by
 // participant instead of by a fixed title, and fall back to creating one —
 // to any profile subject rather than one hardcoded agent.
 
 import { localPartOf } from "@corbits/chat/agent-address";
 import {
-  createChannel,
-  findDirectChannelWith,
-  listChannels,
-  sharedChannelsWith,
-  type CreateChannelInput,
+  createWorkbench,
+  findDirectWorkbenchWith,
+  listWorkbenches,
+  sharedWorkbenchesWith,
+  type CreateWorkbenchInput,
   type ProfileSubject,
-  type SharedChannelSummary,
+  type SharedWorkbenchSummary,
 } from "@corbits/chat-ui";
 
 import { listAgentInstances } from "./agents-api";
 
-export async function loadSharedChannels(
+export async function loadSharedWorkbenches(
   tenantId: string,
   viewerPrincipalId: string,
   subject: ProfileSubject,
-): Promise<readonly SharedChannelSummary[]> {
-  const [channels, chats] = await Promise.all([
-    listChannels(tenantId, "channel"),
-    listChannels(tenantId, "chat"),
+): Promise<readonly SharedWorkbenchSummary[]> {
+  const [workbenches, chats] = await Promise.all([
+    listWorkbenches(tenantId, "workbench"),
+    listWorkbenches(tenantId, "chat"),
   ]);
-  return sharedChannelsWith(
-    [...channels, ...chats],
+  return sharedWorkbenchesWith(
+    [...workbenches, ...chats],
     viewerPrincipalId,
     subject.address,
   );
 }
 
 /**
- * The chat `POST /channels` body for starting a 1:1 with `subject` — a
+ * The chat `POST /workbenches` body for starting a 1:1 with `subject` — a
  * person's chat is keyed by principalId (the address local part, per
  * `timeline.tsx`'s `CurrentUser` doc comment); an agent's chat is keyed by
  * the definitionId of whichever running instance owns `subject.address`,
@@ -45,7 +45,7 @@ export async function loadSharedChannels(
 export function dmCreateInputFor(
   subject: ProfileSubject,
   agentDefinitionId: string | null,
-): CreateChannelInput | null {
+): CreateWorkbenchInput | null {
   if (subject.kind === "agent") {
     if (agentDefinitionId === null) return null;
     return {
@@ -62,12 +62,12 @@ export function dmCreateInputFor(
 }
 
 export type EnsureProfileDmResult =
-  | { readonly kind: "ready"; readonly channelId: string }
+  | { readonly kind: "ready"; readonly workbenchId: string }
   | { readonly kind: "error"; readonly message: string };
 
 /**
- * Open-or-create the direct channel with `subject`: reuse a chat or
- * channel `subject.address` already participates in, else create a fresh
+ * Open-or-create the direct workbench with `subject`: reuse a chat or
+ * workbench `subject.address` already participates in, else create a fresh
  * chat.
  */
 export async function ensureProfileDm(
@@ -75,15 +75,15 @@ export async function ensureProfileDm(
   subject: ProfileSubject,
 ): Promise<EnsureProfileDmResult> {
   try {
-    const [channels, chats] = await Promise.all([
-      listChannels(tenantId, "channel"),
-      listChannels(tenantId, "chat"),
+    const [workbenches, chats] = await Promise.all([
+      listWorkbenches(tenantId, "workbench"),
+      listWorkbenches(tenantId, "chat"),
     ]);
     const existing =
-      findDirectChannelWith(chats, subject.address) ??
-      findDirectChannelWith(channels, subject.address);
+      findDirectWorkbenchWith(chats, subject.address) ??
+      findDirectWorkbenchWith(workbenches, subject.address);
     if (existing !== undefined) {
-      return { kind: "ready", channelId: existing.id };
+      return { kind: "ready", workbenchId: existing.id };
     }
 
     let agentDefinitionId: string | null = null;
@@ -101,8 +101,8 @@ export async function ensureProfileDm(
         message: `No running agent found for @${subject.handle}.`,
       };
     }
-    const created = await createChannel(tenantId, input);
-    return { kind: "ready", channelId: created.id };
+    const created = await createWorkbench(tenantId, input);
+    return { kind: "ready", workbenchId: created.id };
   } catch (cause) {
     return {
       kind: "error",

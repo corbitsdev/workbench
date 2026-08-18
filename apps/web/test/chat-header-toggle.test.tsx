@@ -1,6 +1,6 @@
 // ChatWorkspace carries the shell's single col2 toggle through its
-// headerLeading slot: first in the channel header when a channel is active,
-// and in a bare header while channels load — so chat never strands the
+// headerLeading slot: first in the workbench header when a workbench is active,
+// and in a bare header while workbenches load — so chat never strands the
 // toggle behind its own loading states. Lives here (not packages/chat-ui)
 // because these branches only resolve under a DOM with effects.
 
@@ -21,10 +21,10 @@ class StubEventSource {
   close(): void {}
 }
 
-const channelWire = {
+const workbenchWire = {
   id: "ch_1",
   title: "Growth",
-  kind: "channel",
+  kind: "workbench",
   pinned: false,
   participants: [],
 };
@@ -38,10 +38,10 @@ function jsonResponse(body: unknown): Response {
 
 function routeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
-  if (url.includes("/chat/channels?kind=channel")) {
-    return Promise.resolve(jsonResponse({ items: [channelWire] }));
+  if (url.includes("/chat/workbenches?kind=workbench")) {
+    return Promise.resolve(jsonResponse({ items: [workbenchWire] }));
   }
-  if (url.includes("/chat/channels?kind=chat")) {
+  if (url.includes("/chat/workbenches?kind=chat")) {
     return Promise.resolve(jsonResponse({ items: [] }));
   }
   if (url.includes("/threads")) {
@@ -87,7 +87,7 @@ describe("ChatWorkspace headerLeading", () => {
     globalThis.EventSource = realEventSource;
   });
 
-  test("channels loading renders a bare header that carries the toggle", async () => {
+  test("workbenches loading renders a bare header that carries the toggle", async () => {
     globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
       new Promise<Response>(() => {})) as typeof fetch;
     await act(async () => {
@@ -95,27 +95,27 @@ describe("ChatWorkspace headerLeading", () => {
         <TestQueryProvider>
           <ChatWorkspace
             tenant={{ kind: "ready", tenantId: "tnt_1" }}
-            channelId="ch_1"
+            workbenchId="ch_1"
             headerLeading={leading}
           />
         </TestQueryProvider>,
       );
     });
-    const header = container.querySelector(".chat-channel-header");
+    const header = container.querySelector(".chat-workbench-header");
     if (header === null) throw new Error("bare header not rendered");
     expect(
       header.querySelector('button[aria-label="Toggle sidebar"]'),
     ).not.toBeNull();
   });
 
-  test("an active channel renders the toggle first in the channel header", async () => {
+  test("an active workbench renders the toggle first in the workbench header", async () => {
     globalThis.fetch = routeFetch as typeof fetch;
     await act(async () => {
       root.render(
         <TestQueryProvider>
           <ChatWorkspace
             tenant={{ kind: "ready", tenantId: "tnt_1" }}
-            channelId="ch_1"
+            workbenchId="ch_1"
             headerLeading={leading}
           />
         </TestQueryProvider>,
@@ -125,14 +125,14 @@ describe("ChatWorkspace headerLeading", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("chat-channel-title")) break;
+      if (container.innerHTML.includes("chat-workbench-title")) break;
     }
 
-    const header = container.querySelector(".chat-channel-header");
-    if (header === null) throw new Error("channel header not rendered");
+    const header = container.querySelector(".chat-workbench-header");
+    if (header === null) throw new Error("workbench header not rendered");
     expect(header.textContent).toContain("Growth");
     const toggle = header.querySelector('button[aria-label="Toggle sidebar"]');
-    if (toggle === null) throw new Error("toggle not in the channel header");
+    if (toggle === null) throw new Error("toggle not in the workbench header");
     expect(header.firstElementChild).toBe(toggle);
   });
 });

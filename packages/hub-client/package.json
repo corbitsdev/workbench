@@ -19,7 +19,7 @@
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "@corbits/assistant-workflow": "workspace:*",
-    "@corbits/channel-digest-workflow": "workspace:*",
+    "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
     "@corbits/heartbeat-workflow": "workspace:*",
     "@corbits/last-30-days-research-workflow": "workspace:*",

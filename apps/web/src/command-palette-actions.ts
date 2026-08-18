@@ -14,7 +14,7 @@
 // Workbench creation is not one of those — there is no dialog to race, no
 // page to mount first: one click mints a fresh Myra workbench and
 // navigates straight into it (CL-6138, superseding the CL-6089/CL-6121
-// picker-and-dialog design). "new-channel" and "new-agent" both funnel
+// picker-and-dialog design). "new-workbench" and "new-agent" both funnel
 // through `requestNewWorkbench`, the same one-creation-verb hop the
 // sidebar's own "+" control uses. "New thread" is out of scope (killed by
 // owner decision).
@@ -31,9 +31,9 @@
 import { toast } from "@corbits/react-ui";
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
-import { CHANNEL_PATH_PREFIX, channelPath } from "./channel-path";
+import { WORKBENCH_PATH_PREFIX, workbenchPath } from "./workbench-path";
 import { createAgentAndLaunch } from "./instant-agent-create";
-import { ensureMyraChannel } from "./myra-channel";
+import { ensureMyraWorkbench } from "./myra-workbench";
 import { requestLibraryUpload } from "./library-upload";
 import type { RoutinePanelSubject } from "./shell/canvas-availability";
 
@@ -94,7 +94,7 @@ export function resetPendingDialogRequests(): void {
 }
 
 export type ActionCommandId =
-  | "new-channel"
+  | "new-workbench"
   | "new-agent"
   | "new-routine"
   | "new-skill"
@@ -102,7 +102,7 @@ export type ActionCommandId =
   | "toggle-theme"
   | "close-canvas"
   | "talk-to-myra"
-  | "go-channels"
+  | "go-workbenches"
   | "go-insights";
 
 export type ActionCommand = {
@@ -117,7 +117,7 @@ export type ActionCommand = {
  * registry (`skills-api.ts`) rather than installing one from a catalog. */
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
-    id: "new-channel",
+    id: "new-workbench",
     title: "New workbench",
     subtitle: "Mint a fresh workbench with Myra",
   },
@@ -149,7 +149,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Open your personal agent",
   },
   {
-    id: "go-channels",
+    id: "go-workbenches",
     title: "Go to workbenches",
     subtitle: "Home · conversation list",
   },
@@ -170,7 +170,7 @@ export type ActionCommandContext = {
 };
 
 /**
- * Runs one action command. "new-channel" and "new-agent" both mint
+ * Runs one action command. "new-workbench" and "new-agent" both mint
  * directly — see `requestNewWorkbench`'s doc; "new-skill" still goes
  * through a pending flag when the palette fires it off-route (see the
  * module doc), so the target page's own mount effect opens the dialog
@@ -182,7 +182,7 @@ export async function runActionCommand(
   ctx: ActionCommandContext,
 ): Promise<void> {
   switch (id) {
-    case "new-channel":
+    case "new-workbench":
     case "new-agent": {
       await requestNewWorkbench({
         tenantId: ctx.tenantId,
@@ -222,12 +222,13 @@ export async function runActionCommand(
     }
     case "talk-to-myra": {
       if (ctx.tenantId === null) return;
-      const result = await ensureMyraChannel(ctx.tenantId);
-      if (result.kind === "ready") ctx.navigate(channelPath(result.channelId));
+      const result = await ensureMyraWorkbench(ctx.tenantId);
+      if (result.kind === "ready")
+        ctx.navigate(workbenchPath(result.workbenchId));
       return;
     }
-    case "go-channels": {
-      ctx.navigate(CHANNEL_PATH_PREFIX);
+    case "go-workbenches": {
+      ctx.navigate(WORKBENCH_PATH_PREFIX);
       return;
     }
     case "go-insights": {

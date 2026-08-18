@@ -31,7 +31,11 @@ import {
   useShellLayoutMode,
 } from "@corbits/shell-layout";
 import { useBench } from "../bench-context";
-import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import {
+  workbenchIdFromPath,
+  workbenchPath,
+  isWorkbenchPath,
+} from "../workbench-path";
 import {
   CanvasAvailabilityProvider,
   type AppCanvasColumnState,
@@ -77,8 +81,8 @@ export function ShellChromeProvider({
     ) {
       previousTenantIdRef.current = selectedTenantId;
       setCanvasState(clearCanvasForTenantSwitch());
-      if (isChannelPath(path) && channelIdFromPath(path) !== null) {
-        navigate(channelPath(null));
+      if (isWorkbenchPath(path) && workbenchIdFromPath(path) !== null) {
+        navigate(workbenchPath(null));
       }
       return;
     }

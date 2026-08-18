@@ -44,14 +44,14 @@ export type WorkflowCatalogEntry = {
    * Where a run's result actually lands — the honest end-to-end
    * contract a routine's "Deliver results to" step depends on. Every
    * entry states this plainly, whether or not it is automatable:
-   * `"channel"` posts into the picked delivery channel's thread (the
+   * `"workbench"` posts into the picked delivery workbench's thread (the
    * default every workflow used before recurring-task existed);
-   * `"inbox"` never posts to a channel at all — its result reaches only
+   * `"inbox"` never posts to a workbench at all — its result reaches only
    * the creator's Inbox, so a create/run flow for it must never collect
-   * or require a deliveryChannelId that would otherwise be silently
+   * or require a deliveryWorkbenchId that would otherwise be silently
    * discarded.
    */
-  readonly deliveryMode: "channel" | "inbox";
+  readonly deliveryMode: "workbench" | "inbox";
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
   readonly whatItDoes: string;
   /**
@@ -94,7 +94,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "echo",
     displayName: "Echo",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Replies with the exact text it received — a wiring check for the mail-triggered contract, not a real assistant.",
     requiredConnections: [],
@@ -105,7 +105,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "assistant",
     displayName: "Myra",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "A general-purpose assistant for the workspace — answers questions, drafts text, and reasons through problems in conversation.",
     requiredConnections: [],
@@ -116,7 +116,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "heartbeat",
     displayName: "Heartbeat",
     automatable: true,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Completes immediately on every trigger with no real reply — a lightweight target for testing scheduling and mail triggers.",
     requiredConnections: [],
@@ -124,12 +124,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     typicalDuration: "a few seconds",
   },
   {
-    assetName: "channel-digest",
-    displayName: "Channel digest",
+    assetName: "workbench-digest",
+    displayName: "Workbench digest",
     automatable: true,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
-      "Relays a scheduler-computed digest line straight into a channel, unchanged — the digest content itself comes entirely from its trigger.",
+      "Relays a scheduler-computed digest line straight into a workbench, unchanged — the digest content itself comes entirely from its trigger.",
     requiredConnections: [],
     exampleOutput: "Digest of 12 messages since yesterday · last post 9:41am",
     typicalDuration: "a few seconds",
@@ -138,7 +138,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "granola-call",
     displayName: "Granola call notes",
     automatable: true,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Polls Granola for recent calls and starts one process-granola-call run per call that doesn't yet have published notes.",
     requiredConnections: ["granola"],
@@ -149,7 +149,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "process-granola-call",
     displayName: "Process Granola call",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
     requiredConnections: ["granola"],
@@ -161,7 +161,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "morning-brief",
     displayName: "Morning brief",
     automatable: true,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
@@ -173,7 +173,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "pain-point-collateral",
     displayName: "Pain-point collateral",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Extracts a customer's real pain points from a call transcript and drafts one piece of targeted collateral, held for approval before it's finalized.",
     requiredConnections: ["granola"],
@@ -209,7 +209,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "collateral-generation",
     displayName: "Collateral generation",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
@@ -221,7 +221,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "reddit-opportunity-scanner",
     displayName: "Reddit opportunity scanner",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Scores Reddit posts as outreach opportunities for a target website, after a review of the search plan and one approval on the final list.",
     requiredConnections: ["scrapecreators"],
@@ -232,7 +232,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "last-30-days-research",
     displayName: "Last 30 days research report",
     automatable: false,
-    deliveryMode: "channel",
+    deliveryMode: "workbench",
     whatItDoes:
       "Researches a topic over the last 30 days across web search and GitHub, and writes a cited report with sourced findings.",
     requiredConnections: ["exa"],
@@ -266,11 +266,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Recurring task",
     automatable: true,
     // A task result always lands in its creator's Inbox — never a
-    // channel — the same delivery every manual task uses. The create
-    // dialog reads this to skip the "Deliver results to" channel step
+    // workbench — the same delivery every manual task uses. The create
+    // dialog reads this to skip the "Deliver results to" workbench step
     // entirely for this workflow, and packages/routines' create/fire
-    // validation reads it (via the host's deliveryChannelRequired port)
-    // to never require a deliveryChannelId this workflow would silently
+    // validation reads it (via the host's deliveryWorkbenchRequired port)
+    // to never require a deliveryWorkbenchId this workflow would silently
     // discard.
     deliveryMode: "inbox",
     whatItDoes:
@@ -327,13 +327,15 @@ export function isAutomatableWorkflowName(name: string): boolean {
 }
 
 /**
- * Whether a routine on this workflow needs a `deliveryChannelId` at
+ * Whether a routine on this workflow needs a `deliveryWorkbenchId` at
  * all — `false` only for a known `"inbox"`-delivering entry (see
  * `WorkflowCatalogEntry.deliveryMode`). An unknown name defaults `true`
- * (channel required): the safe, prior-behavior default when a workflow
+ * (workbench required): the safe, prior-behavior default when a workflow
  * isn't catalog-known at all.
  */
-export function deliveryChannelRequiredForWorkflowName(name: string): boolean {
+export function deliveryWorkbenchRequiredForWorkflowName(
+  name: string,
+): boolean {
   return byAssetName.get(name)?.deliveryMode !== "inbox";
 }
 

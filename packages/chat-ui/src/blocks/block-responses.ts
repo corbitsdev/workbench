@@ -2,7 +2,7 @@
 // routes. `@corbits/chat-ui` owns no session, so it never fetches or
 // mutates responses itself -- the host supplies this port, mirroring how
 // `ApprovalActions` threads the approve card's round-trip through
-// `ChatWorkspace`/`ChannelTimeline` down to the card.
+// `ChatWorkspace`/`WorkbenchTimeline` down to the card.
 //
 // A poll's live tally and a form's "already submitted" state are always
 // re-read from this port after every vote/submit -- never assumed from the

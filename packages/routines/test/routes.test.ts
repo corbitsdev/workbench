@@ -10,7 +10,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import {
   createRoutineRoutes,
   fireScheduledRoutine,
-  type ChannelNoticePort,
+  type WorkbenchNoticePort,
   type CreateRoutineRoutesDeps,
   type RoutineLauncher,
 } from "../src/routes";
@@ -68,13 +68,13 @@ function fakeLauncher(): RoutineLauncher & {
   };
 }
 
-function fakeChannelNotice(): ChannelNoticePort & {
-  calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][];
+function fakeWorkbenchNotice(): WorkbenchNoticePort & {
+  calls: Parameters<WorkbenchNoticePort["postWorkbenchNotice"]>[0][];
 } {
-  const calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][] = [];
+  const calls: Parameters<WorkbenchNoticePort["postWorkbenchNotice"]>[0][] = [];
   return {
     calls,
-    async postChannelNotice(input) {
+    async postWorkbenchNotice(input) {
       calls.push(input);
     },
   };
@@ -143,7 +143,7 @@ const VALID_BODY = {
   definitionId: "def_digest",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
-  deliveryChannelId: "ch_delivery",
+  deliveryWorkbenchId: "ch_delivery",
 };
 
 describe("createRoutineRoutes", () => {
@@ -345,34 +345,34 @@ describe("createRoutineRoutes", () => {
   });
 
   test("posts an honest notice when a routine is created enabled", async () => {
-    const channelNotice = fakeChannelNotice();
-    const deps = buildDeps({ channelNotice });
+    const workbenchNotice = fakeWorkbenchNotice();
+    const deps = buildDeps({ workbenchNotice });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     await createRoutine(app, VALID_BODY);
 
-    expect(channelNotice.calls.length).toBe(1);
-    expect(channelNotice.calls[0]?.channelId).toBe(
-      VALID_BODY.deliveryChannelId,
+    expect(workbenchNotice.calls.length).toBe(1);
+    expect(workbenchNotice.calls[0]?.workbenchId).toBe(
+      VALID_BODY.deliveryWorkbenchId,
     );
-    expect(channelNotice.calls[0]?.text).toBe(
+    expect(workbenchNotice.calls[0]?.text).toBe(
       'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
         "Disable it in the Routines panel.",
     );
   });
 
   test("posts nothing when a routine is created disabled", async () => {
-    const channelNotice = fakeChannelNotice();
-    const deps = buildDeps({ channelNotice, store: storeCreatingDisabled() });
+    const workbenchNotice = fakeWorkbenchNotice();
+    const deps = buildDeps({ workbenchNotice, store: storeCreatingDisabled() });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { response } = await createRoutine(app, VALID_BODY);
 
     expect(response.status).toBe(201);
-    expect(channelNotice.calls.length).toBe(0);
+    expect(workbenchNotice.calls.length).toBe(0);
   });
 
   test("posts an honest notice when a disabled routine is flipped to enabled", async () => {
-    const channelNotice = fakeChannelNotice();
-    const deps = buildDeps({ channelNotice, store: storeCreatingDisabled() });
+    const workbenchNotice = fakeWorkbenchNotice();
+    const deps = buildDeps({ workbenchNotice, store: storeCreatingDisabled() });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { body: created } = await createRoutine(app, VALID_BODY);
 
@@ -383,19 +383,19 @@ describe("createRoutineRoutes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(channelNotice.calls.length).toBe(1);
-    expect(channelNotice.calls[0]?.text).toBe(
+    expect(workbenchNotice.calls.length).toBe(1);
+    expect(workbenchNotice.calls[0]?.text).toBe(
       'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
         "Disable it in the Routines panel.",
     );
   });
 
   test("posts nothing for an update that does not flip enabled", async () => {
-    const channelNotice = fakeChannelNotice();
-    const deps = buildDeps({ channelNotice });
+    const workbenchNotice = fakeWorkbenchNotice();
+    const deps = buildDeps({ workbenchNotice });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { body: created } = await createRoutine(app, VALID_BODY);
-    channelNotice.calls.length = 0; // clear the create notice
+    workbenchNotice.calls.length = 0; // clear the create notice
 
     const response = await app.request(`/routines/${created["id"]}`, {
       method: "PATCH",
@@ -404,15 +404,15 @@ describe("createRoutineRoutes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(channelNotice.calls.length).toBe(0);
+    expect(workbenchNotice.calls.length).toBe(0);
   });
 
   test("posts nothing for a patch that keeps an already-enabled routine enabled", async () => {
-    const channelNotice = fakeChannelNotice();
-    const deps = buildDeps({ channelNotice });
+    const workbenchNotice = fakeWorkbenchNotice();
+    const deps = buildDeps({ workbenchNotice });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { body: created } = await createRoutine(app, VALID_BODY);
-    channelNotice.calls.length = 0; // clear the create notice
+    workbenchNotice.calls.length = 0; // clear the create notice
 
     const response = await app.request(`/routines/${created["id"]}`, {
       method: "PATCH",
@@ -421,7 +421,7 @@ describe("createRoutineRoutes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(channelNotice.calls.length).toBe(0);
+    expect(workbenchNotice.calls.length).toBe(0);
   });
 
   test("lists only routines for the calling tenant", async () => {
@@ -449,7 +449,7 @@ describe("createRoutineRoutes", () => {
     expect(runResponse.status).toBe(201);
     expect(launcher.calls).toBe(1);
     // The run-now response carries only a runId — a run's result always
-    // delivers into the channel's root feed, never a hidden thread.
+    // delivers into the workbench's root feed, never a hidden thread.
     const runBody = (await runResponse.json()) as Record<string, unknown>;
     expect(Object.keys(runBody)).toEqual(["runId"]);
     expect(launcher.lastLaunchInput).not.toHaveProperty("deliveryThreadId");
@@ -554,18 +554,18 @@ describe("createRoutineRoutes", () => {
     expect(second.status).toBe(404);
   });
 
-  describe("deliveryChannelRequired", () => {
-    test("rejects a create with no deliveryChannelId when no port is wired (prior behavior)", async () => {
+  describe("deliveryWorkbenchRequired", () => {
+    test("rejects a create with no deliveryWorkbenchId when no port is wired (prior behavior)", async () => {
       const deps = buildDeps();
       const app = mountAs(createRoutineRoutes(deps), "user_1");
       const {
         name: _name,
-        deliveryChannelId: _drop,
-        ...withoutChannel
+        deliveryWorkbenchId: _drop,
+        ...withoutWorkbench
       } = VALID_BODY;
       const { response, body } = await createRoutine(app, {
-        ...withoutChannel,
-        name: "No channel",
+        ...withoutWorkbench,
+        name: "No workbench",
       });
       expect(response.status).toBe(400);
       expect((body["error"] as Record<string, unknown>)["code"]).toBe(
@@ -573,39 +573,39 @@ describe("createRoutineRoutes", () => {
       );
     });
 
-    test("rejects a create with no deliveryChannelId when the port says this definition requires one", async () => {
-      const deps = buildDeps({ deliveryChannelRequired: async () => true });
+    test("rejects a create with no deliveryWorkbenchId when the port says this definition requires one", async () => {
+      const deps = buildDeps({ deliveryWorkbenchRequired: async () => true });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const { response } = await createRoutine(app, {
-        ...withoutChannel,
-        name: "Still requires a channel",
+        ...withoutWorkbench,
+        name: "Still requires a workbench",
       });
       expect(response.status).toBe(400);
     });
 
-    test("accepts a create with no deliveryChannelId when the port says this definition never delivers to a channel", async () => {
-      const deps = buildDeps({ deliveryChannelRequired: async () => false });
+    test("accepts a create with no deliveryWorkbenchId when the port says this definition never delivers to a workbench", async () => {
+      const deps = buildDeps({ deliveryWorkbenchRequired: async () => false });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const { response, body } = await createRoutine(app, {
-        ...withoutChannel,
+        ...withoutWorkbench,
         name: "Inbox delivery",
       });
       expect(response.status).toBe(201);
-      expect(body["deliveryChannelId"]).toBe(null);
+      expect(body["deliveryWorkbenchId"]).toBe(null);
     });
 
-    test("'run now' on a channel-less routine succeeds once the port says a channel isn't required", async () => {
+    test("'run now' on a workbench-less routine succeeds once the port says a workbench isn't required", async () => {
       const launcher = fakeLauncher();
       const deps = buildDeps({
         launcher,
-        deliveryChannelRequired: async () => false,
+        deliveryWorkbenchRequired: async () => false,
       });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const { body: created } = await createRoutine(app, {
-        ...withoutChannel,
+        ...withoutWorkbench,
         name: "Inbox delivery",
       });
 
@@ -622,13 +622,13 @@ describe("createRoutineRoutes", () => {
   describe("deliverySpace", () => {
     function fakeDeliverySpace(
       overrides: {
-        readonly channelId?: string;
+        readonly workbenchId?: string;
         readonly onCreate?: () => void;
         readonly onCompensate?: () => void;
         readonly failCompensate?: boolean;
       } = {},
     ) {
-      const channelId = overrides.channelId ?? "ch_new_space";
+      const workbenchId = overrides.workbenchId ?? "ch_new_space";
       let createCalls = 0;
       let compensateCalls = 0;
       return {
@@ -650,7 +650,7 @@ describe("createRoutineRoutes", () => {
           expect(input.tenantId).toBe(TENANT.id);
           expect(input.tenantDomain).toBe(TENANT.domain);
           return {
-            channelId,
+            workbenchId,
             compensate: async () => {
               compensateCalls += 1;
               overrides.onCompensate?.();
@@ -663,27 +663,27 @@ describe("createRoutineRoutes", () => {
       };
     }
 
-    test("provisions a new space and binds it as deliveryChannelId when none is named", async () => {
+    test("provisions a new space and binds it as deliveryWorkbenchId when none is named", async () => {
       const deliverySpace = fakeDeliverySpace();
       const deps = buildDeps({ deliverySpace });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const { response, body } = await createRoutine(app, {
-        ...withoutChannel,
+        ...withoutWorkbench,
         name: "Weekly digest",
       });
       expect(response.status).toBe(201);
-      expect(body["deliveryChannelId"]).toBe("ch_new_space");
+      expect(body["deliveryWorkbenchId"]).toBe("ch_new_space");
       expect(deliverySpace.createCalls).toBe(1);
     });
 
-    test("leaves an existing deliveryChannelId untouched — the space port is never called", async () => {
+    test("leaves an existing deliveryWorkbenchId untouched — the space port is never called", async () => {
       const deliverySpace = fakeDeliverySpace();
       const deps = buildDeps({ deliverySpace });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
       const { response, body } = await createRoutine(app, VALID_BODY);
       expect(response.status).toBe(201);
-      expect(body["deliveryChannelId"]).toBe(VALID_BODY.deliveryChannelId);
+      expect(body["deliveryWorkbenchId"]).toBe(VALID_BODY.deliveryWorkbenchId);
       expect(deliverySpace.createCalls).toBe(0);
     });
 
@@ -695,11 +695,11 @@ describe("createRoutineRoutes", () => {
       };
       const deps = buildDeps({ store, deliverySpace });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const response = await app.request("/routines", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...withoutChannel, name: "Doomed" }),
+        body: JSON.stringify({ ...withoutWorkbench, name: "Doomed" }),
       });
       expect(response.status).toBe(500);
       expect(deliverySpace.createCalls).toBe(1);
@@ -714,11 +714,11 @@ describe("createRoutineRoutes", () => {
       };
       const deps = buildDeps({ store, deliverySpace });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
-      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
       const response = await app.request("/routines", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...withoutChannel, name: "Doomed" }),
+        body: JSON.stringify({ ...withoutWorkbench, name: "Doomed" }),
       });
       expect(response.status).toBe(500);
       expect(deliverySpace.compensateCalls).toBe(1);
@@ -781,7 +781,7 @@ describe("fireScheduledRoutine", () => {
       trigger: { kind: "interval", unit: "hours", every: 6 },
       scope: "bench",
       input: {},
-      deliveryChannelId: "ch_delivery",
+      deliveryWorkbenchId: "ch_delivery",
       createdBy: "user_1",
     });
 
@@ -822,12 +822,12 @@ describe("fireScheduledRoutine", () => {
     expect(launcher.calls).toBe(0);
   });
 
-  test("refuses to fire a channel-less routine when no deliveryChannelRequired port is wired (prior behavior)", async () => {
+  test("refuses to fire a workbench-less routine when no deliveryWorkbenchRequired port is wired (prior behavior)", async () => {
     const store = createInMemoryRoutineStore();
     const launcher = fakeLauncher();
     const created = await store.createRoutine({
       tenantId: TENANT.id,
-      name: "Channel-less digest",
+      name: "Workbench-less digest",
       definitionId: "def_digest",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       scope: "bench",
@@ -840,11 +840,11 @@ describe("fireScheduledRoutine", () => {
         { store, launcher },
         { tenantId: TENANT.id, routine: created },
       ),
-    ).rejects.toThrow(/deliveryChannelId/);
+    ).rejects.toThrow(/deliveryWorkbenchId/);
     expect(launcher.calls).toBe(0);
   });
 
-  test("fires a channel-less routine when the port says its definition never delivers to a channel", async () => {
+  test("fires a workbench-less routine when the port says its definition never delivers to a workbench", async () => {
     const store = createInMemoryRoutineStore();
     const launcher = fakeLauncher();
     const created = await store.createRoutine({
@@ -861,7 +861,7 @@ describe("fireScheduledRoutine", () => {
       {
         store,
         launcher,
-        deliveryChannelRequired: async () => false,
+        deliveryWorkbenchRequired: async () => false,
       },
       { tenantId: TENANT.id, routine: created },
     );

@@ -26,7 +26,7 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
     enabled: true,
-    deliveryChannelId: null,
+    deliveryWorkbenchId: null,
     consecutiveFailures: 0,
     deadLetteredAt: null,
     createdAt: "2026-08-16T00:00:00.000Z",

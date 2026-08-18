@@ -49,7 +49,7 @@ export const Routine = type({
   scope: "'personal' | 'bench'",
   input: "Record<string, unknown>",
   enabled: "boolean",
-  deliveryChannelId: "string | null",
+  deliveryWorkbenchId: "string | null",
   // How many scheduled fires have failed in a row (reset to 0 on any
   // successful fire, including "run now" — see store.ts). Zero means
   // healthy, regardless of `deadLetteredAt`.
@@ -93,7 +93,7 @@ export const RoutineDraft = type({
   proposedTrigger: RoutineTriggerWire,
   proposedName: "string | null",
   definitionId: "string | null",
-  deliveryChannelId: "string",
+  deliveryWorkbenchId: "string",
   scope: "'personal' | 'bench'",
   autonomy: "Record<string, unknown> | null",
   approvedRoutineId: "string | null",
@@ -107,11 +107,11 @@ export type CreateRoutineInput = {
   readonly definitionId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: "personal" | "bench";
-  /** Omitted only for a workflow whose result never posts to a channel
+  /** Omitted only for a workflow whose result never posts to a workbench
    * (see `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`)
    * — the server itself still rejects a missing value for every other
-   * workflow (`deliveryChannelRequired`, routes.ts). */
-  readonly deliveryChannelId?: string;
+   * workflow (`deliveryWorkbenchRequired`, routes.ts). */
+  readonly deliveryWorkbenchId?: string;
   readonly input?: Record<string, unknown>;
   readonly runOnceNow?: boolean;
 };
@@ -121,12 +121,12 @@ export type UpdateRoutineInput = {
   readonly trigger?: RoutineTriggerT;
   readonly enabled?: boolean;
   readonly input?: Record<string, unknown>;
-  readonly deliveryChannelId?: string;
+  readonly deliveryWorkbenchId?: string;
 };
 
 export type CreateDraftInput = {
   readonly prompt: string;
-  readonly deliveryChannelId: string;
+  readonly deliveryWorkbenchId: string;
   readonly scope: "personal" | "bench";
 };
 

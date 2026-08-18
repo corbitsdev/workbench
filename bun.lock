@@ -675,12 +675,12 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/assistant-workflow": "workspace:*",
-        "@corbits/channel-digest-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
         "@corbits/heartbeat-workflow": "workspace:*",
         "@corbits/last-30-days-research-workflow": "workspace:*",
         "@corbits/recurring-task-workflow": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
+        "@corbits/workbench-digest-workflow": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1542,18 +1542,6 @@
         "typescript": "catalog:",
       },
     },
-    "workflows/channel-digest": {
-      "name": "@corbits/channel-digest-workflow",
-      "version": "0.0.1",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "workflows/collateral-generation": {
       "name": "@corbits/collateral-generation-workflow",
       "version": "0.0.1",
@@ -1687,6 +1675,18 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/workbench-digest": {
+      "name": "@corbits/workbench-digest-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
   },
   "trustedDependencies": [
     "@corbits/react-ui",
@@ -1804,8 +1804,6 @@
 
     "@corbits/capability-tools": ["@corbits/capability-tools@workspace:packages/capability-tools"],
 
-    "@corbits/channel-digest-workflow": ["@corbits/channel-digest-workflow@workspace:workflows/channel-digest"],
-
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
@@ -1921,6 +1919,8 @@
     "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:packages/web-search-tools"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
+
+    "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
 

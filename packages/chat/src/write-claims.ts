@@ -102,7 +102,7 @@ export function createDrizzleWriteClaimStore<
  * In-memory `WriteClaimStore`, for tests only. Deliberately constructed
  * OUTSIDE `createChatOrchestrator`/`createArtifactDeliveryHandler` and
  * handed in as a dependency, unlike `postedApprovalIds`/
- * `ingestedChannelDays` in `./chat-orchestrator.ts` (plain `Set`s
+ * `ingestedWorkbenchDays` in `./chat-orchestrator.ts` (plain `Set`s
  * instantiated once per orchestrator and lost on the next one) — a test
  * can hold the same fake store across two separate orchestrator/handler
  * instances to prove a claim survives what a hub restart looks like from

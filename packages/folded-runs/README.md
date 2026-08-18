@@ -20,7 +20,7 @@ or a host-specific package such as `@corbits/chat`.
   imported from `@intx/hub-api`'s hub-api-internal helper.
 - **Crypto provider caching** (`./src/crypto-cache.ts`) —
   `createCryptoProviderCache` mints one `CryptoProvider` per cache key
-  (a channel id, an instance id, ...) and reuses it for the cache's
+  (a workbench id, an instance id, ...) and reuses it for the cache's
   lifetime; never evicted, since a key going momentarily unreachable does
   not mean it is gone for good.
 - **Run lookups** (`./src/runs.ts`) — resolving a run by id or address, and

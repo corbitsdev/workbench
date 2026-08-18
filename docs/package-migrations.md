@@ -28,7 +28,7 @@ tables — how its migrations are written, tracked, and applied.
   including its own ledger table. This holds regardless of whether a
   package's rows carry a `tenant_id` / `principal_id` column: those are
   plain text identifiers, not foreign keys, so a row in
-  `chat.channel_settings` refers to a platform tenant by id exactly the
+  `chat.workbench_settings` refers to a platform tenant by id exactly the
   same way whether it sits in `public` or in `chat` — the schema a table
   lives in is never load-bearing for that reference. A package landing in
   its own schema, never `public`, is what makes it possible to lift the

@@ -9,7 +9,7 @@ import {
 } from "../src/recents";
 
 function entry(id: string, title = id): RecentEntry {
-  return { kind: "channel", id, title };
+  return { kind: "workbench", id, title };
 }
 
 describe("addRecentEntry", () => {
@@ -29,10 +29,10 @@ describe("addRecentEntry", () => {
   });
 
   test("distinguishes entries with the same id but different kind", () => {
-    const channelA = { kind: "channel", id: "a", title: "a" };
+    const workbenchA = { kind: "workbench", id: "a", title: "a" };
     const pageA = { kind: "page", id: "a", title: "a" };
-    const result = addRecentEntry([channelA], pageA);
-    expect(result).toEqual([pageA, channelA]);
+    const result = addRecentEntry([workbenchA], pageA);
+    expect(result).toEqual([pageA, workbenchA]);
   });
 });
 
@@ -51,9 +51,9 @@ describe("removeRecentEntry", () => {
   });
 
   test("a same-id different-kind entry is untouched — kind+id is the key", () => {
-    const channelA = { kind: "channel", id: "a", title: "a" };
+    const workbenchA = { kind: "workbench", id: "a", title: "a" };
     const pageA = { kind: "page", id: "a", title: "a" };
-    const result = removeRecentEntry([channelA, pageA], channelA);
+    const result = removeRecentEntry([workbenchA, pageA], workbenchA);
     expect(result).toEqual([pageA]);
   });
 });
@@ -97,7 +97,7 @@ describe("createRecentsStore", () => {
     expect(result).toEqual([entry("a")]);
   });
 
-  test("remove persists and load reflects it — self-healing a stale entry (e.g. a channel that 404s)", () => {
+  test("remove persists and load reflects it — self-healing a stale entry (e.g. a workbench that 404s)", () => {
     const store = createRecentsStore(inMemoryStorage(), "bench:1");
     store.push(entry("a"));
     store.push(entry("b"));

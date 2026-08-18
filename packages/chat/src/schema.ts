@@ -1,6 +1,6 @@
 // Product tables @corbits/chat owns (see scripts/checks/no-product-tenancy
-// ALLOWLIST): channel_settings, channel_read_state, channel_launch,
-// channel_tenancy, message_reactions, and pinned_messages. These tables
+// ALLOWLIST): workbench_settings, workbench_read_state, workbench_launch,
+// workbench_tenancy, message_reactions, and pinned_messages. These tables
 // live in their own `chat` Postgres schema,
 // fully siloed from the platform's `public` schema — see
 // docs/package-migrations.md. `tenantId`/`principalId` are plain text
@@ -19,31 +19,31 @@ import {
 export const chatSchema = pgSchema("chat");
 
 /**
- * Settings for a single channel, record-as-truth: `settings` is a
+ * Settings for a single workbench, record-as-truth: `settings` is a
  * namespaced jsonb blob (`"chat/..."` keys plus extension namespaces)
  * rather than a column per setting, so new settings never require a
  * migration.
  */
-export const channelSettings = chatSchema.table(
-  "channel_settings",
+export const workbenchSettings = chatSchema.table(
+  "workbench_settings",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     settings: jsonb("settings").notNull(),
     updatedBy: text("updated_by").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.tenantId, table.channelId] })],
+  (table) => [primaryKey({ columns: [table.tenantId, table.workbenchId] })],
 );
 
 /**
  * Bench-wide chat defaults — one row per tenant, the same
- * record-as-truth jsonb shape as `channelSettings` (a `"chat/..."`
- * namespaced blob rather than a column per setting). A channel with no
+ * record-as-truth jsonb shape as `workbenchSettings` (a `"chat/..."`
+ * namespaced blob rather than a column per setting). A workbench with no
  * override for a given key inherits its value from here; see
- * `resolveContextWindow` in `./channel-settings.ts` for how the two are
+ * `resolveContextWindow` in `./workbench-settings.ts` for how the two are
  * folded into one effective value.
  */
 export const chatBenchSettings = chatSchema.table("chat_bench_settings", {
@@ -56,15 +56,15 @@ export const chatBenchSettings = chatSchema.table("chat_bench_settings", {
 });
 
 /**
- * Per-principal read cursor for a channel — humans and agents alike,
- * since both are principals on the platform. `channelId` is the
- * workflow-run/instance id that identifies the channel.
+ * Per-principal read cursor for a workbench — humans and agents alike,
+ * since both are principals on the platform. `workbenchId` is the
+ * workflow-run/instance id that identifies the workbench.
  */
-export const channelReadState = chatSchema.table(
-  "channel_read_state",
+export const workbenchReadState = chatSchema.table(
+  "workbench_read_state",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     principalId: text("principal_id").notNull(),
     lastSeenCreatedAt: timestamp("last_seen_created_at", {
       withTimezone: true,
@@ -73,20 +73,20 @@ export const channelReadState = chatSchema.table(
   },
   (table) => [
     primaryKey({
-      columns: [table.tenantId, table.channelId, table.principalId],
+      columns: [table.tenantId, table.workbenchId, table.principalId],
     }),
   ],
 );
 
 /**
  * The folded launch body of every instance this package launches —
- * channel hosts and invited agents alike — written in the launch
- * transaction and read back to wake a slept instance. A channel host's
+ * workbench hosts and invited agents alike — written in the launch
+ * transaction and read back to wake a slept instance. A workbench host's
  * definition exists nowhere else (its workflow asset is never pushed
  * a workflow.json), so this row is the single wake-time source for
  * both launch kinds.
  */
-export const channelLaunch = chatSchema.table("channel_launch", {
+export const workbenchLaunch = chatSchema.table("workbench_launch", {
   tenantId: text("tenant_id").notNull(),
   instanceId: text("instance_id").primaryKey(),
   foldedBody: jsonb("folded_body").notNull(),
@@ -94,8 +94,8 @@ export const channelLaunch = chatSchema.table("channel_launch", {
     .notNull()
     .defaultNow(),
   /**
-   * Set at launch time, never re-derived: `true` for a channel host
-   * (`launchChannel`), `false` for an invited agent (`launchInvite`).
+   * Set at launch time, never re-derived: `true` for a workbench host
+   * (`launchWorkbench`), `false` for an invited agent (`launchInvite`).
    * A wake (`wakeByAddress` in `platform-adapter.ts`) reads this to
    * decide whether to pin the noop inference source again or resolve
    * against the tenant catalog — the launch row is the only place
@@ -107,16 +107,16 @@ export const channelLaunch = chatSchema.table("channel_launch", {
 
 /**
  * The parent↔child link between a bench and the native tenant a
- * channel was minted as (see `./channel-tenancy.ts`). No native
+ * workbench was minted as (see `./workbench-tenancy.ts`). No native
  * child-tenant listing route exists upstream (`parentId` is stored on
  * `tenant` but never queried by any hub-api route), so this table is
- * the honest source for "which channels are child tenancies of this
+ * the honest source for "which workbenches are child tenancies of this
  * bench" — chat owns it rather than leaving the question unanswerable.
- * `tenantId` is unique: a channel tenant is minted for exactly one
- * channel, never shared.
+ * `tenantId` is unique: a workbench tenant is minted for exactly one
+ * workbench, never shared.
  */
-export const channelTenancy = chatSchema.table("channel_tenancy", {
-  channelId: text("channel_id").primaryKey(),
+export const workbenchTenancy = chatSchema.table("workbench_tenancy", {
+  workbenchId: text("workbench_id").primaryKey(),
   tenantId: text("tenant_id").notNull().unique(),
   parentTenantId: text("parent_tenant_id").notNull(),
   slug: text("slug").notNull(),
@@ -126,18 +126,18 @@ export const channelTenancy = chatSchema.table("channel_tenancy", {
 });
 
 /**
- * A thread inside a channel. The root feed is the thread with
- * `kind = 'root'` (one per channel). Reply threads hang off a parent
+ * A thread inside a workbench. The root feed is the thread with
+ * `kind = 'root'` (one per workbench). Reply threads hang off a parent
  * message id; delivery threads hang off a routine run ref. Messages
  * themselves still live in platform mail — this table is workbench
  * thread identity only (see `./threads.ts`).
  */
-export const channelThreads = chatSchema.table(
-  "channel_threads",
+export const workbenchThreads = chatSchema.table(
+  "workbench_threads",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     /** root | reply | delivery */
     kind: text("kind").notNull(),
     /** Message id this reply thread answers; null for root/delivery. */
@@ -157,7 +157,10 @@ export const channelThreads = chatSchema.table(
       .defaultNow(),
   },
   (table) => [
-    index("channel_threads_channel_idx").on(table.tenantId, table.channelId),
+    index("workbench_threads_workbench_idx").on(
+      table.tenantId,
+      table.workbenchId,
+    ),
   ],
 );
 
@@ -165,11 +168,11 @@ export const channelThreads = chatSchema.table(
  * Membership of a platform mail message id in a thread. A message
  * belongs to exactly one thread (root feed by default).
  */
-export const channelThreadMessages = chatSchema.table(
-  "channel_thread_messages",
+export const workbenchThreadMessages = chatSchema.table(
+  "workbench_thread_messages",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     threadId: text("thread_id").notNull(),
     messageId: text("message_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -178,9 +181,9 @@ export const channelThreadMessages = chatSchema.table(
   },
   (table) => [
     primaryKey({
-      columns: [table.tenantId, table.channelId, table.messageId],
+      columns: [table.tenantId, table.workbenchId, table.messageId],
     }),
-    index("channel_thread_messages_thread_idx").on(
+    index("workbench_thread_messages_thread_idx").on(
       table.tenantId,
       table.threadId,
     ),
@@ -188,22 +191,22 @@ export const channelThreadMessages = chatSchema.table(
 );
 
 /**
- * One channel's projection into a sibling tenant (CL-5882's
- * Slack-Connect-style shared channels). The owning tenant is never
- * inferable from `channelId` alone (a channel's own tenancy lives in
- * `channelTenancy`/`channel_settings`, not here), so it's carried
- * explicitly — `getShare`/`listSharesForChannel` in `./channel-share.ts`
+ * One workbench's projection into a sibling tenant (CL-5882's
+ * Slack-Connect-style shared workbenches). The owning tenant is never
+ * inferable from `workbenchId` alone (a workbench's own tenancy lives in
+ * `workbenchTenancy`/`workbench_settings`, not here), so it's carried
+ * explicitly — `getShare`/`listSharesForWorkbench` in `./workbench-share.ts`
  * always take it rather than re-deriving it. A row here is created only
  * after `FederationTrustStore.hasBilateralTrust` passes (see
- * `./channel-share.ts`'s `createShare`); this table records that a
+ * `./workbench-share.ts`'s `createShare`); this table records that a
  * projection *exists*, never that trust does — trust can later be
  * revoked without cascading a delete here (see `docs/TENANCY.md`).
  */
-export const channelShare = chatSchema.table(
-  "channel_share",
+export const workbenchShare = chatSchema.table(
+  "workbench_share",
   {
     owningTenantId: text("owning_tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     projectedTenantId: text("projected_tenant_id").notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -211,26 +214,26 @@ export const channelShare = chatSchema.table(
       .defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.channelId, table.projectedTenantId] }),
-    index("channel_share_projected_idx").on(table.projectedTenantId),
+    primaryKey({ columns: [table.workbenchId, table.projectedTenantId] }),
+    index("workbench_share_projected_idx").on(table.projectedTenantId),
   ],
 );
 
 /**
  * Which principals of a projected tenant can actually see a shared
- * channel — a share never auto-adds anyone (see `docs/TENANCY.md`'s
+ * workbench — a share never auto-adds anyone (see `docs/TENANCY.md`'s
  * scope boundary): each side's own admin explicitly adds their own
- * principals here via `POST /channels/:id/share-members`, fully
+ * principals here via `POST /workbenches/:id/share-members`, fully
  * separate from the owning tenant's own `chat/participants`. Scoped by
  * `projectedTenantId` first (matching the primary access question,
- * "can this caller, in this tenant, see this channel") so two tenants
- * sharing the same channel keep fully independent membership.
+ * "can this caller, in this tenant, see this workbench") so two tenants
+ * sharing the same workbench keep fully independent membership.
  */
-export const channelShareMember = chatSchema.table(
-  "channel_share_member",
+export const workbenchShareMember = chatSchema.table(
+  "workbench_share_member",
   {
     projectedTenantId: text("projected_tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     principalId: text("principal_id").notNull(),
     addedBy: text("added_by").notNull(),
     addedAt: timestamp("added_at", { withTimezone: true })
@@ -239,7 +242,7 @@ export const channelShareMember = chatSchema.table(
   },
   (table) => [
     primaryKey({
-      columns: [table.projectedTenantId, table.channelId, table.principalId],
+      columns: [table.projectedTenantId, table.workbenchId, table.principalId],
     }),
   ],
 );
@@ -255,7 +258,7 @@ export const blockResponses = chatSchema.table(
   "block_responses",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     messageId: text("message_id").notNull(),
     blockId: text("block_id").notNull(),
     principalId: text("principal_id").notNull(),
@@ -271,7 +274,7 @@ export const blockResponses = chatSchema.table(
     primaryKey({
       columns: [
         table.tenantId,
-        table.channelId,
+        table.workbenchId,
         table.messageId,
         table.blockId,
         table.principalId,
@@ -279,7 +282,7 @@ export const blockResponses = chatSchema.table(
     }),
     index("block_responses_block_idx").on(
       table.tenantId,
-      table.channelId,
+      table.workbenchId,
       table.messageId,
       table.blockId,
     ),
@@ -287,7 +290,7 @@ export const blockResponses = chatSchema.table(
 );
 
 /**
- * One row per (tenant, channel, message, emoji, principal) — a
+ * One row per (tenant, workbench, message, emoji, principal) — a
  * principal either has reacted with a given emoji on a given message
  * or hasn't; there is no count column, the row's presence *is* the
  * count (see `./reactions.ts`'s `toggleReaction`, which inserts on a
@@ -301,7 +304,7 @@ export const messageReactions = chatSchema.table(
   "message_reactions",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     messageId: text("message_id").notNull(),
     emoji: text("emoji").notNull(),
     principalId: text("principal_id").notNull(),
@@ -313,7 +316,7 @@ export const messageReactions = chatSchema.table(
     primaryKey({
       columns: [
         table.tenantId,
-        table.channelId,
+        table.workbenchId,
         table.messageId,
         table.emoji,
         table.principalId,
@@ -321,7 +324,7 @@ export const messageReactions = chatSchema.table(
     }),
     index("message_reactions_message_idx").on(
       table.tenantId,
-      table.channelId,
+      table.workbenchId,
       table.messageId,
     ),
   ],
@@ -340,7 +343,7 @@ export const pinnedMessages = chatSchema.table(
   "pinned_messages",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     messageId: text("message_id").notNull(),
     pinnedBy: text("pinned_by").notNull(),
     pinnedAt: timestamp("pinned_at", { withTimezone: true })
@@ -349,9 +352,12 @@ export const pinnedMessages = chatSchema.table(
   },
   (table) => [
     primaryKey({
-      columns: [table.tenantId, table.channelId, table.messageId],
+      columns: [table.tenantId, table.workbenchId, table.messageId],
     }),
-    index("pinned_messages_channel_idx").on(table.tenantId, table.channelId),
+    index("pinned_messages_workbench_idx").on(
+      table.tenantId,
+      table.workbenchId,
+    ),
   ],
 );
 
@@ -367,13 +373,13 @@ export const messageClientIds = chatSchema.table(
   "message_client_ids",
   {
     tenantId: text("tenant_id").notNull(),
-    channelId: text("channel_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
     messageId: text("message_id").notNull(),
     clientId: text("client_id").notNull(),
   },
   (table) => [
     primaryKey({
-      columns: [table.tenantId, table.channelId, table.messageId],
+      columns: [table.tenantId, table.workbenchId, table.messageId],
     }),
   ],
 );
@@ -386,12 +392,12 @@ export const messageClientIds = chatSchema.table(
  * check-then-write — before doing their one write. A redelivered
  * `onTurnFinalized` (sidecar reconnect, hub restart replaying the event
  * collector) loses the claim race the second time and skips the write
- * outright, unlike `postedApprovalIds`/`ingestedChannelDays` in
+ * outright, unlike `postedApprovalIds`/`ingestedWorkbenchDays` in
  * `chat-orchestrator.ts`, which are process-local `Set`s that reset on
  * restart. `surface` distinguishes the three call sites so a `memory`
  * claim and an `artifact` claim for the same turn never collide, and
  * `claimKey` is either the finalized turn's own `turnId` (memory/artifact)
- * or `"${channelId}:${date}"` (digest, folding in its former per-day
+ * or `"${workbenchId}:${date}"` (digest, folding in its former per-day
  * bound).
  */
 export const finalizedTurnWriteClaim = chatSchema.table(

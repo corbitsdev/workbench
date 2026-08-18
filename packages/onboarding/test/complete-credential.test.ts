@@ -213,7 +213,7 @@ describe("completeCredentialSetup", () => {
       workflows: [
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ],
@@ -263,7 +263,7 @@ describe("completeCredentialSetup", () => {
       workflows: [
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ],
@@ -313,7 +313,7 @@ describe("completeCredentialSetup", () => {
       workflows: [
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ],
@@ -668,7 +668,7 @@ describe("completeCredentialSetup", () => {
       expect(result.workflows).toEqual([
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ]);
@@ -1217,7 +1217,7 @@ describe("completeCredentialSetup", () => {
       pending: [
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ],
@@ -1420,7 +1420,7 @@ describe("ensureSeeded (the slow half)", () => {
       workflows: [
         "echo",
         "assistant",
-        "channel-digest",
+        "workbench-digest",
         "recurring-task",
         "last-30-days-research",
       ],
@@ -1669,7 +1669,7 @@ describe("ensureSeeded (the slow half)", () => {
       apiKey: "sk-ant-good",
       seedTenantFn: async () => {
         throw new SidecarUnavailableError(
-          "the hub could not deploy workflow channel-digest: the sidecar is unavailable",
+          "the hub could not deploy workflow workbench-digest: the sidecar is unavailable",
           "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
         );
       },
@@ -1678,7 +1678,7 @@ describe("ensureSeeded (the slow half)", () => {
     expect(result).toEqual({
       kind: "seeded-pending-agents",
       deployed: ["echo", "assistant"],
-      pending: ["channel-digest", "recurring-task", "last-30-days-research"],
+      pending: ["workbench-digest", "recurring-task", "last-30-days-research"],
       message: "Your workbench is ready — agents will come online shortly.",
     });
   });

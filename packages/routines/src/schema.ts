@@ -21,10 +21,10 @@ export const routinesSchema = pgSchema("routines");
 /**
  * A Routine: the named parent entity over workflow runs. `trigger` and
  * `input` are jsonb — record-as-truth, the same convention
- * `@corbits/chat`'s `channel_settings` uses — so new trigger shapes or
+ * `@corbits/chat`'s `workbench_settings` uses — so new trigger shapes or
  * input fields never require a migration. `trigger` holds the arktype-
  * validated shape from `./trigger.ts`, or `null` for a manual,
- * run-now-only routine. `deliveryChannelId` is nullable: a routine
+ * run-now-only routine. `deliveryWorkbenchId` is nullable: a routine
  * need not post its results anywhere.
  */
 export const routine = routinesSchema.table("routine", {
@@ -36,7 +36,7 @@ export const routine = routinesSchema.table("routine", {
   scope: text("scope").notNull(),
   input: jsonb("input").notNull(),
   enabled: boolean("enabled").notNull().default(true),
-  deliveryChannelId: text("delivery_channel_id"),
+  deliveryWorkbenchId: text("delivery_workbench_id"),
   createdBy: text("created_by").notNull(),
   // The due-fire clock: the next minute this routine's trigger matches,
   // recomputed on create, on every trigger/enabled change, and on each
@@ -110,7 +110,7 @@ export const routineDraft = routinesSchema.table("routine_draft", {
   proposedTrigger: jsonb("proposed_trigger"),
   proposedName: text("proposed_name"),
   definitionId: text("definition_id"),
-  deliveryChannelId: text("delivery_channel_id").notNull(),
+  deliveryWorkbenchId: text("delivery_workbench_id").notNull(),
   scope: text("scope").notNull(),
   autonomy: jsonb("autonomy"),
   createdBy: text("created_by").notNull(),

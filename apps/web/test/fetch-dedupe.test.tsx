@@ -2,7 +2,7 @@
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
 // `WorkbenchList`, and any second subscriber) shares the same TanStack
-// Query keys (`tenantKeys.channels`, `.tasks`, `.topLevelRuns` — see
+// Query keys (`tenantKeys.workbenches`, `.tasks`, `.topLevelRuns` — see
 // `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
 // each listing exactly once.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
-import { requestChannelRename } from "../src/channel-rename-events";
+import { requestWorkbenchRename } from "../src/workbench-rename-events";
 import { WorkbenchList } from "../src/shell/workbench-list";
 import {
   createTestQueryClient,
@@ -100,8 +100,8 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <WorkbenchList path="/c" onNavigate={() => undefined} />
-            <WorkbenchList path="/c" onNavigate={() => undefined} />
+            <WorkbenchList path="/w" onNavigate={() => undefined} />
+            <WorkbenchList path="/w" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -111,7 +111,7 @@ describe("shell listing dedupe (CL-6045)", () => {
     // Before the fix, each of these fired once per mounted band (2x here,
     // and up to 5x across the shell's real surfaces) — now exactly once
     // per (tenant, kind) no matter how many bands subscribe.
-    expect(countsByMatch(calls, (p) => p.includes("kind=channel"))).toBe(1);
+    expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("kind=chat"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("/top-level-runs"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("/tasks"))).toBe(1);
@@ -119,10 +119,10 @@ describe("shell listing dedupe (CL-6045)", () => {
 
   test("a rename invalidates the shared listing query, triggering exactly one refetch", async () => {
     const calls: string[] = [];
-    const channel = {
+    const workbench = {
       id: "ch_1",
       title: "General",
-      kind: "channel",
+      kind: "workbench",
       pinned: false,
       participants: [],
     };
@@ -139,15 +139,15 @@ describe("shell listing dedupe (CL-6045)", () => {
       if (init?.method === "PATCH") {
         return Promise.resolve(
           json({
-            ...channel,
+            ...workbench,
             title: "Renamed",
             settings: {},
             contextWindow: { value: 20, source: "inherit" },
           }),
         );
       }
-      if (path.includes("kind=channel"))
-        return Promise.resolve(json({ items: [channel] }));
+      if (path.includes("kind=workbench"))
+        return Promise.resolve(json({ items: [workbench] }));
       return Promise.resolve(json({ items: [] }));
     }) as typeof fetch;
     const queryClient = createTestQueryClient();
@@ -159,16 +159,16 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <WorkbenchList path="/c" onNavigate={() => undefined} />
+            <WorkbenchList path="/w" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );
     });
     await settle();
 
-    expect(countsByMatch(calls, (p) => p.includes("kind=channel"))).toBe(1);
+    expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(1);
 
-    act(() => requestChannelRename("ch_1"));
+    act(() => requestWorkbenchRename("ch_1"));
     await settle();
     const input = container.querySelector(
       'input[aria-label="Rename"]',
@@ -195,6 +195,6 @@ describe("shell listing dedupe (CL-6045)", () => {
     // One refetch, triggered by the rename's invalidateQueries — not zero
     // (freshness must actually fire) and not more than one (no duplicate
     // invalidation sites).
-    expect(countsByMatch(calls, (p) => p.includes("kind=channel"))).toBe(2);
+    expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(2);
   });
 });

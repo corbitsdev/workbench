@@ -1,7 +1,7 @@
 // The settings surface's one seam of its own to Interchange's native hub
 // routes: renaming a bench (`PATCH /api/tenants/:tenantId`, see
 // `vendor/intx/hub-api/src/routes/tenants.ts`) and reading the signed-in
-// account's profile (`GET /api/me`). Channel settings and bench membership
+// account's profile (`GET /api/me`). Workbench settings and bench membership
 // listings are not reimplemented here — they come straight from
 // `@corbits/chat-ui` and `@corbits/bench-ui`, the packages that already own
 // those seams. Signup policy is operator env exposed at `GET /api/auth-config`.

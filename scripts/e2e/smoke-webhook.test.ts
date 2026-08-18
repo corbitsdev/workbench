@@ -339,16 +339,16 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         },
       );
 
-      const channelId = await hop("delivery channel creation", async () => {
+      const workbenchId = await hop("delivery workbench creation", async () => {
         const res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/chat/channels`,
-          { kind: "channel", name: "Webhook results" },
+          `/api/tenants/${tenantId}/chat/workbenches`,
+          { kind: "workbench", name: "Webhook results" },
           cookies,
         );
-        expectStatus("create delivery channel", res, 201);
-        return stringField(res.data, "id", "create delivery channel");
+        expectStatus("create delivery workbench", res, 201);
+        return stringField(res.data, "id", "create delivery workbench");
       });
 
       const routineId = await hop(
@@ -363,7 +363,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
               definitionId,
               trigger: { kind: "webhook", webhookTriggerId: triggerId },
               scope: "bench",
-              deliveryChannelId: channelId,
+              deliveryWorkbenchId: workbenchId,
             },
             cookies,
           );
@@ -489,7 +489,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           // The webhook-fired run turns inference against the noop source
           // asynchronously (see the sidecar dial-in above). The run itself
           // (`workflow_run`) is a long-lived folded run that stays
-          // "running" indefinitely, the same way a chat channel does —
+          // "running" indefinitely, the same way a chat workbench does —
           // it is the per-turn `inference_turn` row (written by
           // @intx/hub-sessions' event-collector) that records the turn.
           // Poll straight out of the database (no route reads a

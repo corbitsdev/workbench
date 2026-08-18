@@ -1,4 +1,4 @@
-/* Chat surface — active conversation only. Channel list lives in the host
+/* Chat surface — active conversation only. Workbench list lives in the host
    shell's contextual panel. Layout glue only: visual styling comes from
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
@@ -26,7 +26,7 @@
 }
 
 /* Stage top bar — mock `.top`: fixed 3rem row, tight title, trailing actions. */
-.chat-channel-header {
+.chat-workbench-header {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -38,14 +38,14 @@
   background: var(--background, transparent);
 }
 
-.chat-channel-identity {
+.chat-workbench-identity {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 0.55rem;
 }
 
-.chat-channel-title {
+.chat-workbench-title {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -54,7 +54,7 @@
   font-weight: 640;
 }
 
-.chat-channel-actions {
+.chat-workbench-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -62,11 +62,11 @@
   margin-left: auto;
 }
 
-/* Channel settings — full stage surface (mock § Channel settings):
-   channels are tenants, so settings replace the whole stage. Breadcrumb top
+/* Workbench settings — full stage surface (mock § Workbench settings):
+   workbenches are tenants, so settings replace the whole stage. Breadcrumb top
    bar, grouped left nav, panel on the right. Never a dialog. */
 
-.channel-settings-stage {
+.workbench-settings-stage {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -75,7 +75,7 @@
   overflow: hidden;
 }
 
-.channel-settings-topbar {
+.workbench-settings-topbar {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -88,14 +88,14 @@
   padding: 0 0.9rem;
 }
 
-.channel-settings-topbar-identity {
+.workbench-settings-topbar-identity {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
 }
 
-.channel-settings-breadcrumb {
+.workbench-settings-breadcrumb {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -103,14 +103,14 @@
   font-size: 0.875rem;
 }
 
-.channel-settings-section-dot {
+.workbench-settings-section-dot {
   width: 3px;
   height: 3px;
   flex-shrink: 0;
   background: var(--muted-foreground);
 }
 
-.channel-settings-section-label {
+.workbench-settings-section-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -118,7 +118,7 @@
   color: var(--muted-foreground);
 }
 
-.channel-settings-breadcrumb button {
+.workbench-settings-breadcrumb button {
   appearance: none;
   border: 0;
   background: transparent;
@@ -130,16 +130,16 @@
   cursor: pointer;
 }
 
-.channel-settings-breadcrumb button:hover {
+.workbench-settings-breadcrumb button:hover {
   text-decoration: underline;
 }
 
-.channel-settings-breadcrumb-sep {
+.workbench-settings-breadcrumb-sep {
   color: var(--muted-foreground);
   opacity: 0.6;
 }
 
-.channel-settings-breadcrumb-current {
+.workbench-settings-breadcrumb-current {
   color: var(--muted-foreground);
   white-space: nowrap;
 }
@@ -147,7 +147,7 @@
 /* One primary-action language for the whole surface (CL-6215 EMIL #4): the
    top-bar Save is now a react-ui primary Button, the same visual language
    as the agent-detail Save below rather than a bespoke black pill. */
-.channel-settings-topbar [data-slot="button"]:disabled,
+.workbench-settings-topbar [data-slot="button"]:disabled,
 .chat-settings-field-actions [data-slot="button"]:disabled {
   /* A disabled primary action reads as neutral-gray, never a dimmed
      orange — dimmed orange still reads as "another orange" on a page
@@ -159,38 +159,37 @@
   color: var(--muted-foreground);
 }
 
-.channel-settings-shell {
+.workbench-settings-shell {
   display: flex;
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-.channel-settings-nav {
+.workbench-settings-nav {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   gap: 0.1rem;
   width: 14rem;
-  border-right: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   padding: 1rem 0.75rem;
   overflow-y: auto;
 }
 
-.channel-settings-nav-group {
+.workbench-settings-nav-group {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
   padding-top: 0.7rem;
 }
 
-.channel-settings-nav-group-danger {
+.workbench-settings-nav-group-danger {
   margin-top: 0.5rem;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-.channel-settings-nav-group-label {
+.workbench-settings-nav-group-label {
   padding: 0.25rem 0.5rem;
   font-size: 0.65rem;
   font-weight: 650;
@@ -199,7 +198,7 @@
   color: var(--muted-foreground);
 }
 
-.channel-settings-nav-item {
+.workbench-settings-nav-item {
   display: block;
   width: 100%;
   border: 0;
@@ -212,22 +211,22 @@
   cursor: pointer;
 }
 
-.channel-settings-nav-item:hover {
+.workbench-settings-nav-item:hover {
   background: var(--muted);
 }
 
-.channel-settings-nav-item[aria-current="page"] {
+.workbench-settings-nav-item[aria-current="page"] {
   background: var(--muted);
   font-weight: 640;
 }
 
-.channel-settings-nav-item:focus-visible,
-.channel-settings-breadcrumb button:focus-visible {
+.workbench-settings-nav-item:focus-visible,
+.workbench-settings-breadcrumb button:focus-visible {
   outline: 2px solid var(--ring, var(--primary));
   outline-offset: -2px;
 }
 
-.channel-settings-panel-area {
+.workbench-settings-panel-area {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -292,7 +291,7 @@
 
 /* Sidebar-row pattern (CL-6215 DRAPER): a row's "you can act here" signal
    is the 2px inset accent edge, never a background wash — the same rule
-   the shell's own channel list follows (`apps/web/src/app.css`'s
+   the shell's own workbench list follows (`apps/web/src/app.css`'s
    `.shell-ch-row` / sidebar-item-row overrides). A persistent trailing
    chevron marks the row as a drill-in, not a toggle (CL-6215 EMIL #1). */
 .chat-settings-agent-picker-row {
@@ -362,7 +361,7 @@
   outline-offset: 2px;
 }
 
-.channel-settings-pane {
+.workbench-settings-pane {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -837,7 +836,7 @@
   flex-shrink: 0;
 }
 
-/* Wraps a message sender's avatar with room for the shared-channel
+/* Wraps a message sender's avatar with room for the shared-workbench
    tenant-monogram badge (CL-5882), positioned bottom-right — only
    rendered when the server annotates the sender with a
    `tenantMonogram` (see `resolveMessageSenderTenant` in
@@ -2064,7 +2063,7 @@
 
 /* CL-6124: the first-run prompt box for a zero-workbench bench — one big
    ChatGPT-style box with corner affordances instead of the conversation
-   composer's slim inline row, since there is no channel here to carry
+   composer's slim inline row, since there is no workbench here to carry
    mentions, slash commands, or a pending-bubble hand-off. */
 .first-run-composer {
   width: 100%;
@@ -2473,7 +2472,7 @@
 /* Settings sits apart from the quiet New routine / Insights pair — a hairline
    divider keeps it reading as the header's one persistent, always-available
    control rather than a third peer in that group. */
-.chat-channel-settings-slot {
+.chat-workbench-settings-slot {
   display: flex;
   align-items: center;
   margin-left: 0.35rem;
@@ -2481,7 +2480,7 @@
   border-left: 1px solid var(--border);
 }
 
-/* Who's live in this channel right now, beyond the static member stack
+/* Who's live in this workbench right now, beyond the static member stack
    above — round (vs. the member stack's square avatars) and colored per
    principal (server-assigned, see @corbits/presence) so "live" reads at a
    glance without any extra chrome or a status dot. */
@@ -2520,7 +2519,7 @@
 /* Existing reaction chips + pin toggle, indented to align under the bubble
    text the same way `.chat-thread-affordance` does. Chips are content —
    they always show once a reaction exists. The pin toggle fades in on
-   hover/focus so a quiet channel doesn't carry a permanent row of controls
+   hover/focus so a quiet workbench doesn't carry a permanent row of controls
    under every line. Adding a *new* reaction, replying, and the ellipsis
    menu live in `.chat-hover-toolbar` instead — see below. */
 .chat-message-actions {
@@ -2759,7 +2758,7 @@
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
-/* Pinned strip: a single row of jump chips at the channel top — mock
+/* Pinned strip: a single row of jump chips at the workbench top — mock
    geometry mirrors the thread-open row's flat, borderless affordance
    rather than a card. */
 .chat-pinned-strip {
@@ -2922,7 +2921,7 @@
   outline-offset: -2px;
 }
 
-.chat-new-channel-form {
+.chat-new-workbench-form {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;

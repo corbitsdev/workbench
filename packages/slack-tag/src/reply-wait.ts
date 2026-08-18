@@ -13,11 +13,11 @@
  * on the stream (tool calls, gate-blocked, etc.) is ignored here — this
  * is a reply *wait*, not a general event bridge.
  */
-import type { ChatChannelEvent } from "@corbits/chat";
+import type { ChatWorkbenchEvent } from "@corbits/chat";
 
 export type SubscribeToChannel = (
   channelId: string,
-  onEvent: (event: ChatChannelEvent) => void,
+  onEvent: (event: ChatWorkbenchEvent) => void,
 ) => () => void;
 
 function connectorReplyContent(event: unknown): string | undefined {
@@ -32,7 +32,7 @@ function connectorReplyContent(event: unknown): string | undefined {
   return typeof content === "string" && content !== "" ? content : undefined;
 }
 
-function replyTextFrom(channelEvent: ChatChannelEvent): string | undefined {
+function replyTextFrom(channelEvent: ChatWorkbenchEvent): string | undefined {
   if (channelEvent.type !== "chat.agent") return undefined;
   return connectorReplyContent(channelEvent.data);
 }

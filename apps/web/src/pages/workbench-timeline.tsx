@@ -1,6 +1,6 @@
 // Per-workbench Insights view (CL-6224): one wall-clock spine merging chat
 // messages, thread forks, routine runs, tasks, and approvals for a single
-// workbench (== channel, per docs/GLOSSARY.md), oldest to newest with day
+// workbench (== workbench, per docs/GLOSSARY.md), oldest to newest with day
 // dividers. No new backend — every fetch here is an existing route this app
 // already reads elsewhere (chat-ui, routines-api, tasks-ui, api.ts); the new
 // work is `../workbench-timeline-merge.ts`'s pure merge, plus this render.
@@ -30,7 +30,7 @@ import {
   filterTimelineEvents,
   groupTimelineByDay,
   mergeTimelineEvents,
-  routinesForChannel,
+  routinesForWorkbench,
   toApprovalEvents,
   toMessageEvents,
   toRoutineRunEvents,
@@ -314,40 +314,40 @@ export function WorkbenchTimelineView({
 
 /**
  * Fetch composition for one workbench's Timeline. `benchTenantId` is the
- * owning bench — chat's own channel-tenancy keeps messages/threads
- * addressed at the parent bench's tenant id even though the channel also
- * mints its own workbench tenant (see docs/channel-tenancy.md) — while
- * `channelId` is the channel's own id, resolved to that workbench tenant
- * one level up in `InsightsChannelPage` (`../insights-channel-scope.ts`)
+ * owning bench — chat's own workbench-tenancy keeps messages/threads
+ * addressed at the parent bench's tenant id even though the workbench also
+ * mints its own workbench tenant (see docs/workbench-tenancy.md) — while
+ * `workbenchId` is the workbench's own id, resolved to that workbench tenant
+ * one level up in `InsightsWorkbenchPage` (`../insights-workbench-scope.ts`)
  * for the tenant-scoped Insights endpoints; this component only ever reads
  * messages/threads/routines/tasks/approvals off the owning bench.
  */
 export function WorkbenchTimelineRoute({
   benchTenantId,
-  channelId,
+  workbenchId,
   onOpenRun,
 }: {
   readonly benchTenantId: string | null;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly onOpenRun: (runId: string) => void;
 }) {
   const messagesQuery = useTenantQuery(
     benchTenantId === null
-      ? ["tenant", "none", "chat", "channels", channelId, "messages"]
-      : tenantKeys.channelMessages(benchTenantId, channelId),
+      ? ["tenant", "none", "chat", "workbenches", workbenchId, "messages"]
+      : tenantKeys.workbenchMessages(benchTenantId, workbenchId),
     benchTenantId !== null,
     () =>
-      listMessages(benchTenantId as string, channelId).then(
+      listMessages(benchTenantId as string, workbenchId).then(
         (page) => page.items,
       ),
   );
   const threadsQuery = useTenantQuery(
     benchTenantId === null
-      ? ["tenant", "none", "chat", "channels", channelId, "threads"]
-      : tenantKeys.channelThreads(benchTenantId, channelId),
+      ? ["tenant", "none", "chat", "workbenches", workbenchId, "threads"]
+      : tenantKeys.workbenchThreads(benchTenantId, workbenchId),
     benchTenantId !== null,
     () =>
-      listThreads(benchTenantId as string, channelId).then(
+      listThreads(benchTenantId as string, workbenchId).then(
         (page) => page.items,
       ),
   );
@@ -360,14 +360,14 @@ export function WorkbenchTimelineRoute({
   );
   const routines =
     routinesQuery.kind === "ready"
-      ? routinesForChannel(routinesQuery.data, channelId)
+      ? routinesForWorkbench(routinesQuery.data, workbenchId)
       : [];
   const routineRunsQuery = useTenantQuery<
     ReadonlyMap<string, readonly RoutineRun[]>
   >(
     benchTenantId === null
-      ? ["tenant", "none", "workbench-timeline-routine-runs", channelId]
-      : tenantKeys.workbenchTimelineRoutineRuns(benchTenantId, channelId),
+      ? ["tenant", "none", "workbench-timeline-routine-runs", workbenchId]
+      : tenantKeys.workbenchTimelineRoutineRuns(benchTenantId, workbenchId),
     benchTenantId !== null && routines.length > 0,
     async () => {
       const entries = await Promise.all(
@@ -408,7 +408,7 @@ export function WorkbenchTimelineRoute({
   const routineRunsByRoutineId =
     routineRunsQuery.kind === "ready" ? routineRunsQuery.data : new Map();
   const tasks = tasksQuery.kind === "ready" ? tasksQuery.data : [];
-  // needs-you carries no channel/workbench id (a known v1 gap — see
+  // needs-you carries no workbench/workbench id (a known v1 gap — see
   // workbench-timeline-merge.ts's toApprovalEvents), so this is every
   // pending approval on the owning bench, not just this workbench's own.
   const approvals =
@@ -418,7 +418,7 @@ export function WorkbenchTimelineRoute({
     messages: toMessageEvents(messages),
     threadForks: toThreadForkEvents(threads),
     routineRuns: toRoutineRunEvents(routines, routineRunsByRoutineId),
-    tasks: toTaskEvents(tasks, channelId),
+    tasks: toTaskEvents(tasks, workbenchId),
     approvals: toApprovalEvents(approvals),
   });
 

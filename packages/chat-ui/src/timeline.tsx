@@ -1,4 +1,4 @@
-// Renders a channel's `MessageItem[]` oldest→newest: text parts as chat
+// Renders a workbench's `MessageItem[]` oldest→newest: text parts as chat
 // bubbles, event parts as inline system lines, block parts through the
 // generative-UI block registry, everything else as a labeled fallback
 // block. `sender` is an optional field on `MessageItem` (see
@@ -101,7 +101,7 @@ export type PendingMessageStatus = "sending" | "failed";
 /**
  * A message this host has optimistically added to the timeline before
  * (or instead of, on failure) the server confirms it — see
- * `ChannelTimeline`'s `items` doc. `nonce` is the host's own client-side
+ * `WorkbenchTimeline`'s `items` doc. `nonce` is the host's own client-side
  * key, round-tripped back through `PendingActions` so a retry/discard
  * always targets the exact pending entry the reader acted on, never a
  * position in an array that may have reflowed underneath it.
@@ -456,7 +456,11 @@ function TextBubble({
           />
         </button>
       )}
-      <div className="chat-bubble" data-own={isOwn} data-pending={pendingStatus}>
+      <div
+        className="chat-bubble"
+        data-own={isOwn}
+        data-pending={pendingStatus}
+      >
         {showHeader ? (
           <div className="chat-bubble-head">
             {display !== undefined && (
@@ -523,7 +527,7 @@ function TextBubble({
  * A friendly system line for an event part — never the raw event string on
  * its own and never any address or id out of `part.data`. Known event kinds
  * get a specific line (looking up the matching participant's handle for
- * "channel.agent-joined" rather than showing the joined agent's address);
+ * "workbench.agent-joined" rather than showing the joined agent's address);
  * anything else falls back to the event name with its separators turned
  * into spaces.
  */
@@ -546,13 +550,13 @@ function friendlyEventText(
       : undefined;
 
   switch (part.event) {
-    case "channel.agent-joined":
+    case "workbench.agent-joined":
       return handle !== undefined
         ? CHAT_STRINGS.eventAgentJoined(displayNameFromHandle(handle))
         : CHAT_STRINGS.eventAgentJoinedUnknown;
-    case "channel.membership-changed":
+    case "workbench.membership-changed":
       return CHAT_STRINGS.eventMembershipChanged;
-    case "channel.settings-changed": {
+    case "workbench.settings-changed": {
       const changed =
         data !== undefined &&
         typeof data.changed === "object" &&
@@ -573,8 +577,8 @@ function friendlyEventText(
       ) {
         const from = previous?.["chat/name"];
         return typeof from === "string" && from !== to
-          ? CHAT_STRINGS.eventChannelRenamed(from, to)
-          : CHAT_STRINGS.eventChannelRenamedTo(to);
+          ? CHAT_STRINGS.eventWorkbenchRenamed(from, to)
+          : CHAT_STRINGS.eventWorkbenchRenamedTo(to);
       }
       return CHAT_STRINGS.eventSettingsChanged;
     }
@@ -1101,7 +1105,7 @@ function MessageParts({
       });
   const replyCount = threadMeta?.replyCount ?? 0;
   const pendingNonce = item.pendingNonce ?? item.id;
-  // Same identity `ChannelTimeline`'s render loop keys this whole group
+  // Same identity `WorkbenchTimeline`'s render loop keys this whole group
   // under (`clientId` when the wire echoed one, else `id`) — reused here
   // for each part's own key so a pending send's `TextBubble` (and its
   // avatar) is the very DOM node its later confirmed copy updates in
@@ -1338,15 +1342,15 @@ function ThreadAffordance({
   );
 }
 
-/** A channel's scroll position, captured/restored across a
- * `ChannelTimeline` unmount-remount (e.g. opening/closing Settings) — see
- * `ChannelTimeline`'s `scrollRestore`/`onScrollSnapshot`. */
+/** A workbench's scroll position, captured/restored across a
+ * `WorkbenchTimeline` unmount-remount (e.g. opening/closing Settings) — see
+ * `WorkbenchTimeline`'s `scrollRestore`/`onScrollSnapshot`. */
 export type ScrollSnapshot = {
   readonly scrollTop: number;
   readonly pinned: boolean;
 };
 
-export function ChannelTimeline({
+export function WorkbenchTimeline({
   items,
   participants = [],
   settingUpAgent,
@@ -1377,7 +1381,7 @@ export function ChannelTimeline({
   readonly currentUser?: CurrentUser;
   /** Reply-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
-  /** `"reply"` on the channel root feed, `"fork"` inside an open thread —
+  /** `"reply"` on the workbench root feed, `"fork"` inside an open thread —
    * see `ThreadAffordanceMode`. */
   readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
@@ -1413,10 +1417,10 @@ export function ChannelTimeline({
    * recovery affordance at all (still shown as failed). */
   readonly pendingActions?: PendingActions;
   /** The scroll position to restore on mount — the host's own memory of
-   * where this channel's reader last was, captured via `onScrollSnapshot`
+   * where this workbench's reader last was, captured via `onScrollSnapshot`
    * the last time this component unmounted (e.g. opening Settings, which
    * swaps this whole component out for the settings surface). Undefined
-   * mounts pinned to the bottom, same as a channel's first-ever render. */
+   * mounts pinned to the bottom, same as a workbench's first-ever render. */
   readonly scrollRestore?: ScrollSnapshot;
   /** Called once, from this component's unmount cleanup, with its final
    * scroll position — the host's only chance to remember it, since this
@@ -1425,7 +1429,7 @@ export function ChannelTimeline({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts pinned (true) unless a restored snapshot says otherwise — a
-  // channel's first-ever render always lands at the bottom, but remounting
+  // workbench's first-ever render always lands at the bottom, but remounting
   // after Settings closes restores exactly how the reader left it.
   const pinnedRef = useRef(scrollRestore?.pinned ?? true);
 

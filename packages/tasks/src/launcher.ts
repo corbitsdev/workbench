@@ -1,8 +1,8 @@
 // Launches a one-shot task: a prompt sent to an agent definition, no
-// channel involved. Mirrors `@corbits/chat`'s `launchInvite` shape
+// workbench involved. Mirrors `@corbits/chat`'s `launchInvite` shape
 // (definition lookup, `readFoldedBody`, `launchFoldedRun`) minus every
-// channel/participant/settings concern — a task never creates a
-// `channel_settings` row, so it can never appear in a chat sidebar.
+// workbench/participant/settings concern — a task never creates a
+// `workbench_settings` row, so it can never appear in a chat sidebar.
 //
 // Model preference: a task's chosen catalog model rides the launch
 // body's own `model` field — the exact seam a definition's declared
@@ -88,7 +88,7 @@ export type TaskLauncherDeps = {
    * The host's verdict on whether a deployed definition belongs in
    * the task picker — mirrors `@corbits/chat`'s `isInvitableDefinition`
    * seam exactly. Required, never defaulted: an unfiltered picker
-   * would let automations and channel-host plumbing masquerade as
+   * would let automations and workbench-host plumbing masquerade as
    * task-launchable agents.
    */
   isTaskableDefinition: (definition: { id: string; name: string }) => boolean;

@@ -24,14 +24,14 @@ function definitionRow(id: string, name: string, status = "deployed") {
 function routineRow(overrides: {
   id: string;
   name: string;
-  deliveryChannelId?: string | null;
+  deliveryWorkbenchId?: string | null;
   enabled?: boolean;
 }) {
   return {
     id: overrides.id,
     name: overrides.name,
     enabled: overrides.enabled ?? true,
-    deliveryChannelId: overrides.deliveryChannelId ?? null,
+    deliveryWorkbenchId: overrides.deliveryWorkbenchId ?? null,
   };
 }
 
@@ -43,9 +43,9 @@ describe("DEFAULT_ROUTINE_PRESETS", () => {
     ]);
   });
 
-  test("targets the channel-digest and last-30-days-research assets", () => {
+  test("targets the workbench-digest and last-30-days-research assets", () => {
     expect(DEFAULT_ROUTINE_PRESETS.map((p) => p.assetName)).toEqual([
-      "channel-digest",
+      "workbench-digest",
       "last-30-days-research",
     ]);
   });
@@ -59,14 +59,14 @@ describe("DEFAULT_ROUTINE_PRESETS", () => {
 
   test("daily digest fires on a fixed daily cadence", () => {
     const digest = DEFAULT_ROUTINE_PRESETS.find(
-      (p) => p.assetName === "channel-digest",
+      (p) => p.assetName === "workbench-digest",
     );
     expect(digest?.trigger).toEqual({ kind: "daily", hour: 9, minute: 0 });
   });
 });
 
 describe("ensureDefaultRoutines", () => {
-  test("creates every preset disabled, sharing the first preset's delivery channel", async () => {
+  test("creates every preset disabled, sharing the first preset's delivery workbench", async () => {
     const { lines, log } = collector();
     const createCalls: { name: string; body: unknown }[] = [];
     const patchCalls: { id: string; body: unknown }[] = [];
@@ -81,7 +81,7 @@ describe("ensureDefaultRoutines", () => {
           status: 200,
           data: {
             data: [
-              definitionRow("wfd_digest", "channel-digest"),
+              definitionRow("wfd_digest", "workbench-digest"),
               definitionRow("wfd_research", "last-30-days-research"),
             ],
             nextCursor: null,
@@ -96,16 +96,16 @@ describe("ensureDefaultRoutines", () => {
         createCalls.push({ name: parsed.name, body });
         const id = `rtn_${nextRoutineId}`;
         nextRoutineId += 1;
-        // Every preset after the first names the shared channel
+        // Every preset after the first names the shared workbench
         // explicitly; the first preset names none, so the space it
         // would have been auto-provisioned into is stood in here as a
         // fixed id the test can assert every later preset reuses.
-        const deliveryChannelId =
-          (parsed as { deliveryChannelId?: string }).deliveryChannelId ??
+        const deliveryWorkbenchId =
+          (parsed as { deliveryWorkbenchId?: string }).deliveryWorkbenchId ??
           "ch_provisioned";
         return {
           status: 201,
-          data: routineRow({ id, name: parsed.name, deliveryChannelId }),
+          data: routineRow({ id, name: parsed.name, deliveryWorkbenchId }),
         };
       }
       if (
@@ -123,10 +123,10 @@ describe("ensureDefaultRoutines", () => {
 
     expect(createCalls).toHaveLength(2);
     expect(createCalls[0]?.name).toBe("Daily digest");
-    expect(createCalls[0]?.body).not.toHaveProperty("deliveryChannelId");
+    expect(createCalls[0]?.body).not.toHaveProperty("deliveryWorkbenchId");
     expect(createCalls[1]?.name).toBe("Last 30 days research");
     expect(createCalls[1]?.body).toMatchObject({
-      deliveryChannelId: "ch_provisioned",
+      deliveryWorkbenchId: "ch_provisioned",
     });
 
     expect(patchCalls).toHaveLength(2);
@@ -160,7 +160,7 @@ describe("ensureDefaultRoutines", () => {
 
     const output = lines.join("\n");
     expect(output).toContain(
-      'routine "Daily digest" skipped: no deployed definition named "channel-digest"',
+      'routine "Daily digest" skipped: no deployed definition named "workbench-digest"',
     );
     expect(output).toContain(
       'routine "Last 30 days research" skipped: no deployed definition named "last-30-days-research"',
@@ -178,7 +178,7 @@ describe("ensureDefaultRoutines", () => {
           status: 200,
           data: {
             data: [
-              definitionRow("wfd_digest", "channel-digest"),
+              definitionRow("wfd_digest", "workbench-digest"),
               definitionRow("wfd_research", "last-30-days-research"),
             ],
             nextCursor: null,
@@ -193,13 +193,13 @@ describe("ensureDefaultRoutines", () => {
               routineRow({
                 id: "rtn_1",
                 name: "Daily digest",
-                deliveryChannelId: "ch_existing",
+                deliveryWorkbenchId: "ch_existing",
                 enabled: false,
               }),
               routineRow({
                 id: "rtn_2",
                 name: "Last 30 days research",
-                deliveryChannelId: "ch_existing",
+                deliveryWorkbenchId: "ch_existing",
                 enabled: false,
               }),
             ],
@@ -233,7 +233,7 @@ describe("ensureDefaultRoutines", () => {
         return {
           status: 200,
           data: {
-            data: [definitionRow("wfd_digest", "channel-digest")],
+            data: [definitionRow("wfd_digest", "workbench-digest")],
             nextCursor: null,
           },
         };

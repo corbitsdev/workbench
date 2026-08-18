@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  canShareChannelWithinParent,
-  createDmChannelSpec,
-  dmChannelName,
+  canShareWorkbenchWithinParent,
+  createDmWorkbenchSpec,
+  dmWorkbenchName,
   emailAllowedForSignup,
   isInterchangeRole,
   parseAllowedEmailDomains,
@@ -135,19 +135,19 @@ describe("wouldCreateParentCycle", () => {
 
 describe("DM contract", () => {
   test("names from counterparty", () => {
-    expect(dmChannelName("  Ada  ")).toBe("Ada");
-    expect(dmChannelName("   ")).toBe("Direct message");
+    expect(dmWorkbenchName("  Ada  ")).toBe("Ada");
+    expect(dmWorkbenchName("   ")).toBe("Direct message");
   });
 
-  test("createDmChannelSpec requires distinct members", () => {
+  test("createDmWorkbenchSpec requires distinct members", () => {
     expect(() =>
-      createDmChannelSpec({
+      createDmWorkbenchSpec({
         counterpartyDisplayName: "Ada",
         memberUserIds: ["u1", "u1"],
       }),
     ).toThrow(/distinct/);
 
-    const spec = createDmChannelSpec({
+    const spec = createDmWorkbenchSpec({
       counterpartyDisplayName: "Ada",
       memberUserIds: ["u1", "u2"],
     });
@@ -164,24 +164,24 @@ describe("isInterchangeRole", () => {
   });
 });
 
-describe("canShareChannelWithinParent", () => {
+describe("canShareWorkbenchWithinParent", () => {
   test("siblings under same parent can share", async () => {
     const lookup = memoryLookup({
       root: null,
       a: "root",
       b: "root",
     });
-    expect(await canShareChannelWithinParent("a", "b", lookup)).toBe(true);
+    expect(await canShareWorkbenchWithinParent("a", "b", lookup)).toBe(true);
   });
 
   test("unrelated roots cannot", async () => {
     const lookup = memoryLookup({ a: null, b: null });
-    expect(await canShareChannelWithinParent("a", "b", lookup)).toBe(false);
+    expect(await canShareWorkbenchWithinParent("a", "b", lookup)).toBe(false);
   });
 
   test("child and parent can share", async () => {
     const lookup = memoryLookup({ root: null, child: "root" });
-    expect(await canShareChannelWithinParent("child", "root", lookup)).toBe(
+    expect(await canShareWorkbenchWithinParent("child", "root", lookup)).toBe(
       true,
     );
   });

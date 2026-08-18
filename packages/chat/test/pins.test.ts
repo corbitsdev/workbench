@@ -5,19 +5,19 @@ import { describe, expect, test } from "bun:test";
 import { createInMemoryPinStore } from "../src/pins";
 
 const TENANT = "tnt_1";
-const CHANNEL = "run_channel1";
+const WORKBENCH = "run_workbench1";
 
 describe("PinStore", () => {
   test("pinning then listing returns the pinned row", async () => {
     const store = createInMemoryPinStore();
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
 
-    const pins = await store.listPins(TENANT, CHANNEL);
+    const pins = await store.listPins(TENANT, WORKBENCH);
     expect(pins).toHaveLength(1);
     expect(pins[0]).toMatchObject({ messageId: "m1", pinnedBy: "prn_alice" });
   });
@@ -26,18 +26,18 @@ describe("PinStore", () => {
     const store = createInMemoryPinStore();
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_bob",
     });
 
-    const pins = await store.listPins(TENANT, CHANNEL);
+    const pins = await store.listPins(TENANT, WORKBENCH);
     expect(pins).toHaveLength(1);
     expect(pins[0]?.pinnedBy).toBe("prn_bob");
   });
@@ -46,58 +46,58 @@ describe("PinStore", () => {
     const store = createInMemoryPinStore();
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
-    await store.unpinMessage(TENANT, CHANNEL, "m1");
+    await store.unpinMessage(TENANT, WORKBENCH, "m1");
 
-    const pins = await store.listPins(TENANT, CHANNEL);
+    const pins = await store.listPins(TENANT, WORKBENCH);
     expect(pins).toEqual([]);
   });
 
   test("unpinning a message that was never pinned is a harmless no-op", async () => {
     const store = createInMemoryPinStore();
-    await store.unpinMessage(TENANT, CHANNEL, "m_ghost");
-    expect(await store.listPins(TENANT, CHANNEL)).toEqual([]);
+    await store.unpinMessage(TENANT, WORKBENCH, "m_ghost");
+    expect(await store.listPins(TENANT, WORKBENCH)).toEqual([]);
   });
 
   test("newest pin first", async () => {
     const store = createInMemoryPinStore();
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
     await new Promise((resolve) => setTimeout(resolve, 2));
     await store.pinMessage({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m2",
       pinnedBy: "prn_alice",
     });
 
-    const pins = await store.listPins(TENANT, CHANNEL);
+    const pins = await store.listPins(TENANT, WORKBENCH);
     expect(pins.map((p) => p.messageId)).toEqual(["m2", "m1"]);
   });
 
-  test("tenant isolation: a channel pin in one tenant never appears under another's", async () => {
+  test("tenant isolation: a workbench pin in one tenant never appears under another's", async () => {
     const store = createInMemoryPinStore();
     await store.pinMessage({
       tenantId: "tnt_1",
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
     await store.pinMessage({
       tenantId: "tnt_2",
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       pinnedBy: "prn_alice",
     });
 
-    expect(await store.listPins("tnt_1", CHANNEL)).toHaveLength(1);
-    expect(await store.listPins("tnt_2", CHANNEL)).toHaveLength(1);
+    expect(await store.listPins("tnt_1", WORKBENCH)).toHaveLength(1);
+    expect(await store.listPins("tnt_2", WORKBENCH)).toHaveLength(1);
   });
 });

@@ -1,13 +1,13 @@
 // Composition tests for `ChatWorkspace`'s settings-surface wiring: it
 // mounts against a registered DOM (see dom-setup.ts) because these prove
-// real effect-driven sequencing — the two-step "channels resolve, then the
+// real effect-driven sequencing — the two-step "workbenches resolve, then the
 // settings surface renders" load a direct `/c/:id/settings` URL drives —
 // which static markup rendering cannot exercise.
 //
 // Stubs `global.fetch` the same way test/api.test.ts does (never
 // `mock.module`, which would replace `../src/api` for every test file in
 // this run, not just this one) and a minimal `EventSource` stand-in so the
-// channel stream's connect attempt has something to call.
+// workbench stream's connect attempt has something to call.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -42,17 +42,17 @@ afterEach(() => {
   StubEventSource.instances = [];
 });
 
-const CHANNEL_WIRE = {
+const WORKBENCH_WIRE = {
   id: "ch_1",
   title: "Launch Planning",
-  kind: "channel",
+  kind: "workbench",
   pinned: false,
   participants: [] as { address: string; handle: string }[],
 };
 
 function stubFetch(
   sentMessages?: unknown[],
-  channel: typeof CHANNEL_WIRE = CHANNEL_WIRE,
+  workbench: typeof WORKBENCH_WIRE = WORKBENCH_WIRE,
 ) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -62,27 +62,28 @@ function stubFetch(
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    if (/\/chat\/channels\?kind=channel$/.test(path)) {
-      return json({ items: [channel] });
+    if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+      return json({ items: [workbench] });
     }
-    if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+    if (/\/chat\/workbenches\?kind=chat$/.test(path))
+      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
       if (init?.method === "POST") {
         sentMessages?.push(JSON.parse(String(init.body)));
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
       return json({ items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
       return json({ items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
       return json({
-        ...channel,
+        ...workbench,
         settings: {},
         contextWindow: { value: 20, source: "inherit" },
       });
@@ -154,35 +155,35 @@ async function mount(props: Parameters<typeof ChatWorkspace>[0]) {
 }
 
 describe("ChatWorkspace settings surface", () => {
-  test("a direct /c/:id/settings URL renders the settings surface once channels resolve", async () => {
+  test("a direct /c/:id/settings URL renders the settings surface once workbenches resolve", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       settingsOpen: true,
     });
     await harness.settle();
 
     expect(
-      harness.container.querySelector(".channel-settings-stage"),
+      harness.container.querySelector(".workbench-settings-stage"),
     ).not.toBeNull();
     expect(harness.container.textContent).toContain("Launch Planning");
     harness.unmount();
   });
 
-  test("settingsOpen for a channel id absent from the resolved list falls back to the ordinary chat view and corrects the URL", async () => {
+  test("settingsOpen for a workbench id absent from the resolved list falls back to the ordinary chat view and corrects the URL", async () => {
     stubFetch();
     const settingsOpenChanges: boolean[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_missing",
+      workbenchId: "ch_missing",
       settingsOpen: true,
       onSettingsOpenChange: (open: boolean) => settingsOpenChanges.push(open),
     });
     await harness.settle();
 
     expect(
-      harness.container.querySelector(".channel-settings-stage"),
+      harness.container.querySelector(".workbench-settings-stage"),
     ).toBeNull();
     expect(harness.container.querySelector(".chat-main")).not.toBeNull();
     expect(settingsOpenChanges).toEqual([false]);
@@ -193,14 +194,14 @@ describe("ChatWorkspace settings surface", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       settingsOpen: true,
       settingsSection: "members",
     });
     await harness.settle();
 
     const activeItem = harness.container.querySelector(
-      '.channel-settings-nav-item[aria-current="page"]',
+      '.workbench-settings-nav-item[aria-current="page"]',
     );
     expect(activeItem?.textContent).toBe("Members");
     harness.unmount();
@@ -211,7 +212,7 @@ describe("ChatWorkspace settings surface", () => {
     const sectionChanges: string[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       settingsOpen: true,
       settingsSection: "general",
       onSettingsSectionChange: (section: string) =>
@@ -220,7 +221,7 @@ describe("ChatWorkspace settings surface", () => {
     await harness.settle();
 
     const items = Array.from(
-      harness.container.querySelectorAll(".channel-settings-nav-item"),
+      harness.container.querySelectorAll(".workbench-settings-nav-item"),
     );
     const membersItem = items.find((el) => el.textContent === "Members") as
       HTMLButtonElement | undefined;
@@ -237,7 +238,7 @@ describe("ChatWorkspace settings surface", () => {
     const opens: (string | undefined)[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       settingsOpen: false,
       onSettingsOpenChange: (_open: boolean, section?: string) =>
         opens.push(section),
@@ -260,7 +261,7 @@ describe("connection state is never rendered as chrome", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -279,7 +280,7 @@ describe("connection state is never rendered as chrome", () => {
     stubFetch(sentMessages);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -311,7 +312,7 @@ describe("connection state is never rendered as chrome", () => {
   });
 });
 
-// Two-level thread model + fork affordance (CL-5908, CL-5948): a channel
+// Two-level thread model + fork affordance (CL-5908, CL-5948): a workbench
 // with one depth-1 thread already open, plus the sub-thread a fork creates.
 const ROOT_THREAD = {
   id: "thr_root",
@@ -351,18 +352,19 @@ function stubThreadedFetch() {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    if (/\/chat\/channels\?kind=channel$/.test(path)) {
-      return json({ items: [CHANNEL_WIRE] });
+    if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+      return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/threads\/fork$/.test(path)) {
+    if (/\/chat\/workbenches\?kind=chat$/.test(path))
+      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/threads\/fork$/.test(path)) {
       forked = true;
       const body = JSON.parse(String(init?.body)) as {
         parentMessageId: string;
       };
       return json({ ...DEPTH2_THREAD, parentMessageId: body.parentMessageId });
     }
-    if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       const items = forked
         ? [ROOT_THREAD, DEPTH1_THREAD, DEPTH2_THREAD]
         : [ROOT_THREAD, DEPTH1_THREAD];
@@ -397,7 +399,7 @@ function stubThreadedFetch() {
     if (/\/threads\/thr_2\/messages$/.test(path)) {
       return json({ thread: DEPTH2_THREAD, items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
       if (init?.method === "POST") {
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
@@ -412,13 +414,13 @@ function stubThreadedFetch() {
         ],
       });
     }
-    if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
       return json({ items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
       return json({
-        ...CHANNEL_WIRE,
+        ...WORKBENCH_WIRE,
         settings: {},
         contextWindow: { value: 20, source: "inherit" },
       });
@@ -431,11 +433,11 @@ function stubThreadedFetch() {
 }
 
 describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
-  test("opening a depth-1 thread shows a two-segment breadcrumb: channel / thread", async () => {
+  test("opening a depth-1 thread shows a two-segment breadcrumb: workbench / thread", async () => {
     stubThreadedFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -462,7 +464,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     stubThreadedFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -475,7 +477,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     });
 
     // The thread's own feed carries only "inside the thread"; its
-    // parent ("root note", msg_1) is pulled from the channel feed.
+    // parent ("root note", msg_1) is pulled from the workbench feed.
     const text = harness.container.textContent ?? "";
     const parentAt = text.indexOf("root note");
     const replyAt = text.indexOf("inside the thread");
@@ -489,7 +491,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     stubThreadedFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -536,7 +538,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     stubThreadedFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -564,8 +566,8 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
   });
 });
 
-const CHANNEL_WITH_AGENT_WIRE = {
-  ...CHANNEL_WIRE,
+const WORKBENCH_WITH_AGENT_WIRE = {
+  ...WORKBENCH_WIRE,
   participants: [
     { address: "researcher@agents.example", handle: "researcher" },
   ],
@@ -595,7 +597,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -608,13 +610,13 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/agents opens channel settings straight to the Agents section", async () => {
+  test("/agents opens workbench settings straight to the Agents section", async () => {
     stubFetch();
     const settingsOpenChanges: boolean[] = [];
     const sectionsOpened: (string | undefined)[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       settingsOpen: false,
       onSettingsOpenChange: (open: boolean, section?: string) => {
         settingsOpenChanges.push(open);
@@ -637,7 +639,7 @@ describe("composer slash commands — each wired command's real action", () => {
     let opened = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       onOpenRoutines: () => {
         opened += 1;
       },
@@ -653,14 +655,14 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/routine opens the New Routine panel pre-bound to the active channel", async () => {
+  test("/routine opens the New Routine panel pre-bound to the active workbench", async () => {
     stubFetch();
     const opened: string[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
-      onCreateRoutineInSpace: (channelId: string) => {
-        opened.push(channelId);
+      workbenchId: "ch_1",
+      onCreateRoutineInSpace: (workbenchId: string) => {
+        opened.push(workbenchId);
       },
     });
     await harness.settle();
@@ -678,7 +680,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -695,7 +697,7 @@ describe("composer slash commands — each wired command's real action", () => {
     let opened = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       onOpenRoutines: () => {
         opened += 1;
       },
@@ -722,7 +724,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -737,7 +739,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -753,7 +755,7 @@ describe("composer slash commands — each wired command's real action", () => {
     let opened = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       onOpenInsights: () => {
         opened += 1;
       },
@@ -777,7 +779,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -788,12 +790,12 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/summarize addresses the channel's actual first agent participant and sends", async () => {
+  test("/summarize addresses the workbench's actual first agent participant and sends", async () => {
     const sentMessages: unknown[] = [];
-    stubFetch(sentMessages, CHANNEL_WITH_AGENT_WIRE);
+    stubFetch(sentMessages, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -808,12 +810,12 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/summarize with no agent in the channel never sends a mention it can't back", async () => {
+  test("/summarize with no agent in the workbench never sends a mention it can't back", async () => {
     const sentMessages: unknown[] = [];
-    stubFetch(sentMessages, CHANNEL_WIRE);
+    stubFetch(sentMessages, WORKBENCH_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -830,7 +832,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch(sentMessages);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -848,7 +850,7 @@ describe("composer slash commands — each wired command's real action", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -870,11 +872,11 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("an unmatched command's popover offers no items, and typing / at a channel with no agent still opens it", async () => {
+  test("an unmatched command's popover offers no items, and typing / at a workbench with no agent still opens it", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -888,10 +890,10 @@ describe("composer slash commands — each wired command's real action", () => {
 });
 
 describe("a stale thread reference self-heals instead of dead-ending", () => {
-  // CL-6069: a channel's remembered root-thread id can outlive the
+  // CL-6069: a workbench's remembered root-thread id can outlive the
   // server-side run it named (e.g. across a hub restart), so
   // `GET .../threads/:id/messages` 404s. The client must fall back to
-  // the channel's live feed rather than rendering a dead-end
+  // the workbench's live feed rather than rendering a dead-end
   // "Couldn't load messages" / "Try again" that keeps re-requesting
   // the same gone thread.
   function stubFetchWithStaleThread(recoveredText: string) {
@@ -903,20 +905,23 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "thr_stale", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/threads\/thr_stale\/messages$/.test(path)) {
+      if (
+        /\/chat\/workbenches\/[^/]+\/threads\/thr_stale\/messages$/.test(path)
+      ) {
         return new Response(JSON.stringify({ error: "not found" }), {
           status: 404,
           headers: { "content-type": "application/json" },
         });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         return json({
           items: [
             {
@@ -928,13 +933,13 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
           ],
         });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -946,11 +951,11 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
     }) as typeof fetch;
   }
 
-  test("a 404 on the channel's remembered root thread falls back to the channel's live feed", async () => {
+  test("a 404 on the workbench's remembered root thread falls back to the workbench's live feed", async () => {
     stubFetchWithStaleThread("recovered after a stale thread 404");
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
     await harness.settle();
@@ -964,13 +969,13 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
   });
 });
 
-describe("a channel-level 404 offers a way out instead of retrying forever", () => {
-  // CL-6077: the routed channel itself is gone (deleted, or a stale id from
+describe("a workbench-level 404 offers a way out instead of retrying forever", () => {
+  // CL-6077: the routed workbench itself is gone (deleted, or a stale id from
   // a Recents entry that outlived it), not a transient load failure — a
   // dead-end "Try again" button would just re-request the same gone
-  // channel forever. The workspace tells the host (so it can drop the
+  // workbench forever. The workspace tells the host (so it can drop the
   // stale Recents entry) and offers "Back to workbenches" instead of retry.
-  function stubFetchWithMissingChannel() {
+  function stubFetchWithMissingWorkbench() {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
@@ -979,28 +984,29 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         return new Response(JSON.stringify({ error: "not found" }), {
           status: 404,
           headers: { "content-type": "application/json" },
         });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/pins$/.test(path))
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
         return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1013,14 +1019,15 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
   }
 
   test("reports the dead id to the host and renders Back to workbenches instead of Try again", async () => {
-    stubFetchWithMissingChannel();
+    stubFetchWithMissingWorkbench();
     const notFoundIds: string[] = [];
     let backToSpacesClicks = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
-      onChannelNotFound: (channelId: string) => notFoundIds.push(channelId),
-      onBackToChannelList: () => {
+      workbenchId: "ch_1",
+      onWorkbenchNotFound: (workbenchId: string) =>
+        notFoundIds.push(workbenchId),
+      onBackToWorkbenchList: () => {
         backToSpacesClicks += 1;
       },
     });
@@ -1028,7 +1035,7 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
 
     // A background refresh (SSE reconnect/poll) can independently retry and
     // re-report the same dead id — purging is idempotent either way, so
-    // this only asserts every report named the right channel, not a count.
+    // this only asserts every report named the right workbench, not a count.
     expect(notFoundIds.length).toBeGreaterThan(0);
     expect(new Set(notFoundIds)).toEqual(new Set(["ch_1"]));
     expect(harness.container.textContent).not.toContain("Try again");
@@ -1057,28 +1064,29 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         return new Response(JSON.stringify({ error: "unauthorized" }), {
           status: 401,
           headers: { "content-type": "application/json" },
         });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/pins$/.test(path))
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
         return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1095,7 +1103,7 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
     let signInClicks = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       onSignIn: () => {
         signInClicks += 1;
       },
@@ -1128,26 +1136,27 @@ describe("chat error copy never leaks a raw API path", () => {
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         return new Response(JSON.stringify({ error: "boom" }), {
           status: 500,
           headers: { "content-type": "application/json" },
         });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1160,7 +1169,7 @@ describe("chat error copy never leaks a raw API path", () => {
 
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -1191,14 +1200,15 @@ describe("optimistic send (CL-6103)", () => {
           status,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         if (init?.method === "POST") {
           if (shouldFail()) {
             return json({ error: { code: "bad_request" } }, 500);
@@ -1207,13 +1217,13 @@ describe("optimistic send (CL-6103)", () => {
         }
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1237,7 +1247,7 @@ describe("optimistic send (CL-6103)", () => {
     stubFetchWithSendOutcome(() => false);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       currentUser: { principalId: "prn_alice" },
     });
     await harness.settle();
@@ -1261,7 +1271,7 @@ describe("optimistic send (CL-6103)", () => {
     stubFetchWithSendOutcome(() => false);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       currentUser: { principalId: "prn_alice" },
     });
     await harness.settle();
@@ -1296,7 +1306,7 @@ describe("optimistic send (CL-6103)", () => {
     stubFetchWithSendOutcome(() => fail);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       currentUser: { principalId: "prn_alice" },
     });
     await harness.settle();
@@ -1335,7 +1345,7 @@ describe("optimistic send (CL-6103)", () => {
     stubFetchWithSendOutcome(() => true);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       currentUser: { principalId: "prn_alice" },
     });
     await harness.settle();
@@ -1392,14 +1402,15 @@ describe("loadMessages request ordering (CL-6251)", () => {
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_WIRE] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         if (init?.method === "POST") {
           postCount += 1;
           return json({
@@ -1410,7 +1421,7 @@ describe("loadMessages request ordering (CL-6251)", () => {
         const callIndex = messagesGetCount;
         messagesGetCount += 1;
         // Every load before the race starts (the initial mount load, plus
-        // however many redundant foreground loads the channel-resolution
+        // however many redundant foreground loads the workbench-resolution
         // effects happen to run) reports empty — nothing about those is
         // under test here.
         if (callIndex < raceStartIndex) {
@@ -1442,13 +1453,13 @@ describe("loadMessages request ordering (CL-6251)", () => {
         await sleep(5);
         return json({ items: [firstMessage, secondMessage] });
       }
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_WIRE,
+          ...WORKBENCH_WIRE,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1461,7 +1472,7 @@ describe("loadMessages request ordering (CL-6251)", () => {
 
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       currentUser: { principalId: "prn_alice" },
     });
     await harness.settle();
@@ -1497,12 +1508,12 @@ describe("loadMessages request ordering (CL-6251)", () => {
   });
 });
 
-describe("Channel header polish (CL-6106)", () => {
-  test("the threads dropdown is hidden entirely when the channel has no threads yet", async () => {
+describe("Workbench header polish (CL-6106)", () => {
+  test("the threads dropdown is hidden entirely when the workbench has no threads yet", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -1510,11 +1521,11 @@ describe("Channel header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("the threads dropdown appears once the channel has a thread", async () => {
+  test("the threads dropdown appears once the workbench has a thread", async () => {
     stubThreadedFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -1527,10 +1538,10 @@ describe("Channel header polish (CL-6106)", () => {
   });
 
   test("agent participant chips share the roster's circular avatar, keeping the handle as a hover tooltip", async () => {
-    stubFetch(undefined, CHANNEL_WITH_AGENT_WIRE);
+    stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -1547,7 +1558,7 @@ describe("Channel header polish (CL-6106)", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       onOpenRoutines: () => {},
       onOpenInsights: () => {},
     });
@@ -1568,7 +1579,7 @@ describe("Channel header polish (CL-6106)", () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -1579,24 +1590,24 @@ describe("Channel header polish (CL-6106)", () => {
     expect(button.textContent?.trim()).toBe("");
     expect(button.title).toBe("Settings");
 
-    const actions = harness.container.querySelector(".chat-channel-actions");
+    const actions = harness.container.querySelector(".chat-workbench-actions");
     expect(actions?.lastElementChild?.contains(button)).toBe(true);
     harness.unmount();
   });
 });
 
-describe("switching channels never carries a stale root-thread id across", () => {
+describe("switching workbenches never carries a stale root-thread id across", () => {
   // CL-6067/6069 regression: `loadMessages`'s closure over `rootThreadId`
-  // can still hold the *previous* channel's value the instant a channel
+  // can still hold the *previous* workbench's value the instant a workbench
   // switch fires the reset effect (the reset's own `setRootThreadId(null)`
-  // hasn't committed yet). Trusting it sends the new channel's messages
-  // request down the old channel's thread id, which 404s and can leave the
+  // hasn't committed yet). Trusting it sends the new workbench's messages
+  // request down the old workbench's thread id, which 404s and can leave the
   // pane stuck on the loading skeleton behind the stale-thread-ref fallback
   // cascade instead of rendering promptly.
-  const CHANNEL_A = { ...CHANNEL_WIRE, id: "ch_a", title: "Channel A" };
-  const CHANNEL_B = { ...CHANNEL_WIRE, id: "ch_b", title: "Channel B" };
+  const WORKBENCH_A = { ...WORKBENCH_WIRE, id: "ch_a", title: "Workbench A" };
+  const WORKBENCH_B = { ...WORKBENCH_WIRE, id: "ch_b", title: "Workbench B" };
 
-  function stubFetchTwoChannels(wrongRequests: string[]) {
+  function stubFetchTwoWorkbenches(wrongRequests: string[]) {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
@@ -1610,14 +1621,15 @@ describe("switching channels never carries a stale root-thread id across", () =>
           status: 404,
           headers: { "content-type": "application/json" },
         });
-      if (/\/chat\/channels\?kind=channel$/.test(path)) {
-        return json({ items: [CHANNEL_A, CHANNEL_B] });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_A, WORKBENCH_B] });
       }
-      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-      if (/\/chat\/channels\/ch_a\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/ch_a\/threads$/.test(path)) {
         return json({ rootThreadId: "thr_a", items: [] });
       }
-      if (/\/chat\/channels\/ch_b\/threads$/.test(path)) {
+      if (/\/chat\/workbenches\/ch_b\/threads$/.test(path)) {
         return json({ rootThreadId: "thr_b", items: [] });
       }
       const rootThread = (id: string) => ({
@@ -1629,7 +1641,7 @@ describe("switching channels never carries a stale root-thread id across", () =>
         title: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       });
-      if (/\/chat\/channels\/ch_a\/threads\/thr_a\/messages$/.test(path)) {
+      if (/\/chat\/workbenches\/ch_a\/threads\/thr_a\/messages$/.test(path)) {
         return json({
           thread: rootThread("thr_a"),
           items: [
@@ -1642,7 +1654,7 @@ describe("switching channels never carries a stale root-thread id across", () =>
           ],
         });
       }
-      if (/\/chat\/channels\/ch_b\/threads\/thr_b\/messages$/.test(path)) {
+      if (/\/chat\/workbenches\/ch_b\/threads\/thr_b\/messages$/.test(path)) {
         return json({
           thread: rootThread("thr_b"),
           items: [
@@ -1655,24 +1667,24 @@ describe("switching channels never carries a stale root-thread id across", () =>
           ],
         });
       }
-      // Any cross-channel thread id combination is the bug this test
+      // Any cross-workbench thread id combination is the bug this test
       // guards against — record it and 404, exactly like the real hub
-      // would for a thread id that doesn't belong to that channel.
-      if (/\/chat\/channels\/[^/]+\/threads\/[^/]+\/messages$/.test(path)) {
+      // would for a thread id that doesn't belong to that workbench.
+      if (/\/chat\/workbenches\/[^/]+\/threads\/[^/]+\/messages$/.test(path)) {
         wrongRequests.push(path);
         return notFound();
       }
-      if (/\/chat\/channels\/[^/]+\/messages/.test(path))
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
         return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/channels\/[^/]+\/pins$/.test(path))
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
         return json({ items: [] });
-      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
-          ...CHANNEL_A,
+          ...WORKBENCH_A,
           settings: {},
           contextWindow: { value: 20, source: "inherit" },
         });
@@ -1684,12 +1696,12 @@ describe("switching channels never carries a stale root-thread id across", () =>
     }) as typeof fetch;
   }
 
-  test("switching to another channel loads that channel's own thread, not the previous one's", async () => {
+  test("switching to another workbench loads that workbench's own thread, not the previous one's", async () => {
     const wrongRequests: string[] = [];
-    stubFetchTwoChannels(wrongRequests);
+    stubFetchTwoWorkbenches(wrongRequests);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_a",
+      workbenchId: "ch_a",
     });
     await harness.settle();
     await harness.settle();
@@ -1697,7 +1709,7 @@ describe("switching channels never carries a stale root-thread id across", () =>
 
     await harness.rerender({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_b",
+      workbenchId: "ch_b",
     });
     await harness.settle();
     await harness.settle();

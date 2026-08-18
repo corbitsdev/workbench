@@ -1,13 +1,13 @@
 // Browser-safe "what counts as a user-facing agent" logic: filtering out
-// the chat anchor machinery's channel hosts (they are plumbing, not an
+// the chat anchor machinery's workbench hosts (they are plumbing, not an
 // agent a person created), full-text search across the fields a person
 // actually reads (never an id), and flagging an instance whose definition
 // has since gone missing from the tenant's own listing. Depends directly on
-// `@corbits/chat/channel-host-naming` — a domain package, not app state —
+// `@corbits/chat/workbench-host-naming` — a domain package, not app state —
 // to identify that plumbing; a host injects only its raw definition/
 // instance lists, already fetched from wherever it gets them.
 
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 export type UserFacingAgentDefinition = {
   readonly id: string;
@@ -22,7 +22,7 @@ export type UserFacingAgentInstance = {
   readonly address?: string;
 };
 
-/** Every definition, minus the chat anchor machinery's channel hosts —
+/** Every definition, minus the chat anchor machinery's workbench hosts —
  * those are internal plumbing, never a user-facing agent. Definitions
  * never need the run-id filter `purposeAgentInstances` below takes:
  * definition rows aren't run rows, so a folded run's own id can never
@@ -32,13 +32,13 @@ export type UserFacingAgentInstance = {
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
-  return definitions.filter((d) => !isChannelHostDefinitionName(d.name));
+  return definitions.filter((d) => !isWorkbenchHostDefinitionName(d.name));
 }
 
 /**
  * `excludeRunIds` additionally drops folded chat runs (invited agents):
  * they self-anchor like a real deployment and launch under a real,
- * user-authored `definitionId` that `isChannelHostDefinitionName` never
+ * user-authored `definitionId` that `isWorkbenchHostDefinitionName` never
  * catches, so the host names them by id instead. Defaults to an empty
  * set so callers without a folded-run source keep the name-only filter.
  */
@@ -48,7 +48,7 @@ export function purposeAgentInstances<T extends UserFacingAgentInstance>(
 ): readonly T[] {
   return instances.filter(
     (instance) =>
-      !isChannelHostDefinitionName(instance.definitionName) &&
+      !isWorkbenchHostDefinitionName(instance.definitionName) &&
       !excludeRunIds.has(instance.id),
   );
 }

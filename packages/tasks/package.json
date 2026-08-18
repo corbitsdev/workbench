@@ -1,7 +1,7 @@
 {
   "name": "@corbits/tasks",
   "private": true,
-  "description": "Spawn-and-return agent tasks: a prompt plus an agent definition launches a one-shot folded run with no channel, and its finalized reply lands in the Inbox.",
+  "description": "Spawn-and-return agent tasks: a prompt plus an agent definition launches a one-shot folded run with no workbench, and its finalized reply lands in the Inbox.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",

@@ -1,4 +1,4 @@
-// Channel surface for the main stage. `/c` and `/c/:channelId` (plus legacy
+// Workbench surface for the main stage. `/w` and `/w/:workbenchId` (plus legacy
 // `/chat` prefixes) render the conversation here — not in the canvas.
 // Canvas stays auxiliary (profiles and similar) and opens on demand from
 // this workspace.
@@ -6,7 +6,7 @@
 import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { describeApiError } from "@corbits/api-query";
 import { listPrincipals } from "@corbits/settings-ui";
-import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
+import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -22,14 +22,14 @@ import {
   artifactContentFromDetailError,
 } from "../chat-artifact-open";
 import {
-  channelIdFromPath,
-  channelPath,
-  channelSettingsPath,
-  channelSettingsSectionFromPath,
-  isChannelSettingsPath,
-} from "../channel-path";
-import { reportChannelNotFound } from "../channel-not-found-event";
-import { channelInsightsPath } from "../insights-deeplinks";
+  workbenchIdFromPath,
+  workbenchPath,
+  workbenchSettingsPath,
+  workbenchSettingsSectionFromPath,
+  isWorkbenchSettingsPath,
+} from "../workbench-path";
+import { reportWorkbenchNotFound } from "../workbench-not-found-event";
+import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -53,9 +53,9 @@ export function ChatPage({
 }) {
   const bench = useBench();
   const onSignIn = useSignOut();
-  const channelId = channelIdFromPath(path);
-  const settingsOpen = isChannelSettingsPath(path);
-  const settingsSection = channelSettingsSectionFromPath(path) ?? "general";
+  const workbenchId = workbenchIdFromPath(path);
+  const settingsOpen = isWorkbenchSettingsPath(path);
+  const settingsSection = workbenchSettingsSectionFromPath(path) ?? "general";
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
   const openArtifactInCanvas = useOpenArtifactInCanvas();
@@ -64,12 +64,12 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
-  // Who's live in this channel right now, beyond the static participants
+  // Who's live in this workbench right now, beyond the static participants
   // list — the server derives displayName/color, so no identity data
   // needs resolving here (see `usePresenceRoom`).
   const { members: presenceMembers } = usePresenceRoom(
     tenantId,
-    channelId === null ? null : `channel:${channelId}`,
+    workbenchId === null ? null : `workbench:${workbenchId}`,
   );
   const approvalActions = useMemo(
     () =>
@@ -80,10 +80,10 @@ export function ChatPage({
   );
   const blockResponses = useMemo(
     () =>
-      tenantId === null || channelId === null
+      tenantId === null || workbenchId === null
         ? undefined
-        : createChatBlockResponseActions(tenantId, channelId),
-    [tenantId, channelId],
+        : createChatBlockResponseActions(tenantId, workbenchId),
+    [tenantId, workbenchId],
   );
 
   // The in-chat "Fix this connection" affordance's deep link (CL-6092) —
@@ -144,9 +144,9 @@ export function ChatPage({
           });
         return;
       }
-      if (part.blobId === undefined || channelId === null) return;
+      if (part.blobId === undefined || workbenchId === null) return;
       const blobId = part.blobId;
-      void fetchChannelBlob(tenantId, channelId, blobId)
+      void fetchWorkbenchBlob(tenantId, workbenchId, blobId)
         .then((contentBase64) => {
           openArtifactInCanvas(
             artifactContentFromBlob(part, blobId, contentBase64),
@@ -162,7 +162,7 @@ export function ChatPage({
           );
         });
     },
-    [tenantId, channelId, openArtifactInCanvas],
+    [tenantId, workbenchId, openArtifactInCanvas],
   );
 
   // The chip's "Open in Library" affordance — only ever offered for a part
@@ -180,23 +180,25 @@ export function ChatPage({
     <ChatWorkspace
       tenant={tenant}
       {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
-      channelId={channelId}
-      onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
+      workbenchId={workbenchId}
+      onWorkbenchChange={(nextWorkbenchId) =>
+        navigate(workbenchPath(nextWorkbenchId))
+      }
       onOpenProfile={openProfile}
       registerComposerInsert={registerComposerInsert}
       settingsOpen={settingsOpen}
       onSettingsOpenChange={(open, section) => {
-        if (channelId === null) return;
+        if (workbenchId === null) return;
         navigate(
           open
-            ? channelSettingsPath(channelId, section ?? settingsSection)
-            : channelPath(channelId),
+            ? workbenchSettingsPath(workbenchId, section ?? settingsSection)
+            : workbenchPath(workbenchId),
         );
       }}
       settingsSection={settingsSection}
       onSettingsSectionChange={(section) => {
-        if (channelId === null) return;
-        navigate(channelSettingsPath(channelId, section));
+        if (workbenchId === null) return;
+        navigate(workbenchSettingsPath(workbenchId, section));
       }}
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}
@@ -206,37 +208,37 @@ export function ChatPage({
       listMembers={listMembers}
       // The header's Routines affordance and `/run`: the panel's default
       // list view, beside this conversation — never a `/routines` hop
-      // (CL-6139). Bound to this channel so the list's own "New routine"
-      // row still targets this conversation's agent/channel.
+      // (CL-6139). Bound to this workbench so the list's own "New routine"
+      // row still targets this conversation's agent/workbench.
       onOpenRoutines={() =>
         openRoutine({
           view: "list",
-          ...(channelId !== null ? { channelId } : {}),
+          ...(workbenchId !== null ? { workbenchId } : {}),
         })
       }
       // The header's Insights affordance: this conversation's own scoped
-      // timeline, never the global landing. Passes the channel id as-is —
-      // the route itself resolves the channel's workbench tenant (see
-      // `insights-channel-scope.ts`), since a channel id is never a
+      // timeline, never the global landing. Passes the workbench id as-is —
+      // the route itself resolves the workbench's workbench tenant (see
+      // `insights-workbench-scope.ts`), since a workbench id is never a
       // tenant id.
       onOpenInsights={() => {
-        if (channelId === null) return;
-        navigate(channelInsightsPath(channelId));
+        if (workbenchId === null) return;
+        navigate(workbenchInsightsPath(workbenchId));
       }}
       // `/routine`: opens the editor directly on a brand-new routine
-      // bound to this channel.
-      onCreateRoutineInSpace={(inSpaceChannelId) =>
-        openRoutine({ routineId: null, channelId: inSpaceChannelId })
+      // bound to this workbench.
+      onCreateRoutineInSpace={(inSpaceWorkbenchId) =>
+        openRoutine({ routineId: null, workbenchId: inSpaceWorkbenchId })
       }
       presenceMembers={presenceMembers}
-      onChannelNotFound={reportChannelNotFound}
-      onBackToChannelList={() => navigate(channelPath(null))}
+      onWorkbenchNotFound={reportWorkbenchNotFound}
+      onBackToWorkbenchList={() => navigate(workbenchPath(null))}
       {...(onSignIn !== undefined ? { onSignIn } : {})}
     />
   );
 
   // The conversation itself carries the open workbench's own name inline
-  // (see ChatWorkspace's `chat-channel-header`) — that header IS the
+  // (see ChatWorkspace's `chat-workbench-header`) — that header IS the
   // stage's page identity here, so no generic `StageTopBar` renders above
   // it (CL-6089: a second "Workbenches" bar over the conversation's own
   // header was a double identity, not two different things).

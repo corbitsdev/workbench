@@ -19,10 +19,10 @@ import {
 import { toast } from "@corbits/react-ui";
 import {
   CHAT_STRINGS,
-  channelsQueryKeyPrefix,
-  patchChannelSettings,
+  workbenchesQueryKeyPrefix,
+  patchWorkbenchSettings,
 } from "@corbits/chat-ui";
-import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
+import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
 import { WorkingTaskRow } from "@corbits/tasks-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Hash, MessageSquare, MoreHorizontal, Search } from "lucide-react";
@@ -31,11 +31,11 @@ import type { KeyboardEvent } from "react";
 
 import { openAgentDmChat } from "../agent-dm-launch";
 import { useBench } from "../bench-context";
-import { channelIdFromPath, channelPath } from "../channel-path";
+import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import {
-  REQUEST_CHANNEL_RENAME_EVENT,
-  isChannelRenameRequestFor,
-} from "../channel-rename-events";
+  REQUEST_WORKBENCH_RENAME_EVENT,
+  isWorkbenchRenameRequestFor,
+} from "../workbench-rename-events";
 import { useBenchActivity } from "./bench-activity";
 import {
   buildSidebarRows,
@@ -80,11 +80,11 @@ function NewWorkbenchStubRow() {
  * opening the (portaled, Radix) menu.
  */
 export function rowMenuLabels(
-  channel: Pick<Channel, "pinned">,
+  workbench: Pick<Workbench, "pinned">,
 ): readonly [rename: string, pinToggle: string] {
   return [
     CHAT_STRINGS.rowMenuRename,
-    channel.pinned ? CHAT_STRINGS.rowMenuUnpin : CHAT_STRINGS.rowMenuPin,
+    workbench.pinned ? CHAT_STRINGS.rowMenuUnpin : CHAT_STRINGS.rowMenuPin,
   ];
 }
 
@@ -125,22 +125,22 @@ export type WorkbenchRowSignals = {
  * refetch on navigation, so the open row's count is forced to 0 locally.
  */
 export function workbenchRowSignals(
-  channel: Pick<
-    Channel,
+  workbench: Pick<
+    Workbench,
     "unreadCount" | "lastActivityAt" | "live" | "sharedLabel"
   >,
   isOpen: boolean,
 ): WorkbenchRowSignals {
   return {
-    ...(channel.sharedLabel !== undefined
-      ? { sharedLabel: channel.sharedLabel }
+    ...(workbench.sharedLabel !== undefined
+      ? { sharedLabel: workbench.sharedLabel }
       : {}),
-    ...(channel.live !== undefined ? { live: channel.live } : {}),
-    ...(channel.lastActivityAt !== undefined
-      ? { time: formatRelativeTime(channel.lastActivityAt) }
+    ...(workbench.live !== undefined ? { live: workbench.live } : {}),
+    ...(workbench.lastActivityAt !== undefined
+      ? { time: formatRelativeTime(workbench.lastActivityAt) }
       : {}),
-    ...(channel.unreadCount !== undefined
-      ? { unread: isOpen ? 0 : channel.unreadCount }
+    ...(workbench.unreadCount !== undefined
+      ? { unread: isOpen ? 0 : workbench.unreadCount }
       : {}),
   };
 }
@@ -152,16 +152,16 @@ export function workbenchRowSignals(
  * and "recency, not insertion order" rules are testable.
  */
 export function orderWorkbenchRows(
-  channels: readonly Channel[],
-): readonly Channel[] {
-  const byRecency = (a: Channel, b: Channel) => {
+  workbenches: readonly Workbench[],
+): readonly Workbench[] {
+  const byRecency = (a: Workbench, b: Workbench) => {
     const at = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
     const bt = b.lastActivityAt ? Date.parse(b.lastActivityAt) : 0;
     return bt - at;
   };
   return [
-    ...channels.filter((channel) => channel.pinned).sort(byRecency),
-    ...channels.filter((channel) => !channel.pinned).sort(byRecency),
+    ...workbenches.filter((workbench) => workbench.pinned).sort(byRecency),
+    ...workbenches.filter((workbench) => !workbench.pinned).sort(byRecency),
   ];
 }
 
@@ -169,29 +169,29 @@ export function orderWorkbenchRows(
  * One workbench row — avatar, name (the agent's for an agent conversation,
  * the row's own title for a multi-party one), optional shared/live, optional
  * time + unread badge, hover menu for rename / pin. Mutations go through
- * `PATCH /channels/:id/settings`.
+ * `PATCH /workbenches/:id/settings`.
  */
 function WorkbenchRow({
-  channel,
+  workbench,
   active,
   tenantId,
   onSelect,
   signals = {},
 }: {
-  readonly channel: Channel;
+  readonly workbench: Workbench;
   readonly active: boolean;
   readonly tenantId: string;
   readonly onSelect: () => void;
   readonly signals?: WorkbenchRowSignals;
 }) {
   const queryClient = useQueryClient();
-  const [title, setTitle] = useState(channel.title);
-  // The channel prop only reconciles on a scope change, so the effective
+  const [title, setTitle] = useState(workbench.title);
+  // The workbench prop only reconciles on a scope change, so the effective
   // pinned state lives here: without it a second toggle would re-send and
   // re-announce the first one's transition.
-  const [pinned, setPinned] = useState(channel.pinned);
+  const [pinned, setPinned] = useState(workbench.pinned);
   const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(channel.title);
+  const [renameValue, setRenameValue] = useState(workbench.title);
   const [renameLabel, pinToggleLabel] = rowMenuLabels({ pinned });
 
   function startRename() {
@@ -201,12 +201,15 @@ function WorkbenchRow({
 
   useEffect(() => {
     function onRenameRequest(event: Event) {
-      if (isChannelRenameRequestFor(event, channel.id)) startRename();
+      if (isWorkbenchRenameRequestFor(event, workbench.id)) startRename();
     }
-    window.addEventListener(REQUEST_CHANNEL_RENAME_EVENT, onRenameRequest);
+    window.addEventListener(REQUEST_WORKBENCH_RENAME_EVENT, onRenameRequest);
     return () =>
-      window.removeEventListener(REQUEST_CHANNEL_RENAME_EVENT, onRenameRequest);
-  }, [channel.id]);
+      window.removeEventListener(
+        REQUEST_WORKBENCH_RENAME_EVENT,
+        onRenameRequest,
+      );
+  }, [workbench.id]);
 
   async function commitRename() {
     const payload = renamePayload(renameValue, title);
@@ -214,17 +217,17 @@ function WorkbenchRow({
     if (payload === undefined) return;
     setTitle(payload);
     try {
-      await patchChannelSettings(tenantId, channel.id, {
+      await patchWorkbenchSettings(tenantId, workbench.id, {
         "chat/name": payload,
       });
       void queryClient.invalidateQueries({
-        queryKey: channelsQueryKeyPrefix(tenantId),
+        queryKey: workbenchesQueryKeyPrefix(tenantId),
       });
-      toast(CHAT_STRINGS.channelRenamedToast(payload));
+      toast(CHAT_STRINGS.workbenchRenamedToast(payload));
     } catch {
       // Revert the optimistic title on failure; the list will refetch on
       // the next scope selection and reconcile either way.
-      setTitle(channel.title);
+      setTitle(workbench.title);
     }
   }
 
@@ -241,16 +244,16 @@ function WorkbenchRow({
   async function togglePinned() {
     const next = !pinned;
     try {
-      await patchChannelSettings(tenantId, channel.id, {
+      await patchWorkbenchSettings(tenantId, workbench.id, {
         "chat/pinned": next,
       });
       void queryClient.invalidateQueries({
-        queryKey: channelsQueryKeyPrefix(tenantId),
+        queryKey: workbenchesQueryKeyPrefix(tenantId),
       });
       setPinned(next);
-      toast(CHAT_STRINGS.channelPinnedToast(next, title));
+      toast(CHAT_STRINGS.workbenchPinnedToast(next, title));
     } catch {
-      toast(CHAT_STRINGS.channelPinToggleError(next));
+      toast(CHAT_STRINGS.workbenchPinToggleError(next));
     }
   }
 
@@ -269,16 +272,16 @@ function WorkbenchRow({
     );
   }
 
-  const displayTitle = title || CHAT_STRINGS.unnamedChannel;
+  const displayTitle = title || CHAT_STRINGS.unnamedWorkbench;
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
   return (
     <div
       className="shell-ch-row-wrap"
-      data-ctx-channel={channel.id}
-      data-ctx-channel-title={displayTitle}
-      data-ctx-channel-pinned={channel.pinned ? "true" : "false"}
+      data-ctx-workbench={workbench.id}
+      data-ctx-workbench-title={displayTitle}
+      data-ctx-workbench-pinned={workbench.pinned ? "true" : "false"}
     >
       <button
         type="button"
@@ -306,8 +309,8 @@ function WorkbenchRow({
               <span className="shell-ch-live" title="Active" />
             ) : null}
           </span>
-          {channel.preview !== undefined && channel.preview !== "" ? (
-            <span className="shell-ch-preview">{channel.preview}</span>
+          {workbench.preview !== undefined && workbench.preview !== "" ? (
+            <span className="shell-ch-preview">{workbench.preview}</span>
           ) : null}
         </span>
         <span className="shell-ch-right">
@@ -342,9 +345,9 @@ function WorkbenchRow({
 
 /**
  * A never-opened agent's row (CL-6253): mints its DM lazily on first
- * click, then reuses the same channel on every later click — once
- * opened, the agent shows up as an ordinary channel row via its own DM
- * `Channel` instead (see `unopenedAgentRows`). Disabled, with an honest
+ * click, then reuses the same workbench on every later click — once
+ * opened, the agent shows up as an ordinary workbench row via its own DM
+ * `Workbench` instead (see `unopenedAgentRows`). Disabled, with an honest
  * join caption, when the caller isn't a member of the agent's OWNING
  * tenant — reachable-through-inheritance is not the same as postable-in;
  * see `packages/agent-directory/src/visible-definitions.ts`.
@@ -414,7 +417,7 @@ export function WorkbenchList({
 }) {
   const { selectedTenantId, memberships } = useBench();
   const activity = useBenchActivity(selectedTenantId);
-  const activeId = channelIdFromPath(path);
+  const activeId = workbenchIdFromPath(path);
   const [query, setQuery] = useState("");
 
   if (activity.kind === "loading") {
@@ -440,7 +443,7 @@ export function WorkbenchList({
   }
 
   const all = buildSidebarRows(
-    activity.channels,
+    activity.workbenches,
     activity.chats,
     activity.agents,
   );
@@ -475,13 +478,15 @@ export function WorkbenchList({
   }
 
   const rowName = (row: SidebarRow): string =>
-    row.kind === "channel"
-      ? row.channel.title || CHAT_STRINGS.unnamedChannel
+    row.kind === "workbench"
+      ? row.workbench.title || CHAT_STRINGS.unnamedWorkbench
       : row.agent.name;
 
   const q = query.trim().toLowerCase();
   const filtered =
-    q === "" ? all : all.filter((row) => rowName(row).toLowerCase().includes(q));
+    q === ""
+      ? all
+      : all.filter((row) => rowName(row).toLowerCase().includes(q));
 
   const tenantId = selectedTenantId ?? "";
 
@@ -507,16 +512,16 @@ export function WorkbenchList({
       ) : (
         <div className="panel-stack-group">
           {filtered.map((row) =>
-            row.kind === "channel" ? (
+            row.kind === "workbench" ? (
               <WorkbenchRow
-                key={row.channel.id}
-                channel={row.channel}
-                active={row.channel.id === activeId}
+                key={row.workbench.id}
+                workbench={row.workbench}
+                active={row.workbench.id === activeId}
                 tenantId={tenantId}
-                onSelect={() => onNavigate(channelPath(row.channel.id))}
+                onSelect={() => onNavigate(workbenchPath(row.workbench.id))}
                 signals={workbenchRowSignals(
-                  row.channel,
-                  row.channel.id === activeId,
+                  row.workbench,
+                  row.workbench.id === activeId,
                 )}
               />
             ) : (

@@ -56,7 +56,7 @@ function routine(
     trigger: { kind: "interval", unit: "hours", every: 24 },
     scope: "bench",
     input: {},
-    deliveryChannelId: null,
+    deliveryWorkbenchId: null,
     consecutiveFailures: 0,
     deadLetteredAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -66,7 +66,7 @@ function routine(
 }
 
 describe("computeInsightsStats", () => {
-  test("counts purposeful runs by status and drops channel hosts", () => {
+  test("counts purposeful runs by status and drops workbench hosts", () => {
     const stats = computeInsightsStats(
       [
         run({
@@ -121,15 +121,15 @@ describe("computeInsightsStats", () => {
 });
 
 describe("purposeRunsForInsights", () => {
-  const channelHost = run({
+  const workbenchHost = run({
     id: "host",
     status: "running",
     definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   });
   const deployment = run({ id: "ins_deployed", status: "running" });
 
-  test("drops a channel-host run by its definition-name pattern", () => {
-    expect(purposeRunsForInsights([deployment, channelHost])).toEqual([
+  test("drops a workbench-host run by its definition-name pattern", () => {
+    expect(purposeRunsForInsights([deployment, workbenchHost])).toEqual([
       deployment,
     ]);
   });
@@ -240,8 +240,8 @@ describe("groupRunsByDefinition", () => {
       run({
         id: "fire1",
         status: "running",
-        definitionId: "wfd_channel_digest",
-        definitionName: "channel-digest",
+        definitionId: "wfd_workbench_digest",
+        definitionName: "workbench-digest",
         routineId: "rtn_pulse_check",
         routineName: "Pulse check",
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -251,8 +251,8 @@ describe("groupRunsByDefinition", () => {
       run({
         id: "fire2",
         status: "running",
-        definitionId: "wfd_channel_digest",
-        definitionName: "channel-digest",
+        definitionId: "wfd_workbench_digest",
+        definitionName: "workbench-digest",
         routineId: "rtn_weekly_roundup",
         routineName: "Weekly roundup",
         createdAt: "2026-01-02T00:00:00.000Z",
@@ -275,7 +275,7 @@ describe("runDisplayName", () => {
         run({
           id: "fire1",
           status: "running",
-          definitionName: "channel-digest",
+          definitionName: "workbench-digest",
           routineId: "rtn_pulse_check",
           routineName: "Pulse check",
         }),

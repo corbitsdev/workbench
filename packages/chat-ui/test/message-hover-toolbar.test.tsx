@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 import type { PinActions, ReactionActions } from "../src/timeline";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,7 +57,7 @@ async function mount(props: {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={props.items}
         {...(props.onOpenThread !== undefined
           ? { onOpenThread: props.onOpenThread }
@@ -126,7 +126,7 @@ describe("the persistent inline 'Reply in thread' link is gone", () => {
 
   test("a message that already has replies still shows its thread summary row", async () => {
     const el = await mount({ items: textMessage() });
-    // threadMetaByMessageId isn't wired in this mount, but ChannelTimeline
+    // threadMetaByMessageId isn't wired in this mount, but WorkbenchTimeline
     // only renders the summary row at all when onOpenThread is passed —
     // remount with both to exercise the replyCount > 0 branch.
     const withReplies = document.createElement("div");
@@ -134,7 +134,7 @@ describe("the persistent inline 'Reply in thread' link is gone", () => {
     const repliesRoot = createRoot(withReplies);
     await act(async () => {
       repliesRoot.render(
-        <ChannelTimeline
+        <WorkbenchTimeline
           items={textMessage()}
           onOpenThread={() => undefined}
           threadMetaByMessageId={

@@ -623,7 +623,7 @@ select:disabled,
   white-space: nowrap;
 }
 
-/* A recent-run row that deep-links to its routine's delivery channel. */
+/* A recent-run row that deep-links to its routine's delivery workbench. */
 .routine-run-row-linked {
   cursor: pointer;
   transition: background 120ms ease;
@@ -634,7 +634,7 @@ select:disabled,
   background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
-/* Channel rows in the panel band. One-line title + ellipsis; dense to match
+/* Workbench rows in the panel band. One-line title + ellipsis; dense to match
    the mock chrome. Classnames kept under the historical chat-sidebar- prefix
    so package-level row helpers stay reusable without owning layout CSS. */
 .chat-sidebar-row {
@@ -663,7 +663,7 @@ select:disabled,
 
 /* Shared stage top bar — mock `.top`: a fixed 3rem row on every stage
    surface. Title · dot · subtitle, then per-page actions right-align.
-   Matches `.chat-channel-header` geometry so conversations and pages read
+   Matches `.chat-workbench-header` geometry so conversations and pages read
    as one chrome. */
 .stage-top-bar {
   display: flex;
@@ -1383,7 +1383,7 @@ select:disabled,
 }
 
 /* Agent-DM identity avatar: zero radius per brand rule, distinct from the
-   round channel-participant stack above — a small, deterministic,
+   round workbench-participant stack above — a small, deterministic,
    brand-compatible palette hashed off the agent's own name (see
    `identityColorClass` in `./shell/sidebar-rows.ts`), never a per-agent
    custom color. */
@@ -1469,7 +1469,7 @@ select:disabled,
 }
 
 /* Bounded last-message/last-known-status line under the row name — a
-   channel's message preview, or an unreachable agent's join caption. */
+   workbench's message preview, or an unreachable agent's join caption. */
 .shell-ch-preview {
   display: block;
   font-size: 0.72rem;

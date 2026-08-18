@@ -219,7 +219,7 @@ export type CreateConnectionRoutesDeps = {
   providerHealth?: ProviderHealthStore;
   /**
    * Backs `GET /provider-health`'s `connectedProviderCount` — the same
-   * `listConnectedProviders` the channel host's own inference
+   * `listConnectedProviders` the workbench host's own inference
    * preferences are derived from (`@corbits/chat`). The shell banner
    * uses this to tell "every connected provider needs attention" (route
    * the fix action to Plugins) apart from "nothing is connected at all"

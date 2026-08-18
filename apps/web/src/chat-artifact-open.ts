@@ -5,7 +5,7 @@
 // `artifactContentFromDetail`), never raw blob bytes. Only a part with no
 // `artifactId` — a plain human upload that never got a Library row — falls
 // back to `chat-ui`'s blob route (see `packages/chat/src/routes.ts`
-// `GET /channels/:id/blobs/:blobId`, `artifactContentFromBlob`).
+// `GET /workbenches/:id/blobs/:blobId`, `artifactContentFromBlob`).
 
 import {
   isTextDecodableMediaType,

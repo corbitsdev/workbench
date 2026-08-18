@@ -28,7 +28,7 @@ export type RoutineDraftInventoryWorkflow = {
   readonly definitionId: string;
   readonly assetName: string;
   readonly displayName: string;
-  readonly deliveryMode: "channel" | "inbox";
+  readonly deliveryMode: "workbench" | "inbox";
   readonly triggerFields: readonly WorkflowTriggerField[];
   readonly description?: string;
 };

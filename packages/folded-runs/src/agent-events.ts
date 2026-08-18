@@ -1,6 +1,6 @@
 // Recognizers for the sidecar `agent.event` frames every folded-run
 // observer keys off. Both process-wide orchestrators — `@corbits/chat`'s
-// (replies into channels) and `@corbits/tasks`' (terminal results into
+// (replies into workbenches) and `@corbits/tasks`' (terminal results into
 // the Inbox) — subscribe to the same stream and need the same two
 // readings, so the parsing lives here, in the package both already
 // build on, rather than duplicated in each: this module is about

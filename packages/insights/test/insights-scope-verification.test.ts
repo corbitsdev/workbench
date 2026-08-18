@@ -3,7 +3,7 @@
 //    has no coverage on the branch (routes-scope.test.ts substitutes the
 //    memory store). Proves multi-tenant reads, isolation, empty-array,
 //    and that a quote-bearing tenant id is parameterized (no injection).
-// 2. resolveScope recursion: a workbench with a channel child tenancy is
+// 2. resolveScope recursion: a workbench with a workbench child tenancy is
 //    NOT a leaf — its /usage now includes the grandchild's rows, and the
 //    workspace parent's aggregate includes them too.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -137,7 +137,7 @@ describeIfDb("pg-store listUsageByTenants (real Postgres)", () => {
   });
 });
 
-describeIfDb("resolveScope recursion over channel child tenancies", () => {
+describeIfDb("resolveScope recursion over workbench child tenancies", () => {
   const scratchUrl = scratchUrlFor(
     databaseUrl ?? "postgres://localhost:5432/unused",
   ).replace("_critique_scope_verification", "_critique_recursion_verification");
@@ -145,7 +145,7 @@ describeIfDb("resolveScope recursion over channel child tenancies", () => {
 
   const workspaceId = generateId("tenant");
   const workbenchId = generateId("tenant");
-  const channelTenantId = generateId("tenant");
+  const workbenchTenantId = generateId("tenant");
 
   const allowAll: RequireGrant = () => async (_c, next) => {
     await next();
@@ -182,13 +182,13 @@ describeIfDb("resolveScope recursion over channel child tenancies", () => {
         domain: `crit-wb-${workbenchId}.localhost`,
         parentId: workspaceId,
       });
-      // Same shape packages/chat's channel tenancy mint produces:
+      // Same shape packages/chat's workbench tenancy mint produces:
       // a tenant whose parent is the workbench (chat routes.ts:837).
       await db.insert(schema.tenant).values({
-        id: channelTenantId,
+        id: workbenchTenantId,
         name: "chn_deadbeef",
-        slug: `crit-ch-${channelTenantId}`,
-        domain: `crit-ch-${channelTenantId}.localhost`,
+        slug: `crit-ch-${workbenchTenantId}`,
+        domain: `crit-ch-${workbenchTenantId}.localhost`,
         parentId: workbenchId,
       });
     } finally {
@@ -205,7 +205,7 @@ describeIfDb("resolveScope recursion over channel child tenancies", () => {
     });
     await store.insertUsage({
       id: "chrow",
-      tenantId: channelTenantId,
+      tenantId: workbenchTenantId,
       sessionId: "s2",
       turnId: "t2",
       model: "m",
@@ -248,14 +248,14 @@ describeIfDb("resolveScope recursion over channel child tenancies", () => {
     return app;
   }
 
-  test("a workbench with a channel child tenancy is not a leaf: its /usage includes the grandchild's rows", async () => {
+  test("a workbench with a workbench child tenancy is not a leaf: its /usage includes the grandchild's rows", async () => {
     const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
     try {
       const res = await appFor(workbenchId, db).request("/usage");
       const summary = (await res.json()) as OverallUsageSummary;
-      // 107 = workbench's own 100 + channel tenant's 7. The branch test's
+      // 107 = workbench's own 100 + workbench tenant's 7. The branch test's
       // "a leaf has no descendants" claim does not hold for a workbench
-      // that has minted a channel tenancy.
+      // that has minted a workbench tenancy.
       expect(summary.tokens.input).toBe(107);
       expect(summary.turns).toBe(2);
     } finally {

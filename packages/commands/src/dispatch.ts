@@ -1,7 +1,7 @@
 // The one dispatch path every surface that runs a command goes
 // through: parse, resolve, run — loud ("Unknown command: /x") on a
 // miss rather than silently dropping the invocation. Shared by the
-// channel message pipeline (`@corbits/chat`'s intercept of a leading
+// workbench message pipeline (`@corbits/chat`'s intercept of a leading
 // "/" or "@name") and the direct execute route in `./routes`, so the
 // two can never answer an unknown command differently.
 import {
@@ -45,7 +45,7 @@ export async function dispatchSlashCommand(
 
 /**
  * Resolves a leading `@name` against the registry without running it —
- * the caller (the channel message pipeline) uses this to decide whether
+ * the caller (the workbench message pipeline) uses this to decide whether
  * an `@mention` names a workflow command at all before it commits to
  * the command path instead of the ordinary agent-mention fan-out.
  * `undefined` when `text` is not `@`-shaped, or `name` resolves to no

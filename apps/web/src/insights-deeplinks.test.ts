@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { WorkflowRun } from "./api";
 import {
-  channelInsightsPath,
+  workbenchInsightsPath,
   INSIGHTS_RUNS_PATH,
   runDeepLinkTarget,
   runDetailPath,
@@ -43,12 +43,14 @@ describe("runDeepLinkTarget", () => {
   });
 });
 
-describe("channelInsightsPath", () => {
-  test("builds the /insights/channel/:channelId path", () => {
-    expect(channelInsightsPath("ch_42")).toBe("/insights/channel/ch_42");
+describe("workbenchInsightsPath", () => {
+  test("builds the /insights/workbench/:workbenchId path", () => {
+    expect(workbenchInsightsPath("ch_42")).toBe("/insights/workbench/ch_42");
   });
 
-  test("encodes a channel id so a slash or space cannot break out of the segment", () => {
-    expect(channelInsightsPath("a/b c")).toBe("/insights/channel/a%2Fb%20c");
+  test("encodes a workbench id so a slash or space cannot break out of the segment", () => {
+    expect(workbenchInsightsPath("a/b c")).toBe(
+      "/insights/workbench/a%2Fb%20c",
+    );
   });
 });

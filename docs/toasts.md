@@ -17,7 +17,7 @@ screen rather than stacking, so rapid mutations read as one status line.
   `routineCreatedToast`, `routineRunStartedToast`) next to the API module
   they describe. No component inlines bespoke toast copy.
 - Copy is a plain confirmation. Where it names a subject, `·` separates the
-  action from it: `Channel created · Launch planning`, `Uploaded ·
+  action from it: `Workbench created · Launch planning`, `Uploaded ·
 q3-report.pdf`, `Credential saved · value hidden`. A multi-file upload is
   the one count form: `Uploaded 4 files`. State toggles read as the state
   just entered (`Pinned Deploy notes`), and bare confirmations stay bare
@@ -25,6 +25,6 @@ q3-report.pdf`, `Credential saved · value hidden`. A multi-file upload is
 
 ## Where it fires today
 
-Channel create, rename, pin/unpin, and channel settings save; routine create
+Workbench create, rename, pin/unpin, and workbench settings save; routine create
 and run-now; grant create and revoke; credential save and revoke; artifact
 upload; bench name and conversation-default saves.

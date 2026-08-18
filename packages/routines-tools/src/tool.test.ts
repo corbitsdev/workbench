@@ -31,7 +31,7 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
     enabled: true,
-    deliveryChannelId: null,
+    deliveryWorkbenchId: null,
     consecutiveFailures: 0,
     deadLetteredAt: null,
     createdAt: "2026-08-16T00:00:00.000Z",
@@ -65,7 +65,7 @@ test("routine_list has no approval key — a read never needs a human gate", () 
   expect(listDef).toEqual({ name: ROUTINE_LIST_TOOL });
 });
 
-test("routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: \"ask\"", () => {
+test('routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: "ask"', () => {
   expect(routinesTools.definitions).toEqual([
     { name: ROUTINE_LIST_TOOL },
     { name: ROUTINE_CREATE_TOOL },

@@ -64,170 +64,173 @@ async function seedDefinition(
   });
 }
 
-describeIfDb("listVisibleAgentDefinitions: tenant ancestor-chain inheritance", () => {
-  const target = dbTargetFromUrl(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+describeIfDb(
+  "listVisibleAgentDefinitions: tenant ancestor-chain inheritance",
+  () => {
+    const target = dbTargetFromUrl(
+      databaseUrl ?? "postgres://localhost:5432/unused",
+    );
 
-  beforeAll(async () => {
-    await runMigrations(target, { schema: SCHEMA });
-  });
+    beforeAll(async () => {
+      await runMigrations(target, { schema: SCHEMA });
+    });
 
-  afterAll(async () => {
-    await dropSchema(target, { schema: SCHEMA });
-  });
+    afterAll(async () => {
+      await dropSchema(target, { schema: SCHEMA });
+    });
 
-  test("a child tenant sees a parent tenant's agent definition", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await seedTenant(db, { id: "tnt_dm_sees_parent" });
-      await seedTenant(db, {
-        id: "tnt_dm_sees_parent_child",
-        parentId: "tnt_dm_sees_parent",
-      });
-      await seedDefinition(db, {
-        id: "wfd_outreach",
-        tenantId: "tnt_dm_sees_parent",
-        name: "outreach",
-        description: "Outreach",
-      });
+    test("a child tenant sees a parent tenant's agent definition", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_sees_parent" });
+        await seedTenant(db, {
+          id: "tnt_dm_sees_parent_child",
+          parentId: "tnt_dm_sees_parent",
+        });
+        await seedDefinition(db, {
+          id: "wfd_outreach",
+          tenantId: "tnt_dm_sees_parent",
+          name: "outreach",
+          description: "Outreach",
+        });
 
-      const definitions = await listVisibleAgentDefinitions(
-        db,
-        "tnt_dm_sees_parent_child",
-      );
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_sees_parent_child",
+        );
 
-      expect(definitions).toHaveLength(1);
-      expect(definitions[0]).toMatchObject({
-        id: "wfd_outreach",
-        name: "Outreach",
-        tenantId: "tnt_dm_sees_parent",
-        tenantName: "tnt_dm_sees_parent",
-      });
-      expect(typeof definitions[0]?.createdAt).toBe("string");
-    } finally {
-      await close();
-    }
-  });
+        expect(definitions).toHaveLength(1);
+        expect(definitions[0]).toMatchObject({
+          id: "wfd_outreach",
+          name: "Outreach",
+          tenantId: "tnt_dm_sees_parent",
+          tenantName: "tnt_dm_sees_parent",
+        });
+        expect(typeof definitions[0]?.createdAt).toBe("string");
+      } finally {
+        await close();
+      }
+    });
 
-  test("a child's own definition shadows a parent's same-name definition", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await seedTenant(db, { id: "tnt_dm_shadow_parent" });
-      await seedTenant(db, {
-        id: "tnt_dm_shadow_child",
-        parentId: "tnt_dm_shadow_parent",
-      });
-      await seedDefinition(db, {
-        id: "wfd_shadow_parent",
-        tenantId: "tnt_dm_shadow_parent",
-        name: "assist",
-        description: "Assist (parent)",
-      });
-      await seedDefinition(db, {
-        id: "wfd_shadow_child",
-        tenantId: "tnt_dm_shadow_child",
-        name: "assist",
-        description: "Assist (child)",
-      });
+    test("a child's own definition shadows a parent's same-name definition", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_shadow_parent" });
+        await seedTenant(db, {
+          id: "tnt_dm_shadow_child",
+          parentId: "tnt_dm_shadow_parent",
+        });
+        await seedDefinition(db, {
+          id: "wfd_shadow_parent",
+          tenantId: "tnt_dm_shadow_parent",
+          name: "assist",
+          description: "Assist (parent)",
+        });
+        await seedDefinition(db, {
+          id: "wfd_shadow_child",
+          tenantId: "tnt_dm_shadow_child",
+          name: "assist",
+          description: "Assist (child)",
+        });
 
-      const definitions = await listVisibleAgentDefinitions(
-        db,
-        "tnt_dm_shadow_child",
-      );
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_shadow_child",
+        );
 
-      expect(definitions).toHaveLength(1);
-      expect(definitions[0]).toMatchObject({
-        id: "wfd_shadow_child",
-        name: "Assist (child)",
-        tenantId: "tnt_dm_shadow_child",
-      });
-    } finally {
-      await close();
-    }
-  });
+        expect(definitions).toHaveLength(1);
+        expect(definitions[0]).toMatchObject({
+          id: "wfd_shadow_child",
+          name: "Assist (child)",
+          tenantId: "tnt_dm_shadow_child",
+        });
+      } finally {
+        await close();
+      }
+    });
 
-  test("a sibling tenant never sees another sibling's definition", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await seedTenant(db, { id: "tnt_dm_siblings_parent" });
-      await seedTenant(db, {
-        id: "tnt_dm_sibling_a",
-        parentId: "tnt_dm_siblings_parent",
-      });
-      await seedTenant(db, {
-        id: "tnt_dm_sibling_b",
-        parentId: "tnt_dm_siblings_parent",
-      });
-      await seedDefinition(db, {
-        id: "wfd_sibling_a",
-        tenantId: "tnt_dm_sibling_a",
-        name: "researcher",
-        description: "Researcher",
-      });
+    test("a sibling tenant never sees another sibling's definition", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_siblings_parent" });
+        await seedTenant(db, {
+          id: "tnt_dm_sibling_a",
+          parentId: "tnt_dm_siblings_parent",
+        });
+        await seedTenant(db, {
+          id: "tnt_dm_sibling_b",
+          parentId: "tnt_dm_siblings_parent",
+        });
+        await seedDefinition(db, {
+          id: "wfd_sibling_a",
+          tenantId: "tnt_dm_sibling_a",
+          name: "researcher",
+          description: "Researcher",
+        });
 
-      const definitions = await listVisibleAgentDefinitions(
-        db,
-        "tnt_dm_sibling_b",
-      );
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_sibling_b",
+        );
 
-      expect(definitions).toEqual([]);
-    } finally {
-      await close();
-    }
-  });
+        expect(definitions).toEqual([]);
+      } finally {
+        await close();
+      }
+    });
 
-  test("a channel host anchor is never listed as a DM-able definition", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await seedTenant(db, { id: "tnt_dm_host_guard" });
-      await seedDefinition(db, {
-        id: "wfd_host",
-        tenantId: "tnt_dm_host_guard",
-        name: `run-${"a".repeat(32)}`,
-      });
-      await seedDefinition(db, {
-        id: "wfd_real",
-        tenantId: "tnt_dm_host_guard",
-        name: "assist",
-        description: "Assist",
-      });
+    test("a workbench host anchor is never listed as a DM-able definition", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_host_guard" });
+        await seedDefinition(db, {
+          id: "wfd_host",
+          tenantId: "tnt_dm_host_guard",
+          name: `run-${"a".repeat(32)}`,
+        });
+        await seedDefinition(db, {
+          id: "wfd_real",
+          tenantId: "tnt_dm_host_guard",
+          name: "assist",
+          description: "Assist",
+        });
 
-      const definitions = await listVisibleAgentDefinitions(
-        db,
-        "tnt_dm_host_guard",
-      );
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_host_guard",
+        );
 
-      expect(definitions).toHaveLength(1);
-      expect(definitions[0]).toMatchObject({
-        id: "wfd_real",
-        name: "Assist",
-        tenantId: "tnt_dm_host_guard",
-      });
-    } finally {
-      await close();
-    }
-  });
+        expect(definitions).toHaveLength(1);
+        expect(definitions[0]).toMatchObject({
+          id: "wfd_real",
+          name: "Assist",
+          tenantId: "tnt_dm_host_guard",
+        });
+      } finally {
+        await close();
+      }
+    });
 
-  test("a definition with no materialized asset is not launchable yet, so it isn't listed", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await seedTenant(db, { id: "tnt_dm_no_asset" });
-      await seedDefinition(db, {
-        id: "wfd_no_asset",
-        tenantId: "tnt_dm_no_asset",
-        name: "draft",
-        assetId: null,
-      });
+    test("a definition with no materialized asset is not launchable yet, so it isn't listed", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_no_asset" });
+        await seedDefinition(db, {
+          id: "wfd_no_asset",
+          tenantId: "tnt_dm_no_asset",
+          name: "draft",
+          assetId: null,
+        });
 
-      const definitions = await listVisibleAgentDefinitions(
-        db,
-        "tnt_dm_no_asset",
-      );
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_no_asset",
+        );
 
-      expect(definitions).toEqual([]);
-    } finally {
-      await close();
-    }
-  });
-});
+        expect(definitions).toEqual([]);
+      } finally {
+        await close();
+      }
+    });
+  },
+);

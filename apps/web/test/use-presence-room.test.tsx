@@ -100,34 +100,34 @@ function mountHook(
 
 describe("usePresenceRoom", () => {
   test("does not connect when tenantId or surface is null", () => {
-    const harness = mountHook(null, "channel:chn_1");
+    const harness = mountHook(null, "workbench:chn_1");
     expect(created).toHaveLength(0);
     harness.unmount();
   });
 
   test("connects once both tenantId and surface are present", () => {
-    const harness = mountHook("tnt_1", "channel:chn_1");
+    const harness = mountHook("tnt_1", "workbench:chn_1");
     expect(created).toHaveLength(1);
     expect(created[0]?.roomUrl).toBe(
-      "/api/tenants/tnt_1/presence/rooms/channel:chn_1",
+      "/api/tenants/tnt_1/presence/rooms/workbench:chn_1",
     );
     harness.unmount();
   });
 
   test("disconnects the old room and connects a new one when the surface changes", () => {
-    const harness = mountHook("tnt_1", "channel:chn_1");
-    harness.setArgs("tnt_1", "channel:chn_2");
+    const harness = mountHook("tnt_1", "workbench:chn_1");
+    harness.setArgs("tnt_1", "workbench:chn_2");
 
     expect(created).toHaveLength(2);
     expect(created[0]?.disconnected).toBe(true);
     expect(created[1]?.roomUrl).toBe(
-      "/api/tenants/tnt_1/presence/rooms/channel:chn_2",
+      "/api/tenants/tnt_1/presence/rooms/workbench:chn_2",
     );
     harness.unmount();
   });
 
   test("publishCursor forwards to the connected handle", () => {
-    const harness = mountHook("tnt_1", "channel:chn_1");
+    const harness = mountHook("tnt_1", "workbench:chn_1");
     harness.result()?.publishCursor(0.5, 0.5, 3);
 
     expect(created[0]?.cursorCalls).toEqual([
@@ -137,7 +137,7 @@ describe("usePresenceRoom", () => {
   });
 
   test("disconnects on unmount", () => {
-    const harness = mountHook("tnt_1", "channel:chn_1");
+    const harness = mountHook("tnt_1", "workbench:chn_1");
     harness.unmount();
     expect(created[0]?.disconnected).toBe(true);
   });

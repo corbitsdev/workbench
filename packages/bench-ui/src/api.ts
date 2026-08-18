@@ -138,20 +138,20 @@ export function inviteMember(
   });
 }
 
-const ChannelTenantIds = type({
-  channelTenantIds: "string[]",
+const WorkbenchTenantIds = type({
+  workbenchTenantIds: "string[]",
 });
 
-/** Which of `tenantIds` are channel child tenancies rather than
+/** Which of `tenantIds` are workbench child tenancies rather than
  * workbenches — the one fact `/api/me/principals` cannot answer, since
  * a native tenant row carries no kind marker (see `./tenancy-kind.ts`).
  * An empty input never round-trips: there is nothing to ask. */
-export function listChannelTenantIds(
+export function listWorkbenchTenantIds(
   tenantIds: readonly string[],
 ): Promise<ReadonlySet<string>> {
   if (tenantIds.length === 0) return Promise.resolve(new Set());
-  return request("/api/channel-tenancies/kinds", ChannelTenantIds, {
+  return request("/api/workbench-tenancies/kinds", WorkbenchTenantIds, {
     method: "POST",
     body: JSON.stringify({ tenantIds }),
-  }).then((body) => new Set(body.channelTenantIds));
+  }).then((body) => new Set(body.workbenchTenantIds));
 }

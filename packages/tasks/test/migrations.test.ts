@@ -94,6 +94,8 @@ describeIfDb("applyTasksMigrations", () => {
       expect(report.applied).toEqual([
         LEG_MIGRATION,
         "0005_task_leg_started_at",
+        "0006_task_channel_id",
+        "0007_rename_channel_id_to_workbench_id",
       ]);
 
       const store = createDrizzleTaskStore(drizzle(client));

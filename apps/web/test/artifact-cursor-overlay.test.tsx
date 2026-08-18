@@ -10,9 +10,9 @@ import { createRoot, type Root } from "react-dom/client";
 
 mock.module("../src/profile-relations", () => ({
   ensureProfileDm: mock(() =>
-    Promise.resolve({ kind: "ready", channelId: "chn_dm" }),
+    Promise.resolve({ kind: "ready", workbenchId: "chn_dm" }),
   ),
-  loadSharedChannels: mock(() => Promise.resolve([])),
+  loadSharedWorkbenches: mock(() => Promise.resolve([])),
 }));
 
 const { BenchProvider } = await import("../src/bench-context");
@@ -47,8 +47,8 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
       jsonResponse({ data: [membership], nextCursor: null }),
     );
   }
-  if (url.includes("/api/channel-tenancies/kinds")) {
-    return Promise.resolve(jsonResponse({ channelTenantIds: [] }));
+  if (url.includes("/api/workbench-tenancies/kinds")) {
+    return Promise.resolve(jsonResponse({ workbenchTenantIds: [] }));
   }
   return Promise.reject(
     new Error(`unrouted fetch in cursor overlay test: ${url}`),

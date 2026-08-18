@@ -73,7 +73,7 @@ const neverHandsOn = async (): Promise<string> => {
 
 async function seedRunningTask(
   store: ReturnType<typeof createMemoryTaskStore>,
-  channelId?: string,
+  workbenchId?: string,
 ): Promise<TaskRecord> {
   return store.createTask({
     id: "task_1",
@@ -84,23 +84,23 @@ async function seedRunningTask(
     prompt: "Summarize the incident.",
     modelPreference: null,
     runId: "run_1",
-    channelId: channelId ?? null,
+    workbenchId: workbenchId ?? null,
   });
 }
 
-function fakeChannel(fallbackChannelId?: string) {
-  const posted: { tenantId: string; channelId: string; text: string }[] = [];
+function fakeWorkbench(fallbackWorkbenchId?: string) {
+  const posted: { tenantId: string; workbenchId: string; text: string }[] = [];
   return {
     posted,
     deps: {
       post: async (input: {
         tenantId: string;
-        channelId: string;
+        workbenchId: string;
         text: string;
       }) => {
         posted.push(input);
       },
-      resolveFallbackChannelId: async () => fallbackChannelId,
+      resolveFallbackWorkbenchId: async () => fallbackWorkbenchId,
     },
   };
 }
@@ -532,12 +532,12 @@ describe("createTaskOrchestrator", () => {
     expect(notify.delivered).toHaveLength(0);
   });
 
-  test("a completed task with a channelId posts its result into that channel", async () => {
+  test("a completed task with a workbenchId posts its result into that workbench", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();
     await seedRunningTask(store, "chn_origin");
     const notify = fakeNotify();
-    const channel = fakeChannel("chn_myra");
+    const workbench = fakeWorkbench("chn_myra");
 
     const orchestrator = createTaskOrchestrator({
       db: createFakeDb(
@@ -548,7 +548,7 @@ describe("createTaskOrchestrator", () => {
       events,
       notify: notify.deps,
       launchLeg: neverHandsOn,
-      channel: channel.deps,
+      workbench: workbench.deps,
     });
 
     events.emit("agent.event", {
@@ -572,20 +572,20 @@ describe("createTaskOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(channel.posted).toHaveLength(1);
-    expect(channel.posted[0]?.channelId).toBe("chn_origin");
-    expect(channel.posted[0]?.text).toStartWith("Task finished:");
-    expect(channel.posted[0]?.text).toContain("All clear.");
+    expect(workbench.posted).toHaveLength(1);
+    expect(workbench.posted[0]?.workbenchId).toBe("chn_origin");
+    expect(workbench.posted[0]?.text).toStartWith("Task finished:");
+    expect(workbench.posted[0]?.text).toContain("All clear.");
 
     orchestrator.dispose();
   });
 
-  test("a completed task with no channelId falls back to the tenant's assistant channel", async () => {
+  test("a completed task with no workbenchId falls back to the tenant's assistant workbench", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();
     await seedRunningTask(store);
     const notify = fakeNotify();
-    const channel = fakeChannel("chn_myra");
+    const workbench = fakeWorkbench("chn_myra");
 
     const orchestrator = createTaskOrchestrator({
       db: createFakeDb(
@@ -596,7 +596,7 @@ describe("createTaskOrchestrator", () => {
       events,
       notify: notify.deps,
       launchLeg: neverHandsOn,
-      channel: channel.deps,
+      workbench: workbench.deps,
     });
 
     events.emit("agent.event", {
@@ -611,18 +611,18 @@ describe("createTaskOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(channel.posted).toHaveLength(1);
-    expect(channel.posted[0]?.channelId).toBe("chn_myra");
+    expect(workbench.posted).toHaveLength(1);
+    expect(workbench.posted[0]?.workbenchId).toBe("chn_myra");
 
     orchestrator.dispose();
   });
 
-  test("a completed task with no channelId and no assistant channel posts nowhere, keeping only the notify record", async () => {
+  test("a completed task with no workbenchId and no assistant workbench posts nowhere, keeping only the notify record", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();
     await seedRunningTask(store);
     const notify = fakeNotify();
-    const channel = fakeChannel(undefined);
+    const workbench = fakeWorkbench(undefined);
 
     const orchestrator = createTaskOrchestrator({
       db: createFakeDb(
@@ -633,7 +633,7 @@ describe("createTaskOrchestrator", () => {
       events,
       notify: notify.deps,
       launchLeg: neverHandsOn,
-      channel: channel.deps,
+      workbench: workbench.deps,
     });
 
     events.emit("agent.event", {
@@ -648,18 +648,18 @@ describe("createTaskOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(channel.posted).toHaveLength(0);
+    expect(workbench.posted).toHaveLength(0);
     expect(notify.delivered).toHaveLength(1);
 
     orchestrator.dispose();
   });
 
-  test("a failed task posts an honest failure line into its channel", async () => {
+  test("a failed task posts an honest failure line into its workbench", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();
     await seedRunningTask(store, "chn_origin");
     const notify = fakeNotify();
-    const channel = fakeChannel();
+    const workbench = fakeWorkbench();
 
     const orchestrator = createTaskOrchestrator({
       db: createFakeDb(
@@ -670,7 +670,7 @@ describe("createTaskOrchestrator", () => {
       events,
       notify: notify.deps,
       launchLeg: neverHandsOn,
-      channel: channel.deps,
+      workbench: workbench.deps,
     });
 
     events.emit("agent.event", {
@@ -685,10 +685,10 @@ describe("createTaskOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(channel.posted).toHaveLength(1);
-    expect(channel.posted[0]?.text).toStartWith("Task finished:");
-    expect(channel.posted[0]?.text).toContain("failed");
-    expect(channel.posted[0]?.text).toContain("tool exploded");
+    expect(workbench.posted).toHaveLength(1);
+    expect(workbench.posted[0]?.text).toStartWith("Task finished:");
+    expect(workbench.posted[0]?.text).toContain("failed");
+    expect(workbench.posted[0]?.text).toContain("tool exploded");
 
     orchestrator.dispose();
   });

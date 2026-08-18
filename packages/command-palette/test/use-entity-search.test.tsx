@@ -7,7 +7,7 @@ import type { UseEntitySearchResult } from "../src/use-entity-search";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const CHANNELS = [
+const WORKBENCHES = [
   { id: "chan-1", name: "Launch Planning" },
   { id: "chan-2", name: "Support Triage" },
 ];
@@ -21,7 +21,7 @@ const AGENTS = [
 ];
 
 const SOURCES = [
-  { category: "channels", fetch: () => Promise.resolve(CHANNELS) },
+  { category: "workbenches", fetch: () => Promise.resolve(WORKBENCHES) },
   { category: "routines", fetch: () => Promise.resolve(ROUTINES) },
   { category: "agents", fetch: () => Promise.resolve(AGENTS) },
 ];
@@ -138,7 +138,10 @@ describe("useEntitySearch", () => {
         pageSize: 10,
         debounceMs: 5,
         sources: [
-          { category: "channels", fetch: () => Promise.resolve(CHANNELS) },
+          {
+            category: "workbenches",
+            fetch: () => Promise.resolve(WORKBENCHES),
+          },
           {
             category: "routines",
             fetch: () => Promise.reject(new Error("boom")),
@@ -162,7 +165,7 @@ describe("useEntitySearch", () => {
     await harness.settle();
     await harness.setQuery("launch");
     await harness.settle();
-    // Load all three "launch" matches across channels/routines/agents
+    // Load all three "launch" matches across workbenches/routines/agents
     act(() => harness.get().loadMore());
     await harness.settle();
     act(() => harness.get().loadMore());
@@ -171,7 +174,7 @@ describe("useEntitySearch", () => {
     const titles = results.map((r) => r.title);
     expect(titles).toEqual(["Launch Planning", "Launch Retro", "Launch Agent"]);
     const categories = results.map((r) => r.category);
-    expect(categories).toEqual(["channels", "routines", "agents"]);
+    expect(categories).toEqual(["workbenches", "routines", "agents"]);
     harness.unmount();
   });
 });

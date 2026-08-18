@@ -2,7 +2,7 @@
 // removal flow (CL-6122): a two-click `ConfirmButton` per human row that
 // DELETEs the participant, shows a busy state while the request is in
 // flight, disables the signed-in viewer's own row, and refetches the
-// channel's participants on success — the same effect-driven mount
+// workbench's participants on success — the same effect-driven mount
 // `agents-section.test.tsx` uses. Stubs `global.fetch` directly,
 // never `mock.module`.
 
@@ -11,7 +11,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { ChannelSettingsSurface } from "../src/channel-settings";
+import { WorkbenchSettingsSurface } from "../src/workbench-settings";
 
 const realFetch = globalThis.fetch;
 
@@ -46,9 +46,8 @@ function stubFetch(options: {
     if (/\/sidecar-placement$/.test(path)) {
       return json({ enabled: false, provisionerAvailable: false });
     }
-    const removeMatch = /\/chat\/channels\/[^/]+\/participants\/([^/]+)$/.exec(
-      path,
-    );
+    const removeMatch =
+      /\/chat\/workbenches\/[^/]+\/participants\/([^/]+)$/.exec(path);
     if (removeMatch !== null && init?.method === "DELETE") {
       const address = decodeURIComponent(removeMatch[1] as string);
       if (options.gateRemoveOn !== undefined) {
@@ -69,11 +68,11 @@ function stubFetch(options: {
       options.onRemove?.(address);
       return json({ address });
     }
-    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
       return json({
         id: "ch_1",
         title: "General",
-        kind: "channel",
+        kind: "workbench",
         pinned: false,
         participants,
         settings: {},
@@ -89,12 +88,12 @@ function stubFetch(options: {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-function mount(props: Parameters<typeof ChannelSettingsSurface>[0]) {
+function mount(props: Parameters<typeof WorkbenchSettingsSurface>[0]) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(ChannelSettingsSurface, props));
+    root?.render(createElement(WorkbenchSettingsSurface, props));
   });
   return container;
 }
@@ -114,12 +113,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => act(() => sleep(10));
 
 function baseProps(
-  overrides: Partial<Parameters<typeof ChannelSettingsSurface>[0]> = {},
+  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
 ) {
   return {
     tenantId: "tnt_1",
-    channelId: "ch_1",
-    channelTitle: "General",
+    workbenchId: "ch_1",
+    workbenchTitle: "General",
     onBack: () => undefined,
     onInviteParticipant: () => undefined,
     section: "members" as const,

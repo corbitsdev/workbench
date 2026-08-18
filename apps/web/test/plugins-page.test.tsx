@@ -63,8 +63,8 @@ function stubFetch(): void {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/api/channel-tenancies/kinds"))
-      return Promise.resolve(json({ channelTenantIds: [] }));
+    if (path.includes("/api/workbench-tenancies/kinds"))
+      return Promise.resolve(json({ workbenchTenantIds: [] }));
     if (path.includes("/credentials/resolve/GitHub")) {
       return Promise.resolve(
         json({
@@ -98,7 +98,7 @@ function stubFetch(): void {
             {
               assetId: "skill_1",
               name: "weekly-digest",
-              description: "Summarizes the week's channel activity.",
+              description: "Summarizes the week's workbench activity.",
               scope: "tenant",
               creatorPrincipalId: "prn_1",
               updatedAtIso: "2026-01-01T00:00:00.000Z",
@@ -243,8 +243,8 @@ describe("PluginsRoute", () => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals"))
         return Promise.resolve(json(membership));
-      if (path.includes("/api/channel-tenancies/kinds"))
-        return Promise.resolve(json({ channelTenantIds: [] }));
+      if (path.includes("/api/workbench-tenancies/kinds"))
+        return Promise.resolve(json({ workbenchTenantIds: [] }));
       if (path.includes("/credentials/resolve/OpenRouter")) {
         return Promise.resolve(
           json({

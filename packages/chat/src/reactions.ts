@@ -1,5 +1,5 @@
 // Persistence and pure aggregation for message reactions. One row per
-// (tenant, channel, message, emoji, principal) — see `./schema.ts`'s
+// (tenant, workbench, message, emoji, principal) — see `./schema.ts`'s
 // `messageReactions` for why presence of the row *is* the reaction,
 // with no separate count column to drift out of sync. `toggleReaction`
 // is the only write: a principal who hasn't reacted with this emoji on
@@ -19,7 +19,7 @@ import { messageReactions } from "./schema";
 
 export interface ReactionRow {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly messageId: string;
   readonly emoji: string;
   readonly principalId: string;
@@ -28,7 +28,7 @@ export interface ReactionRow {
 
 export interface ToggleReactionInput {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly messageId: string;
   readonly emoji: string;
   readonly principalId: string;
@@ -44,13 +44,13 @@ export interface ReactionStore {
   toggleReaction(input: ToggleReactionInput): Promise<ToggleReactionResult>;
   /**
    * Every reaction row across the given message ids, in one query — the
-   * batched read `GET /channels/:id/messages` calls once per page
+   * batched read `GET /workbenches/:id/messages` calls once per page
    * rather than once per message. An empty `messageIds` short-circuits
    * to `[]` without touching the store at all.
    */
   listReactionsForMessages(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     messageIds: readonly string[],
   ): Promise<readonly ReactionRow[]>;
 }
@@ -111,14 +111,14 @@ export function aggregateReactionsByMessage(
 
 function reactionKey(input: {
   tenantId: string;
-  channelId: string;
+  workbenchId: string;
   messageId: string;
   emoji: string;
   principalId: string;
 }): string {
   return [
     input.tenantId,
-    input.channelId,
+    input.workbenchId,
     input.messageId,
     input.emoji,
     input.principalId,
@@ -139,13 +139,13 @@ export function createInMemoryReactionStore(): ReactionStore {
       return { added: true };
     },
 
-    async listReactionsForMessages(tenantId, channelId, messageIds) {
+    async listReactionsForMessages(tenantId, workbenchId, messageIds) {
       if (messageIds.length === 0) return [];
       const wanted = new Set(messageIds);
       return [...rows.values()].filter(
         (row) =>
           row.tenantId === tenantId &&
-          row.channelId === channelId &&
+          row.workbenchId === workbenchId &&
           wanted.has(row.messageId),
       );
     },
@@ -162,7 +162,7 @@ export function createDrizzleReactionStore<
   return {
     // A single atomic `INSERT ... ON CONFLICT DO NOTHING`, never a
     // select-then-branch: two concurrent toggles for the same
-    // (tenant, channel, message, emoji, principal) both attempt the
+    // (tenant, workbench, message, emoji, principal) both attempt the
     // insert, Postgres serializes them at the row lock, and the loser
     // gets an empty `returning()` rather than a thrown PK-violation.
     // An empty `returning()` means the row is already there — from an
@@ -172,7 +172,7 @@ export function createDrizzleReactionStore<
     async toggleReaction(input) {
       const rowKey = and(
         eq(messageReactions.tenantId, input.tenantId),
-        eq(messageReactions.channelId, input.channelId),
+        eq(messageReactions.workbenchId, input.workbenchId),
         eq(messageReactions.messageId, input.messageId),
         eq(messageReactions.emoji, input.emoji),
         eq(messageReactions.principalId, input.principalId),
@@ -182,7 +182,7 @@ export function createDrizzleReactionStore<
         .insert(messageReactions)
         .values({
           tenantId: input.tenantId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           messageId: input.messageId,
           emoji: input.emoji,
           principalId: input.principalId,
@@ -190,7 +190,7 @@ export function createDrizzleReactionStore<
         .onConflictDoNothing({
           target: [
             messageReactions.tenantId,
-            messageReactions.channelId,
+            messageReactions.workbenchId,
             messageReactions.messageId,
             messageReactions.emoji,
             messageReactions.principalId,
@@ -206,7 +206,7 @@ export function createDrizzleReactionStore<
       return { added: false };
     },
 
-    async listReactionsForMessages(tenantId, channelId, messageIds) {
+    async listReactionsForMessages(tenantId, workbenchId, messageIds) {
       if (messageIds.length === 0) return [];
       const rows = await db
         .select()
@@ -214,7 +214,7 @@ export function createDrizzleReactionStore<
         .where(
           and(
             eq(messageReactions.tenantId, tenantId),
-            eq(messageReactions.channelId, channelId),
+            eq(messageReactions.workbenchId, workbenchId),
             inArray(messageReactions.messageId, messageIds),
           ),
         );

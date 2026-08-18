@@ -13,18 +13,18 @@ import { useTurnActivity, TurnActivityStrip } from "../src/turn-activity";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function mount(initialChannelId: string | null, staleMs?: number) {
+function mount(initialWorkbenchId: string | null, staleMs?: number) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   let send: (eventType: string, data: unknown) => void = () => {};
-  let setChannelId: (id: string | null) => void = () => {};
+  let setWorkbenchId: (id: string | null) => void = () => {};
 
   function Host() {
-    const [channelId, updateChannelId] = useState(initialChannelId);
-    setChannelId = updateChannelId;
+    const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
+    setWorkbenchId = updateWorkbenchId;
     const { activity, handleStreamEvent } = useTurnActivity(
-      channelId,
+      workbenchId,
       staleMs,
     );
     send = handleStreamEvent;
@@ -40,9 +40,9 @@ function mount(initialChannelId: string | null, staleMs?: number) {
       act(() => {
         send(eventType, data);
       }),
-    switchChannel: (id: string | null) =>
+    switchWorkbench: (id: string | null) =>
       act(() => {
-        setChannelId(id);
+        setWorkbenchId(id);
       }),
     settle: (ms: number) => act(() => sleep(ms)),
     container,
@@ -133,7 +133,7 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     harness.unmount();
   });
 
-  test("switching channels clears whatever activity was in flight in the one just left", () => {
+  test("switching workbenches clears whatever activity was in flight in the one just left", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", {
       type: "tool.start",
@@ -144,7 +144,7 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       harness.container.querySelector(".chat-turn-activity-row"),
     ).not.toBeNull();
 
-    harness.switchChannel("chan_b");
+    harness.switchWorkbench("chan_b");
     expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
     harness.unmount();
   });
@@ -156,7 +156,9 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       seq: 1,
       data: { call: { id: "c1", name: "search", arguments: {} } },
     });
-    expect(harness.container.querySelector(".chat-turn-activity")).not.toBeNull();
+    expect(
+      harness.container.querySelector(".chat-turn-activity"),
+    ).not.toBeNull();
 
     // No `tool.done`/`reactor.done` ever arrives — a dropped SSE mid-turn.
     await harness.settle(60);
@@ -179,7 +181,9 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       data: { callId: "c2", name: "web_search" },
     });
     await harness.settle(20);
-    expect(harness.container.querySelector(".chat-turn-activity")).not.toBeNull();
+    expect(
+      harness.container.querySelector(".chat-turn-activity"),
+    ).not.toBeNull();
 
     await harness.settle(30);
     expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();

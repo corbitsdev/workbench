@@ -1,12 +1,12 @@
 // The create-agent-definition surface: a tenant member submits a
 // name/handle/description/system-prompt/model, and this route
 // materializes it exactly the way the platform's own starter agents
-// (`@corbits/assistant-workflow`, `@corbits/chat`'s channel host) are
+// (`@corbits/assistant-workflow`, `@corbits/chat`'s workbench host) are
 // materialized — a `workflow`-kind asset carrying a single-step
 // `workflow.json`, projected onto a first-class `workflow_definition`
 // row. No git subprocess: `AssetService.populateAsset` writes the
 // commit in-process, the same seam `createAsset` used to hydrate a
-// channel host's asset lives beside.
+// workbench host's asset lives beside.
 //
 // The definition lands with the schema's own default status
 // ("deployed") and a non-null assetId, which is exactly what
@@ -29,7 +29,7 @@ import {
   SkillRegistryError,
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import {
   createAgentDefinitionCore,
@@ -92,9 +92,9 @@ function errorEnvelope(code: string, message: string) {
 }
 
 /** The same 404 shape a missing definition gets — deliberately reused
- * for a channel host's definition too (see `hostGuardedRow`), so a
+ * for a workbench host's definition too (see `hostGuardedRow`), so a
  * caller cannot distinguish "no such definition" from "that id names a
- * channel host" by response shape alone. */
+ * workbench host" by response shape alone. */
 function definitionNotFound(definitionId: string) {
   return errorEnvelope(
     "not_found",
@@ -103,8 +103,8 @@ function definitionNotFound(definitionId: string) {
 }
 
 /**
- * A channel host is a single-step workflow definition exactly like a
- * hand-authored agent, but it is the channel's own silent anchor, never
+ * A workbench host is a single-step workflow definition exactly like a
+ * hand-authored agent, but it is the workbench's own silent anchor, never
  * a participant a person edits through this surface — rewriting its
  * system prompt would turn a silent anchor into a responder. Refused
  * the same way a missing definition is: 404, not 403, so the row's
@@ -116,7 +116,7 @@ function hostGuardedRow(
   return (
     row !== undefined &&
     row.assetId !== null &&
-    !isChannelHostDefinitionName(row.name)
+    !isWorkbenchHostDefinitionName(row.name)
   );
 }
 

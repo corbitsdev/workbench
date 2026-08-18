@@ -1,4 +1,4 @@
-// The full HTTP surface of `@corbits/chat`: channel lifecycle, message
+// The full HTTP surface of `@corbits/chat`: workbench lifecycle, message
 // send/list, settings, read-state, typing, and the SSE stream — mounted
 // by the hub inside its tenant-scoped middleware, so `TenantEnv`'s
 // `tenant`/`principal` are always resolved before a handler here runs.
@@ -8,9 +8,9 @@
 // This module owns route registration, request parsing (arktype at
 // the boundary), grant checks, and HTTP envelope mapping only — every
 // other concern lives in its own module: the platform port in
-// `./platform-port`, the settings vocabulary in `./channel-settings`,
-// join/fan-out orchestration in `./channel-service`, and the SSE
-// subscriber registry in `./channel-events`.
+// `./platform-port`, the settings vocabulary in `./workbench-settings`,
+// join/fan-out orchestration in `./workbench-service`, and the SSE
+// subscriber registry in `./workbench-events`.
 import { formatRunAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
@@ -48,41 +48,41 @@ import {
 } from "./participants";
 import type { ParticipantRecord } from "./participants";
 import {
-  buildChannelHostWorkflow,
-  serializeChannelHostWorkflow,
-} from "./channel-workflow";
+  buildWorkbenchHostWorkflow,
+  serializeWorkbenchHostWorkflow,
+} from "./workbench-workflow";
 import {
-  CHANNEL_CONTROL_NAMESPACE,
+  WORKBENCH_CONTROL_NAMESPACE,
   applyControlPayload,
-  type ChannelControlPayload,
-  type ChannelParticipantState,
+  type WorkbenchControlPayload,
+  type WorkbenchParticipantState,
 } from "./settings-control";
 import {
   benchContextWindowOf,
-  channelView,
+  workbenchView,
   kindOf,
   participantsOf,
   resolveContextWindow,
   SettingsValidationError,
   validateBenchSettingsPatch,
   validateSettingsPatch,
-} from "./channel-settings";
-import { isRecentlyActive } from "./channel-activity";
+} from "./workbench-settings";
+import { isRecentlyActive } from "./workbench-activity";
 import {
   dispatchGreetingKickoff,
   joinHumanParticipant,
   launchAndJoinAgent,
-  removeChannelParticipant,
-  sendChannelMessage,
-} from "./channel-service";
+  removeWorkbenchParticipant,
+  sendWorkbenchMessage,
+} from "./workbench-service";
 import {
-  bridgeChannelStream,
-  createChannelSubscriberRegistry,
-  createPlatformChannelFanout,
-  type ChannelSubscriberRegistry,
-} from "./channel-events";
+  bridgeWorkbenchStream,
+  createWorkbenchSubscriberRegistry,
+  createPlatformWorkbenchFanout,
+  type WorkbenchSubscriberRegistry,
+} from "./workbench-events";
 import type { ChatPlatform } from "./platform-port";
-import type { ChannelSettingsRow, ChatStore } from "./store";
+import type { WorkbenchSettingsRow, ChatStore } from "./store";
 import {
   dispatchAtCommand,
   dispatchSlashCommand,
@@ -90,25 +90,25 @@ import {
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "@corbits/folded-runs";
-import type { ChannelTenancyStore } from "./channel-tenancy";
+import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
-import type { ChannelShareStore } from "./channel-share";
-import { monogramFromName } from "./channel-share";
+import type { WorkbenchShareStore } from "./workbench-share";
+import { monogramFromName } from "./workbench-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
 import { AgentUnreachableError } from "./platform-port";
 import { isAgentAddress } from "./mentions";
 
 export type {
-  ChannelActivitySummary,
-  ChannelEvents,
-  ChannelLauncher,
-  ChannelMail,
-  ChatChannelEvent,
+  WorkbenchActivitySummary,
+  WorkbenchEvents,
+  WorkbenchLauncher,
+  WorkbenchMail,
+  ChatWorkbenchEvent,
   ChatPlatform,
   InvitableDefinition,
-  LaunchedChannel,
+  LaunchedWorkbench,
   LaunchedInvite,
   ListedMail,
   ListedMailItem,
@@ -119,30 +119,30 @@ export type CreateChatRoutesDeps = {
   store: ChatStore;
   platform: ChatPlatform;
   /**
-   * Mints and tracks the native child tenant every channel is anchored
-   * as (see `./channel-tenancy.ts`) — required, never optional: a
-   * channel created without a tenancy would be a silent legacy path
-   * reopened, which "no fallbacks" forbids. Every channel created
+   * Mints and tracks the native child tenant every workbench is anchored
+   * as (see `./workbench-tenancy.ts`) — required, never optional: a
+   * workbench created without a tenancy would be a silent legacy path
+   * reopened, which "no fallbacks" forbids. Every workbench created
    * through this route carries a tenancy link from creation onward;
-   * only channels that predate this rollout lack one.
+   * only workbenches that predate this rollout lack one.
    */
-  tenancy: ChannelTenancyStore;
+  tenancy: WorkbenchTenancyStore;
   requireGrant: RequireGrant;
   /**
    * The host's verdict on whether a deployed definition belongs in the
    * agent pickers (new-chat and invite). The platform already excludes
-   * channel-host anchors; this is where the host prunes its automations
+   * workbench-host anchors; this is where the host prunes its automations
    * (e.g. workbench passes "not automatable in the workflow catalog").
    * Required, never defaulted: an unfiltered picker is what let
    * schedulable workflows masquerade as chat partners.
    */
   isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
-  /** Per-occurrence timeout for the channel host's step. */
+  /** Per-occurrence timeout for the workbench host's step. */
   turnTimeoutMs: number;
   /**
-   * Resolves the provider/model chain a newly created channel's host
-   * declares, for the tenant the channel is being created in — see
-   * `@corbits/chat`'s `createChannelHostInferencePreferencesResolver`,
+   * Resolves the provider/model chain a newly created workbench's host
+   * declares, for the tenant the workbench is being created in — see
+   * `@corbits/chat`'s `createWorkbenchHostInferencePreferencesResolver`,
    * which derives it from that tenant's actually-connected catalog
    * providers rather than a fixed list, so a bench with no Anthropic
    * credential still gets a working host. A folded interactive-instance
@@ -150,10 +150,10 @@ export type CreateChatRoutesDeps = {
    * tenant catalog before it will launch at all (see
    * `platform-adapter.ts`), so the resolved list must name a model a
    * seeded catalog source can resolve — omitting the dep, or resolving
-   * to an empty list, is valid up front, but `launchChannel` then fails
+   * to an empty list, is valid up front, but `launchWorkbench` then fails
    * loud at creation time.
    */
-  channelHostInferencePreferences?: (
+  workbenchHostInferencePreferences?: (
     tenantId: string,
   ) => Promise<readonly InferencePreference[]>;
   /**
@@ -175,7 +175,7 @@ export type CreateChatRoutesDeps = {
    * Thread identity store (root / reply / delivery). When omitted,
    * thread list routes return empty and delivery-thread creation is
    * unavailable — composition that wants threads (hub) injects a
-   * real store. Optional so unit tests that only exercise channel
+   * real store. Optional so unit tests that only exercise workbench
    * CRUD stay free of thread tables.
    */
   threads?: ThreadStore;
@@ -214,33 +214,33 @@ export type CreateChatRoutesDeps = {
    * `@corbits/commands`. Omitted entirely, a message is always posted
    * verbatim regardless of a leading "/" or "@"; every deployment that
    * wants the command system wires this the same way it wires
-   * `channelHostInferencePreferences`, by injecting a fully-composed
+   * `workbenchHostInferencePreferences`, by injecting a fully-composed
    * registry (its workflow-command plugin already bound to this same
-   * `publish`, via `channelSubscribers.publish` below — a
-   * command-started workflow's channel event then reaches the same
+   * `publish`, via `workbenchSubscribers.publish` below — a
+   * command-started workflow's workbench event then reaches the same
    * live SSE stream an ordinary invite does).
    */
   commands?: CommandRegistry;
   /**
-   * The SSE subscriber registry this router's `/channels/:id/stream`
-   * route bridges onto (see `./channel-events.ts`). Defaults to a
+   * The SSE subscriber registry this router's `/workbenches/:id/stream`
+   * route bridges onto (see `./workbench-events.ts`). Defaults to a
    * fresh, router-scoped registry when omitted — the original
    * behavior, still correct for a caller with no other consumer of
-   * live channel events. A composition root that also drives channel
+   * live workbench events. A composition root that also drives workbench
    * events from outside this router (the hub's command dispatch path
    * publishing a workflow-started event, for instance) constructs one
    * registry itself and passes it here *and* to that other consumer,
    * so both sides fan out through the same subscriber set.
    */
-  channelSubscribers?: ChannelSubscriberRegistry;
+  workbenchSubscribers?: WorkbenchSubscriberRegistry;
   /**
-   * Slack-Connect-style channel projection (CL-5882) — see
-   * `./channel-share.ts`. Omitted entirely, every `/channels/:id/shares*`
-   * and `/channels/:id/share-members*` route 404s, and `resolveChannelAccess`
+   * Slack-Connect-style workbench projection (CL-5882) — see
+   * `./workbench-share.ts`. Omitted entirely, every `/workbenches/:id/shares*`
+   * and `/workbenches/:id/share-members*` route 404s, and `resolveWorkbenchAccess`
    * only ever resolves the owning-tenant path: a deployment that doesn't
    * wire this dep behaves exactly as it did before this feature existed.
    */
-  shares?: ChannelShareStore;
+  shares?: WorkbenchShareStore;
   /**
    * Read-only trust lookups the shares routes use to build a human
    * `sharedLabel`/`tenantName`/`tenantMonogram` — never the full
@@ -253,13 +253,13 @@ export type CreateChatRoutesDeps = {
   >;
   /**
    * Releases an invited agent's launched instance when it is removed
-   * from a channel's participants — see `channel-service.ts`'s
-   * `removeChannelParticipant`, whose own doc explains why this is
+   * from a workbench's participants — see `workbench-service.ts`'s
+   * `removeWorkbenchParticipant`, whose own doc explains why this is
    * native platform machinery (`sidecarRouter.sendAgentUndeploy` in the
    * hub's own composition), never reimplemented here. Omitted, an
    * agent's instance keeps running after removal; the gap is logged at
    * error level rather than silently accepted (see
-   * `removeChannelParticipant`).
+   * `removeWorkbenchParticipant`).
    */
   releaseAgentInstance?:
     ((address: string, reason: string) => Promise<void>) | undefined;
@@ -271,7 +271,7 @@ const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
 
-const CreateChannelBody = type({
+const CreateWorkbenchBody = type({
   kind: "string",
   "name?": "string",
   "participants?": "string[]",
@@ -279,10 +279,10 @@ const CreateChannelBody = type({
   "principalId?": "string",
   "reuseExisting?": "boolean",
 });
-type CreateChannelBodyT = typeof CreateChannelBody.infer;
+type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
 /**
- * Narrows a validated create-channel body to the "chat with a
+ * Narrows a validated create-workbench body to the "chat with a
  * definitionId" shape, letting the type system carry the proof
  * `definitionId` is present rather than a `throw new
  * Error("unreachable")` after the fact — the route already 400s above
@@ -292,24 +292,24 @@ type CreateChannelBodyT = typeof CreateChannelBody.infer;
  * future edit.
  */
 function isChatWithDefinition(
-  body: CreateChannelBodyT,
-): body is CreateChannelBodyT & { kind: "chat"; definitionId: string } {
+  body: CreateWorkbenchBodyT,
+): body is CreateWorkbenchBodyT & { kind: "chat"; definitionId: string } {
   return body.kind === "chat" && body.definitionId !== undefined;
 }
 
 /**
- * Narrows a validated create-channel body to the "chat with a
+ * Narrows a validated create-workbench body to the "chat with a
  * principalId" shape — a direct chat whose counterpart is a bench
  * member (a person), not an agent. Chosen over a separate `dm: true`
- * wire flag: `assignChannelBucket` in the host app's sidebar already
+ * wire flag: `assignWorkbenchBucket` in the host app's sidebar already
  * derives "is this a DM" from `kind === "chat"` plus the absence of an
  * agent-shaped participant address (see `mentions.ts`'s
  * `isAgentAddress`), so a `principalId`-created chat lands in the DMs
  * bucket for free, with no second signal to keep in sync.
  */
 function isChatWithPrincipal(
-  body: CreateChannelBodyT,
-): body is CreateChannelBodyT & { kind: "chat"; principalId: string } {
+  body: CreateWorkbenchBodyT,
+): body is CreateWorkbenchBodyT & { kind: "chat"; principalId: string } {
   return body.kind === "chat" && body.principalId !== undefined;
 }
 
@@ -364,7 +364,7 @@ function textOf(parts: readonly PartType[]): string {
 }
 
 /** The system-style text a `CommandResult` posts back into the
- * channel's timeline, or `undefined` for the `"noop"` result, which
+ * workbench's timeline, or `undefined` for the `"noop"` result, which
  * posts nothing at all. */
 function textForCommandResult(result: CommandResult): string | undefined {
   switch (result.type) {
@@ -408,7 +408,7 @@ const SubmitFormResponseBody = type({
 // free-text value) and posted verbatim: this route never sees
 // `QuestionBlockData`'s option list, so it cannot re-derive a label from
 // `optionIndex` alone. `answer` is what actually gets relayed into the
-// channel as the responding user's own message.
+// workbench as the responding user's own message.
 const SubmitQuestionResponseBody = type({
   kind: "'question'",
   answer: "string > 0",
@@ -420,50 +420,50 @@ const SubmitBlockResponseBody = SubmitPollResponseBody.or(
 ).or(SubmitQuestionResponseBody);
 
 /**
- * Every `/channels/:id/*` handler must resolve the channel inside the
- * request tenant before acting. A channel is in-tenant when it has a
- * `channel_settings` row **or** a `channel_launch` row (agent host /
+ * Every `/workbenches/:id/*` handler must resolve the workbench inside the
+ * request tenant before acting. A workbench is in-tenant when it has a
+ * `workbench_settings` row **or** a `workbench_launch` row (agent host /
  * invite instance ids are mailboxes with no settings). A miss is a 404
  * — never a silent pass that lets a wildcard grant operate on another
- * tenant's channel.
+ * tenant's workbench.
  */
-async function channelInTenant(
+async function workbenchInTenant(
   store: ChatStore,
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
 ): Promise<boolean> {
-  if ((await store.getChannelSettings(tenantId, channelId)) !== undefined) {
+  if ((await store.getWorkbenchSettings(tenantId, workbenchId)) !== undefined) {
     return true;
   }
-  return store.hasLaunchedInstance(tenantId, channelId);
+  return store.hasLaunchedInstance(tenantId, workbenchId);
 }
 
 /**
  * The single fail-closed gate every
  * message/read-state/typing/stream/blob/block-response route resolves
- * through: the acting tenant either owns the channel
- * outright (the ordinary case, `channelInTenant`), or it's a tenant a
+ * through: the acting tenant either owns the workbench
+ * outright (the ordinary case, `workbenchInTenant`), or it's a tenant a
  * share was explicitly created for AND the acting principal was
- * explicitly added as a share member (`ChannelShareStore.isShareMember`)
+ * explicitly added as a share member (`WorkbenchShareStore.isShareMember`)
  * — never merely "a share exists for this tenant", since not every
- * member of the projected tenant automatically sees a shared channel,
+ * member of the projected tenant automatically sees a shared workbench,
  * only the ones each side's own admin added one at a time via `POST
  * .../share-members`. A third tenant with no share row at all, and a
  * projected tenant's principal nobody added, both resolve to `undefined`
- * — indistinguishable from "channel doesn't exist" to the caller, which
- * is the honest answer for a channel this caller has no standing to see.
+ * — indistinguishable from "workbench doesn't exist" to the caller, which
+ * is the honest answer for a workbench this caller has no standing to see.
  *
  * `ownerTenantId` is what every downstream `deps.store`/`deps.platform`
  * call takes as `tenantId` — a projected-tenant caller's message reads
  * and writes are always scoped to the OWNING tenant's mailbox
- * (`ChannelMail.sendMail`/`listMail` are keyed by an explicit tenantId
+ * (`WorkbenchMail.sendMail`/`listMail` are keyed by an explicit tenantId
  * argument, never an ambient caller tenant — see `./platform-port.ts`),
- * never a copy of the channel materialized under the projected tenant.
+ * never a copy of the workbench materialized under the projected tenant.
  *
  * Approval boundary unchanged: `requireGrant` (wired per-route, above
  * this function) still evaluates only the ACTING tenant's own grants —
  * a share never widens what a projected-tenant caller may do beyond its
- * own tenant's rules; it only widens which channel those rules apply to.
+ * own tenant's rules; it only widens which workbench those rules apply to.
  * No grant-widening code exists anywhere in this router, deliberately.
  */
 /**
@@ -483,20 +483,20 @@ async function checkGrant(
   return (await requireGrant(resource, action)(c, async () => {})) ?? undefined;
 }
 
-async function resolveChannelAccess(
+async function resolveWorkbenchAccess(
   deps: CreateChatRoutesDeps,
   actingTenantId: string,
-  channelId: string,
+  workbenchId: string,
   principalId: string,
 ): Promise<{ ownerTenantId: string } | undefined> {
-  if (await channelInTenant(deps.store, actingTenantId, channelId)) {
+  if (await workbenchInTenant(deps.store, actingTenantId, workbenchId)) {
     return { ownerTenantId: actingTenantId };
   }
   if (deps.shares === undefined) return undefined;
-  const share = await deps.shares.getShare(channelId, actingTenantId);
+  const share = await deps.shares.getShare(workbenchId, actingTenantId);
   if (share === undefined) return undefined;
   if (
-    !(await deps.shares.isShareMember(actingTenantId, channelId, principalId))
+    !(await deps.shares.isShareMember(actingTenantId, workbenchId, principalId))
   ) {
     return undefined;
   }
@@ -504,30 +504,30 @@ async function resolveChannelAccess(
 }
 
 /**
- * A message's sender carries the shared-channel context
- * (`tenantId`/`tenantName`/`tenantMonogram`) only when the channel
+ * A message's sender carries the shared-workbench context
+ * (`tenantId`/`tenantName`/`tenantMonogram`) only when the workbench
  * actually has at least one share AND the sender is a share member of
  * one of them — never for an ordinary owning-tenant participant, and
  * never fabricated when `deps.shares`/`deps.trust` aren't wired. Checked
- * per message rather than once per channel because a channel can be
+ * per message rather than once per workbench because a workbench can be
  * shared into several tenants; the first share the sender is a member of
  * wins (a principal id is never added as a member under two different
- * projected tenants for the same channel in the UI flow this ships, but
+ * projected tenants for the same workbench in the UI flow this ships, but
  * nothing stops it structurally — first match is a stable, if arbitrary,
  * tie-break).
  */
 async function resolveMessageSenderTenant(
   deps: CreateChatRoutesDeps,
   ownerTenantId: string,
-  channelId: string,
+  workbenchId: string,
   senderAddress: string,
 ): Promise<
   { tenantId: string; tenantName?: string; tenantMonogram?: string } | undefined
 > {
   if (deps.shares === undefined) return undefined;
-  const shares = await deps.shares.listSharesForChannel(
+  const shares = await deps.shares.listSharesForWorkbench(
     ownerTenantId,
-    channelId,
+    workbenchId,
   );
   if (shares.length === 0) return undefined;
   const principalId = localPartOf(senderAddress);
@@ -535,7 +535,7 @@ async function resolveMessageSenderTenant(
     if (
       await deps.shares.isShareMember(
         share.projectedTenantId,
-        channelId,
+        workbenchId,
         principalId,
       )
     ) {
@@ -550,24 +550,24 @@ async function resolveMessageSenderTenant(
 }
 
 /**
- * True when `messageId` names a real message in the channel's own
+ * True when `messageId` names a real message in the workbench's own
  * mail — the guard both write-side reaction/pin routes need before
  * touching storage. Without it, a `messageId` that was never sent (a
  * typo, a stale client, a probe) still 200s and writes a permanent row
  * keyed to nothing: invisible (no message ever renders it) and
  * unremovable (no UI affordance exists for a message that isn't
  * there). Mirrors the same single-page `listMail` + id lookup
- * `GET /channels/:id/pins` and the thread-messages route already use
- * to resolve a message id against the channel's mailbox.
+ * `GET /workbenches/:id/pins` and the thread-messages route already use
+ * to resolve a message id against the workbench's mailbox.
  */
-async function messageExistsInChannel(
+async function messageExistsInWorkbench(
   platform: ChatPlatform,
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ): Promise<boolean> {
   return (
-    (await platform.getMail({ tenantId, channelId, messageId })) !== undefined
+    (await platform.getMail({ tenantId, workbenchId, messageId })) !== undefined
   );
 }
 
@@ -597,7 +597,7 @@ type WireMessageItem = {
 async function enrichWithReactionsAndPins<T extends WireMessageItem>(
   deps: CreateChatRoutesDeps,
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   principalId: string,
   items: readonly T[],
 ): Promise<
@@ -612,7 +612,7 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
       ? aggregateReactionsByMessage(
           await deps.reactions.listReactionsForMessages(
             tenantId,
-            channelId,
+            workbenchId,
             items.map((item) => item.id),
           ),
           principalId,
@@ -621,7 +621,7 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
   const pinnedIds =
     deps.pins !== undefined
       ? new Set(
-          (await deps.pins.listPins(tenantId, channelId)).map(
+          (await deps.pins.listPins(tenantId, workbenchId)).map(
             (row) => row.messageId,
           ),
         )
@@ -632,7 +632,7 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
           (
             await deps.clientIds.listClientIdsForMessages(
               tenantId,
-              channelId,
+              workbenchId,
               items.map((item) => item.id),
             )
           ).map((row) => [row.messageId, row.clientId]),
@@ -667,19 +667,19 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
 }
 
 /**
- * Decides whether an incoming channel message opens the command path
+ * Decides whether an incoming workbench message opens the command path
  * at all, and if so, dispatches it. `undefined` — the caller's cue to
  * post the message normally — for: no registry injected; text that is
  * neither slash- nor `@`-shaped; or an `@name` that names an existing
  * agent participant's handle rather than a command (mention fan-out
  * keeps owning that case exactly as before this rollout).
  */
-async function dispatchChannelCommand(
+async function dispatchWorkbenchCommand(
   deps: CreateChatRoutesDeps,
   input: {
     tenantId: string;
     principalId: string;
-    channelId: string;
+    workbenchId: string;
     text: string;
   },
 ): Promise<CommandResult | undefined> {
@@ -687,7 +687,7 @@ async function dispatchChannelCommand(
   const ctx = {
     tenantId: input.tenantId,
     principalId: input.principalId,
-    channelId: input.channelId,
+    workbenchId: input.workbenchId,
   };
 
   if (input.text.startsWith("/")) {
@@ -702,9 +702,9 @@ async function dispatchChannelCommand(
     );
     if (resolved === undefined) return undefined;
 
-    const existing = await deps.store.getChannelSettings(
+    const existing = await deps.store.getWorkbenchSettings(
       input.tenantId,
-      input.channelId,
+      input.workbenchId,
     );
     const participants =
       existing !== undefined ? participantsOf(existing.settings) : [];
@@ -719,40 +719,40 @@ async function dispatchChannelCommand(
   return undefined;
 }
 
-const MoveChannelBody = type({
+const MoveWorkbenchBody = type({
   newParentTenantId: "string",
 });
 
 /**
  * Finds an existing chat with the given agent, for the one caller that
  * deliberately wants find-or-create semantics: the home-workbench
- * land-hop (`ensureMyraChannel`, via `default-agent-channel.ts`), which
+ * land-hop (`ensureMyraWorkbench`, via `default-agent-workbench.ts`), which
  * passes `reuseExisting: true` so returning to "Myra" always reopens the
  * same conversation rather than minting a fresh one on every visit.
  *
  * Every other caller — "+ New Workbench" picking an agent as a
  * template, or a freshly drafted agent's own launch — always creates
  * (CL-6089): the same agent picked twice from the picker is two
- * independent workbenches, each with its own channel tenant and its own
+ * independent workbenches, each with its own workbench tenant and its own
  * launched agent instance, not the same conversation reopened. `POST
- * /channels` only calls this lookup when `reuseExisting` is set.
+ * /workbenches` only calls this lookup when `reuseExisting` is set.
  *
  * Matches forward, by the `chat/definitionId` every agent chat has
  * carried in its settings since this landed, and falls back to
  * `matchesLegacyAgentChat` for a chat minted before that key existed.
  * More than one match (duplicates this same gap already let through)
- * resolves to the oldest by its channel-tenancy `createdAt` — the
+ * resolves to the oldest by its workbench-tenancy `createdAt` — the
  * original conversation, not whichever the caller happens to hit first —
- * with a channel that predates channel tenancy entirely sorting oldest
+ * with a workbench that predates workbench tenancy entirely sorting oldest
  * of all.
  */
 export async function findExistingAgentChat(
   deps: Pick<CreateChatRoutesDeps, "store" | "platform" | "tenancy">,
   tenantId: string,
   definitionId: string,
-): Promise<ChannelSettingsRow | undefined> {
-  const chats = await deps.store.listChannelSettings(tenantId, "chat");
-  const matches: { row: ChannelSettingsRow; createdAt: Date }[] = [];
+): Promise<WorkbenchSettingsRow | undefined> {
+  const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
+  const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
   for (const row of chats) {
     const storedDefinitionId = row.settings["chat/definitionId"];
     const isMatch =
@@ -760,7 +760,7 @@ export async function findExistingAgentChat(
         ? storedDefinitionId === definitionId
         : await matchesLegacyAgentChat(deps, row, definitionId);
     if (!isMatch) continue;
-    const link = await deps.tenancy.getChannelTenancy(row.channelId);
+    const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
     matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
   }
   if (matches.length === 0) return undefined;
@@ -776,7 +776,7 @@ export async function findExistingAgentChat(
  */
 async function matchesLegacyAgentChat(
   deps: Pick<CreateChatRoutesDeps, "platform">,
-  row: ChannelSettingsRow,
+  row: WorkbenchSettingsRow,
   definitionId: string,
 ): Promise<boolean> {
   const agentAddresses = participantsOf(row.settings)
@@ -789,16 +789,16 @@ async function matchesLegacyAgentChat(
   return false;
 }
 
-/** Annotates a channel view with its native child-tenancy — the
- * `tenancy` field every channel created after this rollout carries,
+/** Annotates a workbench view with its native child-tenancy — the
+ * `tenancy` field every workbench created after this rollout carries,
  * never `null` unless a caller reaches a route that skips the
- * annotation (there are none; `GET /channels` handles the one place a
+ * annotation (there are none; `GET /workbenches` handles the one place a
  * link can be legitimately missing itself, via its own `legacy`
  * branch). */
 function withTenancy(
-  view: ReturnType<typeof channelView>,
+  view: ReturnType<typeof workbenchView>,
   link: { tenantId: string; parentTenantId: string; slug: string },
-): ReturnType<typeof channelView> & {
+): ReturnType<typeof workbenchView> & {
   tenancy: { tenantId: string; parentTenantId: string; slug: string };
   legacy: false;
 } {
@@ -815,20 +815,26 @@ function withTenancy(
 
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
-  const registry = deps.channelSubscribers ?? createChannelSubscriberRegistry();
+  const registry =
+    deps.workbenchSubscribers ?? createWorkbenchSubscriberRegistry();
   const publish = registry.publish;
-  // One upstream platform subscription per channel, fanned out to every
-  // SSE connection on that channel — see `createPlatformChannelFanout`.
-  const platformEvents = createPlatformChannelFanout(deps.platform);
+  // One upstream platform subscription per workbench, fanned out to every
+  // SSE connection on that workbench — see `createPlatformWorkbenchFanout`.
+  const platformEvents = createPlatformWorkbenchFanout(deps.platform);
 
   app.post(
-    "/channels",
+    "/workbenches",
     deps.requireGrant("workflow-run:*", "create"),
     async (c) => {
-      const body = CreateChannelBody(await c.req.json().catch(() => undefined));
+      const body = CreateWorkbenchBody(
+        await c.req.json().catch(() => undefined),
+      );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid channel body: ${body.summary}`),
+          ErrorEnvelope(
+            "bad_request",
+            `invalid workbench body: ${body.summary}`,
+          ),
           400,
         );
       }
@@ -870,7 +876,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // the picker uses it as a template, minting a fresh workbench
       // every time, not reopening a prior conversation. The one
       // exception is the deliberate land-hop to the account's home
-      // workbench (`ensureMyraChannel`), which opts in with
+      // workbench (`ensureMyraWorkbench`), which opts in with
       // `reuseExisting: true` so landing on "Myra" always finds the
       // same conversation instead of forking a new one on every visit.
       // Checked before anything is minted, and before the (cheaper,
@@ -883,11 +889,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           body.definitionId,
         );
         if (existing !== undefined) {
-          const link = await deps.tenancy.getChannelTenancy(existing.channelId);
+          const link = await deps.tenancy.getWorkbenchTenancy(
+            existing.workbenchId,
+          );
           return c.json(
             link !== undefined
-              ? withTenancy(channelView(existing), link)
-              : { ...channelView(existing), tenancy: null, legacy: true },
+              ? withTenancy(workbenchView(existing), link)
+              : { ...workbenchView(existing), tenancy: null, legacy: true },
             200,
           );
         }
@@ -898,7 +906,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // (structurally never a DM — there is no second party), and
       // `principalId` must name a real, active member of this bench.
       // Both fail closed with an ordinary client error rather than
-      // seeding a channel with a participant record nothing backs.
+      // seeding a workbench with a participant record nothing backs.
       if (isChatWithPrincipal(body)) {
         if (body.principalId === principal.id) {
           return c.json(
@@ -928,16 +936,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      const channelId = generateId("workflowRun");
+      const workbenchId = generateId("workflowRun");
       // An unnamed agent chat is titled by its agent's display name
-      // ("Myra"), resolved before the channel tenant is minted so the
+      // ("Myra"), resolved before the workbench tenant is minted so the
       // tenant row carries the same readable name instead of the raw
-      // channel id. An unknown definition leaves this undefined; the
+      // workbench id. An unknown definition leaves this undefined; the
       // post-join handle fallback below still names the chat then.
       // Independent reads run concurrently — each is cheap alone, but the
       // mint path pays every serial await twice over (two launches follow).
       const inferencePreferencesPromise =
-        deps.channelHostInferencePreferences?.(tenant.id);
+        deps.workbenchHostInferencePreferences?.(tenant.id);
       const invitable = isChatWithDefinition(body)
         ? await deps.platform.listInvitableDefinitions(tenant.id)
         : [];
@@ -947,29 +955,29 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ? invitable.find((definition) => definition.id === body.definitionId)
               ?.description
           : undefined);
-      const triggerAddress = formatRunAddress(channelId, tenant.domain);
+      const triggerAddress = formatRunAddress(workbenchId, tenant.domain);
       const inferencePreferences = (await inferencePreferencesPromise) ?? [];
-      const definition = serializeChannelHostWorkflow(
-        buildChannelHostWorkflow({
+      const definition = serializeWorkbenchHostWorkflow(
+        buildWorkbenchHostWorkflow({
           triggerAddress,
           inferencePreferences,
           turnTimeoutMs: deps.turnTimeoutMs,
         }),
       );
 
-      // A channel is a child tenant of the bench it is created in from
-      // the moment it exists — minted before the channel host launches.
-      // The mint itself is one transaction (see `channel-tenancy.ts`),
+      // A workbench is a child tenant of the bench it is created in from
+      // the moment it exists — minted before the workbench host launches.
+      // The mint itself is one transaction (see `workbench-tenancy.ts`),
       // so it never lands half-seeded; but the launch that follows it
       // is a separate step against separate machinery, so a failure
       // there is compensated for explicitly below rather than trusted
       // to ordering alone. The creator becomes the child tenant's
       // native owner exactly as the native tenant-creation route seeds
-      // its own creator (see `channel-tenancy.ts`).
-      const channelTenant = await deps.tenancy.createChannelTenant({
+      // its own creator (see `workbench-tenancy.ts`).
+      const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
         parentTenantId: tenant.id,
-        channelId,
-        name: chatTitle ?? channelId,
+        workbenchId,
+        name: chatTitle ?? workbenchId,
         creatorUserId: principal.refId,
       });
 
@@ -982,29 +990,31 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // (the async mint path below).
       async function compensateMint(err: unknown, phase: string) {
         log.error(
-          "Channel {phase} failed for {channelId} after minting " +
+          "Workbench {phase} failed for {workbenchId} after minting " +
             "{tenantId}; compensating the orphaned tenant and settings: " +
             "{cause}",
           {
             phase,
-            channelId,
-            tenantId: channelTenant.tenantId,
+            workbenchId,
+            tenantId: workbenchTenant.tenantId,
             cause: err instanceof Error ? err.message : String(err),
             err,
           },
         );
         try {
-          await deps.store.deleteChannelSettings(tenant.id, channelId);
-          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+          await deps.store.deleteWorkbenchSettings(tenant.id, workbenchId);
+          await deps.tenancy.compensateWorkbenchTenant(
+            workbenchTenant.tenantId,
+          );
         } catch (compensationErr) {
           log.error(
             "Compensation failed for orphaned tenant {tenantId} after " +
-              "channel {channelId}'s {phase} failure; this tenant is now " +
+              "workbench {workbenchId}'s {phase} failure; this tenant is now " +
               "a privileged orphan and requires manual cleanup",
             {
               phase,
-              channelId,
-              tenantId: channelTenant.tenantId,
+              workbenchId,
+              tenantId: workbenchTenant.tenantId,
               compensationErr,
             },
           );
@@ -1012,10 +1022,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       async function launchHost() {
-        await deps.platform.launchChannel({
+        await deps.platform.launchWorkbench({
           tenantId: tenant.id,
           creatorPrincipalId: principal.id,
-          channelId,
+          workbenchId,
           triggerAddress,
           definition,
         });
@@ -1037,7 +1047,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         "chat/pinned": preset.pinned,
         "chat/participants": initialParticipants,
       };
-      // Recorded so a later `POST /channels` for the same agent can find
+      // Recorded so a later `POST /workbenches` for the same agent can find
       // this chat by it directly (see `findExistingAgentChat`) instead of
       // reverse-resolving a participant address every time.
       const withDefinitionId: Record<string, unknown> = isChatWithDefinition(
@@ -1050,18 +1060,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ? { ...withDefinitionId, "chat/name": chatTitle }
           : withDefinitionId;
 
-      const row = await deps.store.createChannelSettings({
+      const row = await deps.store.createWorkbenchSettings({
         tenantId: tenant.id,
-        channelId,
+        workbenchId,
         settings,
         updatedBy: principal.id,
       });
 
-      // The agent-chat mint answers BEFORE its launches: the channel
+      // The agent-chat mint answers BEFORE its launches: the workbench
       // row and tenant above are the durable mint, the two launches
       // (host + agent) take seconds each, and the client already
-      // renders the setup state until `channel.agent-joined` streams
-      // in. DMs and plain channels keep the synchronous launch — their
+      // renders the setup state until `workbench.agent-joined` streams
+      // in. DMs and plain workbenches keep the synchronous launch — their
       // join step mails through the host, so the host must exist
       // before this handler can finish their setup.
       if (!isChatWithPrincipal(body) && isChatWithDefinition(body)) {
@@ -1081,7 +1091,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               {
                 tenantId: tenant.id,
                 principalId: principal.id,
-                channelId,
+                workbenchId,
                 definitionId,
                 existingSettings: row.settings,
                 invitable,
@@ -1098,7 +1108,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               {
                 tenantId: tenant.id,
                 principalId: principal.id,
-                channelId,
+                workbenchId,
                 agentAddress: joined.address,
                 ...(senderName !== undefined ? { senderName } : {}),
                 ...(chatTitle !== undefined
@@ -1107,9 +1117,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               },
             );
             if (chatTitle === undefined) {
-              await deps.store.updateChannelSettings({
+              await deps.store.updateWorkbenchSettings({
                 tenantId: tenant.id,
-                channelId,
+                workbenchId,
                 settings: { ...joined.settings, "chat/name": joined.handle },
                 updatedBy: principal.id,
               });
@@ -1118,7 +1128,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             await compensateMint(err, "agent launch");
           }
         });
-        return c.json(withTenancy(channelView(row), channelTenant), 201);
+        return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
       }
 
       try {
@@ -1146,7 +1156,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             {
               tenantId: tenant.id,
               principalId: principal.id,
-              channelId,
+              workbenchId,
               memberPrincipalId: body.principalId,
               memberHandle,
               existingSettings: row.settings,
@@ -1159,9 +1169,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           const finalSettings =
             body.name === undefined
               ? (
-                  await deps.store.updateChannelSettings({
+                  await deps.store.updateWorkbenchSettings({
                     tenantId: tenant.id,
-                    channelId,
+                    workbenchId,
                     settings: {
                       ...joined.settings,
                       "chat/name": joined.handle,
@@ -1173,30 +1183,32 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
           return c.json(
             withTenancy(
-              channelView({ channelId, settings: finalSettings }),
-              channelTenant,
+              workbenchView({ workbenchId, settings: finalSettings }),
+              workbenchTenant,
             ),
             201,
           );
         } catch (err) {
           log.error(
-            "Adding the person-DM participant failed for channel " +
-              "{channelId} after the host launched and settings were " +
-              "written; compensating the channel tenant and deleting " +
+            "Adding the person-DM participant failed for workbench " +
+              "{workbenchId} after the host launched and settings were " +
+              "written; compensating the workbench tenant and deleting " +
               "its settings",
-            { channelId, tenantId: channelTenant.tenantId, err },
+            { workbenchId, tenantId: workbenchTenant.tenantId, err },
           );
           try {
-            await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
-            await deps.store.deleteChannelSettings(tenant.id, channelId);
+            await deps.tenancy.compensateWorkbenchTenant(
+              workbenchTenant.tenantId,
+            );
+            await deps.store.deleteWorkbenchSettings(tenant.id, workbenchId);
           } catch (compensationErr) {
             log.error(
               "Compensation failed after person-DM join failure for " +
-                "channel {channelId}; the orphaned tenant {tenantId} " +
+                "workbench {workbenchId}; the orphaned tenant {tenantId} " +
                 "and/or its settings require manual cleanup",
               {
-                channelId,
-                tenantId: channelTenant.tenantId,
+                workbenchId,
+                tenantId: workbenchTenant.tenantId,
                 compensationErr,
               },
             );
@@ -1205,60 +1217,60 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      return c.json(withTenancy(channelView(row), channelTenant), 201);
+      return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
     },
   );
 
   app.get(
-    "/channels",
+    "/workbenches",
     deps.requireGrant("workflow-run:*", "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const kind = c.req.query("kind");
-      const rows = await deps.store.listChannelSettings(tenant.id, kind);
-      // Every channel_settings row here is scoped to this bench
+      const rows = await deps.store.listWorkbenchSettings(tenant.id, kind);
+      // Every workbench_settings row here is scoped to this bench
       // already — the tenancy link is annotated on top, never used to
-      // widen or narrow this query. A moved channel keeps its
-      // channel_settings row in the bench it was created in forever,
-      // so its link must be read by its own channel id, never by
+      // widen or narrow this query. A moved workbench keeps its
+      // workbench_settings row in the bench it was created in forever,
+      // so its link must be read by its own workbench id, never by
       // "children of this bench" — that filter goes stale the moment
-      // a channel moves elsewhere and would wrongly report it as
-      // legacy. A row with no link at all is a genuine LEGACY channel:
-      // it predates this rollout (created before channel tenancy
+      // a workbench moves elsewhere and would wrongly report it as
+      // legacy. A row with no link at all is a genuine LEGACY workbench:
+      // it predates this rollout (created before workbench tenancy
       // existed) and carries no native tenant of its own. Legacy rows
       // are surfaced here, never silently dropped — "no fallbacks"
-      // means the gap stays visible until every legacy channel is
+      // means the gap stays visible until every legacy workbench is
       // backfilled a tenancy, at which point this branch and the
       // `legacy` field below should both be deleted.
       const links = await Promise.all(
-        rows.map((row) => deps.tenancy.getChannelTenancy(row.channelId)),
+        rows.map((row) => deps.tenancy.getWorkbenchTenancy(row.workbenchId)),
       );
 
       // Row signals (unread badge, live dot, relative time) in two bulk
-      // calls covering every row — never one per channel. The caller's
-      // own read cursors come from `channel_read_state` (chat's own
+      // calls covering every row — never one per workbench. The caller's
+      // own read cursors come from `workbench_read_state` (chat's own
       // table); the mail-backed activity itself is the platform port's
-      // concern (`listChannelActivity`), since messages live in
+      // concern (`listWorkbenchActivity`), since messages live in
       // platform mail, not a chat-owned table.
       const principal = c.get("principal");
       const readStates = await deps.store.listReadStates(
         tenant.id,
-        rows.map((row) => row.channelId),
+        rows.map((row) => row.workbenchId),
         principal.id,
       );
-      const cursorByChannelId = new Map(
+      const cursorByWorkbenchId = new Map(
         readStates.map((state) => [
-          state.channelId,
+          state.workbenchId,
           state.lastSeenCreatedAt.toISOString(),
         ]),
       );
-      const activityByChannelId = await deps.platform.listChannelActivity({
+      const activityByWorkbenchId = await deps.platform.listWorkbenchActivity({
         tenantId: tenant.id,
-        channels: rows.map((row) => {
-          const sinceCreatedAt = cursorByChannelId.get(row.channelId);
+        workbenches: rows.map((row) => {
+          const sinceCreatedAt = cursorByWorkbenchId.get(row.workbenchId);
           return sinceCreatedAt === undefined
-            ? { channelId: row.channelId }
-            : { channelId: row.channelId, sinceCreatedAt };
+            ? { workbenchId: row.workbenchId }
+            : { workbenchId: row.workbenchId, sinceCreatedAt };
         }),
       });
 
@@ -1266,9 +1278,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const link = links[index];
         const view =
           link !== undefined
-            ? withTenancy(channelView(row), link)
-            : { ...channelView(row), tenancy: null, legacy: true };
-        const activity = activityByChannelId[row.channelId];
+            ? withTenancy(workbenchView(row), link)
+            : { ...workbenchView(row), tenancy: null, legacy: true };
+        const activity = activityByWorkbenchId[row.workbenchId];
         if (activity === undefined) return view;
         const withUnread = { ...view, unreadCount: activity.unreadCount };
         if (activity.lastActivityAt === undefined) return withUnread;
@@ -1282,12 +1294,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : { ...withActivity, preview: activity.preview };
       });
 
-      // Channels a sibling tenant projected into this one (CL-5882) —
+      // Workbenches a sibling tenant projected into this one (CL-5882) —
       // a UNION with this tenant's own rows above, never a replacement.
       // Only a share this caller's principal was explicitly added to
       // (`isShareMember`) contributes a row: a share that exists but has
       // no member row for this principal, or a tenant with no share at
-      // all, adds nothing here, matching `resolveChannelAccess`'s same
+      // all, adds nothing here, matching `resolveWorkbenchAccess`'s same
       // fail-closed rule for the message/read-state/stream routes.
       const shares = deps.shares;
       const sharedItems =
@@ -1302,18 +1314,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 if (
                   !(await shares.isShareMember(
                     tenant.id,
-                    share.channelId,
+                    share.workbenchId,
                     principal.id,
                   ))
                 ) {
                   continue;
                 }
-                const ownerRow = await deps.store.getChannelSettings(
+                const ownerRow = await deps.store.getWorkbenchSettings(
                   share.owningTenantId,
-                  share.channelId,
+                  share.workbenchId,
                 );
                 if (ownerRow === undefined) continue;
-                const view = channelView(ownerRow);
+                const view = workbenchView(ownerRow);
                 if (kind !== undefined && view.kind !== kind) continue;
                 const viaParent = await deps.trust?.resolveSharedViaParent(
                   share.owningTenantId,
@@ -1341,19 +1353,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/threads",
+    "/workbenches/:id/threads",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      const workbenchId = c.req.param("id");
+      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       if (deps.threads === undefined) {
         return c.json({ rootThreadId: "", items: [] as const });
       }
-      const root = await deps.threads.ensureRootThread(tenant.id, channelId);
-      const items = await deps.threads.listThreads(tenant.id, channelId);
+      const root = await deps.threads.ensureRootThread(tenant.id, workbenchId);
+      const items = await deps.threads.listThreads(tenant.id, workbenchId);
       return c.json({
         rootThreadId: root.id,
         items: items.map((t) => ({
@@ -1370,13 +1382,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/threads/fork",
+    "/workbenches/:id/threads/fork",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      const workbenchId = c.req.param("id");
+      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       if (deps.threads === undefined) {
         return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
@@ -1393,7 +1405,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
       const forkParams = {
         tenantId: tenant.id,
-        channelId,
+        workbenchId,
         parentMessageId: body.parentMessageId,
       };
       const thread = await deps.threads.forkThread(
@@ -1417,40 +1429,40 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/threads/:threadId/messages",
+    "/workbenches/:id/threads/:threadId/messages",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const threadId = c.req.param("threadId");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       if (deps.threads === undefined) {
         return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
       }
       const thread = await deps.threads.getThread(tenant.id, threadId);
-      if (thread === undefined || thread.channelId !== channelId) {
+      if (thread === undefined || thread.workbenchId !== workbenchId) {
         return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
       }
       // A message's thread is the one it was assigned to, or the root
-      // thread when it was never assigned at all — `channel_thread_messages`
+      // thread when it was never assigned at all — `workbench_thread_messages`
       // states that default ("root feed by default"), and this is the
       // one place that resolves it. `POST /messages` is the only caller
       // that records membership, so every agent-originated message
       // (`chat-orchestrator`'s reply/approve-block/artifact posters,
-      // `channel-service`'s join and leave notices) arrives with none:
+      // `workbench-service`'s join and leave notices) arrives with none:
       // listing a feed by membership rows alone would silently hide all
       // of them, a fresh chat's very first agent reply included.
-      const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+      const root = await deps.threads.ensureRootThread(tenant.id, workbenchId);
       const assignments = await deps.threads.listThreadAssignments(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       const listed = await deps.platform.listMail({
         tenantId: tenant.id,
-        channelId,
+        workbenchId,
       });
       const items = await Promise.all(
         listed.items
@@ -1460,7 +1472,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             createdAt: item.createdAt,
             sender: senderOf(item.mail),
             parts: await decodeMail(item.mail, {
-              fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
+              fetchBlob: (blobId) =>
+                deps.platform.fetchBlob(workbenchId, blobId),
             }),
           })),
       );
@@ -1477,7 +1490,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         items: await enrichWithReactionsAndPins(
           deps,
           tenant.id,
-          channelId,
+          workbenchId,
           principal.id,
           items,
         ),
@@ -1486,13 +1499,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/delivery-threads",
+    "/workbenches/:id/delivery-threads",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      const workbenchId = c.req.param("id");
+      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       if (deps.threads === undefined) {
         return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
@@ -1509,7 +1522,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
       const deliveryParams = {
         tenantId: tenant.id,
-        channelId,
+        workbenchId,
         runRef: body.runRef,
       };
       const thread = await deps.threads.createDeliveryThread(
@@ -1531,25 +1544,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/messages",
+    "/workbenches/:id/messages",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const cursor = c.req.query("cursor");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
-      const listMailParams = { tenantId: access.ownerTenantId, channelId };
+      const listMailParams = { tenantId: access.ownerTenantId, workbenchId };
       const listed = await deps.platform.listMail(
         cursor !== undefined ? { ...listMailParams, cursor } : listMailParams,
       );
@@ -1560,7 +1573,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           const senderTenant = await resolveMessageSenderTenant(
             deps,
             access.ownerTenantId,
-            channelId,
+            workbenchId,
             sender.address,
           );
           return {
@@ -1571,7 +1584,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 ? { ...sender, ...senderTenant }
                 : sender,
             parts: await decodeMail(item.mail, {
-              fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
+              fetchBlob: (blobId) =>
+                deps.platform.fetchBlob(workbenchId, blobId),
             }),
           };
         }),
@@ -1580,7 +1594,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const responseItems = await enrichWithReactionsAndPins(
         deps,
         access.ownerTenantId,
-        channelId,
+        workbenchId,
         principal.id,
         items,
       );
@@ -1599,26 +1613,26 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // trip through JSON exactly like text ones, leaving MIME interpretation
   // to the caller, which already has it from the message `Part`.
   app.get(
-    "/channels/:id/blobs/:blobId",
+    "/workbenches/:id/blobs/:blobId",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const blobId = c.req.param("blobId");
       if (
-        (await resolveChannelAccess(
+        (await resolveWorkbenchAccess(
           deps,
           tenant.id,
-          channelId,
+          workbenchId,
           principal.id,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       let blob: string | Uint8Array;
       try {
-        blob = await deps.platform.fetchBlob(channelId, blobId);
+        blob = await deps.platform.fetchBlob(workbenchId, blobId);
       } catch {
         return c.json(ErrorEnvelope("not_found", "blob not found"), 404);
       }
@@ -1631,7 +1645,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/messages",
+    "/workbenches/:id/messages",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const raw = await c.req.json().catch(() => undefined);
@@ -1663,17 +1677,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageParts = parsed.parts as PartType[];
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
 
@@ -1688,7 +1702,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // allowed and a disallowed invite is not a case chat-ui's
       // popover — which only ever offers grant-eligible invites in the
       // one popover session — produces), and a denial leaves the
-      // channel and the draft untouched.
+      // workbench and the draft untouched.
       if (parsed.invite !== undefined && parsed.invite.length > 0) {
         const denied = await checkGrant(
           deps.requireGrant,
@@ -1709,12 +1723,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           );
         }
 
-        const existing = await deps.store.getChannelSettings(
+        const existing = await deps.store.getWorkbenchSettings(
           ownerTenantId,
-          channelId,
+          workbenchId,
         );
         if (existing === undefined) {
-          return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+          return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
         }
 
         let currentSettings = existing.settings;
@@ -1738,7 +1752,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 {
                   tenantId: ownerTenantId,
                   principalId: principal.id,
-                  channelId,
+                  workbenchId,
                   definitionId: entry.definitionId,
                   existingSettings: currentSettings,
                   invitable,
@@ -1779,7 +1793,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             {
               tenantId: ownerTenantId,
               principalId: principal.id,
-              channelId,
+              workbenchId,
               memberPrincipalId: entry.principalId,
               memberHandle: handleFromName(entry.name ?? "", entry.principalId),
               existingSettings: currentSettings,
@@ -1797,10 +1811,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // resolving it against the registry only runs once it is
       // confirmed not to name a known handle, so that mention keeps
       // its ordinary fan-out behavior exactly as before.
-      const commandResult = await dispatchChannelCommand(deps, {
+      const commandResult = await dispatchWorkbenchCommand(deps, {
         tenantId: ownerTenantId,
         principalId: principal.id,
-        channelId,
+        workbenchId,
         text: textOf(messageParts),
       });
       if (commandResult !== undefined) {
@@ -1808,7 +1822,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         if (resultText !== undefined) {
           await deps.platform.sendMail({
             tenantId: ownerTenantId,
-            channelId,
+            workbenchId,
             principalId: principal.id,
             content: encodeParts([{ kind: "text", text: resultText }]),
           });
@@ -1818,12 +1832,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       let sent;
       try {
-        sent = await sendChannelMessage(
+        sent = await sendWorkbenchMessage(
           { store: deps.store, platform: deps.platform },
           {
             tenantId: ownerTenantId,
             principalId: principal.id,
-            channelId,
+            workbenchId,
             messageParts,
             ...(parsed.inReplyToMessageId !== undefined
               ? { inReplyToMessageId: parsed.inReplyToMessageId }
@@ -1846,7 +1860,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (parsed.clientId !== undefined && deps.clientIds !== undefined) {
         await deps.clientIds.recordClientId({
           tenantId: ownerTenantId,
-          channelId,
+          workbenchId,
           messageId: sent.id,
           clientId: parsed.clientId,
         });
@@ -1855,7 +1869,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (deps.threads !== undefined) {
         const root = await deps.threads.ensureRootThread(
           ownerTenantId,
-          channelId,
+          workbenchId,
         );
         let targetThreadId = root.id;
         if (parsed.threadId !== undefined) {
@@ -1863,7 +1877,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ownerTenantId,
             parsed.threadId,
           );
-          if (existing === undefined || existing.channelId !== channelId) {
+          if (existing === undefined || existing.workbenchId !== workbenchId) {
             return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
           }
           targetThreadId = existing.id;
@@ -1872,7 +1886,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           try {
             reply = await deps.threads.openReplyThread({
               tenantId: ownerTenantId,
-              channelId,
+              workbenchId,
               parentMessageId: parsed.inReplyToMessageId,
             });
           } catch (cause) {
@@ -1885,7 +1899,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
         await deps.threads.assignMessage({
           tenantId: ownerTenantId,
-          channelId,
+          workbenchId,
           threadId: targetThreadId,
           messageId: sent.id,
         });
@@ -1916,7 +1930,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/messages/:messageId/blocks/:blockId/responses",
+    "/workbenches/:id/messages/:messageId/blocks/:blockId/responses",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       if (deps.blockResponses === undefined) {
@@ -1928,18 +1942,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
 
@@ -1971,7 +1985,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const row = await deps.blockResponses.upsertBlockResponse({
         tenantId: ownerTenantId,
-        channelId,
+        workbenchId,
         messageId,
         blockId,
         principalId: principal.id,
@@ -1979,35 +1993,35 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       });
 
       // A question's answer is the interview reply itself, not just a
-      // structured event: post it into the channel as the responding
+      // structured event: post it into the workbench as the responding
       // user's own message so the asking agent receives it exactly as it
       // would any other reply from that user — visible in-thread, routed
-      // by the channel's normal host routing, no side channel only the
+      // by the workbench's normal host routing, no side channel only the
       // agent can read.
       if (payload.kind === "question") {
-        await sendChannelMessage(
+        await sendWorkbenchMessage(
           { store: deps.store, platform: deps.platform },
           {
             tenantId: ownerTenantId,
             principalId: principal.id,
-            channelId,
+            workbenchId,
             messageParts: [{ kind: "text", text: payload.answer }],
           },
         );
       }
 
-      // A machine-readable event into the same channel timeline the
+      // A machine-readable event into the same workbench timeline the
       // responder is already a member of, so the outcome reaches the
       // emitting agent in-context on its next turn — the same "the message
       // is the state" pattern Block Kit's `block_actions` uses, rather than
-      // a side channel only the agent can reach. Every channel member sees
-      // the same event any other message in this channel would show them;
-      // that is the channel's own membership boundary, not a new one — the
+      // a side channel only the agent can reach. Every workbench member sees
+      // the same event any other message in this workbench would show them;
+      // that is the workbench's own membership boundary, not a new one — the
       // GET route below is the boundary that must never let a member read
       // *another* member's raw response on demand.
       await deps.platform.sendMail({
         tenantId: ownerTenantId,
-        channelId,
+        workbenchId,
         principalId: principal.id,
         content: encodeParts([
           {
@@ -2023,7 +2037,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/messages/:messageId/blocks/:blockId/responses",
+    "/workbenches/:id/messages/:messageId/blocks/:blockId/responses",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       if (deps.blockResponses === undefined) {
@@ -2035,18 +2049,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       // Every response on file for this block, read once and filtered down
@@ -2056,7 +2070,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // form values is ever assembled into the response body.
       const rows = await deps.blockResponses.listBlockResponses(
         access.ownerTenantId,
-        channelId,
+        workbenchId,
         messageId,
         blockId,
       );
@@ -2069,7 +2083,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/messages/:messageId/reactions/toggle",
+    "/workbenches/:id/messages/:messageId/reactions/toggle",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       if (deps.reactions === undefined) {
@@ -2081,24 +2095,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
       if (
-        !(await messageExistsInChannel(
+        !(await messageExistsInWorkbench(
           deps.platform,
           ownerTenantId,
-          channelId,
+          workbenchId,
           messageId,
         ))
       ) {
@@ -2129,7 +2143,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const { added } = await deps.reactions.toggleReaction({
         tenantId: ownerTenantId,
-        channelId,
+        workbenchId,
         messageId,
         emoji: body.emoji,
         principalId: principal.id,
@@ -2137,12 +2151,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const rows = await deps.reactions.listReactionsForMessages(
         ownerTenantId,
-        channelId,
+        workbenchId,
         [messageId],
       );
       const count = rows.filter((row) => row.emoji === body.emoji).length;
 
-      publish(channelId, {
+      publish(workbenchId, {
         type: "chat.reaction",
         data: {
           messageId,
@@ -2157,7 +2171,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/messages/:messageId/pin",
+    "/workbenches/:id/messages/:messageId/pin",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
@@ -2166,24 +2180,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
       if (
-        !(await messageExistsInChannel(
+        !(await messageExistsInWorkbench(
           deps.platform,
           ownerTenantId,
-          channelId,
+          workbenchId,
           messageId,
         ))
       ) {
@@ -2192,12 +2206,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const row = await deps.pins.pinMessage({
         tenantId: ownerTenantId,
-        channelId,
+        workbenchId,
         messageId,
         pinnedBy: principal.id,
       });
 
-      publish(channelId, {
+      publish(workbenchId, {
         type: "chat.pin",
         data: {
           messageId,
@@ -2216,7 +2230,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.delete(
-    "/channels/:id/messages/:messageId/pin",
+    "/workbenches/:id/messages/:messageId/pin",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
@@ -2225,22 +2239,26 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
-      await deps.pins.unpinMessage(access.ownerTenantId, channelId, messageId);
+      await deps.pins.unpinMessage(
+        access.ownerTenantId,
+        workbenchId,
+        messageId,
+      );
 
-      publish(channelId, {
+      publish(workbenchId, {
         type: "chat.pin",
         data: { messageId, pinned: false },
       });
@@ -2250,7 +2268,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/pins",
+    "/workbenches/:id/pins",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       if (deps.pins === undefined) {
@@ -2259,25 +2277,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
 
-      const pins = await deps.pins.listPins(ownerTenantId, channelId);
+      const pins = await deps.pins.listPins(ownerTenantId, workbenchId);
       if (pins.length === 0) return c.json({ items: [] });
 
       const listed = await deps.platform.listMail({
         tenantId: ownerTenantId,
-        channelId,
+        workbenchId,
       });
       const byId = new Map(listed.items.map((item) => [item.id, item]));
 
@@ -2292,7 +2310,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               sender: senderOf(item.mail),
               parts: await decodeMail(item.mail, {
                 fetchBlob: (blobId) =>
-                  deps.platform.fetchBlob(channelId, blobId),
+                  deps.platform.fetchBlob(workbenchId, blobId),
               }),
               pinnedBy: pin.pinnedBy,
               pinnedAt: pin.pinnedAt.toISOString(),
@@ -2305,9 +2323,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
-  // The tenant-wide listing the new-chat dialog reads before any channel
-  // exists; the per-channel `/channels/:id/invitable` below serves the
-  // in-channel invite flow and insists its channel is real.
+  // The tenant-wide listing the new-chat dialog reads before any workbench
+  // exists; the per-workbench `/workbenches/:id/invitable` below serves the
+  // in-workbench invite flow and insists its workbench is real.
   app.get(
     "/invitable-definitions",
     deps.requireGrant("workflow-run:*", "read"),
@@ -2319,38 +2337,38 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/invitable",
+    "/workbenches/:id/invitable",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      const workbenchId = c.req.param("id");
+      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
       return c.json({ items: items.filter(deps.isInvitableDefinition) });
     },
   );
 
-  // Every one of the channel's own agent participants, each resolved
+  // Every one of the workbench's own agent participants, each resolved
   // back to its definition id — the settings surface's Assistant
   // section reads this before it can look up each definition's
-  // name/instructions through `@corbits/agent-directory`. A channel
+  // name/instructions through `@corbits/agent-directory`. A workbench
   // with several invited agents lists every one of them, not just the
   // first; a participant whose address no longer resolves to a live
   // definition is simply omitted rather than failing the whole list.
   app.get(
-    "/channels/:id/agents",
+    "/workbenches/:id/agents",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      const existing = await deps.store.getChannelSettings(
+      const workbenchId = c.req.param("id");
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const agentParticipants = participantsOf(existing.settings).filter(
@@ -2378,18 +2396,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
-  // Recomputes the given agent's `channel_launch` folded body from its
+  // Recomputes the given agent's `workbench_launch` folded body from its
   // definition's CURRENT `workflow.json` — the lever that makes an
   // edited system prompt reach an already-invited, already-running
-  // instance, since a wake replays whatever `channel_launch` holds
+  // instance, since a wake replays whatever `workbench_launch` holds
   // verbatim and never re-reads the asset itself (see
   // `ChatPlatform.refreshAgentInstanceFromDefinition`). The settings
   // surface calls this right after saving through
   // `@corbits/agent-directory`, so the change is live for this
-  // channel's agent from its next reply. A no-op (never errors) for an
+  // workbench's agent from its next reply. A no-op (never errors) for an
   // address this platform has no running instance for.
   app.post(
-    "/channels/:id/agents/refresh",
+    "/workbenches/:id/agents/refresh",
     deps.requireGrant(idResource("workflow-run", "id"), "update"),
     async (c) => {
       const body = RefreshAgentBody(await c.req.json().catch(() => undefined));
@@ -2401,10 +2419,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       await deps.platform.refreshAgentInstanceFromDefinition(
         tenant.id,
-        channelId,
+        workbenchId,
         body.address,
       );
       return c.json({ ok: true });
@@ -2412,7 +2430,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/invite",
+    "/workbenches/:id/invite",
     deps.requireGrant(idResource("workflow-run", "id"), "create"),
     async (c) => {
       const body = InviteAgentBody(await c.req.json().catch(() => undefined));
@@ -2425,14 +2443,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const existing = await deps.store.getChannelSettings(
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       try {
@@ -2441,7 +2459,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           {
             tenantId: tenant.id,
             principalId: principal.id,
-            channelId,
+            workbenchId,
             definitionId: body.definitionId,
             existingSettings: existing.settings,
             invitable: await deps.platform.listInvitableDefinitions(tenant.id),
@@ -2467,12 +2485,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // The removal counterpart to `POST .../invite` (and to the inline
   // join a chat's own creation runs): drops a participant record and,
   // for an invited agent, releases its launched instance — see
-  // `channel-service.ts`'s `removeChannelParticipant`. A chat's
+  // `workbench-service.ts`'s `removeWorkbenchParticipant`. A chat's
   // participants are fixed at creation exactly as `POST .../invite`
   // already refuses to grow them, so removal from a `kind: "chat"`
-  // channel is refused the same way, with the same 409 shape.
+  // workbench is refused the same way, with the same 409 shape.
   app.delete(
-    "/channels/:id/participants/:address",
+    "/workbenches/:id/participants/:address",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       const params = RemoveParticipantParams({
@@ -2490,14 +2508,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const existing = await deps.store.getChannelSettings(
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       if (kindOf(existing.settings) === "chat") {
@@ -2505,7 +2523,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ErrorEnvelope(
             "conflict",
             "a chat's participants are fixed at creation; removal is " +
-              "only for channels",
+              "only for workbenches",
           ),
           409,
         );
@@ -2518,7 +2536,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "participant not found"), 404);
       }
 
-      await removeChannelParticipant(
+      await removeWorkbenchParticipant(
         {
           store: deps.store,
           platform: deps.platform,
@@ -2528,7 +2546,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         {
           tenantId: tenant.id,
           principalId: principal.id,
-          channelId,
+          workbenchId,
           existingSettings: existing.settings,
           participant,
         },
@@ -2539,10 +2557,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/move",
+    "/workbenches/:id/move",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
-      const body = MoveChannelBody(await c.req.json().catch(() => undefined));
+      const body = MoveWorkbenchBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           ErrorEnvelope("bad_request", `invalid move body: ${body.summary}`),
@@ -2551,17 +2569,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
       // The move is only ever initiated from the bench that currently
-      // owns the channel — `getChannelSettings` scopes by `tenant.id`,
-      // so a caller cannot move a channel it does not already see.
-      const existing = await deps.store.getChannelSettings(
+      // owns the workbench — `getWorkbenchSettings` scopes by `tenant.id`,
+      // so a caller cannot move a workbench it does not already see.
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const principal = c.get("principal");
@@ -2573,13 +2591,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // against the destination tenant rather than the caller's own —
       // but re-checked from inside the very transaction that performs
       // the write, under row locks, rather than as a separate round
-      // trip beforehand (see `ChannelTenancyStore.moveChannelTenancy`).
-      // A caller with standing only in the channel's current bench can
+      // trip beforehand (see `WorkbenchTenancyStore.moveWorkbenchTenancy`).
+      // A caller with standing only in the workbench's current bench can
       // never move it into a tenant it has no authority over, and
       // nothing can revoke that authority in the gap between checking
       // it and acting on it, because there is no gap.
-      const outcome = await deps.tenancy.moveChannelTenancy({
-        channelId,
+      const outcome = await deps.tenancy.moveWorkbenchTenancy({
+        workbenchId,
         newParentTenantId: body.newParentTenantId,
         callerRefId: principal.refId,
       });
@@ -2589,7 +2607,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(
             ErrorEnvelope(
               "conflict",
-              "this channel predates the child-tenancy rollout and carries " +
+              "this workbench predates the child-tenancy rollout and carries " +
                 "no native tenant of its own; it cannot be moved until it " +
                 "is backfilled a tenancy",
             ),
@@ -2604,9 +2622,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(
             ErrorEnvelope(
               "conflict",
-              "the destination is this channel's own tenant, or a " +
+              "the destination is this workbench's own tenant, or a " +
                 "descendant of it; moving it there would make the " +
-                "channel its own ancestor",
+                "workbench its own ancestor",
             ),
             409,
           );
@@ -2621,7 +2639,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         case "moved":
           return c.json(
             {
-              channelId,
+              workbenchId,
               tenancy: {
                 tenantId: outcome.row.tenantId,
                 parentTenantId: outcome.row.parentTenantId,
@@ -2637,7 +2655,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const CreateShareBody = type({ projectedTenantId: "string" });
 
   app.post(
-    "/channels/:id/shares",
+    "/workbenches/:id/shares",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       const body = CreateShareBody(await c.req.json().catch(() => undefined));
@@ -2653,21 +2671,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
       // A share can only ever be created by the tenant that already
-      // owns the channel — the same ownership check `/move` runs.
-      const existing = await deps.store.getChannelSettings(
+      // owns the workbench — the same ownership check `/move` runs.
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const outcome = await deps.shares.createShare({
         owningTenantId: tenant.id,
-        channelId,
+        workbenchId,
         projectedTenantId: body.projectedTenantId,
         createdBy: principal.id,
       });
@@ -2686,7 +2704,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(
             ErrorEnvelope(
               "conflict",
-              "this channel is already shared with " + "that tenant",
+              "this workbench is already shared with " + "that tenant",
             ),
             409,
           );
@@ -2708,7 +2726,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(
             {
               owningTenantId: outcome.row.owningTenantId,
-              channelId: outcome.row.channelId,
+              workbenchId: outcome.row.workbenchId,
               projectedTenantId: outcome.row.projectedTenantId,
               createdBy: outcome.row.createdBy,
               createdAt: outcome.row.createdAt.toISOString(),
@@ -2722,7 +2740,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/shares",
+    "/workbenches/:id/shares",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       if (deps.shares === undefined) {
@@ -2730,21 +2748,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const existing = await deps.store.getChannelSettings(
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
-      const rows = await deps.shares.listSharesForChannel(tenant.id, channelId);
+      const rows = await deps.shares.listSharesForWorkbench(
+        tenant.id,
+        workbenchId,
+      );
       return c.json({
         items: rows.map((row) => ({
           owningTenantId: row.owningTenantId,
-          channelId: row.channelId,
+          workbenchId: row.workbenchId,
           projectedTenantId: row.projectedTenantId,
           createdBy: row.createdBy,
           createdAt: row.createdAt.toISOString(),
@@ -2754,7 +2775,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.delete(
-    "/channels/:id/shares/:projectedTenantId",
+    "/workbenches/:id/shares/:projectedTenantId",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       if (deps.shares === undefined) {
@@ -2762,20 +2783,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const projectedTenantId = c.req.param("projectedTenantId");
 
-      const existing = await deps.store.getChannelSettings(
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const revoked = await deps.shares.revokeShare(
         tenant.id,
-        channelId,
+        workbenchId,
         projectedTenantId,
       );
       if (!revoked) {
@@ -2788,7 +2809,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const AddShareMemberBody = type({ principalId: "string" });
 
   app.post(
-    "/channels/:id/share-members",
+    "/workbenches/:id/share-members",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       const body = AddShareMemberBody(
@@ -2809,36 +2830,36 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
       // Evaluated against the ACTING tenant, never the owning tenant —
       // this is the projected tenant's own admin managing their own
       // side. A share never widens grants: this route only ever inserts
-      // into `channel_share_member` for `projectedTenantId = tenant.id`,
+      // into `workbench_share_member` for `projectedTenantId = tenant.id`,
       // never touches the owning tenant's own participant list. Also
-      // doubles as "is this channel even shared with me" — a tenant
-      // with no share on this channel gets the same 404 a nonexistent
-      // channel would.
-      const share = await deps.shares.getShare(channelId, tenant.id);
+      // doubles as "is this workbench even shared with me" — a tenant
+      // with no share on this workbench gets the same 404 a nonexistent
+      // workbench would.
+      const share = await deps.shares.getShare(workbenchId, tenant.id);
       if (share === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const outcome = await deps.shares.addShareMember({
         projectedTenantId: tenant.id,
-        channelId,
+        workbenchId,
         principalId: body.principalId,
         addedBy: principal.id,
       });
       if (outcome === "no_share") {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       return c.json({ principalId: body.principalId }, 200);
     },
   );
 
   app.delete(
-    "/channels/:id/share-members/:principalId",
+    "/workbenches/:id/share-members/:principalId",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       if (deps.shares === undefined) {
@@ -2846,12 +2867,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       const principalId = c.req.param("principalId");
 
       const removed = await deps.shares.removeShareMember(
         tenant.id,
-        channelId,
+        workbenchId,
         principalId,
       );
       if (!removed) {
@@ -2863,7 +2884,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   async function withResolvedContextWindow(
     tenantId: string,
-    row: { channelId: string; settings: Record<string, unknown> },
+    row: { workbenchId: string; settings: Record<string, unknown> },
   ) {
     const bench = await deps.store.getBenchSettings(tenantId);
     const resolved = resolveContextWindow(
@@ -2871,7 +2892,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       benchContextWindowOf(bench?.settings ?? {}),
     );
     return {
-      ...channelView(row),
+      ...workbenchView(row),
       settings: row.settings,
       contextWindow: resolved,
     };
@@ -2926,33 +2947,33 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/settings",
+    "/workbenches/:id/settings",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
-      const channelId = c.req.param("id");
-      const row = await deps.store.getChannelSettings(tenant.id, channelId);
+      const workbenchId = c.req.param("id");
+      const row = await deps.store.getWorkbenchSettings(tenant.id, workbenchId);
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       return c.json(await withResolvedContextWindow(tenant.id, row));
     },
   );
 
   app.patch(
-    "/channels/:id/settings",
+    "/workbenches/:id/settings",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const existing = await deps.store.getChannelSettings(
+      const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
-        channelId,
+        workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       let patch: Record<string, unknown>;
@@ -2983,9 +3004,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // is updated before anything else here fires, so a failure
       // below never leaves the record unwritten and the audit trail
       // silently ahead of it.
-      const row = await deps.store.updateChannelSettings({
+      const row = await deps.store.updateWorkbenchSettings({
         tenantId: tenant.id,
-        channelId,
+        workbenchId,
         settings: merged,
         updatedBy: principal.id,
       });
@@ -2995,17 +3016,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // workflow used, then post each resulting event part into the
       // anchor's mailbox. A failure here is loud (unhandled), never
       // swallowed, since the timeline is the record of what changed.
-      const priorState: ChannelParticipantState = {
+      const priorState: WorkbenchParticipantState = {
         participants: participantsOf(existing.settings).map(
           (participant) => participant.address,
         ),
         settings: existing.settings,
       };
-      const controlPayloadBase: ChannelControlPayload = {
-        namespace: CHANNEL_CONTROL_NAMESPACE,
+      const controlPayloadBase: WorkbenchControlPayload = {
+        namespace: WORKBENCH_CONTROL_NAMESPACE,
         settings: patch,
       };
-      const controlPayload: ChannelControlPayload =
+      const controlPayload: WorkbenchControlPayload =
         patch["chat/participants"] !== undefined
           ? {
               ...controlPayloadBase,
@@ -3022,13 +3043,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       for (const event of events) {
         await deps.platform.sendMail({
           tenantId: tenant.id,
-          channelId,
+          workbenchId,
           principalId: principal.id,
           content: encodeParts([event]),
         });
       }
 
-      publish(channelId, {
+      publish(workbenchId, {
         type: "chat.settings",
         data: { updatedBy: principal.id, settings: row.settings },
       });
@@ -3038,24 +3059,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/read-state",
+    "/workbenches/:id/read-state",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
-      const access = await resolveChannelAccess(
+      const workbenchId = c.req.param("id");
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
       const row = await deps.store.getReadState(
         access.ownerTenantId,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (row === undefined) {
@@ -3069,7 +3090,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.put(
-    "/channels/:id/read-state",
+    "/workbenches/:id/read-state",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const body = PutReadStateBody(await c.req.json().catch(() => undefined));
@@ -3085,21 +3106,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
 
-      const access = await resolveChannelAccess(
+      const access = await resolveWorkbenchAccess(
         deps,
         tenant.id,
-        channelId,
+        workbenchId,
         principal.id,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const row = await deps.store.putReadState({
         tenantId: access.ownerTenantId,
-        channelId,
+        workbenchId,
         principalId: principal.id,
         lastSeenCreatedAt: new Date(body.lastSeenCreatedAt),
         lastSeenId: body.lastSeenId,
@@ -3113,23 +3134,23 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.post(
-    "/channels/:id/typing",
+    "/workbenches/:id/typing",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       if (
-        (await resolveChannelAccess(
+        (await resolveWorkbenchAccess(
           deps,
           tenant.id,
-          channelId,
+          workbenchId,
           principal.id,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
-      publish(channelId, {
+      publish(workbenchId, {
         type: "chat.typing",
         data: { principalId: principal.id },
       });
@@ -3138,33 +3159,36 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
-    "/channels/:id/stream",
+    "/workbenches/:id/stream",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const channelId = c.req.param("id");
+      const workbenchId = c.req.param("id");
       if (
-        (await resolveChannelAccess(
+        (await resolveWorkbenchAccess(
           deps,
           tenant.id,
-          channelId,
+          workbenchId,
           principal.id,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       return streamSSE(c, async (stream) => {
-        const unbridge = bridgeChannelStream({
+        const unbridge = bridgeWorkbenchStream({
           registry,
           platform: platformEvents,
-          channelId,
+          workbenchId,
           stream,
           authorize: () =>
-            resolveChannelAccess(deps, tenant.id, channelId, principal.id).then(
-              (access) => access !== undefined,
-            ),
+            resolveWorkbenchAccess(
+              deps,
+              tenant.id,
+              workbenchId,
+              principal.id,
+            ).then((access) => access !== undefined),
         });
         stream.onAbort(unbridge);
         await new Promise<void>(() => undefined);

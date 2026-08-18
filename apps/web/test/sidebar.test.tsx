@@ -69,7 +69,7 @@ function stubFetch(needsYou: unknown = { items: [] }): void {
 
 describe("Sidebar", () => {
   test("header offers create + search; there is no collapse affordance", () => {
-    const markup = renderSidebar("/c");
+    const markup = renderSidebar("/w");
     expect(markup).toContain('aria-label="New workbench"');
     // Search is the box inside the list (below the brand row), never a
     // header icon — the box itself is covered by the workbench-list tests.
@@ -88,7 +88,7 @@ describe("Sidebar", () => {
   });
 
   test("footer is Plugins, Insights, then the account row — no Inbox", () => {
-    const markup = renderSidebar("/c");
+    const markup = renderSidebar("/w");
     expect(markup).toContain("shell-sidebar-footer-row");
     expect(markup).toContain(">Plugins<");
     expect(markup).toContain(">Insights<");
@@ -104,7 +104,7 @@ describe("Sidebar", () => {
     expect(onPlugins).toMatch(
       /shell-sidebar-footer-row"[^>]*aria-current="page"/,
     );
-    const elsewhere = renderSidebar("/c");
+    const elsewhere = renderSidebar("/w");
     expect(elsewhere).not.toMatch(
       /shell-sidebar-footer-row"[^>]*aria-current="page"/,
     );
@@ -117,22 +117,22 @@ describe("Sidebar", () => {
   // the same on these routes as it does on a chat route, just with no row
   // marked active.
   describe("the workbench list on global pages", () => {
-    const channel = {
+    const workbench = {
       id: "ch_1",
       title: "Research brief",
-      kind: "channel",
+      kind: "workbench",
       pinned: false,
       participants: [],
     };
 
-    function stubChannels(): void {
+    function stubWorkbenches(): void {
       globalThis.fetch = ((input: RequestInfo | URL) => {
         const path = typeof input === "string" ? input : String(input);
         if (path.includes("/api/me/principals"))
           return Promise.resolve(json(membership));
-        if (path.includes("/chat/channels?kind=channel"))
-          return Promise.resolve(json({ items: [channel] }));
-        if (path.includes("/chat/channels?kind=chat"))
+        if (path.includes("/chat/workbenches?kind=workbench"))
+          return Promise.resolve(json({ items: [workbench] }));
+        if (path.includes("/chat/workbenches?kind=chat"))
           return Promise.resolve(json({ items: [] }));
         if (path.includes("/approvals/needs-you"))
           return Promise.resolve(json({ items: [] }));
@@ -151,7 +151,7 @@ describe("Sidebar", () => {
       container: HTMLDivElement;
       root: ReturnType<typeof createRoot>;
     }> {
-      stubChannels();
+      stubWorkbenches();
       const container = document.createElement("div");
       document.body.appendChild(container);
       const root = createRoot(container);
@@ -207,7 +207,7 @@ describe("Sidebar", () => {
       await act(async () => {
         row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
-      expect(navigated).toEqual(["/c/ch_1"]);
+      expect(navigated).toEqual(["/w/ch_1"]);
 
       act(() => root.unmount());
       container.remove();
@@ -219,10 +219,10 @@ describe("Sidebar", () => {
   // recency-sorted stream, mixed in via `buildSidebarRows`
   // (`./shell/sidebar-rows.ts`).
   describe("agent DM rows", () => {
-    const channel = {
+    const workbench = {
       id: "ch_1",
       title: "Research brief",
-      kind: "channel",
+      kind: "workbench",
       pinned: false,
       participants: [],
       lastActivityAt: "2026-01-01T00:00:00.000Z",
@@ -247,7 +247,7 @@ describe("Sidebar", () => {
     ): void {
       globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
         const path = typeof input === "string" ? input : String(input);
-        if (init?.method === "POST" && path.includes("/chat/channels")) {
+        if (init?.method === "POST" && path.includes("/chat/workbenches")) {
           onPost?.(path, JSON.parse(String(init.body)));
           return Promise.resolve(
             json({
@@ -261,9 +261,9 @@ describe("Sidebar", () => {
         }
         if (path.includes("/api/me/principals"))
           return Promise.resolve(json(membership));
-        if (path.includes("/chat/channels?kind=channel"))
-          return Promise.resolve(json({ items: [channel] }));
-        if (path.includes("/chat/channels?kind=chat"))
+        if (path.includes("/chat/workbenches?kind=workbench"))
+          return Promise.resolve(json({ items: [workbench] }));
+        if (path.includes("/chat/workbenches?kind=chat"))
           return Promise.resolve(json({ items: [] }));
         if (path.includes("/agent-definitions/visible"))
           return Promise.resolve(
@@ -291,7 +291,7 @@ describe("Sidebar", () => {
           <TestQueryProvider>
             <BenchProvider>
               <Sidebar
-                path="/c"
+                path="/w"
                 user={user}
                 onNavigate={onNavigate}
                 onSignOut={noop}
@@ -315,7 +315,7 @@ describe("Sidebar", () => {
 
       const rows = [...container.querySelectorAll(".shell-ch-row")];
       const labels = rows.map((row) => row.textContent ?? "");
-      // Own agent (created 2026-01-05) is newer than the channel's own
+      // Own agent (created 2026-01-05) is newer than the workbench's own
       // last activity (2026-01-01); the inherited agent (2026-01-02)
       // sorts between them — one stream, not two sections.
       expect(labels[0]).toContain("Outreach");
@@ -358,13 +358,13 @@ describe("Sidebar", () => {
       });
 
       expect(posted).toHaveLength(1);
-      expect(posted[0]?.path).toContain("/api/tenants/tnt_1/chat/channels");
+      expect(posted[0]?.path).toContain("/api/tenants/tnt_1/chat/workbenches");
       expect(posted[0]?.body).toEqual({
         kind: "chat",
         definitionId: "wfd_outreach",
         reuseExisting: true,
       });
-      expect(navigated).toEqual(["/c/ch_dm_outreach"]);
+      expect(navigated).toEqual(["/w/ch_dm_outreach"]);
 
       act(() => root.unmount());
       container.remove();
@@ -408,7 +408,7 @@ describe("Sidebar", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <Sidebar path="/c" user={user} onNavigate={noop} onSignOut={noop} />
+            <Sidebar path="/w" user={user} onNavigate={noop} onSignOut={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -451,7 +451,7 @@ describe("Sidebar", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <Sidebar path="/c" user={user} onNavigate={noop} onSignOut={noop} />
+            <Sidebar path="/w" user={user} onNavigate={noop} onSignOut={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -519,7 +519,7 @@ describe("Sidebar", () => {
           <TestQueryProvider>
             <BenchProvider>
               <Sidebar
-                path="/c"
+                path="/w"
                 user={user}
                 onNavigate={noop}
                 onSignOut={onSignOut}

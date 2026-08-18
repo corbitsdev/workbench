@@ -1,9 +1,9 @@
 // CL-6137: proves the unprompted greeting (CL-6126) actually lands in
 // a chat's timeline on a real mint — not merely that the mint request
 // itself succeeds. `dispatchGreetingKickoff` fires fire-and-forget
-// right after `launchAndJoinAgent` in `POST /channels`
+// right after `launchAndJoinAgent` in `POST /workbenches`
 // (`packages/chat/src/routes.ts`); this suite is the only coverage
-// that proves the kickoff's mail actually turns into a channel
+// that proves the kickoff's mail actually turns into a workbench
 // message an agent-authored, not merely that the route returns 201.
 //
 // Mirrors `local-rip.test.ts`'s phase A (onboard → connect a real
@@ -14,7 +14,7 @@
 // stub key dialing the real Anthropic host, whose 401 folds into a
 // completed turn carrying a self-describing credential-error report
 // (`vendor/intx/inference/src/default-director.ts`). That report
-// landing in the channel with zero user messages sent is exactly as
+// landing in the workbench with zero user messages sent is exactly as
 // good a proof the kickoff fired as a real reply would be, and
 // requires no paid key.
 
@@ -125,7 +125,7 @@ async function signUp(
 describe.skipIf(databaseUrl === undefined)(
   "greeting delivery: a real mint's agent speaks first with no human message",
   () => {
-    test("POST /channels kind=chat delivers an agent-authored message with zero user sends", async () => {
+    test("POST /workbenches kind=chat delivers an agent-authored message with zero user sends", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -342,7 +342,7 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       const { chatId, agentAddress } = await hop(
-        "POST /channels kind=chat definitionId=assistant mints a chat with its one agent already joined",
+        "POST /workbenches kind=chat definitionId=assistant mints a chat with its one agent already joined",
         async () => {
           const deadline = Date.now() + 60_000;
           let res: ApiResult;
@@ -355,7 +355,7 @@ describe.skipIf(databaseUrl === undefined)(
             res = await api(
               hub.baseUrl,
               "POST",
-              `/api/tenants/${tenant.tenantId}/chat/channels`,
+              `/api/tenants/${tenant.tenantId}/chat/workbenches`,
               { kind: "chat", definitionId: assistantDefinitionId },
               user.cookies,
             );
@@ -405,7 +405,7 @@ describe.skipIf(databaseUrl === undefined)(
             const res = await api(
               hub.baseUrl,
               "GET",
-              `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+              `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
               undefined,
               user.cookies,
             );
@@ -486,7 +486,7 @@ describe.skipIf(databaseUrl === undefined)(
             const sent = await api(
               hub.baseUrl,
               "POST",
-              `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+              `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
               {
                 parts: [
                   {
@@ -504,7 +504,7 @@ describe.skipIf(databaseUrl === undefined)(
               const res = await api(
                 hub.baseUrl,
                 "GET",
-                `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+                `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
                 undefined,
                 user.cookies,
               );

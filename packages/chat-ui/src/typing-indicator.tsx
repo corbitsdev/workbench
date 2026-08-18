@@ -1,9 +1,9 @@
 // Presentational typing indicator plus the pure rules that decide whether
 // one is showing, and the stateful hook that drives them off the live
 // stream. The wire event it renders already exists end-to-end —
-// `POST /channels/:id/typing` (packages/chat/src/routes.ts) publishes
-// `chat.typing` with `{ principalId }`, and `useChannelStream` already
-// forwards that event type (see use-channel-stream.ts) — so this is wiring
+// `POST /workbenches/:id/typing` (packages/chat/src/routes.ts) publishes
+// `chat.typing` with `{ principalId }`, and `useWorkbenchStream` already
+// forwards that event type (see use-workbench-stream.ts) — so this is wiring
 // an existing read, not new realtime backend.
 
 import { useEffect, useRef, useState } from "react";
@@ -81,14 +81,14 @@ export function typingLabel(
 /**
  * Owns the typing banner's state end to end: feed it every stream event
  * (`chat-workspace.tsx` already sees them all) and it tracks the latest
- * `chat.typing` ping, expiring it on its own timer. `channelId` resets the
- * banner immediately on a channel switch — a ping from the channel just
+ * `chat.typing` ping, expiring it on its own timer. `workbenchId` resets the
+ * banner immediately on a workbench switch — a ping from the workbench just
  * left means nothing here, and its principal id may not even resolve to
  * the same participant in the new one.
  */
 export function useTypingIndicator(
   selfPrincipalId: string | undefined,
-  channelId: string | null,
+  workbenchId: string | null,
   timeoutMs: number = TYPING_INDICATOR_TIMEOUT_MS,
 ): {
   readonly typingState: TypingState;
@@ -105,12 +105,12 @@ export function useTypingIndicator(
   }
 
   // Cleanup runs both on unmount and right before this effect re-fires for
-  // a new channelId, so one effect covers the channel-switch reset and the
+  // a new workbenchId, so one effect covers the workbench-switch reset and the
   // unmount guard against a stray setState.
   useEffect(() => {
     setTypingState(null);
     return clearTimer;
-  }, [channelId]);
+  }, [workbenchId]);
 
   function handleStreamEvent(eventType: string, data: unknown) {
     const now = Date.now();
@@ -164,7 +164,10 @@ export function AgentTypingIndicator({
 }) {
   if (names.length === 0) return null;
   return (
-    <div className="chat-typing-indicator chat-agent-typing-indicator" role="status">
+    <div
+      className="chat-typing-indicator chat-agent-typing-indicator"
+      role="status"
+    >
       <span className="chat-agent-typing-avatars">
         {names.map((name) => (
           <span key={name} className="chat-agent-typing-avatar" title={name}>

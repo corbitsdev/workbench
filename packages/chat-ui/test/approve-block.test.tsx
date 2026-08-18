@@ -20,7 +20,7 @@ import type {
   PlatformApprovalDetail,
 } from "../src/blocks/approval-actions";
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 const PLATFORM_DETAIL: PlatformApprovalDetail = {
   agentName: "Payments Bot",
@@ -109,7 +109,7 @@ async function mount(actions: ApprovalActions, approvalId = "apv_1") {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithApproveBlock(approvalId)}
         approvalActions={actions}
       />,

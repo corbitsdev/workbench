@@ -1,7 +1,7 @@
 // Chat workspace: the host resolves which bench the signed-in
-// account chats in, loads its channels and deployed agents, and wires the
-// timeline and composer together for whichever channel is
-// selected. Channel list lives in the shell contextual panel — this
+// account chats in, loads its workbenches and deployed agents, and wires the
+// timeline and composer together for whichever workbench is
+// selected. Workbench list lives in the shell contextual panel — this
 // surface is the active conversation only.
 //
 // Resolving *which* bench that is is host-specific (it rides on
@@ -29,12 +29,12 @@ import type { ReactNode } from "react";
 
 import {
   ChatApiError,
-  channelsQueryKey,
-  channelsQueryKeyPrefix,
+  workbenchesQueryKey,
+  workbenchesQueryKeyPrefix,
   describeChatError,
   forkThread,
   inviteAgent,
-  listChannels,
+  listWorkbenches,
   listInvitableDefinitions,
   listMessages,
   listPinnedMessages,
@@ -45,19 +45,19 @@ import {
   sendMessage,
   toggleReaction,
   unpinMessage,
-  channelStreamUrl,
-  isKnownChannelKind,
+  workbenchStreamUrl,
+  isKnownWorkbenchKind,
 } from "./api";
 import type {
-  Channel,
-  ChannelThread,
+  Workbench,
+  WorkbenchThread,
   MessageItem,
   ParticipantRecord,
   Part,
   PinnedMessage,
 } from "./api";
-import { ChannelSettingsSurface } from "./channel-settings";
-import type { ChannelSettingsSectionId } from "./channel-settings";
+import { WorkbenchSettingsSurface } from "./workbench-settings";
+import type { WorkbenchSettingsSectionId } from "./workbench-settings";
 import { Composer, partsForSend } from "./composer";
 import type {
   ComposerAttachment,
@@ -72,7 +72,7 @@ import { CHAT_STRINGS } from "./strings";
 import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
-import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
+import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
 import type {
   CurrentUser,
   PendingMessageStatus,
@@ -91,7 +91,7 @@ import {
   useTypingIndicator,
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
-import { useChannelStream } from "./use-channel-stream";
+import { useWorkbenchStream } from "./use-workbench-stream";
 
 /**
  * The host's answer to "which bench does this account chat in": mirrors
@@ -107,7 +107,7 @@ export type TenantResolution =
   | { readonly kind: "ready"; readonly tenantId: string };
 
 /**
- * One live presence entry for the channel's who's-here stack — deliberately
+ * One live presence entry for the workbench's who's-here stack — deliberately
  * a plain data shape, not `@corbits/presence`'s own type: this package
  * never depends on presence, the same way it never depends on any other
  * domain package it's merely handed data from. The host composes the real
@@ -137,10 +137,10 @@ export const TEAM_AVATAR_STACK_LIMIT = 6;
 
 /**
  * Every currently-active member of the workbench, for the header's
- * overlapping avatar stack: every agent participant on the channel (agents
+ * overlapping avatar stack: every agent participant on the workbench (agents
  * are always "active" — they have no presence concept of their own) plus
  * every human currently reflected in live presence. Agents first since
- * they're a channel's stable roster; humans are who's here right now.
+ * they're a workbench's stable roster; humans are who's here right now.
  */
 export function buildTeamAvatarStack(
   participants: readonly ParticipantRecord[],
@@ -164,13 +164,13 @@ export function buildTeamAvatarStack(
   return [...agents, ...humans];
 }
 
-type ChannelsState =
+type WorkbenchesState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
   | {
       readonly kind: "ready";
-      readonly channels: readonly Channel[];
-      readonly chats: readonly Channel[];
+      readonly workbenches: readonly Workbench[];
+      readonly chats: readonly Workbench[];
     };
 
 export type MessagesState =
@@ -178,10 +178,10 @@ export type MessagesState =
   | {
       readonly kind: "error";
       readonly message: string;
-      /** The channel itself 404s, not just this load — retrying with the
+      /** The workbench itself 404s, not just this load — retrying with the
        * same id can never succeed, so the UI trades "Try again" for an
        * honest way out instead. */
-      readonly channelNotFound: boolean;
+      readonly workbenchNotFound: boolean;
       /** A 401 means the session itself is gone — "Try again" would hit
        * the same 401 forever, so the UI offers a way to sign back in
        * instead of a retry that can never succeed. */
@@ -194,7 +194,7 @@ export type MessagesLoadOutcome =
   | {
       readonly kind: "error";
       readonly message: string;
-      readonly channelNotFound: boolean;
+      readonly workbenchNotFound: boolean;
       readonly isUnauthorized: boolean;
     };
 
@@ -202,7 +202,7 @@ export type MessagesLoadOutcome =
  * A background refresh (SSE/poll) never shows the loading skeleton and
  * never replaces a `ready` timeline with an error page — it only ever moves
  * `ready` state forward on success, and otherwise leaves whatever was on
- * screen untouched. A foreground load (first load or channel switch)
+ * screen untouched. A foreground load (first load or workbench switch)
  * always reflects the outcome directly.
  */
 export function nextMessagesState(
@@ -217,45 +217,45 @@ export function nextMessagesState(
   return {
     kind: "error",
     message: outcome.message,
-    channelNotFound: outcome.channelNotFound,
+    workbenchNotFound: outcome.workbenchNotFound,
     isUnauthorized: outcome.isUnauthorized,
   };
 }
 
 /**
  * A chat's agent is fixed at creation — the server 409s an invite into one
- * — so the "invite agent" affordance only ever makes sense on a channel or
- * on a kind this UI doesn't otherwise recognize. Undefined (no channel
+ * — so the "invite agent" affordance only ever makes sense on a workbench or
+ * on a kind this UI doesn't otherwise recognize. Undefined (no workbench
  * resolved yet) defaults to showing it.
  */
 export function canInviteAgent(kind: string | undefined): boolean {
   if (kind === undefined) return true;
-  return !isKnownChannelKind(kind) || kind !== "chat";
+  return !isKnownWorkbenchKind(kind) || kind !== "chat";
 }
 
 /**
  * The composer's placeholder reads as a direct message once the active
  * surface is a chat, naming its one counterpart — a chat's title always
  * defaults to that counterpart's name at creation (see `routes.ts`'s
- * `POST /channels`), so it's always the right word here even when the
- * counterpart is a person, not an agent. A channel (or a surface that
+ * `POST /workbenches`), so it's always the right word here even when the
+ * counterpart is a person, not an agent. A workbench (or a surface that
  * hasn't resolved yet) keeps the generic, mention-driven copy.
  */
 export function composerPlaceholderFor(
-  channel:
+  workbench:
     | {
         readonly kind: string;
         readonly title: string;
       }
     | undefined,
 ): string {
-  if (channel === undefined || channel.kind !== "chat") {
+  if (workbench === undefined || workbench.kind !== "chat") {
     return CHAT_STRINGS.composerPlaceholder;
   }
   const counterpart =
-    channel.title.trim().length > 0
-      ? channel.title
-      : CHAT_STRINGS.unnamedChannel;
+    workbench.title.trim().length > 0
+      ? workbench.title
+      : CHAT_STRINGS.unnamedWorkbench;
   return CHAT_STRINGS.composerPlaceholderChat(counterpart);
 }
 
@@ -264,7 +264,7 @@ export function composerPlaceholderFor(
  *
  * - Open reply/delivery thread → that thread's membership only
  * - Brand-new reply (pending parent, no thread yet) → empty
- * - Channel root feed → the channel's root thread only (never full channel
+ * - Workbench root feed → the workbench's root thread only (never full workbench
  *   mail, which mixes reply-thread messages into the root timeline)
  * - Threads API unavailable (empty rootThreadId) → full mailbox fallback
  */
@@ -272,7 +272,7 @@ export type MessageFeedTarget =
   | { readonly kind: "thread"; readonly threadId: string }
   | { readonly kind: "empty" }
   | { readonly kind: "root-thread"; readonly rootThreadId: string }
-  | { readonly kind: "channel-mail" };
+  | { readonly kind: "workbench-mail" };
 
 export function resolveMessageFeedTarget(args: {
   readonly openThreadId: string | null;
@@ -288,7 +288,7 @@ export function resolveMessageFeedTarget(args: {
   if (args.rootThreadId !== null && args.rootThreadId !== "") {
     return { kind: "root-thread", rootThreadId: args.rootThreadId };
   }
-  return { kind: "channel-mail" };
+  return { kind: "workbench-mail" };
 }
 
 function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
@@ -330,8 +330,8 @@ export function resetPendingSendNonceForTests(): void {
 /** Random per-page-load prefix: a pending nonce doubles as the message's
  * wire `clientId` (CL-6251), which the server persists — a bare counter
  * would repeat `pending_1` on every reload, colliding with a prior
- * session's stored clientId in the same channel (wrong-message matches
- * in `mergePendingSends`, duplicate React keys in `ChannelTimeline`). */
+ * session's stored clientId in the same workbench (wrong-message matches
+ * in `mergePendingSends`, duplicate React keys in `WorkbenchTimeline`). */
 const pendingSendSession = Math.random().toString(36).slice(2, 10);
 
 function nextPendingSendNonce(): string {
@@ -356,7 +356,7 @@ export function pendingSenderAddress(
  * Folds this workspace's own still-in-flight sends onto the end of the
  * server's message list, oldest-first like the rest of the timeline —
  * one message list, rendered through the exact same path as any
- * confirmed message (`ChannelTimeline`'s `MessageParts`), never a
+ * confirmed message (`WorkbenchTimeline`'s `MessageParts`), never a
  * separate visually-distinct tier. `pendingStatus`/`pendingNonce` are
  * the only markers that distinguish it: a small "sending" clock glyph,
  * or (once failed) an inline retry row — see `TimelineMessageItem`.
@@ -364,7 +364,7 @@ export function pendingSenderAddress(
  * A pending send's `nonce` doubles as the `clientId` it sent on the wire
  * (see `sendPending`) and is carried onto the synthetic item's own
  * `clientId` too, so it keys identically to whichever confirmed message
- * later reconciles it — `ChannelTimeline` renders both under the same
+ * later reconciles it — `WorkbenchTimeline` renders both under the same
  * React key, updating one DOM node in place rather than unmounting a
  * pending bubble and mounting an unrelated confirmed one.
  *
@@ -418,8 +418,8 @@ const STREAMING_REPLY_ITEM_ID = "streaming_reply";
  * sends — except this synthetic item is the *other* side's message, so it
  * needs a sender to attribute it to. `chat.agent` events carry no sender
  * (the raw `InferenceEvent` union has no such field, see
- * `streaming-reply.ts`), so this picks the channel's first agent
- * participant as the best available attribution; channels with more than
+ * `streaming-reply.ts`), so this picks the workbench's first agent
+ * participant as the best available attribution; workbenches with more than
  * one invited agent are a known approximation here, not a regression —
  * today's non-streaming refetch has the same "which agent replied" gap
  * until the persisted message's real sender lands.
@@ -478,53 +478,53 @@ export function appendReplyTimedOutNotice(
 }
 
 /**
- * Records one channel's scroll snapshot into the map, pure — a fresh `Map`
+ * Records one workbench's scroll snapshot into the map, pure — a fresh `Map`
  * copy rather than a mutation, so `scrollSnapshotsRef.current` always holds
  * exactly the value this function returned, never a same-reference object
  * mutated out from under a caller still holding the old one.
  */
 export function withScrollSnapshot(
   snapshots: ReadonlyMap<string, ScrollSnapshot>,
-  channelId: string,
+  workbenchId: string,
   snapshot: ScrollSnapshot,
 ): ReadonlyMap<string, ScrollSnapshot> {
   const next = new Map(snapshots);
-  next.set(channelId, snapshot);
+  next.set(workbenchId, snapshot);
   return next;
 }
 
 /**
- * Channels and chats via TanStack Query, keyed with `channelsQueryKey` —
+ * Workbenches and chats via TanStack Query, keyed with `workbenchesQueryKey` —
  * the same key `apps/web`'s shell bands and command palette use, so this
  * sidebar shares one in-flight fetch per (tenantId, kind) with the rest of
  * the shell rather than firing its own independent request on every mount.
  */
-function useChannelLists(tenantId: string) {
-  const channels = useQuery({
-    queryKey: channelsQueryKey(tenantId, "channel"),
-    queryFn: () => listChannels(tenantId, "channel"),
+function useWorkbenchLists(tenantId: string) {
+  const workbenches = useQuery({
+    queryKey: workbenchesQueryKey(tenantId, "workbench"),
+    queryFn: () => listWorkbenches(tenantId, "workbench"),
   });
   const chats = useQuery({
-    queryKey: channelsQueryKey(tenantId, "chat"),
-    queryFn: () => listChannels(tenantId, "chat"),
+    queryKey: workbenchesQueryKey(tenantId, "chat"),
+    queryFn: () => listWorkbenches(tenantId, "chat"),
   });
 
   const reload = useCallback(async () => {
-    await Promise.all([channels.refetch(), chats.refetch()]);
-  }, [channels.refetch, chats.refetch]);
+    await Promise.all([workbenches.refetch(), chats.refetch()]);
+  }, [workbenches.refetch, chats.refetch]);
 
   // Referentially stable across renders that don't actually change the
   // underlying data — a fresh object literal here every render would make
-  // `channelsState` look "changed" to every effect that depends on it
-  // (the auto-select-first-channel effect below included), firing them on
-  // every unrelated re-render rather than only when channels/chats data
+  // `workbenchesState` look "changed" to every effect that depends on it
+  // (the auto-select-first-workbench effect below included), firing them on
+  // every unrelated re-render rather than only when workbenches/chats data
   // itself moves.
-  const state: ChannelsState = useMemo(() => {
-    if (channels.isError) {
+  const state: WorkbenchesState = useMemo(() => {
+    if (workbenches.isError) {
       return {
         kind: "error",
         message: describeChatError(
-          channels.error,
+          workbenches.error,
           "Couldn't load workbenches.",
         ),
       };
@@ -535,14 +535,14 @@ function useChannelLists(tenantId: string) {
         message: describeChatError(chats.error, "Couldn't load workbenches."),
       };
     }
-    if (channels.data === undefined || chats.data === undefined) {
+    if (workbenches.data === undefined || chats.data === undefined) {
       return { kind: "loading" };
     }
-    return { kind: "ready", channels: channels.data, chats: chats.data };
+    return { kind: "ready", workbenches: workbenches.data, chats: chats.data };
   }, [
-    channels.isError,
-    channels.error,
-    channels.data,
+    workbenches.isError,
+    workbenches.error,
+    workbenches.data,
     chats.isError,
     chats.error,
     chats.data,
@@ -553,8 +553,8 @@ function useChannelLists(tenantId: string) {
 
 function ChatWorkspaceInner({
   tenantId,
-  channelId: controlledChannelId,
-  onChannelChange,
+  workbenchId: controlledWorkbenchId,
+  onWorkbenchChange,
   currentUser,
   onOpenProfile,
   settingsOpen = false,
@@ -573,18 +573,18 @@ function ChatWorkspaceInner({
   onCreateRoutineInSpace,
   onOpenInsights,
   presenceMembers,
-  onChannelNotFound,
-  onBackToChannelList,
+  onWorkbenchNotFound,
+  onBackToWorkbenchList,
   onSignIn,
 }: {
   readonly tenantId: string;
-  readonly channelId?: string | null;
-  readonly onChannelChange?: (channelId: string) => void;
+  readonly workbenchId?: string | null;
+  readonly onWorkbenchChange?: (workbenchId: string) => void;
   readonly currentUser?: CurrentUser;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
-  /** Whether the routed channel's settings surface should replace the
-   * conversation stage (mock § Channel settings — a full surface, never a
-   * dialog). Host-controlled the same way `channelId` is: driven from the
+  /** Whether the routed workbench's settings surface should replace the
+   * conversation stage (mock § Workbench settings — a full surface, never a
+   * dialog). Host-controlled the same way `workbenchId` is: driven from the
    * URL (`/c/:id/settings`). */
   readonly settingsOpen?: boolean;
   /** Fired when the settings surface should open or close. `section` is
@@ -594,26 +594,26 @@ function ChatWorkspaceInner({
    * navigation for the section. */
   readonly onSettingsOpenChange?: (
     open: boolean,
-    section?: ChannelSettingsSectionId,
+    section?: WorkbenchSettingsSectionId,
   ) => void;
-  /** Which channel settings tab is active while the surface is open —
+  /** Which workbench settings tab is active while the surface is open —
    * host-controlled the same way `settingsOpen` is, driven from the URL
    * (`/c/:id/settings/:section`). */
-  readonly settingsSection?: ChannelSettingsSectionId;
+  readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
   readonly onSettingsSectionChange?: (
-    section: ChannelSettingsSectionId,
+    section: WorkbenchSettingsSectionId,
   ) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
-  /** See `ChannelTimeline`'s `onFixConnection` (CL-6092). */
+  /** See `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
   readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly headerLeading?: ReactNode;
   /**
-   * Hands the host a function that inserts text into the active channel's
+   * Hands the host a function that inserts text into the active workbench's
    * composer, or `null` while no composer is mounted (loading/error states,
    * settings surface). The profile card's Mention action (CL-5914) is the
    * first caller — a shell-level seam, so the host stores the latest
@@ -636,14 +636,14 @@ function ChatWorkspaceInner({
   /**
    * "New routine in this space" — the header button and the composer's
    * `/routine` command: opens the New Routine panel with the active
-   * channel pre-bound as its destination. Host-supplied so the panel's
+   * workbench pre-bound as its destination. Host-supplied so the panel's
    * own route (and its prefill store) stays owned by the host, the same
-   * way `onOpenRoutines` is; the active channel id is closed over here
+   * way `onOpenRoutines` is; the active workbench id is closed over here
    * rather than passed as an argument, since only this component knows
    * it. Omitted, the button and command are hidden — the same
    * "no dead promise" contract `onOpenRoutines` follows.
    */
-  readonly onCreateRoutineInSpace?: (channelId: string) => void;
+  readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
   /**
    * "Insights for this workbench" — the header button that deep-links to
    * this tenant's own Insights scope (CL-6099). Host-supplied so the
@@ -655,65 +655,65 @@ function ChatWorkspaceInner({
   readonly onOpenInsights?: () => void;
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
-  /** Fired when the routed channel 404s — a deleted channel, or a stale
+  /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
-  readonly onChannelNotFound?: (channelId: string) => void;
-  /** The dead-channel empty state's way out — navigate to the bare channel
+  readonly onWorkbenchNotFound?: (workbenchId: string) => void;
+  /** The dead-workbench empty state's way out — navigate to the bare workbench
    * list instead of retrying an id that can never resolve. */
-  readonly onBackToChannelList?: () => void;
+  readonly onBackToWorkbenchList?: () => void;
   /** The 401 messages-error state's way out — sign back in instead of a
    * retry that can only ever hit the same 401. Omitted, that state falls
    * back to no action at all (never "Try again" for a session that's gone). */
   readonly onSignIn?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const refreshChannelLists = useCallback(() => {
+  const refreshWorkbenchLists = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: channelsQueryKeyPrefix(tenantId),
+      queryKey: workbenchesQueryKeyPrefix(tenantId),
     });
   }, [queryClient, tenantId]);
-  const { state: channelsState, reload: reloadChannels } =
-    useChannelLists(tenantId);
-  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+  const { state: workbenchesState, reload: reloadWorkbenches } =
+    useWorkbenchLists(tenantId);
+  const [selectedWorkbenchId, setSelectedWorkbenchId] = useState<string | null>(
     null,
   );
-  const activeChannelId = controlledChannelId ?? selectedChannelId;
-  const setActiveChannelId = (id: string) => {
-    setSelectedChannelId(id);
-    onChannelChange?.(id);
+  const activeWorkbenchId = controlledWorkbenchId ?? selectedWorkbenchId;
+  const setActiveWorkbenchId = (id: string) => {
+    setSelectedWorkbenchId(id);
+    onWorkbenchChange?.(id);
   };
   const [messagesState, setMessagesState] = useState<MessagesState>({
     kind: "loading",
   });
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  // null = channel root feed. A concrete id opens that thread in the same
+  // null = workbench root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [pendingParentMessageId, setPendingParentMessageId] = useState<
     string | null
   >(null);
-  const [threads, setThreads] = useState<readonly ChannelThread[]>([]);
+  const [threads, setThreads] = useState<readonly WorkbenchThread[]>([]);
   // Root-thread id from listThreads — used so the root feed loads
-  // root-thread membership only, not the full channel mailbox.
+  // root-thread membership only, not the full workbench mailbox.
   const [rootThreadId, setRootThreadId] = useState<string | null>(null);
-  // The channel `rootThreadId` (state) was resolved for, mirrored in a ref.
+  // The workbench `rootThreadId` (state) was resolved for, mirrored in a ref.
   // `loadMessages` must never read the plain `rootThreadId` state directly:
   // React batches state updates, so a resolver that both writes the state
   // and immediately (same microtask, no render in between) triggers
   // `loadMessages` would still hand it last render's closed-over value —
-  // one render stale, but on a channel switch "one render stale" means
-  // the *previous* channel's thread id. A ref has no such lag; both halves
+  // one render stale, but on a workbench switch "one render stale" means
+  // the *previous* workbench's thread id. A ref has no such lag; both halves
   // of this pair are only ever written together via `applyRootThread`
-  // below, so a matching `channelId` guarantees a fresh `threadId`.
+  // below, so a matching `workbenchId` guarantees a fresh `threadId`.
   const rootThreadRef = useRef<{
-    readonly channelId: string;
+    readonly workbenchId: string;
     readonly threadId: string | null;
   } | null>(null);
   const applyRootThread = useCallback(
-    (channelId: string, threadId: string | null) => {
-      rootThreadRef.current = { channelId, threadId };
+    (workbenchId: string, threadId: string | null) => {
+      rootThreadRef.current = { workbenchId, threadId };
       setRootThreadId(threadId);
     },
     [],
@@ -723,15 +723,15 @@ function ChatWorkspaceInner({
   >(new Map());
   // Absent (not `[]`) until the first successful `listPinnedMessages` —
   // `undefined` means "not wired or not loaded yet", so the pinned strip
-  // renders nothing rather than a fabricated empty state on channel
+  // renders nothing rather than a fabricated empty state on workbench
   // switch. A 404 (no `pins` store on the host) resolves to `[]` and
   // stays there — the strip is simply never shown for that deployment.
   const [pinnedMessages, setPinnedMessages] = useState<
     readonly PinnedMessage[]
   >([]);
   // This composer's own optimistic sends — see `mergePendingSends`. A
-  // channel switch drops whatever was pending in the previous channel:
-  // its composer submit targeted that channel, not wherever the reader
+  // workbench switch drops whatever was pending in the previous workbench:
+  // its composer submit targeted that workbench, not wherever the reader
   // navigated to next.
   const [pendingSends, setPendingSends] = useState<readonly PendingSend[]>([]);
 
@@ -749,12 +749,12 @@ function ChatWorkspaceInner({
   const messagesRequestSeqRef = useRef(0);
 
   const loadThreads = useCallback(
-    async (channelId: string) => {
+    async (workbenchId: string) => {
       try {
-        const page = await listThreads(tenantId, channelId);
+        const page = await listThreads(tenantId, workbenchId);
         setThreads(page.items);
         applyRootThread(
-          channelId,
+          workbenchId,
           page.rootThreadId !== "" ? page.rootThreadId : null,
         );
         // Build affordance meta for parent messages that already have a
@@ -770,7 +770,7 @@ function ChatWorkspaceInner({
             try {
               const detail = await listThreadMessages(
                 tenantId,
-                channelId,
+                workbenchId,
                 thread.id,
               );
               const items = detail.items;
@@ -799,7 +799,7 @@ function ChatWorkspaceInner({
         setThreadMetaByMessageId(meta);
       } catch {
         setThreads([]);
-        applyRootThread(channelId, null);
+        applyRootThread(workbenchId, null);
         setThreadMetaByMessageId(new Map());
       }
     },
@@ -807,9 +807,9 @@ function ChatWorkspaceInner({
   );
 
   const loadPins = useCallback(
-    async (channelId: string) => {
+    async (workbenchId: string) => {
       try {
-        setPinnedMessages(await listPinnedMessages(tenantId, channelId));
+        setPinnedMessages(await listPinnedMessages(tenantId, workbenchId));
       } catch {
         // No `pins` store on this host, or a transient read failure —
         // either way the strip just doesn't show, the same "absent
@@ -825,25 +825,28 @@ function ChatWorkspaceInner({
   // items stay on screen (and the composer stays mounted) until fresh data
   // lands, and a failed background refresh is swallowed rather than
   // replacing the timeline with an error page. Only a first load or a
-  // channel switch (background left false) shows the loading skeleton or
+  // workbench switch (background left false) shows the loading skeleton or
   // an error state.
   const loadMessages = useCallback(
-    async (channelId: string, options?: { readonly background?: boolean }) => {
+    async (
+      workbenchId: string,
+      options?: { readonly background?: boolean },
+    ) => {
       const background = options?.background ?? false;
       const ticket = ++messagesRequestSeqRef.current;
       if (!background) setMessagesState({ kind: "loading" });
       try {
-        // Root feed may race with loadThreads on channel switch: if we
+        // Root feed may race with loadThreads on workbench switch: if we
         // don't yet know the root thread id, resolve it from listThreads
         // before loading messages so we never fall back to full mail while
         // threads are available. Read `rootThreadRef`, never the plain
         // `rootThreadId` state — a caller that both resolves the ref and
         // invokes `loadMessages` in the same tick (no render in between,
         // see `applyRootThread`'s doc) would otherwise still be handed
-        // last render's closed-over state, which on a channel switch is
-        // the *previous* channel's thread id.
+        // last render's closed-over state, which on a workbench switch is
+        // the *previous* workbench's thread id.
         let resolvedRootThreadId =
-          rootThreadRef.current?.channelId === channelId
+          rootThreadRef.current?.workbenchId === workbenchId
             ? rootThreadRef.current.threadId
             : null;
         if (
@@ -852,10 +855,10 @@ function ChatWorkspaceInner({
           (resolvedRootThreadId === null || resolvedRootThreadId === "")
         ) {
           try {
-            const threadsPage = await listThreads(tenantId, channelId);
+            const threadsPage = await listThreads(tenantId, workbenchId);
             resolvedRootThreadId =
               threadsPage.rootThreadId !== "" ? threadsPage.rootThreadId : null;
-            applyRootThread(channelId, resolvedRootThreadId);
+            applyRootThread(workbenchId, resolvedRootThreadId);
             setThreads(threadsPage.items);
           } catch {
             resolvedRootThreadId = null;
@@ -870,7 +873,7 @@ function ChatWorkspaceInner({
 
         // A thread hangs off a message the reader was just looking at —
         // rendering the thread without it strands the conversation
-        // context. Prepend the parent from the channel feed when the
+        // context. Prepend the parent from the workbench feed when the
         // thread's own page doesn't carry it; a parent that can't be
         // found (deleted, out of the fetched window) degrades to the
         // bare thread rather than an error.
@@ -885,8 +888,8 @@ function ChatWorkspaceInner({
             return items;
           }
           try {
-            const channelPage = await listMessages(tenantId, channelId);
-            const parent = channelPage.items.find(
+            const workbenchPage = await listMessages(tenantId, workbenchId);
+            const parent = workbenchPage.items.find(
               (m) => m.id === parentMessageId,
             );
             return parent === undefined ? items : [parent, ...items];
@@ -902,7 +905,7 @@ function ChatWorkspaceInner({
             case "thread": {
               const page = await listThreadMessages(
                 tenantId,
-                channelId,
+                workbenchId,
                 fetchFor.threadId,
               );
               return withParentContext(
@@ -918,18 +921,18 @@ function ChatWorkspaceInner({
             case "root-thread": {
               const page = await listThreadMessages(
                 tenantId,
-                channelId,
+                workbenchId,
                 fetchFor.rootThreadId,
               );
               // Membership order is assignment order; timeline wants
               // oldest-first with the viewport pinned to the end.
               return sortMessagesOldestFirst(page.items);
             }
-            case "channel-mail": {
+            case "workbench-mail": {
               // Threads not available on this hub — full mailbox is the
               // only feed source (and there is no reply-thread
               // membership to mix in).
-              const page = await listMessages(tenantId, channelId);
+              const page = await listMessages(tenantId, workbenchId);
               return sortMessagesOldestFirst(page.items);
             }
           }
@@ -944,7 +947,7 @@ function ChatWorkspaceInner({
           // reconnect-ownership challenge treats the run as dead and
           // every id under it 404s from here on. That is a stale
           // reference, not a real failure: discard it and fall back to
-          // the channel's live feed instead of a dead-end error a "Try
+          // the workbench's live feed instead of a dead-end error a "Try
           // again" can never actually recover from.
           const isStaleThreadRef =
             cause instanceof ChatApiError &&
@@ -952,7 +955,7 @@ function ChatWorkspaceInner({
             (target.kind === "thread" || target.kind === "root-thread");
           if (!isStaleThreadRef) throw cause;
           if (target.kind === "thread") setOpenThreadId(null);
-          if (target.kind === "root-thread") applyRootThread(channelId, null);
+          if (target.kind === "root-thread") applyRootThread(workbenchId, null);
           const fallbackTarget = resolveMessageFeedTarget({
             openThreadId: target.kind === "thread" ? null : openThreadId,
             pendingParentMessageId,
@@ -972,7 +975,7 @@ function ChatWorkspaceInner({
         if (openThreadId === null && pendingParentMessageId === null) {
           const last = items.at(-1);
           if (last !== undefined) {
-            await putReadState(tenantId, channelId, {
+            await putReadState(tenantId, workbenchId, {
               lastSeenCreatedAt: last.createdAt,
               lastSeenId: last.id,
             }).catch(() => undefined);
@@ -982,25 +985,25 @@ function ChatWorkspaceInner({
         if (ticket !== messagesRequestSeqRef.current) return;
         // A 401 is terminal for this session: keep polling and the app
         // would hammer the hub unauthenticated forever. Halt refreshes
-        // until the user switches channels or signs back in.
+        // until the user switches workbenches or signs back in.
         const isUnauthorized =
           cause instanceof UnauthenticatedError ||
           (cause instanceof ChatApiError && cause.status === 401);
         if (isUnauthorized) {
           unauthorizedRef.current = true;
         }
-        // A 404 here means the channel itself is gone (deleted, or a stale
+        // A 404 here means the workbench itself is gone (deleted, or a stale
         // id from a Recents entry that outlived it) — not a transient load
         // failure a retry could fix. Tell the host so it can drop the dead
         // Recents entry the same way it dropped the dead thread ref above.
-        const channelNotFound =
+        const workbenchNotFound =
           cause instanceof ChatApiError && cause.status === 404;
-        if (channelNotFound) onChannelNotFound?.(channelId);
+        if (workbenchNotFound) onWorkbenchNotFound?.(workbenchId);
         const message = describeChatError(cause, "Couldn't load messages.");
         setMessagesState((current) =>
           nextMessagesState(
             current,
-            { kind: "error", message, channelNotFound, isUnauthorized },
+            { kind: "error", message, workbenchNotFound, isUnauthorized },
             background,
           ),
         );
@@ -1011,18 +1014,18 @@ function ChatWorkspaceInner({
       openThreadId,
       pendingParentMessageId,
       applyRootThread,
-      onChannelNotFound,
+      onWorkbenchNotFound,
     ],
   );
 
-  // Picking a default channel is this component's own fallback for "no
-  // channel named in the URL yet".
+  // Picking a default workbench is this component's own fallback for "no
+  // workbench named in the URL yet".
   useEffect(() => {
-    if (channelsState.kind !== "ready") return;
-    if (activeChannelId !== null) return;
-    const first = channelsState.channels[0] ?? channelsState.chats[0];
-    if (first !== undefined) setActiveChannelId(first.id);
-  }, [channelsState, activeChannelId]);
+    if (workbenchesState.kind !== "ready") return;
+    if (activeWorkbenchId !== null) return;
+    const first = workbenchesState.workbenches[0] ?? workbenchesState.chats[0];
+    if (first !== undefined) setActiveWorkbenchId(first.id);
+  }, [workbenchesState, activeWorkbenchId]);
 
   useEffect(() => {
     unauthorizedRef.current = false;
@@ -1030,64 +1033,64 @@ function ChatWorkspaceInner({
     setPendingParentMessageId(null);
     setRootThreadId(null);
     setPendingSends([]);
-    if (activeChannelId !== null) {
-      void loadThreads(activeChannelId);
-      void loadMessages(activeChannelId);
-      void loadPins(activeChannelId);
+    if (activeWorkbenchId !== null) {
+      void loadThreads(activeWorkbenchId);
+      void loadMessages(activeWorkbenchId);
+      void loadPins(activeWorkbenchId);
     }
-  }, [activeChannelId]); // eslint-disable-line react-hooks/exhaustive-deps -- channel switch resets thread view
+  }, [activeWorkbenchId]); // eslint-disable-line react-hooks/exhaustive-deps -- workbench switch resets thread view
 
   useEffect(() => {
-    if (activeChannelId === null) return;
-    void loadMessages(activeChannelId);
+    if (activeWorkbenchId === null) return;
+    void loadMessages(activeWorkbenchId);
   }, [openThreadId, pendingParentMessageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshUnlessUnauthorized = () => {
     if (unauthorizedRef.current) return;
-    if (activeChannelId !== null) {
-      void loadMessages(activeChannelId, { background: true });
-      void loadThreads(activeChannelId);
+    if (activeWorkbenchId !== null) {
+      void loadMessages(activeWorkbenchId, { background: true });
+      void loadThreads(activeWorkbenchId);
     }
   };
 
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
-      if (activeChannelId === null) return;
-      toggleReaction(tenantId, activeChannelId, messageId, emoji)
-        .then(() => loadMessages(activeChannelId, { background: true }))
+      if (activeWorkbenchId === null) return;
+      toggleReaction(tenantId, activeWorkbenchId, messageId, emoji)
+        .then(() => loadMessages(activeWorkbenchId, { background: true }))
         .catch(() => toast(CHAT_STRINGS.reactionToggleError));
     },
-    [tenantId, activeChannelId, loadMessages],
+    [tenantId, activeWorkbenchId, loadMessages],
   );
 
   const handlePinMessage = useCallback(
     (messageId: string) => {
-      if (activeChannelId === null) return;
-      pinMessage(tenantId, activeChannelId, messageId)
+      if (activeWorkbenchId === null) return;
+      pinMessage(tenantId, activeWorkbenchId, messageId)
         .then(() =>
           Promise.all([
-            loadMessages(activeChannelId, { background: true }),
-            loadPins(activeChannelId),
+            loadMessages(activeWorkbenchId, { background: true }),
+            loadPins(activeWorkbenchId),
           ]),
         )
         .catch(() => toast(CHAT_STRINGS.pinMessageError));
     },
-    [tenantId, activeChannelId, loadMessages, loadPins],
+    [tenantId, activeWorkbenchId, loadMessages, loadPins],
   );
 
   const handleUnpinMessage = useCallback(
     (messageId: string) => {
-      if (activeChannelId === null) return;
-      unpinMessage(tenantId, activeChannelId, messageId)
+      if (activeWorkbenchId === null) return;
+      unpinMessage(tenantId, activeWorkbenchId, messageId)
         .then(() =>
           Promise.all([
-            loadMessages(activeChannelId, { background: true }),
-            loadPins(activeChannelId),
+            loadMessages(activeWorkbenchId, { background: true }),
+            loadPins(activeWorkbenchId),
           ]),
         )
         .catch(() => toast(CHAT_STRINGS.unpinMessageError));
     },
-    [tenantId, activeChannelId, loadMessages, loadPins],
+    [tenantId, activeWorkbenchId, loadMessages, loadPins],
   );
 
   const reactionActions: ReactionActions = useMemo(
@@ -1106,7 +1109,9 @@ function ChatWorkspaceInner({
   }
 
   const composerMounted =
-    !settingsOpen && activeChannelId !== null && messagesState.kind === "ready";
+    !settingsOpen &&
+    activeWorkbenchId !== null &&
+    messagesState.kind === "ready";
 
   useEffect(() => {
     if (registerComposerInsert === undefined) return;
@@ -1119,70 +1124,74 @@ function ChatWorkspaceInner({
   }, [registerComposerInsert, composerMounted]);
 
   const { typingState, handleStreamEvent: handleTypingEvent } =
-    useTypingIndicator(currentUser?.principalId, activeChannelId);
+    useTypingIndicator(currentUser?.principalId, activeWorkbenchId);
   const {
     streamingReply,
     replyTimedOut,
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
-  } = useStreamingReply(activeChannelId);
+  } = useStreamingReply(activeWorkbenchId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
-    useTurnActivity(activeChannelId);
+    useTurnActivity(activeWorkbenchId);
 
-  // Opening Settings swaps `ChannelTimeline` out for `ChannelSettingsSurface`
+  // Opening Settings swaps `WorkbenchTimeline` out for `WorkbenchSettingsSurface`
   // entirely (see the early `settingsOpen` return below) — closing it
-  // remounts a fresh `ChannelTimeline` with no memory of where the reader
-  // was. A ref (not state) holds each channel's last snapshot: recording it
+  // remounts a fresh `WorkbenchTimeline` with no memory of where the reader
+  // was. A ref (not state) holds each workbench's last snapshot: recording it
   // never needs to trigger a re-render, only be there the next time this
-  // channel's `ChannelTimeline` mounts.
+  // workbench's `WorkbenchTimeline` mounts.
   const scrollSnapshotsRef = useRef<ReadonlyMap<string, ScrollSnapshot>>(
     new Map(),
   );
   const restoredScrollSnapshot =
-    activeChannelId !== null
-      ? scrollSnapshotsRef.current.get(activeChannelId)
+    activeWorkbenchId !== null
+      ? scrollSnapshotsRef.current.get(activeWorkbenchId)
       : undefined;
   const handleScrollSnapshot = useCallback(
     (snapshot: ScrollSnapshot) => {
-      if (activeChannelId === null) return;
+      if (activeWorkbenchId === null) return;
       scrollSnapshotsRef.current = withScrollSnapshot(
         scrollSnapshotsRef.current,
-        activeChannelId,
+        activeWorkbenchId,
         snapshot,
       );
     },
-    [activeChannelId],
+    [activeWorkbenchId],
   );
 
-  useChannelStream(
-    activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
+  useWorkbenchStream(
+    activeWorkbenchId !== null
+      ? workbenchStreamUrl(tenantId, activeWorkbenchId)
+      : "",
     (eventType, data) => {
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
       handleTurnActivityEvent(eventType, data);
       if (eventType !== "chat.typing") refreshUnlessUnauthorized();
-      if (eventType === "chat.pin" && activeChannelId !== null) {
-        void loadPins(activeChannelId);
+      if (eventType === "chat.pin" && activeWorkbenchId !== null) {
+        void loadPins(activeWorkbenchId);
       }
     },
     refreshUnlessUnauthorized,
   );
 
-  /** The one door into the channel settings surface — the gear button and
+  /** The one door into the workbench settings surface — the gear button and
    * the composer's `/agents` command both go through this so the section
    * that lands is always the one the caller meant to open. */
-  function openChannelSettings(section: ChannelSettingsSectionId = "general") {
+  function openWorkbenchSettings(
+    section: WorkbenchSettingsSectionId = "general",
+  ) {
     onSettingsOpenChange?.(true, section);
   }
 
   async function handleInvite(definitionId: string) {
-    if (activeChannelId === null) return;
-    await inviteAgent(tenantId, activeChannelId, definitionId);
-    // The invited agent's address lands on the channel's participants
+    if (activeWorkbenchId === null) return;
+    await inviteAgent(tenantId, activeWorkbenchId, definitionId);
+    // The invited agent's address lands on the workbench's participants
     // (the mention popover picks it up via the reload below) and its
     // join event lands on the timeline.
-    refreshChannelLists();
-    await loadMessages(activeChannelId);
+    refreshWorkbenchLists();
+    await loadMessages(activeWorkbenchId);
   }
 
   /**
@@ -1209,7 +1218,7 @@ function ChatWorkspaceInner({
     attachments: readonly ComposerAttachment[],
     invite?: readonly MentionInviteIntent[],
   ): Promise<void> {
-    if (activeChannelId === null) return;
+    if (activeWorkbenchId === null) return;
     const parts = partsForSend(text, attachments);
     if (parts.length === 0) return;
     const inviteOption = invite !== undefined ? { invite } : {};
@@ -1228,13 +1237,13 @@ function ChatWorkspaceInner({
         readonly clientId?: string;
       };
       if (openThreadId !== null) {
-        sent = await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
           threadId: openThreadId,
           clientId: nonce,
           ...inviteOption,
         });
       } else if (pendingParentMessageId !== null) {
-        sent = await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
           inReplyToMessageId: pendingParentMessageId,
           clientId: nonce,
           ...inviteOption,
@@ -1244,7 +1253,7 @@ function ChatWorkspaceInner({
           setPendingParentMessageId(null);
         }
       } else {
-        sent = await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
           clientId: nonce,
           ...inviteOption,
         });
@@ -1272,18 +1281,18 @@ function ChatWorkspaceInner({
         return { kind: "ready", items: [...current.items, confirmed] };
       });
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
-      // A message just landed in a channel with an agent in it: a reply
+      // A message just landed in a workbench with an agent in it: a reply
       // is owed, so show the typing indicator now rather than sitting
       // silent until the turn's first stream event arrives.
       if (
-        (activeChannel?.participants ?? []).some((participant) =>
+        (activeWorkbench?.participants ?? []).some((participant) =>
           isAgentAddress(participant.address),
         )
       ) {
         noteAwaitingReply();
       }
-      await loadThreads(activeChannelId);
-      await loadMessages(activeChannelId, { background: true });
+      await loadThreads(activeWorkbenchId);
+      await loadMessages(activeWorkbenchId, { background: true });
     } catch (cause) {
       if (cause instanceof ChatApiError && cause.status === 403) {
         toast(CHAT_STRINGS.mentionForbidden);
@@ -1297,7 +1306,7 @@ function ChatWorkspaceInner({
   }
 
   async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
-    if (activeChannelId === null) return false;
+    if (activeWorkbenchId === null) return false;
     const parts = partsForSend(payload.text, payload.attachments);
     if (parts.length === 0) return false;
     const nonce = nextPendingSendNonce();
@@ -1359,7 +1368,7 @@ function ChatWorkspaceInner({
    * nesting itself.
    */
   async function forkMessage(messageId: string) {
-    if (activeChannelId === null) return;
+    if (activeWorkbenchId === null) return;
     const existing = threads.find(
       (t) => t.kind === "reply" && t.parentMessageId === messageId,
     );
@@ -1369,8 +1378,8 @@ function ChatWorkspaceInner({
       return;
     }
     try {
-      const forked = await forkThread(tenantId, activeChannelId, messageId);
-      await loadThreads(activeChannelId);
+      const forked = await forkThread(tenantId, activeWorkbenchId, messageId);
+      await loadThreads(activeWorkbenchId);
       setPendingParentMessageId(null);
       setOpenThreadId(forked.id);
     } catch {
@@ -1383,37 +1392,37 @@ function ChatWorkspaceInner({
     setPendingParentMessageId(null);
   }
 
-  const activeChannel =
-    channelsState.kind === "ready"
-      ? [...channelsState.channels, ...channelsState.chats].find(
-          (channel) => channel.id === activeChannelId,
+  const activeWorkbench =
+    workbenchesState.kind === "ready"
+      ? [...workbenchesState.workbenches, ...workbenchesState.chats].find(
+          (workbench) => workbench.id === activeWorkbenchId,
         )
       : undefined;
   const isActiveChat =
-    activeChannel !== undefined &&
-    isKnownChannelKind(activeChannel.kind) &&
-    activeChannel.kind === "chat";
+    activeWorkbench !== undefined &&
+    isKnownWorkbenchKind(activeWorkbench.kind) &&
+    activeWorkbench.kind === "chat";
   const activeChatAgent = isActiveChat
-    ? activeChannel?.participants.find((participant) =>
+    ? activeWorkbench?.participants.find((participant) =>
         isAgentAddress(participant.address),
       )
     : undefined;
 
-  // The mention popover's "Bring in…" group: only a `channel` grows its
+  // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
-  // creation — see `channel-service.ts`'s `joinHumanParticipant`/
+  // creation — see `workbench-service.ts`'s `joinHumanParticipant`/
   // `launchAndJoinAgent` doc comments), so these only fetch for that
-  // kind, and never before a channel is actually selected.
+  // kind, and never before a workbench is actually selected.
   const bringInEnabled =
-    activeChannelId !== null &&
-    activeChannel !== undefined &&
-    isKnownChannelKind(activeChannel.kind) &&
-    activeChannel.kind === "channel";
+    activeWorkbenchId !== null &&
+    activeWorkbench !== undefined &&
+    isKnownWorkbenchKind(activeWorkbench.kind) &&
+    activeWorkbench.kind === "workbench";
   const invitableAgentsQuery = useQuery({
-    queryKey: ["tenant", tenantId, "chat", "invitable", activeChannelId],
+    queryKey: ["tenant", tenantId, "chat", "invitable", activeWorkbenchId],
     queryFn: () =>
-      activeChannelId !== null
-        ? listInvitableDefinitions(tenantId, activeChannelId)
+      activeWorkbenchId !== null
+        ? listInvitableDefinitions(tenantId, activeWorkbenchId)
         : Promise.resolve([]),
     enabled: bringInEnabled,
   });
@@ -1424,21 +1433,21 @@ function ChatWorkspaceInner({
     enabled: bringInEnabled && listMembers !== undefined,
   });
 
-  // A settings URL for a channel id that resolved channels don't contain
+  // A settings URL for a workbench id that resolved workbenches don't contain
   // (deleted, mistyped, cross-tenant) would otherwise leave the surface
   // silently showing the ordinary chat view under a lying /settings URL —
   // correct the route instead of no-opping.
   useEffect(() => {
     if (!settingsOpen) return;
-    if (channelsState.kind !== "ready") return;
-    if (activeChannelId === null) return;
-    if (activeChannel !== undefined) return;
+    if (workbenchesState.kind !== "ready") return;
+    if (activeWorkbenchId === null) return;
+    if (activeWorkbench !== undefined) return;
     onSettingsOpenChange?.(false);
   }, [
     settingsOpen,
-    channelsState.kind,
-    activeChannelId,
-    activeChannel,
+    workbenchesState.kind,
+    activeWorkbenchId,
+    activeWorkbench,
     onSettingsOpenChange,
   ]);
 
@@ -1454,7 +1463,7 @@ function ChatWorkspaceInner({
     [replyThreads, rootThreadId],
   );
   const subThreadsByParentId = useMemo(() => {
-    const map = new Map<string, ChannelThread[]>();
+    const map = new Map<string, WorkbenchThread[]>();
     for (const t of replyThreads) {
       if (t.parentThreadId === null || t.parentThreadId === rootThreadId) {
         continue;
@@ -1470,7 +1479,7 @@ function ChatWorkspaceInner({
       : threads.find((t) => t.id === openThreadId);
   // A sub-thread's breadcrumb parent segment — undefined for a depth-1
   // thread (or no thread open at all), which breadcrumbs straight back to
-  // the channel.
+  // the workbench.
   const openThreadParent =
     openThread?.parentThreadId !== undefined &&
     openThread.parentThreadId !== null &&
@@ -1483,30 +1492,36 @@ function ChatWorkspaceInner({
     (pendingParentMessageId !== null ? "New thread" : "Thread");
   // Team stack: every active agent + live human for the top bar.
   const teamStack = buildTeamAvatarStack(
-    activeChannel?.participants ?? [],
+    activeWorkbench?.participants ?? [],
     presenceMembers ?? [],
   );
   const visibleTeamStack = teamStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
   const teamStackOverflow = teamStack.length - visibleTeamStack.length;
 
-  // The channel header only exists once a channel is active; the loading,
-  // error, and no-channel states still carry the host's leading control (the
+  // The workbench header only exists once a workbench is active; the loading,
+  // error, and no-workbench states still carry the host's leading control (the
   // shell's col2 toggle) so the sidebar stays reachable.
   const bareLeadingHeader =
     headerLeading !== undefined &&
-    (channelsState.kind !== "ready" || activeChannelId === null) ? (
-      <div className="chat-channel-header">{headerLeading}</div>
+    (workbenchesState.kind !== "ready" || activeWorkbenchId === null) ? (
+      <div className="chat-workbench-header">{headerLeading}</div>
     ) : null;
 
-  if (settingsOpen && activeChannelId !== null && activeChannel !== undefined) {
+  if (
+    settingsOpen &&
+    activeWorkbenchId !== null &&
+    activeWorkbench !== undefined
+  ) {
     return (
       <>
         <div className="chat-workspace">
-          <ChannelSettingsSurface
-            key={activeChannelId}
+          <WorkbenchSettingsSurface
+            key={activeWorkbenchId}
             tenantId={tenantId}
-            channelId={activeChannelId}
-            channelTitle={activeChannel.title || CHAT_STRINGS.unnamedChannel}
+            workbenchId={activeWorkbenchId}
+            workbenchTitle={
+              activeWorkbench.title || CHAT_STRINGS.unnamedWorkbench
+            }
             section={settingsSection}
             onSectionChange={(next) => onSettingsSectionChange?.(next)}
             onBack={() => onSettingsOpenChange?.(false)}
@@ -1514,7 +1529,7 @@ function ChatWorkspaceInner({
               onSettingsOpenChange?.(false);
               setInviteDialogOpen(true);
             }}
-            onSaved={refreshChannelLists}
+            onSaved={refreshWorkbenchLists}
             {...(currentUser !== undefined
               ? { currentUserPrincipalId: currentUser.principalId }
               : {})}
@@ -1524,7 +1539,7 @@ function ChatWorkspaceInner({
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
           tenantId={tenantId}
-          channelId={activeChannelId}
+          workbenchId={activeWorkbenchId}
           onInvite={handleInvite}
         />
       </>
@@ -1536,20 +1551,23 @@ function ChatWorkspaceInner({
       <div className="chat-workspace">
         <div className="chat-main">
           {bareLeadingHeader}
-          {channelsState.kind === "loading" ? (
+          {workbenchesState.kind === "loading" ? (
             <Skeleton className="query-skeleton" />
-          ) : channelsState.kind === "error" ? (
+          ) : workbenchesState.kind === "error" ? (
             <EmptyState
               icon={<CircleAlert />}
-              title={`Couldn't load ${CHAT_STRINGS.couldNotLoadChannels}`}
-              description={channelsState.message}
+              title={`Couldn't load ${CHAT_STRINGS.couldNotLoadWorkbenches}`}
+              description={workbenchesState.message}
               action={
-                <Button variant="outline" onClick={() => void reloadChannels()}>
+                <Button
+                  variant="outline"
+                  onClick={() => void reloadWorkbenches()}
+                >
                   Try again
                 </Button>
               }
             />
-          ) : activeChannelId === null ? (
+          ) : activeWorkbenchId === null ? (
             <EmptyState
               icon={<MessageSquare />}
               title={CHAT_STRINGS.noChatSelectedTitle}
@@ -1557,7 +1575,7 @@ function ChatWorkspaceInner({
             />
           ) : (
             <>
-              <div className="chat-channel-header">
+              <div className="chat-workbench-header">
                 {headerLeading}
                 {inThreadView ? (
                   <nav className="chat-thread-breadcrumb" aria-label="Thread">
@@ -1566,7 +1584,7 @@ function ChatWorkspaceInner({
                       className="chat-thread-breadcrumb-link"
                       onClick={closeThread}
                     >
-                      {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
+                      {activeWorkbench?.title || CHAT_STRINGS.unnamedWorkbench}
                     </button>
                     <span
                       className="chat-thread-breadcrumb-sep"
@@ -1602,14 +1620,14 @@ function ChatWorkspaceInner({
                     </span>
                   </nav>
                 ) : (
-                  <div className="chat-channel-identity">
-                    <h2 className="chat-channel-title">
-                      {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
+                  <div className="chat-workbench-identity">
+                    <h2 className="chat-workbench-title">
+                      {activeWorkbench?.title || CHAT_STRINGS.unnamedWorkbench}
                     </h2>
                     {activeChatAgent !== undefined ? <AgentBadge /> : null}
                   </div>
                 )}
-                <div className="chat-channel-actions">
+                <div className="chat-workbench-actions">
                   {depth1Threads.length > 0 ? (
                     <details className="chat-threads-menu">
                       <summary className="chat-threads-menu-trigger">
@@ -1663,7 +1681,7 @@ function ChatWorkspaceInner({
                   {visibleTeamStack.length > 0 ? (
                     <div
                       className="chat-team-stack"
-                      aria-label={CHAT_STRINGS.channelMembersLabel}
+                      aria-label={CHAT_STRINGS.workbenchMembersLabel}
                     >
                       {visibleTeamStack.map((entry) =>
                         entry.tone === "agent" ? (
@@ -1698,7 +1716,7 @@ function ChatWorkspaceInner({
                       ) : null}
                     </div>
                   ) : null}
-                  {canInviteAgent(activeChannel?.kind) ? (
+                  {canInviteAgent(activeWorkbench?.kind) ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1729,13 +1747,13 @@ function ChatWorkspaceInner({
                       {CHAT_STRINGS.insightsAction}
                     </Button>
                   ) : null}
-                  <div className="chat-channel-settings-slot">
+                  <div className="chat-workbench-settings-slot">
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={CHAT_STRINGS.channelSettingsAction}
-                      title={CHAT_STRINGS.channelSettingsAction}
-                      onClick={() => openChannelSettings()}
+                      aria-label={CHAT_STRINGS.workbenchSettingsAction}
+                      title={CHAT_STRINGS.workbenchSettingsAction}
+                      onClick={() => openWorkbenchSettings()}
                     >
                       <SlidersHorizontal />
                     </Button>
@@ -1745,15 +1763,15 @@ function ChatWorkspaceInner({
               {messagesState.kind === "loading" ? (
                 <Skeleton className="query-skeleton" />
               ) : messagesState.kind === "error" &&
-                messagesState.channelNotFound ? (
+                messagesState.workbenchNotFound ? (
                 <EmptyState
                   icon={<CircleAlert />}
-                  title={CHAT_STRINGS.channelNotFoundTitle}
-                  description={CHAT_STRINGS.channelNotFoundDescription}
+                  title={CHAT_STRINGS.workbenchNotFoundTitle}
+                  description={CHAT_STRINGS.workbenchNotFoundDescription}
                   action={
-                    onBackToChannelList !== undefined ? (
-                      <Button variant="outline" onClick={onBackToChannelList}>
-                        {CHAT_STRINGS.channelNotFoundAction}
+                    onBackToWorkbenchList !== undefined ? (
+                      <Button variant="outline" onClick={onBackToWorkbenchList}>
+                        {CHAT_STRINGS.workbenchNotFoundAction}
                       </Button>
                     ) : undefined
                   }
@@ -1773,7 +1791,7 @@ function ChatWorkspaceInner({
                     ) : (
                       <Button
                         variant="outline"
-                        onClick={() => void loadMessages(activeChannelId)}
+                        onClick={() => void loadMessages(activeWorkbenchId)}
                       >
                         Try again
                       </Button>
@@ -1803,10 +1821,10 @@ function ChatWorkspaceInner({
                       </button>
                     </div>
                   ) : null}
-                  <ChannelTimeline
+                  <WorkbenchTimeline
                     settingUpAgent={
-                      activeChannel?.kind === "chat" &&
-                      typeof activeChannel.definitionId === "string"
+                      activeWorkbench?.kind === "chat" &&
+                      typeof activeWorkbench.definitionId === "string"
                     }
                     items={appendReplyTimedOutNotice(
                       mergeStreamingReply(
@@ -1816,11 +1834,11 @@ function ChatWorkspaceInner({
                           currentUser?.principalId,
                         ),
                         streamingReply,
-                        activeChannel?.participants ?? [],
+                        activeWorkbench?.participants ?? [],
                       ),
                       replyTimedOut,
                     )}
-                    participants={activeChannel?.participants ?? []}
+                    participants={activeWorkbench?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
                     threadMetaByMessageId={threadMetaByMessageId}
                     threadAffordanceMode={inThreadView ? "fork" : "reply"}
@@ -1859,29 +1877,29 @@ function ChatWorkspaceInner({
                     <TypingIndicator
                       label={typingLabel(
                         typingState.principalId,
-                        activeChannel?.participants ?? [],
+                        activeWorkbench?.participants ?? [],
                       )}
                     />
                   ) : (
                     <AgentTypingIndicator
                       names={typingAgentNames(
                         streamingReply,
-                        activeChannel?.participants ?? [],
+                        activeWorkbench?.participants ?? [],
                       )}
                     />
                   )}
                   <Composer
                     ref={composerRef}
                     agents={mentionCandidatesFromParticipants(
-                      activeChannel?.participants ?? [],
+                      activeWorkbench?.participants ?? [],
                     )}
-                    participants={activeChannel?.participants ?? []}
+                    participants={activeWorkbench?.participants ?? []}
                     members={bringInMembersQuery.data ?? []}
                     invitableAgents={invitableAgentsQuery.data ?? []}
-                    placeholder={composerPlaceholderFor(activeChannel)}
+                    placeholder={composerPlaceholderFor(activeWorkbench)}
                     onSend={handleSend}
                     onInviteAgent={() => setInviteDialogOpen(true)}
-                    onOpenAgentsSettings={() => openChannelSettings("agents")}
+                    onOpenAgentsSettings={() => openWorkbenchSettings("agents")}
                     onOpenRoutines={() => {
                       if (onOpenRoutines !== undefined) {
                         onOpenRoutines();
@@ -1892,9 +1910,9 @@ function ChatWorkspaceInner({
                     onCreateRoutineInSpace={() => {
                       if (
                         onCreateRoutineInSpace !== undefined &&
-                        activeChannelId !== null
+                        activeWorkbenchId !== null
                       ) {
-                        onCreateRoutineInSpace(activeChannelId);
+                        onCreateRoutineInSpace(activeWorkbenchId);
                         return;
                       }
                       toast(CHAT_STRINGS.runRoutineUnavailable);
@@ -1906,12 +1924,12 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      {activeChannelId !== null ? (
+      {activeWorkbenchId !== null ? (
         <InviteAgentDialog
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
           tenantId={tenantId}
-          channelId={activeChannelId}
+          workbenchId={activeWorkbenchId}
           onInvite={handleInvite}
         />
       ) : null}
@@ -1925,8 +1943,8 @@ function ChatWorkspaceFrame({ children }: { readonly children: ReactNode }) {
 
 export function ChatWorkspace({
   tenant,
-  channelId = null,
-  onChannelChange,
+  workbenchId = null,
+  onWorkbenchChange,
   currentUser,
   onOpenProfile,
   settingsOpen,
@@ -1945,15 +1963,15 @@ export function ChatWorkspace({
   onCreateRoutineInSpace,
   onOpenInsights,
   presenceMembers,
-  onChannelNotFound,
-  onBackToChannelList,
+  onWorkbenchNotFound,
+  onBackToWorkbenchList,
   onSignIn,
 }: {
   readonly tenant: TenantResolution;
-  /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
-  readonly channelId?: string | null;
-  /** Fired when the user selects a channel, so the app can reflect it in the URL. */
-  readonly onChannelChange?: (channelId: string) => void;
+  /** Controlled active workbench (e.g. from the app's URL); null = pick the first. */
+  readonly workbenchId?: string | null;
+  /** Fired when the user selects a workbench, so the app can reflect it in the URL. */
+  readonly onWorkbenchChange?: (workbenchId: string) => void;
   /**
    * The signed-in account, so its own messages render as "You" (or its
    * name) instead of matching no participant and falling back to
@@ -1963,7 +1981,7 @@ export function ChatWorkspace({
   readonly currentUser?: CurrentUser;
   /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
-  /** Whether the routed channel's settings surface should replace the
+  /** Whether the routed workbench's settings surface should replace the
    * conversation stage — host-controlled from the URL (`/c/:id/settings`). */
   readonly settingsOpen?: boolean;
   /** Fired when the settings surface should open or close, so the host can
@@ -1971,31 +1989,31 @@ export function ChatWorkspace({
    * name for the `section` argument's contract. */
   readonly onSettingsOpenChange?: (
     open: boolean,
-    section?: ChannelSettingsSectionId,
+    section?: WorkbenchSettingsSectionId,
   ) => void;
-  /** Which channel settings tab is active — host-controlled from the URL
+  /** Which workbench settings tab is active — host-controlled from the URL
    * (`/c/:id/settings/:section`). */
-  readonly settingsSection?: ChannelSettingsSectionId;
+  readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
   readonly onSettingsSectionChange?: (
-    section: ChannelSettingsSectionId,
+    section: WorkbenchSettingsSectionId,
   ) => void;
-  /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
+  /** Open a message's artifact chip — see `WorkbenchTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
-  /** The chip's "Open in Library" affordance — see `ChannelTimeline`'s
+  /** The chip's "Open in Library" affordance — see `WorkbenchTimeline`'s
    * `onOpenArtifactInLibrary`. */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The classified-inference-failure text bubble's "Fix this connection"
-   * action — see `ChannelTimeline`'s `onFixConnection` (CL-6092). */
+   * action — see `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
   readonly onFixConnection?: () => void;
-  /** The approve block's live round-trip — see `ChannelTimeline`'s
+  /** The approve block's live round-trip — see `WorkbenchTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
-  /** The poll/form blocks' live round-trip — see `ChannelTimeline`'s
+  /** The poll/form blocks' live round-trip — see `WorkbenchTimeline`'s
    * `blockResponses`. */
   readonly blockResponses?: BlockResponseActions;
-  /** Host-supplied control rendered first in the channel header — the
+  /** Host-supplied control rendered first in the workbench header — the
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
   readonly headerLeading?: ReactNode;
@@ -2010,7 +2028,7 @@ export function ChatWorkspace({
     tenantId: string,
   ) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
-  readonly onCreateRoutineInSpace?: (channelId: string) => void;
+  readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
   /**
    * "Insights for this workbench" — the header button that deep-links to
    * this tenant's own Insights scope (CL-6099). Host-supplied so the
@@ -2021,16 +2039,16 @@ export function ChatWorkspace({
    */
   readonly onOpenInsights?: () => void;
   /**
-   * Who's live in the active channel right now, beyond the static
+   * Who's live in the active workbench right now, beyond the static
    * participants list — the host's `@corbits/presence/client` connection,
    * handed down as data. Omitted entirely, no presence stack renders (the
    * header looks exactly as it did before presence existed).
    */
   readonly presenceMembers?: readonly PresenceMember[];
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly onChannelNotFound?: (channelId: string) => void;
+  readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly onBackToChannelList?: () => void;
+  readonly onBackToWorkbenchList?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onSignIn?: () => void;
 }) {
@@ -2041,8 +2059,8 @@ export function ChatWorkspace({
         <ChatWorkspaceInner
           key={tenant.tenantId}
           tenantId={tenant.tenantId}
-          channelId={channelId}
-          {...(onChannelChange !== undefined ? { onChannelChange } : {})}
+          workbenchId={workbenchId}
+          {...(onWorkbenchChange !== undefined ? { onWorkbenchChange } : {})}
           {...(currentUser !== undefined ? { currentUser } : {})}
           {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
           {...(settingsOpen !== undefined ? { settingsOpen } : {})}
@@ -2071,9 +2089,11 @@ export function ChatWorkspace({
             : {})}
           {...(onOpenInsights !== undefined ? { onOpenInsights } : {})}
           {...(presenceMembers !== undefined ? { presenceMembers } : {})}
-          {...(onChannelNotFound !== undefined ? { onChannelNotFound } : {})}
-          {...(onBackToChannelList !== undefined
-            ? { onBackToChannelList }
+          {...(onWorkbenchNotFound !== undefined
+            ? { onWorkbenchNotFound }
+            : {})}
+          {...(onBackToWorkbenchList !== undefined
+            ? { onBackToWorkbenchList }
             : {})}
           {...(onSignIn !== undefined ? { onSignIn } : {})}
         />

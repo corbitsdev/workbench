@@ -13,7 +13,7 @@ resolve a connector's credential across a tenant chain.
 - `plugins.ts`'s tenant-inheritance resolution calls the native, already
   chain-aware `GET /credentials/resolve/:name` route
   (`vendor/intx/hub-api/src/routes/credentials.ts`, backed by
-  `resolveCredentialByName` in `vendor/intx/db`) so a channel or
+  `resolveCredentialByName` in `vendor/intx/db`) so a workbench or
   sub-workbench inherits whatever an ancestor tenant connected.
 - `pkce.ts`'s state store seals `{ userId, codeVerifier, nonce, expiresAt }`
   through the caller's `CredentialCipher` (`@intx/types`), the same

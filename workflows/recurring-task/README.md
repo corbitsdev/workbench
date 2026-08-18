@@ -44,4 +44,4 @@ const json = serializeRecurringTaskWorkflow(definition);
 
 See [`workflows/README.md`](../README.md#status-note) for what
 registration/automatable/seeded mean — this one is seeded by default for
-every tenant, same as `channel-digest`.
+every tenant, same as `workbench-digest`.

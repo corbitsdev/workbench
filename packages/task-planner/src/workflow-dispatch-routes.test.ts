@@ -151,7 +151,7 @@ function storeOverInserts(db: {
     async linkPlannerRun(input) {
       plannerRunIds.set(input.id, input.plannerRunId);
     },
-    async recordChannel() {},
+    async recordWorkbench() {},
     async listLegs(tenantId, taskId) {
       return legRows().filter(
         (leg) => leg.tenantId === tenantId && leg.taskId === taskId,
@@ -319,13 +319,13 @@ function authenticatorFor(scope: typeof RUN_SCOPE | null) {
   return { resolve: mock(async () => scope) };
 }
 
-/** No dispatch in this file exercises the channel-lookup itself
- * (`@corbits/chat`'s own tests cover `findChannelByParticipantAddress`)
+/** No dispatch in this file exercises the workbench-lookup itself
+ * (`@corbits/chat`'s own tests cover `findWorkbenchByParticipantAddress`)
  * — every route call here just needs a `chatStore` that resolves to
- * "no channel", the same outcome a task launched with no channel
+ * "no workbench", the same outcome a task launched with no workbench
  * context gets. */
 function fakeChatStore() {
-  return { findChannelByParticipantAddress: async () => undefined };
+  return { findWorkbenchByParticipantAddress: async () => undefined };
 }
 
 async function postDispatch(

@@ -1,5 +1,5 @@
 // The one place apps/web talks to `@corbits/presence/client` — every
-// composition site (the channel header's who's-here stack, the canvas
+// composition site (the workbench header's who's-here stack, the canvas
 // artifact pane's cursor overlay) goes through this hook rather than
 // calling `connectPresence` itself, so there is exactly one connect/
 // disconnect lifecycle to reason about per (tenant, surface) pair.
@@ -33,7 +33,7 @@ export interface UsePresenceRoomOptions {
   /**
    * A shared `Y.Doc` to keep in sync over this room — see
    * `@corbits/presence/client`'s own `doc` option. Only artifact rooms
-   * (CL-5958 phase 2 co-editing) pass this; the channel who's-here stack
+   * (CL-5958 phase 2 co-editing) pass this; the workbench who's-here stack
    * never does, since it has no doc content. Reconnects when the `Y.Doc`
    * instance itself changes (a different artifact), not on every render.
    */
@@ -44,9 +44,9 @@ export interface UsePresenceRoomOptions {
 
 /**
  * Connects to a presence room for as long as `tenantId`/`surface` are both
- * present, tearing down and reconnecting whenever either changes (channel
+ * present, tearing down and reconnecting whenever either changes (workbench
  * switch, artifact switch, workbench switch). `null` for either means
- * "nothing to connect to" — mirrors `useChannelStream`'s empty-url guard in
+ * "nothing to connect to" — mirrors `useWorkbenchStream`'s empty-url guard in
  * `@corbits/chat-ui`.
  */
 export function usePresenceRoom(

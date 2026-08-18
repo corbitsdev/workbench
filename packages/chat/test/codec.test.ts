@@ -361,11 +361,11 @@ describe("senderOf", () => {
       textBody: [{ partId: "1", type: "text/plain" }],
       bodyValues: { "1": { value: "sent from a plain mail client" } },
       attachments: [],
-      from: [{ name: null, email: "channel1@acme.example" }],
+      from: [{ name: null, email: "workbench1@acme.example" }],
     };
     expect(senderOf(mail)).toEqual({
       name: null,
-      address: "channel1@acme.example",
+      address: "workbench1@acme.example",
     });
   });
 
@@ -414,7 +414,12 @@ describe("extractTextPreview", () => {
       textBody: [],
       bodyValues: {},
       attachments: [
-        { blobId: "blob_1", name: "report.pdf", type: "application/pdf", size: 1024 },
+        {
+          blobId: "blob_1",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 1024,
+        },
       ],
     };
     expect(extractTextPreview(mail)).toBe("");
@@ -436,14 +441,14 @@ describe("decodeMail leaf-header compensation", () => {
 
   test("strips a leaf attachment's own MIME header block before parsing", async () => {
     const raw =
-      'Content-Type: application/json\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{"kind":"event","event":"channel.agent-joined","data":{"address":"a@b"}}';
+      'Content-Type: application/json\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{"kind":"event","event":"workbench.agent-joined","data":{"address":"a@b"}}';
     const parts = await decodeMail(mailWith("blob_x_1.2"), {
       fetchBlob: async () => raw,
     });
     expect(parts).toEqual([
       {
         kind: "event",
-        event: "channel.agent-joined",
+        event: "workbench.agent-joined",
         data: { address: "a@b" },
       },
     ]);

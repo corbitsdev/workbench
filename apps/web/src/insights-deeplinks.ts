@@ -15,11 +15,11 @@ export function runDeepLinkTarget(run: { readonly id: string }): string {
   return runDetailPath(run.id);
 }
 
-/** Insights scoped to one channel (CL-5879) — the target for the
+/** Insights scoped to one workbench (CL-5879) — the target for the
  * conversation action bar's "Insights" entry point. The route resolves the
- * channel's own workbench tenant itself (see `../insights-channel-scope.ts`)
+ * workbench's own workbench tenant itself (see `../insights-workbench-scope.ts`)
  * rather than trusting a tenant id from the caller, since the caller here
- * only ever has the channel id at hand. */
-export function channelInsightsPath(channelId: string): string {
-  return `${INSIGHTS_PATH_PREFIX}/channel/${encodeURIComponent(channelId)}`;
+ * only ever has the workbench id at hand. */
+export function workbenchInsightsPath(workbenchId: string): string {
+  return `${INSIGHTS_PATH_PREFIX}/workbench/${encodeURIComponent(workbenchId)}`;
 }

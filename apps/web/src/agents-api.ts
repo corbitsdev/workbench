@@ -135,10 +135,10 @@ export function listAgentInstances(
 
 /**
  * The tenant's genuine top-level deployment runs — every folded run
- * (channel host, invited agent, task) excluded server-side by the hub's
+ * (workbench host, invited agent, task) excluded server-side by the hub's
  * own `folded_run` marker table (see `@corbits/folded-runs`'s
- * `scope-routes.ts`), not derived client-side from a tenant's channels
- * the way `foldedRunIdsFromChannels` used to. Used wherever a page needs
+ * `scope-routes.ts`), not derived client-side from a tenant's workbenches
+ * the way `foldedRunIdsFromWorkbenches` used to. Used wherever a page needs
  * "real deployments only" — the Agent Directory and the shell's
  * "Running" activity band alike.
  */
@@ -276,10 +276,10 @@ type ModelsOutcome =
  * Loads a bench's agent directory. Definitions and instances are required;
  * the model catalog and each definition's attached skills are best-effort
  * so either failing alone never blanks the page. `instances` comes from
- * `listTopLevelRuns`, which already excludes every folded run (channel
+ * `listTopLevelRuns`, which already excludes every folded run (workbench
  * host, invited agent, task) server-side — see `@corbits/folded-runs`'s
  * `scope-routes.ts` — so this page never has to derive that exclusion
- * itself from a tenant's channels.
+ * itself from a tenant's workbenches.
  */
 export async function loadAgentDirectory(
   tenantId: string,

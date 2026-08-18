@@ -7,7 +7,7 @@ import {
   resolveThreadAnchor,
   ThreadDepthCapError,
 } from "./threads";
-import type { ChannelThread } from "./threads";
+import type { WorkbenchThread } from "./threads";
 
 describe("resolveTargetThread", () => {
   test("explicit thread wins", () => {
@@ -47,11 +47,11 @@ describe("resolveTargetThread", () => {
   });
 });
 
-function fakeThread(overrides: Partial<ChannelThread>): ChannelThread {
+function fakeThread(overrides: Partial<WorkbenchThread>): WorkbenchThread {
   return {
     id: "thr_x",
     tenantId: "t1",
-    channelId: "c1",
+    workbenchId: "c1",
     kind: "reply",
     parentMessageId: null,
     parentThreadId: null,
@@ -103,13 +103,13 @@ describe("in-memory ThreadStore", () => {
     const store = createInMemoryThreadStore();
     const a = await createDeliveryThread(store, {
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       runRef: "run_42",
       title: "Nightly report",
     });
     const b = await createDeliveryThread(store, {
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       runRef: "run_42",
     });
     expect(a.id).toBe(b.id);
@@ -121,12 +121,12 @@ describe("in-memory ThreadStore", () => {
     const store = createInMemoryThreadStore();
     const a = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     const b = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     expect(a.id).toBe(b.id);
@@ -138,13 +138,13 @@ describe("in-memory ThreadStore", () => {
     const root = await store.ensureRootThread("t1", "c1");
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: root.id,
       messageId: "msg_a",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: root.id,
       messageId: "msg_b",
     });
@@ -155,30 +155,30 @@ describe("in-memory ThreadStore", () => {
     expect(await store.threadIdForMessage("t1", "c1", "msg_a")).toBe(root.id);
   });
 
-  test("listThreadAssignments maps only the channel's assigned messages", async () => {
+  test("listThreadAssignments maps only the workbench's assigned messages", async () => {
     const store = createInMemoryThreadStore();
     const root = await store.ensureRootThread("t1", "c1");
     const reply = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_a",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: root.id,
       messageId: "msg_a",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: reply.id,
       messageId: "msg_b",
     });
     const otherRoot = await store.ensureRootThread("t1", "c2");
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c2",
+      workbenchId: "c2",
       threadId: otherRoot.id,
       messageId: "msg_c",
     });
@@ -200,12 +200,12 @@ describe("in-memory ThreadStore", () => {
     await store.ensureRootThread("t1", "c1");
     await createDeliveryThread(store, {
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       runRef: "run_1",
     });
     await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     const list = await store.listThreads("t1", "c1");
@@ -221,7 +221,7 @@ describe("in-memory ThreadStore", () => {
     const root = await store.ensureRootThread("t1", "c1");
     const thread = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     expect(thread.parentThreadId).toBe(root.id);
@@ -233,18 +233,18 @@ describe("two-level thread cap (CL-5908, CL-5948)", () => {
     const store = createInMemoryThreadStore();
     const depth1 = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth1.id,
       messageId: "msg_2",
     });
     const depth2 = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_2",
     });
     expect(depth2.parentThreadId).toBe(depth1.id);
@@ -255,30 +255,30 @@ describe("two-level thread cap (CL-5908, CL-5948)", () => {
     const store = createInMemoryThreadStore();
     const depth1 = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth1.id,
       messageId: "msg_2",
     });
     const depth2 = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_2",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth2.id,
       messageId: "msg_3",
     });
     await expect(
       store.openReplyThread({
         tenantId: "t1",
-        channelId: "c1",
+        workbenchId: "c1",
         parentMessageId: "msg_3",
       }),
     ).rejects.toThrow(ThreadDepthCapError);
@@ -288,30 +288,30 @@ describe("two-level thread cap (CL-5908, CL-5948)", () => {
     const store = createInMemoryThreadStore();
     const depth1 = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth1.id,
       messageId: "msg_2",
     });
     const depth2 = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_2",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth2.id,
       messageId: "msg_3",
     });
 
     const sibling = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_3",
     });
 
@@ -324,23 +324,23 @@ describe("two-level thread cap (CL-5908, CL-5948)", () => {
     const store = createInMemoryThreadStore();
     const depth1 = await store.openReplyThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_1",
     });
     await store.assignMessage({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       threadId: depth1.id,
       messageId: "msg_2",
     });
     const a = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_2",
     });
     const b = await store.forkThread({
       tenantId: "t1",
-      channelId: "c1",
+      workbenchId: "c1",
       parentMessageId: "msg_2",
     });
     expect(a.id).toBe(b.id);

@@ -40,7 +40,7 @@ import { tenant, workflowDefinition } from "@intx/db/schema";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { skillNameSchema } from "@corbits/skills";
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
 
 import {
@@ -89,7 +89,7 @@ const CreateWorkflowAgentDefinitionInput = type({
  * against `workflowDefinition` rather than imported: `apps/hub` is the
  * composition root and depends on this package, so importing its
  * listing helper back would invert that dependency. Deployed, not an
- * automatable catalog workflow, and not a channel host's own silent
+ * automatable catalog workflow, and not a workbench host's own silent
  * anchor definition.
  */
 function isConversationalAgentDefinition(definition: {
@@ -97,7 +97,7 @@ function isConversationalAgentDefinition(definition: {
 }): boolean {
   return (
     !isAutomatableWorkflowName(definition.name) &&
-    !isChannelHostDefinitionName(definition.name)
+    !isWorkbenchHostDefinitionName(definition.name)
   );
 }
 

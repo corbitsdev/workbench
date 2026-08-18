@@ -18,7 +18,7 @@ export type SettingsContext = {
   readonly tenantId: string | null;
   readonly principalId: string | null;
   /** Client-side navigation, for a section whose own content routes
-   * elsewhere (e.g. Agents' "Start chat" opening a channel). Sections with
+   * elsewhere (e.g. Agents' "Start chat" opening a workbench). Sections with
    * no use for it simply ignore the field. */
   readonly navigate?: (to: string) => void;
   /** A sub-selection carried in the host's URL below the section id (e.g.

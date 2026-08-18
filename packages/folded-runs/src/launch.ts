@@ -59,7 +59,7 @@ export class InferenceResolutionError extends Error {
 /**
  * A caller-supplied inference-source chain, used verbatim in place of
  * catalog resolution (see `deployAtHead`). Exists for launches whose
- * anchor never runs a real inference turn — a channel host's noop
+ * anchor never runs a real inference turn — a workbench host's noop
  * pin (`@corbits/chat`'s `platform-adapter.ts`) is the only caller
  * today. Validated at the boundary since it crosses from a caller
  * package into this one; a malformed override fails loud rather than
@@ -117,7 +117,7 @@ export async function deployAtHead(
     principalId: string;
     sessionId: string;
     foldedBody: FoldedBody;
-    /** Named in the "seed a tenant catalog source" error, e.g. "the channel host", "the invited agent", or "the woken instance". */
+    /** Named in the "seed a tenant catalog source" error, e.g. "the workbench host", "the invited agent", or "the woken instance". */
     launchLabel: string;
     /**
      * When present, used verbatim in place of `resolveDefinitionSources`
@@ -145,8 +145,8 @@ export async function deployAtHead(
      * verbatim and feeds it straight into `agent.send`, which throws on
      * an empty string — and `content` is legitimately empty for
      * attachments-only mail (an event-only send, e.g.
-     * `channel.agent-joined`; see `@corbits/chat`'s `encodeParts`).
-     * A folded run that genuinely ignores its input (the channel host:
+     * `workbench.agent-joined`; see `@corbits/chat`'s `encodeParts`).
+     * A folded run that genuinely ignores its input (the workbench host:
      * its system prompt forbids ever acting on what it receives) should
      * pin a `{ literal: ... }` selector here instead of reading
      * `trigger.payload`, so an attachments-only mail landing in its
@@ -166,7 +166,8 @@ export async function deployAtHead(
           db: deps.db,
           tenantId: params.tenantId,
           modelRequirements: null,
-          fallbackModel: params.foldedBody.model ?? params.fallbackModel ?? null,
+          fallbackModel:
+            params.foldedBody.model ?? params.fallbackModel ?? null,
           invokerPreferences: {},
           ...(deps.credentialCipher !== undefined
             ? { credentialCipher: deps.credentialCipher }
@@ -337,7 +338,7 @@ export type LaunchFoldedRunParams = {
   triggerAddress: string;
   definitionId: string;
   foldedBody: FoldedBody;
-  /** Named in the "seed a tenant catalog source" error, e.g. "the channel host" or "the invited agent". */
+  /** Named in the "seed a tenant catalog source" error, e.g. "the workbench host" or "the invited agent". */
   launchLabel: string;
   /**
    * When present, used verbatim in place of catalog resolution — see
@@ -351,7 +352,7 @@ export type LaunchFoldedRunParams = {
   /**
    * Invoked inside the same launch transaction, immediately after the
    * principal/session/run rows are written, so a caller-owned table
-   * (e.g. `@corbits/chat`'s `channel_launch`) commits atomically with
+   * (e.g. `@corbits/chat`'s `workbench_launch`) commits atomically with
    * them. `folded-runs` never imports the caller's schema — the
    * caller writes its own row through the transaction handle passed
    * here.
@@ -365,7 +366,7 @@ export type LaunchedFoldedRun = {
 };
 
 /**
- * The launch core shared by a channel host and an invited agent alike
+ * The launch core shared by a workbench host and an invited agent alike
  * (or any other folded-run launch a host composes): resolve inference
  * sources against the tenant catalog, write the folded run's
  * principal/session/run rows, open the event collector, and deploy via

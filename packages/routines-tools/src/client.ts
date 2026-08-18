@@ -62,7 +62,7 @@ export interface RoutineView {
   readonly scope: string;
   readonly input: Record<string, unknown>;
   readonly enabled: boolean;
-  readonly deliveryChannelId: string | null;
+  readonly deliveryWorkbenchId: string | null;
   readonly consecutiveFailures: number;
   readonly deadLetteredAt: string | null;
   readonly createdAt: string;
@@ -74,7 +74,7 @@ export interface CreateRoutineRequest {
   readonly definitionId: string;
   readonly trigger: RoutineTriggerInput;
   readonly input?: Record<string, unknown>;
-  readonly deliveryChannelId?: string;
+  readonly deliveryWorkbenchId?: string;
   readonly runOnceNow?: boolean;
 }
 
@@ -97,7 +97,7 @@ const RoutineViewResponse = type({
   scope: "string",
   input: "Record<string, unknown>",
   enabled: "boolean",
-  deliveryChannelId: "string | null",
+  deliveryWorkbenchId: "string | null",
   consecutiveFailures: "number",
   deadLetteredAt: "string | null",
   createdAt: "string",

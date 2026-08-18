@@ -152,7 +152,7 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames(null, [MYRA])).toEqual([]);
   });
 
-  test("a pending reply with no tokens names the channel's agent participant", () => {
+  test("a pending reply with no tokens names the workbench's agent participant", () => {
     expect(typingAgentNames({ text: "" }, [HUMAN, MYRA])).toEqual(["Myra"]);
   });
 
@@ -160,7 +160,7 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual([]);
   });
 
-  test("a slugified handle is shown as a display name — \"myra\" reads \"Myra\"", () => {
+  test('a slugified handle is shown as a display name — "myra" reads "Myra"', () => {
     expect(
       typingAgentNames({ text: "" }, [
         { address: "myra@agents.example", handle: "myra" },
@@ -168,7 +168,7 @@ describe("typingAgentNames", () => {
     ).toEqual(["Myra"]);
   });
 
-  test("no agent participant on the channel means nobody is named", () => {
+  test("no agent participant on the workbench means nobody is named", () => {
     expect(typingAgentNames({ text: "" }, [HUMAN])).toEqual([]);
   });
 });

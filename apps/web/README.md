@@ -23,7 +23,7 @@ workbench-composed rail:
    in the product, and which bench am I in". Fixed width at every
    breakpoint — it never joins the columns that withdraw as the viewport
    narrows.
-2. **Contextual column** — bench-scoped and live: channels, chats, running
+2. **Contextual column** — bench-scoped and live: workbenches, chats, running
    routines, and notifications for the _currently selected_ bench. It
    refetches when the bench changes, not when the route does, so its
    contents can persist or travel across page navigation rather than being
@@ -53,21 +53,21 @@ in a real `@corbits/routines` listing later touches nothing else.
 
 ## Screens
 
-| Path         | What it shows                                                                                                                                                              |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`          | Home — a welcome summary of the signed-in account's benches and runs.                                                                                                      |
-| `/c`         | Channel deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
-| `/workflows` | Workflow runs executing across your benches.                                                                                                                               |
-| `/library`   | The artifact gallery. See "Library" below.                                                                                                                                 |
-| `/settings`  | Account, bench membership, and (CL-5990) Agents/Skills. See "Agents" and "Skills" below.                                                                                   |
+| Path         | What it shows                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Home — a welcome summary of the signed-in account's benches and runs.                                                                                                        |
+| `/c`         | Workbench deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
+| `/workflows` | Workflow runs executing across your benches.                                                                                                                                 |
+| `/library`   | The artifact gallery. See "Library" below.                                                                                                                                   |
+| `/settings`  | Account, bench membership, and (CL-5990) Agents/Skills. See "Agents" and "Skills" below.                                                                                     |
 
 Agents and Skills are Settings sections, not rail destinations — old
 `/agents[/:id]` and `/skills[/:id]` links still resolve, redirecting to
 `/settings/agents[/:id]` and `/settings/skills[/:id]`.
 
 Approvals are not a page: pending permission requests land as actionable
-cards in the contextual panel's Notifications band (and, when a channel is
-open, inline in that channel). The `/approvals` route is gone.
+cards in the contextual panel's Notifications band (and, when a workbench is
+open, inline in that workbench). The `/approvals` route is gone.
 
 ## Tests
 
@@ -91,8 +91,8 @@ route.
 Settings · Agents (`src/pages/agents-settings-section.tsx`, registered via
 `src/settings-workspace-sections.tsx`) is definitions only — a bench's
 directory of agent definitions and their deployed instances, with Start
-chat / Open in channel as its only reach into chat. Talking to an agent is a
-chat; looping one into a conversation is a channel mention — neither lives
+chat / Open in workbench as its only reach into chat. Talking to an agent is a
+chat; looping one into a conversation is a workbench mention — neither lives
 here. See `docs/AGENTS-PAGE.md`.
 
 ## Skills

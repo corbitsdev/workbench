@@ -3,7 +3,7 @@
 // never the inference-provider connectors (Anthropic, OpenAI, Groq,
 // Ollama, Opencode Zen, ...) that also live in
 // `@workbench/connections`'s registry. Those now live only in Shared
-// Settings' Connections section. Mounted through `ChannelSettingsSurface`
+// Settings' Connections section. Mounted through `WorkbenchSettingsSurface`
 // itself, the same composition a person actually reaches — stubs
 // `global.fetch` directly (every descriptor resolves via
 // `GET /credentials/resolve/:name`), never `mock.module`.
@@ -13,7 +13,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { ChannelSettingsSurface } from "../src/channel-settings";
+import { WorkbenchSettingsSurface } from "../src/workbench-settings";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -29,12 +29,12 @@ const json = (body: unknown, status = 200) =>
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-function mount(props: Parameters<typeof ChannelSettingsSurface>[0]) {
+function mount(props: Parameters<typeof WorkbenchSettingsSurface>[0]) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(ChannelSettingsSurface, props));
+    root?.render(createElement(WorkbenchSettingsSurface, props));
   });
   return container;
 }
@@ -54,12 +54,12 @@ const settle = () =>
   act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function baseProps(
-  overrides: Partial<Parameters<typeof ChannelSettingsSurface>[0]> = {},
+  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
 ) {
   return {
     tenantId: "tnt_1",
-    channelId: "ch_1",
-    channelTitle: "Talk to Myra",
+    workbenchId: "ch_1",
+    workbenchTitle: "Talk to Myra",
     onBack: () => undefined,
     onInviteParticipant: () => undefined,
     section: "plugins" as const,
@@ -129,7 +129,7 @@ function stubFetch(
 ) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
-    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
       return json({
         id: "ch_1",
         title: "Talk to Myra",

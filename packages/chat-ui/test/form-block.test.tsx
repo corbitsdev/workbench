@@ -14,7 +14,7 @@ import type {
   BlockResponseQuery,
 } from "../src/blocks/block-responses";
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 function messageWithFormBlock(): MessageItem[] {
   return [
@@ -102,7 +102,7 @@ async function mount(actions: BlockResponseActions) {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithFormBlock()}
         blockResponses={actions}
       />,
@@ -188,7 +188,7 @@ describe("form card round-trip", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<ChannelTimeline items={messageWithFormBlock()} />);
+      root?.render(<WorkbenchTimeline items={messageWithFormBlock()} />);
     });
 
     const input = container.querySelector(

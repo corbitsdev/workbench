@@ -22,13 +22,13 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import type { AppEnv } from "@intx/hub-api";
 
 import {
-  buildChannelHostWorkflow,
+  buildWorkbenchHostWorkflow,
   launchAndJoinAgent,
   presetForKind,
-  sendChannelMessage,
-  serializeChannelHostWorkflow,
-  type ChannelSubscriberRegistry,
-  type ChannelTenancyStore,
+  sendWorkbenchMessage,
+  serializeWorkbenchHostWorkflow,
+  type WorkbenchSubscriberRegistry,
+  type WorkbenchTenancyStore,
   type ChatPlatform,
   type ChatStore,
   type CreateChatRoutesDeps,
@@ -45,7 +45,7 @@ const log = getLogger(["hub", "slack-tag"]);
 
 /** The one role every auto-provisioned Slack principal is granted.
  * Every bench mints this system role at creation (see
- * `@corbits/chat`'s `channel-tenancy.ts`), so it always resolves. */
+ * `@corbits/chat`'s `workbench-tenancy.ts`), so it always resolves. */
 const SLACK_PRINCIPAL_ROLE_NAMES = ["member"] as const;
 
 export type MountWorkbenchSlackTagDeps = {
@@ -54,15 +54,15 @@ export type MountWorkbenchSlackTagDeps = {
   readonly databaseUrl: string;
   readonly chatStore: Pick<
     ChatStore,
-    | "getChannelSettings"
+    | "getWorkbenchSettings"
     | "getBenchSettings"
-    | "createChannelSettings"
-    | "updateChannelSettings"
+    | "createWorkbenchSettings"
+    | "updateWorkbenchSettings"
   >;
   readonly chatPlatform: ChatPlatform;
-  readonly chatTenancy: Pick<ChannelTenancyStore, "createChannelTenant">;
-  readonly channelSubscribers: ChannelSubscriberRegistry;
-  readonly channelHostInferencePreferences?: CreateChatRoutesDeps["channelHostInferencePreferences"];
+  readonly chatTenancy: Pick<WorkbenchTenancyStore, "createWorkbenchTenant">;
+  readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
+  readonly workbenchHostInferencePreferences?: CreateChatRoutesDeps["workbenchHostInferencePreferences"];
   readonly turnTimeoutMs: number;
 };
 
@@ -127,7 +127,7 @@ export async function mountWorkbenchSlackTag(
     state,
     bindings,
     resolvePrincipal,
-    subscribeToChannel: deps.chatPlatform.subscribeToChannel,
+    subscribeToChannel: deps.chatPlatform.subscribeToWorkbench,
     provisionChannel: async (input) => {
       const creatorPrincipal = await deps.db.query.principal.findFirst({
         where: eq(principal.id, input.creatorPrincipalId),
@@ -141,34 +141,34 @@ export async function mountWorkbenchSlackTag(
       const channelId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(channelId, tenantRow.domain);
       const inferencePreferences =
-        (await deps.channelHostInferencePreferences?.(tenantRow.id)) ?? [];
-      const definition = serializeChannelHostWorkflow(
-        buildChannelHostWorkflow({
+        (await deps.workbenchHostInferencePreferences?.(tenantRow.id)) ?? [];
+      const definition = serializeWorkbenchHostWorkflow(
+        buildWorkbenchHostWorkflow({
           triggerAddress,
           inferencePreferences,
           turnTimeoutMs: deps.turnTimeoutMs,
         }),
       );
 
-      const channelTenant = await deps.chatTenancy.createChannelTenant({
+      const channelTenant = await deps.chatTenancy.createWorkbenchTenant({
         parentTenantId: tenantRow.id,
-        channelId,
+        workbenchId: channelId,
         name: input.name,
         creatorUserId: creatorPrincipal.refId,
       });
 
-      await deps.chatPlatform.launchChannel({
+      await deps.chatPlatform.launchWorkbench({
         tenantId: tenantRow.id,
         creatorPrincipalId: input.creatorPrincipalId,
-        channelId,
+        workbenchId: channelId,
         triggerAddress,
         definition,
       });
 
       const preset = presetForKind("chat");
-      const settingsRow = await deps.chatStore.createChannelSettings({
+      const settingsRow = await deps.chatStore.createWorkbenchSettings({
         tenantId: tenantRow.id,
-        channelId,
+        workbenchId: channelId,
         settings: {
           "chat/kind": "chat",
           "chat/pinned": preset.pinned,
@@ -182,12 +182,12 @@ export async function mountWorkbenchSlackTag(
         {
           store: deps.chatStore,
           platform: deps.chatPlatform,
-          publish: deps.channelSubscribers.publish,
+          publish: deps.workbenchSubscribers.publish,
         },
         {
           tenantId: tenantRow.id,
           principalId: input.creatorPrincipalId,
-          channelId,
+          workbenchId: channelId,
           definitionId,
           existingSettings: settingsRow.settings,
           invitable: await deps.chatPlatform.listInvitableDefinitions(
@@ -207,12 +207,12 @@ export async function mountWorkbenchSlackTag(
       return { channelId };
     },
     sendMessage: async (input) => {
-      const sent = await sendChannelMessage(
+      const sent = await sendWorkbenchMessage(
         { store: deps.chatStore, platform: deps.chatPlatform },
         {
           tenantId: input.tenantId,
           principalId: input.principalId,
-          channelId: input.channelId,
+          workbenchId: input.channelId,
           messageParts: [{ kind: "text", text: input.text }],
         },
       );

@@ -391,7 +391,13 @@ export function ConnectionsSection({
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
-      {({ credentials, providers, oauthConfigured, models, ownOfferingIds }) => {
+      {({
+        credentials,
+        providers,
+        oauthConfigured,
+        models,
+        ownOfferingIds,
+      }) => {
         const providerNameById = new Map(
           providers.map((provider) => [provider.id, provider.name]),
         );
@@ -521,7 +527,7 @@ function StatusCaption({
 /** The row's brand mark: a connector's `simple-icons` path where the
  * registry has one, a monochrome initial tile otherwise — the same tile
  * pattern (zero radius, hairline border) the plugins directory's own
- * `PluginLogo` uses (`packages/chat-ui/src/channel-settings/plugins-
+ * `PluginLogo` uses (`packages/chat-ui/src/workbench-settings/plugins-
  * section.tsx`), reused here rather than re-derived (CL-6258). */
 function ConnectorLogo({
   displayName,

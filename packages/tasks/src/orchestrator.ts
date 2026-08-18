@@ -16,7 +16,7 @@
 // `status: "completed" | "failed"`) for the terminal signal, and caches
 // the most recent `connector.reply` content per address to attach to
 // that terminal event. Artifact chips arrive on a third, independent
-// channel — the event-collector's `onTurnFinalized` callback — the
+// workbench — the event-collector's `onTurnFinalized` callback — the
 // same one `@corbits/chat`'s `createArtifactDeliveryHandler` reads;
 // the host wires this orchestrator's `handleFinalizedTurn` into that
 // callback alongside chat's own handler (see apps/hub/src/index.ts).
@@ -62,27 +62,27 @@ export type TaskOrchestratorDeps = {
    */
   launchLeg: ChainDeps["launchLeg"];
   /**
-   * Posts a task's result into a channel — the Inbox was never the
+   * Posts a task's result into a workbench — the Inbox was never the
    * only place a dispatched task's outcome should surface. Optional:
    * a host that hasn't wired chat posting yet still gets the Inbox
    * delivery this orchestrator already provides, unchanged.
    */
-  channel?: TaskChannelPostDeps;
+  workbench?: TaskWorkbenchPostDeps;
 };
 
-export type TaskChannelPostDeps = {
-  /** Posts `text` into the given channel, from the channel itself
-   * (mirrors `@corbits/chat`'s `sendMail` `fromChannelId` — an agent's
+export type TaskWorkbenchPostDeps = {
+  /** Posts `text` into the given workbench, from the workbench itself
+   * (mirrors `@corbits/chat`'s `sendMail` `fromWorkbenchId` — an agent's
    * own reply, not a human's). */
   post(input: {
     readonly tenantId: string;
-    readonly channelId: string;
+    readonly workbenchId: string;
     readonly text: string;
   }): Promise<void>;
-  /** The tenant's Myra/assistant channel, when one exists — the
-   * fallback for a task dispatched with no origin channel (a direct
+  /** The tenant's Myra/assistant workbench, when one exists — the
+   * fallback for a task dispatched with no origin workbench (a direct
    * planner-API call). Undefined when the tenant has none. */
-  resolveFallbackChannelId(tenantId: string): Promise<string | undefined>;
+  resolveFallbackWorkbenchId(tenantId: string): Promise<string | undefined>;
 };
 
 export type TaskOrchestrator = {
@@ -150,7 +150,7 @@ export function createTaskOrchestrator(
       tenantId: string;
       principalId: string;
       definitionId: string;
-      channelId: string | null;
+      workbenchId: string | null;
       createdAt: Date;
     },
     taskStatus: "done" | "failed",
@@ -214,18 +214,18 @@ export function createTaskOrchestrator(
       });
     }
 
-    await postResultToChannel(record, resultEvent);
+    await postResultToWorkbench(record, resultEvent);
   }
 
-  async function postResultToChannel(
-    record: { tenantId: string; channelId: string | null },
+  async function postResultToWorkbench(
+    record: { tenantId: string; workbenchId: string | null },
     resultEvent: TaskResultNotification,
   ): Promise<void> {
-    if (deps.channel === undefined) return;
-    const channelId =
-      record.channelId ??
-      (await deps.channel.resolveFallbackChannelId(record.tenantId));
-    if (channelId === undefined) return;
+    if (deps.workbench === undefined) return;
+    const workbenchId =
+      record.workbenchId ??
+      (await deps.workbench.resolveFallbackWorkbenchId(record.tenantId));
+    if (workbenchId === undefined) return;
 
     const outcome =
       resultEvent.status === "done"
@@ -235,9 +235,13 @@ export function createTaskOrchestrator(
     const text = `Task finished: ${outcome}\n\n${rendered.body}`;
 
     try {
-      await deps.channel.post({ tenantId: record.tenantId, channelId, text });
+      await deps.workbench.post({
+        tenantId: record.tenantId,
+        workbenchId,
+        text,
+      });
     } catch (cause) {
-      log.error`task orchestrator: failed to post task ${resultEvent.taskId}'s result into channel ${channelId}: ${
+      log.error`task orchestrator: failed to post task ${resultEvent.taskId}'s result into workbench ${workbenchId}: ${
         cause instanceof Error ? cause.message : String(cause)
       }`;
     }

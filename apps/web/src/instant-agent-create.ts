@@ -14,7 +14,7 @@
 
 import { launchAgentChat } from "./agent-chat-launch";
 import { listAgentDefinitions } from "./agents-api";
-import { findMyraDefinition } from "./myra-channel";
+import { findMyraDefinition } from "./myra-workbench";
 
 export const NEW_WORKBENCH_TITLE = "New Workbench";
 

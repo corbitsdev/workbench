@@ -1,7 +1,7 @@
 // The mail-path core shared by every folded-run send/list surface:
 // signing and persisting a message into a run's mailbox, and walking
 // that mailbox with keyset pagination. Sender identity
-// (`fromChannelId`/participant semantics, whose address a message is
+// (`fromWorkbenchId`/participant semantics, whose address a message is
 // "from") is a caller concern — this module takes the from-address and
 // raw content as plain inputs and never synthesizes one from a
 // principal id.

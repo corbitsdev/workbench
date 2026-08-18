@@ -47,16 +47,20 @@ import {
 } from "@corbits/insights/client";
 
 import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
-import { channelsQueryKey, listChannels, type Channel } from "@corbits/chat-ui";
+import {
+  workbenchesQueryKey,
+  listWorkbenches,
+  type Workbench,
+} from "@corbits/chat-ui";
 
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import {
-  channelIdForWorkbenchTenant,
-  resolveChannelInsightsScope,
-  type ChannelInsightsResolution,
-} from "../insights-channel-scope";
-import { channelInsightsPath } from "../insights-deeplinks";
+  workbenchIdForWorkbenchTenant,
+  resolveWorkbenchInsightsScope,
+  type WorkbenchInsightsResolution,
+} from "../insights-workbench-scope";
+import { workbenchInsightsPath } from "../insights-deeplinks";
 import {
   ActivityResponseSchema,
   InsightsScopeSchema,
@@ -1006,8 +1010,8 @@ export function InsightsRunDetail({
 }
 
 /**
- * `/insights/channel/:channelId` (CL-5879) is its own dedicated route — a
- * conversation's own scoped view, resolved by `InsightsChannelPage`, never
+ * `/insights/workbench/:workbenchId` (CL-5879) is its own dedicated route — a
+ * conversation's own scoped view, resolved by `InsightsWorkbenchPage`, never
  * a sub-mode of the landing. Every other path stays the cross-workbench
  * default landing: no per-mode branch needed there, since scoping happens
  * in InsightsRoute (which tenantId every query below targets), not here.
@@ -1016,33 +1020,33 @@ export function InsightsRunDetail({
  * matching anything.
  */
 function parseInsightsPath(path: string): {
-  mode: "landing" | "runs" | "run" | "channel";
+  mode: "landing" | "runs" | "run" | "workbench";
   runId: string | null;
-  channelId: string | null;
+  workbenchId: string | null;
 } {
-  const channelMatch = /^\/insights\/channel\/([^/]+)\/?$/.exec(path);
-  if (channelMatch !== null && channelMatch[1] !== undefined) {
+  const workbenchMatch = /^\/insights\/workbench\/([^/]+)\/?$/.exec(path);
+  if (workbenchMatch !== null && workbenchMatch[1] !== undefined) {
     return {
-      mode: "channel",
+      mode: "workbench",
       runId: null,
-      channelId: decodeURIComponent(channelMatch[1]),
+      workbenchId: decodeURIComponent(workbenchMatch[1]),
     };
   }
   if (path === "/insights" || path === "/insights/") {
-    return { mode: "landing", runId: null, channelId: null };
+    return { mode: "landing", runId: null, workbenchId: null };
   }
   if (path === "/insights/runs" || path === "/insights/runs/") {
-    return { mode: "runs", runId: null, channelId: null };
+    return { mode: "runs", runId: null, workbenchId: null };
   }
   const match = /^\/insights\/runs\/([^/]+)\/?$/.exec(path);
   if (match !== null && match[1] !== undefined) {
     return {
       mode: "run",
       runId: decodeURIComponent(match[1]),
-      channelId: null,
+      workbenchId: null,
     };
   }
-  return { mode: "landing", runId: null, channelId: null };
+  return { mode: "landing", runId: null, workbenchId: null };
 }
 
 /**
@@ -1073,7 +1077,7 @@ export function resolveInsightsScope({
   selectedTenantId,
   scopeData,
 }: {
-  readonly mode: "landing" | "runs" | "run" | "channel";
+  readonly mode: "landing" | "runs" | "run" | "workbench";
   readonly selectedTenantId: string | null;
   readonly scopeData: InsightsScope | null;
 }): { effectiveTenantId: string | null; scopeLabel: string } {
@@ -1109,7 +1113,7 @@ export function resolveInsightsScope({
 /**
  * Landing-view scope switcher: "All workbenches" (the cross-workbench
  * aggregate this landing always shows — always the pressed option, since
- * every other pill navigates straight to that sibling's own channel-scoped
+ * every other pill navigates straight to that sibling's own workbench-scoped
  * Insights, CL-5879, rather than switching this same page's scope inline)
  * versus each sibling workbench by name. Hidden entirely when `/scope`
  * reports no parent — a root workbench with no siblings has nothing to
@@ -1120,7 +1124,7 @@ function InsightsScopeSwitcher({
   onSelect,
 }: {
   readonly scope: InsightsScope | null;
-  readonly onSelect: (workbenchId: string | null) => void;
+  readonly onSelect: (tenantId: string | null) => void;
 }) {
   if (scope === null || scope.parent === null) return null;
   return (
@@ -1164,7 +1168,7 @@ export function InsightsPage({
   workbenches,
   range,
   scope,
-  resolveWorkbenchChannelId,
+  resolveWorkbenchIdForTenant,
   scopeLabel,
 }: {
   readonly path: string;
@@ -1188,10 +1192,10 @@ export function InsightsPage({
    * workbenches. Null while loading/absent; the switcher hides itself. */
   readonly scope: InsightsScope | null;
   /** A workbench usage row (and the scope switcher's sibling pills) only
-   * carry that workbench's tenant id — this resolves it to the channel
-   * that opens `/insights/channel/:channelId` for it (CL-5879), or null
-   * when no channel in view carries that tenancy. */
-  readonly resolveWorkbenchChannelId: (tenantId: string) => string | null;
+   * carry that workbench's tenant id — this resolves it to the workbench
+   * that opens `/insights/workbench/:workbenchId` for it (CL-5879), or null
+   * when no workbench in view carries that tenancy. */
+  readonly resolveWorkbenchIdForTenant: (tenantId: string) => string | null;
   /** "All workbenches" or the current workbench's own name — always known
    * even before `/scope` resolves (falls back to the raw id). */
   readonly scopeLabel: string;
@@ -1294,13 +1298,14 @@ export function InsightsPage({
         actions={
           <InsightsScopeSwitcher
             scope={scope}
-            onSelect={(workbenchId) => {
-              if (workbenchId === null) {
+            onSelect={(tenantId) => {
+              if (tenantId === null) {
                 navigate("/insights");
                 return;
               }
-              const channelId = resolveWorkbenchChannelId(workbenchId);
-              if (channelId !== null) navigate(channelInsightsPath(channelId));
+              const workbenchId = resolveWorkbenchIdForTenant(tenantId);
+              if (workbenchId !== null)
+                navigate(workbenchInsightsPath(workbenchId));
             }}
           />
         }
@@ -1322,8 +1327,9 @@ export function InsightsPage({
             }
             onOpenRuns={() => navigate("/insights/runs")}
             onSelectWorkbench={(tenantId) => {
-              const channelId = resolveWorkbenchChannelId(tenantId);
-              if (channelId !== null) navigate(channelInsightsPath(channelId));
+              const workbenchId = resolveWorkbenchIdForTenant(tenantId);
+              if (workbenchId !== null)
+                navigate(workbenchInsightsPath(workbenchId));
             }}
           />
         </PageShell>
@@ -1388,29 +1394,29 @@ export function InsightsRunDetailRoute({
 }
 
 /**
- * Insights scoped to one channel (CL-5879) — `/insights/channel/:channelId`
- * resolves the channel's own workbench tenant (see
- * `../insights-channel-scope.ts`) and titles the page by the CHANNEL name,
- * never the tenant's. A true legacy channel (tenancy `null`) and an id
- * absent from the bench's own channel list (a stale
+ * Insights scoped to one workbench (CL-5879) — `/insights/workbench/:workbenchId`
+ * resolves the workbench's own workbench tenant (see
+ * `../insights-workbench-scope.ts`) and titles the page by the WORKBENCH name,
+ * never the tenant's. A true legacy workbench (tenancy `null`) and an id
+ * absent from the bench's own workbench list (a stale
  * `/insights/workbench/:tenantId` link, or any other mis-wired id — that
  * route is retired) both get an honest empty state instead of a doomed
  * tenant-scoped fetch.
  */
-function InsightsChannelPage({
-  channelId,
-  channelsLoading,
+function InsightsWorkbenchPage({
+  workbenchId,
+  workbenchesLoading,
   resolution,
   benchTenantId,
   onOpenRun,
 }: {
-  readonly channelId: string;
-  readonly channelsLoading: boolean;
-  readonly resolution: ChannelInsightsResolution;
+  readonly workbenchId: string;
+  readonly workbenchesLoading: boolean;
+  readonly resolution: WorkbenchInsightsResolution;
   readonly benchTenantId: string | null;
   readonly onOpenRun: (id: string) => void;
 }) {
-  if (channelsLoading) {
+  if (workbenchesLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar title="Insights" />
@@ -1427,7 +1433,7 @@ function InsightsChannelPage({
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<ChartColumn />}
-            title="Channel not found"
+            title="Workbench not found"
             description="This conversation may have been deleted, or you may not have access to it."
           />
         </PageShell>
@@ -1442,7 +1448,7 @@ function InsightsChannelPage({
           <RichEmptyState
             icon={<ChartColumn />}
             title="No insights for this conversation yet"
-            description="This conversation predates per-channel insights."
+            description="This conversation predates per-workbench insights."
           />
         </PageShell>
       </div>
@@ -1458,7 +1464,7 @@ function InsightsChannelPage({
         <PageShell width="full" className="page-fill">
           <WorkbenchTimelineRoute
             benchTenantId={benchTenantId}
-            channelId={channelId}
+            workbenchId={workbenchId}
             onOpenRun={onOpenRun}
           />
         </PageShell>
@@ -1473,7 +1479,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const currentPath =
     path ??
     (typeof window !== "undefined" ? window.location.pathname : "/insights");
-  const { mode, channelId } = parseInsightsPath(currentPath);
+  const { mode, workbenchId } = parseInsightsPath(currentPath);
 
   // A sliding window: `to` re-anchors to now every minute, so the
   // dashboard keeps up with live turns instead of freezing at whatever
@@ -1491,39 +1497,39 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   );
   const scopeData = scope.kind === "ready" ? scope.data : null;
 
-  // The bench's own channel list, shared with `ChatWorkspace`'s sidebar via
-  // `channelsQueryKey` (never a bespoke fetch of its own) — the single
-  // mechanism behind both directions of channel↔workbench-tenant
-  // resolution (CL-5879): a `/insights/channel/:channelId` deep link
+  // The bench's own workbench list, shared with `ChatWorkspace`'s sidebar via
+  // `workbenchesQueryKey` (never a bespoke fetch of its own) — the single
+  // mechanism behind both directions of workbench↔workbench-tenant
+  // resolution (CL-5879): a `/insights/workbench/:workbenchId` deep link
   // resolving its own tenant below, and a usage row's tenant id resolving
-  // back to the channel that opens it (`resolveWorkbenchChannelId`, fed to
+  // back to the workbench that opens it (`resolveWorkbenchIdForTenant`, fed to
   // `InsightsPage` for the "activity by workbench" rows and the scope
   // switcher's sibling pills).
-  const channelsOfKind = useTenantQuery(
+  const workbenchesOfKind = useTenantQuery(
     selectedTenantId === null
-      ? ["tenant", "none", "channels", "channel"]
-      : channelsQueryKey(selectedTenantId, "channel"),
+      ? ["tenant", "none", "workbenches", "workbench"]
+      : workbenchesQueryKey(selectedTenantId, "workbench"),
     selectedTenantId !== null,
-    () => listChannels(selectedTenantId as string, "channel"),
+    () => listWorkbenches(selectedTenantId as string, "workbench"),
   );
   const chatsOfKind = useTenantQuery(
     selectedTenantId === null
-      ? ["tenant", "none", "channels", "chat"]
-      : channelsQueryKey(selectedTenantId, "chat"),
+      ? ["tenant", "none", "workbenches", "chat"]
+      : workbenchesQueryKey(selectedTenantId, "chat"),
     selectedTenantId !== null,
-    () => listChannels(selectedTenantId as string, "chat"),
+    () => listWorkbenches(selectedTenantId as string, "chat"),
   );
-  const channelsLoading =
-    channelsOfKind.kind === "loading" || chatsOfKind.kind === "loading";
-  const allChannels: readonly Channel[] = [
-    ...(channelsOfKind.kind === "ready" ? channelsOfKind.data : []),
+  const workbenchesLoading =
+    workbenchesOfKind.kind === "loading" || chatsOfKind.kind === "loading";
+  const allWorkbenches: readonly Workbench[] = [
+    ...(workbenchesOfKind.kind === "ready" ? workbenchesOfKind.data : []),
     ...(chatsOfKind.kind === "ready" ? chatsOfKind.data : []),
   ];
-  const resolveWorkbenchChannelId = (tenantId: string): string | null =>
-    channelIdForWorkbenchTenant(allChannels, tenantId);
-  const channelResolution: ChannelInsightsResolution | null =
-    mode === "channel" && channelId !== null
-      ? resolveChannelInsightsScope(allChannels, channelId)
+  const resolveWorkbenchIdForTenant = (tenantId: string): string | null =>
+    workbenchIdForWorkbenchTenant(allWorkbenches, tenantId);
+  const workbenchResolution: WorkbenchInsightsResolution | null =
+    mode === "workbench" && workbenchId !== null
+      ? resolveWorkbenchInsightsScope(allWorkbenches, workbenchId)
       : null;
 
   const { effectiveTenantId, scopeLabel } = resolveInsightsScope({
@@ -1556,8 +1562,8 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       : insightsTopLevelRunsPath(effectiveTenantId),
     TopLevelRunsSchema,
   );
-  // Only meaningful on the cross-workbench landing — mode "channel" renders
-  // `InsightsChannelPage` instead of `InsightsPage`, so there is nothing
+  // Only meaningful on the cross-workbench landing — mode "workbench" renders
+  // `InsightsWorkbenchPage` instead of `InsightsPage`, so there is nothing
   // here to chart and the fetch stays disabled.
   const workbenches = useAPIQuery(
     effectiveTenantId === null || mode !== "landing"
@@ -1604,12 +1610,16 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? { kind: "ready", data: { data: [], nextCursor: null } }
       : runs;
 
-  if (mode === "channel" && channelId !== null && channelResolution !== null) {
+  if (
+    mode === "workbench" &&
+    workbenchId !== null &&
+    workbenchResolution !== null
+  ) {
     return (
-      <InsightsChannelPage
-        channelId={channelId}
-        channelsLoading={channelsLoading}
-        resolution={channelResolution}
+      <InsightsWorkbenchPage
+        workbenchId={workbenchId}
+        workbenchesLoading={workbenchesLoading}
+        resolution={workbenchResolution}
         benchTenantId={selectedTenantId}
         onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
       />
@@ -1627,7 +1637,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       workbenches={workbenches}
       range={range}
       scope={scopeData}
-      resolveWorkbenchChannelId={resolveWorkbenchChannelId}
+      resolveWorkbenchIdForTenant={resolveWorkbenchIdForTenant}
       scopeLabel={scopeLabel}
     />
   );

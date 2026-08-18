@@ -13,7 +13,7 @@ it — `createHubAPI` is a thin `fetch` boundary against the hub's own
 routes, and `@intx/inference`/`@intx/types` supply the model-source and
 response types it validates responses against with `arktype`. Workflow
 definitions come from this repo's own `@corbits/*-workflow` packages
-(`assistant-workflow`, `channel-digest-workflow`, `echo-workflow`,
+(`assistant-workflow`, `workbench-digest-workflow`, `echo-workflow`,
 `heartbeat-workflow`, `recurring-task-workflow`), and tool-package
 publishing is delegated to `@corbits/tool-registry-publish` rather than
 duplicated here.

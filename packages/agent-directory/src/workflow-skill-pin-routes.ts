@@ -20,7 +20,7 @@
 // human already approved this exact pin. The human is the authorizer
 // here, not a grant row; this route still enforces, unconditionally,
 // that the target definition belongs to the authenticated run's own
-// tenant and is never a channel host (the same host guard
+// tenant and is never a workbench host (the same host guard
 // `workflow-capability-routes.ts` applies).
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
@@ -31,7 +31,7 @@ import { workflowDefinition } from "@intx/db/schema";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import { reindexPinnedSkills } from "./agent-workflow";
 import type { PinnedSkillIndexResolver } from "./routes";
@@ -70,7 +70,7 @@ function definitionNotFound(definitionId: string) {
 }
 
 /** Same host-guard `./routes.ts`/`./workflow-capability-routes.ts`
- * apply: a channel host is never a target a workflow run may mutate
+ * apply: a workbench host is never a target a workflow run may mutate
  * through this surface either. Duplicated rather than imported since
  * `workflow-capability-routes.ts` does not export its own copy. */
 function hostGuardedRow(
@@ -79,7 +79,7 @@ function hostGuardedRow(
   return (
     row !== undefined &&
     row.assetId !== null &&
-    !isChannelHostDefinitionName(row.name)
+    !isWorkbenchHostDefinitionName(row.name)
   );
 }
 

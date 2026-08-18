@@ -39,8 +39,8 @@
 // `dispatchTask` — the exact same `@corbits/tasks` `launchTask` call
 // `POST /tasks` uses — so a scheduled recurring task lands in the
 // creator's Inbox exactly like a manual one, on the same launch path, no
-// duplicated logic. A `deliveryChannelId` picked on the routine (if any)
-// is not used for this delivery: a task result never posts to a channel,
+// duplicated logic. A `deliveryWorkbenchId` picked on the routine (if any)
+// is not used for this delivery: a task result never posts to a workbench,
 // only to the Inbox.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
@@ -75,15 +75,15 @@ export type CreateHubRoutineLauncherDeps = FoldedRunsDeps & {
    * task launch is) stays entirely in `@corbits/tasks`; this port is
    * pure composition, same as every other dep here. */
   dispatchTask: (input: LaunchTaskInput) => Promise<TaskRecord>;
-  /** Adds the launched run's address to the routine's delivery channel
+  /** Adds the launched run's address to the routine's delivery workbench
    * as a participant — hub wires this to `@corbits/chat`'s
    * `joinRunParticipant`. Membership is what makes the chat
-   * orchestrator post the run's replies into that channel: a routine
+   * orchestrator post the run's replies into that workbench: a routine
    * delivers into a workbench through the exact same participant path
    * an invited agent's replies take, never a second posting mechanism. */
-  joinDeliveryChannel: (input: {
+  joinDeliveryWorkbench: (input: {
     tenantId: string;
-    channelId: string;
+    workbenchId: string;
     principalId: string;
     address: string;
     handle: string;
@@ -181,21 +181,21 @@ export function createHubRoutineLauncher(
       });
 
       if (
-        input.deliveryChannelId !== undefined &&
-        input.deliveryChannelId !== null &&
-        input.deliveryChannelId !== ""
+        input.deliveryWorkbenchId !== undefined &&
+        input.deliveryWorkbenchId !== null &&
+        input.deliveryWorkbenchId !== ""
       ) {
         try {
-          await deps.joinDeliveryChannel({
+          await deps.joinDeliveryWorkbench({
             tenantId: input.tenantId,
-            channelId: input.deliveryChannelId,
+            workbenchId: input.deliveryWorkbenchId,
             principalId: input.principalId,
             address: triggerAddress,
             handle: handleFromName(input.routineName ?? "", triggerAddress),
           });
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          log.error`routine run ${instanceId} launched but could not join delivery channel ${input.deliveryChannelId}: ${reason}`;
+          log.error`routine run ${instanceId} launched but could not join delivery workbench ${input.deliveryWorkbenchId}: ${reason}`;
         }
       }
 

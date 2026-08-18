@@ -1,4 +1,4 @@
-// The channel header's live who's-here stack (CL-5958): a plain-data
+// The workbench header's live who's-here stack (CL-5958): a plain-data
 // `presenceMembers` prop, distinct from the static participants list —
 // omitted entirely, nothing renders; supplied, one avatar per member,
 // colored per its server-assigned color. Mirrors chat-workspace.test.tsx's
@@ -33,10 +33,10 @@ afterEach(() => {
   StubEventSource.instances = [];
 });
 
-const CHANNEL_WIRE = {
+const WORKBENCH_WIRE = {
   id: "ch_1",
   title: "Launch Planning",
-  kind: "channel",
+  kind: "workbench",
   pinned: false,
   participants: [] as { address: string; handle: string }[],
 };
@@ -50,17 +50,18 @@ function stubFetch() {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    if (/\/chat\/channels\?kind=channel$/.test(path)) {
-      return json({ items: [CHANNEL_WIRE] });
+    if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+      return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+    if (/\/chat\/workbenches\?kind=chat$/.test(path))
+      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/messages/.test(path))
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
       return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/channels\/[^/]+\/invitable$/.test(path))
+    if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
       return json({ items: [] });
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
@@ -93,12 +94,12 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
-describe("channel header presence stack", () => {
+describe("workbench header presence stack", () => {
   test("renders nothing when presenceMembers is omitted", async () => {
     stubFetch();
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
     });
     await harness.settle();
 
@@ -110,7 +111,7 @@ describe("channel header presence stack", () => {
     stubFetch();
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       presenceMembers: [
         {
           principalId: "prn_alice",

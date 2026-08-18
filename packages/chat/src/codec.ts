@@ -22,9 +22,9 @@ export type MailContent = {
   }[];
   /**
    * Set when this mail is a mention fan-out copy: the id of the
-   * channel the message originated in, carried as a reply-to
+   * workbench the message originated in, carried as a reply-to
    * reference rather than a relay hop. Absent on ordinary mail,
-   * including everything sent directly to a channel's own anchor.
+   * including everything sent directly to a workbench's own anchor.
    */
   replyTo?: string;
 };
@@ -165,7 +165,7 @@ export function senderOf(mail: unknown): MailSender {
 const PREVIEW_MAX_LENGTH = 80;
 
 /**
- * A bounded, best-effort preview snippet for a channel-list row: the
+ * A bounded, best-effort preview snippet for a workbench-list row: the
  * message's plain text, whitespace-collapsed and truncated to
  * `PREVIEW_MAX_LENGTH` characters. Text parts only — an attachment-only
  * message (a file, a structured block) previews as empty rather than a

@@ -1,5 +1,5 @@
 // Pure @-mention logic for the composer: detecting an in-progress mention at
-// the caret, deriving mentionable candidates from a channel's participant
+// the caret, deriving mentionable candidates from a workbench's participant
 // records, filtering them against the query, and splicing a chosen handle
 // back into the draft. No DOM, no fetch — kept pure so it is unit-testable
 // without mounting anything.
@@ -38,7 +38,7 @@ function readableLabel(handle: string): string {
 }
 
 /**
- * The mentionable agent candidates for a channel: its agent-address
+ * The mentionable agent candidates for a workbench: its agent-address
  * participants (the same set `mentionedParticipants` fans a copy to on the
  * server), each keyed by its own settings-held handle so a picked candidate
  * always inserts text the server will actually match. Kept agent-only so
@@ -78,7 +78,7 @@ export type MentionSection = "agents" | "people";
 
 /**
  * A single popover row. `invite` is present only for workspace members /
- * invitable definitions not yet in the channel — picking that row both
+ * invitable definitions not yet in the workbench — picking that row both
  * inserts the mention and marks the intent the send path acts on.
  */
 export type MentionOption = {
@@ -88,8 +88,8 @@ export type MentionOption = {
 };
 
 /** A workspace member not yet in this workbench — the same reduced shape
- * `NewChannelDialog`'s `listMembers` already returns (see
- * `new-channel-dialog.tsx`'s `PersonOption`), re-declared here so this
+ * `NewWorkbenchDialog`'s `listMembers` already returns (see
+ * `new-workbench-dialog.tsx`'s `PersonOption`), re-declared here so this
  * module doesn't import a dialog-owned type for one field pair. */
 export type BringInMember = {
   readonly id: string;
@@ -147,12 +147,12 @@ export function bringInOptionsFromMembersAndAgents(
 }
 
 /**
- * Full popover list: Agents (in-channel agents, then invitable), then People
- * (in-channel humans, then bring-in members). Section order matches the
- * cleaned-up picker chrome; within a section, already-in-channel rows stay
+ * Full popover list: Agents (in-workbench agents, then invitable), then People
+ * (in-workbench humans, then bring-in members). Section order matches the
+ * cleaned-up picker chrome; within a section, already-in-workbench rows stay
  * ahead of bring-in so a sender's familiar handles don't jump.
  */
-export function mentionOptionsFromChannel(
+export function mentionOptionsFromWorkbench(
   participants: readonly ParticipantRecord[],
   members: readonly BringInMember[],
   invitableAgents: readonly BringInAgentDefinition[],

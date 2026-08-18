@@ -1,27 +1,27 @@
-// Pure helpers for channel-row menus. The page-local ChatSidebar surface is
-// gone — the app shell's panel contributions own the channel list.
+// Pure helpers for workbench-row menus. The page-local ChatSidebar surface is
+// gone — the app shell's panel contributions own the workbench list.
 
-import type { Channel } from "./api";
+import type { Workbench } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
 /**
- * The row menu's item labels for a given channel, pure so its pinned-state
+ * The row menu's item labels for a given workbench, pure so its pinned-state
  * wording ("Pin" vs "Unpin") is testable without opening the (portaled,
  * Radix-controlled) menu itself.
  */
 export function rowMenuLabels(
-  channel: Pick<Channel, "pinned">,
+  workbench: Pick<Workbench, "pinned">,
 ): readonly [rename: string, pin: string, settings: string] {
   return [
     CHAT_STRINGS.rowMenuRename,
-    channel.pinned ? CHAT_STRINGS.rowMenuUnpin : CHAT_STRINGS.rowMenuPin,
+    workbench.pinned ? CHAT_STRINGS.rowMenuUnpin : CHAT_STRINGS.rowMenuPin,
     CHAT_STRINGS.rowMenuSettings,
   ];
 }
 
 /**
  * What a rename submission should send: `undefined` for input that resolves
- * to nothing worth saving (blank, or unchanged from the channel's current
+ * to nothing worth saving (blank, or unchanged from the workbench's current
  * title) — the caller's cue to treat the rename as a no-op cancel rather
  * than an empty-name PATCH.
  */

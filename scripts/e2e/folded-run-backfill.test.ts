@@ -9,14 +9,14 @@
 // This is the test for CL-6061's backfill follow-up: before
 // `@corbits/folded-runs`' own `folded_run` marker table existed, a
 // folded run was recorded only in the launching package's own table
-// (`@corbits/chat`'s `channel_launch`, `@corbits/tasks`' `task` and
+// (`@corbits/chat`'s `workbench_launch`, `@corbits/tasks`' `task` and
 // `task_leg`). Proves the coordinated backfill this repo chose —
 // `scripts/db-setup.ts` sourcing seeds from each package's own
 // exported lister and handing them to `@corbits/folded-runs`' own
 // `backfillFoldedRunMarkers`, never a direct cross-schema SELECT
 // inside `@corbits/folded-runs` itself, which would make it depend on
 // two packages that already depend on it — actually closes the gap:
-// pre-existing "old-shape" rows (channel host, invited agent, task,
+// pre-existing "old-shape" rows (workbench host, invited agent, task,
 // and a chain leg) get a marker, and `listTopLevelRuns` excludes every
 // one of them afterward while still listing a genuine deployment.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -31,7 +31,7 @@ import {
 import { listTopLevelRuns } from "../../packages/folded-runs/src/scope-routes";
 import {
   applyChatMigrations,
-  listChannelLaunchFoldedRunIds,
+  listWorkbenchLaunchFoldedRunIds,
 } from "../../packages/chat/src/migrations";
 import {
   applyTasksMigrations,
@@ -117,7 +117,7 @@ describeIfDb("folded-run backfill", () => {
     }
   }, 30000);
 
-  test("backfills markers for pre-existing channel_launch/task/task_leg runs and the scoped listing excludes them", async () => {
+  test("backfills markers for pre-existing workbench_launch/task/task_leg runs and the scoped listing excludes them", async () => {
     const target = dbTargetFromUrl(scratchUrl);
     const intxDb = await loadIntxDb();
     const { db, close } = intxDb.createDB(target);
@@ -157,13 +157,13 @@ describeIfDb("folded-run backfill", () => {
         ],
       );
 
-      // Four "old-shape" folded runs — channel host, invited agent,
+      // Four "old-shape" folded runs — workbench host, invited agent,
       // task, and a chain leg — each self-anchored in workflow_run
       // exactly like the deployment above, but with NO folded_run
       // marker yet: only their launching package's own table records
       // them, simulating data written before CL-6061.
       const oldShapeIds = [
-        "run_channel_host_old",
+        "run_workbench_host_old",
         "run_invited_agent_old",
         "run_task_old",
         "run_chain_leg_old",
@@ -184,15 +184,15 @@ describeIfDb("folded-run backfill", () => {
       }
 
       await sql.unsafe(
-        `INSERT INTO "chat"."channel_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
+        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
         [
           TENANT,
-          "run_channel_host_old",
+          "run_workbench_host_old",
           JSON.stringify({ systemPrompt: "host" }),
         ],
       );
       await sql.unsafe(
-        `INSERT INTO "chat"."channel_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
+        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
         [
           TENANT,
           "run_invited_agent_old",
@@ -239,19 +239,19 @@ describeIfDb("folded-run backfill", () => {
         [...oldShapeIds, "run_deployment1"].sort(),
       );
 
-      const [channelLaunchSeeds, taskSeeds] = await Promise.all([
-        listChannelLaunchFoldedRunIds(scratchUrl),
+      const [workbenchLaunchSeeds, taskSeeds] = await Promise.all([
+        listWorkbenchLaunchFoldedRunIds(scratchUrl),
         listTaskFoldedRunIds(scratchUrl),
       ]);
-      expect(channelLaunchSeeds.map((s) => s.id).sort()).toEqual(
-        ["run_channel_host_old", "run_invited_agent_old"].sort(),
+      expect(workbenchLaunchSeeds.map((s) => s.id).sort()).toEqual(
+        ["run_workbench_host_old", "run_invited_agent_old"].sort(),
       );
       expect(taskSeeds.map((s) => s.id).sort()).toEqual(
         ["run_chain_leg_old", "run_task_old"].sort(),
       );
 
       const report = await backfillFoldedRunMarkers(scratchUrl, [
-        ...channelLaunchSeeds,
+        ...workbenchLaunchSeeds,
         ...taskSeeds,
       ]);
       expect(report.applied).toBe(true);
@@ -277,7 +277,7 @@ describeIfDb("folded-run backfill", () => {
       // Idempotent: a second call is a no-op, ledgered under its own
       // migration name.
       const secondReport = await backfillFoldedRunMarkers(scratchUrl, [
-        ...channelLaunchSeeds,
+        ...workbenchLaunchSeeds,
         ...taskSeeds,
       ]);
       expect(secondReport).toEqual({ applied: false, inserted: 0 });

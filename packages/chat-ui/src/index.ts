@@ -1,7 +1,7 @@
 export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
-export { ChannelTimeline, messageDomId } from "./timeline";
+export { WorkbenchTimeline, messageDomId } from "./timeline";
 export type {
   CurrentUser,
   ReactionActions,
@@ -47,8 +47,8 @@ export type {
   DialogStepAccordionStep,
 } from "./dialog-stepper";
 
-export { useChannelStream } from "./use-channel-stream";
-export type { ChannelStreamState } from "./use-channel-stream";
+export { useWorkbenchStream } from "./use-workbench-stream";
+export type { WorkbenchStreamState } from "./use-workbench-stream";
 
 export {
   activeMentionQuery,
@@ -57,7 +57,7 @@ export {
   filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
-  mentionOptionsFromChannel,
+  mentionOptionsFromWorkbench,
 } from "./mentions";
 export type {
   BringInAgentDefinition,
@@ -109,19 +109,19 @@ export {
   FilePart,
   EventPart,
   Part,
-  ChannelKind,
-  isKnownChannelKind,
+  WorkbenchKind,
+  isKnownWorkbenchKind,
   MessageSender,
   ChatApiError,
-  listChannels,
-  listAllChannels,
-  channelsQueryKey,
-  channelsQueryKeyPrefix,
-  CHANNELS_MUTATED_EVENT,
-  createChannel,
+  listWorkbenches,
+  listAllWorkbenches,
+  workbenchesQueryKey,
+  workbenchesQueryKeyPrefix,
+  WORKBENCHES_MUTATED_EVENT,
+  createWorkbench,
   listMessages,
   sendMessage,
-  fetchChannelBlob,
+  fetchWorkbenchBlob,
   listThreads,
   listThreadMessages,
   putReadState,
@@ -131,10 +131,10 @@ export {
   listVisibleAgentDefinitions,
   openAgentDm,
   inviteAgent,
-  channelStreamUrl,
+  workbenchStreamUrl,
   runDisplayName,
-  getChannelSettings,
-  patchChannelSettings,
+  getWorkbenchSettings,
+  patchWorkbenchSettings,
   getBenchChatSettings,
   patchBenchChatSettings,
   getBlockResponses,
@@ -146,22 +146,22 @@ export {
   pinMessage,
   unpinMessage,
   listPinnedMessages,
-  listChannelAgents,
+  listWorkbenchAgents,
 } from "./api";
 export type {
-  Channel,
-  CreateChannelInput,
+  Workbench,
+  CreateWorkbenchInput,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,
-  ChannelThread,
+  WorkbenchThread,
   ThreadMessagesResponse,
   Run,
   InvitableDefinition,
   InvitedAgent,
   VisibleAgentDefinition,
-  ChannelSettings,
-  ChannelSettingsPatch,
+  WorkbenchSettings,
+  WorkbenchSettingsPatch,
   ResolvedContextWindow,
   BenchChatSettings,
   BenchChatSettingsPatch,
@@ -171,38 +171,38 @@ export type {
   ReactionSummary,
   Pinned,
   PinnedMessage,
-  ChannelAgent,
+  WorkbenchAgent,
 } from "./api";
-export { ChannelSettingsSurface } from "./channel-settings";
+export { WorkbenchSettingsSurface } from "./workbench-settings";
 export {
-  channelSettingsSections,
+  workbenchSettingsSections,
   contextWindowControlState,
   contextWindowPatchValue,
-} from "./channel-settings";
+} from "./workbench-settings";
 export type {
-  ChannelSettingsSection,
-  ChannelSettingsSectionGroup,
-  ChannelSettingsSectionId,
+  WorkbenchSettingsSection,
+  WorkbenchSettingsSectionGroup,
+  WorkbenchSettingsSectionId,
   ContextWindowMode,
-} from "./channel-settings";
+} from "./workbench-settings";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
 
-export { sharedChannelsWith } from "./shared-channels";
-export type { SharedChannelSummary } from "./shared-channels";
-export { findDirectChannelWith } from "./direct-channel";
+export { sharedWorkbenchesWith } from "./shared-workbenches";
+export type { SharedWorkbenchSummary } from "./shared-workbenches";
+export { findDirectWorkbenchWith } from "./direct-workbench";
 
 export {
-  createDefaultAgentChannel,
-  findChannelByTitle,
+  createDefaultAgentWorkbench,
+  findWorkbenchByTitle,
   findDefinitionByAssetName,
-  isChannelTitleMatch,
-} from "./default-agent-channel";
+  isWorkbenchTitleMatch,
+} from "./default-agent-workbench";
 export type {
-  DefaultAgentChannel,
-  DefaultAgentChannelConfig,
-  EnsureDefaultAgentChannelResult,
-} from "./default-agent-channel";
+  DefaultAgentWorkbench,
+  DefaultAgentWorkbenchConfig,
+  EnsureDefaultAgentWorkbenchResult,
+} from "./default-agent-workbench";
 
 export { ArtifactChip } from "./artifact-chip";
 

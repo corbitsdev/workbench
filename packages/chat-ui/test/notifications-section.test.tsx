@@ -7,10 +7,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { NotificationsSection } from "../src/channel-settings/notifications-section";
+import { NotificationsSection } from "../src/workbench-settings/notifications-section";
 
 const TENANT_ID = "tnt_flow";
-const CHANNEL_ID = "chn_general";
+const WORKBENCH_ID = "chn_general";
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -43,7 +43,7 @@ async function mount(): Promise<{ container: HTMLDivElement; root: Root }> {
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <NotificationsSection tenantId={TENANT_ID} channelId={CHANNEL_ID} />,
+      <NotificationsSection tenantId={TENANT_ID} workbenchId={WORKBENCH_ID} />,
     );
     await Promise.resolve();
     await Promise.resolve();

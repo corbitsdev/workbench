@@ -360,16 +360,16 @@ describe.skipIf(databaseUrl === undefined)(
         return heartbeat.id;
       });
 
-      const channelId = await hop("delivery channel creation", async () => {
+      const workbenchId = await hop("delivery workbench creation", async () => {
         const res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/chat/channels`,
-          { kind: "channel", name: "Routine input results" },
+          `/api/tenants/${tenantId}/chat/workbenches`,
+          { kind: "workbench", name: "Routine input results" },
           cookies,
         );
-        expectStatus("create delivery channel", res, 201);
-        return stringField(res.data, "id", "create delivery channel");
+        expectStatus("create delivery workbench", res, 201);
+        return stringField(res.data, "id", "create delivery workbench");
       });
 
       // --- Fire 1: "run now" -------------------------------------------
@@ -383,7 +383,7 @@ describe.skipIf(databaseUrl === undefined)(
             definitionId,
             trigger: null,
             scope: "bench",
-            deliveryChannelId: channelId,
+            deliveryWorkbenchId: workbenchId,
             input: { topic: "AI coding agents", focus: "Competing launches" },
           },
           cookies,
@@ -434,7 +434,7 @@ describe.skipIf(databaseUrl === undefined)(
             definitionId,
             trigger: { kind: "interval", unit: "minutes", every: 1 },
             scope: "bench",
-            deliveryChannelId: channelId,
+            deliveryWorkbenchId: workbenchId,
             input: { topic: "Scheduled digest" },
           },
           cookies,
@@ -532,7 +532,7 @@ describe.skipIf(databaseUrl === undefined)(
             definitionId,
             trigger: { kind: "webhook", webhookTriggerId: triggerId },
             scope: "bench",
-            deliveryChannelId: channelId,
+            deliveryWorkbenchId: workbenchId,
           },
           cookies,
         );

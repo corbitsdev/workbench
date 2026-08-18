@@ -1,11 +1,11 @@
 # @corbits/tasks
 
 Spawn-and-return agent tasks: a person picks an agent definition, writes a
-prompt, and a one-shot folded run launches on its own — no channel, no
+prompt, and a one-shot folded run launches on its own — no workbench, no
 participants, no settings. When the run finishes, its reply lands in the
-Inbox as a `task-result` item, and also posts into the channel the task was
+Inbox as a `task-result` item, and also posts into the workbench the task was
 dispatched from (falling back to the tenant's assistant chat when no origin
-channel was recorded). A task can optionally chain hand-offs to further
+workbench was recorded). A task can optionally chain hand-offs to further
 agents, each leg carried out in turn.
 
 ## Composition with @intx/*
@@ -44,5 +44,5 @@ cd packages/tasks && bun test
 ```
 
 `test/store.drizzle.test.ts` and
-`test/task-not-in-channel-list.drizzle.test.ts` need a live Postgres:
+`test/task-not-in-workbench-list.drizzle.test.ts` need a live Postgres:
 `DATABASE_URL=postgres://localhost:5432/workbench_e2e`.

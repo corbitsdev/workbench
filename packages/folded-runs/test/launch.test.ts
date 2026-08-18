@@ -191,7 +191,7 @@ function createFakeSessionService(): SessionService & {
 }
 
 const FOLDED_BODY: FoldedBody = {
-  systemPrompt: "you are a channel host",
+  systemPrompt: "you are a workbench host",
   toolPackagePins: [],
   grantRequirements: [],
   credentialBindings: [],
@@ -232,11 +232,11 @@ describe("launchFoldedRun", () => {
       },
       {
         tenantId: "ten_1",
-        instanceId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definitionId: "wfd_channel1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
         foldedBody: FOLDED_BODY,
-        launchLabel: "the channel host",
+        launchLabel: "the workbench host",
         persistExtra: async (tx) => {
           persistExtraCalls.push(tx);
         },
@@ -252,10 +252,10 @@ describe("launchFoldedRun", () => {
 
     expect(eventCollectors.createCalls).toEqual([
       [
-        "ins_channel1@ten1.workbench.test",
+        "ins_workbench1@ten1.workbench.test",
         "ten_1",
         result.sessionId,
-        "ins_channel1",
+        "ins_workbench1",
       ],
     ]);
     expect(eventCollectors.abandonCalls).toEqual([]);
@@ -284,7 +284,7 @@ describe("launchFoldedRun", () => {
       instanceId: string;
       config: { sources: unknown[]; defaultSource: string; tenantId: string };
     };
-    expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
+    expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
     expect(deployed.config.defaultSource).toBe("off_1");
     expect(deployed.config.tenantId).toBe("ten_1");
 
@@ -292,24 +292,24 @@ describe("launchFoldedRun", () => {
     expect(principalInsert?.values).toMatchObject({
       tenantId: "ten_1",
       kind: "workflow",
-      refId: "ins_channel1",
+      refId: "ins_workbench1",
       status: "active",
     });
 
     const runInsert = db.inserted.find((row) => row.table === workflowRun);
     expect(runInsert?.values).toMatchObject({
-      id: "ins_channel1",
-      definitionId: "wfd_channel1",
-      anchorRunId: "ins_channel1",
+      id: "ins_workbench1",
+      definitionId: "wfd_workbench1",
+      anchorRunId: "ins_workbench1",
       tenantId: "ten_1",
-      address: "ins_channel1@ten1.workbench.test",
+      address: "ins_workbench1@ten1.workbench.test",
       status: "running",
     });
 
     const sessionInsert = db.inserted.find((row) => row.table === agentSession);
     expect(sessionInsert?.values).toMatchObject({
       tenantId: "ten_1",
-      agentId: "wfd_channel1",
+      agentId: "wfd_workbench1",
       principalId: result.instancePrincipalId,
       status: "active",
     });
@@ -321,7 +321,7 @@ describe("launchFoldedRun", () => {
     // no per-caller opt-in.
     const foldedRunInsert = db.inserted.find((row) => row.table === foldedRun);
     expect(foldedRunInsert?.values).toMatchObject({
-      id: "ins_channel1",
+      id: "ins_workbench1",
       tenantId: "ten_1",
     });
   });
@@ -331,7 +331,7 @@ describe("launchFoldedRun", () => {
   // verbatim and feeds it straight into `agent.send`, which throws on an
   // empty string — and `content` is legitimately empty for
   // attachments-only mail. A caller that knows its run never reads its
-  // input (the channel host) must be able to pin a literal instead, so
+  // input (the workbench host) must be able to pin a literal instead, so
   // an attachments-only first mail cannot crash the run before it opens.
   test("stepInput overrides the step's default trigger.payload selector", async () => {
     resolveDefinitionSourcesCalls.length = 0;
@@ -363,12 +363,12 @@ describe("launchFoldedRun", () => {
       },
       {
         tenantId: "ten_1",
-        instanceId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definitionId: "wfd_channel1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
         foldedBody: FOLDED_BODY,
-        launchLabel: "the channel host",
-        stepInput: { literal: "channel-host anchor turn" },
+        launchLabel: "the workbench host",
+        stepInput: { literal: "workbench-host anchor turn" },
       },
     );
 
@@ -376,7 +376,7 @@ describe("launchFoldedRun", () => {
       definition: { steps: Record<string, { input?: unknown }> };
     };
     expect(Object.values(deployed.definition.steps)[0]?.input).toEqual({
-      literal: "channel-host anchor turn",
+      literal: "workbench-host anchor turn",
     });
   });
 
@@ -439,11 +439,11 @@ describe("launchFoldedRun", () => {
       },
       {
         tenantId: "ten_1",
-        instanceId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definitionId: "wfd_channel1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
         foldedBody: pinnedFoldedBody,
-        launchLabel: "the channel host",
+        launchLabel: "the workbench host",
       },
     );
 
@@ -572,17 +572,17 @@ describe("launchFoldedRun", () => {
         },
         {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
-          triggerAddress: "ins_channel1@ten1.workbench.test",
-          definitionId: "wfd_channel1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
           foldedBody: FOLDED_BODY,
-          launchLabel: "the channel host",
+          launchLabel: "the workbench host",
         },
       ),
     ).rejects.toThrow(deployError);
 
     expect(eventCollectors.abandonCalls).toEqual([
-      "ins_channel1@ten1.workbench.test",
+      "ins_workbench1@ten1.workbench.test",
     ]);
 
     const sessionUpdate = db.updated.find((row) => row.table === agentSession);
@@ -632,11 +632,11 @@ describe("launchFoldedRun", () => {
         },
         {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
-          triggerAddress: "ins_channel1@ten1.workbench.test",
-          definitionId: "wfd_channel1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
           foldedBody: FOLDED_BODY,
-          launchLabel: "the channel host",
+          launchLabel: "the workbench host",
         },
       ),
     ).rejects.toThrow(SessionLaunchError);
@@ -671,11 +671,11 @@ describe("launchFoldedRun", () => {
         },
         {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
-          triggerAddress: "ins_channel1@ten1.workbench.test",
-          definitionId: "wfd_channel1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
           foldedBody: FOLDED_BODY,
-          launchLabel: "the channel host",
+          launchLabel: "the workbench host",
         },
       );
     } catch (err) {
@@ -688,7 +688,7 @@ describe("launchFoldedRun", () => {
       'No launchable inference source for model "claude-sonnet-5"',
     );
     expect(err.message).toMatch(/seed a tenant catalog source/);
-    expect(err.message).toMatch(/the channel host/);
+    expect(err.message).toMatch(/the workbench host/);
   });
 
   test("uses a caller-supplied sources override verbatim, never touching the catalog", async () => {
@@ -730,11 +730,11 @@ describe("launchFoldedRun", () => {
       },
       {
         tenantId: "ten_1",
-        instanceId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definitionId: "wfd_channel1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
         foldedBody: FOLDED_BODY,
-        launchLabel: "the channel host",
+        launchLabel: "the workbench host",
         sources: override,
       },
     );
@@ -767,11 +767,11 @@ describe("launchFoldedRun", () => {
         },
         {
           tenantId: "ten_1",
-          instanceId: "ins_channel1",
-          triggerAddress: "ins_channel1@ten1.workbench.test",
-          definitionId: "wfd_channel1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
           foldedBody: FOLDED_BODY,
-          launchLabel: "the channel host",
+          launchLabel: "the workbench host",
           // Missing `apiKey`/`model` on the source: malformed.
           sources: {
             sources: [{ id: "noop", provider: "anthropic" }] as never,
@@ -865,10 +865,19 @@ describe("deployAtHead — mcp credential bindings", () => {
       ok: true,
       delivery: {
         bindings: [
-          { handle: "mcp:exa", credentialId: "cred_1", consumer: "tool:@corbits/mcp-tools" },
+          {
+            handle: "mcp:exa",
+            credentialId: "cred_1",
+            consumer: "tool:@corbits/mcp-tools",
+          },
         ],
         materials: [
-          { credentialId: "cred_1", providerKey: "mcp", origin: "https://mcp.exa.ai/mcp", secret: "n/a" },
+          {
+            credentialId: "cred_1",
+            providerKey: "mcp",
+            origin: "https://mcp.exa.ai/mcp",
+            secret: "n/a",
+          },
         ],
       },
       bindingGrants: [
@@ -923,7 +932,9 @@ describe("deployAtHead — mcp credential bindings", () => {
       config: { grants: { resource: string; action: string }[] };
       definition: { credentialBindings?: readonly unknown[] };
     };
-    expect(deployed.credentials).toEqual(buildCredentialDeliveryResult.delivery);
+    expect(deployed.credentials).toEqual(
+      buildCredentialDeliveryResult.delivery,
+    );
     expect(deployed.config.grants).toContainEqual(
       expect.objectContaining({
         resource: "credential:cred_1",

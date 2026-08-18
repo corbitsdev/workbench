@@ -1,11 +1,11 @@
 // The sanctioned path for a workflow-process child to invite an
-// already-created agent definition into the channel it is itself
+// already-created agent definition into the workbench it is itself
 // messaging in — the execution half of `@corbits/agent-directory-tools`'
 // `create_agent`'s `invite: true` default (Myra's manager tools):
 // after creating a definition through `@corbits/agent-directory`'s
 // `createWorkflowAgentCreateRoutes`, the tool calls this surface to
-// drop the new agent into the caller's own channel, reusing
-// `./channel-service.ts`'s `launchAndJoinAgent` directly rather than
+// drop the new agent into the caller's own workbench, reusing
+// `./workbench-service.ts`'s `launchAndJoinAgent` directly rather than
 // reimplementing invite. Mirrors `@corbits/agent-directory`'s
 // `workflow-capability-routes.ts`/`workflow-create-routes.ts`: a
 // workflow child has no browser session, only its sidecar bearer token
@@ -15,17 +15,17 @@
 //
 // Mounted OUTSIDE the tenant prefix for that reason. Identity NEVER
 // rides in a request body or path: the tenant, principal, and target
-// channel every write is scoped to come from the authenticated run
+// workbench every write is scoped to come from the authenticated run
 // alone.
 //
-// Scope: self-CHANNEL. "The caller's own channel" is resolved from the
-// authenticated run's own mail address via `ChatStore.findChannelByParticipantAddress`
-// (see that method's own doc comment in `./store.ts` for the O(channels-
+// Scope: self-WORKBENCH. "The caller's own workbench" is resolved from the
+// authenticated run's own mail address via `ChatStore.findWorkbenchByParticipantAddress`
+// (see that method's own doc comment in `./store.ts` for the O(workbenches-
 // in-tenant) scan it runs and the [Intx/repo gap] it names: no direct
-// run-address -> channel index exists yet). A run whose address is not
-// a participant of any channel in its tenant — a run this route was
+// run-address -> workbench index exists yet). A run whose address is not
+// a participant of any workbench in its tenant — a run this route was
 // never meant to serve, or called before the run has actually joined
-// anything — gets a 404, never a guess at which channel it meant.
+// anything — gets a 404, never a guess at which workbench it meant.
 //
 // Authorization decision (same shape as `@corbits/agent-directory`'s
 // workflow-run routes, see those files' own comments for the full
@@ -36,18 +36,18 @@
 // created (and, by extension, invited) before this route ever runs.
 // This route still enforces, unconditionally: (1) the caller's run
 // must resolve to a live tenant/principal/run via the sidecar-token +
-// run-address check below, and (2) the resolved channel must actually
+// run-address check below, and (2) the resolved workbench must actually
 // carry the caller's own address as a participant — a run can never
-// invite into a channel it is not itself in.
+// invite into a workbench it is not itself in.
 import { Hono } from "hono";
 import { type } from "arktype";
 
 import {
   launchAndJoinAgent,
-  sendChannelMessage,
+  sendWorkbenchMessage,
   type LaunchAndJoinAgentDeps,
-  type SendChannelMessageDeps,
-} from "./channel-service";
+  type SendWorkbenchMessageDeps,
+} from "./workbench-service";
 import type { ChatStore } from "./store";
 import { Part, type Part as PartType } from "./parts";
 
@@ -81,7 +81,7 @@ export type WorkflowRunAuthenticator = {
 /** The resolved scope PLUS the run's own address — the address is
  * already known once auth succeeds (it is the very header the
  * authenticator checked), and this route needs it again to resolve
- * "the caller's own channel" below. */
+ * "the caller's own workbench" below. */
 type ResolvedScope = WorkflowParticipantRunScope & { readonly address: string };
 
 export type WorkflowParticipantEnv = {
@@ -95,11 +95,11 @@ const PostMessageInput = type({ parts: Part.array() });
 export type CreateWorkflowParticipantRoutesDeps = {
   readonly store: Pick<
     ChatStore,
-    "findChannelByParticipantAddress" | "updateChannelSettings"
+    "findWorkbenchByParticipantAddress" | "updateWorkbenchSettings"
   > &
-    SendChannelMessageDeps["store"];
+    SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &
-    SendChannelMessageDeps["platform"];
+    SendWorkbenchMessageDeps["platform"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
   readonly authenticator: WorkflowRunAuthenticator;
 };
@@ -141,15 +141,15 @@ export function createWorkflowParticipantRoutes(
       );
     }
 
-    const channel = await deps.store.findChannelByParticipantAddress(
+    const workbench = await deps.store.findWorkbenchByParticipantAddress(
       scope.tenantId,
       scope.address,
     );
-    if (channel === undefined) {
+    if (workbench === undefined) {
       return c.json(
         errorEnvelope(
           "not_found",
-          `The calling run "${scope.address}" is not a participant of any channel in this workbench`,
+          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
         ),
         404,
       );
@@ -160,9 +160,9 @@ export function createWorkflowParticipantRoutes(
       {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
-        channelId: channel.channelId,
+        workbenchId: workbench.workbenchId,
         definitionId: body.definitionId,
-        existingSettings: channel.settings,
+        existingSettings: workbench.settings,
         invitable: await deps.platform.listInvitableDefinitions(scope.tenantId),
       },
     );
@@ -177,12 +177,12 @@ export function createWorkflowParticipantRoutes(
     );
   });
 
-  // The posting half of an in-channel gen-UI block: a workflow child
+  // The posting half of an in-workbench gen-UI block: a workflow child
   // (`@corbits/interaction-tools`'s `ask_user`) posts a message carrying a
-  // `block` part into its own channel — resolved the same way
-  // `/participants/invite` resolves "own channel", via the caller's mail
+  // `block` part into its own workbench — resolved the same way
+  // `/participants/invite` resolves "own workbench", via the caller's mail
   // address. No block-type allowlist here: this route is a generic
-  // channel-message post, same shape `sendChannelMessage` gives any
+  // workbench-message post, same shape `sendWorkbenchMessage` gives any
   // tenant-authenticated caller through `./routes.ts`; the block's own
   // schema (`@corbits/chat`'s `blocks.ts`) is what a renderer trusts, not
   // this route.
@@ -196,26 +196,26 @@ export function createWorkflowParticipantRoutes(
       );
     }
 
-    const channel = await deps.store.findChannelByParticipantAddress(
+    const workbench = await deps.store.findWorkbenchByParticipantAddress(
       scope.tenantId,
       scope.address,
     );
-    if (channel === undefined) {
+    if (workbench === undefined) {
       return c.json(
         errorEnvelope(
           "not_found",
-          `The calling run "${scope.address}" is not a participant of any channel in this workbench`,
+          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
         ),
         404,
       );
     }
 
-    const sent = await sendChannelMessage(
+    const sent = await sendWorkbenchMessage(
       { store: deps.store, platform: deps.platform },
       {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
-        channelId: channel.channelId,
+        workbenchId: workbench.workbenchId,
         messageParts: body.parts as PartType[],
       },
     );

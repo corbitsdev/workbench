@@ -19,7 +19,7 @@ client on top of them.
   role labels
 - `tenancy-kind.ts` — classifying a membership by tenancy kind
 - `tenancy-contracts.ts` — shared tenancy constants and validation (roles,
-  signup mode, DM channel naming, parent-tenant cycle checks)
+  signup mode, DM workbench naming, parent-tenant cycle checks)
 - `api.ts` — the bench HTTP client: memberships, creation, members,
   settings
 

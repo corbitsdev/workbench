@@ -1,14 +1,14 @@
 // DB-gated: skipped when no DATABASE_URL is reachable, mirroring
 // `../../folded-runs/test/scope-routes.drizzle.test.ts`. Runs the real
 // platform schema (`@intx/db`'s `runMigrations`) into its own named
-// schema on the shared e2e database, so `messageExistsInChannel`'s fix
+// schema on the shared e2e database, so `messageExistsInWorkbench`'s fix
 // is proven against real `session_mail` rows and a real query — never
 // a hand-rolled fake `db`.
 //
-// CL-6095: `messageExistsInChannel` used to resolve a `messageId` by
+// CL-6095: `messageExistsInWorkbench` used to resolve a `messageId` by
 // fetching ONE page of `listMail` (`MAIL_PAGE_SIZE` = 50) and linearly
 // scanning it. A reaction/pin toggle against a message older than the
-// newest 50 in its channel 404'd — not because the message didn't
+// newest 50 in its workbench 404'd — not because the message didn't
 // exist, but because it never made it onto the page the handler
 // happened to look at. This seeds 60 messages and reacts to one 55
 // back (well past page one) to prove the fix (`ChatPlatform.getMail`,
@@ -31,7 +31,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createChatRoutes } from "../src/routes";
 import { createHubChatPlatform } from "../src/platform-adapter";
 import { createInMemoryChatStore } from "../src/store";
-import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
+import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryReactionStore } from "../src/reactions";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -42,7 +42,7 @@ const TENANT_ID = "tnt_msg_lookup";
 const DEFINITION_ID = "wfd_msg_lookup_host";
 const HOST_PRINCIPAL_ID = "prn_msg_lookup_host";
 const SESSION_ID = "ses_msg_lookup";
-const CHANNEL_ID = "run_msg_lookup_channel1";
+const WORKBENCH_ID = "run_msg_lookup_workbench1";
 const MESSAGE_COUNT = 60;
 // Well past `MAIL_PAGE_SIZE` (50) messages back from the newest.
 const TARGET_INDEX_FROM_NEWEST = 55;
@@ -77,7 +77,7 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
       await db.insert(schema.workflowDefinition).values({
         id: DEFINITION_ID,
         tenantId: TENANT_ID,
-        name: "channel-host",
+        name: "workbench-host",
         status: "deployed",
       });
       await db.insert(schema.principal).values({
@@ -88,12 +88,12 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
         status: "active",
       });
       await db.insert(schema.workflowRun).values({
-        id: CHANNEL_ID,
+        id: WORKBENCH_ID,
         definitionId: DEFINITION_ID,
-        anchorRunId: CHANNEL_ID,
+        anchorRunId: WORKBENCH_ID,
         tenantId: TENANT_ID,
         principalId: HOST_PRINCIPAL_ID,
-        address: `${CHANNEL_ID}@message-lookup.workbench.test`,
+        address: `${WORKBENCH_ID}@message-lookup.workbench.test`,
         status: "running",
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       });
@@ -138,24 +138,24 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
       });
 
       const store = createInMemoryChatStore();
-      await store.createChannelSettings({
+      await store.createWorkbenchSettings({
         tenantId: TENANT_ID,
-        channelId: CHANNEL_ID,
-        settings: { kind: "channel" },
+        workbenchId: WORKBENCH_ID,
+        settings: { kind: "workbench" },
         updatedBy: "prn_caller",
       });
 
       const routes = createChatRoutes({
         store,
         platform,
-        tenancy: createInMemoryChannelTenancyStore(),
+        tenancy: createInMemoryWorkbenchTenancyStore(),
         reactions: createInMemoryReactionStore(),
         requireGrant: () => async (_c, next) => {
           await next();
         },
         isInvitableDefinition: () => true,
         turnTimeoutMs: 60_000,
-        channelHostInferencePreferences: async () => [
+        workbenchHostInferencePreferences: async () => [
           { provider: "anthropic", model: "claude-sonnet-5" },
         ],
       });
@@ -189,7 +189,7 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
       app.route("/", routes);
 
       const response = await app.request(
-        `/channels/${CHANNEL_ID}/messages/${targetMessageId}/reactions/toggle`,
+        `/workbenches/${WORKBENCH_ID}/messages/${targetMessageId}/reactions/toggle`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },

@@ -8,7 +8,7 @@ export type ShellContextMenuTarget =
   | { readonly type: "shell" }
   | { readonly type: "account" }
   | {
-      readonly type: "channel";
+      readonly type: "workbench";
       readonly id: string;
       readonly title: string;
       readonly pinned: boolean;
@@ -28,7 +28,7 @@ function attr(element: Element, name: string): string | null {
 
 // Order matters: `resolveTarget` returns the first definition whose selector
 // matches anywhere in the ancestor chain, not the nearest match overall — so
-// a target nested inside another (the profile face inside a channel row)
+// a target nested inside another (the profile face inside a workbench row)
 // must be listed before its container.
 export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextMenuTarget>[] =
   [
@@ -46,15 +46,15 @@ export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextM
       },
     },
     {
-      selector: "[data-ctx-channel]",
+      selector: "[data-ctx-workbench]",
       resolve: (element) => {
-        const id = attr(element, "data-ctx-channel");
+        const id = attr(element, "data-ctx-workbench");
         if (id === null) return null;
         return {
-          type: "channel",
+          type: "workbench",
           id,
-          title: attr(element, "data-ctx-channel-title") ?? id,
-          pinned: attr(element, "data-ctx-channel-pinned") === "true",
+          title: attr(element, "data-ctx-workbench-title") ?? id,
+          pinned: attr(element, "data-ctx-workbench-pinned") === "true",
         };
       },
     },

@@ -1,6 +1,6 @@
 // The message composer: a plain textarea (Enter sends, Shift+Enter breaks
 // the line), an accessible file picker for attachments, disabled while
-// empty, with an @-mention popover listing the active channel's agent
+// empty, with an @-mention popover listing the active workbench's agent
 // participants. Kept local and simple rather than adopting the library's
 // `ChatInput` — that component is built around the agent-chat `ChatMessage`
 // model (working/stop) this surface does not use, and its send affordance
@@ -22,7 +22,7 @@ import {
   activeMentionQuery,
   filterMentionOptions,
   insertMention,
-  mentionOptionsFromChannel,
+  mentionOptionsFromWorkbench,
 } from "./mentions";
 import type {
   BringInAgentDefinition,
@@ -307,7 +307,7 @@ export const Composer = forwardRef<
     readonly agents: readonly MentionCandidate[];
     /** Every participant record (agent or human) the mention popover's
      * "Bring in…" group de-dupes against — omitted candidates are
-     * already in the channel. Defaults to empty. */
+     * already in the workbench. Defaults to empty. */
     readonly participants?: readonly ParticipantRecord[];
     /** Workspace members not yet in this workbench — the "Bring in…"
      * group's person half. Defaults to empty (no group rendered). */
@@ -319,14 +319,14 @@ export const Composer = forwardRef<
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
     /** `/invite` — opens the invite-agent dialog. */
     readonly onInviteAgent: () => void;
-    /** `/agents` — opens this channel's settings, Agents section. */
+    /** `/agents` — opens this workbench's settings, Agents section. */
     readonly onOpenAgentsSettings: () => void;
     /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
     readonly onOpenRoutines: () => void;
-    /** `/routine` — opens the New Routine panel with this channel
+    /** `/routine` — opens the New Routine panel with this workbench
      * pre-bound as its destination. */
     readonly onCreateRoutineInSpace: () => void;
-    /** Defaults to the generic channel copy — a chat passes one naming its counterpart. */
+    /** Defaults to the generic workbench copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
   }
 >(function Composer(
@@ -395,7 +395,7 @@ export const Composer = forwardRef<
   const mentionOptions: readonly MentionOption[] =
     mention !== null
       ? filterMentionOptions(
-          mentionOptionsFromChannel(participants, members, invitableAgents),
+          mentionOptionsFromWorkbench(participants, members, invitableAgents),
           mention.query,
         )
       : [];
@@ -469,7 +469,7 @@ export const Composer = forwardRef<
   }
 
   /** The mock's own honest macro: no server-side "/summarize" exists, so
-   * this addresses the channel's actual first agent participant the same
+   * this addresses the workbench's actual first agent participant the same
    * way a person would type the mention by hand. */
   async function summarizeThread() {
     const target = agents[0];

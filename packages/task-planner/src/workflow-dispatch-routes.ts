@@ -136,13 +136,13 @@ const DispatchBody = type({
 export type CreateWorkflowDispatchRoutesDeps = {
   readonly authenticator: WorkflowRunAuthenticator;
   /**
-   * Resolves the dispatching run's own channel, so a task's completion
+   * Resolves the dispatching run's own workbench, so a task's completion
    * can post its result back into the workbench it was dispatched
    * from, not only the Inbox — see `@corbits/tasks`' orchestrator.
    * Only the one method `workflow-participant-routes.ts` already
-   * depends on for the same "caller's own channel" lookup.
+   * depends on for the same "caller's own workbench" lookup.
    */
-  readonly chatStore: Pick<ChatStore, "findChannelByParticipantAddress">;
+  readonly chatStore: Pick<ChatStore, "findWorkbenchByParticipantAddress">;
 } & SpawnDeps &
   PlannerRunDeps;
 
@@ -233,18 +233,18 @@ export function createWorkflowDispatchRoutes(
       });
 
       // Best-effort: a task this dispatch itself just launched must
-      // never fail on the back of a channel lookup — an unresolved
-      // channel simply leaves the task's completion to the Inbox/Myra
-      // fallback, same as a task launched with no channel context at
+      // never fail on the back of a workbench lookup — an unresolved
+      // workbench simply leaves the task's completion to the Inbox/Myra
+      // fallback, same as a task launched with no workbench context at
       // all.
-      const originChannel = await deps.chatStore
-        .findChannelByParticipantAddress(scope.tenantId, scope.address)
+      const originWorkbench = await deps.chatStore
+        .findWorkbenchByParticipantAddress(scope.tenantId, scope.address)
         .catch(() => undefined);
-      if (originChannel !== undefined) {
-        await deps.store.recordChannel({
+      if (originWorkbench !== undefined) {
+        await deps.store.recordWorkbench({
           tenantId: scope.tenantId,
           id: task.id,
-          channelId: originChannel.channelId,
+          workbenchId: originWorkbench.workbenchId,
         });
       }
 

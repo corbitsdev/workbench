@@ -2,7 +2,7 @@
 // (the turn-activity strip, a typing indicator) changes the container's
 // own available height without changing `items.length` — the effect that
 // re-anchors scrollTop on `items.length` never fires for it. This proves
-// `ChannelTimeline` wires a `ResizeObserver` on its scroll container that
+// `WorkbenchTimeline` wires a `ResizeObserver` on its scroll container that
 // re-anchors to the bottom while pinned, and leaves an unpinned reader's
 // scrollTop alone.
 //
@@ -17,7 +17,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 const realResizeObserver = globalThis.ResizeObserver;
 
@@ -76,7 +76,7 @@ async function mount() {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(<ChannelTimeline items={items()} />);
+    root?.render(<WorkbenchTimeline items={items()} />);
   });
   const scrollEl = container.querySelector(".chat-timeline") as HTMLElement;
   Object.defineProperty(scrollEl, "scrollHeight", {
@@ -86,7 +86,7 @@ async function mount() {
   return { container, scrollEl };
 }
 
-describe("ChannelTimeline re-anchors on container resize while pinned (CL-6252 #4)", () => {
+describe("WorkbenchTimeline re-anchors on container resize while pinned (CL-6252 #4)", () => {
   test("a resize while pinned scrolls back to the bottom", async () => {
     const { scrollEl } = await mount();
     scrollEl.scrollTop = 0;

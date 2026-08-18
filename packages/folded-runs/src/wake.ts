@@ -1,8 +1,8 @@
 // Re-deploys a folded run's instance when the sidecar no longer has it
 // resident — either it slept (an idle-sleep sweep) or the stack
 // restarted and never relaunched it. The caller reads its own
-// launch-body persistence (e.g. `@corbits/chat`'s `channel_launch`
-// row) and passes the resulting `foldedBody` in — a channel host's
+// launch-body persistence (e.g. `@corbits/chat`'s `workbench_launch`
+// row) and passes the resulting `foldedBody` in — a workbench host's
 // asset never materializes a workflow.json, so the definition's asset
 // cannot be the wake source, and `folded-runs` has no launch-body
 // table of its own to read.
@@ -24,13 +24,13 @@ export type WakeFoldedRunParams = {
    * When present, used verbatim in place of catalog resolution — see
    * `deployAtHead`'s own doc on the same field. A wake re-deploys with
    * whatever pin the caller decided at launch time (e.g.
-   * `@corbits/chat`'s `channel_launch.noopInference` column), never
+   * `@corbits/chat`'s `workbench_launch.noopInference` column), never
    * re-derives it.
    */
   sources?: SourcesOverride;
   /**
    * See `deployAtHead`'s own doc on the same field. A wake must repin
-   * whatever the original launch pinned — the channel host's literal
+   * whatever the original launch pinned — the workbench host's literal
    * input is a property of what the run IS, not of how it was deployed
    * this particular time, so re-deploying it on the default
    * `trigger.payload` selector would silently restore the CL-6164 crash
@@ -75,8 +75,6 @@ export async function wakeFoldedRun(
   await deployAtHead(deps, {
     ...deployAtHeadParams,
     ...(params.sources !== undefined ? { sources: params.sources } : {}),
-    ...(params.stepInput !== undefined
-      ? { stepInput: params.stepInput }
-      : {}),
+    ...(params.stepInput !== undefined ? { stepInput: params.stepInput } : {}),
   });
 }

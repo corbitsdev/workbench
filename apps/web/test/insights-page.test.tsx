@@ -75,7 +75,7 @@ function renderLanding(args: {
             workbenches={emptyWorkbenches}
             range={range}
             scope={null}
-            resolveWorkbenchChannelId={() => null}
+            resolveWorkbenchIdForTenant={() => null}
             scopeLabel="All workbenches"
           />
         </BenchProvider>
@@ -171,7 +171,7 @@ function renderAtPath(path: string): string {
             workbenches={emptyWorkbenches}
             range={range}
             scope={null}
-            resolveWorkbenchChannelId={() => null}
+            resolveWorkbenchIdForTenant={() => null}
             scopeLabel="All workbenches"
           />
         </BenchProvider>
@@ -198,7 +198,7 @@ function renderLandingWithScope(args: {
             workbenches={emptyWorkbenches}
             range={range}
             scope={args.scope}
-            resolveWorkbenchChannelId={() => null}
+            resolveWorkbenchIdForTenant={() => null}
             scopeLabel={args.scopeLabel}
           />
         </BenchProvider>
@@ -229,7 +229,7 @@ describe("InsightsPage scope switcher", () => {
   });
 
   // CL-5879: selecting a sibling now always navigates away to that
-  // workbench's own `/insights/channel/:channelId` view (see the
+  // workbench's own `/insights/workbench/:workbenchId` view (see the
   // "activity by workbench" tests below) rather than switching this same
   // landing's scope inline — so "All workbenches" is the only option ever
   // marked active here.
@@ -667,8 +667,8 @@ describe("InsightsRunsHistory definition grouping", () => {
           insightsRun({
             id: "fire1",
             status: "running",
-            definitionId: "wfd_channel_digest",
-            definitionName: "channel-digest",
+            definitionId: "wfd_workbench_digest",
+            definitionName: "workbench-digest",
             routineId: "rtn_pulse_check",
             routineName: "Pulse check",
           }),
@@ -680,7 +680,7 @@ describe("InsightsRunsHistory definition grouping", () => {
       />,
     );
     expect(el.textContent).toContain("Pulse check");
-    expect(el.textContent).not.toContain("channel-digest");
+    expect(el.textContent).not.toContain("workbench-digest");
   });
 });
 
@@ -911,7 +911,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               workbenches={{ kind: "ready", data: { items: workbenches } }}
               range={range}
               scope={null}
-              resolveWorkbenchChannelId={(tenantId) =>
+              resolveWorkbenchIdForTenant={(tenantId) =>
                 tenantId === "tnt_b" ? "ch_b" : null
               }
               scopeLabel="All workbenches"
@@ -947,7 +947,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
     ).toEqual(["Support", "Sales", "Quiet workbench"]);
   });
 
-  test("clicking a workbench bar resolves its channel and navigates to /insights/channel/:channelId", () => {
+  test("clicking a workbench bar resolves its workbench and navigates to /insights/workbench/:workbenchId", () => {
     const navigated: string[] = [];
     const el = mountGlobalLanding((path) => navigated.push(path));
     const salesRow = [...el.querySelectorAll("tbody tr")].find((row) =>
@@ -957,10 +957,10 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
     act(() => {
       salesRow?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigated).toEqual(["/insights/channel/ch_b"]);
+    expect(navigated).toEqual(["/insights/workbench/ch_b"]);
   });
 
-  test("a workbench with no resolvable channel never gets a broken link", () => {
+  test("a workbench with no resolvable workbench never gets a broken link", () => {
     const navigated: string[] = [];
     const el = mount(
       <TestQueryProvider>
@@ -976,7 +976,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               workbenches={{ kind: "ready", data: { items: workbenches } }}
               range={range}
               scope={null}
-              resolveWorkbenchChannelId={() => null}
+              resolveWorkbenchIdForTenant={() => null}
               scopeLabel="All workbenches"
             />
           </BenchProvider>
@@ -1007,7 +1007,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               workbenches={{ kind: "ready", data: { items: [] } }}
               range={range}
               scope={null}
-              resolveWorkbenchChannelId={() => null}
+              resolveWorkbenchIdForTenant={() => null}
               scopeLabel="All workbenches"
             />
           </BenchProvider>

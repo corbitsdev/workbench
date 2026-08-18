@@ -8,7 +8,7 @@
 // hand-rolled fake `db`.
 //
 // This is the test CL-6061 exists to write: a self-anchored folded run
-// (channel host, invited agent, or task — indistinguishable from each
+// (workbench host, invited agent, or task — indistinguishable from each
 // other by `workflow_run`'s own columns, see `../src/launch.ts`'s big
 // comment) never appears in this scoped listing, while a genuine
 // top-level deployment run does.
@@ -48,7 +48,7 @@ describeIfDb("listTopLevelRuns", () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
       for (const id of [
-        "run_channel_host1",
+        "run_workbench_host1",
         "run_invited_agent1",
         "run_task1",
       ]) {
@@ -60,7 +60,7 @@ describeIfDb("listTopLevelRuns", () => {
     await dropSchema(target, { schema: SCHEMA });
   });
 
-  test("excludes every folded run (channel host, invited agent, task) and lists a genuine deployment", async () => {
+  test("excludes every folded run (workbench host, invited agent, task) and lists a genuine deployment", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
       await db.insert(schema.tenant).values({
@@ -88,12 +88,12 @@ describeIfDb("listTopLevelRuns", () => {
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       });
 
-      // Three folded runs — channel host, invited agent, task — all
+      // Three folded runs — workbench host, invited agent, task — all
       // self-anchored exactly like the deployment above, each marked
       // by its own `folded_run` row the way `launchFoldedRun` writes
       // it unconditionally at launch.
       const foldedIds = [
-        "run_channel_host1",
+        "run_workbench_host1",
         "run_invited_agent1",
         "run_task1",
       ];
@@ -214,7 +214,7 @@ describeIfDb("listTopLevelRunFires", () => {
   afterAll(async () => {
     const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
     try {
-      for (const id of ["run_fire1", "run_channel_host_fires1"]) {
+      for (const id of ["run_fire1", "run_workbench_host_fires1"]) {
         await db.delete(foldedRun).where(eq(foldedRun.id, id));
       }
     } finally {
@@ -234,9 +234,9 @@ describeIfDb("listTopLevelRunFires", () => {
       });
       await db.insert(schema.workflowDefinition).values([
         {
-          id: "wfd_channel_digest",
+          id: "wfd_workbench_digest",
           tenantId: FIRES_TENANT,
-          name: "channel-digest",
+          name: "workbench-digest",
           status: "deployed",
         },
         {
@@ -251,7 +251,7 @@ describeIfDb("listTopLevelRunFires", () => {
       // Plumbing, not a run — must never appear in the fires feed.
       await db.insert(schema.workflowRun).values({
         id: "run_never_fired1",
-        definitionId: "wfd_channel_digest",
+        definitionId: "wfd_workbench_digest",
         anchorRunId: "run_never_fired1",
         tenantId: FIRES_TENANT,
         address: "run_never_fired1@scope-routes-fires.workbench.test",
@@ -264,7 +264,7 @@ describeIfDb("listTopLevelRunFires", () => {
       // check" — must appear, carrying that routine's name.
       await db.insert(schema.workflowRun).values({
         id: "run_fire1",
-        definitionId: "wfd_channel_digest",
+        definitionId: "wfd_workbench_digest",
         anchorRunId: "run_fire1",
         tenantId: FIRES_TENANT,
         address: "run_fire1@scope-routes-fires.workbench.test",
@@ -275,20 +275,20 @@ describeIfDb("listTopLevelRunFires", () => {
         .insert(foldedRun)
         .values({ id: "run_fire1", tenantId: FIRES_TENANT });
 
-      // A channel-host folded run: no routine parent — must stay
+      // A workbench-host folded run: no routine parent — must stay
       // excluded even though it is fired activity, same as today.
       await db.insert(schema.workflowRun).values({
-        id: "run_channel_host_fires1",
-        definitionId: "wfd_channel_digest",
-        anchorRunId: "run_channel_host_fires1",
+        id: "run_workbench_host_fires1",
+        definitionId: "wfd_workbench_digest",
+        anchorRunId: "run_workbench_host_fires1",
         tenantId: FIRES_TENANT,
-        address: "run_channel_host_fires1@scope-routes-fires.workbench.test",
+        address: "run_workbench_host_fires1@scope-routes-fires.workbench.test",
         status: "running",
         createdAt: new Date("2026-01-02T12:00:00.000Z"),
       });
       await db
         .insert(foldedRun)
-        .values({ id: "run_channel_host_fires1", tenantId: FIRES_TENANT });
+        .values({ id: "run_workbench_host_fires1", tenantId: FIRES_TENANT });
 
       // A plain deployment, triggered directly (no routine, no fold):
       // must appear, with no routine parent — the honest
@@ -329,7 +329,7 @@ describeIfDb("listTopLevelRunFires", () => {
 
       const fire = rows.find((row) => row.id === "run_fire1");
       expect(fire).toMatchObject({
-        definitionName: "channel-digest",
+        definitionName: "workbench-digest",
         routineId: "rtn_pulse_check",
         routineName: "Pulse check",
       });
@@ -351,7 +351,7 @@ describeIfDb("listTopLevelRunFires", () => {
       const rows = await listTopLevelRunFires(db, FIRES_TENANT, undefined);
       const ids = rows.map((row) => row.id);
       expect(ids).not.toContain("run_fire1");
-      expect(ids).not.toContain("run_channel_host_fires1");
+      expect(ids).not.toContain("run_workbench_host_fires1");
       expect(ids).toContain("run_direct_deployment1");
       expect(ids).not.toContain("run_never_fired1");
     } finally {

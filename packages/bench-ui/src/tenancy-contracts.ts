@@ -22,26 +22,26 @@ export const WorkbenchIcon = type({
 });
 export type WorkbenchIcon = typeof WorkbenchIcon.infer;
 
-export const DmChannelFlag = type({
+export const DmWorkbenchFlag = type({
   dm: "true",
   memberUserIds: type("string").array().atLeastLength(2).atMostLength(2),
 });
-export type DmChannelFlag = typeof DmChannelFlag.infer;
+export type DmWorkbenchFlag = typeof DmWorkbenchFlag.infer;
 
 /**
  * Build the auto-name for a DM from the counterparty's display name.
  * Never invents a third-party name — caller supplies the resolved label.
  */
-export function dmChannelName(counterpartyDisplayName: string): string {
+export function dmWorkbenchName(counterpartyDisplayName: string): string {
   const trimmed = counterpartyDisplayName.trim();
   return trimmed.length > 0 ? trimmed : "Direct message";
 }
 
 /**
- * Spec for creating a DM channel. The channel runtime still lives in the
+ * Spec for creating a DM workbench. The workbench runtime still lives in the
  * owning tenant; this is the product shape the create path must honor.
  */
-export function createDmChannelSpec(args: {
+export function createDmWorkbenchSpec(args: {
   readonly counterpartyDisplayName: string;
   readonly memberUserIds: readonly [string, string];
 }): {
@@ -54,7 +54,7 @@ export function createDmChannelSpec(args: {
     throw new Error("DM members must be two distinct user ids");
   }
   return {
-    name: dmChannelName(args.counterpartyDisplayName),
+    name: dmWorkbenchName(args.counterpartyDisplayName),
     dm: true,
     memberUserIds: [a, b],
   };
@@ -163,10 +163,10 @@ export function isInterchangeRole(value: string): value is InterchangeRole {
 }
 
 /**
- * Same-parent shared-channel projection: both tenants must share a parent
+ * Same-parent shared-workbench projection: both tenants must share a parent
  * (or one is the parent of the other). External cross-org is out of scope.
  */
-export async function canShareChannelWithinParent(
+export async function canShareWorkbenchWithinParent(
   tenantA: string,
   tenantB: string,
   lookup: TenantParentLookup,

@@ -1,5 +1,5 @@
 // The sidebar's one data source: everything happening in the currently
-// selected bench right now. Channels and chats come from
+// selected bench right now. Workbenches and chats come from
 // `@corbits/chat-ui`'s own validated fetches; running routines come through
 // the seam in `./routine-activity.ts`; the signed-in user's in-progress
 // tasks come from `@corbits/tasks-ui` (`GET /tasks` is already
@@ -25,12 +25,12 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CHANNELS_MUTATED_EVENT,
-  channelsQueryKeyPrefix,
-  listChannels,
+  WORKBENCHES_MUTATED_EVENT,
+  workbenchesQueryKeyPrefix,
+  listWorkbenches,
   listVisibleAgentDefinitions,
 } from "@corbits/chat-ui";
-import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
+import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
 import { listTasks, workingTasks } from "@corbits/tasks-ui";
 import type { WorkingTask } from "@corbits/tasks-ui";
 
@@ -44,8 +44,8 @@ export type BenchActivityQuery =
   | { readonly kind: "error"; readonly message: string }
   | {
       readonly kind: "ready";
-      readonly channels: readonly Channel[];
-      readonly chats: readonly Channel[];
+      readonly workbenches: readonly Workbench[];
+      readonly chats: readonly Workbench[];
       readonly agents: readonly VisibleAgentDefinition[];
       readonly routines: readonly RoutineActivityItem[];
       readonly workingTasks: readonly WorkingTask[];
@@ -64,7 +64,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const queryClient = useQueryClient();
 
   // A conversation minted anywhere (picker dialog, agent launch, the
-  // land-hop) announces itself via `CHANNELS_MUTATED_EVENT`; without
+  // land-hop) announces itself via `WORKBENCHES_MUTATED_EVENT`; without
   // this, the sidebar's cached listing only catches up on the next
   // unrelated refetch and a fresh workbench is invisible until then.
   useEffect(() => {
@@ -72,22 +72,23 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
       const detail = (event as CustomEvent<{ tenantId?: string }>).detail;
       if (detail?.tenantId === undefined) return;
       void queryClient.invalidateQueries({
-        queryKey: channelsQueryKeyPrefix(detail.tenantId),
+        queryKey: workbenchesQueryKeyPrefix(detail.tenantId),
       });
     };
-    window.addEventListener(CHANNELS_MUTATED_EVENT, onMutated);
-    return () => window.removeEventListener(CHANNELS_MUTATED_EVENT, onMutated);
+    window.addEventListener(WORKBENCHES_MUTATED_EVENT, onMutated);
+    return () =>
+      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, onMutated);
   }, [queryClient]);
 
-  const channelsQuery = useQuery({
-    queryKey: tenantKeys.channels(key, "channel"),
+  const workbenchesQuery = useQuery({
+    queryKey: tenantKeys.workbenches(key, "workbench"),
     enabled,
-    queryFn: () => listChannels(key, "channel"),
+    queryFn: () => listWorkbenches(key, "workbench"),
   });
   const chatsQuery = useQuery({
-    queryKey: tenantKeys.channels(key, "chat"),
+    queryKey: tenantKeys.workbenches(key, "chat"),
     enabled,
-    queryFn: () => listChannels(key, "chat"),
+    queryFn: () => listWorkbenches(key, "chat"),
   });
   const routinesQuery = useQuery({
     queryKey: tenantKeys.topLevelRuns(key),
@@ -108,7 +109,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   if (tenantId === null) return { kind: "empty" };
 
   for (const query of [
-    channelsQuery,
+    workbenchesQuery,
     chatsQuery,
     routinesQuery,
     tasksQuery,
@@ -118,7 +119,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
       return { kind: "error", message: errorMessage(query.error) };
   }
   if (
-    channelsQuery.data === undefined ||
+    workbenchesQuery.data === undefined ||
     chatsQuery.data === undefined ||
     routinesQuery.data === undefined ||
     tasksQuery.data === undefined ||
@@ -129,7 +130,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
 
   return {
     kind: "ready",
-    channels: channelsQuery.data,
+    workbenches: workbenchesQuery.data,
     chats: chatsQuery.data,
     agents: agentsQuery.data,
     routines: routinesQuery.data,

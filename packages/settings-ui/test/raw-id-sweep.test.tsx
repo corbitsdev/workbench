@@ -1,5 +1,5 @@
 // The UI floor's raw-id sweep: render every settings section's presentational
-// view with a full, realistic fixture — a bench, a channel, and a user each
+// view with a full, realistic fixture — a bench, a workbench, and a user each
 // carrying a uuid-like id — and assert none of those ids ever reach visible
 // text. Attribute values (an `<option value>`, a `key`) are not the floor's
 // concern the way visible text is, so the sweep strips markup down to text

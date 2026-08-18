@@ -2,12 +2,12 @@
 
 One page. Names real surfaces (`apps/web/src/routes.tsx`,
 `packages/settings-ui/src/section-registry.tsx`,
-`packages/chat-ui/src/channel-settings/*`). No hypotheticals.
+`packages/chat-ui/src/workbench-settings/*`). No hypotheticals.
 
 ## The core move: spaces are tenants
 
-`packages/chat-ui/src/channel-settings/surface.tsx` already says it —
-_"channels are tenants, so their settings replace the whole stage."_ We
+`packages/chat-ui/src/workbench-settings/surface.tsx` already says it —
+_"workbenches are tenants, so their settings replace the whole stage."_ We
 finish what's started: a space is its own tenancy. It can hold **its own
 named credentials, its own agents, its own grants**, inherited from the
 bench unless overridden. That's why settings stop being a buried tree —
@@ -35,17 +35,17 @@ agent, or routine) you're already in.
 Current groups: Personal (Agent, Notifications, Account) / Workspace (Bench,
 People, Roles, Grants, Connections, Audit).
 
-| Section                                 | Verdict                   | Where it goes                                                                                                                                                               |
-| --------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent` (personal agent config)         | move-into-context         | agent's own chat — same pattern `channel-settings/surface.tsx` already gives channels                                                                                       |
-| `chat`/Notifications                    | keep                      | Settings (genuinely global)                                                                                                                                                 |
-| `account`                               | keep                      | Settings                                                                                                                                                                    |
-| `bench`                                 | keep                      | Settings (bench is the outer tenant)                                                                                                                                        |
-| `people`                                | keep, fix                 | Settings — filter machine principals from the human roster (in flight per owner)                                                                                            |
-| `roles` / `grants`                      | keep, contextual add      | Settings for bench-wide; **also surfaces inline** on a space's Access tab (`channel-settings/access-section.tsx` already exists — extend it to grants, not just membership) |
-| `connections`/`credentials-section.tsx` | merge + move-into-context | kill as the _only_ entry point. Settings → Connections becomes bench-key **management** (rotate, name, revoke); **creation happens at point of use** (see below)            |
-| `granola-webhook-card.tsx`              | kill the circularity      | binding a webhook no longer requires leaving the routine. See flow 3.                                                                                                       |
-| `audit`                                 | keep                      | Settings                                                                                                                                                                    |
+| Section                                 | Verdict                   | Where it goes                                                                                                                                                                 |
+| --------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent` (personal agent config)         | move-into-context         | agent's own chat — same pattern `workbench-settings/surface.tsx` already gives workbenches                                                                                    |
+| `chat`/Notifications                    | keep                      | Settings (genuinely global)                                                                                                                                                   |
+| `account`                               | keep                      | Settings                                                                                                                                                                      |
+| `bench`                                 | keep                      | Settings (bench is the outer tenant)                                                                                                                                          |
+| `people`                                | keep, fix                 | Settings — filter machine principals from the human roster (in flight per owner)                                                                                              |
+| `roles` / `grants`                      | keep, contextual add      | Settings for bench-wide; **also surfaces inline** on a space's Access tab (`workbench-settings/access-section.tsx` already exists — extend it to grants, not just membership) |
+| `connections`/`credentials-section.tsx` | merge + move-into-context | kill as the _only_ entry point. Settings → Connections becomes bench-key **management** (rotate, name, revoke); **creation happens at point of use** (see below)              |
+| `granola-webhook-card.tsx`              | kill the circularity      | binding a webhook no longer requires leaving the routine. See flow 3.                                                                                                         |
+| `audit`                                 | keep                      | Settings                                                                                                                                                                      |
 
 **Result: Settings page shrinks from 8 sections to 5 (Account, Notifications, Bench, People, Connections+Audit), all bench-scoped. Nothing space-scoped lives in the settings tree anymore.**
 
@@ -87,7 +87,7 @@ steps — name workbench, add inference credential, orient)
 
 **2. Make an agent** (`create-agent-dialog.tsx`, CL-6074 — treat as done)
 
-1. From Spaces, "New chat" → agent tab (`new-channel-dialog.tsx` already
+1. From Spaces, "New chat" → agent tab (`new-workbench-dialog.tsx` already
    has this picker) → "Create new agent."
 2. Two fields: name, what it's for. (System prompt/model/skills stay, but
    collapsed under "Advanced" — YAGNI on exposing them by default.)
@@ -98,15 +98,15 @@ steps — name workbench, add inference credential, orient)
    round-trip, no directory page.
 
 **3. Make a routine from a space** (`routines-page.tsx` today: standalone
-page, delivery channel required at creation, Granola webhook is a separate
+page, delivery workbench required at creation, Granola webhook is a separate
 Connections-section card)
 
 1. From inside a space, "New routine" (not from the standalone Routines
    page — routines page becomes the _list_ of what's running, not the only
    place to start one).
 2. Pick source: catalog template or describe-to-agent.
-3. Delivery channel is pre-filled as _this_ space — the one you're
-   already in, not a picker over every channel.
+3. Delivery workbench is pre-filled as _this_ space — the one you're
+   already in, not a picker over every workbench.
 4. If the routine needs a credential (a provider key, or — for Granola —
    the inbound webhook secret), it's minted right here, inline, scoped to
    this space by default. For Granola: the last step of the wizard _is_

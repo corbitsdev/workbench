@@ -29,7 +29,7 @@ export function addRecentEntry(
 
 /** Drops the entry matching `kind`+`id`, if present. Pure, the same way
  * `addRecentEntry` is — used to self-heal a Recents list once the entity it
- * points at is confirmed gone (e.g. a channel that 404s). */
+ * points at is confirmed gone (e.g. a workbench that 404s). */
 export function removeRecentEntry(
   entries: readonly RecentEntry[],
   entry: Pick<RecentEntry, "kind" | "id">,

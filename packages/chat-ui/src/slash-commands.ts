@@ -2,7 +2,7 @@
 // build can actually run today, detecting an in-progress command token,
 // and filtering the catalog against what's been typed so far. No DOM, no
 // side effects — actions live in composer.tsx, the only place with the
-// channel/host context a command's action needs.
+// workbench/host context a command's action needs.
 //
 // The catalog is deliberately short. `/thread` is out of scope (killed by
 // owner decision — see command-palette-actions.ts's own note on "New

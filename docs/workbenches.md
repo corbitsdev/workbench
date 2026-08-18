@@ -1,14 +1,14 @@
 # Workbenches
 
 A workbench is Workbench's one conversational surface: every workbench is a
-multi-agent room, and there is no separate chat-vs-channel behavioral split
-— a 1:1 chat and a multi-agent channel route messages the same way (see
-[CHAT.md](CHAT.md) for the underlying channel/thread model).
+multi-agent room, and there is no separate chat-vs-workbench behavioral split
+— a 1:1 chat and a multi-agent workbench route messages the same way (see
+[CHAT.md](CHAT.md) for the underlying workbench/thread model).
 
 ## Host routing
 
-`sendChannelMessage` (`packages/chat/src/channel-service.ts`) decides who
-receives a message without ever branching on the channel's `kind`:
+`sendWorkbenchMessage` (`packages/chat/src/workbench-service.ts`) decides who
+receives a message without ever branching on the workbench's `kind`:
 
 - **`@mention` an agent** — that agent always receives the message.
 - **Reply to an agent's message** — that agent receives it too, even
@@ -49,8 +49,8 @@ wrote.
 
 A routine's runs and a dispatched task's result both deliver into a
 workbench rather than a separate destination: a routine's delivery lands
-in its channel's delivery thread, and a dispatched task's completion or
-failure posts into the channel it was dispatched from (falling back to the
-tenant's assistant chat when no origin channel was recorded) — never only
+in its workbench's delivery thread, and a dispatched task's completion or
+failure posts into the workbench it was dispatched from (falling back to the
+tenant's assistant chat when no origin workbench was recorded) — never only
 an inbox. There is no standalone Inbox page; task/approval affordances live
 inside the workbench itself.

@@ -5,7 +5,7 @@ import { searchEntities } from "../src/entity-search";
 describe("searchEntities", () => {
   const sources = [
     {
-      category: "channels",
+      category: "workbenches",
       entities: [
         { id: "chan-1", name: "Launch Planning" },
         { id: "chan-2", name: "Support Triage" },
@@ -83,7 +83,7 @@ describe("searchEntities", () => {
       offset: 0,
     });
     const categories = page.results.map((result) => result.category);
-    expect(categories).toEqual(["channels", "routines", "agents"]);
+    expect(categories).toEqual(["workbenches", "routines", "agents"]);
   });
 
   test("returns nothing for a source with no matching entities", () => {

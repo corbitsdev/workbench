@@ -1,6 +1,6 @@
 // Path-id helpers for settings deep links. Shared by the shell (col2
 // section nav) and the settings sections (stage detail) so neither layer
-// owns the other. Same pattern as channel-path.ts. Agents and Skills used
+// owns the other. Same pattern as workbench-path.ts. Agents and Skills used
 // to be their own top-level routes (`/agents/:id`, `/skills/:id`); they are
 // now Settings sections at `/settings/agents/:id` and `/settings/skills/:id`
 // — see `settingsEntityIdFromPath`.

@@ -5,28 +5,28 @@ import { describe, expect, test } from "bun:test";
 
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryPinStore } from "../src/pins";
-import { createChannelSubscriberRegistry } from "../src/channel-events";
-import type { ChatChannelEvent } from "../src/platform-port";
-import { buildDeps, createChannel, mountAs, sendText } from "./test-support";
+import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
+import type { ChatWorkbenchEvent } from "../src/platform-port";
+import { buildDeps, createWorkbench, mountAs, sendText } from "./test-support";
 
-function pinUrl(channelId: string, messageId: string) {
-  return `/channels/${channelId}/messages/${messageId}/pin`;
+function pinUrl(workbenchId: string, messageId: string) {
+  return `/workbenches/${workbenchId}/messages/${messageId}/pin`;
 }
 
 async function pin(
   app: ReturnType<typeof mountAs>,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ) {
-  return app.request(pinUrl(channelId, messageId), { method: "POST" });
+  return app.request(pinUrl(workbenchId, messageId), { method: "POST" });
 }
 
 async function unpin(
   app: ReturnType<typeof mountAs>,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ) {
-  return app.request(pinUrl(channelId, messageId), { method: "DELETE" });
+  return app.request(pinUrl(workbenchId, messageId), { method: "DELETE" });
 }
 
 /** Sends a real message and returns its id — pin tests that expect a
@@ -34,10 +34,10 @@ async function unpin(
  * pinning an unknown id 404s. */
 async function sendAndGetMessageId(
   app: ReturnType<typeof mountAs>,
-  channelId: string,
+  workbenchId: string,
 ): Promise<string> {
-  await sendText(app, channelId, "hello");
-  const list = await app.request(`/channels/${channelId}/messages`);
+  await sendText(app, workbenchId, "hello");
+  const list = await app.request(`/workbenches/${workbenchId}/messages`);
   const body = (await list.json()) as { items: { id: string }[] };
   const id = body.items[0]?.id;
   if (id === undefined) throw new Error("sendAndGetMessageId: no message id");
@@ -48,13 +48,15 @@ describe("pin routes — gating", () => {
   test("no pins store injected: pin, unpin, and list all 404", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
 
-    expect((await pin(app, channel.id, "m1")).status).toBe(404);
-    expect((await unpin(app, channel.id, "m1")).status).toBe(404);
-    expect((await app.request(`/channels/${channel.id}/pins`)).status).toBe(
-      404,
-    );
+    expect((await pin(app, workbench.id, "m1")).status).toBe(404);
+    expect((await unpin(app, workbench.id, "m1")).status).toBe(404);
+    expect(
+      (await app.request(`/workbenches/${workbench.id}/pins`)).status,
+    ).toBe(404);
   });
 
   test("a denied grant is rejected before any pin is stored", async () => {
@@ -65,24 +67,24 @@ describe("pin routes — gating", () => {
         c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const channelId = "run_channel1";
+    const workbenchId = "run_workbench1";
 
-    const response = await pin(app, channelId, "m1");
+    const response = await pin(app, workbenchId, "m1");
     expect(response.status).toBe(403);
-    expect(await store.listPins("tnt_1", channelId)).toHaveLength(0);
+    expect(await store.listPins("tnt_1", workbenchId)).toHaveLength(0);
   });
 
-  test("an unknown channel id 404s", async () => {
+  test("an unknown workbench id 404s", async () => {
     const deps = buildDeps({ pins: createInMemoryPinStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     expect((await pin(app, "run_ghost", "m1")).status).toBe(404);
   });
 
-  test("a channel that belongs to a different tenant is invisible: 404, not leaked cross-tenant", async () => {
+  test("a workbench that belongs to a different tenant is invisible: 404, not leaked cross-tenant", async () => {
     const store = createInMemoryPinStore();
     const deps = buildDeps({ pins: store });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body } = await createChannel(app, { kind: "channel" });
+    const { body } = await createWorkbench(app, { kind: "workbench" });
 
     const otherApp = mountAs(
       createChatRoutes(buildDeps({ pins: store })),
@@ -95,15 +97,17 @@ describe("pin routes — gating", () => {
     const store = createInMemoryPinStore();
     const deps = buildDeps({ pins: store });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    // A real message exists in the channel, but "m_ghost" is not it —
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    // A real message exists in the workbench, but "m_ghost" is not it —
     // proves the check resolves the specific id, not just "some
-    // message exists in this channel".
-    await sendText(app, channel.id, "unrelated message");
+    // message exists in this workbench".
+    await sendText(app, workbench.id, "unrelated message");
 
-    const response = await pin(app, channel.id, "m_ghost");
+    const response = await pin(app, workbench.id, "m_ghost");
     expect(response.status).toBe(404);
-    expect(await store.listPins("tnt_1", channel.id)).toHaveLength(0);
+    expect(await store.listPins("tnt_1", workbench.id)).toHaveLength(0);
   });
 });
 
@@ -111,14 +115,16 @@ describe("pin routes — pin/unpin round trip", () => {
   test("pinning then GET /pins returns it with the message's own content", async () => {
     const deps = buildDeps({ pins: createInMemoryPinStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    await sendText(app, channel.id, "important announcement");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await sendText(app, workbench.id, "important announcement");
 
-    const list = await app.request(`/channels/${channel.id}/messages`);
+    const list = await app.request(`/workbenches/${workbench.id}/messages`);
     const listed = (await list.json()) as { items: { id: string }[] };
     const messageId = listed.items[0]?.id as string;
 
-    const pinResponse = await pin(app, channel.id, messageId);
+    const pinResponse = await pin(app, workbench.id, messageId);
     expect(pinResponse.status).toBe(200);
     const pinBody = (await pinResponse.json()) as {
       messageId: string;
@@ -126,7 +132,7 @@ describe("pin routes — pin/unpin round trip", () => {
     };
     expect(pinBody).toMatchObject({ messageId, pinnedBy: "prn_alice" });
 
-    const pins = await app.request(`/channels/${channel.id}/pins`);
+    const pins = await app.request(`/workbenches/${workbench.id}/pins`);
     const pinsBody = (await pins.json()) as {
       items: { id: string; parts: { kind: string; text?: string }[] }[];
     };
@@ -137,18 +143,20 @@ describe("pin routes — pin/unpin round trip", () => {
   test("unpinning removes it from GET /pins", async () => {
     const deps = buildDeps({ pins: createInMemoryPinStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    await sendText(app, channel.id, "hello");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await sendText(app, workbench.id, "hello");
 
-    const list = await app.request(`/channels/${channel.id}/messages`);
+    const list = await app.request(`/workbenches/${workbench.id}/messages`);
     const listed = (await list.json()) as { items: { id: string }[] };
     const messageId = listed.items[0]?.id as string;
 
-    await pin(app, channel.id, messageId);
-    const unpinResponse = await unpin(app, channel.id, messageId);
+    await pin(app, workbench.id, messageId);
+    const unpinResponse = await unpin(app, workbench.id, messageId);
     expect(unpinResponse.status).toBe(204);
 
-    const pins = await app.request(`/channels/${channel.id}/pins`);
+    const pins = await app.request(`/workbenches/${workbench.id}/pins`);
     const pinsBody = (await pins.json()) as { items: unknown[] };
     expect(pinsBody.items).toEqual([]);
   });
@@ -158,20 +166,22 @@ describe("pin routes — the message wire type carries pinned", () => {
   test("GET /messages marks each item pinned or not, batched from one listPins call", async () => {
     const deps = buildDeps({ pins: createInMemoryPinStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    await sendText(app, channel.id, "one");
-    await sendText(app, channel.id, "two");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await sendText(app, workbench.id, "one");
+    await sendText(app, workbench.id, "two");
 
-    const before = await app.request(`/channels/${channel.id}/messages`);
+    const before = await app.request(`/workbenches/${workbench.id}/messages`);
     const beforeBody = (await before.json()) as {
       items: { id: string; pinned?: boolean }[];
     };
     expect(beforeBody.items.every((item) => item.pinned === false)).toBe(true);
 
     const targetId = beforeBody.items[0]?.id as string;
-    await pin(app, channel.id, targetId);
+    await pin(app, workbench.id, targetId);
 
-    const after = await app.request(`/channels/${channel.id}/messages`);
+    const after = await app.request(`/workbenches/${workbench.id}/messages`);
     const afterBody = (await after.json()) as {
       items: { id: string; pinned?: boolean }[];
     };
@@ -182,31 +192,37 @@ describe("pin routes — the message wire type carries pinned", () => {
   test("without a pins store, the pinned field is simply absent", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    await sendText(app, channel.id, "hello");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await sendText(app, workbench.id, "hello");
 
-    const list = await app.request(`/channels/${channel.id}/messages`);
+    const list = await app.request(`/workbenches/${workbench.id}/messages`);
     const body = (await list.json()) as { items: Record<string, unknown>[] };
     expect(body.items[0]).not.toHaveProperty("pinned");
   });
 });
 
 describe("pin routes — chat.pin SSE event", () => {
-  test("pinning and unpinning both publish onto the channel's subscriber registry", async () => {
-    const channelSubscribers = createChannelSubscriberRegistry();
+  test("pinning and unpinning both publish onto the workbench's subscriber registry", async () => {
+    const workbenchSubscribers = createWorkbenchSubscriberRegistry();
     const deps = buildDeps({
       pins: createInMemoryPinStore(),
-      channelSubscribers,
+      workbenchSubscribers,
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
-    const messageId = await sendAndGetMessageId(app, channel.id);
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    const messageId = await sendAndGetMessageId(app, workbench.id);
 
-    const received: ChatChannelEvent[] = [];
-    channelSubscribers.subscribe(channel.id, (event) => received.push(event));
+    const received: ChatWorkbenchEvent[] = [];
+    workbenchSubscribers.subscribe(workbench.id, (event) =>
+      received.push(event),
+    );
 
-    await pin(app, channel.id, messageId);
-    await unpin(app, channel.id, messageId);
+    await pin(app, workbench.id, messageId);
+    await unpin(app, workbench.id, messageId);
 
     expect(received).toHaveLength(2);
     expect(received[0]).toMatchObject({

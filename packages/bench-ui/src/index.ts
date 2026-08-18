@@ -21,7 +21,7 @@ export {
 
 export {
   classifyBenchMembership,
-  filterWorkbenchMemberships,
+  filterBenchMemberships,
 } from "./tenancy-kind";
 export type { TenancyKind } from "./tenancy-kind";
 
@@ -33,7 +33,7 @@ export {
   createBench,
   listMembers,
   inviteMember,
-  listChannelTenantIds,
+  listWorkbenchTenantIds,
   getBenchSettings,
   patchBenchSettings,
 } from "./api";
@@ -51,16 +51,16 @@ export {
   DEFAULT_SIGNUP_MODE,
   SignupMode,
   WorkbenchIcon,
-  DmChannelFlag,
-  dmChannelName,
-  createDmChannelSpec,
+  DmWorkbenchFlag,
+  dmWorkbenchName,
+  createDmWorkbenchSpec,
   validateParentId,
   wouldCreateParentCycle,
   emailAllowedForSignup,
   parseAllowedEmailDomains,
   parseSignupMode,
   isInterchangeRole,
-  canShareChannelWithinParent,
+  canShareWorkbenchWithinParent,
 } from "./tenancy-contracts";
 export type {
   InterchangeRole,

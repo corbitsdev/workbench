@@ -87,7 +87,7 @@ Either path:
    curated model catalog;
 3. deploys and (unlike the OAuth callback's own fast half) confirms every
    default workflow the platform ships: **echo**, **assistant**,
-   **channel-digest**, and **recurring-task** — the last one deployed but
+   **workbench-digest**, and **recurring-task** — the last one deployed but
    never run directly; it exists only so "Make this a routine" (see
    below) always has a definition to prefill against
    (`packages/hub-client/src/seed.ts`'s `DEFAULT_WORKFLOWS`).
@@ -108,7 +108,7 @@ itself — via `@corbits/tool-registry-publish`, which bundles
 `@corbits/memory-tools` into a self-contained tarball (every dependency
 inlined, so the closure resolver has nothing further to fetch) and pushes
 it through the hub's native asset REST routes — ahead of deploying any
-workflow, so this step needs nothing from you: **echo**, **channel-digest**,
+workflow, so this step needs nothing from you: **echo**, **workbench-digest**,
 **assistant**, and **recurring-task** all come up live.
 `scripts/e2e/local-rip.test.ts` asserts exactly that.
 
@@ -136,7 +136,7 @@ pick who does the work (`createMyraAgentSelectionStrategy`,
   (**echo** is always available) and send it a prompt. This calls the real
   `@corbits/tasks` HTTP surface (`packages/tasks/src/routes.ts`):
   `POST /api/tenants/:id/tasks` launches a one-shot folded run with no
-  channel involved (`launchTask`, `packages/tasks/src/launcher.ts` — the
+  workbench involved (`launchTask`, `packages/tasks/src/launcher.ts` — the
   run's own `workflowRun` id comes from `@intx/hub-common`'s `generateId`,
   mirroring `@corbits/chat`'s own invite-launch shape).
 - **Let Myra choose** (the composer's default) — type an outcome instead of
@@ -222,8 +222,8 @@ under it; a run outside your tenant, or that never existed, reads back as
 A dispatched task's run is deliberately absent from the Insights landing
 page's own top-level feed (`GET /api/tenants/:id/top-level-runs`,
 `packages/folded-runs/src/scope-routes.ts`) — that feed is scoped to
-genuine top-level deployments (channels, scheduled routines), and a task
-is folded-run plumbing the same way an invited channel participant is
+genuine top-level deployments (workbenches, scheduled routines), and a task
+is folded-run plumbing the same way an invited workbench participant is
 (`launchTask` shares `launchFoldedRun` with `@corbits/chat`'s own invite
 path, which is what plants the marker this scoping query excludes on).
 The trace link is the one path back to a task's own run detail.
@@ -242,8 +242,8 @@ agent and prompt, targeting the tenant's already-deployed
 for you, never run directly on its own. Saving that dialog schedules a
 routine that dispatches through the same `launchTask` a manual task does
 (`apps/hub/src/routine-launcher.ts`), delivering to your Inbox on the same
-schedule, never a channel. `scripts/e2e/recurring-task-routine.test.ts`
+schedule, never a workbench. `scripts/e2e/recurring-task-routine.test.ts`
 proves the scheduled-fire path end to end against a real hub, sidecar, and
-Postgres: a routine with no delivery channel at all, a forced-due fire
+Postgres: a routine with no delivery workbench at all, a forced-due fire
 that dispatches a real task rather than a folded run of its own, and that
 task's terminal delivery landing in the routine creator's Inbox.

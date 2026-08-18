@@ -87,7 +87,7 @@ const VALID_BODY = {
   definitionId: "def_research",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
-  deliveryChannelId: "ch_delivery",
+  deliveryWorkbenchId: "ch_delivery",
   input: { topic: "AI coding agents", focus: "Competing launches" },
 };
 

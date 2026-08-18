@@ -15,12 +15,12 @@ mock.module("@corbits/react-ui", () => ({
 }));
 
 let ensureProfileDmResult: Promise<
-  { kind: "ready"; channelId: string } | { kind: "error"; message: string }
-> = Promise.resolve({ kind: "ready", channelId: "chn_dm" });
+  { kind: "ready"; workbenchId: string } | { kind: "error"; message: string }
+> = Promise.resolve({ kind: "ready", workbenchId: "chn_dm" });
 
 mock.module("../src/profile-relations", () => ({
   ensureProfileDm: mock(() => ensureProfileDmResult),
-  loadSharedChannels: mock(() => Promise.resolve([])),
+  loadSharedWorkbenches: mock(() => Promise.resolve([])),
 }));
 
 const { BenchProvider } = await import("../src/bench-context");
@@ -55,8 +55,8 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
       jsonResponse({ data: [membership], nextCursor: null }),
     );
   }
-  if (url.includes("/api/channel-tenancies/kinds")) {
-    return Promise.resolve(jsonResponse({ channelTenantIds: [] }));
+  if (url.includes("/api/workbench-tenancies/kinds")) {
+    return Promise.resolve(jsonResponse({ workbenchTenantIds: [] }));
   }
   return Promise.reject(
     new Error(`unrouted fetch in canvas-column test: ${url}`),
@@ -87,7 +87,7 @@ describe("canvas profile card Message action", () => {
     toastMock.mockClear();
     ensureProfileDmResult = Promise.resolve({
       kind: "ready",
-      channelId: "chn_dm",
+      workbenchId: "chn_dm",
     });
   });
 
@@ -122,7 +122,7 @@ describe("canvas profile card Message action", () => {
       );
     });
     // Let BenchProvider's membership fetch (and, once it resolves, the
-    // channel-tenancy-kinds follow-up) actually settle before interacting —
+    // workbench-tenancy-kinds follow-up) actually settle before interacting —
     // a button exists from the very first render regardless, so presence
     // alone can't gate this.
     for (let i = 0; i < 20; i++) {
@@ -144,8 +144,10 @@ describe("canvas profile card Message action", () => {
   }
 
   test("stays open and shows a pending label while the DM is being resolved, then closes and navigates once it's ready", async () => {
-    let resolveDm: (value: { kind: "ready"; channelId: string }) => void = () =>
-      undefined;
+    let resolveDm: (value: {
+      kind: "ready";
+      workbenchId: string;
+    }) => void = () => undefined;
     ensureProfileDmResult = new Promise((resolve) => {
       resolveDm = resolve;
     });
@@ -159,12 +161,12 @@ describe("canvas profile card Message action", () => {
     expect(messageButton().textContent).toBe("Messaging…");
 
     await act(async () => {
-      resolveDm({ kind: "ready", channelId: "chn_dm" });
+      resolveDm({ kind: "ready", workbenchId: "chn_dm" });
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(navigated).toContain("/c/chn_dm");
+    expect(navigated).toContain("/w/chn_dm");
     expect(closed).toBe(true);
   });
 

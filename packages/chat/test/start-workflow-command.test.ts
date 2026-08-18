@@ -3,7 +3,7 @@
 // workflow-command registrar: invite-then-send, sharing the same
 // `launchAndJoinAgent` core as `POST .../invite`.
 import { describe, expect, test } from "bun:test";
-import { startWorkflowCommand } from "../src/channel-service";
+import { startWorkflowCommand } from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import { fakePlatform, TENANT } from "./test-support";
 
@@ -13,10 +13,10 @@ describe("startWorkflowCommand", () => {
     const platform = fakePlatform({
       invitable: [{ id: "wfd_echo", name: "Echo" }],
     });
-    await store.createChannelSettings({
+    await store.createWorkbenchSettings({
       tenantId: TENANT.id,
-      channelId: "chan_1",
-      settings: { "chat/kind": "channel", "chat/participants": [] },
+      workbenchId: "chan_1",
+      settings: { "chat/kind": "workbench", "chat/participants": [] },
       updatedBy: "prn_alice",
     });
 
@@ -25,7 +25,7 @@ describe("startWorkflowCommand", () => {
       {
         tenantId: TENANT.id,
         principalId: "prn_alice",
-        channelId: "chan_1",
+        workbenchId: "chan_1",
         definitionId: "wfd_echo",
         args: "summarize this thread",
       },
@@ -36,10 +36,10 @@ describe("startWorkflowCommand", () => {
       address: "ins_invited1@acme.example",
     });
     const opening = platform.sentMail.find(
-      (mail) => mail.channelId === "ins_invited1",
+      (mail) => mail.workbenchId === "ins_invited1",
     );
     expect(opening?.content.content).toBe("summarize this thread");
-    expect(opening?.fromChannelId).toBe("chan_1");
+    expect(opening?.fromWorkbenchId).toBe("chan_1");
   });
 
   test("empty args still start the run, with a 'Continue.' opening mail", async () => {
@@ -47,10 +47,10 @@ describe("startWorkflowCommand", () => {
     const platform = fakePlatform({
       invitable: [{ id: "wfd_echo", name: "Echo" }],
     });
-    await store.createChannelSettings({
+    await store.createWorkbenchSettings({
       tenantId: TENANT.id,
-      channelId: "chan_2",
-      settings: { "chat/kind": "channel", "chat/participants": [] },
+      workbenchId: "chan_2",
+      settings: { "chat/kind": "workbench", "chat/participants": [] },
       updatedBy: "prn_alice",
     });
 
@@ -59,19 +59,19 @@ describe("startWorkflowCommand", () => {
       {
         tenantId: TENANT.id,
         principalId: "prn_alice",
-        channelId: "chan_2",
+        workbenchId: "chan_2",
         definitionId: "wfd_echo",
         args: "   ",
       },
     );
 
     const opening = platform.sentMail.find(
-      (mail) => mail.channelId === "ins_invited1",
+      (mail) => mail.workbenchId === "ins_invited1",
     );
     expect(opening?.content.content).toBe("Continue.");
   });
 
-  test("throws loud for a channel that does not exist", async () => {
+  test("throws loud for a workbench that does not exist", async () => {
     const store = createInMemoryChatStore();
     const platform = fakePlatform({
       invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -83,11 +83,11 @@ describe("startWorkflowCommand", () => {
         {
           tenantId: TENANT.id,
           principalId: "prn_alice",
-          channelId: "chan_missing",
+          workbenchId: "chan_missing",
           definitionId: "wfd_echo",
           args: "hi",
         },
       ),
-    ).rejects.toThrow(/No channel "chan_missing"/);
+    ).rejects.toThrow(/No workbench "chan_missing"/);
   });
 });

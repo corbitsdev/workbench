@@ -1,24 +1,24 @@
-// Adds an already-launched run's address to a channel's participant list.
+// Adds an already-launched run's address to a workbench's participant list.
 // Membership is the one thing the chat orchestrator keys on to post a
-// run's `connector.reply` into a channel (see `chat-orchestrator.ts`'s
-// `resolveMemberChannels`), so a routine's run delivering into its
+// run's `connector.reply` into a workbench (see `chat-orchestrator.ts`'s
+// `resolveMemberWorkbenches`), so a routine's run delivering into its
 // workbench is exactly this join — no second posting path. Unlike
 // `launchAndJoinAgent`, the run is launched elsewhere (`@corbits/routines`'
 // launcher port) and no join event is posted: a routine's arrival in the
-// channel is its first reply, not a "joined" announcement.
+// workbench is its first reply, not a "joined" announcement.
 import { addParticipant, parseParticipants } from "./participants";
 import type { ChatStore } from "./store";
 
 export type JoinRunParticipantDeps = {
   readonly store: Pick<
     ChatStore,
-    "getChannelSettings" | "updateChannelSettings"
+    "getWorkbenchSettings" | "updateWorkbenchSettings"
   >;
 };
 
 export type JoinRunParticipantInput = {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly principalId: string;
   readonly address: string;
   readonly handle: string;
@@ -28,18 +28,18 @@ export async function joinRunParticipant(
   deps: JoinRunParticipantDeps,
   input: JoinRunParticipantInput,
 ): Promise<void> {
-  const row = await deps.store.getChannelSettings(
+  const row = await deps.store.getWorkbenchSettings(
     input.tenantId,
-    input.channelId,
+    input.workbenchId,
   );
   if (row === undefined) {
     throw new Error(
-      `no channel "${input.channelId}" in tenant "${input.tenantId}"`,
+      `no workbench "${input.workbenchId}" in tenant "${input.tenantId}"`,
     );
   }
-  await deps.store.updateChannelSettings({
+  await deps.store.updateWorkbenchSettings({
     tenantId: input.tenantId,
-    channelId: input.channelId,
+    workbenchId: input.workbenchId,
     settings: {
       ...row.settings,
       "chat/participants": addParticipant(

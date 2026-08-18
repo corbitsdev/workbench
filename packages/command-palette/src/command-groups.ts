@@ -8,7 +8,7 @@ export type PaletteResultItem = {
   readonly title: string;
   readonly subtitle?: string;
   /** Text to match the query against, when it should differ from
-   * `title subtitle` (e.g. to also match a channel section or an id alias).
+   * `title subtitle` (e.g. to also match a workbench section or an id alias).
    * Defaults to `title` + `subtitle`. */
   readonly searchText?: string;
 };
@@ -39,7 +39,7 @@ export type BuildCommandPaletteGroupsInput = {
   readonly recents: readonly PaletteResultItem[];
   /** Every other group, already in the exact order they should render in —
    * scoped and unscoped groups may be interleaved, matching the mock's
-   * Commands/Channels/Pages/Settings/Artifacts/Routines/Threads/People
+   * Commands/Workbenches/Pages/Settings/Artifacts/Routines/Threads/People
    * order (People last). */
   readonly sources: readonly PaletteSource[];
 };

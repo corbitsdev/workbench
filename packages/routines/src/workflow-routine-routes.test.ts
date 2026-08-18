@@ -15,7 +15,7 @@ import {
 } from "./workflow-routine-routes";
 import { createInMemoryRoutineStore, type RoutineStore } from "./store";
 import type {
-  ChannelNoticePort,
+  WorkbenchNoticePort,
   DeliverySpacePort,
   RoutineLauncher,
 } from "./routes";
@@ -52,13 +52,13 @@ function fakeLauncher(): RoutineLauncher & { calls: number } {
   };
 }
 
-function fakeChannelNotice(): ChannelNoticePort & {
-  calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][];
+function fakeWorkbenchNotice(): WorkbenchNoticePort & {
+  calls: Parameters<WorkbenchNoticePort["postWorkbenchNotice"]>[0][];
 } {
-  const calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][] = [];
+  const calls: Parameters<WorkbenchNoticePort["postWorkbenchNotice"]>[0][] = [];
   return {
     calls,
-    async postChannelNotice(input) {
+    async postWorkbenchNotice(input) {
       calls.push(input);
     },
   };
@@ -101,7 +101,7 @@ const VALID_BODY = {
   name: "Morning digest",
   definitionId: "def_digest",
   trigger: { kind: "daily", hour: 9, minute: 0 },
-  deliveryChannelId: "ch_delivery",
+  deliveryWorkbenchId: "ch_delivery",
 };
 
 async function createRoutine(
@@ -222,13 +222,13 @@ test("rejects an invalid trigger with a 400", async () => {
   expect(response.status).toBe(400);
 });
 
-test("400s when delivery is required, no channel is named, and no deliverySpace is wired", async () => {
+test("400s when delivery is required, no workbench is named, and no deliverySpace is wired", async () => {
   const app = buildApp(
-    buildDeps({ deliveryChannelRequired: async () => true }),
+    buildDeps({ deliveryWorkbenchRequired: async () => true }),
   );
   const { response } = await createRoutine(app, {
     ...VALID_BODY,
-    deliveryChannelId: undefined,
+    deliveryWorkbenchId: undefined,
   });
   expect(response.status).toBe(400);
 });
@@ -239,23 +239,23 @@ test("auto-provisions a delivery space via deliverySpace + resolveTenantDomain w
     createDeliverySpace: (input) => {
       seenInput = input;
       return Promise.resolve({
-        channelId: "ch_provisioned",
+        workbenchId: "ch_provisioned",
         compensate: () => Promise.resolve(),
       });
     },
   };
   const deps = buildDeps({
-    deliveryChannelRequired: async () => true,
+    deliveryWorkbenchRequired: async () => true,
     deliverySpace,
     resolveTenantDomain: async () => "acme.example",
   });
   const app = buildApp(deps);
   const { response, body } = await createRoutine(app, {
     ...VALID_BODY,
-    deliveryChannelId: undefined,
+    deliveryWorkbenchId: undefined,
   });
   expect(response.status).toBe(201);
-  expect(body["deliveryChannelId"]).toBe("ch_provisioned");
+  expect(body["deliveryWorkbenchId"]).toBe("ch_provisioned");
   expect(seenInput).toEqual({
     tenantId: TENANT_ID,
     tenantDomain: "acme.example",
@@ -265,69 +265,69 @@ test("auto-provisions a delivery space via deliverySpace + resolveTenantDomain w
   });
 });
 
-test("delivery defaults to the creating run's own channel — no new space is provisioned", async () => {
+test("delivery defaults to the creating run's own workbench — no new space is provisioned", async () => {
   let provisioned = false;
   const deliverySpace: DeliverySpacePort = {
     createDeliverySpace: () => {
       provisioned = true;
       return Promise.resolve({
-        channelId: "ch_provisioned",
+        workbenchId: "ch_provisioned",
         compensate: () => Promise.resolve(),
       });
     },
   };
   const deps = buildDeps({
-    deliveryChannelRequired: async () => true,
+    deliveryWorkbenchRequired: async () => true,
     deliverySpace,
     resolveTenantDomain: async () => "acme.example",
-    resolveRunChannel: async (tenantId, runId) =>
+    resolveRunWorkbench: async (tenantId, runId) =>
       tenantId === TENANT_ID && runId === RUN_ID ? "ch_home" : undefined,
   });
   const app = buildApp(deps);
   const { response, body } = await createRoutine(app, {
     ...VALID_BODY,
-    deliveryChannelId: undefined,
+    deliveryWorkbenchId: undefined,
   });
   expect(response.status).toBe(201);
-  expect(body["deliveryChannelId"]).toBe("ch_home");
+  expect(body["deliveryWorkbenchId"]).toBe("ch_home");
   expect(provisioned).toBe(false);
 });
 
-test("a run with no home channel still auto-provisions a delivery space", async () => {
+test("a run with no home workbench still auto-provisions a delivery space", async () => {
   const deliverySpace: DeliverySpacePort = {
     createDeliverySpace: () =>
       Promise.resolve({
-        channelId: "ch_provisioned",
+        workbenchId: "ch_provisioned",
         compensate: () => Promise.resolve(),
       }),
   };
   const deps = buildDeps({
-    deliveryChannelRequired: async () => true,
+    deliveryWorkbenchRequired: async () => true,
     deliverySpace,
     resolveTenantDomain: async () => "acme.example",
-    resolveRunChannel: async () => undefined,
+    resolveRunWorkbench: async () => undefined,
   });
   const app = buildApp(deps);
   const { response, body } = await createRoutine(app, {
     ...VALID_BODY,
-    deliveryChannelId: undefined,
+    deliveryWorkbenchId: undefined,
   });
   expect(response.status).toBe(201);
-  expect(body["deliveryChannelId"]).toBe("ch_provisioned");
+  expect(body["deliveryWorkbenchId"]).toBe("ch_provisioned");
 });
 
-test("an explicit deliveryChannelId always wins over the run's home channel", async () => {
+test("an explicit deliveryWorkbenchId always wins over the run's home workbench", async () => {
   const deps = buildDeps({
-    deliveryChannelRequired: async () => true,
-    resolveRunChannel: async () => "ch_home",
+    deliveryWorkbenchRequired: async () => true,
+    resolveRunWorkbench: async () => "ch_home",
   });
   const app = buildApp(deps);
   const { response, body } = await createRoutine(app, {
     ...VALID_BODY,
-    deliveryChannelId: "ch_named",
+    deliveryWorkbenchId: "ch_named",
   });
   expect(response.status).toBe(201);
-  expect(body["deliveryChannelId"]).toBe("ch_named");
+  expect(body["deliveryWorkbenchId"]).toBe("ch_named");
 });
 
 test("runOnceNow launches immediately through the same launcher run-now uses", async () => {
@@ -390,33 +390,35 @@ test("PATCH /routines/:id updates enabled, name, trigger, and input", async () =
 });
 
 test("POST /routines posts an honest notice when created enabled", async () => {
-  const channelNotice = fakeChannelNotice();
-  const app = buildApp(buildDeps({ channelNotice }));
+  const workbenchNotice = fakeWorkbenchNotice();
+  const app = buildApp(buildDeps({ workbenchNotice }));
   await createRoutine(app, VALID_BODY);
 
-  expect(channelNotice.calls.length).toBe(1);
-  expect(channelNotice.calls[0]?.channelId).toBe(VALID_BODY.deliveryChannelId);
-  expect(channelNotice.calls[0]?.text).toBe(
+  expect(workbenchNotice.calls.length).toBe(1);
+  expect(workbenchNotice.calls[0]?.workbenchId).toBe(
+    VALID_BODY.deliveryWorkbenchId,
+  );
+  expect(workbenchNotice.calls[0]?.text).toBe(
     'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
       "Disable it in the Routines panel.",
   );
 });
 
 test("POST /routines posts nothing when created disabled", async () => {
-  const channelNotice = fakeChannelNotice();
+  const workbenchNotice = fakeWorkbenchNotice();
   const app = buildApp(
-    buildDeps({ channelNotice, store: storeCreatingDisabled() }),
+    buildDeps({ workbenchNotice, store: storeCreatingDisabled() }),
   );
   const { response } = await createRoutine(app, VALID_BODY);
 
   expect(response.status).toBe(201);
-  expect(channelNotice.calls.length).toBe(0);
+  expect(workbenchNotice.calls.length).toBe(0);
 });
 
 test("PATCH /routines/:id posts an honest notice when flipped to enabled", async () => {
-  const channelNotice = fakeChannelNotice();
+  const workbenchNotice = fakeWorkbenchNotice();
   const store = storeCreatingDisabled();
-  const app = buildApp(buildDeps({ channelNotice, store }));
+  const app = buildApp(buildDeps({ workbenchNotice, store }));
   const { body: created } = await createRoutine(app, VALID_BODY);
 
   const response = await app.request(`/routines/${String(created["id"])}`, {
@@ -426,18 +428,18 @@ test("PATCH /routines/:id posts an honest notice when flipped to enabled", async
   });
 
   expect(response.status).toBe(200);
-  expect(channelNotice.calls.length).toBe(1);
-  expect(channelNotice.calls[0]?.text).toBe(
+  expect(workbenchNotice.calls.length).toBe(1);
+  expect(workbenchNotice.calls[0]?.text).toBe(
     'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
       "Disable it in the Routines panel.",
   );
 });
 
 test("PATCH /routines/:id posts nothing for an update that does not flip enabled", async () => {
-  const channelNotice = fakeChannelNotice();
-  const app = buildApp(buildDeps({ channelNotice }));
+  const workbenchNotice = fakeWorkbenchNotice();
+  const app = buildApp(buildDeps({ workbenchNotice }));
   const { body: created } = await createRoutine(app, VALID_BODY);
-  channelNotice.calls.length = 0; // clear the create notice
+  workbenchNotice.calls.length = 0; // clear the create notice
 
   const response = await app.request(`/routines/${String(created["id"])}`, {
     method: "PATCH",
@@ -446,7 +448,7 @@ test("PATCH /routines/:id posts nothing for an update that does not flip enabled
   });
 
   expect(response.status).toBe(200);
-  expect(channelNotice.calls.length).toBe(0);
+  expect(workbenchNotice.calls.length).toBe(0);
 });
 
 test("PATCH /routines/:id 404s for a routine outside the run's own tenant", async () => {

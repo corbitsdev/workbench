@@ -80,6 +80,17 @@ export const routineMigrations: readonly RoutineMigration[] = [
         ON "routines"."routine_draft" ("tenant_id", "status");
     `,
   },
+  // Product rename (CL-6260): follows @corbits/chat's own
+  // 0018_rename_channel_to_workbench — a routine's delivery target is
+  // the same workbench, so the column that names it is renamed the
+  // same way.
+  {
+    name: "0004_rename_delivery_channel_id_to_delivery_workbench_id",
+    sql: `
+      ALTER TABLE "routines"."routine" RENAME COLUMN "delivery_channel_id" TO "delivery_workbench_id";
+      ALTER TABLE "routines"."routine_draft" RENAME COLUMN "delivery_channel_id" TO "delivery_workbench_id";
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

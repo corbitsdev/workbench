@@ -13,7 +13,7 @@
 // account, so its rename/purpose/icon form and member list have no home to
 // keep them separate in. Conversation-scoped settings (agent, capabilities,
 // history) live on the workbench's own settings surface
-// (`@corbits/chat-ui`'s `ChannelSettingsSurface`, CL-6084) — not here.
+// (`@corbits/chat-ui`'s `WorkbenchSettingsSurface`, CL-6084) — not here.
 // Consuming apps compose bench context and routing around
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.

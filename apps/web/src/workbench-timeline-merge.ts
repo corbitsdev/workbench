@@ -6,7 +6,7 @@
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { localPartOf } from "@corbits/chat/agent-address";
-import type { ChannelThread, MessageItem } from "@corbits/chat-ui";
+import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
 
 import type { NeedsYouItem } from "./api";
 import type { Routine, RoutineRun } from "./routines-api";
@@ -78,7 +78,7 @@ function messageExcerpt(item: MessageItem): string {
     : text;
 }
 
-/** Never the raw address (a per-channel local id shape) — falls back to
+/** Never the raw address (a per-workbench local id shape) — falls back to
  * its friendly local part when the sender has no display name. */
 function senderDisplayName(sender: MessageItem["sender"]): string {
   return sender.name ?? localPartOf(sender.address);
@@ -97,10 +97,10 @@ export function toMessageEvents(
   }));
 }
 
-/** Every fork off the channel's root thread — the root itself (the plain
- * channel timeline) never renders as its own spine entry. */
+/** Every fork off the workbench's root thread — the root itself (the plain
+ * workbench timeline) never renders as its own spine entry. */
 export function toThreadForkEvents(
-  threads: readonly ChannelThread[],
+  threads: readonly WorkbenchThread[],
 ): readonly TimelineThreadForkEvent[] {
   return threads
     .filter((thread) => thread.kind !== "root")
@@ -116,20 +116,20 @@ export function toThreadForkEvents(
 
 /** This workbench's own routines — the ones that deliver into it, not
  * every routine the owning bench has defined. */
-export function routinesForChannel(
+export function routinesForWorkbench(
   routines: readonly Routine[],
-  channelId: string,
+  workbenchId: string,
 ): readonly Routine[] {
-  return routines.filter((routine) => routine.deliveryChannelId === channelId);
+  return routines.filter(
+    (routine) => routine.deliveryWorkbenchId === workbenchId,
+  );
 }
 
 function embeddedRunField(run: RoutineRun, key: string): unknown {
   return run.run?.[key];
 }
 
-export function routineRunStatus(
-  run: RoutineRun,
-): "ok" | "failed" | "running" {
+export function routineRunStatus(run: RoutineRun): "ok" | "failed" | "running" {
   if (run.error !== undefined && run.error !== null) return "failed";
   const status = embeddedRunField(run, "status");
   if (status === "running") return "running";
@@ -175,13 +175,13 @@ export function toRoutineRunEvents(
   return events;
 }
 
-/** Tasks carry their own `channelId` — this workbench's tasks only. */
+/** Tasks carry their own `workbenchId` — this workbench's tasks only. */
 export function toTaskEvents(
   tasks: readonly Task[],
-  channelId: string,
+  workbenchId: string,
 ): readonly TimelineTaskEvent[] {
   return tasks
-    .filter((task) => task.channelId === channelId)
+    .filter((task) => task.workbenchId === workbenchId)
     .map((task) => ({
       kind: "task",
       id: task.id,
@@ -193,7 +193,7 @@ export function toTaskEvents(
 }
 
 /**
- * `needs-you` carries no channel/workbench id (a known v1 gap — see
+ * `needs-you` carries no workbench/workbench id (a known v1 gap — see
  * workbench-timeline.tsx), so every pending approval for the owning bench
  * shows up here, not just this workbench's own.
  */
@@ -321,7 +321,14 @@ export function computeTimelineDayKpis(
           break;
       }
     }
-    return { day: group.day, label: group.label, messages, agentTurns, routineRuns, approvals };
+    return {
+      day: group.day,
+      label: group.label,
+      messages,
+      agentTurns,
+      routineRuns,
+      approvals,
+    };
   });
 }
 

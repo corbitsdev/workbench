@@ -1,5 +1,5 @@
 // A shell-level seam between two independent surfaces: the canvas column's
-// ProfileCard (this app) and the active channel's composer (mounted deep
+// ProfileCard (this app) and the active workbench's composer (mounted deep
 // inside `@corbits/chat-ui`'s `ChatWorkspace`, a sibling tree). The profile
 // card's Mention action (CL-5914) needs to land `@handle` in whatever
 // composer is on screen without either side importing the other — the same
@@ -54,7 +54,7 @@ export function useRegisterComposerInsert(): (
   return useContext(ComposerInsertionContext).registerInsert;
 }
 
-/** The profile card's Mention action calls this — `false` means no channel
+/** The profile card's Mention action calls this — `false` means no workbench
  * is open right now, so the caller can fall back to an honest "nothing to
  * mention into" message instead of silently doing nothing. */
 export function useInsertIntoComposer(): (text: string) => boolean {

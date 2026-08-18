@@ -146,10 +146,10 @@ describe("extension mounting", () => {
     });
   });
 
-  test("the channel-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
+  test("the workbench-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
     const hub = await bootHub();
 
-    const gated = await hub.app.request("/api/channel-tenancies/kinds", {
+    const gated = await hub.app.request("/api/workbench-tenancies/kinds", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ tenantIds: [] }),

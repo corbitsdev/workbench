@@ -90,13 +90,13 @@ export const tenantSurfaces: TenantSurface[] = [
     memberStatus: 200,
   },
   {
-    // Every channel is now minted as a child tenant of the bench that
-    // creates it (see packages/chat/src/channel-tenancy.ts); this
-    // covers the listing seam that owns "which channels belong to this
+    // Every workbench is now minted as a child tenant of the bench that
+    // creates it (see packages/chat/src/workbench-tenancy.ts); this
+    // covers the listing seam that owns "which workbenches belong to this
     // bench" in the absence of a native child-tenant listing route.
-    name: "chat channels list",
+    name: "chat workbenches list",
     method: "GET",
-    path: (t) => `/api/tenants/${t}/chat/channels`,
+    path: (t) => `/api/tenants/${t}/chat/workbenches`,
     memberStatus: 200,
   },
 ];

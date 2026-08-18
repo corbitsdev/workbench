@@ -12,21 +12,23 @@ import {
 } from "../src/reactions";
 
 const TENANT = "tnt_1";
-const CHANNEL = "run_channel1";
+const WORKBENCH = "run_workbench1";
 
 describe("ReactionStore — toggle semantics", () => {
   test("a first toggle adds the reaction", async () => {
     const store = createInMemoryReactionStore();
     const result = await store.toggleReaction({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "👍",
       principalId: "prn_alice",
     });
     expect(result.added).toBe(true);
 
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, ["m1"]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
+      "m1",
+    ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ emoji: "👍", principalId: "prn_alice" });
   });
@@ -35,7 +37,7 @@ describe("ReactionStore — toggle semantics", () => {
     const store = createInMemoryReactionStore();
     const input = {
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "👍",
       principalId: "prn_alice",
@@ -44,7 +46,9 @@ describe("ReactionStore — toggle semantics", () => {
     const second = await store.toggleReaction(input);
     expect(second.added).toBe(false);
 
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, ["m1"]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
+      "m1",
+    ]);
     expect(rows).toHaveLength(0);
   });
 
@@ -52,20 +56,22 @@ describe("ReactionStore — toggle semantics", () => {
     const store = createInMemoryReactionStore();
     await store.toggleReaction({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "🎉",
       principalId: "prn_alice",
     });
     await store.toggleReaction({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "🎉",
       principalId: "prn_bob",
     });
 
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, ["m1"]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
+      "m1",
+    ]);
     expect(rows).toHaveLength(2);
   });
 
@@ -73,22 +79,24 @@ describe("ReactionStore — toggle semantics", () => {
     const store = createInMemoryReactionStore();
     await store.toggleReaction({
       tenantId: "tnt_1",
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "👍",
       principalId: "prn_alice",
     });
     await store.toggleReaction({
       tenantId: "tnt_2",
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "👍",
       principalId: "prn_alice",
     });
 
-    const tenant1Rows = await store.listReactionsForMessages("tnt_1", CHANNEL, [
-      "m1",
-    ]);
+    const tenant1Rows = await store.listReactionsForMessages(
+      "tnt_1",
+      WORKBENCH,
+      ["m1"],
+    );
     expect(tenant1Rows).toHaveLength(1);
     expect(tenant1Rows[0]?.tenantId).toBe("tnt_1");
   });
@@ -97,20 +105,20 @@ describe("ReactionStore — toggle semantics", () => {
     const store = createInMemoryReactionStore();
     await store.toggleReaction({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m1",
       emoji: "👍",
       principalId: "prn_alice",
     });
     await store.toggleReaction({
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m2",
       emoji: "❤️",
       principalId: "prn_bob",
     });
 
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, [
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
       "m1",
       "m2",
       "m3",
@@ -120,7 +128,7 @@ describe("ReactionStore — toggle semantics", () => {
 
   test("an empty messageIds list short-circuits without touching the store", async () => {
     const store = createInMemoryReactionStore();
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, []);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, []);
     expect(rows).toEqual([]);
   });
 
@@ -136,7 +144,7 @@ describe("ReactionStore — toggle semantics", () => {
     const store = createInMemoryReactionStore();
     const input = {
       tenantId: TENANT,
-      channelId: CHANNEL,
+      workbenchId: WORKBENCH,
       messageId: "m_race",
       emoji: "👍",
       principalId: "prn_alice",
@@ -148,7 +156,7 @@ describe("ReactionStore — toggle semantics", () => {
     ]);
 
     expect([first.added, second.added]).toEqual([true, false]);
-    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, [
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
       "m_race",
     ]);
     expect(rows).toHaveLength(0);
@@ -160,7 +168,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
     const rows = [
       {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m1",
         emoji: "👍",
         principalId: "prn_alice",
@@ -168,7 +176,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
       },
       {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m1",
         emoji: "👍",
         principalId: "prn_bob",
@@ -176,7 +184,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
       },
       {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m1",
         emoji: "🎉",
         principalId: "prn_bob",
@@ -202,7 +210,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
     const rows = [
       {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m1",
         emoji: "👍",
         principalId: "prn_alice",
@@ -210,7 +218,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
       },
       {
         tenantId: TENANT,
-        channelId: CHANNEL,
+        workbenchId: WORKBENCH,
         messageId: "m2",
         emoji: "🚀",
         principalId: "prn_alice",

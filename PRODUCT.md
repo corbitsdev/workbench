@@ -97,7 +97,7 @@ per-workbench connector and plugin overrides against the account default
 config profile; per-person notification preferences for that workbench;
 and archiving. See ARCHITECTURE.md's "Conversation as a folded workflow
 run" for how a workbench's settings relate to its underlying run, and
-`packages/chat-ui`'s `channel-settings` for the implementation.
+`packages/chat-ui`'s `workbench-settings` for the implementation.
 
 ## Routines, through conversation
 
@@ -145,10 +145,12 @@ User-facing surfaces (UI, docs, support) use exactly these nouns:
   between; shown in the bench switcher, never called a "workspace" or
   "org" in copy.
 
-Internally these map onto platform primitives (tenant, channel, DM) — see
+Internally these map onto platform primitives (tenant, DM) — see
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the authoritative table. Code and
-API paths keep the platform's own names; only user-facing surfaces use the
-product vocabulary above.
+API paths generally keep the platform's own names; "workbench" is the one
+exception (CL-6260), since its package (`@corbits/chat`) is ours, not the
+platform's — only user-facing surfaces use the rest of the product
+vocabulary above.
 
 ## Open questions
 

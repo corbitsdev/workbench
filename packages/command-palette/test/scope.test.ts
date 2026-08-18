@@ -14,9 +14,9 @@ describe("parsePaletteQuery", () => {
     expect(parsePaletteQuery("")).toEqual({ scope: null, query: "" });
   });
 
-  test("# scopes to channels and strips the prefix", () => {
+  test("# scopes to workbenches and strips the prefix", () => {
     const result = parsePaletteQuery("#eng");
-    expect(result.scope?.kind).toBe("channels");
+    expect(result.scope?.kind).toBe("workbenches");
     expect(result.query).toBe("eng");
   });
 
@@ -40,14 +40,14 @@ describe("parsePaletteQuery", () => {
 
   test("a bare scope prefix yields an empty query", () => {
     expect(parsePaletteQuery("#")).toEqual({
-      scope: { prefix: "#", kind: "channels", label: "spaces" },
+      scope: { prefix: "#", kind: "workbenches", label: "spaces" },
       query: "",
     });
   });
 
   test("trims whitespace after the prefix", () => {
     expect(parsePaletteQuery("#  eng ")).toEqual({
-      scope: { prefix: "#", kind: "channels", label: "spaces" },
+      scope: { prefix: "#", kind: "workbenches", label: "spaces" },
       query: "eng",
     });
   });

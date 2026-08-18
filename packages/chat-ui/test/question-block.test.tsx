@@ -15,7 +15,7 @@ import type {
   BlockResponseQuery,
 } from "../src/blocks/block-responses";
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 function messageWithQuestionBlock(allowFreeText = false): MessageItem[] {
   return [
@@ -107,7 +107,7 @@ async function mount(actions: BlockResponseActions, allowFreeText = false) {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithQuestionBlock(allowFreeText)}
         blockResponses={actions}
       />,
@@ -122,7 +122,7 @@ describe("question card — open state", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<ChannelTimeline items={messageWithQuestionBlock()} />);
+      root?.render(<WorkbenchTimeline items={messageWithQuestionBlock()} />);
     });
 
     const buttons = container.querySelectorAll(".chat-block-question-choice");

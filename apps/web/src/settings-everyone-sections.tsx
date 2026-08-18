@@ -7,7 +7,7 @@
 // never drift on what Everyone contains. Agents (CL-5990) was cut in
 // CL-6121 — a directory tab in global Settings duplicated agent
 // configuration that already lives per-workbench (`@corbits/chat-ui`'s
-// `ChannelSettingsSurface`, "Myra" section, CL-6084); that's the one
+// `WorkbenchSettingsSurface`, "Myra" section, CL-6084); that's the one
 // place it belongs now. Config Profiles (CL-6258) was cut the same way —
 // the owner called it "too confusing" as a standing settings surface;
 // `@corbits/config-profiles-ui`'s `ProfilesSettingsSection` has no other

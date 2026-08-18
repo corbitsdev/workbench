@@ -3,12 +3,12 @@
 // @corbits/tasks' launchTask (apps/hub/src/routine-launcher.ts) rather
 // than launching its own (otherwise-unused) folded run, and the result
 // must land in the routine creator's Inbox exactly like a manual task —
-// never a channel. Proves, against a real Postgres and a real
+// never a workbench. Proves, against a real Postgres and a real
 // hub+sidecar pair, with the hub's own noop-inference endpoint standing
 // in for a model provider (zero-cost, same pattern as
 // `routine-repeat.test.ts` and `routine-trigger-input.test.ts`):
 //
-//   1. The routine can be created with NO deliveryChannelId at all —
+//   1. The routine can be created with NO deliveryWorkbenchId at all —
 //      the honest end-to-end delivery-destination fix (fix #1):
 //      recurring-task's `deliveryMode: "inbox"` means
 //      `@corbits/routines`' create validation never requires one.
@@ -186,7 +186,7 @@ async function deployWorkflow(args: {
 describe.skipIf(databaseUrl === undefined)(
   "a scheduled recurring-task routine dispatches through launchTask and delivers to the creator's Inbox",
   () => {
-    test("fires the routine, produces a real task, and delivers its result to the Inbox — never a channel", async () => {
+    test("fires the routine, produces a real task, and delivers its result to the Inbox — never a workbench", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -372,9 +372,9 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       const routineId = await hop(
-        "create the recurring-task routine with no deliveryChannelId",
+        "create the recurring-task routine with no deliveryWorkbenchId",
         async () => {
-          // No deliveryChannelId at all — fix #1's whole point: this
+          // No deliveryWorkbenchId at all — fix #1's whole point: this
           // workflow's deliveryMode is "inbox", so
           // @corbits/routines' create validation must never require
           // one here.
@@ -396,11 +396,11 @@ describe.skipIf(databaseUrl === undefined)(
           );
           expectStatus("create recurring-task routine", routine, 201);
           if (
-            (routine.data as Record<string, unknown>)["deliveryChannelId"] !==
+            (routine.data as Record<string, unknown>)["deliveryWorkbenchId"] !==
             null
           ) {
             throw new Error(
-              `expected a null deliveryChannelId on an inbox-delivering routine, got: ${JSON.stringify(routine.data)}`,
+              `expected a null deliveryWorkbenchId on an inbox-delivering routine, got: ${JSON.stringify(routine.data)}`,
             );
           }
           return stringField(routine.data, "id", "create routine");
@@ -517,7 +517,7 @@ describe.skipIf(databaseUrl === undefined)(
       console.log(
         "recurring-task-routine: gate achieved: a scheduled recurring-task " +
           "fire dispatches through launchTask (never its own folded run) " +
-          "with no deliveryChannelId required, and its result reaches the " +
+          "with no deliveryWorkbenchId required, and its result reaches the " +
           "creator's Inbox.",
       );
     }, 180_000);

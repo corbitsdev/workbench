@@ -53,7 +53,7 @@ describe("presence mount", () => {
     closers.push(hub.close);
 
     const gated = await hub.app.request(
-      "/api/tenants/some-tenant/presence/rooms/channel:chn_1/join",
+      "/api/tenants/some-tenant/presence/rooms/workbench:chn_1/join",
       { method: "POST" },
     );
     expect(gated.status).toBe(401);
@@ -63,7 +63,9 @@ describe("presence mount", () => {
 
     // The route exists only under the tenant scope; outside it the path
     // falls through to the interface shell.
-    const outside = await hub.app.request("/presence/rooms/channel:chn_1/join");
+    const outside = await hub.app.request(
+      "/presence/rooms/workbench:chn_1/join",
+    );
     expect(await outside.text()).toBe("<html>shell</html>");
   });
 });

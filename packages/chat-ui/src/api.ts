@@ -29,18 +29,18 @@ export type { ParticipantRecord } from "@corbits/chat/participants";
 export { REACTION_EMOJI } from "@corbits/chat/reaction-emoji";
 export type { ReactionEmoji } from "@corbits/chat/reaction-emoji";
 
-export const ChannelKind = type("'channel' | 'chat'");
-export type ChannelKind = typeof ChannelKind.infer;
+export const WorkbenchKind = type("'workbench' | 'chat'");
+export type WorkbenchKind = typeof WorkbenchKind.infer;
 
-/** Every channel kind this UI has bespoke handling for. Any other value on
- * the wire is a channel kind the server knows about that this UI doesn't —
+/** Every workbench kind this UI has bespoke handling for. Any other value on
+ * the wire is a workbench kind the server knows about that this UI doesn't —
  * it renders through the neutral, kind-agnostic path rather than being
  * rejected at parse time. */
-export function isKnownChannelKind(kind: string): kind is ChannelKind {
-  return kind === "channel" || kind === "chat";
+export function isKnownWorkbenchKind(kind: string): kind is WorkbenchKind {
+  return kind === "workbench" || kind === "chat";
 }
 
-const ChannelWire = type({
+const WorkbenchWire = type({
   id: "string",
   title: "string",
   kind: "string",
@@ -48,9 +48,9 @@ const ChannelWire = type({
   "definitionId?": "string | null",
   participants: "unknown[]",
   "legacy?": "boolean",
-  // Row signals `GET /channels` annotates when it can resolve a
-  // channel's mailbox (see `packages/chat/src/routes.ts`): absent,
-  // never a fabricated zero, for a channel whose session isn't
+  // Row signals `GET /workbenches` annotates when it can resolve a
+  // workbench's mailbox (see `packages/chat/src/routes.ts`): absent,
+  // never a fabricated zero, for a workbench whose session isn't
   // resolvable yet. `unreadCount` is the one exception — 0 is itself
   // the honest "nothing unread" answer once a mailbox is resolved.
   "unreadCount?": "number",
@@ -61,28 +61,28 @@ const ChannelWire = type({
   // an empty string, when there is no message yet or it carries no text
   // part.
   "preview?": "string",
-  // `GET /channels` sets this server-side (see
-  // `packages/chat/src/routes.ts`) only for a channel projected into
-  // this tenant via CL-5882's shared-channel machinery: "shared via
+  // `GET /workbenches` sets this server-side (see
+  // `packages/chat/src/routes.ts`) only for a workbench projected into
+  // this tenant via CL-5882's shared-workbench machinery: "shared via
   // parent · <parent name>" for true siblings, "shared · <owning tenant
-  // name>" otherwise. Absent for every ordinary, non-projected channel.
+  // name>" otherwise. Absent for every ordinary, non-projected workbench.
   "sharedLabel?": "string",
-  // The channel's own workbench tenant (every channel minted through
-  // POST /channels carries a tenancy link; null only on true legacy
+  // The workbench's own workbench tenant (every workbench minted through
+  // POST /workbenches carries a tenancy link; null only on true legacy
   // rows) — what per-workbench surfaces like Insights scope on, since
-  // the CHANNEL id is a run id, never a tenant id.
+  // the WORKBENCH id is a run id, never a tenant id.
   "tenancy?": type({ tenantId: "string" }).or("null"),
 });
 
-const Channel = ChannelWire.pipe((wire) => ({
+const Workbench = WorkbenchWire.pipe((wire) => ({
   ...wire,
   participants: parseParticipants(wire.participants),
 }));
-export type Channel = Omit<typeof ChannelWire.infer, "participants"> & {
+export type Workbench = Omit<typeof WorkbenchWire.infer, "participants"> & {
   readonly participants: readonly ParticipantRecord[];
 };
 
-const ChannelsResponse = type({ items: ChannelWire.array() }).pipe(
+const WorkbenchesResponse = type({ items: WorkbenchWire.array() }).pipe(
   (response) => ({
     items: response.items.map((wire) => ({
       ...wire,
@@ -92,8 +92,8 @@ const ChannelsResponse = type({ items: ChannelWire.array() }).pipe(
 );
 
 // `tenantId`/`tenantName`/`tenantMonogram` are set server-side only for a
-// message sent by a shared channel's "other side" participant — a share
-// member of a tenant this channel was projected into (see
+// message sent by a shared workbench's "other side" participant — a share
+// member of a tenant this workbench was projected into (see
 // `resolveMessageSenderTenant` in `packages/chat/src/routes.ts`). Absent
 // for every ordinary same-tenant sender.
 export const MessageSender = type({
@@ -125,7 +125,7 @@ const MessageItem = type({
   // Both fields are simply absent from the wire when the host never
   // injected the corresponding store (see `CreateChatRoutesDeps` in
   // `packages/chat/src/routes.ts`) — never a fabricated empty array or
-  // `false`, mirroring how `unreadCount` on `Channel` works.
+  // `false`, mirroring how `unreadCount` on `Workbench` works.
   "reactions?": ReactionSummaryWire.array(),
   "pinned?": "boolean",
   // The client-generated send identity (CL-6251) this message's own
@@ -172,9 +172,9 @@ export type Run = typeof Run.infer;
 
 const RunsResponse = Run.array();
 
-// `GET /channels/:id/invitable` (see packages/chat/src/routes.ts): the
-// tenant's deployed, launchable workflow definitions this channel can
-// invite an agent from — never including the channel's own host.
+// `GET /workbenches/:id/invitable` (see packages/chat/src/routes.ts): the
+// tenant's deployed, launchable workflow definitions this workbench can
+// invite an agent from — never including the workbench's own host.
 const InvitableDefinition = type({
   id: "string",
   name: "string",
@@ -262,57 +262,59 @@ async function request<T>(
   return parsed;
 }
 
-function channelsPath(tenantId: string, kind: ChannelKind): string {
-  return `/api/tenants/${tenantId}/chat/channels?kind=${kind}`;
+function workbenchesPath(tenantId: string, kind: WorkbenchKind): string {
+  return `/api/tenants/${tenantId}/chat/workbenches?kind=${kind}`;
 }
 
 /**
- * The shared TanStack Query key for `listChannels(tenantId, kind)` —
+ * The shared TanStack Query key for `listWorkbenches(tenantId, kind)` —
  * defined here (not in the app's own key module) because this package owns
- * both the endpoint and `ChannelKind`. Every surface that lists channels of
+ * both the endpoint and `WorkbenchKind`. Every surface that lists workbenches of
  * a given kind (the shell's bench-activity, the command palette, the
  * Routines picker, this package's own `ChatWorkspace` sidebar) keys its
  * query with this function so they all subscribe to the one cached fetch
  * per (tenantId, kind) instead of each firing its own.
  */
-export function channelsQueryKey(
+export function workbenchesQueryKey(
   tenantId: string,
-  kind: ChannelKind,
-): readonly [string, string, string, ChannelKind] {
-  return ["tenant", tenantId, "channels", kind] as const;
+  kind: WorkbenchKind,
+): readonly [string, string, string, WorkbenchKind] {
+  return ["tenant", tenantId, "workbenches", kind] as const;
 }
 
-/** Prefix covering every `channelsQueryKey` kind for a tenant — invalidate
+/** Prefix covering every `workbenchesQueryKey` kind for a tenant — invalidate
  * this after a mutation (create, rename, pin) to refetch both kinds. */
-export function channelsQueryKeyPrefix(
+export function workbenchesQueryKeyPrefix(
   tenantId: string,
 ): readonly [string, string, string] {
-  return ["tenant", tenantId, "channels"] as const;
+  return ["tenant", tenantId, "workbenches"] as const;
 }
 
-export function listChannels(
+export function listWorkbenches(
   tenantId: string,
-  kind: ChannelKind,
-): Promise<readonly Channel[]> {
-  return request(channelsPath(tenantId, kind), ChannelsResponse).then(
+  kind: WorkbenchKind,
+): Promise<readonly Workbench[]> {
+  return request(workbenchesPath(tenantId, kind), WorkbenchesResponse).then(
     (page) => page.items,
   );
 }
 
 /**
- * Every channel a tenant holds, of any kind — `kind` is optional
- * server-side (`packages/chat/src/routes.ts`'s `GET /channels`), and
- * channel kinds are open-ended (`packages/chat/src/kinds.ts`), so this
+ * Every workbench a tenant holds, of any kind — `kind` is optional
+ * server-side (`packages/chat/src/routes.ts`'s `GET /workbenches`), and
+ * workbench kinds are open-ended (`packages/chat/src/kinds.ts`), so this
  * omits the query param entirely rather than hardcoding the two kinds
  * this UI has bespoke handling for. Used where the caller needs the
- * complete channel-host/participant surface regardless of kind — e.g.
- * the shell's second column splitting the result into its channels and
+ * complete workbench-host/participant surface regardless of kind — e.g.
+ * the shell's second column splitting the result into its workbenches and
  * chats sections (see `apps/web/src/shell/bench-activity.ts`).
  */
-export function listAllChannels(tenantId: string): Promise<readonly Channel[]> {
+export function listAllWorkbenches(
+  tenantId: string,
+): Promise<readonly Workbench[]> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels`,
-    ChannelsResponse,
+    `/api/tenants/${tenantId}/chat/workbenches`,
+    WorkbenchesResponse,
   ).then((page) => page.items);
 }
 
@@ -320,17 +322,17 @@ export function listAllChannels(tenantId: string): Promise<readonly Channel[]> {
 // creation and fixed for its lifetime: either an agent (`definitionId`)
 // or a bench member (`principalId`) — never both. The name is optional
 // either way (the server titles it by the counterpart's handle when
-// omitted). A channel is the pinned, multiplayer kind: name-only, no
+// omitted). A workbench is the pinned, multiplayer kind: name-only, no
 // counterpart attached at creation. See `packages/chat/src/routes.ts`
-// `POST /channels` for the server side of this union.
+// `POST /workbenches` for the server side of this union.
 //
 // An agent chat always mints a new workbench (CL-6089) — the agent is a
 // template, not a conversation being reopened — unless the caller opts
 // into `reuseExisting: true`, reserved for the one deliberate
 // find-or-create caller: the home-workbench land-hop
-// (`default-agent-channel.ts`'s `ensure`).
-export type CreateChannelInput =
-  | { readonly kind: "channel"; readonly name: string }
+// (`default-agent-workbench.ts`'s `ensure`).
+export type CreateWorkbenchInput =
+  | { readonly kind: "workbench"; readonly name: string }
   | {
       readonly kind: "chat";
       readonly definitionId: string;
@@ -343,40 +345,40 @@ export type CreateChannelInput =
       readonly name?: string;
     };
 
-/** Fired on `window` after every successful `createChannel`, carrying
+/** Fired on `window` after every successful `createWorkbench`, carrying
  * `{tenantId}` in `detail`. The host shell's sidebar list caches its
- * channel listings outside this package (see
+ * workbench listings outside this package (see
  * `apps/web/src/shell/bench-activity.ts`), and creation happens at many
  * call sites (the picker dialog, agent launch, the land-hop) — one
  * signal here reaches them all, so a freshly minted workbench appears
  * in the sidebar without waiting for an unrelated refetch. */
-export const CHANNELS_MUTATED_EVENT = "workbench:chat:channels-mutated";
+export const WORKBENCHES_MUTATED_EVENT = "workbench:chat:workbenches-mutated";
 
-export function createChannel(
+export function createWorkbench(
   tenantId: string,
-  input: CreateChannelInput,
-): Promise<Channel> {
-  return request(`/api/tenants/${tenantId}/chat/channels`, Channel, {
+  input: CreateWorkbenchInput,
+): Promise<Workbench> {
+  return request(`/api/tenants/${tenantId}/chat/workbenches`, Workbench, {
     method: "POST",
     body: JSON.stringify(input),
-  }).then((channel) => {
+  }).then((workbench) => {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent(CHANNELS_MUTATED_EVENT, { detail: { tenantId } }),
+        new CustomEvent(WORKBENCHES_MUTATED_EVENT, { detail: { tenantId } }),
       );
     }
-    return channel;
+    return workbench;
   });
 }
 
 export function listMessages(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   cursor?: string,
 ): Promise<MessagesResponse> {
   const query = cursor !== undefined ? `?cursor=${cursor}` : "";
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages${query}`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages${query}`,
     MessagesResponse,
   );
 }
@@ -384,18 +386,18 @@ export function listMessages(
 const BlobResponse = type({ contentBase64: "string" });
 
 /**
- * A `FilePart`'s bytes, base64-encoded (`GET /channels/:id/blobs/:blobId`).
+ * A `FilePart`'s bytes, base64-encoded (`GET /workbenches/:id/blobs/:blobId`).
  * There is no stored link from a chat blob to a Library artifact today —
  * this is the fallback read path a host uses to open a chat attachment
  * without one (see `chat-artifact-open.ts` in the web app).
  */
-export function fetchChannelBlob(
+export function fetchWorkbenchBlob(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   blobId: string,
 ): Promise<string> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/blobs/${encodeURIComponent(blobId)}`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/blobs/${encodeURIComponent(blobId)}`,
     BlobResponse,
   ).then((body) => body.contentBase64);
 }
@@ -428,7 +430,7 @@ export type SendMessageOptions = {
 
 export function sendMessage(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   parts: readonly Part[],
   options?: SendMessageOptions,
 ): Promise<{
@@ -447,7 +449,7 @@ export function sendMessage(
   }
   if (options?.clientId !== undefined) body["clientId"] = options.clientId;
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
     SentMessage,
     { method: "POST", body: JSON.stringify(body) },
   );
@@ -463,12 +465,12 @@ export function sendMessage(
  */
 export function toggleReaction(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   emoji: string,
 ): Promise<ReactionSummary> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/${messageId}/reactions/toggle`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/${messageId}/reactions/toggle`,
     ReactionSummaryWire,
     { method: "POST", body: JSON.stringify({ emoji }) },
   );
@@ -481,26 +483,26 @@ const PinnedWire = type({
 });
 export type Pinned = typeof PinnedWire.infer;
 
-function pinPath(tenantId: string, channelId: string, messageId: string) {
-  return `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/${messageId}/pin`;
+function pinPath(tenantId: string, workbenchId: string, messageId: string) {
+  return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/${messageId}/pin`;
 }
 
 export function pinMessage(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ): Promise<Pinned> {
-  return request(pinPath(tenantId, channelId, messageId), PinnedWire, {
+  return request(pinPath(tenantId, workbenchId, messageId), PinnedWire, {
     method: "POST",
   });
 }
 
 export async function unpinMessage(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
 ): Promise<void> {
-  const response = await fetch(pinPath(tenantId, channelId, messageId), {
+  const response = await fetch(pinPath(tenantId, workbenchId, messageId), {
     method: "DELETE",
   });
   if (response.status === 401) {
@@ -508,7 +510,7 @@ export async function unpinMessage(
   }
   if (!response.ok) {
     throw new ChatApiError(
-      `The server answered ${response.status} for ${pinPath(tenantId, channelId, messageId)}.`,
+      `The server answered ${response.status} for ${pinPath(tenantId, workbenchId, messageId)}.`,
       response.status,
     );
   }
@@ -516,7 +518,7 @@ export async function unpinMessage(
 
 // A pinned message's own content, for the pinned strip's preview — the
 // same `MessageItem` shape plus who pinned it and when. See `GET
-// /channels/:id/pins` in `packages/chat/src/routes.ts`.
+// /workbenches/:id/pins` in `packages/chat/src/routes.ts`.
 const PinnedMessageWire = MessageItem.and({
   pinnedBy: "string",
   pinnedAt: "string",
@@ -527,10 +529,10 @@ const PinnedMessagesResponse = type({ items: PinnedMessageWire.array() });
 
 export function listPinnedMessages(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
 ): Promise<readonly PinnedMessage[]> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/pins`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/pins`,
     PinnedMessagesResponse,
   ).then((page) => page.items);
 }
@@ -539,7 +541,7 @@ export function listPinnedMessages(
 // root thread, the root thread's id for a depth-1 thread, a depth-1
 // thread's id for a depth-2 sub-thread. Two levels, stop — see
 // `resolveThreadAnchor` in `packages/chat/src/threads.ts`.
-export const ChannelThread = type({
+export const WorkbenchThread = type({
   id: "string",
   kind: "'root' | 'reply' | 'delivery'",
   parentMessageId: "string | null",
@@ -548,39 +550,39 @@ export const ChannelThread = type({
   title: "string | null",
   createdAt: "string",
 });
-export type ChannelThread = typeof ChannelThread.infer;
+export type WorkbenchThread = typeof WorkbenchThread.infer;
 
 const ThreadsResponse = type({
   rootThreadId: "string",
-  items: ChannelThread.array(),
+  items: WorkbenchThread.array(),
 });
 
 export function listThreads(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
 ): Promise<{
   readonly rootThreadId: string;
-  readonly items: readonly ChannelThread[];
+  readonly items: readonly WorkbenchThread[];
 }> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads`,
     ThreadsResponse,
   );
 }
 
 const ThreadMessagesResponse = type({
-  thread: ChannelThread,
+  thread: WorkbenchThread,
   items: MessageItem.array(),
 });
 export type ThreadMessagesResponse = typeof ThreadMessagesResponse.infer;
 
 export function listThreadMessages(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   threadId: string,
 ): Promise<ThreadMessagesResponse> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads/${threadId}/messages`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads/${threadId}/messages`,
     ThreadMessagesResponse,
   );
 }
@@ -595,26 +597,26 @@ export function listThreadMessages(
  */
 export function forkThread(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   parentMessageId: string,
   title?: string,
-): Promise<ChannelThread> {
+): Promise<WorkbenchThread> {
   const body: Record<string, unknown> = { parentMessageId };
   if (title !== undefined) body["title"] = title;
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads/fork`,
-    ChannelThread,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads/fork`,
+    WorkbenchThread,
     { method: "POST", body: JSON.stringify(body) },
   );
 }
 
 export function putReadState(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   input: { readonly lastSeenCreatedAt: string; readonly lastSeenId: string },
 ): Promise<void> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/read-state`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`,
     ReadState,
     { method: "PUT", body: JSON.stringify(input) },
   ).then(() => undefined);
@@ -629,18 +631,18 @@ export function listRuns(tenantId: string): Promise<readonly Run[]> {
 
 export function listInvitableDefinitions(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
 ): Promise<readonly InvitableDefinition[]> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
     InvitableDefinitionsResponse,
   ).then((page) => page.items);
 }
 
 /**
  * The tenant-wide invitable listing (`GET /invitable-definitions`) the
- * new-chat dialog reads before any channel exists — the per-channel
- * variant above 404s on a channel id that isn't real.
+ * new-chat dialog reads before any workbench exists — the per-workbench
+ * variant above 404s on a workbench id that isn't real.
  */
 export function listTenantInvitableDefinitions(
   tenantId: string,
@@ -653,73 +655,73 @@ export function listTenantInvitableDefinitions(
 
 export function inviteAgent(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   definitionId: string,
 ): Promise<InvitedAgent> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/invite`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
     InvitedAgent,
     { method: "POST", body: JSON.stringify({ definitionId }) },
   );
 }
 
-// `DELETE /channels/:id/participants/:address` (see
+// `DELETE /workbenches/:id/participants/:address` (see
 // `packages/chat/src/routes.ts`): the removal counterpart to
-// `inviteAgent`/channel creation's own join — drops the participant and,
+// `inviteAgent`/workbench creation's own join — drops the participant and,
 // for an invited agent, releases its launched instance server-side. The
-// Members section calls this per row and refetches `getChannelSettings`
+// Members section calls this per row and refetches `getWorkbenchSettings`
 // on success rather than trusting an optimistic local edit.
-export function removeChannelParticipant(
+export function removeWorkbenchParticipant(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   address: string,
 ): Promise<void> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/participants/${encodeURIComponent(address)}`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/participants/${encodeURIComponent(address)}`,
     RemovedParticipant,
     { method: "DELETE" },
   ).then(() => undefined);
 }
 
-// `GET /channels/:id/agents` (see `packages/chat/src/routes.ts`): every
-// one of the channel's agent participants, each resolved to the
+// `GET /workbenches/:id/agents` (see `packages/chat/src/routes.ts`): every
+// one of the workbench's agent participants, each resolved to the
 // definition id its name/instructions are read from and saved to via
 // `@corbits/agent-directory`'s own routes (see `getAgentInstructions`/
-// `updateAgentInstructions` below). A channel with several invited
+// `updateAgentInstructions` below). A workbench with several invited
 // agents lists all of them, not just the first.
-const ChannelAgentWire = type({
+const WorkbenchAgentWire = type({
   address: "string",
   handle: "string",
   definitionId: "string",
 });
-export type ChannelAgent = typeof ChannelAgentWire.infer;
+export type WorkbenchAgent = typeof WorkbenchAgentWire.infer;
 
-const ChannelAgentsResponse = type({ items: ChannelAgentWire.array() });
+const WorkbenchAgentsResponse = type({ items: WorkbenchAgentWire.array() });
 
-export function listChannelAgents(
+export function listWorkbenchAgents(
   tenantId: string,
-  channelId: string,
-): Promise<readonly ChannelAgent[]> {
+  workbenchId: string,
+): Promise<readonly WorkbenchAgent[]> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/agents`,
-    ChannelAgentsResponse,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/agents`,
+    WorkbenchAgentsResponse,
   ).then((page) => page.items);
 }
 
-// `POST /channels/:id/agents/refresh` (see
+// `POST /workbenches/:id/agents/refresh` (see
 // `packages/chat/src/routes.ts`): recomputes the given agent's running
 // instance from its definition's CURRENT instructions — a wake replays
-// whatever the channel's launch record holds verbatim, so a definition
+// whatever the workbench's launch record holds verbatim, so a definition
 // edit reaches a running instance only after this call. The Assistant
 // section calls it right after `updateAgentInstructions` succeeds, so
-// the change is live for this channel's agent from its next reply.
-export function refreshChannelAgent(
+// the change is live for this workbench's agent from its next reply.
+export function refreshWorkbenchAgent(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   address: string,
 ): Promise<void> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/agents/refresh`,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/agents/refresh`,
     type({ ok: "boolean" }),
     { method: "POST", body: JSON.stringify({ address }) },
   ).then(() => undefined);
@@ -766,7 +768,7 @@ function agentInstructionsPath(tenantId: string, definitionId: string) {
 // definition this tenant can open a direct chat with — its own, plus
 // every ancestor tenant's, a child's same-name definition shadowing an
 // ancestor's. `tenantId` here is the definition's OWNING tenant, which
-// is where its DM channel actually lives — never necessarily the
+// is where its DM workbench actually lives — never necessarily the
 // caller's own tenant.
 const VisibleAgentDefinitionWire = type({
   id: "string",
@@ -792,19 +794,19 @@ export function listVisibleAgentDefinitions(
 
 /**
  * Opens a direct chat with an agent, minting it on first open and
- * reusing the same channel on every later open — `packages/chat/src/
- * routes.ts`'s `POST /channels` with `reuseExisting: true` already
+ * reusing the same workbench on every later open — `packages/chat/src/
+ * routes.ts`'s `POST /workbenches` with `reuseExisting: true` already
  * finds-or-creates by `chat/definitionId` (`findExistingAgentChat`), the
  * same seam the home-workbench land-hop uses. `tenantId` must be the
  * definition's OWNING tenant (see `VisibleAgentDefinition.tenantId`),
  * never the caller's own tenant when the agent was reached through
- * ancestor inheritance — the DM channel lives where the agent lives.
+ * ancestor inheritance — the DM workbench lives where the agent lives.
  */
 export function openAgentDm(
   tenantId: string,
   definitionId: string,
-): Promise<Channel> {
-  return createChannel(tenantId, {
+): Promise<Workbench> {
+  return createWorkbench(tenantId, {
     kind: "chat",
     definitionId,
     reuseExisting: true,
@@ -908,8 +910,11 @@ export function addAgentCapability(
   );
 }
 
-export function channelStreamUrl(tenantId: string, channelId: string): string {
-  return `/api/tenants/${tenantId}/chat/channels/${channelId}/stream`;
+export function workbenchStreamUrl(
+  tenantId: string,
+  workbenchId: string,
+): string {
+  return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/stream`;
 }
 
 // `POST`/`GET .../blocks/:blockId/responses` (see
@@ -945,37 +950,37 @@ const SubmittedBlockResponse = type({
 
 function blockResponsesPath(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
 ): string {
   return (
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/` +
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/` +
     `${messageId}/blocks/${blockId}/responses`
   );
 }
 
 export function getBlockResponses(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
 ): Promise<BlockResponses> {
   return request(
-    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
     BlockResponsesWire,
   );
 }
 
 export function submitPollResponse(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
   choiceIds: readonly string[],
 ): Promise<void> {
   return request(
-    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
     SubmittedBlockResponse,
     {
       method: "POST",
@@ -986,13 +991,13 @@ export function submitPollResponse(
 
 export function submitFormResponse(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
   values: Readonly<Record<string, string>>,
 ): Promise<void> {
   return request(
-    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
     SubmittedBlockResponse,
     {
       method: "POST",
@@ -1003,14 +1008,14 @@ export function submitFormResponse(
 
 export function submitQuestionResponse(
   tenantId: string,
-  channelId: string,
+  workbenchId: string,
   messageId: string,
   blockId: string,
   answer: string,
   optionIndex?: number,
 ): Promise<void> {
   return request(
-    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
     SubmittedBlockResponse,
     {
       method: "POST",
@@ -1024,7 +1029,7 @@ export function submitQuestionResponse(
 }
 
 // `chat/contextWindow`'s two-way "inherit vs override" resolution — see
-// `resolveContextWindow` in `packages/chat/src/channel-settings.ts`, whose
+// `resolveContextWindow` in `packages/chat/src/workbench-settings.ts`, whose
 // server-side output this wire shape mirrors. `source` is what the settings
 // panel's "Use bench default (N)" vs override control reads to decide which
 // state it renders.
@@ -1034,39 +1039,39 @@ export const ResolvedContextWindow = type({
 });
 export type ResolvedContextWindow = typeof ResolvedContextWindow.infer;
 
-const ChannelSettingsResponse = ChannelWire.and({
+const WorkbenchSettingsResponse = WorkbenchWire.and({
   settings: type("Record<string, unknown>"),
   contextWindow: ResolvedContextWindow,
 }).pipe((wire) => ({
   ...wire,
   participants: parseParticipants(wire.participants),
 }));
-export type ChannelSettings = Omit<
-  typeof ChannelSettingsResponse.infer,
+export type WorkbenchSettings = Omit<
+  typeof WorkbenchSettingsResponse.infer,
   "participants"
 > & {
   readonly participants: readonly ParticipantRecord[];
 };
 
-export function getChannelSettings(
+export function getWorkbenchSettings(
   tenantId: string,
-  channelId: string,
-): Promise<ChannelSettings> {
+  workbenchId: string,
+): Promise<WorkbenchSettings> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
-    ChannelSettingsResponse,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
+    WorkbenchSettingsResponse,
   );
 }
 
 /**
  * A `chat/*`-namespaced settings patch: name, purpose, pinned, and
  * context-window edits all go through this one function, matching the
- * single `PATCH /channels/:id/settings` route in
+ * single `PATCH /workbenches/:id/settings` route in
  * `packages/chat/src/routes.ts` that accepts any subset of them in one
  * body. `chat/contextWindow: null` clears
- * a channel's override back to inheriting the bench default.
+ * a workbench's override back to inheriting the bench default.
  */
-export type ChannelSettingsPatch = {
+export type WorkbenchSettingsPatch = {
   readonly "chat/kind"?: string;
   readonly "chat/name"?: string;
   readonly "chat/purpose"?: string;
@@ -1074,20 +1079,20 @@ export type ChannelSettingsPatch = {
   readonly "chat/contextWindow"?: number | null;
 };
 
-export function patchChannelSettings(
+export function patchWorkbenchSettings(
   tenantId: string,
-  channelId: string,
-  patch: ChannelSettingsPatch,
-): Promise<ChannelSettings> {
+  workbenchId: string,
+  patch: WorkbenchSettingsPatch,
+): Promise<WorkbenchSettings> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
-    ChannelSettingsResponse,
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
+    WorkbenchSettingsResponse,
     { method: "PATCH", body: JSON.stringify(patch) },
   );
 }
 
 // `GET`/`PATCH /bench/settings` (see `packages/chat/src/routes.ts`): the
-// bench-wide chat defaults every channel inherits unless it sets its own
+// bench-wide chat defaults every workbench inherits unless it sets its own
 // override. Currently just the default context window.
 const BenchChatSettingsResponse = type({
   settings: "Record<string, unknown>",

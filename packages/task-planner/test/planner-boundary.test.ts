@@ -1,7 +1,7 @@
 // Proves CL-6051's reviewed boundary findings stay closed: the
 // `{create}` branch can no longer bypass `@corbits/agent-directory`'s
 // REST-boundary bounds (finding 1), and the planner's agent inventory
-// filter excludes channel-host anchors (finding 4). Originally written
+// filter excludes workbench-host anchors (finding 4). Originally written
 // to prove the bugs were OPEN (`tmp/critique-tests/planner-boundary.test.ts`);
 // relocated here per this package's own `test/` convention for
 // multi-module/composition suites (see `AGENTS.md`) with its first four
@@ -19,7 +19,7 @@ import {
 } from "@corbits/task-planner";
 import { CreateAgentDefinitionInput } from "@corbits/agent-directory";
 import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
-import { isChannelHostDefinitionName } from "@corbits/chat";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat";
 
 const inventory: PlannerInventory = {
   agents: [{ id: "wfd_a", name: "a", displayName: "A" }],
@@ -204,16 +204,16 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
   });
 });
 
-describe("the planner's agent inventory filter excludes channel hosts", () => {
-  test("a channel-host definition name is recognized by isChannelHostDefinitionName", () => {
+describe("the planner's agent inventory filter excludes workbench hosts", () => {
+  test("a workbench-host definition name is recognized by isWorkbenchHostDefinitionName", () => {
     const hostName = `run-${"a".repeat(32)}`;
-    expect(isChannelHostDefinitionName(hostName)).toBe(true);
+    expect(isWorkbenchHostDefinitionName(hostName)).toBe(true);
     // apps/hub/src/index.ts's isConversationalAgentDefinition now excludes
     // this name too, alongside isAutomatableWorkflowName.
     expect(!isAutomatableWorkflowName(hostName)).toBe(true);
   });
 
-  test("a channel host offered in the inventory still validates as a {use} target (validation is inventory-driven, not name-driven)", () => {
+  test("a workbench host offered in the inventory still validates as a {use} target (validation is inventory-driven, not name-driven)", () => {
     const withHost: PlannerInventory = {
       ...inventory,
       agents: [

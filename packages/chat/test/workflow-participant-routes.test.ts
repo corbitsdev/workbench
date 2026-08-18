@@ -1,10 +1,10 @@
 // Route-level tests for the workflow-run-authenticated participant-
 // invite surface: authentication, the "run's address isn't a
-// participant of any channel" 404, and the happy-path invite
+// participant of any workbench" 404, and the happy-path invite
 // (delegating to `launchAndJoinAgent`, so the join event and settings
-// update land exactly as `POST /channels/:id/invite` produces them).
+// update land exactly as `POST /workbenches/:id/invite` produces them).
 // Reuses `./test-support.ts`'s `TENANT`/`fakePlatform` and
-// `createInMemoryChatStore`, matching `channel-service.test.ts`'s style.
+// `createInMemoryChatStore`, matching `workbench-service.test.ts`'s style.
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 
@@ -61,7 +61,7 @@ test("POST /participants/invite is a 401 without a recognized run credential", a
   expect(response.status).toBe(401);
 });
 
-test("a run whose address is not a participant of any channel is a 404", async () => {
+test("a run whose address is not a participant of any workbench is a 404", async () => {
   const app = buildApp();
   const response = await app.request("/participants/invite", {
     method: "POST",
@@ -81,13 +81,13 @@ test("an invalid body is a 400", async () => {
   expect(response.status).toBe(400);
 });
 
-test("invites the named definition into the caller's own channel, resolved from its own participant address", async () => {
+test("invites the named definition into the caller's own workbench, resolved from its own participant address", async () => {
   const store = createInMemoryChatStore();
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: TENANT.id,
-    channelId: "chan_1",
+    workbenchId: "chan_1",
     settings: {
-      "chat/kind": "channel",
+      "chat/kind": "workbench",
       "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
     },
     updatedBy: "prn_1",
@@ -120,7 +120,7 @@ test("invites the named definition into the caller's own channel, resolved from 
     },
   ]);
 
-  const updated = await store.getChannelSettings(TENANT.id, "chan_1");
+  const updated = await store.getWorkbenchSettings(TENANT.id, "chan_1");
   expect(updated?.settings["chat/participants"]).toEqual([
     { address: RUN_ADDRESS, handle: "myra" },
     { address: "ins_invited1@acme.example", handle: "echo" },
@@ -138,7 +138,7 @@ describe("POST /participants/messages", () => {
     expect(response.status).toBe(401);
   });
 
-  test("a run whose address is not a participant of any channel is a 404", async () => {
+  test("a run whose address is not a participant of any workbench is a 404", async () => {
     const app = buildApp();
     const response = await app.request("/participants/messages", {
       method: "POST",
@@ -150,11 +150,11 @@ describe("POST /participants/messages", () => {
 
   test("an invalid body is a 400", async () => {
     const store = createInMemoryChatStore();
-    await store.createChannelSettings({
+    await store.createWorkbenchSettings({
       tenantId: TENANT.id,
-      channelId: "chan_1",
+      workbenchId: "chan_1",
       settings: {
-        "chat/kind": "channel",
+        "chat/kind": "workbench",
         "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
       },
       updatedBy: "prn_1",
@@ -168,13 +168,13 @@ describe("POST /participants/messages", () => {
     expect(response.status).toBe(400);
   });
 
-  test("posts a question block into the caller's own channel as the run's own message", async () => {
+  test("posts a question block into the caller's own workbench as the run's own message", async () => {
     const store = createInMemoryChatStore();
-    await store.createChannelSettings({
+    await store.createWorkbenchSettings({
       tenantId: TENANT.id,
-      channelId: "chan_1",
+      workbenchId: "chan_1",
       settings: {
-        "chat/kind": "channel",
+        "chat/kind": "workbench",
         "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
       },
       updatedBy: "prn_1",
@@ -204,6 +204,6 @@ describe("POST /participants/messages", () => {
     expect(typeof body.id).toBe("string");
     expect(platform.sentMail.length).toBeGreaterThanOrEqual(1);
     expect(platform.sentMail[0]?.principalId).toBe("prn_1");
-    expect(platform.sentMail[0]?.channelId).toBe("chan_1");
+    expect(platform.sentMail[0]?.workbenchId).toBe("chan_1");
   });
 });

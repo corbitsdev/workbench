@@ -5,7 +5,7 @@
 // workspace member (parent present) and a non-member (parent absent).
 // CL-5879 retired the `/insights/workbench/:tenantId` deep link that used
 // to override this default outright — per-workbench Insights is now its
-// own `/insights/channel/:channelId` route (see `InsightsChannelPage`),
+// own `/insights/workbench/:workbenchId` route (see `InsightsWorkbenchPage`),
 // so this landing scope never takes a workbench override anymore.
 import { describe, expect, test } from "bun:test";
 

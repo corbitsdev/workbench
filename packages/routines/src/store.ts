@@ -44,7 +44,7 @@ export interface RoutineRow {
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
   readonly enabled: boolean;
-  readonly deliveryChannelId: string | null;
+  readonly deliveryWorkbenchId: string | null;
   readonly createdBy: string;
   readonly nextFireAt: Date | null;
   readonly lastFireAt: Date | null;
@@ -62,7 +62,7 @@ export interface CreateRoutineInput {
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
-  readonly deliveryChannelId?: string | null;
+  readonly deliveryWorkbenchId?: string | null;
   readonly createdBy: string;
 }
 
@@ -71,7 +71,7 @@ export interface UpdateRoutineInput {
   readonly trigger?: RoutineTriggerT;
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
-  readonly deliveryChannelId?: string | null;
+  readonly deliveryWorkbenchId?: string | null;
 }
 
 export interface RoutineRunRow {
@@ -187,7 +187,7 @@ function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
     scope: row.scope as RoutineScope,
     input: row.input as Record<string, unknown>,
     enabled: row.enabled,
-    deliveryChannelId: row.deliveryChannelId,
+    deliveryWorkbenchId: row.deliveryWorkbenchId,
     createdBy: row.createdBy,
     nextFireAt: row.nextFireAt,
     lastFireAt: row.lastFireAt,
@@ -227,7 +227,7 @@ export function createDrizzleRoutineStore<
           scope: input.scope,
           input: input.input,
           enabled: true,
-          deliveryChannelId: input.deliveryChannelId ?? null,
+          deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
           createdBy: input.createdBy,
           nextFireAt: computeNextFireAt(input.trigger, now),
           lastFireAt: null,
@@ -523,7 +523,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         scope: input.scope,
         input: input.input,
         enabled: true,
-        deliveryChannelId: input.deliveryChannelId ?? null,
+        deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
         createdBy: input.createdBy,
         nextFireAt: computeNextFireAt(input.trigger, now),
         lastFireAt: null,

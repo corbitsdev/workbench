@@ -1,6 +1,6 @@
 // CL-6117: the "run this workbench on its own dedicated capacity" toggle,
 // rehomed from settings-ui's unregistered bench section (CL-6096) into the
-// channel settings surface's own Capacity section. Covers the real
+// workbench settings surface's own Capacity section. Covers the real
 // fetch/save wiring — load, optimistic flip, revert on failure, and the
 // disabled-with-hint state when the provisioner isn't available.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -8,7 +8,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { CapacitySection } from "../src/channel-settings/capacity-section";
+import { CapacitySection } from "../src/workbench-settings/capacity-section";
 
 const TENANT_ID = "tnt_flow";
 const realFetch = globalThis.fetch;

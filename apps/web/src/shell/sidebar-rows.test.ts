@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
+import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
 
 import {
   buildSidebarRows,
@@ -8,18 +8,20 @@ import {
   unopenedAgentRows,
 } from "./sidebar-rows";
 
-function channel(overrides: Partial<Channel> = {}): Channel {
+function workbench(overrides: Partial<Workbench> = {}): Workbench {
   return {
     id: "ch_1",
     title: "General",
-    kind: "channel",
+    kind: "workbench",
     pinned: false,
     participants: [],
     ...overrides,
-  } as Channel;
+  } as Workbench;
 }
 
-function agent(overrides: Partial<VisibleAgentDefinition> = {}): VisibleAgentDefinition {
+function agent(
+  overrides: Partial<VisibleAgentDefinition> = {},
+): VisibleAgentDefinition {
   return {
     id: "wfd_outreach",
     name: "Outreach",
@@ -37,13 +39,17 @@ describe("unopenedAgentRows", () => {
   });
 
   test("an agent already opened as a chat is never duplicated", () => {
-    const chats = [channel({ id: "ch_dm", kind: "chat", definitionId: "wfd_outreach" })];
+    const chats = [
+      workbench({ id: "ch_dm", kind: "chat", definitionId: "wfd_outreach" }),
+    ];
     const rows = unopenedAgentRows(chats, [agent()]);
     expect(rows).toEqual([]);
   });
 
   test("a chat with a different definitionId doesn't suppress an unrelated agent", () => {
-    const chats = [channel({ id: "ch_dm", kind: "chat", definitionId: "wfd_other" })];
+    const chats = [
+      workbench({ id: "ch_dm", kind: "chat", definitionId: "wfd_other" }),
+    ];
     const rows = unopenedAgentRows(chats, [agent()]);
     expect(rows).toEqual([{ kind: "agent", agent: agent() }]);
   });
@@ -51,11 +57,11 @@ describe("unopenedAgentRows", () => {
 
 describe("buildSidebarRows", () => {
   test("mixes bench and agent rows into one recency-sorted stream", () => {
-    const older = channel({
+    const older = workbench({
       id: "ch_old",
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
-    const newer = channel({
+    const newer = workbench({
       id: "ch_new",
       kind: "chat",
       lastActivityAt: "2026-01-03T00:00:00.000Z",
@@ -67,15 +73,15 @@ describe("buildSidebarRows", () => {
 
     const rows = buildSidebarRows([older], [newer], [midAgent]);
 
-    expect(rows.map((row) => (row.kind === "channel" ? row.channel.id : row.agent.id))).toEqual([
-      "ch_new",
-      "wfd_mid",
-      "ch_old",
-    ]);
+    expect(
+      rows.map((row) =>
+        row.kind === "workbench" ? row.workbench.id : row.agent.id,
+      ),
+    ).toEqual(["ch_new", "wfd_mid", "ch_old"]);
   });
 
-  test("pinned channel rows float above every unpinned row regardless of recency", () => {
-    const pinned = channel({
+  test("pinned workbench rows float above every unpinned row regardless of recency", () => {
+    const pinned = workbench({
       id: "ch_pinned",
       pinned: true,
       lastActivityAt: "2026-01-01T00:00:00.000Z",
@@ -87,11 +93,11 @@ describe("buildSidebarRows", () => {
 
     const rows = buildSidebarRows([pinned], [], [freshAgent]);
 
-    expect(rows[0]).toEqual({ kind: "channel", channel: pinned });
+    expect(rows[0]).toEqual({ kind: "workbench", workbench: pinned });
   });
 
-  test("an agent already opened as a DM appears once, as its channel row", () => {
-    const dm = channel({
+  test("an agent already opened as a DM appears once, as its workbench row", () => {
+    const dm = workbench({
       id: "ch_dm",
       kind: "chat",
       definitionId: "wfd_outreach",
@@ -100,7 +106,7 @@ describe("buildSidebarRows", () => {
 
     const rows = buildSidebarRows([], [dm], [agent()]);
 
-    expect(rows).toEqual([{ kind: "channel", channel: dm }]);
+    expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
 });
 

@@ -25,13 +25,13 @@
 //
 // A routine created from this panel always targets the conversation it
 // was opened beside: every workbench's host participant is Myra, so "this
-// workbench's own agent" resolves to that channel's host agent
-// (`listChannelAgents`), and the routine delivers back into that same
-// channel — never a new one. A panel opened with no channel in scope (a
+// workbench's own agent" resolves to that workbench's host agent
+// (`listWorkbenchAgents`), and the routine delivers back into that same
+// workbench — never a new one. A panel opened with no workbench in scope (a
 // deliberate `/routines` visit) falls back to the workbench's own default
-// Myra channel (`ensureMyraChannel`, the one deliberate find-or-create
+// Myra workbench (`ensureMyraWorkbench`, the one deliberate find-or-create
 // path in the product) rather than the old tenant-wide "assistant"
-// definition lookup, which had no channel to deliver into at all and
+// definition lookup, which had no workbench to deliver into at all and
 // silently minted a fresh one server-side whenever delivery was required.
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -56,7 +56,7 @@ import {
   TraceWaterfall,
 } from "@corbits/react-ui";
 import type { BadgeTone, StatusDotTone } from "@corbits/react-ui";
-import { listChannelAgents } from "@corbits/chat-ui";
+import { listWorkbenchAgents } from "@corbits/chat-ui";
 import { listTasks } from "@corbits/tasks-ui";
 import type { Task, TaskStatus } from "@corbits/tasks-ui";
 import { Clock, Plus, X } from "lucide-react";
@@ -64,7 +64,7 @@ import { Clock, Plus, X } from "lucide-react";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
-import { ensureMyraChannel } from "../myra-channel";
+import { ensureMyraWorkbench } from "../myra-workbench";
 import { cadenceLabel, cadenceSummary } from "../routine-trigger";
 import { ScheduleEditor } from "../routine-schedule";
 import {
@@ -170,29 +170,29 @@ export function RoutinePanel() {
   if (subject === null || subject.view === "list") {
     return (
       <RoutineListPanel
-        channelId={subject?.channelId}
+        workbenchId={subject?.workbenchId}
         onClose={close}
         onSelect={(routineId) =>
           openRoutine({
             routineId,
-            ...(subject?.channelId !== undefined
-              ? { channelId: subject.channelId }
+            ...(subject?.workbenchId !== undefined
+              ? { workbenchId: subject.workbenchId }
               : {}),
           })
         }
         onNew={() =>
           openRoutine({
             routineId: null,
-            ...(subject?.channelId !== undefined
-              ? { channelId: subject.channelId }
+            ...(subject?.workbenchId !== undefined
+              ? { workbenchId: subject.workbenchId }
               : {}),
           })
         }
         onOpenRuns={() =>
           openRoutine({
             view: "runs",
-            ...(subject?.channelId !== undefined
-              ? { channelId: subject.channelId }
+            ...(subject?.workbenchId !== undefined
+              ? { workbenchId: subject.workbenchId }
               : {}),
           })
         }
@@ -206,8 +206,8 @@ export function RoutinePanel() {
         onBack={() =>
           openRoutine({
             view: "list",
-            ...(subject.channelId !== undefined
-              ? { channelId: subject.channelId }
+            ...(subject.workbenchId !== undefined
+              ? { workbenchId: subject.workbenchId }
               : {}),
           })
         }
@@ -221,8 +221,8 @@ export function RoutinePanel() {
       onBack={() =>
         openRoutine({
           view: "list",
-          ...(subject.channelId !== undefined
-            ? { channelId: subject.channelId }
+          ...(subject.workbenchId !== undefined
+            ? { workbenchId: subject.workbenchId }
             : {}),
         })
       }
@@ -349,7 +349,7 @@ async function pollForOutcome(
 }
 
 function RoutineListPanel({
-  channelId,
+  workbenchId,
   onClose,
   onSelect,
   onNew,
@@ -358,7 +358,7 @@ function RoutineListPanel({
   /** The workbench this panel was opened beside. The pop-out is
    * strictly workbench-scoped (owner decision, CL-6200): only routines
    * delivering here and tasks dispatched from here are listed. */
-  readonly channelId?: string | undefined;
+  readonly workbenchId?: string | undefined;
   readonly onClose: () => void;
   readonly onSelect: (routineId: string) => void;
   readonly onNew: () => void;
@@ -380,9 +380,9 @@ function RoutineListPanel({
   );
   const allRoutines = routinesQuery.kind === "ready" ? routinesQuery.data : [];
   const routines =
-    channelId === undefined
+    workbenchId === undefined
       ? allRoutines
-      : allRoutines.filter((r) => r.deliveryChannelId === channelId);
+      : allRoutines.filter((r) => r.deliveryWorkbenchId === workbenchId);
   const routineIds = routines.map((r) => r.id);
   const runHistoriesQuery = useTenantQuery<
     ReadonlyMap<string, readonly RoutineRun[]>
@@ -553,7 +553,7 @@ function RoutineListPanel({
         {tenantId !== null ? (
           <TasksSection
             tenantId={tenantId}
-            channelId={channelId}
+            workbenchId={workbenchId}
             navigate={navigate}
           />
         ) : null}
@@ -573,7 +573,7 @@ function runStatusDotTone(status: string): StatusDotTone {
  * (`insightsTopLevelRunsPath` is already tenant-scoped, so a workbench's
  * runs are exactly this bench's top-level feed) — each row opening the
  * same `TraceWaterfall` insights renders, inline in this pane: no route
- * hop out of `/c/:id`. Selection is local state, not canvas subject state
+ * hop out of `/w/:id`. Selection is local state, not canvas subject state
  * — a click into a trace and back never touches the shell's own history. */
 function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
   const { selectedTenantId: tenantId } = useBench();
@@ -685,11 +685,11 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
  * outcome shows inline the moment it lands, not just in Insights. */
 function TasksSection({
   tenantId,
-  channelId,
+  workbenchId,
   navigate,
 }: {
   readonly tenantId: string;
-  readonly channelId?: string | undefined;
+  readonly workbenchId?: string | undefined;
   readonly navigate: (path: string) => void;
 }) {
   const tasksQuery = useTenantQuery(tenantKeys.tasks(tenantId), true, () =>
@@ -699,7 +699,8 @@ function TasksSection({
     tasksQuery.kind === "ready"
       ? [...tasksQuery.data]
           .filter(
-            (task) => channelId === undefined || task.channelId === channelId,
+            (task) =>
+              workbenchId === undefined || task.workbenchId === workbenchId,
           )
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, 10)
@@ -783,7 +784,7 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 type CreateTarget = {
   readonly definitionId: string;
-  readonly deliveryChannelId: string;
+  readonly deliveryWorkbenchId: string;
 };
 
 /** The editor view: create/edit one routine. Self-fetching — handed only
@@ -901,37 +902,37 @@ function RoutineEditorPanel({
     };
   }, [tenantId, subject.routineId]);
 
-  /** This routine's own agent + delivery channel: the conversation the
+  /** This routine's own agent + delivery workbench: the conversation the
    * panel was opened beside (its host participant — every workbench's
    * host is Myra), or, with no conversation in scope, this workbench's
-   * own default Myra channel. Never mints a new channel — `ensureMyraChannel`
+   * own default Myra workbench. Never mints a new workbench — `ensureMyraWorkbench`
    * finds-or-creates the one singleton Myra conversation this tenant
    * already has. */
   const resolveCreateTarget = async (): Promise<CreateTarget> => {
     if (tenantId === null) {
       throw new Error("No workbench to create this in yet");
     }
-    if (subject.channelId !== undefined) {
-      const channelId = subject.channelId;
-      const agents = await listChannelAgents(tenantId, channelId);
+    if (subject.workbenchId !== undefined) {
+      const workbenchId = subject.workbenchId;
+      const agents = await listWorkbenchAgents(tenantId, workbenchId);
       const definitionId = agents[0]?.definitionId;
       if (definitionId === undefined) {
         throw new Error(
           "This conversation has no agent to run this routine yet.",
         );
       }
-      return { definitionId, deliveryChannelId: channelId };
+      return { definitionId, deliveryWorkbenchId: workbenchId };
     }
-    const result = await ensureMyraChannel(tenantId);
+    const result = await ensureMyraWorkbench(tenantId);
     if (result.kind === "error") throw new Error(result.message);
-    const agents = await listChannelAgents(tenantId, result.channelId);
+    const agents = await listWorkbenchAgents(tenantId, result.workbenchId);
     const definitionId = agents[0]?.definitionId;
     if (definitionId === undefined) {
       throw new Error(
         "This workbench has no assistant to run this routine yet.",
       );
     }
-    return { definitionId, deliveryChannelId: result.channelId };
+    return { definitionId, deliveryWorkbenchId: result.workbenchId };
   };
 
   /** Every create/update this panel makes funnels through this one chain —
@@ -967,7 +968,7 @@ function RoutineEditorPanel({
     const routine = await createRoutine(tenantId as string, {
       name: fields.name,
       definitionId: target.definitionId,
-      deliveryChannelId: target.deliveryChannelId,
+      deliveryWorkbenchId: target.deliveryWorkbenchId,
       scope: "personal",
       trigger: fields.trigger,
       runOnceNow: false,
@@ -1052,7 +1053,7 @@ function RoutineEditorPanel({
         const created = await createRoutine(tenantId, {
           name: name.trim() || "Untitled routine",
           definitionId: target.definitionId,
-          deliveryChannelId: target.deliveryChannelId,
+          deliveryWorkbenchId: target.deliveryWorkbenchId,
           scope: "personal",
           trigger: null,
           runOnceNow: false,

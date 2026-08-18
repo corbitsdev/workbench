@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { MessageItem } from "../src/api";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 function messageWithBlock(type: string, data: unknown): MessageItem[] {
   return [
@@ -22,7 +22,7 @@ function messageWithBlock(type: string, data: unknown): MessageItem[] {
 describe("block rendering", () => {
   test("approve block renders framing with fixed disabled Approve/Deny", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("approve", {
           approvalId: "apv_fixture1",
           title: "Deploy staging",
@@ -44,7 +44,7 @@ describe("block rendering", () => {
 
   test("steps block renders each step with its state", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("steps", {
           title: "Migration",
           steps: [
@@ -65,7 +65,7 @@ describe("block rendering", () => {
 
   test("metrics block renders tiles and proportional bars", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("metrics", {
           title: "Ingest health",
           metrics: [
@@ -89,7 +89,7 @@ describe("block rendering", () => {
 
   test("poll block renders disabled choice rows without tallies", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("poll", {
           pollId: "blk_poll1",
           title: "Ship day?",
@@ -109,7 +109,7 @@ describe("block rendering", () => {
 
   test("form block renders labeled disabled fields and a submit button", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("form", {
           formId: "blk_form1",
           title: "Release notes",
@@ -117,8 +117,8 @@ describe("block rendering", () => {
             { id: "name", label: "Name", input: "text", value: "v1.4" },
             { id: "notes", label: "Notes", input: "textarea", required: true },
             {
-              id: "channel",
-              label: "Channel",
+              id: "workbench",
+              label: "Workbench",
               input: "select",
               options: ["stable", "beta"],
               value: "beta",
@@ -142,7 +142,7 @@ describe("block rendering", () => {
 
   test("form block falls back to the default submit label", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("form", {
           formId: "blk_form1",
           title: "T",
@@ -155,7 +155,7 @@ describe("block rendering", () => {
 
   test("stream block shows a cursor while streaming and none when done", () => {
     const streaming = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("stream", {
           title: "Build log",
           text: "compiling modules",
@@ -167,7 +167,7 @@ describe("block rendering", () => {
     expect(streaming).toContain("chat-block-cursor");
 
     const done = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("stream", {
           title: "Build log",
           text: "build complete",
@@ -181,7 +181,7 @@ describe("block rendering", () => {
 
   test("unknown block type renders the labeled fallback, not raw JSON", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("carousel", { secret: "payload" })}
       />,
     );
@@ -192,7 +192,7 @@ describe("block rendering", () => {
 
   test("malformed data for a known type renders the fallback", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={messageWithBlock("metrics", { title: 42, metrics: "nope" })}
       />,
     );

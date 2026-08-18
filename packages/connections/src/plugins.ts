@@ -1,5 +1,5 @@
 // The Plugins gallery's one seam onto tenant inheritance (CL-6090): a
-// workbench (a bench tenant, or any of its channel/sub-workbench children)
+// workbench (a bench tenant, or any of its workbench/sub-workbench children)
 // does not hold its own copy of every plugin connection — it inherits
 // whatever an ancestor tenant connected, unless it has connected (or
 // explicitly removed) that connector for itself. This module is the

@@ -55,7 +55,7 @@ describe("chat mount", () => {
     closers.push(hub.close);
 
     const gated = await hub.app.request(
-      "/api/tenants/some-tenant/chat/channels",
+      "/api/tenants/some-tenant/chat/workbenches",
       {
         method: "GET",
       },
@@ -67,7 +67,7 @@ describe("chat mount", () => {
 
     // The route exists only under the tenant scope; outside it the
     // path falls through to the interface shell.
-    const outside = await hub.app.request("/chat/channels");
+    const outside = await hub.app.request("/chat/workbenches");
     expect(await outside.text()).toBe("<html>shell</html>");
   });
 });

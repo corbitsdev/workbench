@@ -13,7 +13,7 @@ import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
 import type { TimelineMessageItem } from "../src/timeline";
-import { ChannelTimeline } from "../src/timeline";
+import { WorkbenchTimeline } from "../src/timeline";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -33,7 +33,7 @@ async function render(items: readonly TimelineMessageItem[]) {
   }
   await act(async () => {
     root?.render(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={items}
         currentUser={{ principalId: "prn_alice" }}
         pendingActions={{ onRetry: () => {}, onDiscard: () => {} }}
@@ -82,7 +82,7 @@ describe("one message list: a pending send reconciles in place under a stable ke
   test("refresh-first: a background refresh lands the confirmed copy while the send is still marked pending — renders once, never both", async () => {
     // mergePendingSends already drops a pending entry once a confirmed
     // item with a matching clientId shows up; this is what the host
-    // hands ChannelTimeline once that dedup has run.
+    // hands WorkbenchTimeline once that dedup has run.
     const el = await render([confirmedItem]);
     expect(el.querySelectorAll(".chat-message-group")).toHaveLength(1);
     expect(el.querySelector(".chat-pending-glyph")).toBeNull();

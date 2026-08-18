@@ -31,7 +31,7 @@ describe("openAgentDmChat", () => {
   test("opens the agent's DM with reuseExisting and navigates to it", async () => {
     const navigated: string[] = [];
     const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/channels")) {
+      if (path.endsWith("/chat/workbenches")) {
         return json({
           id: "chan-dm-1",
           title: "Outreach",
@@ -47,14 +47,14 @@ describe("openAgentDmChat", () => {
       navigated.push(to),
     );
 
-    const call = calls.find((c) => c.path.endsWith("/chat/channels"));
-    expect(call?.path).toBe("/api/tenants/tnt_root/chat/channels");
+    const call = calls.find((c) => c.path.endsWith("/chat/workbenches"));
+    expect(call?.path).toBe("/api/tenants/tnt_root/chat/workbenches");
     expect(JSON.parse(String(call?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_outreach",
       reuseExisting: true,
     });
-    expect(navigated).toEqual(["/c/chan-dm-1"]);
+    expect(navigated).toEqual(["/w/chan-dm-1"]);
   });
 
   test("mints in the definition's owning tenant, not necessarily the caller's own", async () => {
@@ -70,6 +70,6 @@ describe("openAgentDmChat", () => {
 
     await openAgentDmChat("tnt_ancestor", "wfd_outreach", () => {});
 
-    expect(calls[0]?.path).toBe("/api/tenants/tnt_ancestor/chat/channels");
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_ancestor/chat/workbenches");
   });
 });

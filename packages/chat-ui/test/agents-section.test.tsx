@@ -5,7 +5,7 @@
 // Capabilities (including a model picker fed from the tenant's resolved
 // inference catalog), and History — generalized to any agent. This reads
 // and saves through `@corbits/agent-directory`'s routes rather than the
-// channel settings PATCH every other section uses, so its load/save/error
+// workbench settings PATCH every other section uses, so its load/save/error
 // sequencing needs a real effect-driven mount. Stubs `global.fetch`
 // directly, never `mock.module`.
 
@@ -14,7 +14,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { ChannelSettingsSurface } from "../src/channel-settings";
+import { WorkbenchSettingsSurface } from "../src/workbench-settings";
 
 const realFetch = globalThis.fetch;
 
@@ -51,12 +51,15 @@ type VersionFixture = {
   readonly current: boolean;
 };
 
-type ModelFixture = { readonly canonicalName: string; readonly displayName?: string };
+type ModelFixture = {
+  readonly canonicalName: string;
+  readonly displayName?: string;
+};
 type OfferingFixture = { readonly providerName: string };
 
 function stubFetch(options: {
   readonly agents?: readonly AgentFixture[];
-  readonly channelKind?: string;
+  readonly workbenchKind?: string;
   readonly saveFails?: boolean;
   readonly versions?: readonly VersionFixture[];
   readonly capabilityInventory?: {
@@ -91,9 +94,12 @@ function stubFetch(options: {
     skills: [],
     models: [],
   };
-  const catalogModels =
-    options.catalogModels ??
-    [{ canonicalName: "anthropic/claude-sonnet", offerings: [{ providerName: "anthropic" }] }];
+  const catalogModels = options.catalogModels ?? [
+    {
+      canonicalName: "anthropic/claude-sonnet",
+      offerings: [{ providerName: "anthropic" }],
+    },
+  ];
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
@@ -103,11 +109,11 @@ function stubFetch(options: {
         headers: { "content-type": "application/json" },
       });
 
-    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
       return json({
         id: "ch_1",
         title: "Talk to Myra",
-        kind: options.channelKind ?? "chat",
+        kind: options.workbenchKind ?? "chat",
         pinned: false,
         participants: agents.map((agent) => ({
           address: agent.address,
@@ -139,13 +145,13 @@ function stubFetch(options: {
         })),
       );
     }
-    if (/\/chat\/channels\/[^/]+\/agents\/refresh$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/agents\/refresh$/.test(path)) {
       const body = JSON.parse(String(init?.body)) as { address: string };
       refreshCalls.push(body.address);
       options.onRefresh?.(body.address);
       return json({ ok: true });
     }
-    if (/\/chat\/channels\/[^/]+\/agents$/.test(path)) {
+    if (/\/chat\/workbenches\/[^/]+\/agents$/.test(path)) {
       return json({
         items: agents.map((agent) => ({
           address: agent.address,
@@ -259,12 +265,12 @@ function stubFetch(options: {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-function mount(props: Parameters<typeof ChannelSettingsSurface>[0]) {
+function mount(props: Parameters<typeof WorkbenchSettingsSurface>[0]) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(ChannelSettingsSurface, props));
+    root?.render(createElement(WorkbenchSettingsSurface, props));
   });
   return container;
 }
@@ -284,12 +290,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => act(() => sleep(10));
 
 function baseProps(
-  overrides: Partial<Parameters<typeof ChannelSettingsSurface>[0]> = {},
+  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
 ) {
   return {
     tenantId: "tnt_1",
-    channelId: "ch_1",
-    channelTitle: "Talk to Myra",
+    workbenchId: "ch_1",
+    workbenchTitle: "Talk to Myra",
     onBack: () => undefined,
     onInviteParticipant: () => undefined,
     section: "agents" as const,
@@ -310,7 +316,7 @@ function setTextareaValue(textarea: HTMLTextAreaElement | null, value: string) {
 
 function findButton(el: HTMLElement, text: string) {
   return Array.from(
-    el.querySelectorAll(".channel-settings-panel-area button"),
+    el.querySelectorAll(".workbench-settings-panel-area button"),
   ).find((button) => button.textContent === text) as
     HTMLButtonElement | undefined;
 }
@@ -360,9 +366,9 @@ describe("Agents section — list", () => {
   });
 
   test("no agents invited yet reads honestly, not as an empty list", async () => {
-    // A channel (not a DM chat), so the empty agent list itself is under
+    // A workbench (not a DM chat), so the empty agent list itself is under
     // test rather than the separate DM trim that hides Agents entirely.
-    stubFetch({ agents: [], channelKind: "channel" });
+    stubFetch({ agents: [], workbenchKind: "workbench" });
     const el = mount(baseProps());
     await settle();
 
@@ -408,10 +414,10 @@ describe("Agents section — detail", () => {
     await settle();
 
     const nameInput = el.querySelector(
-      ".channel-settings-panel-area input",
+      ".workbench-settings-panel-area input",
     ) as HTMLInputElement | null;
     const textarea = el.querySelector(
-      ".channel-settings-panel-area textarea",
+      ".workbench-settings-panel-area textarea",
     ) as HTMLTextAreaElement | null;
     expect(nameInput?.value).toBe("Myra");
     expect(textarea?.value).toBe("Be a helpful assistant.");
@@ -442,7 +448,7 @@ describe("Agents section — detail", () => {
     await settle();
 
     const textarea = el.querySelector(
-      ".channel-settings-panel-area textarea",
+      ".workbench-settings-panel-area textarea",
     ) as HTMLTextAreaElement | null;
     setTextareaValue(textarea, "Try to save this.");
     await settle();
@@ -475,23 +481,24 @@ describe("Agents section — detail", () => {
 
     openAgent(el, "myra");
     await settle();
-    const back = el.querySelector(".chat-settings-agent-back") as
-      HTMLButtonElement | null;
+    const back = el.querySelector(
+      ".chat-settings-agent-back",
+    ) as HTMLButtonElement | null;
     act(() => {
       back?.click();
     });
     await settle();
 
     expect(
-      Array.from(el.querySelectorAll(".chat-settings-agent-picker-row")).map(
-        (row) => row.textContent,
-      ).sort(),
+      Array.from(el.querySelectorAll(".chat-settings-agent-picker-row"))
+        .map((row) => row.textContent)
+        .sort(),
     ).toEqual(["@myra", "@researcher"]);
 
     openAgent(el, "researcher");
     await settle();
     const researcherTextarea = el.querySelector(
-      ".channel-settings-panel-area textarea",
+      ".workbench-settings-panel-area textarea",
     ) as HTMLTextAreaElement | null;
     expect(researcherTextarea?.value).toBe("Dig up sources.");
   });

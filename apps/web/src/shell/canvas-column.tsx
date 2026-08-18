@@ -1,7 +1,7 @@
 // Column 4: the optional canvas. Collapsed, it takes no space at all — the
 // main pane gets the width back — and open, it hosts targeted auxiliary
 // content: profile cards, and (CL-5938) typed artifact renderers opened
-// from a chat artifact chip or the Library page. Primary channel
+// from a chat artifact chip or the Library page. Primary workbench
 // conversation lives in the main stage, not here.
 //
 // CL-5958 phase 1 added a co-viewer cursor overlay on top of the
@@ -29,6 +29,8 @@ import {
   ProfileCard,
   toast,
   type ProfileCardAction,
+  // vendor noun: channel — @corbits/react-ui's own `ProfileCardChannel`,
+  // published from a separate repo, not part of this rename.
   type ProfileCardChannel,
 } from "@corbits/react-ui";
 import {
@@ -36,7 +38,7 @@ import {
   ArtifactTextEditor,
   type ArtifactSaveState,
 } from "@corbits/artifact-ui";
-import type { ProfileSubject, SharedChannelSummary } from "@corbits/chat-ui";
+import type { ProfileSubject, SharedWorkbenchSummary } from "@corbits/chat-ui";
 import {
   ChevronLeft,
   ExternalLink,
@@ -50,8 +52,8 @@ import type { ReactNode } from "react";
 import type * as Y from "yjs";
 
 import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
-import { ensureProfileDm, loadSharedChannels } from "../profile-relations";
+import { workbenchPath } from "../workbench-path";
+import { ensureProfileDm, loadSharedWorkbenches } from "../profile-relations";
 import type {
   CanvasArtifactContent,
   RoutinePanelSubject,
@@ -187,7 +189,7 @@ function messageAction(
     void ensureProfileDm(tenantId, profile).then((result) => {
       setPending(false);
       if (result.kind === "ready") {
-        onNavigate(channelPath(result.channelId));
+        onNavigate(workbenchPath(result.workbenchId));
         onClose();
       } else {
         toast(result.message);
@@ -196,8 +198,8 @@ function messageAction(
   };
 }
 
-/** Insert `@handle` into whichever channel's composer is on screen — an
- * honest "nothing to mention into" toast when none is (CL-5914: no channel
+/** Insert `@handle` into whichever workbench's composer is on screen — an
+ * honest "nothing to mention into" toast when none is (CL-5914: no workbench
  * open, or the settings surface is showing instead of a conversation). */
 function mentionAction(
   profile: ProfileSubject,
@@ -343,7 +345,7 @@ function profileActions(
   if (profile.kind === "agent") {
     // No "Edit agent" hop here: `ProfileSubject` (chat-ui's
     // `profile-subject.ts`) carries only address/handle/displayName, never
-    // a channel id, so this card has no way to resolve the agent's own
+    // a workbench id, so this card has no way to resolve the agent's own
     // workbench settings. The global `/settings/agents` tab this used to
     // target is gone — rather than hop to a dead route, the action is
     // dropped until a subject carries enough context to land somewhere real.
@@ -386,38 +388,40 @@ function profileActions(
   ];
 }
 
-function toProfileCardChannels(
-  channels: readonly SharedChannelSummary[],
+function toProfileCardWorkbenches(
+  workbenches: readonly SharedWorkbenchSummary[],
 ): readonly ProfileCardChannel[] {
-  return channels.map((channel) => ({
-    id: channel.id,
-    name: channel.title,
-    href: channelPath(channel.id),
+  return workbenches.map((workbench) => ({
+    id: workbench.id,
+    name: workbench.title,
+    href: workbenchPath(workbench.id),
   }));
 }
 
-/** Shared channels between the viewer and `profile` (CL-5919) — refetched
+/** Shared workbenches between the viewer and `profile` (CL-5919) — refetched
  * whenever the open profile changes, dropped if a later change races past
  * an in-flight fetch. Pinned skills are intentionally never populated: no
  * agent carries any real skill-attachment data yet (tracked in CL-5991), so
  * showing them would be fabricated, not deferred. */
-function useSharedChannels(
+function useSharedWorkbenches(
   tenantId: string | null,
   viewerPrincipalId: string | null,
   profile: ProfileSubject,
-): readonly SharedChannelSummary[] {
-  const [channels, setChannels] = useState<readonly SharedChannelSummary[]>([]);
+): readonly SharedWorkbenchSummary[] {
+  const [workbenches, setWorkbenches] = useState<
+    readonly SharedWorkbenchSummary[]
+  >([]);
 
   useEffect(() => {
-    setChannels([]);
+    setWorkbenches([]);
     if (tenantId === null || viewerPrincipalId === null) return;
     let cancelled = false;
-    void loadSharedChannels(tenantId, viewerPrincipalId, profile).then(
+    void loadSharedWorkbenches(tenantId, viewerPrincipalId, profile).then(
       (result) => {
-        if (!cancelled) setChannels(result);
+        if (!cancelled) setWorkbenches(result);
       },
       () => {
-        if (!cancelled) setChannels([]);
+        if (!cancelled) setWorkbenches([]);
       },
     );
     return () => {
@@ -425,7 +429,7 @@ function useSharedChannels(
     };
   }, [tenantId, viewerPrincipalId, profile.address]);
 
-  return channels;
+  return workbenches;
 }
 
 function ProfileCanvasPane({
@@ -448,7 +452,7 @@ function ProfileCanvasPane({
   useEffect(() => {
     setMessagePending(false);
   }, [profile.address]);
-  const sharedChannels = useSharedChannels(
+  const sharedWorkbenches = useSharedWorkbenches(
     selectedTenantId,
     selectedPrincipalId,
     profile,
@@ -476,7 +480,7 @@ function ProfileCanvasPane({
           messagePending,
           setMessagePending,
         )}
-        sharedChannels={toProfileCardChannels(sharedChannels)}
+        sharedChannels={toProfileCardWorkbenches(sharedWorkbenches)}
       />
     </div>
   );

@@ -15,7 +15,7 @@ export type TaskStatus = typeof TaskStatus.infer;
 const Task = type({
   id: "string",
   definitionId: "string",
-  channelId: "string | null",
+  workbenchId: "string | null",
   agentName: "string",
   prompt: "string",
   modelPreference: "string | null",

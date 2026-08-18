@@ -5,10 +5,10 @@ import {
   useTheme,
 } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
-import { listChannels } from "@corbits/chat-ui";
+import { listWorkbenches } from "@corbits/chat-ui";
 import {
-  filterWorkbenchMemberships,
-  listChannelTenantIds,
+  filterBenchMemberships,
+  listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -31,12 +31,15 @@ import {
   type ActionCommandId,
 } from "./command-palette-actions";
 import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
-import { CHANNEL_NOT_FOUND_EVENT } from "./channel-not-found-event";
+import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
-import { useCloseCanvas, useOpenRoutineInCanvas } from "./shell/canvas-availability";
+import {
+  useCloseCanvas,
+  useOpenRoutineInCanvas,
+} from "./shell/canvas-availability";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { meKeys, tenantKeys } from "./query-client";
@@ -51,9 +54,9 @@ const STATIC_COMMANDS = buildStaticCommands(
  *
  * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
  * `@corbits/command-palette` (`buildCommandPaletteGroups`) — this file only
- * assembles the app's own sources (routes, channels, agents, routines,
+ * assembles the app's own sources (routes, workbenches, agents, routines,
  * skills, library artifacts) and maps a selection back to a real route or
- * action. Entity results for channels/runs/agents still come off the same
+ * action. Entity results for workbenches/runs/agents still come off the same
  * `useEntitySearch` paging this provider already used; routines, skills and
  * library artifacts are small per-bench catalogs fetched once and filtered
  * client-side, the same way the static route list already is.
@@ -106,34 +109,43 @@ export function CommandPaletteProvider({
     [recentsStore],
   );
 
-  // A channel-level 404 (`chat-page.tsx`, via `ChatWorkspace`'s
-  // `onChannelNotFound`) means a Recents entry outlived the channel it
+  // A workbench-level 404 (`chat-page.tsx`, via `ChatWorkspace`'s
+  // `onWorkbenchNotFound`) means a Recents entry outlived the workbench it
   // points at — drop it so re-opening the palette never offers a dead end
-  // again. See `channel-not-found-event.ts` for why this is an event
+  // again. See `workbench-not-found-event.ts` for why this is an event
   // rather than a prop: the chat route and this provider are siblings.
   useEffect(() => {
-    function onChannelNotFound(event: Event) {
-      const channelId = (event as CustomEvent<string>).detail;
-      removeRecent({ kind: "channels", id: `entity:channels:${channelId}` });
+    function onWorkbenchNotFound(event: Event) {
+      const workbenchId = (event as CustomEvent<string>).detail;
+      removeRecent({
+        kind: "workbenches",
+        id: `entity:workbenches:${workbenchId}`,
+      });
     }
-    window.addEventListener(CHANNEL_NOT_FOUND_EVENT, onChannelNotFound);
+    window.addEventListener(WORKBENCH_NOT_FOUND_EVENT, onWorkbenchNotFound);
     return () => {
-      window.removeEventListener(CHANNEL_NOT_FOUND_EVENT, onChannelNotFound);
+      window.removeEventListener(
+        WORKBENCH_NOT_FOUND_EVENT,
+        onWorkbenchNotFound,
+      );
     };
   }, [removeRecent]);
 
-  // Reads through `queryClient` at the shared `tenantKeys.channels` key
-  // (rather than calling `listChannels` directly) so a re-search — every
+  // Reads through `queryClient` at the shared `tenantKeys.workbenches` key
+  // (rather than calling `listWorkbenches` directly) so a re-search — every
   // debounced keystroke re-invokes this — and the bare `#` scope view below
-  // both reuse one cached fetch with every other channel-listing surface in
+  // both reuse one cached fetch with every other workbench-listing surface in
   // the shell, instead of each one issuing its own request.
-  const listChannelsForSearch = useCallback(async () => {
+  const listWorkbenchesForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const result = await queryClient.ensureQueryData({
-      queryKey: tenantKeys.channels(selectedTenantId, "channel"),
-      queryFn: () => listChannels(selectedTenantId, "channel"),
+      queryKey: tenantKeys.workbenches(selectedTenantId, "workbench"),
+      queryFn: () => listWorkbenches(selectedTenantId, "workbench"),
     });
-    return result.map((channel) => ({ id: channel.id, name: channel.title }));
+    return result.map((workbench) => ({
+      id: workbench.id,
+      name: workbench.title,
+    }));
   }, [selectedTenantId, queryClient]);
 
   // Workflow runs are what the Routines page lists today. The group is labeled
@@ -158,11 +170,11 @@ export function CommandPaletteProvider({
 
   const entitySearchSources = useMemo(
     () => [
-      { category: "channels", fetch: listChannelsForSearch },
+      { category: "workbenches", fetch: listWorkbenchesForSearch },
       { category: "runs", fetch: listRunsForSearch },
       { category: "agents", fetch: listAgentsForSearch },
     ],
-    [listChannelsForSearch, listRunsForSearch, listAgentsForSearch],
+    [listWorkbenchesForSearch, listRunsForSearch, listAgentsForSearch],
   );
 
   const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
@@ -181,7 +193,7 @@ export function CommandPaletteProvider({
   // fetches for (by design — the unscoped default view should not dump
   // every entity on open). The mock shows every item in an active scope for
   // this input, so fetch that scope's raw list directly instead.
-  const [bareChannels, setBareChannels] = useState<
+  const [bareWorkbenches, setBareWorkbenches] = useState<
     readonly PaletteResultItem[]
   >([]);
   const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>(
@@ -189,16 +201,16 @@ export function CommandPaletteProvider({
   );
 
   useEffect(() => {
-    if (bareScopeKind !== "channels" || !open) {
-      setBareChannels([]);
+    if (bareScopeKind !== "workbenches" || !open) {
+      setBareWorkbenches([]);
       return;
     }
     let cancelled = false;
-    void listChannelsForSearch().then((rows) => {
+    void listWorkbenchesForSearch().then((rows) => {
       if (cancelled) return;
-      setBareChannels(
+      setBareWorkbenches(
         rows.map((row) => ({
-          id: `entity:channels:${row.id}`,
+          id: `entity:workbenches:${row.id}`,
           title: row.name,
         })),
       );
@@ -206,7 +218,7 @@ export function CommandPaletteProvider({
     return () => {
       cancelled = true;
     };
-  }, [bareScopeKind, open, listChannelsForSearch]);
+  }, [bareScopeKind, open, listWorkbenchesForSearch]);
 
   useEffect(() => {
     if (bareScopeKind !== "people" || !open) {
@@ -257,16 +269,16 @@ export function CommandPaletteProvider({
     memberships.kind === "ready"
       ? memberships.data.data.map((membership) => membership.tenantId)
       : [];
-  const channelTenancyKinds = useQuery({
-    queryKey: meKeys.channelTenancyKinds(workbenchMembershipTenantIds),
-    queryFn: () => listChannelTenantIds(workbenchMembershipTenantIds),
+  const workbenchTenancyKinds = useQuery({
+    queryKey: meKeys.workbenchTenancyKinds(workbenchMembershipTenantIds),
+    queryFn: () => listWorkbenchTenantIds(workbenchMembershipTenantIds),
     enabled: workbenchMembershipTenantIds.length > 0,
   });
   const workbenchMemberships =
     memberships.kind === "ready"
-      ? filterWorkbenchMemberships(
+      ? filterBenchMemberships(
           memberships.data.data,
-          channelTenancyKinds.data ?? new Set(),
+          workbenchTenancyKinds.data ?? new Set(),
         )
       : [];
   const nextWorkbench =
@@ -328,15 +340,15 @@ export function CommandPaletteProvider({
     return [...commands, ...runNow, ...switchWorkbench];
   }, [routinesQuery, nextWorkbench]);
 
-  const channelItems = useMemo<readonly PaletteResultItem[]>(() => {
-    if (bareScopeKind === "channels") return bareChannels;
+  const workbenchItems = useMemo<readonly PaletteResultItem[]>(() => {
+    if (bareScopeKind === "workbenches") return bareWorkbenches;
     return results
-      .filter((result) => result.category === "channels")
-      .map((channel) => ({
-        id: `entity:channels:${channel.id}`,
-        title: channel.title,
+      .filter((result) => result.category === "workbenches")
+      .map((workbench) => ({
+        id: `entity:workbenches:${workbench.id}`,
+        title: workbench.title,
       }));
-  }, [results, bareScopeKind, bareChannels]);
+  }, [results, bareScopeKind, bareWorkbenches]);
 
   const agentItems = useMemo<readonly PaletteResultItem[]>(() => {
     if (bareScopeKind === "people") return bareAgents;
@@ -411,10 +423,10 @@ export function CommandPaletteProvider({
         items: actionItems,
       },
       {
-        id: "channels",
+        id: "workbenches",
         heading: "Workbenches",
-        kind: "channels",
-        items: channelItems,
+        kind: "workbenches",
+        items: workbenchItems,
       },
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
       { id: "runs", heading: "Runs", items: runItems },
@@ -430,7 +442,7 @@ export function CommandPaletteProvider({
     ],
     [
       actionItems,
-      channelItems,
+      workbenchItems,
       pageItems,
       runItems,
       routineItems,
@@ -489,12 +501,12 @@ export function CommandPaletteProvider({
           routePath;
         navigate(routePath);
         pushRecent({ kind: "route", id, title: label });
-      } else if (id.startsWith("entity:channels:")) {
-        const channelId = id.slice("entity:channels:".length);
+      } else if (id.startsWith("entity:workbenches:")) {
+        const workbenchId = id.slice("entity:workbenches:".length);
         const title =
-          channelItems.find((item) => item.id === id)?.title ?? channelId;
-        navigate(`/c/${channelId}`);
-        pushRecent({ kind: "channels", id, title, subtitle: "Workbench" });
+          workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
+        navigate(`/w/${workbenchId}`);
+        pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
         const runId = id.slice("entity:runs:".length);
@@ -537,7 +549,7 @@ export function CommandPaletteProvider({
       closeCanvas,
       openRoutine,
       pushRecent,
-      channelItems,
+      workbenchItems,
       runItems,
       agentItems,
       routineItems,

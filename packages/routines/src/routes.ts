@@ -50,10 +50,10 @@ export interface LaunchedRoutineRun {
  * correlation. Keeping this a port, not a direct dependency, is what
  * keeps `@corbits/routines` hosted-service-agnostic.
  *
- * A run's delivery is a message into `deliveryChannelId`'s root
+ * A run's delivery is a message into `deliveryWorkbenchId`'s root
  * timeline — never a pre-opened thread. If a single run's delivery ever
  * needs more than one message, the FIRST message still lands on the
- * channel root; any follow-up messages from that same run thread under
+ * workbench root; any follow-up messages from that same run thread under
  * it via `inReplyToMessageId` (`@corbits/chat`'s send API already
  * supports this) rather than a thread minted ahead of the run, before
  * anyone knows whether the run will actually produce more than one
@@ -65,7 +65,7 @@ export interface RoutineLauncher {
     principalId: string;
     definitionId: string;
     input: Record<string, unknown>;
-    deliveryChannelId?: string | null | undefined;
+    deliveryWorkbenchId?: string | null | undefined;
     runRef?: string | undefined;
     routineName?: string | undefined;
   }): Promise<LaunchedRoutineRun>;
@@ -73,8 +73,8 @@ export interface RoutineLauncher {
 
 /**
  * Optional port: provision a new delivery destination ("space") for a
- * routine that didn't pick an existing channel. Wired to `@corbits/chat`
- * channel creation at the hub. Returns the new channel's id plus a
+ * routine that didn't pick an existing workbench. Wired to `@corbits/chat`
+ * workbench creation at the hub. Returns the new workbench's id plus a
  * `compensate` callback that undoes the provisioning — called if the
  * routine row itself then fails to write, so a space is never left
  * behind with nothing pointing at it.
@@ -86,25 +86,25 @@ export interface DeliverySpacePort {
     creatorPrincipalId: string;
     creatorUserId: string;
     name: string;
-  }): Promise<{ channelId: string; compensate: () => Promise<void> }>;
+  }): Promise<{ workbenchId: string; compensate: () => Promise<void> }>;
 }
 
 /**
- * Optional port: posts a plain-text notice into a channel through the
+ * Optional port: posts a plain-text notice into a workbench through the
  * host's existing chat platform — the same path a human's web-UI
  * message takes (mirrors `slack-tag`'s own `SendMessage` port over
- * `@corbits/chat`'s `sendChannelMessage`). Since grant-free
+ * `@corbits/chat`'s `sendWorkbenchMessage`). Since grant-free
  * `routine_create`/`routine_update` no longer require human approval
  * (CL-6247), a routine created enabled or flipped to enabled posts one
- * of these into its delivery channel so the people in that channel
+ * of these into its delivery workbench so the people in that workbench
  * learn what just started running, honestly, without digging into the
  * Routines panel first. Omitted: no notice is posted, unchanged from
  * before this port existed.
  */
-export interface ChannelNoticePort {
-  postChannelNotice(input: {
+export interface WorkbenchNoticePort {
+  postWorkbenchNotice(input: {
     tenantId: string;
-    channelId: string;
+    workbenchId: string;
     principalId: string;
     text: string;
   }): Promise<void>;
@@ -152,27 +152,27 @@ export type CreateRoutineRoutesDeps = {
   ) => Promise<boolean>;
   /**
    * Provisions a brand-new space for a routine created with no
-   * `deliveryChannelId`, named after the routine. When omitted, a
-   * routine whose workflow requires delivery and names no channel
+   * `deliveryWorkbenchId`, named after the routine. When omitted, a
+   * routine whose workflow requires delivery and names no workbench
    * still 400s exactly as before this port existed — a host that
    * hasn't wired space creation yet keeps the prior, honest error
    * instead of silently accepting a routine with nowhere to deliver.
    */
   deliverySpace?: DeliverySpacePort | undefined;
   /**
-   * Whether a routine on this definition must carry a `deliveryChannelId`
-   * — `false` for a workflow whose result never posts to a channel at
+   * Whether a routine on this definition must carry a `deliveryWorkbenchId`
+   * — `false` for a workflow whose result never posts to a workbench at
    * all (e.g. the recurring-task bridge, which always delivers to its
    * creator's Inbox). Omitted defaults every definition to
-   * channel-required, the behavior before this port existed — a host
+   * workbench-required, the behavior before this port existed — a host
    * that never wires it keeps every prior create/run-now/fire contract
    * unchanged. Consulted at create, at "run now", and at every
    * scheduled fire (`fireScheduledRoutine`'s own `deps` takes the same
    * port), so a routine can never end up silently missing the delivery
    * its own workflow actually needs, and never forced to collect a
-   * channel a workflow would just discard.
+   * workbench a workflow would just discard.
    */
-  deliveryChannelRequired?: (
+  deliveryWorkbenchRequired?: (
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
@@ -198,8 +198,8 @@ export type CreateRoutineRoutesDeps = {
    */
   drafts?: import("./drafts").RoutineDraftStore | undefined;
   drafting?: import("./drafts").RoutineDraftingPort | undefined;
-  /** See `ChannelNoticePort`'s own doc comment. */
-  channelNotice?: ChannelNoticePort | undefined;
+  /** See `WorkbenchNoticePort`'s own doc comment. */
+  workbenchNotice?: WorkbenchNoticePort | undefined;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -234,10 +234,10 @@ const CreateRoutineBody = type({
   scope: "'personal' | 'bench'",
   "input?": "Record<string, unknown>",
   // Whether this is actually required depends on the definition's own
-  // delivery mode (see `deliveryChannelRequired`, checked below, after
+  // delivery mode (see `deliveryWorkbenchRequired`, checked below, after
   // parse) — a workflow that only ever delivers to its creator's Inbox
-  // must never be forced to collect a channel it would just discard.
-  "deliveryChannelId?": "string",
+  // must never be forced to collect a workbench it would just discard.
+  "deliveryWorkbenchId?": "string",
   "runOnceNow?": "boolean",
 });
 
@@ -246,7 +246,7 @@ const UpdateRoutineBody = type({
   "trigger?": RoutineTrigger,
   "input?": "Record<string, unknown>",
   "enabled?": "boolean",
-  "deliveryChannelId?": "string",
+  "deliveryWorkbenchId?": "string",
 });
 
 const RunNowBody = type({
@@ -255,7 +255,7 @@ const RunNowBody = type({
 
 const CreateDraftBody = type({
   prompt: "string",
-  deliveryChannelId: "string",
+  deliveryWorkbenchId: "string",
   scope: "'personal' | 'bench'",
 });
 
@@ -288,7 +288,7 @@ export function routineView(row: RoutineRow) {
     scope: row.scope,
     input: row.input,
     enabled: row.enabled,
-    deliveryChannelId: row.deliveryChannelId,
+    deliveryWorkbenchId: row.deliveryWorkbenchId,
     consecutiveFailures: row.consecutiveFailures,
     deadLetteredAt: row.deadLetteredAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -316,7 +316,7 @@ async function runView(
  * never silently orphan a platform run. Clears fire-failure counters
  * only after both steps succeed.
  *
- * A run's result always delivers as a message into `deliveryChannelId`'s
+ * A run's result always delivers as a message into `deliveryWorkbenchId`'s
  * root timeline — see `RoutineLauncher`'s own doc comment for the
  * multi-message contract.
  *
@@ -336,7 +336,7 @@ export async function launchAndCorrelate(
     input: Record<string, unknown>;
     routineId: string;
     triggeredBy: string;
-    deliveryChannelId: string | null;
+    deliveryWorkbenchId: string | null;
     routineName?: string;
   },
 ): Promise<LaunchedRoutineRun> {
@@ -345,7 +345,7 @@ export async function launchAndCorrelate(
     principalId: input.principalId,
     definitionId: input.definitionId,
     input: input.input,
-    deliveryChannelId: input.deliveryChannelId,
+    deliveryWorkbenchId: input.deliveryWorkbenchId,
     routineName: input.routineName,
   });
   try {
@@ -391,26 +391,26 @@ export async function webhookTriggerValid(
   );
 }
 
-/** Every definition defaults to channel-required — see
- * `CreateRoutineRoutesDeps.deliveryChannelRequired`'s own doc comment
+/** Every definition defaults to workbench-required — see
+ * `CreateRoutineRoutesDeps.deliveryWorkbenchRequired`'s own doc comment
  * for why an omitted port must never change prior behavior.
  *
  * Exported: `./workflow-routine-routes.ts` consults the same rule for
  * Myra's own create/run-now path.
  */
-export async function isDeliveryChannelRequired(
-  deps: Pick<CreateRoutineRoutesDeps, "deliveryChannelRequired">,
+export async function isDeliveryWorkbenchRequired(
+  deps: Pick<CreateRoutineRoutesDeps, "deliveryWorkbenchRequired">,
   tenantId: string,
   definitionId: string,
 ): Promise<boolean> {
-  if (deps.deliveryChannelRequired === undefined) return true;
-  return deps.deliveryChannelRequired(tenantId, definitionId);
+  if (deps.deliveryWorkbenchRequired === undefined) return true;
+  return deps.deliveryWorkbenchRequired(tenantId, definitionId);
 }
 
 /**
  * Posts the "created enabled" / "enabled" honest-notice — see
- * `ChannelNoticePort`'s own doc comment for why this exists. Silent
- * no-op when `channelNotice` isn't wired, or when the routine has
+ * `WorkbenchNoticePort`'s own doc comment for why this exists. Silent
+ * no-op when `workbenchNotice` isn't wired, or when the routine has
  * nowhere to deliver into; a delivery failure here is logged, never
  * thrown — the routine itself already exists (or was already updated)
  * by the time this runs, and a missed notice must not undo that.
@@ -420,34 +420,37 @@ export async function isDeliveryChannelRequired(
  * reuses this exact helper, never a second, drifting wording.
  */
 export async function postRoutineEnabledNotice(
-  deps: Pick<CreateRoutineRoutesDeps, "channelNotice">,
+  deps: Pick<CreateRoutineRoutesDeps, "workbenchNotice">,
   input: {
     tenantId: string;
     principalId: string;
-    channelId: string | null;
+    workbenchId: string | null;
     name: string;
     trigger: RoutineTriggerT;
     verb: "Created" | "Enabled";
   },
 ): Promise<void> {
-  if (deps.channelNotice === undefined) return;
-  if (input.channelId === null || input.channelId === "") return;
+  if (deps.workbenchNotice === undefined) return;
+  if (input.workbenchId === null || input.workbenchId === "") return;
   const text =
     `${input.verb} routine "${input.name}" — runs ` +
     `${routineCadenceLabel(input.trigger)}. Disable it in the Routines panel.`;
   try {
-    await deps.channelNotice.postChannelNotice({
+    await deps.workbenchNotice.postWorkbenchNotice({
       tenantId: input.tenantId,
-      channelId: input.channelId,
+      workbenchId: input.workbenchId,
       principalId: input.principalId,
       text,
     });
   } catch (err) {
-    log.error("Failed to post routine-{verb} notice into channel {channelId}", {
-      verb: input.verb,
-      channelId: input.channelId,
-      err,
-    });
+    log.error(
+      "Failed to post routine-{verb} notice into workbench {workbenchId}",
+      {
+        verb: input.verb,
+        workbenchId: input.workbenchId,
+        err,
+      },
+    );
   }
 }
 
@@ -511,12 +514,17 @@ export function createRoutineRoutes(
       }
 
       const needsDelivery =
-        (await isDeliveryChannelRequired(deps, tenant.id, body.definitionId)) &&
-        (body.deliveryChannelId === undefined || body.deliveryChannelId === "");
+        (await isDeliveryWorkbenchRequired(
+          deps,
+          tenant.id,
+          body.definitionId,
+        )) &&
+        (body.deliveryWorkbenchId === undefined ||
+          body.deliveryWorkbenchId === "");
 
-      // No channel named and none needed: fall through with a null
-      // delivery channel, unchanged from before this port existed.
-      // A channel is named: use it as-is, unchanged. Only the third
+      // No workbench named and none needed: fall through with a null
+      // delivery workbench, unchanged from before this port existed.
+      // A workbench is named: use it as-is, unchanged. Only the third
       // case — delivery required, nothing named — is new: a space
       // named after the routine is auto-provisioned, the routine's
       // default destination rather than a dead end. A host that
@@ -525,7 +533,7 @@ export function createRoutineRoutes(
         return c.json(
           ErrorEnvelope(
             "bad_request",
-            "deliveryChannelId is required for this workflow",
+            "deliveryWorkbenchId is required for this workflow",
           ),
           400,
         );
@@ -547,9 +555,9 @@ export function createRoutineRoutes(
       // if it somehow does, the freshly-made space is compensated
       // (deleted) rather than left behind pointing at nothing — the
       // same mint-then-compensate shape `@corbits/chat`'s own
-      // `POST /channels` uses for its tenant mint.
+      // `POST /workbenches` uses for its tenant mint.
       let provisionedSpace:
-        { channelId: string; compensate: () => Promise<void> } | undefined;
+        { workbenchId: string; compensate: () => Promise<void> } | undefined;
       if (needsDelivery && deps.deliverySpace !== undefined) {
         provisionedSpace = await deps.deliverySpace.createDeliverySpace({
           tenantId: tenant.id,
@@ -559,8 +567,8 @@ export function createRoutineRoutes(
           name: body.name,
         });
       }
-      const deliveryChannelId =
-        body.deliveryChannelId ?? provisionedSpace?.channelId ?? null;
+      const deliveryWorkbenchId =
+        body.deliveryWorkbenchId ?? provisionedSpace?.workbenchId ?? null;
 
       let row: RoutineRow;
       try {
@@ -571,24 +579,24 @@ export function createRoutineRoutes(
           trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
-          deliveryChannelId,
+          deliveryWorkbenchId,
           createdBy: principal.id,
         });
       } catch (err) {
         if (provisionedSpace !== undefined) {
           log.error(
             "Routine creation failed after provisioning space " +
-              "{channelId}; compensating the orphaned space",
-            { channelId: provisionedSpace.channelId, err },
+              "{workbenchId}; compensating the orphaned space",
+            { workbenchId: provisionedSpace.workbenchId, err },
           );
           try {
             await provisionedSpace.compensate();
           } catch (compensationErr) {
             log.error(
-              "Compensation failed for orphaned space {channelId} " +
+              "Compensation failed for orphaned space {workbenchId} " +
                 "after routine creation failed; this space now has no " +
                 "routine pointing at it and requires manual cleanup",
-              { channelId: provisionedSpace.channelId, compensationErr },
+              { workbenchId: provisionedSpace.workbenchId, compensationErr },
             );
           }
         }
@@ -605,7 +613,7 @@ export function createRoutineRoutes(
             input: row.input,
             routineId: row.id,
             triggeredBy: "manual",
-            deliveryChannelId: row.deliveryChannelId,
+            deliveryWorkbenchId: row.deliveryWorkbenchId,
             routineName: row.name,
           },
         );
@@ -615,7 +623,7 @@ export function createRoutineRoutes(
         await postRoutineEnabledNotice(deps, {
           tenantId: tenant.id,
           principalId: principal.id,
-          channelId: row.deliveryChannelId,
+          workbenchId: row.deliveryWorkbenchId,
           name: row.name,
           trigger: row.trigger,
           verb: "Created",
@@ -696,8 +704,8 @@ export function createRoutineRoutes(
       if (body.enabled !== undefined) {
         patch = { ...patch, enabled: body.enabled };
       }
-      if (body.deliveryChannelId !== undefined) {
-        patch = { ...patch, deliveryChannelId: body.deliveryChannelId };
+      if (body.deliveryWorkbenchId !== undefined) {
+        patch = { ...patch, deliveryWorkbenchId: body.deliveryWorkbenchId };
       }
 
       const row = await deps.store.updateRoutine(tenant.id, routineId, patch);
@@ -707,7 +715,7 @@ export function createRoutineRoutes(
         await postRoutineEnabledNotice(deps, {
           tenantId: tenant.id,
           principalId: principal.id,
-          channelId: row.deliveryChannelId,
+          workbenchId: row.deliveryWorkbenchId,
           name: row.name,
           trigger: row.trigger,
           verb: "Enabled",
@@ -782,18 +790,18 @@ export function createRoutineRoutes(
       // scheduled trigger would call — the only difference is
       // `triggeredBy`, never a second launch code path.
       if (
-        (await isDeliveryChannelRequired(
+        (await isDeliveryWorkbenchRequired(
           deps,
           tenant.id,
           existing.definitionId,
         )) &&
-        (existing.deliveryChannelId === null ||
-          existing.deliveryChannelId === "")
+        (existing.deliveryWorkbenchId === null ||
+          existing.deliveryWorkbenchId === "")
       ) {
         return c.json(
           ErrorEnvelope(
             "bad_request",
-            "routine has no deliveryChannelId; set one before running",
+            "routine has no deliveryWorkbenchId; set one before running",
           ),
           400,
         );
@@ -807,7 +815,7 @@ export function createRoutineRoutes(
           input: body.input ?? existing.input,
           routineId,
           triggeredBy: "manual",
-          deliveryChannelId: existing.deliveryChannelId,
+          deliveryWorkbenchId: existing.deliveryWorkbenchId,
           routineName: existing.name,
         },
       );
@@ -852,7 +860,7 @@ export function createRoutineRoutes(
         const draft = await deps.drafts.createDraft({
           tenantId: tenant.id,
           prompt: body.prompt,
-          deliveryChannelId: body.deliveryChannelId,
+          deliveryWorkbenchId: body.deliveryWorkbenchId,
           scope: body.scope,
           createdBy: principal.id,
         });
@@ -1013,7 +1021,7 @@ export function createRoutineRoutes(
           draft.autonomy !== null
             ? { draftedSteps: draft.proposedSteps, autonomy: draft.autonomy }
             : { draftedSteps: draft.proposedSteps },
-        deliveryChannelId: draft.deliveryChannelId,
+        deliveryWorkbenchId: draft.deliveryWorkbenchId,
         createdBy: principal.id,
       });
       const approved = await deps.drafts.markApproved(
@@ -1066,7 +1074,7 @@ function draftView(row: import("./drafts").RoutineDraftRow) {
     proposedTrigger: row.proposedTrigger,
     proposedName: row.proposedName,
     definitionId: row.definitionId,
-    deliveryChannelId: row.deliveryChannelId,
+    deliveryWorkbenchId: row.deliveryWorkbenchId,
     scope: row.scope,
     autonomy: row.autonomy,
     approvedRoutineId: row.approvedRoutineId,
@@ -1087,7 +1095,7 @@ export async function fireScheduledRoutine(
   deps: {
     store: RoutineStore;
     launcher: RoutineLauncher;
-    deliveryChannelRequired?: (
+    deliveryWorkbenchRequired?: (
       tenantId: string,
       definitionId: string,
     ) => Promise<boolean>;
@@ -1100,16 +1108,16 @@ export async function fireScheduledRoutine(
     );
   }
   if (
-    (await isDeliveryChannelRequired(
+    (await isDeliveryWorkbenchRequired(
       deps,
       params.tenantId,
       params.routine.definitionId,
     )) &&
-    (params.routine.deliveryChannelId === null ||
-      params.routine.deliveryChannelId === "")
+    (params.routine.deliveryWorkbenchId === null ||
+      params.routine.deliveryWorkbenchId === "")
   ) {
     throw new Error(
-      `routine ${params.routine.id} has no deliveryChannelId; cannot fire`,
+      `routine ${params.routine.id} has no deliveryWorkbenchId; cannot fire`,
     );
   }
   return launchAndCorrelate(deps, {
@@ -1119,7 +1127,7 @@ export async function fireScheduledRoutine(
     input: params.routine.input,
     routineId: params.routine.id,
     triggeredBy: "schedule",
-    deliveryChannelId: params.routine.deliveryChannelId,
+    deliveryWorkbenchId: params.routine.deliveryWorkbenchId,
     routineName: params.routine.name,
   });
 }

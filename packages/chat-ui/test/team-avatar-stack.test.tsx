@@ -1,5 +1,5 @@
-// The channel header's combined who's-active stack: every agent
-// participant on the channel plus every human currently reflected in live
+// The workbench header's combined who's-active stack: every agent
+// participant on the workbench plus every human currently reflected in live
 // presence, overlapping with a title tooltip, collapsing anything past
 // TEAM_AVATAR_STACK_LIMIT into a "+N" chip. Mirrors
 // presence-stack.test.tsx's stub-fetch/mount harness.
@@ -33,7 +33,9 @@ afterEach(() => {
   StubEventSource.instances = [];
 });
 
-function stubFetch(channelWire: { participants: { address: string; handle: string }[] }) {
+function stubFetch(workbenchWire: {
+  participants: { address: string; handle: string }[];
+}) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
@@ -42,27 +44,28 @@ function stubFetch(channelWire: { participants: { address: string; handle: strin
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    if (/\/chat\/channels\?kind=channel$/.test(path)) {
+    if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({
         items: [
           {
             id: "ch_1",
             title: "Launch Planning",
-            kind: "channel",
+            kind: "workbench",
             pinned: false,
-            participants: channelWire.participants,
+            participants: workbenchWire.participants,
           },
         ],
       });
     }
-    if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+    if (/\/chat\/workbenches\?kind=chat$/.test(path))
+      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
-    if (/\/chat\/channels\/[^/]+\/messages/.test(path))
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
       return json({ items: [] });
-    if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/channels\/[^/]+\/invitable$/.test(path))
+    if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
       return json({ items: [] });
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
@@ -99,7 +102,7 @@ function presenceMember(id: string, name: string) {
   return { principalId: id, displayName: name, color: "hsl(10 65% 45%)" };
 }
 
-describe("channel header team avatar stack", () => {
+describe("workbench header team avatar stack", () => {
   test("renders every agent participant and every live human", async () => {
     stubFetch({
       participants: [
@@ -109,7 +112,7 @@ describe("channel header team avatar stack", () => {
     });
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       presenceMembers: [presenceMember("prn_alice", "Alice")],
     });
     await harness.settle();
@@ -135,15 +138,20 @@ describe("channel header team avatar stack", () => {
   });
 
   test("collapses anything past the limit into a +N chip", async () => {
-    const presenceMembers = ["Alice", "Bob", "Carla", "Dana", "Eve", "Finn"].map(
-      (name, index) => presenceMember(`prn_${index}`, name),
-    );
+    const presenceMembers = [
+      "Alice",
+      "Bob",
+      "Carla",
+      "Dana",
+      "Eve",
+      "Finn",
+    ].map((name, index) => presenceMember(`prn_${index}`, name));
     stubFetch({
       participants: [{ address: "myra@agents.example", handle: "Myra" }],
     });
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
-      channelId: "ch_1",
+      workbenchId: "ch_1",
       presenceMembers,
     });
     await harness.settle();

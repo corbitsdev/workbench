@@ -7,29 +7,29 @@ packages — `@corbits/chat` (the HTTP surface and domain logic) and
 `@corbits/chat-ui` (the React components a host renders it with) — composed
 onto the hub and the web app respectively.
 
-## What a channel is
+## What a workbench is
 
-A channel is a credential-free, folded interactive instance: a single
-long-lived agent run whose only job is to hold a mailbox. Creating a channel
-launches this instance (its **channel host**, sometimes called its anchor)
-and every message sent to the channel is mail delivered to that instance's
+A workbench is a credential-free, folded interactive instance: a single
+long-lived agent run whose only job is to hold a mailbox. Creating a workbench
+launches this instance (its **workbench host**, sometimes called its anchor)
+and every message sent to the workbench is mail delivered to that instance's
 address. The host's system prompt forbids it from ever replying, commenting,
-or acting — it exists purely to give the channel a durable, listable
-mailbox. That mailbox, read back in order, is the channel's **timeline**.
+or acting — it exists purely to give the workbench a durable, listable
+mailbox. That mailbox, read back in order, is the workbench's **timeline**.
 
-Because a channel is an ordinary folded run, it goes through the same
+Because a workbench is an ordinary folded run, it goes through the same
 launch, addressing, and mail machinery any other interactive agent run
 uses — chat adds no parallel transport of its own.
 
-A channel is also its own tenant, parented under the bench it was created
+A workbench is also its own tenant, parented under the bench it was created
 in, so its membership and permissions are native grants rather than a
-chat-specific system — see [channel-tenancy.md](channel-tenancy.md) for
+chat-specific system — see [workbench-tenancy.md](workbench-tenancy.md) for
 the mint, listing, and move mechanics.
 
 ```mermaid
 flowchart LR
-    subgraph Channel
-        Host[Channel host<br/>anchor run]
+    subgraph Workbench
+        Host[Workbench host<br/>anchor run]
     end
     Alice[Human participant] -->|mail| Host
     Bot["@handle agent participant"] -->|mail| Host
@@ -40,7 +40,7 @@ flowchart LR
 
 ## The message model
 
-A message is a list of MIME parts, not a single string. The parts a channel
+A message is a list of MIME parts, not a single string. The parts a workbench
 supports:
 
 - **text** — plain message text.
@@ -69,14 +69,14 @@ parts, or one non-text part — becomes a list of MIME attachments, each
 platform's JMAP-style response the same way, so callers always see the same
 `Part[]` shape regardless of which side of the wire produced it.
 
-## Threads: channel → thread → sub-thread
+## Threads: workbench → thread → sub-thread
 
-A channel's timeline is itself a thread — its **root thread**, one per
-channel, created lazily on first use. Any message can be replied to, which
+A workbench's timeline is itself a thread — its **root thread**, one per
+workbench, created lazily on first use. Any message can be replied to, which
 opens (or reuses) a **depth-1 thread** anchored on that message; any message
 _inside_ a depth-1 thread can be **forked**, which opens (or reuses) a
 **depth-2 sub-thread** anchored on that message. That's the whole model —
-channel → thread → sub-thread, stop. There is no depth 3 (owner ruling,
+workbench → thread → sub-thread, stop. There is no depth 3 (owner ruling,
 CL-5908): nesting a reply off a message that already lives in a sub-thread
 is rejected with an honest `409 conflict` rather than silently growing a
 third level.
@@ -97,7 +97,7 @@ Every non-root thread carries a `parentThreadId` — the thread it hangs
 directly off (the root thread's id for a depth-1 thread, a depth-1 thread's
 id for a depth-2 sub-thread) — alongside its existing `parentMessageId`,
 the origin message it answers or forks. `@corbits/chat-ui` reads
-`parentThreadId` to render the breadcrumb (`Channel / Thread / Sub-thread`,
+`parentThreadId` to render the breadcrumb (`Workbench / Thread / Sub-thread`,
 at most three segments), to walk a fork back to its parent thread, and to
 indent sub-threads under their parent in the threads menu; a forked
 sub-thread also shows a small banner above its timeline linking back to its
@@ -105,41 +105,41 @@ origin message — the fork's visible back-reference.
 
 ## Participants and mentions
 
-A channel's participants are held in its settings as records of
-`{ address, handle }`. The **handle** is the short, unique-within-channel
+A workbench's participants are held in its settings as records of
+`{ address, handle }`. The **handle** is the short, unique-within-workbench
 name a mention actually types — `@echo`, never the underlying run's
 unreadable instance id. Handles are derived from a definition's name at
-invite time and de-duplicated against every handle already in the channel
+invite time and de-duplicated against every handle already in the workbench
 (`echo`, `echo-2`, `echo-3`, ...).
 
 A **mention** is `@` followed by a participant's handle at a word boundary,
 anywhere in a message's text. Mentioning an agent participant triggers
 **fan-out**: the server sends that agent a single-recipient copy of the
-message, addressed from the channel itself rather than from the posting
-principal. Sending from the channel matters because an agent's reply
+message, addressed from the workbench itself rather than from the posting
+principal. Sending from the workbench matters because an agent's reply
 router answers the address a message came from — a principal address has
-no mailbox to answer into, but the channel's address is the mailbox every
+no mailbox to answer into, but the workbench's address is the mailbox every
 participant already reads.
 
 ## Chats and direct messages (DMs)
 
 `kind: "chat"` is a direct thread with exactly one counterpart, fixed at
-creation and never changed afterward (`POST /channels/:id/invite` 409s a
+creation and never changed afterward (`POST /workbenches/:id/invite` 409s a
 chat, whichever kind of counterpart it has). The counterpart is chosen at
-`POST /channels` time, one of:
+`POST /workbenches` time, one of:
 
 - **An agent** — `{ kind: "chat", definitionId }`. The named definition is
   launched and joined as the chat's one participant, exactly as
-  `POST /channels/:id/invite` joins one into a channel (`launchAndJoinAgent`
-  in `packages/chat/src/channel-service.ts`, shared by both paths).
+  `POST /workbenches/:id/invite` joins one into a workbench (`launchAndJoinAgent`
+  in `packages/chat/src/workbench-service.ts`, shared by both paths).
 - **A person** — `{ kind: "chat", principalId }`. This is a **DM**: a
-  two-member channel tenancy whose second participant is an existing bench
+  two-member workbench tenancy whose second participant is an existing bench
   member, added directly with no instance to launch
   (`joinHumanParticipant`, the human-counterpart analog of
-  `launchAndJoinAgent`) — a human participant reads the channel's own
+  `launchAndJoinAgent`) — a human participant reads the workbench's own
   timeline directly, so there is no mailbox to stand up, only the
-  participant record and a `channel.member-joined` audit event on the
-  channel's own timeline.
+  participant record and a `workbench.member-joined` audit event on the
+  workbench's own timeline.
 
 Exactly one of `definitionId`/`principalId` may be present; a `principalId`
 is validated before anything is minted — it must name a real, active
@@ -157,32 +157,32 @@ everywhere it matters — `kind === "chat"` plus the absence of an
 agent-shaped participant address (`isAgentAddress` in
 `packages/chat/src/mentions.ts`, which is simply "does this participant's
 address contain `@`" — a human participant's address is its bare principal
-id). `@corbits/chat-ui`'s channel-settings surface trims its Agents section the
-same way (`channelSettingsSections(kind, isDm)` in
-`packages/chat-ui/src/channel-settings/model.ts` — a DM has no agent to
+id). `@corbits/chat-ui`'s workbench-settings surface trims its Agents section the
+same way (`workbenchSettingsSections(kind, isDm)` in
+`packages/chat-ui/src/workbench-settings/model.ts` — a DM has no agent to
 invite, so the section has nothing to show; Members and Danger zone are
 already trimmed for every 1:1 chat, agent or person). One derivation, no
 second signal to keep in sync.
 
 ## The reply bridge
 
-An invited agent's reply is not something it posts back into the channel on
+An invited agent's reply is not something it posts back into the workbench on
 its own — replies surface only as `connector.reply` events on that agent's
 own event stream, never as mail it sends. The **reply bridge** is the piece
-that turns those events into channel messages: for each agent participant,
+that turns those events into workbench messages: for each agent participant,
 the platform subscribes to that agent's event stream and, on a
-`connector.reply` event, posts its content into the channel's timeline as
-mail from the channel (mirroring how a mention fan-out copy is sent).
+`connector.reply` event, posts its content into the workbench's timeline as
+mail from the workbench (mirroring how a mention fan-out copy is sent).
 
 The bridge is armed when an agent is invited, and idempotently re-armed
-whenever a channel's messages are read — bridges are in-memory, so a host
+whenever a workbench's messages are read — bridges are in-memory, so a host
 restart loses them, and a read is the natural moment to notice and recreate
 one.
 
-## Bench defaults and per-channel overrides
+## Bench defaults and per-workbench overrides
 
-A channel setting can be a bench-wide default every channel inherits, or an
-explicit per-channel override — the same "Use bench default" vs. "Override"
+A workbench setting can be a bench-wide default every workbench inherits, or an
+explicit per-workbench override — the same "Use bench default" vs. "Override"
 shape Discord's server-default settings use. Today this applies to exactly
 one setting, `chat/contextWindow` (how many prior messages a mentioned
 agent sees as context):
@@ -191,54 +191,54 @@ agent sees as context):
   the tenant's own `chat_bench_settings` row. A bench default is never
   itself an override of anything, so it is always a plain number, never
   `null`.
-- **Per-channel override** — a channel's own `chat/contextWindow` in its
+- **Per-workbench override** — a workbench's own `chat/contextWindow` in its
   settings is nullable: `null` (or the key's absence) means "inherit the
   bench default," any other integer is an explicit override for that
-  channel alone.
-- **Resolution** — `resolveContextWindow(channelSettings, benchDefault)` in
-  `packages/chat/src/channel-settings.ts` folds the two into the one
+  workbench alone.
+- **Resolution** — `resolveContextWindow(workbenchSettings, benchDefault)` in
+  `packages/chat/src/workbench-settings.ts` folds the two into the one
   effective value a message send actually uses, returning both the value
   and which source it came from (`"inherit"` or `"override"`). `GET`/`PATCH
-/channels/:id/settings` include this resolved `{ value, source }` shape
+/workbenches/:id/settings` include this resolved `{ value, source }` shape
   on every response, so a caller never has to re-derive it from the bench
-  default and the raw channel settings separately.
+  default and the raw workbench settings separately.
 
 In the UI this resolved shape drives a two-state control — "Use bench
-default (N)" vs. an explicit numeric field — on the channel's own settings
+default (N)" vs. an explicit numeric field — on the workbench's own settings
 panel (opened from its header, or from its sidebar row's ellipsis menu).
 The bench-wide settings page only ever edits the default itself; it carries
-no per-channel editor, since a channel's override belongs to the channel.
+no per-workbench editor, since a workbench's override belongs to the workbench.
 
 ## The HTTP surface
 
 `@corbits/chat` mounts one router, under a tenant-scoped prefix, with the
 following routes:
 
-| Method & path                                             | What it does                                                                                                                                                                                                                    |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /channels`                                          | Mints the channel's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))            |
-| `GET /channels`                                           | Lists the tenant's channels, optionally filtered by kind                                                                                                                                                                        |
-| `GET /channels/:id/messages`                              | Reads the channel's timeline, decoded into parts, paginated by cursor                                                                                                                                                           |
-| `POST /channels/:id/messages`                             | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict`             |
-| `GET /channels/:id/threads`                               | Lists a channel's threads (root, delivery, replies, and sub-threads) plus its root thread id                                                                                                                                    |
-| `GET /channels/:id/threads/:threadId/messages`            | Reads one thread's own membership, decoded into parts — never the full channel mailbox                                                                                                                                          |
-| `POST /channels/:id/threads/fork`                         | Forks a sub-thread rooted at any message inside a thread (CL-5948); idempotent per origin message, and redirects to a sibling sub-thread rather than nesting past depth 2 (see [Threads](#threads-channel--thread--sub-thread)) |
-| `POST /channels/:id/delivery-threads`                     | Creates (or reuses) the delivery thread for a routine run                                                                                                                                                                       |
-| `GET /channels/:id/invitable`                             | Lists the tenant's deployed definitions that can be invited into a channel                                                                                                                                                      |
-| `POST /channels/:id/invite`                               | Launches a definition into the channel and adds it as a participant                                                                                                                                                             |
-| `POST /channels/:id/move`                                 | Re-parents a channel's own tenant to a different bench                                                                                                                                                                          |
-| `GET /channels/:id/settings`                              | Reads a channel's settings, including its resolved context window                                                                                                                                                               |
-| `PATCH /channels/:id/settings`                            | Updates settings, recording each change as a timeline event                                                                                                                                                                     |
-| `GET /channels/:id/read-state`                            | Reads the calling principal's last-seen cursor for the channel                                                                                                                                                                  |
-| `PUT /channels/:id/read-state`                            | Advances the calling principal's last-seen cursor                                                                                                                                                                               |
-| `POST /channels/:id/typing`                               | Publishes an ephemeral typing indicator to the channel's live stream                                                                                                                                                            |
-| `POST /channels/:id/messages/:messageId/reactions/toggle` | Toggles the calling principal's reaction with a curated emoji on a message; publishes `chat.reaction`                                                                                                                           |
-| `POST /channels/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                            |
-| `DELETE /channels/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                          |
-| `GET /channels/:id/pins`                                  | Lists a channel's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
-| `GET /channels/:id/stream`                                | Server-Sent Events stream of live channel activity                                                                                                                                                                              |
-| `GET /bench/settings`                                     | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                     |
-| `PATCH /bench/settings`                                   | Updates the tenant's bench-wide chat defaults                                                                                                                                                                                   |
+| Method & path                                                | What it does                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /workbenches`                                          | Mints the workbench's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))            |
+| `GET /workbenches`                                           | Lists the tenant's workbenches, optionally filtered by kind                                                                                                                                                                       |
+| `GET /workbenches/:id/messages`                              | Reads the workbench's timeline, decoded into parts, paginated by cursor                                                                                                                                                           |
+| `POST /workbenches/:id/messages`                             | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict`               |
+| `GET /workbenches/:id/threads`                               | Lists a workbench's threads (root, delivery, replies, and sub-threads) plus its root thread id                                                                                                                                    |
+| `GET /workbenches/:id/threads/:threadId/messages`            | Reads one thread's own membership, decoded into parts — never the full workbench mailbox                                                                                                                                          |
+| `POST /workbenches/:id/threads/fork`                         | Forks a sub-thread rooted at any message inside a thread (CL-5948); idempotent per origin message, and redirects to a sibling sub-thread rather than nesting past depth 2 (see [Threads](#threads-workbench--thread--sub-thread)) |
+| `POST /workbenches/:id/delivery-threads`                     | Creates (or reuses) the delivery thread for a routine run                                                                                                                                                                         |
+| `GET /workbenches/:id/invitable`                             | Lists the tenant's deployed definitions that can be invited into a workbench                                                                                                                                                      |
+| `POST /workbenches/:id/invite`                               | Launches a definition into the workbench and adds it as a participant                                                                                                                                                             |
+| `POST /workbenches/:id/move`                                 | Re-parents a workbench's own tenant to a different bench                                                                                                                                                                          |
+| `GET /workbenches/:id/settings`                              | Reads a workbench's settings, including its resolved context window                                                                                                                                                               |
+| `PATCH /workbenches/:id/settings`                            | Updates settings, recording each change as a timeline event                                                                                                                                                                       |
+| `GET /workbenches/:id/read-state`                            | Reads the calling principal's last-seen cursor for the workbench                                                                                                                                                                  |
+| `PUT /workbenches/:id/read-state`                            | Advances the calling principal's last-seen cursor                                                                                                                                                                                 |
+| `POST /workbenches/:id/typing`                               | Publishes an ephemeral typing indicator to the workbench's live stream                                                                                                                                                            |
+| `POST /workbenches/:id/messages/:messageId/reactions/toggle` | Toggles the calling principal's reaction with a curated emoji on a message; publishes `chat.reaction`                                                                                                                             |
+| `POST /workbenches/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                              |
+| `DELETE /workbenches/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                            |
+| `GET /workbenches/:id/pins`                                  | Lists a workbench's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
+| `GET /workbenches/:id/stream`                                | Server-Sent Events stream of live workbench activity                                                                                                                                                                              |
+| `GET /bench/settings`                                        | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                       |
+| `PATCH /bench/settings`                                      | Updates the tenant's bench-wide chat defaults                                                                                                                                                                                     |
 
 Every route runs behind the hub's tenant-scoped middleware, so the calling
 tenant and principal are always resolved before a handler runs; principals
@@ -249,7 +249,7 @@ never appear in a path.
 `@corbits/chat` never talks to the platform's own HTTP API or reimplements
 its session, grant, or mail machinery. Instead it depends on `ChatPlatform`:
 a narrow port describing exactly what the package needs — launching a
-channel or an invited agent, sending and listing mail, fetching an
+workbench or an invited agent, sending and listing mail, fetching an
 attachment's bytes, subscribing to live events, and arming a reply bridge.
 A host composes this port from services it already builds (a session
 service, an asset service, a sidecar router, and its database), and injects
@@ -284,20 +284,20 @@ way — the port, not this hub, is the integration contract.
 ## Consuming it from the UI
 
 `@corbits/chat-ui` renders the whole chat surface — sidebar, timeline,
-composer, mention picker, new-channel and invite-agent dialogs, and the live
+composer, mention picker, new-workbench and invite-agent dialogs, and the live
 event stream — as a single `ChatWorkspace` component. A host supplies which
-bench to talk to and the current user, and mirrors the active channel into
+bench to talk to and the current user, and mirrors the active workbench into
 its own routing. Each sidebar row also carries a hover-revealed ellipsis
-menu (Rename, Pin/Unpin, Channel settings).
+menu (Rename, Pin/Unpin, Workbench settings).
 
-Channels are tenants, so their settings are never a dialog: the gear icon
-in the channel header routes to a full stage surface,
-`ChannelSettingsSurface` (`packages/chat-ui/src/channel-settings/`) —
-a breadcrumb back to the channel, a left nav grouped Shared / Personal /
+Workbenches are tenants, so their settings are never a dialog: the gear icon
+in the workbench header routes to a full stage surface,
+`WorkbenchSettingsSurface` (`packages/chat-ui/src/workbench-settings/`) —
+a breadcrumb back to the workbench, a left nav grouped Shared / Personal /
 Danger zone, and the active section's panel on the right. `ChatWorkspace`
 takes `settingsOpen` and `onSettingsOpenChange` the same way it takes
-`channelId` and `onChannelChange`, so the host mirrors the surface into its
-own routing (`@workbench/web` mounts it at `/c/:channelId/settings`). The
+`workbenchId` and `onWorkbenchChange`, so the host mirrors the surface into its
+own routing (`@workbench/web` mounts it at `/c/:workbenchId/settings`). The
 General section still PATCHes name, pinned, and the inherit/override
 context-window control; Members and Agents reuse the same invite flow
 already in `invite-agent-dialog.tsx` rather than duplicating it.
@@ -309,11 +309,11 @@ import { listPrincipals } from "@corbits/settings-ui";
 <ChatWorkspace
   tenant={tenant}
   currentUser={{ principalId }}
-  channelId={channelId}
-  onChannelChange={(channelId) => navigate(`/chat/${channelId}`)}
+  workbenchId={workbenchId}
+  onWorkbenchChange={(workbenchId) => navigate(`/chat/${workbenchId}`)}
   settingsOpen={settingsOpen}
   onSettingsOpenChange={(open) =>
-    navigate(open ? `/chat/${channelId}/settings` : `/chat/${channelId}`)
+    navigate(open ? `/chat/${workbenchId}/settings` : `/chat/${workbenchId}`)
   }
   onOpenArtifact={(part) => navigate("/library")}
   listMembers={async (tenantId) => {
@@ -350,23 +350,23 @@ host can do is navigate to the Library at large — a real per-artifact deep
 link (and opening in canvas rather than navigating away) is follow-up work.
 
 A typing banner renders between the timeline and the composer, driven by
-the `chat.typing` event `POST /channels/:id/typing` already publishes to
+the `chat.typing` event `POST /workbenches/:id/typing` already publishes to
 the live stream (see the HTTP surface table above) — `ChatWorkspace` tracks
 the latest ping with a short expiry and resolves it to the typist's
 participant handle, never a raw principal id.
 
 ### Reactions and pinned messages (CL-6030)
 
-Message reactions and per-channel message pinning (the open question left
+Message reactions and per-workbench message pinning (the open question left
 by CL-5942) are both in scope and backed by their own tables — `message_reactions`
 and `pinned_messages` — in `@corbits/chat`'s own `chat` schema (see
-`packages/chat/src/schema.ts`; distinct from the sidebar's whole-channel
+`packages/chat/src/schema.ts`; distinct from the sidebar's whole-workbench
 `chat/pinned` setting, which is unrelated). Both are presence-as-truth:
 a reaction row's existence _is_ the reaction (`./reactions.ts`'s
 `toggleReaction` inserts on a miss and deletes on a hit — true on/off, never
 a counter that can drift), and a pin row's existence _is_ the pin.
 
-`GET /channels/:id/messages` (and `GET /channels/:id/threads/:threadId/messages`)
+`GET /workbenches/:id/messages` (and `GET /workbenches/:id/threads/:threadId/messages`)
 attach `reactions` (a per-emoji `{ emoji, count, reactedByMe }[]`) and
 `pinned` (boolean) onto every item — extending the wire type the timeline
 already consumed rather than a parallel read. Both batch over the whole
@@ -378,12 +378,12 @@ corresponding store, the same "no store, no feature" contract
 Reactions are restricted server-side to a small curated emoji set
 (`REACTION_EMOJI` in `packages/chat/src/reaction-emoji.ts`, shared with
 `@corbits/chat-ui`'s picker) — an emoji outside it is a `400`, never
-silently accepted. Toggling and pinning both publish onto the channel's
+silently accepted. Toggling and pinning both publish onto the workbench's
 existing SSE subscriber registry (`chat.reaction`, `chat.pin`), live, the
-same channel `bridgeChannelStream` already bridges typing and settings
+same workbench `bridgeWorkbenchStream` already bridges typing and settings
 events through.
 
-In the UI, `ChannelTimeline` renders a reaction chip row under each message
+In the UI, `WorkbenchTimeline` renders a reaction chip row under each message
 (click a chip to toggle; an "add reaction" trigger opens the curated
 picker) and a pin/unpin toggle, both hover/focus-revealed and keyboard
 operable — see `ReactionActions`/`PinActions` in `timeline.tsx`. The

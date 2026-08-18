@@ -98,8 +98,8 @@ async function createDraft(
 }
 
 const DRAFT_BODY = {
-  prompt: "Summarize the channel every morning",
-  deliveryChannelId: "ch_1",
+  prompt: "Summarize the workbench every morning",
+  deliveryWorkbenchId: "ch_1",
   scope: "bench",
 };
 

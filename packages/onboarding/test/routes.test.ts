@@ -415,7 +415,7 @@ describe("POST /complete", () => {
         deployed: ["echo"],
         pending: [
           "assistant",
-          "channel-digest",
+          "workbench-digest",
           "recurring-task",
           "last-30-days-research",
         ],

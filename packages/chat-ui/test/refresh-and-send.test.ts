@@ -2,7 +2,7 @@
 // suite runs in bun's bare test environment (no DOM), so instead of mounting
 // components it exercises the pure rules the fixes turned on: exactly the
 // same rules `chat-workspace.tsx`, `composer.tsx`, and
-// `use-channel-stream.ts` call from inside their hooks.
+// `use-workbench-stream.ts` call from inside their hooks.
 
 import { describe, expect, test } from "bun:test";
 
@@ -33,7 +33,7 @@ import {
 } from "../src/composer";
 import type { ComposerAttachment } from "../src/composer";
 import { CHAT_STRINGS } from "../src/strings";
-import { backoffDelayMs, shouldConnect } from "../src/use-channel-stream";
+import { backoffDelayMs, shouldConnect } from "../src/use-workbench-stream";
 
 describe("nextMessagesState (B1: background refresh keeps the composer mounted)", () => {
   const ready: MessagesState = {
@@ -63,7 +63,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
       {
         kind: "error",
         message: "boom",
-        channelNotFound: false,
+        workbenchNotFound: false,
         isUnauthorized: false,
       },
       false,
@@ -71,18 +71,18 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
     expect(next).toEqual({
       kind: "error",
       message: "boom",
-      channelNotFound: false,
+      workbenchNotFound: false,
       isUnauthorized: false,
     });
   });
 
-  test("a channel-not-found failure carries that flag through to the rendered state", () => {
+  test("a workbench-not-found failure carries that flag through to the rendered state", () => {
     const next = nextMessagesState(
       ready,
       {
         kind: "error",
         message: "not found",
-        channelNotFound: true,
+        workbenchNotFound: true,
         isUnauthorized: false,
       },
       false,
@@ -90,7 +90,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
     expect(next).toEqual({
       kind: "error",
       message: "not found",
-      channelNotFound: true,
+      workbenchNotFound: true,
       isUnauthorized: false,
     });
   });
@@ -106,7 +106,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
       {
         kind: "error",
         message: "boom",
-        channelNotFound: false,
+        workbenchNotFound: false,
         isUnauthorized: false,
       },
       true,
@@ -122,7 +122,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
       {
         kind: "error",
         message: "boom",
-        channelNotFound: false,
+        workbenchNotFound: false,
         isUnauthorized: false,
       },
       true,
@@ -324,11 +324,11 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
     expect(canInviteAgent("chat")).toBe(false);
   });
 
-  test("is true for a channel", () => {
-    expect(canInviteAgent("channel")).toBe(true);
+  test("is true for a workbench", () => {
+    expect(canInviteAgent("workbench")).toBe(true);
   });
 
-  test("defaults true with no resolved channel yet", () => {
+  test("defaults true with no resolved workbench yet", () => {
     expect(canInviteAgent(undefined)).toBe(true);
   });
 
@@ -337,7 +337,7 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
   });
 });
 
-describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not a channel)", () => {
+describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not a workbench)", () => {
   test("names the counterpart for an agent chat", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "Myra" })).toBe(
       CHAT_STRINGS.composerPlaceholderChat("Myra"),
@@ -350,21 +350,21 @@ describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not 
     );
   });
 
-  test("keeps the generic channel copy for a channel", () => {
-    expect(composerPlaceholderFor({ kind: "channel", title: "General" })).toBe(
-      CHAT_STRINGS.composerPlaceholder,
-    );
+  test("keeps the generic workbench copy for a workbench", () => {
+    expect(
+      composerPlaceholderFor({ kind: "workbench", title: "General" }),
+    ).toBe(CHAT_STRINGS.composerPlaceholder);
   });
 
-  test("keeps the generic copy with no channel resolved yet", () => {
+  test("keeps the generic copy with no workbench resolved yet", () => {
     expect(composerPlaceholderFor(undefined)).toBe(
       CHAT_STRINGS.composerPlaceholder,
     );
   });
 
-  test("falls back to the unnamed-channel label for a titleless chat", () => {
+  test("falls back to the unnamed-workbench label for a titleless chat", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "" })).toBe(
-      CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedChannel),
+      CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedWorkbench),
     );
   });
 });
@@ -400,7 +400,7 @@ describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
     ).toEqual({ kind: "empty" });
   });
 
-  test("root feed uses the root thread, not full channel mail", () => {
+  test("root feed uses the root thread, not full workbench mail", () => {
     expect(
       resolveMessageFeedTarget({
         openThreadId: null,
@@ -410,24 +410,24 @@ describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
     ).toEqual({ kind: "root-thread", rootThreadId: "thr_root" });
   });
 
-  test("empty rootThreadId falls back to channel mail (threads unavailable)", () => {
+  test("empty rootThreadId falls back to workbench mail (threads unavailable)", () => {
     expect(
       resolveMessageFeedTarget({
         openThreadId: null,
         pendingParentMessageId: null,
         rootThreadId: "",
       }),
-    ).toEqual({ kind: "channel-mail" });
+    ).toEqual({ kind: "workbench-mail" });
   });
 
-  test("null rootThreadId falls back to channel mail until threads resolve", () => {
+  test("null rootThreadId falls back to workbench mail until threads resolve", () => {
     expect(
       resolveMessageFeedTarget({
         openThreadId: null,
         pendingParentMessageId: null,
         rootThreadId: null,
       }),
-    ).toEqual({ kind: "channel-mail" });
+    ).toEqual({ kind: "workbench-mail" });
   });
 });
 
@@ -455,7 +455,7 @@ describe("appendReplyTimedOutNotice (CL-6252 #6: an honest note when the reply b
 });
 
 describe("withScrollSnapshot (CL-6252 #3: settings toggle preserves scroll position)", () => {
-  test("records a new channel's snapshot without disturbing another channel's", () => {
+  test("records a new workbench's snapshot without disturbing another workbench's", () => {
     const withA = withScrollSnapshot(new Map(), "ch_a", {
       scrollTop: 120,
       pinned: false,
@@ -469,7 +469,7 @@ describe("withScrollSnapshot (CL-6252 #3: settings toggle preserves scroll posit
     expect(withBoth.get("ch_b")).toEqual({ scrollTop: 0, pinned: true });
   });
 
-  test("overwrites a channel's previous snapshot rather than keeping the stale one", () => {
+  test("overwrites a workbench's previous snapshot rather than keeping the stale one", () => {
     const first = withScrollSnapshot(new Map(), "ch_a", {
       scrollTop: 50,
       pinned: false,
@@ -522,13 +522,13 @@ describe("backoffDelayMs (exponential backoff + jitter, capped)", () => {
   });
 });
 
-describe("shouldConnect (S3: an empty channel url opens no connection)", () => {
-  test("is false with no active channel", () => {
+describe("shouldConnect (S3: an empty workbench url opens no connection)", () => {
+  test("is false with no active workbench", () => {
     expect(shouldConnect("")).toBe(false);
   });
 
   test("is true once a real stream url is known", () => {
-    expect(shouldConnect("/api/tenants/tnt_1/chat/channels/c1/stream")).toBe(
+    expect(shouldConnect("/api/tenants/tnt_1/chat/workbenches/c1/stream")).toBe(
       true,
     );
   });
@@ -602,7 +602,7 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
     ];
     const merged = mergePendingSends(serverItems, pending, "prn_alice");
     // The timeline keys every item by `clientId ?? id` (see
-    // `ChannelTimeline`'s render loop) so a pending bubble and its later
+    // `WorkbenchTimeline`'s render loop) so a pending bubble and its later
     // confirmed copy — same `clientId` — update one DOM node in place
     // rather than unmount/remount as two unrelated items.
     expect(merged[1]?.clientId).toBe("pending_1");
@@ -734,7 +734,7 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
     expect(mergeStreamingReply(serverItems, null, [agent])).toBe(serverItems);
   });
 
-  test("a growing reply appends a streaming item attributed to the channel's agent", () => {
+  test("a growing reply appends a streaming item attributed to the workbench's agent", () => {
     const merged = mergeStreamingReply(serverItems, { text: "Working on it" }, [
       agent,
     ]);

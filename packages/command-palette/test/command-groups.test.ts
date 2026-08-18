@@ -12,10 +12,10 @@ const actions: PaletteSource = {
   items: [{ id: "action:theme", title: "Toggle theme" }],
 };
 
-const channels: PaletteSource = {
-  id: "channels",
-  heading: "Channels",
-  kind: "channels",
+const workbenches: PaletteSource = {
+  id: "workbenches",
+  heading: "Workbenches",
+  kind: "workbenches",
   items: [
     { id: "ch:eng", title: "Engineering" },
     { id: "ch:design", title: "Design" },
@@ -49,12 +49,12 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "",
       recents,
-      sources: [actions, channels, pages, routines, people],
+      sources: [actions, workbenches, pages, routines, people],
     });
     expect(groups.map((g) => g.id)).toEqual([
       "recents",
       "actions",
-      "channels",
+      "workbenches",
       "pages",
       "routines",
       "people",
@@ -65,7 +65,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "",
       recents: [],
-      sources: [actions, channels, pages, routines, people],
+      sources: [actions, workbenches, pages, routines, people],
     });
     expect(groups.at(-1)?.id).toBe("people");
   });
@@ -74,7 +74,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "eng",
       recents,
-      sources: [channels],
+      sources: [workbenches],
     });
     expect(groups.find((g) => g.id === "recents")).toBeUndefined();
   });
@@ -83,7 +83,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#",
       recents,
-      sources: [channels],
+      sources: [workbenches],
     });
     expect(groups.find((g) => g.id === "recents")).toBeUndefined();
   });
@@ -92,9 +92,9 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#",
       recents: [],
-      sources: [actions, channels, pages, routines],
+      sources: [actions, workbenches, pages, routines],
     });
-    expect(groups.map((g) => g.id)).toEqual(["channels"]);
+    expect(groups.map((g) => g.id)).toEqual(["workbenches"]);
   });
 
   test("unscoped sources vanish once a scope is active", () => {
@@ -110,12 +110,12 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#des",
       recents: [],
-      sources: [channels],
+      sources: [workbenches],
     });
     expect(groups).toEqual([
       {
-        id: "channels",
-        heading: "Channels",
+        id: "workbenches",
+        heading: "Workbenches",
         items: [{ id: "ch:design", title: "Design" }],
       },
     ]);
@@ -125,7 +125,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "zzz",
       recents: [],
-      sources: [channels, routines],
+      sources: [workbenches, routines],
     });
     expect(groups).toEqual([]);
   });
@@ -134,7 +134,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "weekly",
       recents: [],
-      sources: [channels, routines],
+      sources: [workbenches, routines],
     });
     expect(groups).toEqual([
       {

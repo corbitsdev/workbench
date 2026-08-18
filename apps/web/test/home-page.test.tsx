@@ -1,6 +1,6 @@
 // The land-hop every entry point funnels through: `/` (HomeRoute)
 // resolves to one of two places depending on whether the bench has any
-// workbenches yet. A bench with one or more ensures Myra's channel exists
+// workbenches yet. A bench with one or more ensures Myra's workbench exists
 // and opens it — the same land-hop CL-6081 wired up. A brand-new bench
 // with zero workbenches auto-mints its first Myra workbench through the
 // exact same one-creation-verb path every "+ New workbench" control uses
@@ -23,14 +23,14 @@ import type { Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { HomeRoute } from "../src/pages/home-page";
-import { resetMyraChannelCache } from "../src/myra-channel";
+import { resetMyraWorkbenchCache } from "../src/myra-workbench";
 import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  resetMyraChannelCache();
+  resetMyraWorkbenchCache();
 });
 
 const json = (body: unknown, status = 200) =>
@@ -80,13 +80,13 @@ const PRINCIPALS_RESPONSE = {
 };
 
 describe("HomeRoute (the `/` land hop every entry point funnels through)", () => {
-  test("a bench with an existing workbench ensures Myra's channel and navigates straight into it", async () => {
+  test("a bench with an existing workbench ensures Myra's workbench and navigates straight into it", async () => {
     stubFetch((path, method) => {
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
-      if (path.endsWith("/chat/channels") && method === "GET") {
-        // The all-kinds emptiness check (`listAllChannels`) finds an
+      if (path.endsWith("/chat/workbenches") && method === "GET") {
+        // The all-kinds emptiness check (`listAllWorkbenches`) finds an
         // existing workbench, so the ensure+redirect hop below runs.
         return json({
           items: [
@@ -100,10 +100,10 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
           ],
         });
       }
-      if (path.endsWith("/chat/channels?kind=channel")) {
+      if (path.endsWith("/chat/workbenches?kind=workbench")) {
         return json({ items: [] });
       }
-      if (path.endsWith("/chat/channels?kind=chat")) {
+      if (path.endsWith("/chat/workbenches?kind=chat")) {
         return json({ items: [] });
       }
       if (path.includes("/workflows/definitions")) {
@@ -122,7 +122,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
           nextCursor: null,
         });
       }
-      if (path.endsWith("/chat/channels") && method === "POST") {
+      if (path.endsWith("/chat/workbenches") && method === "POST") {
         return json({
           id: "chan_myra",
           title: "Myra",
@@ -154,7 +154,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/c/chan_myra"]);
+    expect(navigated).toEqual(["/w/chan_myra"]);
   });
 
   test("a brand-new bench with zero workbenches auto-mints its first Myra workbench and lands in it", async () => {
@@ -162,10 +162,10 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
-      if (path.endsWith("/chat/channels") && method === "GET") {
-        // listAllChannels finds nothing — this bench has no workbenches
+      if (path.endsWith("/chat/workbenches") && method === "GET") {
+        // listAllWorkbenches finds nothing — this bench has no workbenches
         // yet, so HomeRoute mints one via the default setup template
-        // rather than calling ensureMyraChannel (which only ever finds
+        // rather than calling ensureMyraWorkbench (which only ever finds
         // or reuses an existing one).
         return json({ items: [] });
       }
@@ -185,7 +185,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
           nextCursor: null,
         });
       }
-      if (path.endsWith("/chat/channels") && method === "POST") {
+      if (path.endsWith("/chat/workbenches") && method === "POST") {
         return json({
           id: "chan_new",
           title: "New Workbench",
@@ -217,7 +217,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/c/chan_new"]);
+    expect(navigated).toEqual(["/w/chan_new"]);
   });
 });
 

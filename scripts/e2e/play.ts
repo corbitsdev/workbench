@@ -344,7 +344,7 @@ async function main(): Promise<void> {
   );
 
   const { chatId, agentAddress } = await hop(
-    "POST /channels kind=chat definitionId=assistant mints a chat with its one agent already joined",
+    "POST /workbenches kind=chat definitionId=assistant mints a chat with its one agent already joined",
     async () => {
       const deadline = Date.now() + 60_000;
       let res: ApiResult;
@@ -357,7 +357,7 @@ async function main(): Promise<void> {
         res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenant.tenantId}/chat/channels`,
+          `/api/tenants/${tenant.tenantId}/chat/workbenches`,
           { kind: "chat", definitionId: assistantDefinitionId },
           user.cookies,
         );
@@ -407,7 +407,7 @@ async function main(): Promise<void> {
         const res = await api(
           hub.baseUrl,
           "GET",
-          `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+          `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
           undefined,
           user.cookies,
         );
@@ -467,7 +467,7 @@ async function main(): Promise<void> {
     const res = await api(
       hub.baseUrl,
       "GET",
-      `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+      `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
       undefined,
       user.cookies,
     );
@@ -538,7 +538,7 @@ async function main(): Promise<void> {
     const sent = await api(
       hub.baseUrl,
       "POST",
-      `/api/tenants/${tenant.tenantId}/chat/channels/${chatId}/messages`,
+      `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
       { parts: [{ kind: "text", text: human }] },
       user.cookies,
     );

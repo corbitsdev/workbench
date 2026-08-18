@@ -35,7 +35,9 @@ import type { CapabilityInventoryProvider } from "../src/capability-inventory";
  * `../src/skills-store.ts`), so a test that needs a definition's skills
  * seeds a `DefinitionSkillsStore` directly instead of stubbing a second
  * path here. */
-function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
+function readAssetBlobFor(
+  workflowBytes: Uint8Array,
+): AssetService["readAssetBlob"] {
   return () => Promise.resolve(workflowBytes);
 }
 
@@ -898,7 +900,7 @@ test("PUT /:definitionId 404s rather than 403s for a definition this tenant cann
   expect(response.status).toBe(404);
 });
 
-test("GET/PUT /:definitionId refuse a channel host's definition as 404, never exposing its prompt", async () => {
+test("GET/PUT /:definitionId refuse a workbench host's definition as 404, never exposing its prompt", async () => {
   const hostName = `run-${"a".repeat(32)}`;
   const getApp = buildApp(
     fakeAssetService(),

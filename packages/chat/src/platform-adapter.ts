@@ -4,8 +4,8 @@
 // of chat's behavior. `createHubChatPlatform` composes the port from
 // `@corbits/folded-runs` (launch/wake/mail machinery for folded
 // interactive runs, shared with any other host that launches them)
-// plus the concerns that are chat's own: `channel_launch` persistence,
-// asset naming, invitable listing, and participant/fromChannelId
+// plus the concerns that are chat's own: `workbench_launch` persistence,
+// asset naming, invitable listing, and participant/fromWorkbenchId
 // send semantics.
 import { and, asc, count, desc, eq, gt, inArray, max, or } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
@@ -39,13 +39,13 @@ import {
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { extractPartByPath, parseMailToEmail } from "@intx/mime";
-import { channelLaunch } from "./schema";
-import { summarizeChannelActivity } from "./channel-activity";
+import { workbenchLaunch } from "./schema";
+import { summarizeWorkbenchActivity } from "./workbench-activity";
 import { extractTextPreview } from "./codec";
 import {
-  channelHostAssetName,
-  isChannelHostDefinitionName,
-} from "./channel-host-naming";
+  workbenchHostAssetName,
+  isWorkbenchHostDefinitionName,
+} from "./workbench-host-naming";
 import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import type {
   AssetService,
@@ -59,10 +59,10 @@ import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { type } from "arktype";
 import {
   AgentUnreachableError,
-  type ChatChannelEvent,
+  type ChatWorkbenchEvent,
   type ChatPlatform,
   type InvitableDefinition,
-  type LaunchedChannel,
+  type LaunchedWorkbench,
   type LaunchedInvite,
   type ListedMail,
   type ListedMailItem,
@@ -83,7 +83,7 @@ export type CreateHubChatPlatformDeps = {
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
-   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. A channel
+   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. A workbench
    * host never needs it (its launch is pinned to `noopInferenceBaseUrl`,
    * never the catalog), but every invited-agent launch and wake does.
    * Omitted, `resolveDefinitionSources` falls back to a noop cipher and
@@ -94,8 +94,8 @@ export type CreateHubChatPlatformDeps = {
   /**
    * The hub's own noop-inference endpoint (see `./noop-inference.ts`),
    * reachable over HTTP from the sidecar — never the catalog. Every
-   * channel-HOST launch and wake pins its `InferenceSource` here
-   * instead of resolving against the tenant catalog: a channel
+   * workbench-HOST launch and wake pins its `InferenceSource` here
+   * instead of resolving against the tenant catalog: a workbench
    * anchor's mailbox is the timeline and its system prompt forbids
    * replying, so the real inference turn the ordinary launch path
    * would otherwise run on every message is pure waste. Invited-agent
@@ -112,7 +112,7 @@ export type CreateHubChatPlatformDeps = {
    */
   eventCollectors: EventCollectorRegistry;
   /**
-   * Opt-in idle-sleep for every launched instance (channel hosts and
+   * Opt-in idle-sleep for every launched instance (workbench hosts and
    * invited agents alike): absent here, the adapter keeps today's
    * behavior exactly (nothing ever sleeps, no interval runs). When
    * present, this adapter builds a `@corbits/agent-lifecycle` instance
@@ -132,7 +132,7 @@ export type CreateHubChatPlatformDeps = {
    */
   reclaimRetryDelaysMs?: readonly number[];
   /**
-   * Same resolver `./routes.ts`'s `channelHostInferencePreferences` dep
+   * Same resolver `./routes.ts`'s `workbenchHostInferencePreferences` dep
    * takes (see its own doc), reused here for `launchInvite`: a
    * hand-authored definition that declares no model requirements of
    * its own (e.g. a `create_agent` definition created without a
@@ -142,27 +142,27 @@ export type CreateHubChatPlatformDeps = {
    * connected provider, that 409 is exactly what still happens — the
    * honest answer when there is truly nothing to launch against.
    */
-  channelHostInferencePreferences?: (
+  workbenchHostInferencePreferences?: (
     tenantId: string,
   ) => Promise<readonly InferencePreference[]>;
 };
 
-// Channel-host asset naming lives in `./channel-host-naming` — a
+// Workbench-host asset naming lives in `./workbench-host-naming` — a
 // browser-safe module shared with the UIs that filter anchor runs out
 // of workflow listings — so the derivation and the predicate over the
 // resulting names can never drift apart.
 
-// The `InferenceSource.id`/`InferenceSource.model` a channel-host pin
+// The `InferenceSource.id`/`InferenceSource.model` a workbench-host pin
 // carries — never read by anything (the noop endpoint ignores both),
-// but `InferenceSource` requires non-empty strings, and a channel
+// but `InferenceSource` requires non-empty strings, and a workbench
 // host's `foldedBody.model` is `null` whenever no catalog source was
-// ever resolved for it (see `buildChannelHostWorkflow`'s
+// ever resolved for it (see `buildWorkbenchHostWorkflow`'s
 // `inferencePreferences` — empty when the hub has seeded none).
 const NOOP_INFERENCE_SOURCE_ID = "noop";
 const NOOP_INFERENCE_MODEL_FALLBACK = "noop";
 
 /**
- * The `SourcesOverride` every channel-HOST launch and wake pins
+ * The `SourcesOverride` every workbench-HOST launch and wake pins
  * instead of resolving against the tenant catalog (see
  * `CreateHubChatPlatformDeps.noopInferenceBaseUrl`'s doc). Invited
  * agents never get this — they still resolve normally.
@@ -186,24 +186,24 @@ function noopSourcesOverride(
 }
 
 /**
- * The channel-host step's `input` selector. Every other folded run reads
+ * The workbench-host step's `input` selector. Every other folded run reads
  * its step's default `{ from: "trigger.payload" }` — the triggering
  * mail's real content, which an inference-driven agent needs. The
- * channel host never does: it never replies, comments, or acts on
- * anything sent to it (see `channel-workflow.ts`'s
- * `CHANNEL_HOST_SYSTEM_PROMPT`), so its step
+ * workbench host never does: it never replies, comments, or acts on
+ * anything sent to it (see `workbench-workflow.ts`'s
+ * `WORKBENCH_HOST_SYSTEM_PROMPT`), so its step
  * has no use for `trigger.payload` at all. Pinning a literal here — not
  * just leaving the field alone — matters because `trigger.payload` is
  * bare mail `content`, which is legitimately empty for attachments-only
  * mail (`@corbits/chat`'s `encodeParts` leaves `content` empty for an
- * event-only send, e.g. `channel.agent-joined`); the default selector
+ * event-only send, e.g. `workbench.agent-joined`); the default selector
  * would feed that empty string straight into `agent.send`, which throws
  * on it, killing the anchor before it ever opens (CL-6164). The exact
  * value is never read by anything — the anchor's whole job is holding
  * the mailbox, not processing input.
  */
-const CHANNEL_HOST_STEP_INPUT: Selector = {
-  literal: "channel-host anchor turn",
+const WORKBENCH_HOST_STEP_INPUT: Selector = {
+  literal: "workbench-host anchor turn",
 };
 
 /**
@@ -235,7 +235,7 @@ export type HubChatPlatform = ChatPlatform & {
 /**
  * Composes the `ChatPlatform` port over the hub's real session
  * services and `@corbits/folded-runs`. One crypto provider is minted
- * per channel and cached for the adapter's lifetime.
+ * per workbench and cached for the adapter's lifetime.
  */
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
@@ -330,20 +330,20 @@ export function createHubChatPlatform(
     }
     const launchRows = await deps.db
       .select()
-      .from(channelLaunch)
-      .where(eq(channelLaunch.instanceId, run.id))
+      .from(workbenchLaunch)
+      .where(eq(workbenchLaunch.instanceId, run.id))
       .limit(1);
     const launchRow = launchRows[0];
     if (launchRow === undefined) {
       throw new Error(
-        `No channel_launch row for instance "${run.id}"; instances ` +
+        `No workbench_launch row for instance "${run.id}"; instances ` +
           `launched before launch-body persistence existed cannot be woken`,
       );
     }
     const parsedFoldedBody = FoldedBodySchema(launchRow.foldedBody);
     if (parsedFoldedBody instanceof type.errors) {
       throw new Error(
-        `channel_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
+        `workbench_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
       );
     }
     const wakeParams = {
@@ -362,7 +362,7 @@ export function createHubChatPlatform(
               deps.noopInferenceBaseUrl,
               parsedFoldedBody,
             ),
-            stepInput: CHANNEL_HOST_STEP_INPUT,
+            stepInput: WORKBENCH_HOST_STEP_INPUT,
           }
         : wakeParams,
     );
@@ -413,21 +413,21 @@ export function createHubChatPlatform(
   }
 
   const platform: ChatPlatform = {
-    async launchChannel(input): Promise<LaunchedChannel> {
+    async launchWorkbench(input): Promise<LaunchedWorkbench> {
       // Validates the address shape early, mirroring every other path
       // here that reads a domain off an agent address.
       domainOf(input.triggerAddress);
       const asset = await deps.assetService.createAsset({
         tenantId: input.tenantId,
         kind: "workflow",
-        name: channelHostAssetName(input.channelId),
+        name: workbenchHostAssetName(input.workbenchId),
         creatorPrincipalId: input.creatorPrincipalId,
       });
       let definitionJSON: unknown;
       try {
         definitionJSON = JSON.parse(input.definition);
       } catch (cause) {
-        throw new Error("channel definition is not valid JSON", { cause });
+        throw new Error("workbench definition is not valid JSON", { cause });
       }
       const wireHash = await computeWireDefinitionHash(definitionJSON);
       const { definitionId } = await ensureWorkflowDefinitionForAsset(deps.db, {
@@ -439,31 +439,31 @@ export function createHubChatPlatform(
 
       await launchFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,
-        instanceId: input.channelId,
+        instanceId: input.workbenchId,
         triggerAddress: input.triggerAddress,
         definitionId,
         foldedBody,
-        launchLabel: "the channel host",
-        // A channel host never replies — its mailbox is the
+        launchLabel: "the workbench host",
+        // A workbench host never replies — its mailbox is the
         // timeline and its system prompt forbids answering — so its
         // launch is pinned to the hub's own noop endpoint rather than
         // resolved against the tenant catalog. This is what lets a
-        // channel launch (and, per `noopInference` below, every wake
+        // workbench launch (and, per `noopInference` below, every wake
         // of it) succeed with zero catalog sources seeded.
         sources: noopSourcesOverride(deps.noopInferenceBaseUrl, foldedBody),
-        stepInput: CHANNEL_HOST_STEP_INPUT,
+        stepInput: WORKBENCH_HOST_STEP_INPUT,
         // The launch body is persisted with the launch itself, in the
         // same transaction, so a wake can rebuild the deploy config
-        // without reaching for the definition's asset — a channel
+        // without reaching for the definition's asset — a workbench
         // host's asset never holds a workflow.json, so this row is
         // the only wake-time source. Chat owns this table; folded-runs
         // never imports it. `noopInference: true` records this launch
         // as a host, so its wake pins the same noop source rather than
         // re-deriving "is this a host" from anything else.
         persistExtra: async (tx) => {
-          await tx.insert(channelLaunch).values({
+          await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,
-            instanceId: input.channelId,
+            instanceId: input.workbenchId,
             foldedBody,
             createdAt: new Date(),
             noopInference: true,
@@ -474,7 +474,7 @@ export function createHubChatPlatform(
       lifecycle?.track(input.triggerAddress);
       lifecycle?.recordActivity(input.triggerAddress);
 
-      return { instanceId: input.channelId };
+      return { instanceId: input.workbenchId };
     },
 
     async launchInvite(input): Promise<LaunchedInvite> {
@@ -526,12 +526,12 @@ export function createHubChatPlatform(
       // A definition that declares no model requirements of its own
       // (`foldedBody.model === null`) would otherwise 409 as
       // `not_launchable` — resolve the same catalog default a fresh
-      // channel host gets instead of failing loud. Only consulted when
+      // workbench host gets instead of failing loud. Only consulted when
       // the definition truly names nothing; a definition with its own
       // model is never second-guessed.
       const fallbackModel =
         foldedBody.model === null
-          ? ((await deps.channelHostInferencePreferences?.(input.tenantId)) ??
+          ? ((await deps.workbenchHostInferencePreferences?.(input.tenantId)) ??
               [])[0]?.model
           : undefined;
 
@@ -549,7 +549,7 @@ export function createHubChatPlatform(
         // the column's own default) records this launch as not a
         // host, so its wake resolves against the catalog too.
         persistExtra: async (tx) => {
-          await tx.insert(channelLaunch).values({
+          await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,
             instanceId,
             foldedBody,
@@ -576,7 +576,7 @@ export function createHubChatPlatform(
         orderBy: desc(workflowDefinition.createdAt),
       });
       return rows
-        .filter((row) => !isChannelHostDefinitionName(row.name))
+        .filter((row) => !isWorkbenchHostDefinitionName(row.name))
         .map((row) => {
           const base = { id: row.id, name: row.name };
           return typeof row.description === "string" && row.description !== ""
@@ -592,7 +592,7 @@ export function createHubChatPlatform(
 
     async refreshAgentInstanceFromDefinition(
       tenantId,
-      _channelId,
+      _workbenchId,
       address,
     ): Promise<void> {
       const run = await findFoldedRunByAddress(deps.db, address);
@@ -615,18 +615,18 @@ export function createHubChatPlatform(
       const foldedBody = readFoldedBody(definitionJSON);
 
       await deps.db
-        .update(channelLaunch)
+        .update(workbenchLaunch)
         .set({ foldedBody })
-        .where(eq(channelLaunch.instanceId, run.id));
+        .where(eq(workbenchLaunch.instanceId, run.id));
     },
 
     async sendMail(input): Promise<SentMail> {
-      const run = await findFoldedRunById(deps.db, input.channelId);
+      const run = await findFoldedRunById(deps.db, input.workbenchId);
       if (run === undefined) {
-        throw new Error(`No channel run for "${input.channelId}"`);
+        throw new Error(`No workbench run for "${input.workbenchId}"`);
       }
       if (run.address === null) {
-        throw new Error(`Channel run "${input.channelId}" has no address`);
+        throw new Error(`Workbench run "${input.workbenchId}" has no address`);
       }
 
       // Wake before send: a sleeping instance (the lifecycle package's
@@ -659,11 +659,11 @@ export function createHubChatPlatform(
       const domain = domainOf(run.address);
       let from: string;
       let originAddress: string | undefined;
-      if (input.fromChannelId !== undefined) {
-        const origin = await findFoldedRunById(deps.db, input.fromChannelId);
+      if (input.fromWorkbenchId !== undefined) {
+        const origin = await findFoldedRunById(deps.db, input.fromWorkbenchId);
         if (origin?.address == null) {
           throw new Error(
-            `Origin channel "${input.fromChannelId}" has no address`,
+            `Origin workbench "${input.fromWorkbenchId}" has no address`,
           );
         }
         from = origin.address;
@@ -672,10 +672,10 @@ export function createHubChatPlatform(
         from = `${input.principalId}@${domain}`;
       } else {
         throw new Error(
-          "sendMail requires either principalId or fromChannelId",
+          "sendMail requires either principalId or fromWorkbenchId",
         );
       }
-      const cryptoProvider = await cryptoProviders.get(input.channelId);
+      const cryptoProvider = await cryptoProviders.get(input.workbenchId);
 
       const attachments = input.content.attachments?.map(
         (attachment, index) => ({
@@ -711,9 +711,9 @@ export function createHubChatPlatform(
     },
 
     async listMail(input): Promise<ListedMail> {
-      const run = await findFoldedRunById(deps.db, input.channelId);
+      const run = await findFoldedRunById(deps.db, input.workbenchId);
       if (run === undefined) {
-        throw new Error(`No channel run for "${input.channelId}"`);
+        throw new Error(`No workbench run for "${input.workbenchId}"`);
       }
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
       const listMailBase = { tenantId: input.tenantId, sessionId };
@@ -726,7 +726,7 @@ export function createHubChatPlatform(
     },
 
     async getMail(input): Promise<ListedMailItem | undefined> {
-      const run = await findFoldedRunById(deps.db, input.channelId);
+      const run = await findFoldedRunById(deps.db, input.workbenchId);
       if (run === undefined) return undefined;
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
 
@@ -750,20 +750,20 @@ export function createHubChatPlatform(
       };
     },
 
-    async listChannelActivity(input) {
-      if (input.channels.length === 0) return {};
+    async listWorkbenchActivity(input) {
+      if (input.workbenches.length === 0) return {};
 
-      // Bulk channelId -> sessionId, mirroring `resolveFoldedRunSessionId`'s
+      // Bulk workbenchId -> sessionId, mirroring `resolveFoldedRunSessionId`'s
       // per-run resolution (run -> its principal's `agent_session`,
-      // `includeEnded: true` so a channel whose host session already ended
+      // `includeEnded: true` so a workbench whose host session already ended
       // still reports its mail) but in two `inArray` round trips total
       // instead of one `findFoldedRunById` + `resolveRunSessionId` pair per
-      // channel.
-      const channelIds = input.channels.map((c) => c.channelId);
+      // workbench.
+      const workbenchIds = input.workbenches.map((c) => c.workbenchId);
       const runRows = await deps.db
         .select({ id: workflowRun.id, principalId: workflowRun.principalId })
         .from(workflowRun)
-        .where(inArray(workflowRun.id, channelIds));
+        .where(inArray(workflowRun.id, workbenchIds));
 
       const principalIds = runRows
         .map((row) => row.principalId)
@@ -790,14 +790,14 @@ export function createHubChatPlatform(
         }
       }
 
-      const channelSessionIds = new Map<string, string>();
+      const workbenchSessionIds = new Map<string, string>();
       for (const run of runRows) {
         if (run.principalId === null) continue;
         const sessionId = sessionIdByPrincipal.get(run.principalId);
-        if (sessionId !== undefined) channelSessionIds.set(run.id, sessionId);
+        if (sessionId !== undefined) workbenchSessionIds.set(run.id, sessionId);
       }
 
-      const sessionIds = [...new Set(channelSessionIds.values())];
+      const sessionIds = [...new Set(workbenchSessionIds.values())];
       if (sessionIds.length === 0) return {};
 
       const latestBySession = await deps.db
@@ -810,17 +810,17 @@ export function createHubChatPlatform(
         .groupBy(sessionMail.sessionId);
 
       const cutoffBySessionId = new Map<string, string>();
-      for (const channel of input.channels) {
-        const sessionId = channelSessionIds.get(channel.channelId);
+      for (const workbench of input.workbenches) {
+        const sessionId = workbenchSessionIds.get(workbench.workbenchId);
         if (sessionId === undefined) continue;
         cutoffBySessionId.set(
           sessionId,
-          channel.sinceCreatedAt ?? new Date(0).toISOString(),
+          workbench.sinceCreatedAt ?? new Date(0).toISOString(),
         );
       }
 
       // One grouped COUNT, gated by each session's own cutoff via an
-      // OR of per-session conditions rather than a query per channel —
+      // OR of per-session conditions rather than a query per workbench —
       // the composite `session_mail_session_id_created_at_idx` backs
       // every branch.
       const unreadConditions = [...cutoffBySessionId].map(
@@ -849,7 +849,7 @@ export function createHubChatPlatform(
 
       // The newest message's own row, fetched by the exact
       // (sessionId, createdAt) pair `max()` just resolved — an OR of
-      // per-session conditions, the same bulk-not-per-channel shape the
+      // per-session conditions, the same bulk-not-per-workbench shape the
       // unread count above uses — so the preview snippet below reads
       // the real latest message rather than an arbitrary row sharing
       // its session.
@@ -877,8 +877,8 @@ export function createHubChatPlatform(
         ]),
       );
 
-      return summarizeChannelActivity(
-        channelSessionIds,
+      return summarizeWorkbenchActivity(
+        workbenchSessionIds,
         latestRows.map((row) => {
           const preview = previewBySessionId.get(row.sessionId);
           return preview === undefined
@@ -896,13 +896,13 @@ export function createHubChatPlatform(
       );
     },
 
-    async fetchBlob(channelId, blobId): Promise<string | Uint8Array> {
-      // Blobs are only readable when the mail row lives on this channel's
+    async fetchBlob(workbenchId, blobId): Promise<string | Uint8Array> {
+      // Blobs are only readable when the mail row lives on this workbench's
       // session. Looking up by mail id alone let any authenticated caller
       // read another tenant's attachment by guessing a blob id.
-      const run = await findFoldedRunById(deps.db, channelId);
+      const run = await findFoldedRunById(deps.db, workbenchId);
       if (run === undefined) {
-        throw new Error(`No channel run for "${channelId}"`);
+        throw new Error(`No workbench run for "${workbenchId}"`);
       }
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
 
@@ -926,14 +926,14 @@ export function createHubChatPlatform(
       return extractPartByPath(mailRow.raw, partPath);
     },
 
-    subscribeToChannel(
-      channelId: string,
-      onEvent: (event: ChatChannelEvent) => void,
+    subscribeToWorkbench(
+      workbenchId: string,
+      onEvent: (event: ChatWorkbenchEvent) => void,
     ): () => void {
       let cancelled = false;
       let unsubscribeAgent: (() => void) | undefined;
 
-      void findFoldedRunById(deps.db, channelId)
+      void findFoldedRunById(deps.db, workbenchId)
         .then((run) => {
           if (cancelled || run === undefined || run.address === null) return;
           unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
@@ -945,7 +945,7 @@ export function createHubChatPlatform(
         })
         .catch((cause: unknown) => {
           getLogger(["chat", "platform-adapter"])
-            .error`subscribeToChannel: failed to resolve folded run for ${channelId}: ${
+            .error`subscribeToWorkbench: failed to resolve folded run for ${workbenchId}: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
         });

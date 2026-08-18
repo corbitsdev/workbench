@@ -7,7 +7,7 @@ import {
   filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
-  mentionOptionsFromChannel,
+  mentionOptionsFromWorkbench,
 } from "../src/mentions";
 
 describe("activeMentionQuery", () => {
@@ -101,7 +101,7 @@ describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => 
     { address: "prn_alice", handle: "alice" },
   ];
 
-  test("a workspace member already in the channel is excluded", () => {
+  test("a workspace member already in the workbench is excluded", () => {
     const options = bringInOptionsFromMembersAndAgents(
       [
         { id: "prn_alice", displayName: "Alice" },
@@ -141,9 +141,9 @@ describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => 
   });
 });
 
-describe("mentionOptionsFromChannel and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
-  test("lists Agents then People, in-channel ahead of bring-in within each section", () => {
-    const options = mentionOptionsFromChannel(
+describe("mentionOptionsFromWorkbench and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
+  test("lists Agents then People, in-workbench ahead of bring-in within each section", () => {
+    const options = mentionOptionsFromWorkbench(
       [
         { address: "researcher@agents.example", handle: "researcher" },
         { address: "prn_alice", handle: "alice" },
@@ -166,7 +166,7 @@ describe("mentionOptionsFromChannel and filterMentionOptions (CL-5879 mention-pu
   });
 
   test("filterMentionOptions narrows both sections by the same prefix rule", () => {
-    const options = mentionOptionsFromChannel(
+    const options = mentionOptionsFromWorkbench(
       [{ address: "researcher@agents.example", handle: "researcher" }],
       [{ id: "prn_reed", displayName: "Reed" }],
       [{ id: "wfd_echo", name: "echo", description: "Echo" }],

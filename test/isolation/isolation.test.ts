@@ -228,18 +228,18 @@ if (!databaseUrl) {
     });
   });
 
-  describe("chat channel move", () => {
-    /** The `tenancy` annotation `GET .../chat/channels` carries for one
-     * channel id, or `undefined` if the id is absent from the list —
-     * the actual, current `channel_tenancy` state, read fresh on every
+  describe("chat workbench move", () => {
+    /** The `tenancy` annotation `GET .../chat/workbenches` carries for one
+     * workbench id, or `undefined` if the id is absent from the list —
+     * the actual, current `workbench_tenancy` state, read fresh on every
      * call rather than trusted from an earlier response. */
-    async function readChannelTenancy(
+    async function readWorkbenchTenancy(
       tenantId: string,
       cookie: string,
-      channelId: string,
+      workbenchId: string,
     ): Promise<{ tenantId: string; parentTenantId: string } | undefined> {
       const response = await app.request(
-        `/api/tenants/${tenantId}/chat/channels`,
+        `/api/tenants/${tenantId}/chat/workbenches`,
         { headers: { cookie } },
       );
       expect(response.status).toBe(200);
@@ -249,7 +249,7 @@ if (!databaseUrl) {
           tenancy: { tenantId: string; parentTenantId: string } | null;
         }[];
       };
-      const item = body.items.find((entry) => entry.id === channelId);
+      const item = body.items.find((entry) => entry.id === workbenchId);
       return item?.tenancy ?? undefined;
     }
 
@@ -269,16 +269,16 @@ if (!databaseUrl) {
       return body.parentId;
     }
 
-    test("a member of A cannot move A's channel under B without standing in B", async () => {
+    test("a member of A cannot move A's workbench under B without standing in B", async () => {
       const createResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
         {
           method: "POST",
           headers: {
             cookie: tenantA.cookie,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ kind: "channel", name: "Movable" }),
+          body: JSON.stringify({ kind: "workbench", name: "Movable" }),
         },
       );
       expect(createResponse.status).toBe(201);
@@ -289,11 +289,11 @@ if (!databaseUrl) {
 
       // Tenant A's own member holds no principal at all in tenant B —
       // the destination-authorization check must refuse this before
-      // either the channel_tenancy link or tenant.parentId is touched,
-      // even though the caller has full authority over the channel in
+      // either the workbench_tenancy link or tenant.parentId is touched,
+      // even though the caller has full authority over the workbench in
       // its own bench.
       const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
         {
           method: "POST",
           headers: {
@@ -306,7 +306,7 @@ if (!databaseUrl) {
       await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
 
       const settingsResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/settings`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/settings`,
         { headers: { cookie: tenantA.cookie } },
       );
       expect(settingsResponse.status).toBe(200);
@@ -316,7 +316,7 @@ if (!databaseUrl) {
       // tenant row, straight from the database, rather than trusting
       // the 403 response alone — a write-then-deny implementation
       // would still return 403 here but would fail these reads.
-      const link = await readChannelTenancy(
+      const link = await readWorkbenchTenancy(
         tenantA.tenantId,
         tenantA.cookie,
         created.id,
@@ -329,16 +329,19 @@ if (!databaseUrl) {
       expect(parentId).toBe(tenantA.tenantId);
     });
 
-    test("a member of A holding only a read-only principal in B still cannot move A's channel into B", async () => {
+    test("a member of A holding only a read-only principal in B still cannot move A's workbench into B", async () => {
       const createResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
         {
           method: "POST",
           headers: {
             cookie: tenantA.cookie,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ kind: "channel", name: "Movable Read Only" }),
+          body: JSON.stringify({
+            kind: "workbench",
+            name: "Movable Read Only",
+          }),
         },
       );
       expect(createResponse.status).toBe(201);
@@ -401,7 +404,7 @@ if (!databaseUrl) {
       expect(activateResponse.status).toBe(200);
 
       const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
         {
           method: "POST",
           headers: {
@@ -414,7 +417,7 @@ if (!databaseUrl) {
       await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
 
       const settingsResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/settings`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/settings`,
         { headers: { cookie: tenantA.cookie } },
       );
       expect(settingsResponse.status).toBe(200);
@@ -422,7 +425,7 @@ if (!databaseUrl) {
       // Same non-negotiable as the sibling test: a real, active
       // principal in the destination is still not a manage grant, and
       // the denial must leave the actual rows untouched.
-      const link = await readChannelTenancy(
+      const link = await readWorkbenchTenancy(
         tenantA.tenantId,
         tenantA.cookie,
         created.id,
@@ -435,16 +438,16 @@ if (!databaseUrl) {
       expect(parentId).toBe(tenantA.tenantId);
     });
 
-    test("a member of A who genuinely manages tenant C can move A's channel there, and the write actually lands", async () => {
+    test("a member of A who genuinely manages tenant C can move A's workbench there, and the write actually lands", async () => {
       const createResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
         {
           method: "POST",
           headers: {
             cookie: tenantA.cookie,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ kind: "channel", name: "Movable To Own" }),
+          body: JSON.stringify({ kind: "workbench", name: "Movable To Own" }),
         },
       );
       expect(createResponse.status).toBe(201);
@@ -456,7 +459,7 @@ if (!databaseUrl) {
 
       // A second, real tenant owned by the same user as tenant A — a
       // genuine manage grant in the destination, not a fake store's
-      // `Set`. `createDrizzleChannelTenancyStore` is the only
+      // `Set`. `createDrizzleWorkbenchTenancyStore` is the only
       // implementation that takes the `SELECT ... FOR UPDATE` locks
       // and calls the real `evaluateGrants`, so this is the only test
       // that instantiates it end to end.
@@ -468,7 +471,7 @@ if (!databaseUrl) {
       );
 
       const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
         {
           method: "POST",
           headers: {
@@ -488,7 +491,7 @@ if (!databaseUrl) {
       // landed — re-read both places the move writes, fresh, to
       // confirm the transaction really committed both halves: the
       // chat-owned link row, and the native `tenant.parentId` column.
-      const link = await readChannelTenancy(
+      const link = await readWorkbenchTenancy(
         tenantA.tenantId,
         tenantA.cookie,
         created.id,

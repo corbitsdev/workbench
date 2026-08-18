@@ -161,7 +161,7 @@ const HubEnv = type({
     "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
   ),
   "WORKBENCH_CHAT_IDLE_REAP_MS?": type("string").describe(
-    "how long a chat resident (channel host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
+    "how long a chat resident (workbench host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
   ),
 });
 
