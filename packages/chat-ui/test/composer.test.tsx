@@ -249,39 +249,88 @@ describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)
   });
 });
 
+// The hint used to mount/unmount with its condition, which added and
+// removed a line from the composer's box on every focus/blur and
+// keystroke. It is now always in the DOM with a reserved height; only
+// `data-visible` (and the opacity/visibility CSS it drives) toggles, so
+// asserting on that attribute — never on presence/absence — is the
+// honest way to test the new mechanism (CL-6250).
 describe("Composer keyboard hint", () => {
-  test("stays hidden until the textarea is focused with a non-empty draft", async () => {
+  test("is always mounted and stays visibility-hidden until focused with a non-empty draft", async () => {
     mount(() => Promise.resolve(true));
-    expect(hint()).toBeNull();
+    expect(hint()).not.toBeNull();
+    expect(hint()?.getAttribute("data-visible")).toBe("false");
 
     act(() => {
       textarea().focus();
     });
     await settle();
-    expect(hint()).toBeNull();
+    expect(hint()?.getAttribute("data-visible")).toBe("false");
 
     typeInto(textarea(), "hello");
     await settle();
+    expect(hint()?.getAttribute("data-visible")).toBe("true");
     expect(hint()?.textContent).toBe("Enter to send");
 
     act(() => {
       textarea().blur();
     });
     await settle();
-    expect(hint()).toBeNull();
+    expect(hint()?.getAttribute("data-visible")).toBe("false");
   });
 
-  test("hides again once the draft is cleared while still focused", async () => {
+  test("hides again once the draft is cleared while still focused, without unmounting", async () => {
     mount(() => Promise.resolve(true));
     act(() => {
       textarea().focus();
     });
     typeInto(textarea(), "hi");
     await settle();
-    expect(hint()).not.toBeNull();
+    expect(hint()?.getAttribute("data-visible")).toBe("true");
 
     typeInto(textarea(), "");
     await settle();
-    expect(hint()).toBeNull();
+    expect(hint()).not.toBeNull();
+    expect(hint()?.getAttribute("data-visible")).toBe("false");
+  });
+});
+
+describe("Composer growth containment (CL-6250)", () => {
+  test("the textarea carries the max-height/overflow class and keeps applying its measured inline height", async () => {
+    mount(() => Promise.resolve(true));
+    expect(textarea().className).toContain("chat-composer-input");
+
+    typeInto(textarea(), "line one\nline two\nline three");
+    await settle();
+    // The auto-grow effect still measures and writes an inline height on
+    // every change — the CSS transition added for CL-6250 smooths that
+    // write, it does not replace it.
+    expect(textarea().style.height.endsWith("px")).toBe(true);
+  });
+});
+
+describe("Composer popover entrance (CL-6250)", () => {
+  test("the slash popover carries the entrance class", async () => {
+    mount(() => Promise.resolve(true));
+    typeInto(textarea(), "/");
+    await settle();
+    const popover = container?.querySelector(".chat-mention-popover");
+    expect(popover?.classList.contains("chat-popover-enter")).toBe(true);
+  });
+
+  test("the mention popover carries the entrance class", async () => {
+    mountWithMentions(() => Promise.resolve(true));
+    typeInto(textarea(), "@");
+    await settle();
+    const popover = container?.querySelector(".chat-mention-popover");
+    expect(popover?.classList.contains("chat-popover-enter")).toBe(true);
+  });
+});
+
+describe("Composer hit targets (CL-6250)", () => {
+  test("attach and send buttons carry the extended-hit-area class", () => {
+    mount(() => Promise.resolve(true));
+    const buttons = container?.querySelectorAll(".chat-composer-icon-button");
+    expect(buttons?.length).toBe(2);
   });
 });
