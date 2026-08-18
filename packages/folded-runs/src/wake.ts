@@ -12,6 +12,7 @@ import { deployAtHead, type SourcesOverride } from "./launch";
 import { resolveFoldedRunSessionId } from "./runs";
 import type { FoldedRunsDeps } from "./types";
 import type { FoldedBody } from "@intx/workflow-deploy";
+import type { Selector } from "@intx/workflow";
 
 export type WakeFoldedRunParams = {
   tenantId: string;
@@ -27,6 +28,15 @@ export type WakeFoldedRunParams = {
    * re-derives it.
    */
   sources?: SourcesOverride;
+  /**
+   * See `deployAtHead`'s own doc on the same field. A wake must repin
+   * whatever the original launch pinned — the channel host's literal
+   * input is a property of what the run IS, not of how it was deployed
+   * this particular time, so re-deploying it on the default
+   * `trigger.payload` selector would silently restore the CL-6164 crash
+   * on the very next mail this occurrence receives.
+   */
+  stepInput?: Selector;
 };
 
 export async function wakeFoldedRun(
@@ -62,10 +72,11 @@ export async function wakeFoldedRun(
     foldedBody: params.foldedBody,
     launchLabel: "the woken instance",
   };
-  await deployAtHead(
-    deps,
-    params.sources !== undefined
-      ? { ...deployAtHeadParams, sources: params.sources }
-      : deployAtHeadParams,
-  );
+  await deployAtHead(deps, {
+    ...deployAtHeadParams,
+    ...(params.sources !== undefined ? { sources: params.sources } : {}),
+    ...(params.stepInput !== undefined
+      ? { stepInput: params.stepInput }
+      : {}),
+  });
 }

@@ -33,7 +33,7 @@ import {
   wrapHarnessAsSingleStepWorkflow,
   type FoldedBody,
 } from "@intx/workflow-deploy";
-import { defineWorkflow, step } from "@intx/workflow";
+import { defineWorkflow, step, type Selector } from "@intx/workflow";
 import type { FoldedRunsDeps } from "./types";
 
 /**
@@ -138,6 +138,24 @@ export async function deployAtHead(
      * consulted when `foldedBody.model` is already set.
      */
     fallbackModel?: string;
+    /**
+     * Overrides the step's default input selector (`{ from:
+     * "trigger.payload" }`, `defineWorkflow`'s standard first-step
+     * default). The default reads the triggering mail's bare `content`
+     * verbatim and feeds it straight into `agent.send`, which throws on
+     * an empty string — and `content` is legitimately empty for
+     * attachments-only mail (an event-only send, e.g.
+     * `channel.agent-joined`; see `@corbits/chat`'s `encodeParts`).
+     * A folded run that genuinely ignores its input (the channel host:
+     * its system prompt forbids ever acting on what it receives) should
+     * pin a `{ literal: ... }` selector here instead of reading
+     * `trigger.payload`, so an attachments-only mail landing in its
+     * inbox — its very first message, in the common case — cannot crash
+     * the run before it ever opens (CL-6164). Absent, behavior is
+     * unchanged: the step reads the real trigger payload, as every
+     * inference-driven agent must.
+     */
+    stepInput?: Selector;
   },
 ): Promise<void> {
   const sourcesOverride = parseSourcesOverride(params.sources);
@@ -271,6 +289,7 @@ export async function deployAtHead(
     [FOLDED_STEP_ID]: step({
       agent: wrapHarnessAsSingleStepWorkflow({ config, deployContent }),
       triggers: "unbounded",
+      ...(params.stepInput !== undefined ? { input: params.stepInput } : {}),
     }),
   };
   // The workflow-host's per-step credential snapshot
@@ -327,6 +346,8 @@ export type LaunchFoldedRunParams = {
   sources?: SourcesOverride;
   /** See `deployAtHead`'s own doc on the same field. */
   fallbackModel?: string;
+  /** See `deployAtHead`'s own doc on the same field. */
+  stepInput?: Selector;
   /**
    * Invoked inside the same launch transaction, immediately after the
    * principal/session/run rows are written, so a caller-owned table
@@ -462,6 +483,9 @@ export async function launchFoldedRun(
       ...(params.sources !== undefined ? { sources: params.sources } : {}),
       ...(params.fallbackModel !== undefined
         ? { fallbackModel: params.fallbackModel }
+        : {}),
+      ...(params.stepInput !== undefined
+        ? { stepInput: params.stepInput }
         : {}),
     });
   } catch (err) {
