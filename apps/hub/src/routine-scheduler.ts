@@ -4,6 +4,10 @@
 // that package's routes.ts doc comment). This mirrors
 // `@corbits/agent-lifecycle`'s own `setInterval` sweep (the only other
 // periodic loop in this repo) rather than pulling in a new dependency.
+// The vendor's own `ScheduleTrigger` (`@intx/workflow`'s
+// `definition/triggers.ts`) is declared upstream but has no runtime
+// consumer at our pin — `live-inert-projector.ts` only projects it
+// structurally — which is exactly why this poller exists.
 //
 // Three guarantees, precisely stated:
 //

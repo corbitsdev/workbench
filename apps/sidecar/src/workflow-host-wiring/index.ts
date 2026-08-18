@@ -643,6 +643,13 @@ export function createSidecarDeployRouter(deps: {
     try {
       const definitionHash = await computeWireDefinitionHash(spec.definition);
 
+      // Warm-keep is the single-step launched-agent deploy: the sole step
+      // IS the long-lived agent, so the child warm-keeps it across
+      // messages. A multi-step deploy keeps instantiate-send-teardown per
+      // step. Computed early because both the recycle-policy wiring below
+      // and the spawn opts further down key off it.
+      const warmKeep = spec.definition.stepOrder.length === 1;
+
       // Per-deployment substrate-config keys the workflow-substrate-factory
       // validator requires. The boot edge's `multistepSubstrateEnv` carries
       // the boot-edge constants; the four workflow-definition / workflow-run
@@ -682,6 +689,7 @@ export function createSidecarDeployRouter(deps: {
         workflowRunRef: "refs/heads/main",
         deploymentId,
         stepCount: spec.definition.stepOrder.length,
+        warmKeep,
         deploymentMailAddress: spec.agentAddress,
         deriveStepAddress: stepStrategy.deriveStepAddress,
         deriveStepRepoId: stepStrategy.deriveStepRepoId,
@@ -801,11 +809,6 @@ export function createSidecarDeployRouter(deps: {
       }
 
       const stepOrder = [...spec.definition.stepOrder];
-      // Warm-keep is the single-step launched-agent deploy: the sole step
-      // IS the long-lived agent, so the child warm-keeps it across
-      // messages. A multi-step deploy keeps instantiate-send-teardown per
-      // step. The signal is carried explicitly down through the spawn env.
-      const warmKeep = spec.definition.stepOrder.length === 1;
       const spawnOpts: SpawnOpts = {
         stepOrder,
         definitionHash,

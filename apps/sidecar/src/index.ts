@@ -246,7 +246,9 @@ const orchestrator = createSidecarOrchestrator({
     keyStore,
     publishWorkflowInferenceEvent,
   }) => {
-    const router = createSidecarDeployRouter({
+    const deployRouterConfigBase: Parameters<
+      typeof createSidecarDeployRouter
+    >[0] = {
       sessions,
       keyStore,
       transport,
@@ -282,7 +284,22 @@ const orchestrator = createSidecarOrchestrator({
       multistepSourcesRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent,
-    });
+    };
+    const deployRouterConfigWithConsumedRetentionMs =
+      config.consumedRetentionMs !== undefined
+        ? {
+            ...deployRouterConfigBase,
+            consumedRetentionMs: config.consumedRetentionMs,
+          }
+        : deployRouterConfigBase;
+    const deployRouterConfig =
+      config.readyTimeoutMs !== undefined
+        ? {
+            ...deployRouterConfigWithConsumedRetentionMs,
+            readyTimeoutMs: config.readyTimeoutMs,
+          }
+        : deployRouterConfigWithConsumedRetentionMs;
+    const router = createSidecarDeployRouter(deployRouterConfig);
     capturedRouter = router;
     return router;
   },

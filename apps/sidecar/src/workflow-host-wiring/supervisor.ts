@@ -19,6 +19,7 @@ import {
   type DispatchTimingMark,
   type HubTransportMailBusAdapter,
   type PrincipalSigner,
+  type RecyclePolicyBounds,
   type SubprocessSpawner,
   type SuspensionRegistration,
   type WorkflowSupervisor,
@@ -28,6 +29,34 @@ import {
   defaultSubprocessSpawner,
   SIDECAR_WORKFLOW_CHILD_BINARY,
 } from "./transport";
+
+/**
+ * Conservative default for the warm-keep recycle policy's grants-staleness
+ * bound. A warm-keep child's agent runs for the deployment's whole
+ * lifetime on the grants pushed at spawn (`deliverCredentials`); this forces
+ * a clean respawn -- which re-reads every step's grants from the repo store
+ * during `recycle`'s respawn step -- rather than let a long-lived agent run
+ * indefinitely on hours-old material. 24h mirrors
+ * `DEFAULT_CONSUMED_RETENTION_MS`'s order of magnitude.
+ */
+export const DEFAULT_MAX_GRANTS_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The vendor's recycle policy also supports a `maxRssBytes` bound
+ * (`RecyclePolicyBounds.maxRssBytes`, consulted via a `readRssBytes`
+ * reader the host supplies -- see `types.ts:473-499`). This wiring
+ * deliberately does NOT arm it: the reader's contract is "the workflow-
+ * process child's current resident-set size", but the only pid this
+ * wiring ever observes is the one returned by the FIRST `spawn()`
+ * (`SpawnResult.pid`) -- `recycle()`'s own return value (`RecycleAttempt`)
+ * never surfaces the respawned child's pid, and recycle can be triggered
+ * by the operator, the policy itself, or the child's own
+ * `recycle.request` control frame, any of which silently retires the pid
+ * this wiring would otherwise be reading. A reader that keeps polling a
+ * stale (possibly OS-recycled) pid across a respawn would make the bound
+ * actively wrong rather than merely absent, so it is left unwired until
+ * the vendor surfaces the live child's pid across a recycle.
+ */
 
 export type CreateSidecarWorkflowSupervisorOpts = {
   /** Sidecar's hub mail transport. */
@@ -108,6 +137,17 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    */
   readyTimeoutMs?: number;
   /**
+   * Whether this deployment's child warm-keeps its agent across messages
+   * (the single-step launched-agent deploy; see `SpawnOpts.warmKeep`).
+   * Gates the recycle policy this wiring arms: a warm-keep child is the
+   * only shape whose grants can go stale over a long-lived process, so
+   * `true` arms `recyclePolicy.maxGrantsAgeMs` (`DEFAULT_MAX_GRANTS_AGE_MS`)
+   * and its `readGrantsAgeMs` reader. A per-message multi-step child tears
+   * down and respawns fresh every message and has no long-running grants
+   * to police, so `false` (the default) leaves the recycle policy unarmed.
+   */
+  warmKeep?: boolean;
+  /**
    * Control-plane suspension sink, forwarded verbatim to the supervisor's
    * `onSuspensionRegister` binding. Production wires this to the sidecar's
    * hub link (`HubLink.sendSignalCorrelationRegister`) so an ask-rail
@@ -178,6 +218,11 @@ export function createSidecarWorkflowSupervisor(
   const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(
     opts.transport,
   );
+  // Wall-clock of the most recent `deliverCredentials` push, read by
+  // `readGrantsAgeMs` below. `undefined` until the first delivery, which
+  // matches the vendor reader's contract: "or `undefined` if no refresh
+  // has been observed yet" (`types.ts:483-488`).
+  let lastGrantsRefreshAt: number | undefined;
   const supervisorPrincipal: WorkflowRunSupervisorPrincipal = {
     kind: "supervisor",
     anchorRunId: opts.deploymentId,
@@ -244,16 +289,42 @@ export function createSidecarWorkflowSupervisor(
           consumedRetentionMs: opts.consumedRetentionMs,
         }
       : supervisorConfigWithRepackEveryMessages;
-  const supervisorConfig =
+  const supervisorConfigWithReadyTimeoutMs =
     opts.readyTimeoutMs !== undefined
       ? {
           ...supervisorConfigWithConsumedRetentionMs,
           readyTimeoutMs: opts.readyTimeoutMs,
         }
       : supervisorConfigWithConsumedRetentionMs;
+  // Recycle policy is armed only for a warm-keep child (see `warmKeep`'s
+  // doc comment); a per-message multi-step child has nothing for it to
+  // police. `maxRssBytes`/`readRssBytes` are intentionally absent -- see
+  // the module-level comment above `DEFAULT_MAX_GRANTS_AGE_MS`.
+  const recyclePolicy: RecyclePolicyBounds | undefined = opts.warmKeep
+    ? { maxGrantsAgeMs: DEFAULT_MAX_GRANTS_AGE_MS }
+    : undefined;
+  const supervisorConfig =
+    recyclePolicy !== undefined
+      ? {
+          ...supervisorConfigWithReadyTimeoutMs,
+          recyclePolicy,
+          readGrantsAgeMs: () =>
+            lastGrantsRefreshAt === undefined
+              ? undefined
+              : Date.now() - lastGrantsRefreshAt,
+        }
+      : supervisorConfigWithReadyTimeoutMs;
   const supervisor = createWorkflowSupervisor(supervisorConfig);
   return {
-    supervisor,
+    supervisor: {
+      ...supervisor,
+      async deliverCredentials(
+        args: Parameters<WorkflowSupervisor["deliverCredentials"]>[0],
+      ): Promise<void> {
+        await supervisor.deliverCredentials(args);
+        lastGrantsRefreshAt = Date.now();
+      },
+    },
     routeInbound(message) {
       return mailBus.routeInbound(opts.deploymentMailAddress, message);
     },
