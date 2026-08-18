@@ -472,12 +472,18 @@ function createFakeSidecarRouter(
   subscribeAgentCalls: { address: string }[];
   dispatchAgentEventCalls: { address: string; event: unknown }[];
   sendAgentUndeployCalls: { address: string; reason: string }[];
+  sendRunGrantsCalls: { address: string; runId: string; stepGrants: unknown }[];
   routableAddresses: string[];
   agentCallbacks: Map<string, (event: unknown) => void>;
 } {
   const subscribeAgentCalls: { address: string }[] = [];
   const dispatchAgentEventCalls: { address: string; event: unknown }[] = [];
   const sendAgentUndeployCalls: { address: string; reason: string }[] = [];
+  const sendRunGrantsCalls: {
+    address: string;
+    runId: string;
+    stepGrants: unknown;
+  }[] = [];
   // Existing tests never exercise wake-on-mail and predate
   // `getRoutableAddresses` entirely; defaulting to "everything is
   // routable" (rather than an empty list) keeps them passing without
@@ -491,6 +497,7 @@ function createFakeSidecarRouter(
     subscribeAgentCalls,
     dispatchAgentEventCalls,
     sendAgentUndeployCalls,
+    sendRunGrantsCalls,
     routableAddresses,
     agentCallbacks,
     subscribeAgent(address: string, cb: (event: unknown) => void) {
@@ -515,10 +522,24 @@ function createFakeSidecarRouter(
         ? ({ includes: () => true } as unknown as string[])
         : routableAddresses;
     },
+    // Every launch and wake produces the run's `run.grants` frame before its
+    // first mail. Always routable: the frame is sent after the deploy the
+    // fake `sessionService` just acked, and that deploy is what makes the
+    // address resident — `routableAddresses` models residency BEFORE the
+    // wake (what `getRoutableAddresses` answers), not after it.
+    sendRunGrants(address: string, runId: string, stepGrants: unknown) {
+      sendRunGrantsCalls.push({ address, runId, stepGrants });
+      return true;
+    },
   } as unknown as SidecarRouter & {
     subscribeAgentCalls: { address: string }[];
     dispatchAgentEventCalls: { address: string; event: unknown }[];
     sendAgentUndeployCalls: { address: string; reason: string }[];
+    sendRunGrantsCalls: {
+      address: string;
+      runId: string;
+      stepGrants: unknown;
+    }[];
     routableAddresses: string[];
     agentCallbacks: Map<string, (event: unknown) => void>;
   };

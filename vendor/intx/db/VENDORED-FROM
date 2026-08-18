@@ -1,4 +1,4 @@
 Source: https://github.com/faremeter/interchange (packages/db)
-Commit: 55c4431e60cc97dae2f63bfd52de56166e42b13b
+Commit: 59f5e7b9d94e7bcccfc180e7d9d11434e2e18eec
 License: LGPL-2.1-only (see vendor/intx/LICENSE)
 Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed.

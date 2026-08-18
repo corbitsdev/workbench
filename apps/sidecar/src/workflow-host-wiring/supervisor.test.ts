@@ -253,12 +253,9 @@ test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a n
   expect(age).toBeGreaterThanOrEqual(0);
 });
 
-// Port of upstream Interchange's `onRunStart` grants sink (CL-6194): the
-// per-run credential/grants barrier the vendor supervisor awaits before
-// every `trigger.fire`. Before this port, `createSidecarWorkflowSupervisor`
-// never wired `onRunStart`, so the supervisor fell back to a spawn-time-only
-// credentialsSnapshot and a one-shot post-spawn `deliverCredentials` push
-// stood in for a per-run refresh (removed with this port).
+// Port of upstream Interchange's `onRunStart` grants sink: the per-run
+// credential/grants barrier the vendor supervisor awaits before every
+// `trigger.fire`.
 test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's credentialsSnapshot from its per-run grants file", async () => {
   const { store, dir } = await makeRepoStore();
   const filePath = path.join(dir, runGrantsPath("run-1"));
@@ -305,14 +302,11 @@ test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's cre
   });
 });
 
-// This hub does not yet write `runs/<runId>/grants.json` on every run
-// birth path (CL-6194 reopened) — chat-minted channel hosts never get
-// one — so an absent file starts the run on an empty-GRANTS snapshot
-// with one entry PER STEP (material arrives via the post-spawn
-// deliverCredentials push) instead of upstream's fail-closed reject,
-// which bricked every new workbench; an entryless snapshot equally
-// bricked every credential lookup ("no entry for stepId").
-test("onRunStart starts a run with no per-run grants file on an empty per-step snapshot", async () => {
+// Every run birth path writes `runs/<runId>/grants.json` before the run
+// dispatches — `deployAtHead` produces the `run.grants` frame the sidecar
+// writes — so an absent file is a run that would start under-authorized,
+// and the barrier fails it closed rather than inventing an empty grant set.
+test("onRunStart fails a run with no per-run grants file closed", async () => {
   const { store } = await makeRepoStore();
 
   createSidecarWorkflowSupervisor({
@@ -341,16 +335,7 @@ test("onRunStart starts a run with no per-run grants file on an empty per-step s
 
   await expect(
     onRunStart({ runId: "run-missing", anchorRunId: "dep-9" }),
-  ).resolves.toEqual({
-    steps: [
-      {
-        stepId: "step-a",
-        address: "dep-9-step-a@local",
-        grants: [],
-        contentHash: "stub-hash:[]",
-      },
-    ],
-  });
+  ).rejects.toThrow(/has no grants file; failing closed/);
 });
 
 test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's observation point", async () => {

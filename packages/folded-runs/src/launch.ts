@@ -5,14 +5,12 @@
 // cite, `routes/instances.ts`, was retired upstream by `b5c1525b`; the
 // run-first `/workflows/runs` surface it converged onto is the same
 // self-anchored-run model this module already imitates) — rather than
-// the native
-// `sessionService.deployWorkflowDefinition` path. A workflow-deploy
-// anchor is a *deployment* run (`workflow_run.deploymentId` set, no
-// `principalId`), a different address family than a folded run
-// (`deploymentId: null`, `principalId` set, its session found by
-// joining `agent_session` on that principal) — the family that makes
-// a run's mailbox actually listable through the platform's sanctioned
-// per-run surfaces.
+// the native `sessionService.deployWorkflowDefinition` path. Every
+// routable run is now one self-anchored `workflow_run` row
+// (`anchorRunId === id`), so a folded run and a workflow-deploy anchor
+// share that shape; what still distinguishes a folded run is its
+// `principalId`, whose `agent_session` join is what makes the run's
+// mailbox listable through the platform's sanctioned per-run surfaces.
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
@@ -104,6 +102,7 @@ export async function deployAtHead(
     FoldedRunsDeps,
     | "db"
     | "sessionService"
+    | "sidecarRouter"
     | "eventCollectors"
     | "credentialCipher"
     | "hubPublicKey"
@@ -330,6 +329,30 @@ export async function deployAtHead(
     toolPackagePins: params.foldedBody.toolPackagePins,
     ...(credentials !== undefined ? { credentials } : {}),
   });
+
+  // Produce the run's `run.grants` frame, the same contract upstream's hub
+  // fires on every run birth: the sidecar writes it to
+  // `runs/<runId>/grants.json` in the deployment's workflow-run repo, and
+  // the supervisor's `onRunStart` barrier reads that file to authorize the
+  // run. A folded run is self-anchored, so its run id IS its deployment id,
+  // and `grants` — the tool-pin and credential-binding set already deployed
+  // as `config.grants` — is the run's whole grant set.
+  //
+  // Sent after the deploy resolves and before any trigger mail: the sidecar
+  // registers its grants handler during the deploy the ack acknowledges, and
+  // both frames ride the same per-address channel, so same-socket FIFO puts
+  // the grants on disk ahead of the mail that starts the run.
+  if (
+    !deps.sidecarRouter.sendRunGrants(
+      params.triggerAddress,
+      params.instanceId,
+      grants,
+    )
+  ) {
+    throw new Error(
+      `${params.launchLabel}: deployment ${params.triggerAddress} is not routable for run ${params.instanceId}; cannot deliver its run grants, so the run would start under-authorized`,
+    );
+  }
 }
 
 export type LaunchFoldedRunParams = {

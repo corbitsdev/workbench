@@ -34,10 +34,7 @@
   "sideEffects": [
     "./src/index.ts",
     "./src/hono.ts",
-    "./src/default-sink.ts",
-    "./dist/index.js",
-    "./dist/hono.js",
-    "./dist/default-sink.js"
+    "./src/default-sink.ts"
   ],
   "publishConfig": {
     "access": "public"

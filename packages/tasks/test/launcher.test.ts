@@ -330,6 +330,11 @@ function createDeps(opts: {
       } as never,
       sidecarRouter: {
         dispatchAgentEvent() {},
+        // A task's run is born through `launchFoldedRun`, which produces the
+        // run's `run.grants` frame once the deploy acks.
+        sendRunGrants() {
+          return true;
+        },
       } as never,
       eventCollectors: {
         create() {},

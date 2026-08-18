@@ -20,6 +20,7 @@ import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
   SessionService,
+  SidecarRouter,
 } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -190,6 +191,35 @@ function createFakeSessionService(): SessionService & {
   } as unknown as SessionService & { deployInstanceAtHeadCalls: unknown[] };
 }
 
+type RunGrantsCall = {
+  agentAddress: string;
+  runId: string;
+  stepGrants: readonly unknown[];
+};
+
+/**
+ * Records the `run.grants` frames `deployAtHead` produces. `routable`
+ * mirrors the real router's return: `false` means the deployment address is
+ * not routable, which the launch must treat as a hard failure rather than
+ * starting a run with no grants file.
+ */
+function createFakeSidecarRouter(routable = true): SidecarRouter & {
+  runGrantsCalls: RunGrantsCall[];
+} {
+  const runGrantsCalls: RunGrantsCall[] = [];
+  return {
+    runGrantsCalls,
+    sendRunGrants(
+      agentAddress: string,
+      runId: string,
+      stepGrants: readonly unknown[],
+    ) {
+      runGrantsCalls.push({ agentAddress, runId, stepGrants });
+      return routable;
+    },
+  } as unknown as SidecarRouter & { runGrantsCalls: RunGrantsCall[] };
+}
+
 const FOLDED_BODY: FoldedBody = {
   systemPrompt: "you are a workbench host",
   toolPackagePins: [],
@@ -225,7 +255,7 @@ describe("launchFoldedRun", () => {
         db: db as never,
         sessionService,
         assetService: {} as never,
-        sidecarRouter: {} as never,
+        sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
@@ -356,7 +386,7 @@ describe("launchFoldedRun", () => {
         db: createFakeDb() as never,
         sessionService,
         assetService: {} as never,
-        sidecarRouter: {} as never,
+        sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors: createFakeEventCollectors(),
@@ -418,7 +448,7 @@ describe("launchFoldedRun", () => {
         db: db as never,
         sessionService,
         assetService: {} as never,
-        sidecarRouter: {} as never,
+        sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: (pins) => {
           toolGrantsForPinsCalls.push(pins);
@@ -513,7 +543,7 @@ describe("launchFoldedRun", () => {
         db: db as never,
         sessionService,
         assetService: {} as never,
-        sidecarRouter: {} as never,
+        sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
@@ -565,7 +595,7 @@ describe("launchFoldedRun", () => {
           db: db as never,
           sessionService,
           assetService: {} as never,
-          sidecarRouter: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
@@ -625,7 +655,7 @@ describe("launchFoldedRun", () => {
           db: db as never,
           sessionService,
           assetService: {} as never,
-          sidecarRouter: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
@@ -664,7 +694,7 @@ describe("launchFoldedRun", () => {
           db: db as never,
           sessionService: createFakeSessionService(),
           assetService: {} as never,
-          sidecarRouter: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors: createFakeEventCollectors(),
@@ -723,7 +753,7 @@ describe("launchFoldedRun", () => {
         db: db as never,
         sessionService,
         assetService: {} as never,
-        sidecarRouter: {} as never,
+        sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
@@ -760,7 +790,7 @@ describe("launchFoldedRun", () => {
           db: db as never,
           sessionService,
           assetService: {} as never,
-          sidecarRouter: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
@@ -808,6 +838,7 @@ describe("wakeFoldedRun", () => {
       {
         db: dbWithSelect as never,
         sessionService,
+        sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
         toolGrantsForPins: () => [],
@@ -896,6 +927,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     await deployAtHead(
       {
         db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
         sessionService,
         eventCollectors,
         credentialCipher: {} as never,
@@ -969,6 +1001,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     await deployAtHead(
       {
         db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
         sessionService,
         eventCollectors,
         credentialCipher: {} as never,
@@ -996,5 +1029,100 @@ describe("deployAtHead — mcp credential bindings", () => {
       credentials?: unknown;
     };
     expect(deployed.credentials).toBeUndefined();
+  });
+});
+
+describe("deployAtHead — run.grants production", () => {
+  const SOURCES = {
+    ok: true as const,
+    sources: [
+      {
+        id: "off_1",
+        provider: "anthropic",
+        baseURL: "https://inference.invalid",
+        apiKey: "placeholder",
+        model: "claude-sonnet-5",
+      },
+    ],
+    defaultSource: "off_1",
+  };
+
+  const PIN = {
+    name: "@corbits/mcp-tools",
+    version: "1.0.0",
+    integrity: "sha512-deadbeef",
+    registry: "https://registry.invalid",
+  };
+
+  function makeDeps(sidecarRouter: ReturnType<typeof createFakeSidecarRouter>) {
+    return {
+      db: createFakeDb() as never,
+      sessionService: createFakeSessionService(),
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+      hubPublicKey: "hub-key",
+      toolGrantsForPins: () => [
+        {
+          resource: "tool:@corbits/mcp-tools:search",
+          action: "invoke" as const,
+          effect: "allow" as const,
+        },
+      ],
+    };
+  }
+
+  const PARAMS = {
+    tenantId: "ten_1",
+    instanceId: "run_grants1",
+    triggerAddress: "run_grants1@ten1.workbench.test",
+    principalId: "prn_1",
+    sessionId: "ses_1",
+    foldedBody: { ...FOLDED_BODY, toolPackagePins: [PIN] },
+    launchLabel: "the workbench host",
+  };
+
+  test("sends the run's grants frame for its own self-anchored run id", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const sidecarRouter = createFakeSidecarRouter();
+
+    await deployAtHead(makeDeps(sidecarRouter), PARAMS);
+
+    expect(sidecarRouter.runGrantsCalls).toHaveLength(1);
+    const [call] = sidecarRouter.runGrantsCalls;
+    expect(call?.agentAddress).toBe(PARAMS.triggerAddress);
+    // A folded run is self-anchored: its run id IS its deployment id.
+    expect(call?.runId).toBe(PARAMS.instanceId);
+    expect(call?.stepGrants).toEqual([
+      expect.objectContaining({
+        resource: "tool:@corbits/mcp-tools:search",
+        action: "invoke",
+        effect: "allow",
+        principalId: PARAMS.principalId,
+      }),
+    ]);
+  });
+
+  test("ships the same grant set the deploy carries as config.grants", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const sidecarRouter = createFakeSidecarRouter();
+    const deps = makeDeps(sidecarRouter);
+
+    await deployAtHead(deps, PARAMS);
+
+    const deployed = deps.sessionService.deployInstanceAtHeadCalls[0] as {
+      config: { grants: unknown[] };
+    };
+    expect(sidecarRouter.runGrantsCalls[0]?.stepGrants).toEqual(
+      deployed.config.grants,
+    );
+  });
+
+  test("throws when the deployment address is not routable for the frame", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const sidecarRouter = createFakeSidecarRouter(false);
+
+    await expect(deployAtHead(makeDeps(sidecarRouter), PARAMS)).rejects.toThrow(
+      /is not routable for run run_grants1/,
+    );
   });
 });

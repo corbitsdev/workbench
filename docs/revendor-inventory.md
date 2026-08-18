@@ -1,5 +1,13 @@
 # CL-5514 re-vendor: pin delta, breakage, retirement
 
+> Superseded pin: CL-6254 bumped the vendored tree from `55c4431e` to
+> `59f5e7b9` (upstream `main` tip, 2026-08-18). `VENDORED.md` is the current
+> pin of record; every `55c4431e` reference below is historical. The bump
+> added upstream's source-format workflow line and cost one contract
+> adoption (`applyAtomic` now takes `gitDirs`); the retirement verdicts below
+> still hold — nothing in it retires `packages/folded-runs`,
+> `packages/agent-lifecycle`, or the self-anchoring mechanism.
+
 This has since landed for real: all five breakage items below are fixed on
 `cl-5514-revendor`, the branch merged the `cl-5879-shell-mock-v2` shell/plugins
 work forward onto the new pin, and `bun run check` plus a full walkthrough run

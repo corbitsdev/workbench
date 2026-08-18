@@ -20,6 +20,11 @@ import path from "node:path";
 import git from "isomorphic-git";
 
 import { getLogger } from "@intx/log";
+import {
+  DEFAULT_PACK_MATERIALIZATION_LIMITS,
+  indexPackIntoGitDir,
+  writeTreeToDisk,
+} from "@intx/storage-isogit/node";
 
 const logger = getLogger(["interchange", "hub-agent", "apply-asset-pack"]);
 
@@ -88,120 +93,63 @@ export async function applyAssetPack(args: ApplyAssetPackArgs): Promise<void> {
   const scratchDir = await fsp.mkdtemp(
     path.join(workspaceRoot, ".intx-asset-scratch-"),
   );
+  // Set while a materialized-files temp dir awaits publish; cleared once it is
+  // renamed onto the mount. The `finally` removes it if a failure leaves it.
+  let materializeDir: string | undefined;
 
   try {
-    await git.init({ fs, dir: scratchDir, defaultBranch: "main" });
-
-    const packDir = path.join(scratchDir, ".git", "objects", "pack");
-    await fsp.mkdir(packDir, { recursive: true });
-
-    const packFilename = `pack-asset-${path.basename(scratchDir)}.pack`;
-    const relPackPath = path.join(".git", "objects", "pack", packFilename);
-    const absPackPath = path.join(scratchDir, relPackPath);
-    await fsp.writeFile(absPackPath, pack);
-
-    const { oids } = await git.indexPack({
-      fs,
-      dir: scratchDir,
-      filepath: relPackPath,
-    });
-    if (!oids.includes(commitSha)) {
-      throw new Error(`expected commit ${commitSha} not found in pack`);
-    }
+    // Index the pack into the scratch `.git` and assert the pinned commit is
+    // present. The scratch dir is discarded in the `finally`; this reuses the
+    // same "index a pack into a gitDir and assert the commit" step a durable
+    // source-asset delivery keeps.
+    await indexPackIntoGitDir(
+      scratchDir,
+      pack,
+      commitSha,
+      DEFAULT_PACK_MATERIALIZATION_LIMITS,
+    );
 
     const { commit } = await git.readCommit({
       fs,
       dir: scratchDir,
       oid: commitSha,
     });
-    const { tree } = await git.readTree({
-      fs,
-      dir: scratchDir,
-      oid: commit.tree,
-    });
 
-    // Clear any prior materialization at the mount so removed files
-    // don't linger from an older asset version.
+    // Materialize into a sibling temp dir, then atomically publish it to the
+    // mount by rename, so a crash mid-write never leaves a partial mount that
+    // restore's dir-exists check would trust. A re-delivery keeps the prior
+    // mount until the new one is ready, so a failed materialization does not
+    // destroy a working mount.
+    materializeDir = await fsp.mkdtemp(
+      path.join(workspaceRoot, ".intx-asset-materialize-"),
+    );
+    await writeTreeToDisk(
+      scratchDir,
+      materializeDir,
+      commit.tree,
+      DEFAULT_PACK_MATERIALIZATION_LIMITS,
+    );
+    // Publish atomically: ensure the mount's PARENT exists, clear any prior
+    // mount, and rename the fully materialized temp into place.
+    await fsp.mkdir(path.dirname(destDir), { recursive: true });
     await fsp.rm(destDir, { recursive: true, force: true });
-    await fsp.mkdir(destDir, { recursive: true });
-
-    await writeTreeEntries(scratchDir, destDir, tree);
+    await fsp.rename(materializeDir, destDir);
+    materializeDir = undefined; // published; nothing left to clean up
 
     logger.info`Materialized asset pack at ${destDir} (${commitSha.slice(0, 8)} on ${ref})`;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Best-effort cleanup so a partial materialization doesn't linger.
-    // Log any secondary failure so it does not silently mask state — the
-    // primary materialization error is still thrown to the caller.
-    await fsp.rm(destDir, { recursive: true, force: true }).catch((rmErr) => {
-      const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-      logger.warn`asset pack destDir cleanup failed at ${destDir}: ${rmMsg}`;
-    });
+    // The mount is published only by the atomic rename above, so a failure here
+    // leaves the prior (complete) mount untouched -- do not remove it. The
+    // partial temp is cleaned in the `finally`.
     throw new Error(`asset_materialization_failed: ${msg}`, { cause: err });
   } finally {
-    await fsp
-      .rm(scratchDir, { recursive: true, force: true })
-      .catch((rmErr) => {
+    for (const dir of [scratchDir, materializeDir]) {
+      if (dir === undefined) continue;
+      await fsp.rm(dir, { recursive: true, force: true }).catch((rmErr) => {
         const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-        logger.warn`asset pack scratchDir cleanup failed at ${scratchDir}: ${rmMsg}`;
+        logger.warn`asset pack temp cleanup failed at ${dir}: ${rmMsg}`;
       });
-  }
-}
-
-type TreeEntry = {
-  type: "blob" | "tree" | "commit";
-  mode: string;
-  path: string;
-  oid: string;
-};
-
-async function writeTreeEntries(
-  repoDir: string,
-  targetDir: string,
-  entries: TreeEntry[],
-): Promise<void> {
-  for (const entry of entries) {
-    const entryPath = path.join(targetDir, entry.path);
-    switch (entry.type) {
-      case "tree": {
-        await fsp.mkdir(entryPath, { recursive: true });
-        const { tree } = await git.readTree({
-          fs,
-          dir: repoDir,
-          oid: entry.oid,
-        });
-        await writeTreeEntries(repoDir, entryPath, tree);
-        break;
-      }
-      case "blob": {
-        const { blob } = await git.readBlob({
-          fs,
-          dir: repoDir,
-          oid: entry.oid,
-        });
-        await fsp.writeFile(entryPath, blob, {
-          mode: entry.mode === "100755" ? 0o755 : 0o644,
-        });
-        break;
-      }
-      case "commit": {
-        // Submodule reference. Skill assets do not declare submodules
-        // and validatePush has no reason to accept one, so seeing
-        // entry.type === "commit" here means an asset tree was pushed
-        // with content the v1 materialization pipeline cannot honor.
-        // Fail loudly rather than silently dropping the entry: a
-        // half-materialized workspace would diverge from the source
-        // with no signal to the operator.
-        throw new Error(
-          `asset_materialization_failed: submodule reference at ${entry.path} is not supported`,
-        );
-      }
-      default: {
-        const exhaustive: never = entry.type;
-        throw new Error(
-          `asset_materialization_failed: unknown tree-entry type ${String(exhaustive)} at ${entry.path}`,
-        );
-      }
     }
   }
 }
