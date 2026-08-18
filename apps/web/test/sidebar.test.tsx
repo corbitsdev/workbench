@@ -61,6 +61,8 @@ function stubFetch(needsYou: unknown = { items: [] }): void {
       return Promise.resolve(json(needsYou));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
+    if (path.includes("/agent-definitions/visible"))
+      return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -136,6 +138,8 @@ describe("Sidebar", () => {
           return Promise.resolve(json({ items: [] }));
         if (path.includes("/top-level-runs"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
+        if (path.includes("/agent-definitions/visible"))
+          return Promise.resolve(json({ definitions: [] }));
         return Promise.resolve(json({ items: [] }));
       }) as typeof fetch;
     }
@@ -204,6 +208,181 @@ describe("Sidebar", () => {
         row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       expect(navigated).toEqual(["/c/ch_1"]);
+
+      act(() => root.unmount());
+      container.remove();
+    });
+  });
+
+  // CL-6253: agents-as-contacts — every visible agent definition (own +
+  // inherited) renders as a sidebar row alongside benches, in the same
+  // recency-sorted stream, mixed in via `buildSidebarRows`
+  // (`./shell/sidebar-rows.ts`).
+  describe("agent DM rows", () => {
+    const channel = {
+      id: "ch_1",
+      title: "Research brief",
+      kind: "channel",
+      pinned: false,
+      participants: [],
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+    };
+    const ownAgent = {
+      id: "wfd_outreach",
+      name: "Outreach",
+      tenantId: "tnt_1",
+      tenantName: "Corbits Bench",
+      createdAt: "2026-01-05T00:00:00.000Z",
+    };
+    const inheritedAgent = {
+      id: "wfd_ancestor_agent",
+      name: "Researcher",
+      tenantId: "tnt_ancestor",
+      tenantName: "Corbits HQ",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    };
+
+    function stubAgentSidebar(
+      onPost?: (path: string, body: unknown) => void,
+    ): void {
+      globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        const path = typeof input === "string" ? input : String(input);
+        if (init?.method === "POST" && path.includes("/chat/channels")) {
+          onPost?.(path, JSON.parse(String(init.body)));
+          return Promise.resolve(
+            json({
+              id: "ch_dm_outreach",
+              title: "Outreach",
+              kind: "chat",
+              pinned: false,
+              participants: [],
+            }),
+          );
+        }
+        if (path.includes("/api/me/principals"))
+          return Promise.resolve(json(membership));
+        if (path.includes("/chat/channels?kind=channel"))
+          return Promise.resolve(json({ items: [channel] }));
+        if (path.includes("/chat/channels?kind=chat"))
+          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/agent-definitions/visible"))
+          return Promise.resolve(
+            json({ definitions: [ownAgent, inheritedAgent] }),
+          );
+        if (path.includes("/approvals/needs-you"))
+          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/top-level-runs"))
+          return Promise.resolve(json({ data: [], nextCursor: null }));
+        return Promise.resolve(json({ items: [] }));
+      }) as typeof fetch;
+    }
+
+    async function mountSidebar(
+      onNavigate: (to: string) => void = noop,
+    ): Promise<{
+      container: HTMLDivElement;
+      root: ReturnType<typeof createRoot>;
+    }> {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <BenchProvider>
+              <Sidebar
+                path="/c"
+                user={user}
+                onNavigate={onNavigate}
+                onSignOut={noop}
+              />
+            </BenchProvider>
+          </TestQueryProvider>,
+        );
+      });
+      for (let i = 0; i < 40; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        if (container.innerHTML.includes("data-ctx-agent")) break;
+      }
+      return { container, root };
+    }
+
+    test("renders an unopened agent alongside bench rows in one recency-sorted stream", async () => {
+      stubAgentSidebar();
+      const { container, root } = await mountSidebar();
+
+      const rows = [...container.querySelectorAll(".shell-ch-row")];
+      const labels = rows.map((row) => row.textContent ?? "");
+      // Own agent (created 2026-01-05) is newer than the channel's own
+      // last activity (2026-01-01); the inherited agent (2026-01-02)
+      // sorts between them — one stream, not two sections.
+      expect(labels[0]).toContain("Outreach");
+      expect(labels[1]).toContain("Researcher");
+      expect(labels[2]).toContain("Research brief");
+
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    test("an agent row carries a deterministic identity-color class on its avatar", async () => {
+      stubAgentSidebar();
+      const { container, root } = await mountSidebar();
+
+      const avatar = container.querySelector(
+        '[data-ctx-agent="wfd_outreach"] .shell-agent-avatar',
+      );
+      expect(avatar).not.toBeNull();
+      expect(avatar?.className).toMatch(/\bshell-agent-color-[0-4]\b/);
+
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    test("clicking an own-tenant agent row mints its DM and navigates to it", async () => {
+      const posted: { path: string; body: unknown }[] = [];
+      stubAgentSidebar((path, body) => posted.push({ path, body }));
+      const navigated: string[] = [];
+      const { container, root } = await mountSidebar((to) =>
+        navigated.push(to),
+      );
+
+      const row = container.querySelector<HTMLButtonElement>(
+        '[data-ctx-agent="wfd_outreach"] .shell-ch-row',
+      );
+      expect(row?.disabled).toBe(false);
+      await act(async () => {
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(posted).toHaveLength(1);
+      expect(posted[0]?.path).toContain("/api/tenants/tnt_1/chat/channels");
+      expect(posted[0]?.body).toEqual({
+        kind: "chat",
+        definitionId: "wfd_outreach",
+        reuseExisting: true,
+      });
+      expect(navigated).toEqual(["/c/ch_dm_outreach"]);
+
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    test("an inherited agent from a tenant the caller isn't a member of renders disabled with a join caption", async () => {
+      stubAgentSidebar();
+      const { container, root } = await mountSidebar();
+
+      const row = container.querySelector<HTMLButtonElement>(
+        '[data-ctx-agent="wfd_ancestor_agent"] .shell-ch-row',
+      );
+      expect(row?.disabled).toBe(true);
+      expect(
+        container.querySelector(
+          '[data-ctx-agent="wfd_ancestor_agent"] .shell-ch-preview',
+        )?.textContent,
+      ).toContain("Corbits HQ");
 
       act(() => root.unmount());
       container.remove();

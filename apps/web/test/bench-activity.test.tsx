@@ -33,6 +33,7 @@ function stubTenantFetch(
     readonly chats?: readonly unknown[];
     readonly runs?: readonly unknown[];
     readonly tasks?: readonly unknown[];
+    readonly agents?: readonly unknown[];
   } = {},
 ): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
@@ -42,6 +43,8 @@ function stubTenantFetch(
       return Promise.resolve(json({ data: data.runs ?? [], nextCursor: null }));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
+    if (path.includes("/agent-definitions/visible"))
+      return Promise.resolve(json({ definitions: data.agents ?? [] }));
     if (path.includes("kind=chat"))
       return Promise.resolve(json({ items: data.chats ?? [] }));
     return Promise.resolve(json({ items: data.channels ?? [] }));
@@ -99,6 +102,7 @@ describe("useBenchActivity", () => {
       kind: "ready",
       channels: [],
       chats: [],
+      agents: [],
       routines: [],
       workingTasks: [],
     });
@@ -108,6 +112,9 @@ describe("useBenchActivity", () => {
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
     expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
     expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
+    expect(
+      calls.some((path) => path.includes("/agent-definitions/visible")),
+    ).toBe(true);
     root.unmount();
     container.remove();
   });
@@ -161,6 +168,36 @@ describe("useBenchActivity", () => {
     expect(state.channels.map((c) => c.id)).toEqual(["run_host1"]);
     expect(state.chats.map((c) => c.id)).toEqual(["run_chat1"]);
     expect(state.routines.map((r) => r.id)).toEqual(["run_deployment1"]);
+    root.unmount();
+    container.remove();
+  });
+
+  test("surfaces every visible agent definition, own and inherited", async () => {
+    const calls: string[] = [];
+    stubTenantFetch(calls, {
+      agents: [
+        {
+          id: "wfd_outreach",
+          name: "Outreach",
+          tenantId: "tnt_ancestor",
+          tenantName: "Acme",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const { latest, root, container } = await mountHook("tnt_1");
+    await settle();
+    const state = latest();
+    if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
+    expect(state.agents).toEqual([
+      {
+        id: "wfd_outreach",
+        name: "Outreach",
+        tenantId: "tnt_ancestor",
+        tenantName: "Acme",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
     root.unmount();
     container.remove();
   });

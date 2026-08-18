@@ -66,6 +66,8 @@ function stubFetch(calls: string[]): void {
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/tasks")) return Promise.resolve(json({ items: [] }));
+    if (path.includes("/agent-definitions/visible"))
+      return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -132,6 +134,8 @@ describe("shell listing dedupe (CL-6045)", () => {
       if (path.includes("/top-level-runs"))
         return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/tasks")) return Promise.resolve(json({ items: [] }));
+      if (path.includes("/agent-definitions/visible"))
+        return Promise.resolve(json({ definitions: [] }));
       if (init?.method === "PATCH") {
         return Promise.resolve(
           json({
