@@ -14,6 +14,7 @@ mock.module("@intx/workflow-host", () => ({
     capturedConfig = config;
     return {
       getCredentialsSnapshot: () => null,
+      deliverCredentials: async () => {},
     };
   }),
   wrapHubTransportAsMailBus: () => ({
@@ -23,7 +24,8 @@ mock.module("@intx/workflow-host", () => ({
 
 let capturedConfig: unknown;
 
-const { createSidecarWorkflowSupervisor } = await import("./supervisor");
+const { createSidecarWorkflowSupervisor, DEFAULT_MAX_GRANTS_AGE_MS } =
+  await import("./supervisor");
 
 test("createSidecarWorkflowSupervisor forwards onSuspensionRegister to the workflow-host supervisor", () => {
   const registerSuspension = mock(() => {});
@@ -130,4 +132,91 @@ test("createSidecarWorkflowSupervisor omits credentialDelivery when the deploy c
   expect(
     (capturedConfig as { credentialDelivery?: unknown }).credentialDelivery,
   ).toBeUndefined();
+});
+
+// CL-6242: the vendor's recycle policy (`RecyclePolicyBounds` /
+// `readRssBytes` / `readGrantsAgeMs`, `types.ts:473-499`) was never armed
+// for a warm-keep deployment, so a long-lived single-step agent ran
+// forever on the grants it was spawned with -- no bound ever forced a
+// respawn onto fresh grants.
+test("createSidecarWorkflowSupervisor arms the grants-age recycle policy for a warm-keep deployment", () => {
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: {} as never,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-5" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-5",
+    stepCount: 1,
+    deploymentMailAddress: "dep-5@local",
+    deriveStepAddress: () => "dep-5-step@local",
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+    warmKeep: true,
+  });
+
+  expect(capturedConfig).toMatchObject({
+    recyclePolicy: { maxGrantsAgeMs: DEFAULT_MAX_GRANTS_AGE_MS },
+  });
+  expect(
+    typeof (capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs,
+  ).toBe("function");
+  // No RSS reader: see the module-level comment in `supervisor.ts` on why
+  // `maxRssBytes`/`readRssBytes` are never wired.
+  expect(
+    (capturedConfig as { readRssBytes?: unknown }).readRssBytes,
+  ).toBeUndefined();
+});
+
+test("createSidecarWorkflowSupervisor omits the recycle policy for a non-warm-keep deployment", () => {
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: {} as never,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-6" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-6",
+    stepCount: 2,
+    deploymentMailAddress: "dep-6@local",
+    deriveStepAddress: () => "dep-6-step@local",
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+    warmKeep: false,
+  });
+
+  expect(
+    (capturedConfig as { recyclePolicy?: unknown }).recyclePolicy,
+  ).toBeUndefined();
+  expect(
+    (capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs,
+  ).toBeUndefined();
+});
+
+test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a non-negative age", async () => {
+  const wired = createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: {} as never,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-7" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-7",
+    stepCount: 1,
+    deploymentMailAddress: "dep-7@local",
+    deriveStepAddress: () => "dep-7-step@local",
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+    warmKeep: true,
+  });
+
+  const readGrantsAgeMs = (
+    capturedConfig as { readGrantsAgeMs: () => number | undefined }
+  ).readGrantsAgeMs;
+  expect(readGrantsAgeMs()).toBeUndefined();
+
+  await wired.supervisor.deliverCredentials({
+    delivery: { bindings: [], materials: [] },
+  } as never);
+
+  const age = readGrantsAgeMs();
+  expect(age).toBeGreaterThanOrEqual(0);
 });

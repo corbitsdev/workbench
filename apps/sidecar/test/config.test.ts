@@ -20,7 +20,31 @@ test("parses a complete environment into config", () => {
     home: undefined,
     tmpdir: undefined,
     toolRegistries: undefined,
+    consumedRetentionMs: undefined,
+    readyTimeoutMs: undefined,
   });
+});
+
+test("carries operator overrides for consumedRetentionMs/readyTimeoutMs through when present", () => {
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    CONSUMED_RETENTION_MS: "3600000",
+    CHILD_READY_TIMEOUT_MS: "5000",
+  });
+  expect(config.consumedRetentionMs).toBe(3_600_000);
+  expect(config.readyTimeoutMs).toBe(5_000);
+});
+
+test("a non-numeric CONSUMED_RETENTION_MS fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({ ...VALID_ENV, CONSUMED_RETENTION_MS: "not-a-number" }),
+  ).toThrow(/CONSUMED_RETENTION_MS/);
+});
+
+test("a non-positive CHILD_READY_TIMEOUT_MS fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({ ...VALID_ENV, CHILD_READY_TIMEOUT_MS: "0" }),
+  ).toThrow(/CHILD_READY_TIMEOUT_MS/);
 });
 
 test("carries a valid tool-registry pin through as the raw JSON", () => {
