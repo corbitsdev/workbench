@@ -27,6 +27,7 @@ import {
   type SourcesOverride,
 } from "@corbits/folded-runs";
 import type { FoldedBody } from "@intx/workflow-deploy";
+import type { Selector } from "@intx/workflow";
 import type { DB } from "@intx/db";
 import {
   agentSession,
@@ -185,6 +186,27 @@ function noopSourcesOverride(
 }
 
 /**
+ * The channel-host step's `input` selector. Every other folded run reads
+ * its step's default `{ from: "trigger.payload" }` — the triggering
+ * mail's real content, which an inference-driven agent needs. The
+ * channel host never does: it never replies, comments, or acts on
+ * anything sent to it (see `channel-workflow.ts`'s
+ * `CHANNEL_HOST_SYSTEM_PROMPT`), so its step
+ * has no use for `trigger.payload` at all. Pinning a literal here — not
+ * just leaving the field alone — matters because `trigger.payload` is
+ * bare mail `content`, which is legitimately empty for attachments-only
+ * mail (`@corbits/chat`'s `encodeParts` leaves `content` empty for an
+ * event-only send, e.g. `channel.agent-joined`); the default selector
+ * would feed that empty string straight into `agent.send`, which throws
+ * on it, killing the anchor before it ever opens (CL-6164). The exact
+ * value is never read by anything — the anchor's whole job is holding
+ * the mailbox, not processing input.
+ */
+const CHANNEL_HOST_STEP_INPUT: Selector = {
+  literal: "channel-host anchor turn",
+};
+
+/**
  * The concrete object `createHubChatPlatform` returns: the `ChatPlatform`
  * port itself, plus a `recordActivity` hook the host wires into
  * `createChatOrchestrator` (see `chat-orchestrator.ts`) so an invited
@@ -328,6 +350,7 @@ export function createHubChatPlatform(
               deps.noopInferenceBaseUrl,
               parsedFoldedBody,
             ),
+            stepInput: CHANNEL_HOST_STEP_INPUT,
           }
         : wakeParams,
     );
@@ -416,6 +439,7 @@ export function createHubChatPlatform(
         // channel launch (and, per `noopInference` below, every wake
         // of it) succeed with zero catalog sources seeded.
         sources: noopSourcesOverride(deps.noopInferenceBaseUrl, foldedBody),
+        stepInput: CHANNEL_HOST_STEP_INPUT,
         // The launch body is persisted with the launch itself, in the
         // same transaction, so a wake can rebuild the deploy config
         // without reaching for the definition's asset — a channel
