@@ -574,6 +574,9 @@ describe("POST /complete-setup", () => {
       );
     });
 
+    hub.get(`/api/tenants/${TENANT_ID}/assets/:assetId/tarballs`, (c) =>
+      c.json([], 200),
+    );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
