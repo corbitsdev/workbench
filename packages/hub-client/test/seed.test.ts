@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CliError } from "../src/errors";
+import { CliError, isSidecarUnavailableError } from "../src/errors";
 import {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
@@ -527,6 +527,14 @@ describe("seedTenant", () => {
     }
     expect(caught).toBeInstanceOf(CliError);
     expect((caught as CliError).fix).toContain("bun run dev");
+    // Onboarding's `ensureSeeded` parses this exact class to finish the
+    // request successfully with a partial-seed report, rather than
+    // failing the whole onboarding flow the way a generic `CliError`
+    // still does — the 409/not-routable case above stays a plain
+    // `CliError` on purpose, since only this 502 branch is the "durable
+    // state intact, sidecar just isn't up yet" condition onboarding
+    // recovers from.
+    expect(isSidecarUnavailableError(caught)).toBe(true);
   });
 
   test("an empty default workflow set is an error", async () => {

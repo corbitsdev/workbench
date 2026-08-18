@@ -538,9 +538,7 @@ describe("POST /complete-setup", () => {
     hub.post(`/api/tenants/${TENANT_ID}/git-tokens`, (c) =>
       c.json({ id: "tok_1", secret: "s3cret" }, 201),
     );
-    hub.get(`/api/tenants/${TENANT_ID}/skills/:name`, (c) =>
-      c.json({}, 404),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/skills/:name`, (c) => c.json({}, 404));
     hub.post(`/api/tenants/${TENANT_ID}/skills`, (c) => c.json({}, 201));
     hub.get(`/api/tenants/${TENANT_ID}/workflows/definitions`, (c) =>
       c.json({ data: [], nextCursor: null }, 200),
@@ -616,6 +614,73 @@ describe("POST /complete-setup", () => {
       expect(deploymentCreatePosts).toBe(DEFAULT_WORKFLOWS.length);
       expect(assets.length).toBe(DEFAULT_WORKFLOWS.length + 1);
       expect(deployments.length).toBe(DEFAULT_WORKFLOWS.length);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // CL-6264: a sidecar-unavailable deploy must not fail this route —
+  // durable state (credential, tenant, grants, assets) is already
+  // intact — and the pending row must survive so a later reload's call
+  // to this same route can finish the deferred workflows once the
+  // sidecar is back.
+  test("a sidecar-unavailable deploy reports the pending kind and keeps the pending row for the next retry", async () => {
+    const hub = new Hono();
+    principalsRoute(hub);
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
+      c.json([]),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes({
+          hubUrl: `http://localhost:${server.port}`,
+          pushWorkflow: async () => "pushed",
+          log: () => undefined,
+          pendingSeedStore,
+          ensureSeededFn: async () => ({
+            kind: "seeded-pending-agents",
+            deployed: ["echo"],
+            pending: ["assistant"],
+            message:
+              "Your workbench is ready — agents will come online shortly.",
+          }),
+        }),
+      );
+      await withPendingSeed(pendingSeedStore);
+
+      const response = await app.request("/api/onboarding/complete-setup", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        kind: string;
+        tenantId: string;
+        tenantSlug: string;
+        deployed: string[];
+        pending: string[];
+        message: string;
+      };
+      expect(body).toEqual({
+        kind: "seeded-pending-agents",
+        tenantId: TENANT_ID,
+        tenantSlug: TENANT_SLUG,
+        deployed: ["echo"],
+        pending: ["assistant"],
+        message: "Your workbench is ready — agents will come online shortly.",
+      });
+
+      // Not fully seeded yet — the row must still be there for the next
+      // reload's retry, not cleared the way a full `seeded` result
+      // clears it.
+      const stillThere = await pendingSeedStore.read({
+        userId: "user_1",
+        tenantId: TENANT_ID,
+      });
+      expect(stillThere).toBeDefined();
     } finally {
       server.stop(true);
     }

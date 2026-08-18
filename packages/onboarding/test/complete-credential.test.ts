@@ -4,6 +4,7 @@ import type {
   ToolRegistryPublisher,
   WorkflowPusher,
 } from "@workbench/hub-client";
+import { SidecarUnavailableError } from "@workbench/hub-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -209,7 +210,13 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
+      workflows: [
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+        "last-30-days-research",
+      ],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -253,7 +260,13 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
+      workflows: [
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+        "last-30-days-research",
+      ],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
@@ -297,7 +310,13 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
+      workflows: [
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+        "last-30-days-research",
+      ],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedCatalogCalls[0]?.provider).toBe("groq");
@@ -564,7 +583,10 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -574,7 +596,11 @@ describe("completeCredentialSetup", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -763,7 +789,10 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -773,7 +802,11 @@ describe("completeCredentialSetup", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -1124,6 +1157,73 @@ describe("completeCredentialSetup", () => {
       expect.objectContaining({ credentialType: "api_key" }),
     ]);
   });
+
+  // CL-6264: the credential-persist half already succeeded (the tenant,
+  // principal, and credential are real and durable) by the time the
+  // deploy step hits a sidecar-unavailable failure, so `/complete`'s own
+  // route can write a pending-seed row for the retry path — it needs
+  // `principalId`/`tenantDomain` threaded all the way out here to do it.
+  test("a sidecar-unavailable deploy still reports the durable tenant identity, not just deployed/pending", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+      seedCatalogFn: async () => {},
+      seedTenantFn: async () => {
+        throw new SidecarUnavailableError(
+          "the hub could not deploy workflow echo: the sidecar is unavailable",
+          "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
+        );
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "seeded-pending-agents",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      principalId: PRINCIPAL_ID,
+      tenantDomain: "alice-user1.bench.local",
+      deployed: [],
+      pending: [
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+        "last-30-days-research",
+      ],
+      message: "Your workbench is ready — agents will come online shortly.",
+    });
+  });
 });
 
 describe("testAndPersistCredential (the fast half)", () => {
@@ -1317,7 +1417,13 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded",
-      workflows: ["echo", "assistant", "channel-digest", "recurring-task", "last-30-days-research"],
+      workflows: [
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+        "last-30-days-research",
+      ],
     });
     expectNoConfirmation(seedTenantCalls);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -1414,7 +1520,10 @@ describe("ensureSeeded (the slow half)", () => {
           cookies: [],
         };
       }
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -1424,7 +1533,11 @@ describe("ensureSeeded (the slow half)", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/definitions`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -1495,5 +1608,99 @@ describe("ensureSeeded (the slow half)", () => {
     expect(deploymentCreatePosts).toBe(5);
     expect(assets.length).toBe(5);
     expect(deployments.length).toBe(5);
+  });
+
+  // CL-6264: tonight's live failure — completeCredentialSetup ->
+  // seedTenant -> deployWorkflow hit sidecar_unavailable and the whole
+  // flow failed, even though the credential, tenant, grants, and assets
+  // all durably succeeded. `ensureSeeded` must parse that specific
+  // `CliError` subclass and report an honest partial state instead of
+  // throwing.
+  test("a sidecar-unavailable deploy reports which workflows deployed and which are pending, instead of failing the whole flow", async () => {
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    const assetRow = (name: string) => ({
+      id: `ast_${name}`,
+      tenantId: TENANT_ID,
+      kind: "workflow",
+      name,
+      displayName: name,
+      creatorPrincipalId: PRINCIPAL_ID,
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+      origin: { tenantId: TENANT_ID, direct: true },
+    });
+    const api: ApiCall = async (method, path) => {
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: [assetRow("echo"), assetRow("assistant")],
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: [
+            { definitionAssetId: "ast_echo", status: "deployed" },
+            { definitionAssetId: "ast_assistant", status: "deployed" },
+          ],
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await ensureSeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+      tenant: TENANT,
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      seedTenantFn: async () => {
+        throw new SidecarUnavailableError(
+          "the hub could not deploy workflow channel-digest: the sidecar is unavailable",
+          "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
+        );
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "seeded-pending-agents",
+      deployed: ["echo", "assistant"],
+      pending: ["channel-digest", "recurring-task", "last-30-days-research"],
+      message: "Your workbench is ready — agents will come online shortly.",
+    });
+  });
+
+  test("a non-sidecar deploy failure still fails the flow loudly", async () => {
+    await expect(
+      ensureSeeded({
+        api: (async () => {
+          throw new Error("api must not be called before seedTenantFn runs");
+        }) as ApiCall,
+        cookies: ["session=abc"],
+        hubUrl: "http://localhost:3000",
+        pushWorkflow: noopPush,
+        publishToolRegistry: noopPublishToolRegistry,
+        log: collector().log,
+        tenant: TENANT,
+        provider: "anthropic",
+        apiKey: "sk-ant-good",
+        seedTenantFn: async () => {
+          throw new Error("the hub rejected the deployment with status 500");
+        },
+      }),
+    ).rejects.toThrow("the hub rejected the deployment with status 500");
   });
 });
