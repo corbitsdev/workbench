@@ -69,6 +69,14 @@
 // `CORBITS_VOCABULARY`) — the brand-correctness guidance applies here
 // exactly as it did in the OG.
 //
+// (5) Intake: the OG parks on `awaitSignal("intake")` so a human stepper
+// can fill topic/focus after the run starts. Workbench collects those
+// fields on the routine *before* launch and delivers them as the
+// first-turn mail (`renderRoutineInput` → `trigger.payload`). A gate
+// that nobody fulfills hangs the run forever. There is no second
+// intake path: the triggering mail *is* the topic/focus. Every
+// reasoning step that needs them reads `{ from: "trigger.payload" }`.
+//
 // ## What of the prior (CL-5997) single-step port is kept vs. replaced
 //
 // Replaced: the single reasoning step and its monolithic system prompt
@@ -107,7 +115,7 @@
 
 import { defineAgent } from "@intx/agent";
 import type { InferencePreference } from "@intx/agent";
-import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineWorkflow, step } from "@intx/workflow";
 import type {
   Selector,
   StepPrimitive,
@@ -127,9 +135,7 @@ export const LAST_30_DAYS_RESEARCH_WORKFLOW_ID = "wf_last_30_days_research";
 
 // Step ids, in run order. Exported so tests and any future delivery-card
 // renderer can address a specific step without hardcoding string literals.
-export const INTAKE_SIGNAL = "intake";
 export const LAST_30_DAYS_RESEARCH_STEP_IDS = [
-  "intake",
   "ground",
   "gather",
   "entities",
@@ -245,12 +251,13 @@ export interface Last30DaysResearchWorkflowInput {
 }
 
 /**
- * Builds the last-30-days-research definition: a six-step pipeline behind
- * one intake gate (see this file's header comment for the full step-by-
- * step account and every adaptation from the OG). Tools are never
- * inlined on the definition: they arrive as packages on the deploy
- * (`@corbits/web-search-tools`, `@corbits/github-tools`), keeping the
- * definition pure data — matching every other definition in this catalog.
+ * Builds the last-30-days-research definition: a six-step pipeline
+ * whose first-turn mail *is* the topic/focus (see this file's header
+ * comment for the full step-by-step account and every adaptation from
+ * the OG). Tools are never inlined on the definition: they arrive as
+ * packages on the deploy (`@corbits/web-search-tools`,
+ * `@corbits/github-tools`), keeping the definition pure data — matching
+ * every other definition in this catalog.
  */
 export function buildLast30DaysResearchWorkflow(
   input: Last30DaysResearchWorkflowInput,
@@ -273,13 +280,10 @@ export function buildLast30DaysResearchWorkflow(
     id: LAST_30_DAYS_RESEARCH_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
-      intake: awaitSignal({ name: INTAKE_SIGNAL }),
-
       ground: reasoningStep({
         id: "last-30-days-research-ground",
         systemPrompt: GROUNDING_PROMPT,
-        input: { from: "steps.intake.output" },
-        after: ["intake"],
+        input: { from: "trigger.payload" },
         timeoutMs: input.turnTimeoutMs,
         inferencePreferences: defaultPreferences,
       }),
@@ -288,10 +292,7 @@ export function buildLast30DaysResearchWorkflow(
         id: "last-30-days-research-gather",
         systemPrompt: GATHER_PROMPT,
         input: {
-          merge: [
-            { from: "steps.intake.output" },
-            { from: "steps.ground.output" },
-          ],
+          merge: [{ from: "trigger.payload" }, { from: "steps.ground.output" }],
         },
         after: ["ground"],
         timeoutMs: input.turnTimeoutMs,
@@ -302,10 +303,7 @@ export function buildLast30DaysResearchWorkflow(
         id: "last-30-days-research-entities",
         systemPrompt: ENTITY_EXTRACT_PROMPT,
         input: {
-          merge: [
-            { from: "steps.intake.output" },
-            { from: "steps.gather.output" },
-          ],
+          merge: [{ from: "trigger.payload" }, { from: "steps.gather.output" }],
         },
         after: ["gather"],
         timeoutMs: input.turnTimeoutMs,
@@ -317,7 +315,7 @@ export function buildLast30DaysResearchWorkflow(
         systemPrompt: GATHER_PROMPT,
         input: {
           merge: [
-            { from: "steps.intake.output" },
+            { from: "trigger.payload" },
             { from: "steps.entities.output" },
           ],
         },
@@ -331,7 +329,7 @@ export function buildLast30DaysResearchWorkflow(
         systemPrompt: CURATE_PROMPT,
         input: {
           merge: [
-            { from: "steps.intake.output" },
+            { from: "trigger.payload" },
             { from: "steps.gather.output" },
             { from: "steps.gather2.output" },
           ],
@@ -345,10 +343,7 @@ export function buildLast30DaysResearchWorkflow(
         id: "last-30-days-research-write",
         systemPrompt: WRITE_PROMPT,
         input: {
-          merge: [
-            { from: "steps.intake.output" },
-            { from: "steps.curate.output" },
-          ],
+          merge: [{ from: "trigger.payload" }, { from: "steps.curate.output" }],
         },
         after: ["curate"],
         timeoutMs: input.turnTimeoutMs,

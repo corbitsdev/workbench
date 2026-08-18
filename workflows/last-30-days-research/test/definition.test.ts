@@ -4,14 +4,9 @@
 // re-proven here.
 
 import { expect, test } from "bun:test";
-import type {
-  AwaitSignalPrimitive,
-  StepPrimitive,
-  WorkflowDefinition,
-} from "@intx/workflow";
+import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
-  INTAKE_SIGNAL,
   LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
   LAST_30_DAYS_RESEARCH_PENDING_SOURCES,
   LAST_30_DAYS_RESEARCH_SECTIONS,
@@ -42,35 +37,33 @@ function stepPrimitive(
   return primitive;
 }
 
-function awaitSignalPrimitive(
-  definition: WorkflowDefinition,
-  id: string,
-): AwaitSignalPrimitive {
-  const primitive = definition.steps[id];
-  if (primitive === undefined || primitive.kind !== "awaitSignal") {
-    throw new Error(`expected awaitSignal primitive for "${id}"`);
-  }
-  return primitive;
-}
-
-test("the definition has exactly the six-step pipeline behind the intake gate", () => {
+test("the definition is a six-step pipeline with no intake gate", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
+  expect(LAST_30_DAYS_RESEARCH_STEP_IDS).toEqual([
+    "ground",
+    "gather",
+    "entities",
+    "gather2",
+    "curate",
+    "write",
+  ]);
   expect(definition.stepOrder).toEqual([...LAST_30_DAYS_RESEARCH_STEP_IDS]);
   expect(Object.keys(definition.steps).sort()).toEqual(
     [...LAST_30_DAYS_RESEARCH_STEP_IDS].sort(),
   );
+  expect(definition.steps.intake).toBeUndefined();
 });
 
-test("intake is an awaitSignal gate named INTAKE_SIGNAL", () => {
+test("ground is the first step and reads the triggering mail as topic/focus", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const intake = awaitSignalPrimitive(definition, "intake");
-  expect(intake.name).toBe(INTAKE_SIGNAL);
+  const ground = stepPrimitive(definition, "ground");
+  expect(ground.after).toBeUndefined();
+  expect(ground.input).toEqual({ from: "trigger.payload" });
 });
 
 test("every reasoning step chains serially, ground through write", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
   const expectedPredecessor: Record<string, string> = {
-    ground: "intake",
     gather: "ground",
     entities: "gather",
     gather2: "entities",
@@ -132,29 +125,29 @@ test("curate and write prepend the writer-tier preference ahead of the deploy de
   }
 });
 
-test("each step's input selector chains off the prior step's output, plus intake where the prompt needs the topic/focus", () => {
+test("each step's input selector chains off the prior step's output, plus the triggering mail where the prompt needs the topic/focus", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
   expect(stepPrimitive(definition, "ground").input).toEqual({
-    from: "steps.intake.output",
+    from: "trigger.payload",
   });
   expect(stepPrimitive(definition, "gather").input).toEqual({
-    merge: [{ from: "steps.intake.output" }, { from: "steps.ground.output" }],
+    merge: [{ from: "trigger.payload" }, { from: "steps.ground.output" }],
   });
   expect(stepPrimitive(definition, "entities").input).toEqual({
-    merge: [{ from: "steps.intake.output" }, { from: "steps.gather.output" }],
+    merge: [{ from: "trigger.payload" }, { from: "steps.gather.output" }],
   });
   expect(stepPrimitive(definition, "gather2").input).toEqual({
-    merge: [{ from: "steps.intake.output" }, { from: "steps.entities.output" }],
+    merge: [{ from: "trigger.payload" }, { from: "steps.entities.output" }],
   });
   expect(stepPrimitive(definition, "curate").input).toEqual({
     merge: [
-      { from: "steps.intake.output" },
+      { from: "trigger.payload" },
       { from: "steps.gather.output" },
       { from: "steps.gather2.output" },
     ],
   });
   expect(stepPrimitive(definition, "write").input).toEqual({
-    merge: [{ from: "steps.intake.output" }, { from: "steps.curate.output" }],
+    merge: [{ from: "trigger.payload" }, { from: "steps.curate.output" }],
   });
 });
 
