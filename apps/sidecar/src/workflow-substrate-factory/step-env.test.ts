@@ -18,6 +18,7 @@ import type {
   SourcesSnapshotRef,
 } from "@intx/workflow-host";
 
+import { SUMMARIZE_OLDER_TURNS_NAME } from "./compactors";
 import { createSidecarStepBuildEnv } from "./step-env";
 
 const tmpDirs: string[] = [];
@@ -110,5 +111,25 @@ test("a toolless body-step env still carries definitionId, so the binding is not
   const env = await buildEnv(stepInvokeRequest(), sourcesRef);
   expect((env as unknown as { definitionId: string }).definitionId).toBe(
     "wfd_parent_definition",
+  );
+});
+
+test("the built step env forwards the summarize-older-turns compactor (CL-6204) like the other env fields above", async () => {
+  const dataDir = makeTmpDataDir();
+  const buildEnv = createSidecarStepBuildEnv(buildEnvDeps(dataDir));
+  const sourcesRef: SourcesSnapshotRef = {
+    current: {
+      step_1: [{ id: "src_1", provider: "anthropic", model: "claude" }],
+    },
+  } as unknown as SourcesSnapshotRef;
+
+  const env = await buildEnv(stepInvokeRequest(), sourcesRef);
+
+  const compactors = (
+    env as unknown as { compactors: Record<string, { name: string }> }
+  ).compactors;
+  expect(Object.keys(compactors)).toEqual([SUMMARIZE_OLDER_TURNS_NAME]);
+  expect(compactors[SUMMARIZE_OLDER_TURNS_NAME]?.name).toBe(
+    SUMMARIZE_OLDER_TURNS_NAME,
   );
 });
