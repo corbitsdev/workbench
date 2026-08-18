@@ -94,10 +94,24 @@ const WebhookTrigger = type({
 });
 
 /**
+ * A run-once trigger: fires exactly once, immediately on create, and
+ * never schedules — the "a task is a run-once routine" shape (CL-6243).
+ * Distinct from `null` (manual, repeatable run-now-only): a `null`-
+ * triggered routine never auto-fires and can be run-now'd any number of
+ * times, while `{kind: "once"}` fires the moment it's created and its
+ * `nextFireAt` stays `null` forever after — the scheduler never claims
+ * it (see `computeNextFireAt`), and the UI reads its cadence as "Runs
+ * once" rather than "Manual"/"On demand".
+ */
+const OnceTrigger = type({
+  kind: "'once'",
+});
+
+/**
  * A routine's trigger: one of the three cadence presets, a raw cron
- * escape hatch, an event-driven webhook binding, or `null` for a
- * manual, run-now-only routine. Every branch is validated eagerly
- * (arktype at the trust boundary) — an invalid cron string, an
+ * escape hatch, an event-driven webhook binding, a run-once trigger, or
+ * `null` for a manual, run-now-only routine. Every branch is validated
+ * eagerly (arktype at the trust boundary) — an invalid cron string, an
  * impossible schedule, or a bad timezone is rejected at save time with
  * a specific error, never at the next scheduled fire.
  *
@@ -113,6 +127,7 @@ export const RoutineTrigger = IntervalTrigger.or(DailyTrigger)
   .or(WeeklyTrigger)
   .or(CronTrigger)
   .or(WebhookTrigger)
+  .or(OnceTrigger)
   .or("null");
 
 export type RoutineTriggerT = typeof RoutineTrigger.infer;
@@ -169,6 +184,7 @@ export const RoutineTriggerWire = IntervalTrigger.or(DailyTriggerWire)
   .or(WeeklyTriggerWire)
   .or(CronTriggerWire)
   .or(WebhookTrigger)
+  .or(OnceTrigger)
   .or("null");
 
 export type RoutineTriggerWireT = typeof RoutineTriggerWire.infer;
@@ -181,7 +197,10 @@ export type RoutineTriggerWireT = typeof RoutineTriggerWire.infer;
  * `computeNextFireAt`).
  */
 export function cronExpressionForTrigger(
-  trigger: Exclude<RoutineTriggerT, null | { kind: "webhook" }>,
+  trigger: Exclude<
+    RoutineTriggerT,
+    null | { kind: "webhook" } | { kind: "once" }
+  >,
 ): string {
   switch (trigger.kind) {
     case "interval":
@@ -225,11 +244,12 @@ export function cronTriggerForWeekdays(
 }
 
 /** Timezone the trigger's wall-clock fields are interpreted in. Only
- * meaningful for a cadence trigger — webhook and manual triggers have no
- * wall-clock fields, so this returns "UTC" for them as a harmless default. */
+ * meaningful for a cadence trigger — webhook, once, and manual triggers
+ * have no wall-clock fields, so this returns "UTC" for them as a
+ * harmless default. */
 export function timezoneForTrigger(trigger: RoutineTriggerT): string {
   if (trigger === null || trigger.kind === "interval") return "UTC";
-  if (trigger.kind === "webhook") return "UTC";
+  if (trigger.kind === "webhook" || trigger.kind === "once") return "UTC";
   return trigger.timezone ?? "UTC";
 }
 
@@ -239,13 +259,14 @@ export function timezoneForTrigger(trigger: RoutineTriggerT): string {
  */
 export type RoutineModeFilter = "all" | "schedule" | "trigger" | "demand";
 
-/** Where a trigger sits for filtering: a manual (`null`) trigger is
- * on-demand only, a webhook trigger is event-driven ("trigger"), and every
- * cadence preset or raw cron fires on its own schedule. */
+/** Where a trigger sits for filtering: a manual (`null`) or run-once
+ * trigger is on-demand only, a webhook trigger is event-driven
+ * ("trigger"), and every cadence preset or raw cron fires on its own
+ * schedule. */
 export function routineTriggerCategory(
   trigger: RoutineTriggerT,
 ): Exclude<RoutineModeFilter, "all"> {
-  if (trigger === null) return "demand";
+  if (trigger === null || trigger.kind === "once") return "demand";
   if (trigger.kind === "webhook") return "trigger";
   return "schedule";
 }
@@ -261,8 +282,10 @@ export function routineMatchesModeFilter(
 
 /**
  * When a routine with this trigger next fires, strictly after `after` —
- * `null` for a manual routine (which never auto-fires) or a webhook
- * routine (which fires only on a verified delivery, never on a clock).
+ * `null` for a manual routine (which never auto-fires), a webhook
+ * routine (which fires only on a verified delivery, never on a clock),
+ * or a run-once routine (which fires exactly once, at create — see
+ * `launchAndCorrelate`'s caller in `routes.ts` — and never again).
  * Persisted as a routine's `nextFireAt` on every create, trigger/enabled
  * change, and fire, so a schedule due while the hub is down is still due
  * (not skipped) on restart: the scheduler's readiness test is
@@ -275,7 +298,8 @@ export function computeNextFireAt(
   trigger: RoutineTriggerT,
   after: Date,
 ): Date | null {
-  if (trigger === null || trigger.kind === "webhook") return null;
+  if (trigger === null || trigger.kind === "webhook" || trigger.kind === "once")
+    return null;
   return nextCronFireAfter(
     cronExpressionForTrigger(trigger),
     after,
@@ -315,6 +339,8 @@ export function routineCadenceLabel(trigger: RoutineTriggerT): string {
   switch (trigger.kind) {
     case "webhook":
       return "On webhook";
+    case "once":
+      return "Runs once";
     case "interval": {
       const singular = { minutes: "minute", hours: "hour", days: "day" }[
         trigger.unit
@@ -358,5 +384,7 @@ export function routineCadenceSummary(trigger: RoutineTriggerT): string {
       return `Cron ${trigger.expression}`;
     case "webhook":
       return "On webhook";
+    case "once":
+      return "Runs once";
   }
 }
