@@ -596,26 +596,23 @@ export function createSidecarDeployRouter(deps: {
     spec: WorkflowDeploySpec,
     sources: WorkflowDeploymentRecord["sources"],
   ): WorkflowDeploymentRecord {
-    const recordBase = {
+    // `exactOptionalPropertyTypes` rejects `{ field: undefined }` for these
+    // optional record fields, so an absent value must omit the key entirely
+    // rather than assign `undefined` to it -- hence one conditional-spread
+    // per optional field, folded into this single literal.
+    return {
       version: 1 as const,
       agentAddress: spec.agentAddress,
       definitionId: spec.definition.id,
       sources,
+      ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
+      ...(spec.hubPublicKey !== undefined
+        ? { hubPublicKey: spec.hubPublicKey }
+        : {}),
+      ...(spec.referencedDefinitionHashes !== undefined
+        ? { referencedDefinitionHashes: spec.referencedDefinitionHashes }
+        : {}),
     };
-    const recordWithSessionId =
-      spec.sessionId !== undefined
-        ? { ...recordBase, sessionId: spec.sessionId }
-        : recordBase;
-    const recordWithHubPublicKey =
-      spec.hubPublicKey !== undefined
-        ? { ...recordWithSessionId, hubPublicKey: spec.hubPublicKey }
-        : recordWithSessionId;
-    return spec.referencedDefinitionHashes !== undefined
-      ? {
-          ...recordWithHubPublicKey,
-          referencedDefinitionHashes: spec.referencedDefinitionHashes,
-        }
-      : recordWithHubPublicKey;
   }
 
   /**
@@ -769,57 +766,34 @@ export function createSidecarDeployRouter(deps: {
           [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(currentSources),
         }),
         subprocessSpawner: multistepSpawner,
+        // `exactOptionalPropertyTypes` rejects `{ field: undefined }` for
+        // these optional supervisor-config fields, so an absent value must
+        // omit the key entirely -- hence one conditional-spread per optional
+        // field, folded into this single literal rather than a chain of
+        // named intermediate configs.
+        ...(deps.registerSuspension !== undefined
+          ? { onSuspensionRegister: deps.registerSuspension }
+          : {}),
+        ...(spec.credentials !== undefined
+          ? { credentialDelivery: spec.credentials }
+          : {}),
+        ...(deps.multistepBinaryPath !== undefined
+          ? { binaryPath: deps.multistepBinaryPath }
+          : {}),
+        ...(deps.onDispatchTiming !== undefined
+          ? { onDispatchTiming: deps.onDispatchTiming }
+          : {}),
+        ...(deps.repackEveryMessages !== undefined
+          ? { repackEveryMessages: deps.repackEveryMessages }
+          : {}),
+        ...(deps.consumedRetentionMs !== undefined
+          ? { consumedRetentionMs: deps.consumedRetentionMs }
+          : {}),
+        ...(deps.readyTimeoutMs !== undefined
+          ? { readyTimeoutMs: deps.readyTimeoutMs }
+          : {}),
       };
-      const wiredConfigWithOnSuspensionRegister =
-        deps.registerSuspension !== undefined
-          ? {
-              ...wiredBaseConfig,
-              onSuspensionRegister: deps.registerSuspension,
-            }
-          : wiredBaseConfig;
-      const wiredConfigWithCredentialDelivery =
-        spec.credentials !== undefined
-          ? {
-              ...wiredConfigWithOnSuspensionRegister,
-              credentialDelivery: spec.credentials,
-            }
-          : wiredConfigWithOnSuspensionRegister;
-      const wiredConfigWithBinaryPath =
-        deps.multistepBinaryPath !== undefined
-          ? {
-              ...wiredConfigWithCredentialDelivery,
-              binaryPath: deps.multistepBinaryPath,
-            }
-          : wiredConfigWithCredentialDelivery;
-      const wiredConfigWithOnDispatchTiming =
-        deps.onDispatchTiming !== undefined
-          ? {
-              ...wiredConfigWithBinaryPath,
-              onDispatchTiming: deps.onDispatchTiming,
-            }
-          : wiredConfigWithBinaryPath;
-      const wiredConfigWithRepackEveryMessages =
-        deps.repackEveryMessages !== undefined
-          ? {
-              ...wiredConfigWithOnDispatchTiming,
-              repackEveryMessages: deps.repackEveryMessages,
-            }
-          : wiredConfigWithOnDispatchTiming;
-      const wiredConfigWithConsumedRetentionMs =
-        deps.consumedRetentionMs !== undefined
-          ? {
-              ...wiredConfigWithRepackEveryMessages,
-              consumedRetentionMs: deps.consumedRetentionMs,
-            }
-          : wiredConfigWithRepackEveryMessages;
-      const wiredConfig =
-        deps.readyTimeoutMs !== undefined
-          ? {
-              ...wiredConfigWithConsumedRetentionMs,
-              readyTimeoutMs: deps.readyTimeoutMs,
-            }
-          : wiredConfigWithConsumedRetentionMs;
-      const wired = createSidecarWorkflowSupervisor(wiredConfig);
+      const wired = createSidecarWorkflowSupervisor(wiredBaseConfig);
 
       // OUTBOUND half of mailbox ownership: register a signing key for
       // the deployment mail address on the host transport so the supervisor

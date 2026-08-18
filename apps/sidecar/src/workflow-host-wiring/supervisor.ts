@@ -34,7 +34,7 @@ import {
   defaultSubprocessSpawner,
   SIDECAR_WORKFLOW_CHILD_BINARY,
 } from "./transport";
-import { readRunGrants, runGrantsPath } from "../run-grants";
+import { readRunGrants } from "../run-grants";
 
 const logger = getLogger(["sidecar", "workflow-host-wiring", "supervisor"]);
 
@@ -381,7 +381,19 @@ export function createSidecarWorkflowSupervisor(
     lastGrantsRefreshAt = Date.now();
     return snapshot;
   };
-  const supervisorBaseConfig = {
+  // Recycle policy is armed only for a warm-keep child (see `warmKeep`'s
+  // doc comment); a per-message multi-step child has nothing for it to
+  // police. `maxRssBytes`/`readRssBytes` are intentionally absent -- see
+  // the module-level comment above `DEFAULT_MAX_GRANTS_AGE_MS`.
+  const recyclePolicy: RecyclePolicyBounds | undefined = opts.warmKeep
+    ? { maxGrantsAgeMs: DEFAULT_MAX_GRANTS_AGE_MS }
+    : undefined;
+  // `exactOptionalPropertyTypes` rejects `{ field: undefined }` for these
+  // optional supervisor-config fields, so an absent value must omit the key
+  // entirely -- hence one conditional-spread per optional field, folded
+  // into this single literal rather than a chain of named intermediate
+  // configs.
+  const supervisorConfig = {
     repoStore: opts.repoStore,
     signAsPrincipal: (async (kind, payload) => {
       const sig = await signEd25519(opts.signingKeySeed, payload);
@@ -401,74 +413,37 @@ export function createSidecarWorkflowSupervisor(
     readPrincipal: supervisorPrincipal,
     deriveStepAddress: opts.deriveStepAddress,
     deriveMailAuditRef: deriveSidecarMailAuditRef(opts.deploymentId),
-  };
-  const supervisorConfigWithOnSuspensionRegister =
-    opts.onSuspensionRegister !== undefined
+    ...(opts.onSuspensionRegister !== undefined
+      ? { onSuspensionRegister: opts.onSuspensionRegister }
+      : {}),
+    ...(opts.credentialDelivery !== undefined
+      ? { credentialDelivery: opts.credentialDelivery }
+      : {}),
+    ...(opts.deriveStepRepoId !== undefined
+      ? { deriveStepRepoId: opts.deriveStepRepoId }
+      : {}),
+    ...(opts.onDispatchTiming !== undefined
+      ? { onDispatchTiming: opts.onDispatchTiming }
+      : {}),
+    ...(opts.repackEveryMessages !== undefined
+      ? { repackEveryMessages: opts.repackEveryMessages }
+      : {}),
+    ...(opts.consumedRetentionMs !== undefined
+      ? { consumedRetentionMs: opts.consumedRetentionMs }
+      : {}),
+    ...(opts.readyTimeoutMs !== undefined
+      ? { readyTimeoutMs: opts.readyTimeoutMs }
+      : {}),
+    ...(recyclePolicy !== undefined
       ? {
-          ...supervisorBaseConfig,
-          onSuspensionRegister: opts.onSuspensionRegister,
-        }
-      : supervisorBaseConfig;
-  const supervisorConfigWithCredentialDelivery =
-    opts.credentialDelivery !== undefined
-      ? {
-          ...supervisorConfigWithOnSuspensionRegister,
-          credentialDelivery: opts.credentialDelivery,
-        }
-      : supervisorConfigWithOnSuspensionRegister;
-  const supervisorConfigWithDeriveStepRepoId =
-    opts.deriveStepRepoId !== undefined
-      ? {
-          ...supervisorConfigWithCredentialDelivery,
-          deriveStepRepoId: opts.deriveStepRepoId,
-        }
-      : supervisorConfigWithCredentialDelivery;
-  const supervisorConfigWithOnDispatchTiming =
-    opts.onDispatchTiming !== undefined
-      ? {
-          ...supervisorConfigWithDeriveStepRepoId,
-          onDispatchTiming: opts.onDispatchTiming,
-        }
-      : supervisorConfigWithDeriveStepRepoId;
-  const supervisorConfigWithRepackEveryMessages =
-    opts.repackEveryMessages !== undefined
-      ? {
-          ...supervisorConfigWithOnDispatchTiming,
-          repackEveryMessages: opts.repackEveryMessages,
-        }
-      : supervisorConfigWithOnDispatchTiming;
-  const supervisorConfigWithConsumedRetentionMs =
-    opts.consumedRetentionMs !== undefined
-      ? {
-          ...supervisorConfigWithRepackEveryMessages,
-          consumedRetentionMs: opts.consumedRetentionMs,
-        }
-      : supervisorConfigWithRepackEveryMessages;
-  const supervisorConfigWithReadyTimeoutMs =
-    opts.readyTimeoutMs !== undefined
-      ? {
-          ...supervisorConfigWithConsumedRetentionMs,
-          readyTimeoutMs: opts.readyTimeoutMs,
-        }
-      : supervisorConfigWithConsumedRetentionMs;
-  // Recycle policy is armed only for a warm-keep child (see `warmKeep`'s
-  // doc comment); a per-message multi-step child has nothing for it to
-  // police. `maxRssBytes`/`readRssBytes` are intentionally absent -- see
-  // the module-level comment above `DEFAULT_MAX_GRANTS_AGE_MS`.
-  const recyclePolicy: RecyclePolicyBounds | undefined = opts.warmKeep
-    ? { maxGrantsAgeMs: DEFAULT_MAX_GRANTS_AGE_MS }
-    : undefined;
-  const supervisorConfig =
-    recyclePolicy !== undefined
-      ? {
-          ...supervisorConfigWithReadyTimeoutMs,
           recyclePolicy,
           readGrantsAgeMs: () =>
             lastGrantsRefreshAt === undefined
               ? undefined
               : Date.now() - lastGrantsRefreshAt,
         }
-      : supervisorConfigWithReadyTimeoutMs;
+      : {}),
+  };
   const supervisor = createWorkflowSupervisor(supervisorConfig);
   return {
     supervisor: {
