@@ -63,6 +63,10 @@ export interface ListedMail {
 export interface ChannelActivitySummary {
   readonly lastActivityAt?: string;
   readonly unreadCount: number;
+  /** A bounded, text-only snippet of the newest message — omitted (never
+   * an empty string) when there is no message yet, or when the newest
+   * message carries no text part. */
+  readonly preview?: string;
 }
 
 export interface ChatChannelEvent {

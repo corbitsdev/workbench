@@ -47,7 +47,8 @@ export const CHAT_STRINGS = {
   workbenchLoadingAgentJoined: "Myra is joining\u2026",
   emptyTimelineDescription: "Say something to get the conversation going.",
   mentionEmpty: "No matches",
-  mentionBringInGroupLabel: "Bring in…",
+  mentionAgentsGroupLabel: "Agents",
+  mentionPeopleGroupLabel: "People",
   mentionForbidden: "You can't add people to this workbench",
   composerSlashEmpty: "No matching commands",
   composerSummarizeNoAgentError:
@@ -107,6 +108,7 @@ export const CHAT_STRINGS = {
     pinned
       ? "Couldn't pin that workbench — try again."
       : "Couldn't unpin that workbench — try again.",
+  agentDmOpenError: (name: string) => `Couldn't open a chat with ${name} — try again.`,
   reactionChipLabel: (emoji: string, count: number) =>
     `React with ${emoji} (${count})`,
   reactionAddAction: "Add reaction",

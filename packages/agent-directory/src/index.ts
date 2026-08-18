@@ -72,3 +72,7 @@ export {
   type CreateWorkflowAgentCreateRoutesDeps,
   type WorkflowAgentCreateEnv,
 } from "./workflow-create-routes";
+export {
+  listVisibleAgentDefinitions,
+  type VisibleAgentDefinition,
+} from "./visible-definitions";

@@ -56,6 +56,11 @@ const ChannelWire = type({
   "unreadCount?": "number",
   "lastActivityAt?": "string",
   "live?": "boolean",
+  // A bounded, text-only snippet of the newest message (see
+  // `packages/chat/src/codec.ts`'s `extractTextPreview`) — absent, never
+  // an empty string, when there is no message yet or it carries no text
+  // part.
+  "preview?": "string",
   // `GET /channels` sets this server-side (see
   // `packages/chat/src/routes.ts`) only for a channel projected into
   // this tenant via CL-5882's shared-channel machinery: "shared via
@@ -749,6 +754,56 @@ export type AgentDetail = typeof AgentDetailWire.infer;
 
 function agentInstructionsPath(tenantId: string, definitionId: string) {
   return `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`;
+}
+
+// `GET /agent-definitions/visible` (see
+// `packages/agent-directory/src/visible-definitions.ts`): every agent
+// definition this tenant can open a direct chat with — its own, plus
+// every ancestor tenant's, a child's same-name definition shadowing an
+// ancestor's. `tenantId` here is the definition's OWNING tenant, which
+// is where its DM channel actually lives — never necessarily the
+// caller's own tenant.
+const VisibleAgentDefinitionWire = type({
+  id: "string",
+  name: "string",
+  tenantId: "string",
+  tenantName: "string",
+  createdAt: "string",
+});
+export type VisibleAgentDefinition = typeof VisibleAgentDefinitionWire.infer;
+
+const VisibleAgentDefinitionsResponse = type({
+  definitions: VisibleAgentDefinitionWire.array(),
+});
+
+export function listVisibleAgentDefinitions(
+  tenantId: string,
+): Promise<readonly VisibleAgentDefinition[]> {
+  return request(
+    `/api/tenants/${tenantId}/agent-definitions/visible`,
+    VisibleAgentDefinitionsResponse,
+  ).then((page) => page.definitions);
+}
+
+/**
+ * Opens a direct chat with an agent, minting it on first open and
+ * reusing the same channel on every later open — `packages/chat/src/
+ * routes.ts`'s `POST /channels` with `reuseExisting: true` already
+ * finds-or-creates by `chat/definitionId` (`findExistingAgentChat`), the
+ * same seam the home-workbench land-hop uses. `tenantId` must be the
+ * definition's OWNING tenant (see `VisibleAgentDefinition.tenantId`),
+ * never the caller's own tenant when the agent was reached through
+ * ancestor inheritance — the DM channel lives where the agent lives.
+ */
+export function openAgentDm(
+  tenantId: string,
+  definitionId: string,
+): Promise<Channel> {
+  return createChannel(tenantId, {
+    kind: "chat",
+    definitionId,
+    reuseExisting: true,
+  });
 }
 
 export function getAgentInstructions(

@@ -983,8 +983,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       async function compensateMint(err: unknown, phase: string) {
         log.error(
           "Channel {phase} failed for {channelId} after minting " +
-            "{tenantId}; compensating the orphaned tenant and settings",
-          { phase, channelId, tenantId: channelTenant.tenantId, err },
+            "{tenantId}; compensating the orphaned tenant and settings: " +
+            "{cause}",
+          {
+            phase,
+            channelId,
+            tenantId: channelTenant.tenantId,
+            cause: err instanceof Error ? err.message : String(err),
+            err,
+          },
         );
         try {
           await deps.store.deleteChannelSettings(tenant.id, channelId);
@@ -1264,13 +1271,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const activity = activityByChannelId[row.channelId];
         if (activity === undefined) return view;
         const withUnread = { ...view, unreadCount: activity.unreadCount };
-        return activity.lastActivityAt !== undefined
-          ? {
-              ...withUnread,
-              lastActivityAt: activity.lastActivityAt,
-              live: isRecentlyActive(activity.lastActivityAt),
-            }
-          : withUnread;
+        if (activity.lastActivityAt === undefined) return withUnread;
+        const withActivity = {
+          ...withUnread,
+          lastActivityAt: activity.lastActivityAt,
+          live: isRecentlyActive(activity.lastActivityAt),
+        };
+        return activity.preview === undefined
+          ? withActivity
+          : { ...withActivity, preview: activity.preview };
       });
 
       // Channels a sibling tenant projected into this one (CL-5882) —

@@ -162,6 +162,36 @@ export function senderOf(mail: unknown): MailSender {
   return { name: from.name, address: from.email };
 }
 
+const PREVIEW_MAX_LENGTH = 80;
+
+/**
+ * A bounded, best-effort preview snippet for a channel-list row: the
+ * message's plain text, whitespace-collapsed and truncated to
+ * `PREVIEW_MAX_LENGTH` characters. Text parts only — an attachment-only
+ * message (a file, a structured block) previews as empty rather than a
+ * fabricated "[attachment]" placeholder, and a mail shape this can't
+ * parse previews as empty too, since this is list-row decoration, never
+ * the message content path itself (that's `decodeMail`, which throws
+ * loudly on the same malformed input).
+ */
+export function extractTextPreview(mail: unknown): string {
+  const parsed = MailReadContent(mail);
+  if (parsed instanceof type.errors) return "";
+
+  const segments: string[] = [];
+  for (const body of parsed.textBody) {
+    const value = BodyValue(parsed.bodyValues[body.partId]);
+    if (!(value instanceof type.errors) && value.value.length > 0) {
+      segments.push(value.value);
+    }
+  }
+
+  const text = segments.join(" ").replace(/\s+/g, " ").trim();
+  return text.length > PREVIEW_MAX_LENGTH
+    ? `${text.slice(0, PREVIEW_MAX_LENGTH).trimEnd()}…`
+    : text;
+}
+
 const BodyValue = type({ value: "string" });
 
 /**

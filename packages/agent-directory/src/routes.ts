@@ -57,6 +57,7 @@ import {
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
 import type { DefinitionAssetHistory } from "./definition-history";
+import { listVisibleAgentDefinitions } from "./visible-definitions";
 
 /**
  * Resolves the pinned skill names a definition carries into the
@@ -272,6 +273,21 @@ export function createAgentDefinitionRoutes({
         principalId: principal.id,
       });
       return c.json(inventory);
+    },
+  );
+
+  // Every agent this tenant can open a direct chat with — its own agent
+  // definitions plus every ancestor's (CL-6253): the sidebar's unified
+  // recency-sorted stream reads this list, keyed by `tenantId` per row
+  // so a click can mint the DM in the agent's actual owning tenant, not
+  // the caller's.
+  app.get(
+    "/visible",
+    requireGrant("workflow-definition:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const definitions = await listVisibleAgentDefinitions(db, tenant.id);
+      return c.json({ definitions });
     },
   );
 

@@ -41,6 +41,7 @@ import { getLogger } from "@intx/log";
 import { extractPartByPath, parseMailToEmail } from "@intx/mime";
 import { channelLaunch } from "./schema";
 import { summarizeChannelActivity } from "./channel-activity";
+import { extractTextPreview } from "./codec";
 import {
   channelHostAssetName,
   isChannelHostDefinitionName,
@@ -991,17 +992,56 @@ export function createHubChatPlatform(
               .where(or(...unreadConditions))
               .groupBy(sessionMail.sessionId);
 
+      const latestRows = latestBySession.filter(
+        (row): row is { sessionId: string; lastActivityAt: Date } =>
+          row.lastActivityAt !== null,
+      );
+
+      // The newest message's own row, fetched by the exact
+      // (sessionId, createdAt) pair `max()` just resolved — an OR of
+      // per-session conditions, the same bulk-not-per-channel shape the
+      // unread count above uses — so the preview snippet below reads
+      // the real latest message rather than an arbitrary row sharing
+      // its session.
+      const latestMailConditions = latestRows.map((row) =>
+        and(
+          eq(sessionMail.sessionId, row.sessionId),
+          eq(sessionMail.createdAt, row.lastActivityAt),
+        ),
+      );
+      const latestMailBySession =
+        latestMailConditions.length === 0
+          ? []
+          : await deps.db
+              .select({
+                id: sessionMail.id,
+                sessionId: sessionMail.sessionId,
+                raw: sessionMail.raw,
+              })
+              .from(sessionMail)
+              .where(or(...latestMailConditions));
+      const previewBySessionId = new Map(
+        latestMailBySession.map((row) => [
+          row.sessionId,
+          extractTextPreview(parseMailToEmail(row.raw, row.id)),
+        ]),
+      );
+
       return summarizeChannelActivity(
         channelSessionIds,
-        latestBySession
-          .filter(
-            (row): row is { sessionId: string; lastActivityAt: Date } =>
-              row.lastActivityAt !== null,
-          )
-          .map((row) => ({
-            sessionId: row.sessionId,
-            lastActivityAt: row.lastActivityAt.toISOString(),
-          })),
+        latestRows.map((row) => {
+          const preview = previewBySessionId.get(row.sessionId);
+          return preview === undefined
+            ? {
+                sessionId: row.sessionId,
+                lastActivityAt: row.lastActivityAt.toISOString(),
+              }
+            : {
+                sessionId: row.sessionId,
+                lastActivityAt: row.lastActivityAt.toISOString(),
+                preview,
+              };
+        }),
         unreadBySession,
       );
     },

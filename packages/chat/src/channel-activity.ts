@@ -23,6 +23,10 @@ export function isRecentlyActive(
 export interface SessionActivityAggregate {
   readonly sessionId: string;
   readonly lastActivityAt: string;
+  /** The newest message's bounded text preview, when one could be
+   * extracted (see `extractTextPreview`) — absent for an attachment-only
+   * message, never a fabricated placeholder. */
+  readonly preview?: string;
 }
 
 export interface SessionUnreadAggregate {
@@ -47,7 +51,7 @@ export function summarizeChannelActivity(
   unreadBySession: readonly SessionUnreadAggregate[],
 ): Record<string, ChannelActivitySummary> {
   const latestBySessionId = new Map(
-    latestBySession.map((row) => [row.sessionId, row.lastActivityAt]),
+    latestBySession.map((row) => [row.sessionId, row]),
   );
   const unreadBySessionId = new Map(
     unreadBySession.map((row) => [row.sessionId, row.unreadCount]),
@@ -55,12 +59,20 @@ export function summarizeChannelActivity(
 
   const result: Record<string, ChannelActivitySummary> = {};
   for (const [channelId, sessionId] of channelSessionIds) {
-    const lastActivityAt = latestBySessionId.get(sessionId);
+    const latest = latestBySessionId.get(sessionId);
     const unreadCount = unreadBySessionId.get(sessionId) ?? 0;
+    if (latest === undefined) {
+      result[channelId] = { unreadCount };
+      continue;
+    }
     result[channelId] =
-      lastActivityAt === undefined
-        ? { unreadCount }
-        : { unreadCount, lastActivityAt };
+      latest.preview === undefined || latest.preview.length === 0
+        ? { unreadCount, lastActivityAt: latest.lastActivityAt }
+        : {
+            unreadCount,
+            lastActivityAt: latest.lastActivityAt,
+            preview: latest.preview,
+          };
   }
   return result;
 }

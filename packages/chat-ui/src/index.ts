@@ -66,6 +66,7 @@ export type {
   MentionInviteIntent,
   MentionOption,
   MentionQuery,
+  MentionSection,
 } from "./mentions";
 
 export {
@@ -127,6 +128,8 @@ export {
   listRuns,
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
+  listVisibleAgentDefinitions,
+  openAgentDm,
   inviteAgent,
   channelStreamUrl,
   runDisplayName,
@@ -156,6 +159,7 @@ export type {
   Run,
   InvitableDefinition,
   InvitedAgent,
+  VisibleAgentDefinition,
   ChannelSettings,
   ChannelSettingsPatch,
   ResolvedContextWindow,
