@@ -297,7 +297,14 @@ const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 // guard (wired off the event collector's current-turn id) spares a
 // mid-turn instance regardless of this value, so it only has to be
 // long enough that an agent between turns is never mistaken for idle.
-const CHAT_IDLE_SLEEP_MS = 60_000;
+//
+// 8h, not 60s: idle-sleep undeploys the resident, and the wake path
+// cannot yet revive a run without destroying its identity/anchor
+// (undeploy rm -rf's the agent dir — CL-6239; anchor loss — CL-6164),
+// so a 60s window meant every conversation went deaf after its first
+// quiet minute. Sleeping is killing until suspend/resume or the
+// CL-6254 re-pin lands; keep residents warm for a working day instead.
+const CHAT_IDLE_SLEEP_MS = 8 * 60 * 60 * 1000;
 
 // Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
 // self-serve email signup is rejected; owners add users or share a
