@@ -118,7 +118,7 @@ test("the agent pins memory, capability, and the manager-tools bundles — real 
     { name: "@corbits/connections-tools", version: "0.0.2" },
     { name: "@corbits/skills-tools", version: "0.0.3" },
     { name: "@corbits/mcp-tools", version: "0.0.3" },
-  { name: "@corbits/interaction-tools", version: "0.0.2" },
+    { name: "@corbits/interaction-tools", version: "0.0.2" },
   ]);
 });
 
@@ -213,5 +213,58 @@ test("the prompt has a delegated specialist finish its thread with a summary bac
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
     "finish its thread with a one-line summary addressed back to you " +
       "and the main conversation",
+  );
+});
+
+// CL-6179: on a stated outcome, Myra runs a short, bounded discovery
+// interview before proposing anything — never the open-ended intake
+// this clause exists to rule out.
+test("the prompt runs discovery inside 'Deciding what to do', in order: interview, propose, build, hand off", () => {
+  const decidingSection = ASSISTANT_SYSTEM_PROMPT.slice(
+    ASSISTANT_SYSTEM_PROMPT.indexOf("## Deciding what to do"),
+    ASSISTANT_SYSTEM_PROMPT.indexOf("## Being a teammate"),
+  );
+
+  const interviewAt = decidingSection.indexOf("ask one or two sharp questions");
+  const proposeAt = decidingSection.indexOf(
+    "propose a small, named specialist team",
+  );
+  const buildAt = decidingSection.indexOf("Build only on a light confirmation");
+  const skillAt = decidingSection.indexOf("load the writing-system-prompts");
+  const createAgentAt = decidingSection.indexOf("create_agent");
+  const handoffAt = decidingSection.indexOf(
+    "Their own chats for focused work.",
+  );
+
+  for (const at of [
+    interviewAt,
+    proposeAt,
+    buildAt,
+    skillAt,
+    createAgentAt,
+    handoffAt,
+  ]) {
+    expect(at).toBeGreaterThan(-1);
+  }
+  expect(interviewAt).toBeLessThan(proposeAt);
+  expect(proposeAt).toBeLessThan(buildAt);
+  // The skill loads before create_agent ever fires.
+  expect(skillAt).toBeLessThan(createAgentAt);
+  expect(createAgentAt).toBeLessThan(handoffAt);
+});
+
+test("the prompt's discovery interview uses ask_user for enumerable options, never a long open-ended one", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "a tappable card via ask_user when the options are enumerable",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never a long, open-ended interview",
+  );
+});
+
+test("the prompt hands a built team off with the exact discovery closing line", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "Their own chats for focused work. Here when you want me to run " +
+      "the hunt and hand things off.",
   );
 });
