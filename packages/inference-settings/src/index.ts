@@ -10,6 +10,7 @@ export {
 export type { ModelInfo, ModelOfferingInfo, ShadowOfferingInput } from "./api";
 export {
   buildEffectiveInferenceRows,
+  computeMakeDefaultPatches,
   computeReorderPatches,
   defaultModelForProvider,
   providerDisplayName,

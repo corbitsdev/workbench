@@ -28,9 +28,14 @@ import {
 import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
 import {
+  buildEffectiveInferenceRows,
+  computeMakeDefaultPatches,
   defaultModelForProvider,
   getResolvedCatalog,
+  listOwnOfferings,
+  updateOwnOffering,
   type DefaultProviderModel,
+  type EffectiveInferenceRow,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@intx/types";
 import { ChevronRight } from "lucide-react";
@@ -108,6 +113,10 @@ type ConnectionsData = {
    * own header for why this is never a second, hand-maintained notion of
    * "the" model). */
   readonly models: readonly ModelInfo[];
+  /** This tenant's own offering ids — the provenance source for which of
+   * `models`' offerings a default-model pick can actually PATCH (only a
+   * "set-here" offering; see `computeMakeDefaultPatches`). */
+  readonly ownOfferingIds: ReadonlySet<string>;
 };
 
 /**
@@ -130,6 +139,7 @@ export function ConnectorRowList({
   credentials,
   providers,
   models,
+  ownOfferingIds,
   filter,
   onReload,
   onError,
@@ -139,6 +149,7 @@ export function ConnectorRowList({
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
   readonly models: readonly ModelInfo[];
+  readonly ownOfferingIds: ReadonlySet<string>;
   /** Narrows which registry entries render a row. Defaults to every
    * api-key connector (every entry with a `probe`) — OAuth connectors
    * are never included here regardless of filter, since this list has
@@ -172,6 +183,29 @@ export function ConnectorRowList({
     .filter((descriptor) => !MCP_PRESET_CONNECTOR_IDS.includes(descriptor.id))
     .filter(filter ?? (() => true));
 
+  const effectiveRows = buildEffectiveInferenceRows(models, ownOfferingIds);
+
+  function handlePickDefault(offeringId: string, providerName: string) {
+    onError?.(null);
+    const providerOfferings = effectiveRows.filter(
+      (row) => row.providerName === providerName,
+    );
+    const patches = computeMakeDefaultPatches(providerOfferings, offeringId);
+    if (patches === null) {
+      onError?.(SETTINGS_STRINGS.connectionsSetDefaultModelError);
+      return;
+    }
+    Promise.all(
+      patches.map((patch) =>
+        updateOwnOffering(tenantId, patch.offeringId, {
+          priority: patch.priority,
+        }),
+      ),
+    )
+      .then(() => onReload())
+      .catch(() => onError?.(SETTINGS_STRINGS.connectionsSetDefaultModelError));
+  }
+
   return (
     <>
       {descriptors.map((descriptor) => (
@@ -183,6 +217,16 @@ export function ConnectorRowList({
             descriptor.feedsTools.length === 0
               ? defaultModelForProvider(models, descriptor.id)
               : null
+          }
+          providerOfferings={
+            descriptor.feedsTools.length === 0
+              ? effectiveRows.filter(
+                  (row) => row.providerName === descriptor.id,
+                )
+              : []
+          }
+          onPickDefault={(offeringId) =>
+            handlePickDefault(offeringId, descriptor.id)
           }
           onConnect={() => {
             setDialogMode("connect");
@@ -237,14 +281,25 @@ export function ConnectionsSection({
       listProviders(tenantId),
       fetchOAuthConfigured(tenantId),
       getResolvedCatalog(tenantId),
+      listOwnOfferings(tenantId),
     ])
-      .then(([credentials, providers, oauthConfigured, models]) => {
-        if (!cancelled)
-          setQuery({
-            kind: "ready",
-            data: { credentials, providers, oauthConfigured, models },
-          });
-      })
+      .then(
+        ([credentials, providers, oauthConfigured, models, ownOfferings]) => {
+          if (!cancelled)
+            setQuery({
+              kind: "ready",
+              data: {
+                credentials,
+                providers,
+                oauthConfigured,
+                models,
+                ownOfferingIds: new Set(
+                  ownOfferings.map((offering) => offering.id),
+                ),
+              },
+            });
+        },
+      )
       .catch((cause: unknown) => {
         if (cancelled) return;
         if (cause instanceof UnauthenticatedError) {
@@ -336,7 +391,7 @@ export function ConnectionsSection({
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
-      {({ credentials, providers, oauthConfigured, models }) => {
+      {({ credentials, providers, oauthConfigured, models, ownOfferingIds }) => {
         const providerNameById = new Map(
           providers.map((provider) => [provider.id, provider.name]),
         );
@@ -356,6 +411,7 @@ export function ConnectionsSection({
                 credentials={credentials}
                 providers={providers}
                 models={models}
+                ownOfferingIds={ownOfferingIds}
                 onReload={reload}
                 onError={setRowError}
               />
@@ -499,10 +555,61 @@ function defaultModelCaption(defaultModel: DefaultProviderModel | null) {
   return SETTINGS_STRINGS.connectionsDefaultModelLine(label);
 }
 
+/** The offering `defaultModelForProvider` would pick for this same row
+ * set — lowest priority wins, first occurrence breaks a tie — so the
+ * select's initial value always names the offering actually in effect,
+ * never a second, independently-computed notion of "current." */
+function winningOffering(
+  rows: readonly EffectiveInferenceRow[],
+): EffectiveInferenceRow | null {
+  let best: EffectiveInferenceRow | null = null;
+  for (const row of rows) {
+    if (best === null || row.priority < best.priority) best = row;
+  }
+  return best;
+}
+
+/**
+ * The default-model caption, made pickable (CL-6258 follow-up: "set
+ * default models"). Renders a quiet, unstyled-as-a-button `<select>` —
+ * matching the row's other captions, never button chrome — listing this
+ * provider's own resolved offerings; `null` when the provider has none
+ * to choose between (nothing resolved yet, same case
+ * `defaultModelCaption` already returns `null` for).
+ */
+function DefaultModelPicker({
+  providerOfferings,
+  onPick,
+}: {
+  readonly providerOfferings: readonly EffectiveInferenceRow[];
+  readonly onPick: (offeringId: string) => void;
+}) {
+  if (providerOfferings.length === 0) return null;
+  const current = winningOffering(providerOfferings);
+  return (
+    <p className="settings-connection-row-caption">
+      {SETTINGS_STRINGS.connectionsDefaultModelLabel}{" "}
+      <select
+        className="settings-connection-row-default-model-select"
+        value={current?.offeringId ?? ""}
+        onChange={(event) => onPick(event.target.value)}
+      >
+        {providerOfferings.map((row) => (
+          <option key={row.offeringId} value={row.offeringId}>
+            {row.modelDisplayName ?? row.canonicalName}
+          </option>
+        ))}
+      </select>
+    </p>
+  );
+}
+
 function ConnectorRow({
   descriptor,
   statusResult,
   defaultModel,
+  providerOfferings,
+  onPickDefault,
   onConnect,
   onReconnect,
   onDisconnect,
@@ -514,6 +621,11 @@ function ConnectorRow({
    * connector (`feedsTools.length > 0`, which shows "Used by workflows"
    * instead) or an inference provider that resolves nothing yet. */
   readonly defaultModel: DefaultProviderModel | null;
+  /** This provider's own resolved offerings — the pick list
+   * `DefaultModelPicker` renders. Empty for a tool/plugin connector, same
+   * case `defaultModel` is `null` for. */
+  readonly providerOfferings: readonly EffectiveInferenceRow[];
+  readonly onPickDefault: (offeringId: string) => void;
   readonly onConnect: () => void;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
@@ -533,9 +645,10 @@ function ConnectorRow({
         </div>
         {statusResult.status === "connected" &&
           defaultModelCaption(defaultModel) !== null && (
-            <p className="settings-connection-row-caption">
-              {defaultModelCaption(defaultModel)}
-            </p>
+            <DefaultModelPicker
+              providerOfferings={providerOfferings}
+              onPick={onPickDefault}
+            />
           )}
         {descriptor.feedsTools.length > 0 && (
           <span className="settings-connection-row-pinned-row">

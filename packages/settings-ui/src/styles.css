@@ -380,6 +380,19 @@
   color: var(--muted-foreground);
 }
 
+/* Reads as the caption it's inline with — no border, no fill, no arrow
+   chrome beyond the platform default — never a button. */
+.settings-connection-row-default-model-select {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
 .settings-connection-row-pinned-row {
   display: flex;
   align-items: center;

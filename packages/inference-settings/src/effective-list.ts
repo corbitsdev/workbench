@@ -204,6 +204,44 @@ export function computeReorderPatches(
   ];
 }
 
+/**
+ * The patches to make `targetOfferingId` this provider's default —
+ * `defaultModelForProvider`'s own winner (lowest `priority` wins, ties
+ * broken by iteration order, so "top" means strictly less than every
+ * other offering's priority, not merely tied for lowest). Only ever
+ * patches the target itself: lowering it below the current minimum
+ * among the *other* offerings is enough to win, and every other row's
+ * priority already means something (another model's own fallback order)
+ * this call has no business disturbing. `providerOfferings` is every row
+ * for one provider (`buildEffectiveInferenceRows`'s output filtered to a
+ * `providerName`), matching the scope `defaultModelForProvider` itself
+ * resolves over. Returns `null` when the target offering is not one this
+ * tenant owns directly ("set-here") — an inherited offering cannot be
+ * PATCHed until it is shadowed, the same rule `computeReorderPatches`
+ * enforces — or isn't in `providerOfferings` at all. Returns `[]` when
+ * the target is already strictly ahead of every other offering (nothing
+ * to send).
+ */
+export function computeMakeDefaultPatches(
+  providerOfferings: readonly EffectiveInferenceRow[],
+  targetOfferingId: string,
+): readonly PriorityPatch[] | null {
+  const target = providerOfferings.find(
+    (row) => row.offeringId === targetOfferingId,
+  );
+  if (target === undefined || target.provenance !== "set-here") return null;
+
+  const others = providerOfferings.filter(
+    (row) => row.offeringId !== targetOfferingId,
+  );
+  if (others.length === 0) return [];
+
+  const minOtherPriority = Math.min(...others.map((row) => row.priority));
+  if (target.priority < minOtherPriority) return [];
+
+  return [{ offeringId: target.offeringId, priority: minOtherPriority - 1 }];
+}
+
 /** Rows for one model, in fallback order, restricted to the set a caller
  * can act on directly (`"set-here"`) alongside their `"inherited"`
  * siblings — a reorder only ever targets adjacent `"set-here"` rows. */
