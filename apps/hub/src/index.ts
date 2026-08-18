@@ -1500,7 +1500,12 @@ export async function createHub(config: HubConfig) {
   // consumer of this delivery adapter.
   const notifyHost = new URL(config.baseUrl).host;
   const credentialExpirySweep = createCredentialExpirySweep({
-    store: createDrizzleCredentialExpirySweepStore(db),
+    store: createDrizzleCredentialExpirySweepStore(
+      db,
+      credentialCipher,
+      sidecarRouter,
+    ),
+    hubUrl: config.baseUrl,
     notify: {
       mail: mailboxDelivery,
       addressing: {

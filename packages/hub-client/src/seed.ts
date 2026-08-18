@@ -905,6 +905,12 @@ export type EnsureCredentialArgs = {
   name: string;
   secret: string;
   type: "api_key" | "oauth_token";
+  /** An `oauth_token` credential from a provider whose grant issues a
+   * refresh token — absent for a provider that never does (Hugging
+   * Face's PKCE flow), never a coerced empty string. */
+  refreshSecret?: string;
+  /** ISO instant the access token expires, when the provider reports one. */
+  expiresAt?: string;
   metadata?: Record<string, unknown>;
   /**
    * Set by a caller that received `secret` as an explicit user
@@ -937,6 +943,8 @@ export async function ensureCredential(
       name: args.name,
       type: args.type,
       secret: args.secret,
+      refreshSecret: args.refreshSecret,
+      expiresAt: args.expiresAt,
       metadata: args.metadata,
     },
     cookies,
@@ -1012,6 +1020,8 @@ export async function ensureCredential(
       `/api/tenants/${args.tenantId}/credentials/${existing.id}`,
       {
         secret: args.secret,
+        refreshSecret: args.refreshSecret,
+        expiresAt: args.expiresAt,
         status: "active",
         metadata: args.metadata,
       },

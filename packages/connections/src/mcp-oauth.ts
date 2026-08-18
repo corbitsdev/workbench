@@ -15,7 +15,10 @@
 // `./pkce.ts`'s `createConnectStateStore` already uses for the fixed-
 // registry OAuth connectors, so a state minted moments before a hub
 // restart survives it exactly like `./oauth-routes.ts`'s flows do.
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import {
+  auth,
+  type OAuthClientProvider,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
@@ -76,7 +79,9 @@ export function createMcpOAuthProvider(args: {
     },
     codeVerifier(): string {
       if (session.codeVerifier === undefined) {
-        throw new Error("No PKCE code verifier saved for this MCP OAuth session");
+        throw new Error(
+          "No PKCE code verifier saved for this MCP OAuth session",
+        );
       }
       return session.codeVerifier;
     },
@@ -88,4 +93,56 @@ export function createMcpOAuthProvider(args: {
       return authorizationUrl;
     },
   } as OAuthClientProvider & { readonly capturedAuthorizationUrl?: URL };
+}
+
+export type McpOAuthRefreshResult =
+  | { readonly ok: true; readonly tokens: OAuthTokens }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * CL-6207: re-invokes `auth()` with a session pre-loaded with the stored
+ * token pair (and the client this workbench registered at connect time,
+ * when known) so a stored `refresh_token` takes `auth()`'s own refresh
+ * branch instead of falling through to a fresh interactive
+ * authorization. Never redirects a human -- a refresh that can't
+ * complete non-interactively (revoked client, no refresh grant) comes
+ * back as `{ ok: false }`, not a `REDIRECT` this caller has nowhere to
+ * send; `apps/hub`'s credential-expiry sweep is the only caller today.
+ */
+export async function refreshMcpOAuthTokens(args: {
+  readonly serverUrl: string;
+  readonly tokens: OAuthTokens;
+  readonly clientInformation?: OAuthClientInformationMixed;
+  readonly callbackUrl: string;
+  readonly clientName: string;
+}): Promise<McpOAuthRefreshResult> {
+  const session: McpOAuthSession = {
+    tokens: args.tokens,
+    ...(args.clientInformation !== undefined
+      ? { clientInformation: args.clientInformation }
+      : {}),
+  };
+  const provider = createMcpOAuthProvider({
+    callbackUrl: args.callbackUrl,
+    clientName: args.clientName,
+    session,
+  });
+
+  let result: Awaited<ReturnType<typeof auth>>;
+  try {
+    result = await auth(provider, { serverUrl: args.serverUrl });
+  } catch (cause) {
+    return {
+      ok: false,
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+  if (result !== "AUTHORIZED" || session.tokens === undefined) {
+    return {
+      ok: false,
+      message:
+        "the authorization server required a new interactive authorization instead of refreshing",
+    };
+  }
+  return { ok: true, tokens: session.tokens };
 }

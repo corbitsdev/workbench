@@ -33,6 +33,8 @@ export {
 } from "./routes";
 export {
   createMcpServerRoutes,
+  providerName as mcpProviderName,
+  slugOf as mcpSlugOf,
   type CreateMcpServerRoutesDeps,
   type McpServerConnected,
   type McpServerSummary,
@@ -47,6 +49,8 @@ export {
 } from "./mcp-presets";
 export {
   createMcpOAuthProvider,
+  refreshMcpOAuthTokens,
+  type McpOAuthRefreshResult,
   type McpOAuthSession,
 } from "./mcp-oauth";
 export {

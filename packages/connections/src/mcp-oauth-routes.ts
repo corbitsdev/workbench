@@ -23,7 +23,12 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
 import { MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-providers";
-import { cookiesFromHeader, ensureCredential, ensureProvider, type ApiCall } from "@workbench/hub-client";
+import {
+  cookiesFromHeader,
+  ensureCredential,
+  ensureProvider,
+  type ApiCall,
+} from "@workbench/hub-client";
 import { createHubAPI } from "@workbench/hub-client";
 import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createMcpOAuthProvider, type McpOAuthSession } from "./mcp-oauth";
@@ -91,7 +96,8 @@ function resolveTarget(
   queryName: string | undefined,
 ): { slug: string; name: string; url: string } | undefined {
   if (queryUrl !== undefined && queryUrl.length > 0) {
-    const name = queryName !== undefined && queryName.length > 0 ? queryName : slugParam;
+    const name =
+      queryName !== undefined && queryName.length > 0 ? queryName : slugParam;
     return { slug: slugParam, name, url: queryUrl };
   }
   const preset = mcpPresetBySlug(slugParam);
@@ -118,278 +124,327 @@ export function createMcpOAuthRoutes(
     return `${returnPath}?${query.toString()}`;
   }
 
-  app.get("/:slug/start", deps.requireGrant("credential:*", "create"), async (c) => {
-    const slugParam = c.req.param("slug");
-    const target = resolveTarget(
-      slugParam,
-      c.req.query("url"),
-      c.req.query("name"),
-    );
-    const returnPath = sanitizeReturnPath(
-      c.req.query("return"),
-      defaultReturnPath,
-      returnPathAllowlist,
-    );
-    if (target === undefined) {
-      return c.json(
-        ErrorEnvelope("not_found", `Unknown MCP server preset: "${slugParam}"`),
-        404,
+  app.get(
+    "/:slug/start",
+    deps.requireGrant("credential:*", "create"),
+    async (c) => {
+      const slugParam = c.req.param("slug");
+      const target = resolveTarget(
+        slugParam,
+        c.req.query("url"),
+        c.req.query("name"),
       );
-    }
-
-    const principal = c.get("principal");
-    const callbackUrl = new URL(
-      c.req.path.replace(/\/start$/, "/callback"),
-      deps.hubUrl,
-    ).toString();
-    const session: McpOAuthSession = {};
-    const provider = createMcpOAuthProvider({
-      callbackUrl,
-      clientName: "Corbits Workbench",
-      session,
-    });
-
-    let result: Awaited<ReturnType<typeof auth>>;
-    try {
-      result = await auth(provider, { serverUrl: target.url });
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(`mcp oauth start failed for "${target.slug}": ${message}`);
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: target.slug,
-          outcome: "error",
-          code: "discovery_failed",
-        }),
-        302,
+      const returnPath = sanitizeReturnPath(
+        c.req.query("return"),
+        defaultReturnPath,
+        returnPathAllowlist,
       );
-    }
-    const authorizationUrl = (
-      provider as unknown as { capturedAuthorizationUrl?: URL }
-    ).capturedAuthorizationUrl;
-    if (result !== "REDIRECT" || authorizationUrl === undefined) {
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: target.slug,
-          outcome: "error",
-          code: "no_authorization_needed",
-        }),
-        302,
-      );
-    }
+      if (target === undefined) {
+        return c.json(
+          ErrorEnvelope(
+            "not_found",
+            `Unknown MCP server preset: "${slugParam}"`,
+          ),
+          404,
+        );
+      }
 
-    const payload: McpOAuthStatePayload = {
-      principalId: principal.id,
-      slug: target.slug,
-      name: target.name,
-      url: target.url,
-      returnPath,
-      nonce: randomNonce(),
-      expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
-      ...(session.codeVerifier !== undefined
-        ? { codeVerifier: session.codeVerifier }
-        : {}),
-      ...(session.clientInformation !== undefined
-        ? { clientInformation: session.clientInformation }
-        : {}),
-    };
-    const sealed = await deps.credentialCipher.encrypt(
-      JSON.stringify(payload),
-      stateAad(),
-    );
-    setCookie(c, cookieName(target.slug), sealed, {
-      httpOnly: true,
-      sameSite: "Lax",
-      secure: secureCookies,
-      path: "/",
-      maxAge: 600,
-    });
-    return c.redirect(authorizationUrl.toString(), 302);
-  });
-
-  app.get("/:slug/callback", deps.requireGrant("credential:*", "create"), async (c) => {
-    const slugParam = c.req.param("slug");
-    const sealed = getCookie(c, cookieName(slugParam));
-    deleteCookie(c, cookieName(slugParam), { path: "/" });
-
-    const fallbackReturn = sanitizeReturnPath(
-      undefined,
-      defaultReturnPath,
-      returnPathAllowlist,
-    );
-    if (sealed === undefined) {
-      return c.redirect(
-        redirectPath(fallbackReturn, {
-          mcpOauth: slugParam,
-          outcome: "error",
-          code: "state_expired",
-        }),
-        302,
-      );
-    }
-
-    let payload: McpOAuthStatePayload;
-    try {
-      const plaintext = await deps.credentialCipher.decrypt(sealed, stateAad());
-      const parsed = McpOAuthStatePayload(JSON.parse(plaintext));
-      if (parsed instanceof type.errors) throw new Error(parsed.summary);
-      payload = parsed;
-    } catch {
-      return c.redirect(
-        redirectPath(fallbackReturn, {
-          mcpOauth: slugParam,
-          outcome: "error",
-          code: "state_expired",
-        }),
-        302,
-      );
-    }
-
-    const returnPath = sanitizeReturnPath(
-      payload.returnPath,
-      defaultReturnPath,
-      returnPathAllowlist,
-    );
-    const principal = c.get("principal");
-    const code = c.req.query("code");
-    if (
-      payload.expiresAt <= Date.now() ||
-      payload.principalId !== principal.id ||
-      code === undefined ||
-      code === ""
-    ) {
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: payload.slug,
-          outcome: "error",
-          code: "state_expired",
-        }),
-        302,
-      );
-    }
-
-    const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
-    const session: McpOAuthSession = {
-      ...(payload.codeVerifier !== undefined
-        ? { codeVerifier: payload.codeVerifier }
-        : {}),
-      ...(payload.clientInformation !== undefined
-        ? {
-            clientInformation:
-              payload.clientInformation as OAuthClientInformationMixed,
-          }
-        : {}),
-    };
-    const provider = createMcpOAuthProvider({
-      callbackUrl,
-      clientName: "Corbits Workbench",
-      session,
-    });
-
-    let result: Awaited<ReturnType<typeof auth>>;
-    try {
-      result = await auth(provider, {
-        serverUrl: payload.url,
-        authorizationCode: code,
+      const principal = c.get("principal");
+      const callbackUrl = new URL(
+        c.req.path.replace(/\/start$/, "/callback"),
+        deps.hubUrl,
+      ).toString();
+      const session: McpOAuthSession = {};
+      const provider = createMcpOAuthProvider({
+        callbackUrl,
+        clientName: "Corbits Workbench",
+        session,
       });
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(`mcp oauth token exchange failed for "${payload.slug}": ${message}`);
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: payload.slug,
-          outcome: "error",
-          code: "exchange_failed",
-        }),
-        302,
-      );
-    }
-    if (result !== "AUTHORIZED" || session.tokens === undefined) {
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: payload.slug,
-          outcome: "error",
-          code: "exchange_failed",
-        }),
-        302,
-      );
-    }
 
-    const accessToken = session.tokens.access_token;
-    const test: McpProbeResult = await probe(payload.url, accessToken);
-    if (!test.ok) {
-      deps.log(
-        `mcp oauth connect for "${payload.slug}" exchanged a token but the post-auth probe failed: ${test.message}`,
-      );
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: payload.slug,
-          outcome: "error",
-          code: "connect_failed",
-        }),
-        302,
-      );
-    }
+      let result: Awaited<ReturnType<typeof auth>>;
+      try {
+        result = await auth(provider, { serverUrl: target.url });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(`mcp oauth start failed for "${target.slug}": ${message}`);
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: target.slug,
+            outcome: "error",
+            code: "discovery_failed",
+          }),
+          302,
+        );
+      }
+      const authorizationUrl = (
+        provider as unknown as { capturedAuthorizationUrl?: URL }
+      ).capturedAuthorizationUrl;
+      if (result !== "REDIRECT" || authorizationUrl === undefined) {
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: target.slug,
+            outcome: "error",
+            code: "no_authorization_needed",
+          }),
+          302,
+        );
+      }
 
-    const tenant = c.get("tenant");
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
-    try {
-      const existingProviders = await listMcpProviders(api, cookies, tenant.id);
-      const takenSlugs = new Set(existingProviders.map((p) => slugOf(p.name)));
-      const slug = takenSlugs.has(payload.slug)
-        ? payload.slug
-        : uniqueSlug(slugify(payload.name), takenSlugs);
-      // The FULL endpoint URL, matching the API-key connect path — the
-      // origin alone drops paths like `/mcp` and every downstream call
-      // dies at the CDN ("supports only cachable requests").
-      const providerId = await ensureProvider(
-        api,
-        cookies,
-        {
-          tenantId: tenant.id,
-          name: providerName(slug),
-          plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
-          apiBaseUrl: payload.url,
-        },
-        deps.log,
+      const payload: McpOAuthStatePayload = {
+        principalId: principal.id,
+        slug: target.slug,
+        name: target.name,
+        url: target.url,
+        returnPath,
+        nonce: randomNonce(),
+        expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+        ...(session.codeVerifier !== undefined
+          ? { codeVerifier: session.codeVerifier }
+          : {}),
+        ...(session.clientInformation !== undefined
+          ? { clientInformation: session.clientInformation }
+          : {}),
+      };
+      const sealed = await deps.credentialCipher.encrypt(
+        JSON.stringify(payload),
+        stateAad(),
       );
-      await ensureCredential(
-        api,
-        cookies,
-        {
-          tenantId: tenant.id,
-          providerId,
-          name: payload.name,
-          secret: accessToken,
-          type: "api_key",
-          metadata: { url: payload.url, name: payload.name },
-          verified: true,
-        },
-        deps.log,
+      setCookie(c, cookieName(target.slug), sealed, {
+        httpOnly: true,
+        sameSite: "Lax",
+        secure: secureCookies,
+        path: "/",
+        maxAge: 600,
+      });
+      return c.redirect(authorizationUrl.toString(), 302);
+    },
+  );
+
+  app.get(
+    "/:slug/callback",
+    deps.requireGrant("credential:*", "create"),
+    async (c) => {
+      const slugParam = c.req.param("slug");
+      const sealed = getCookie(c, cookieName(slugParam));
+      deleteCookie(c, cookieName(slugParam), { path: "/" });
+
+      const fallbackReturn = sanitizeReturnPath(
+        undefined,
+        defaultReturnPath,
+        returnPathAllowlist,
       );
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: slug,
-          outcome: "connected",
-          toolCount: String(test.toolCount),
-        }),
-        302,
+      if (sealed === undefined) {
+        return c.redirect(
+          redirectPath(fallbackReturn, {
+            mcpOauth: slugParam,
+            outcome: "error",
+            code: "state_expired",
+          }),
+          302,
+        );
+      }
+
+      let payload: McpOAuthStatePayload;
+      try {
+        const plaintext = await deps.credentialCipher.decrypt(
+          sealed,
+          stateAad(),
+        );
+        const parsed = McpOAuthStatePayload(JSON.parse(plaintext));
+        if (parsed instanceof type.errors) throw new Error(parsed.summary);
+        payload = parsed;
+      } catch {
+        return c.redirect(
+          redirectPath(fallbackReturn, {
+            mcpOauth: slugParam,
+            outcome: "error",
+            code: "state_expired",
+          }),
+          302,
+        );
+      }
+
+      const returnPath = sanitizeReturnPath(
+        payload.returnPath,
+        defaultReturnPath,
+        returnPathAllowlist,
       );
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `mcp oauth connect setup failed for tenant ${tenant.id}, slug ${payload.slug}: ${message}`,
-      );
-      return c.redirect(
-        redirectPath(returnPath, {
-          mcpOauth: payload.slug,
-          outcome: "error",
-          code: "setup_failed",
-        }),
-        302,
-      );
-    }
-  });
+      const principal = c.get("principal");
+      const code = c.req.query("code");
+      if (
+        payload.expiresAt <= Date.now() ||
+        payload.principalId !== principal.id ||
+        code === undefined ||
+        code === ""
+      ) {
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "state_expired",
+          }),
+          302,
+        );
+      }
+
+      const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
+      const session: McpOAuthSession = {
+        ...(payload.codeVerifier !== undefined
+          ? { codeVerifier: payload.codeVerifier }
+          : {}),
+        ...(payload.clientInformation !== undefined
+          ? {
+              clientInformation:
+                payload.clientInformation as OAuthClientInformationMixed,
+            }
+          : {}),
+      };
+      const provider = createMcpOAuthProvider({
+        callbackUrl,
+        clientName: "Corbits Workbench",
+        session,
+      });
+
+      let result: Awaited<ReturnType<typeof auth>>;
+      try {
+        result = await auth(provider, {
+          serverUrl: payload.url,
+          authorizationCode: code,
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(
+          `mcp oauth token exchange failed for "${payload.slug}": ${message}`,
+        );
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "exchange_failed",
+          }),
+          302,
+        );
+      }
+      if (result !== "AUTHORIZED" || session.tokens === undefined) {
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "exchange_failed",
+          }),
+          302,
+        );
+      }
+
+      const accessToken = session.tokens.access_token;
+      const test: McpProbeResult = await probe(payload.url, accessToken);
+      if (!test.ok) {
+        deps.log(
+          `mcp oauth connect for "${payload.slug}" exchanged a token but the post-auth probe failed: ${test.message}`,
+        );
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "connect_failed",
+          }),
+          302,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const cookies = cookiesFromHeader(c.req.header("cookie"));
+      try {
+        const existingProviders = await listMcpProviders(
+          api,
+          cookies,
+          tenant.id,
+        );
+        const takenSlugs = new Set(
+          existingProviders.map((p) => slugOf(p.name)),
+        );
+        const slug = takenSlugs.has(payload.slug)
+          ? payload.slug
+          : uniqueSlug(slugify(payload.name), takenSlugs);
+        // The FULL endpoint URL, matching the API-key connect path — the
+        // origin alone drops paths like `/mcp` and every downstream call
+        // dies at the CDN ("supports only cachable requests").
+        const providerId = await ensureProvider(
+          api,
+          cookies,
+          {
+            tenantId: tenant.id,
+            name: providerName(slug),
+            plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
+            apiBaseUrl: payload.url,
+          },
+          deps.log,
+        );
+        // Stored as `oauth_token` (CL-6207), not `api_key` — an MCP server
+        // that issued a refresh token gets one that actually refreshes at
+        // expiry instead of dying; one that didn't (mirroring the
+        // documented Hugging Face precedent) stores no refreshSecret/
+        // expiresAt at all, never a coerced empty value.
+        const { refresh_token: refreshToken, expires_in: expiresIn } =
+          session.tokens;
+        await ensureCredential(
+          api,
+          cookies,
+          {
+            tenantId: tenant.id,
+            providerId,
+            name: payload.name,
+            secret: accessToken,
+            type: "oauth_token",
+            ...(refreshToken !== undefined
+              ? { refreshSecret: refreshToken }
+              : {}),
+            ...(expiresIn !== undefined
+              ? {
+                  expiresAt: new Date(
+                    Date.now() + expiresIn * 1000,
+                  ).toISOString(),
+                }
+              : {}),
+            // `clientInformation` (when DCR minted one) lets a later
+            // refresh reuse the same registered client instead of the
+            // authorization server seeing a fresh dynamic registration
+            // every sweep tick.
+            metadata: {
+              url: payload.url,
+              name: payload.name,
+              ...(session.clientInformation !== undefined
+                ? { clientInformation: session.clientInformation }
+                : {}),
+            },
+            verified: true,
+          },
+          deps.log,
+        );
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: slug,
+            outcome: "connected",
+            toolCount: String(test.toolCount),
+          }),
+          302,
+        );
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(
+          `mcp oauth connect setup failed for tenant ${tenant.id}, slug ${payload.slug}: ${message}`,
+        );
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "setup_failed",
+          }),
+          302,
+        );
+      }
+    },
+  );
 
   return app;
 }
