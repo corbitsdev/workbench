@@ -14,7 +14,6 @@ import {
   domainOf,
   findFoldedRunByAddress,
   findFoldedRunById,
-  isFoldedRunSettled,
   launchFoldedRun,
   listFoldedMail,
   readDefinitionJSON,
@@ -46,10 +45,7 @@ import {
   channelHostAssetName,
   isChannelHostDefinitionName,
 } from "./channel-host-naming";
-import {
-  ensureWorkflowDefinitionForAsset,
-  SessionLaunchError,
-} from "@intx/hub-sessions";
+import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import type {
   AssetService,
   EventCollectorRegistry,
@@ -128,9 +124,10 @@ export type CreateHubChatPlatformDeps = {
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
-   * The wake path's settle-window backoff (see RECLAIM_RETRY_DELAYS_MS
-   * below). Injectable so tests exercise the window in milliseconds
-   * instead of the production ~8s budget.
+   * `sendFoldedMailWithReclaimRetry`'s backoff between retries of a
+   * mail send that failed with "agent is unreachable" (see
+   * RECLAIM_RETRY_DELAYS_MS below). Injectable so tests exercise the
+   * backoff in milliseconds instead of the production ~8s budget.
    */
   reclaimRetryDelaysMs?: readonly number[];
   /**
@@ -227,7 +224,6 @@ export function createHubChatPlatform(
 
   const cryptoProviders = createCryptoProviderCache();
   const wakeLogger = getLogger(["chat", "wake"]);
-  const SETTLED_UNDEPLOY_WAIT_MS = 5_000;
 
   // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
   // wake-coalescing logic live entirely in that package, imported as a
@@ -279,78 +275,21 @@ export function createHubChatPlatform(
     return err instanceof Error && err.message.includes("agent is unreachable");
   }
 
-  // `sendAgentUndeploy` rejects with this exact text
-  // (`vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`) when the
-  // address has no WS entry in `addressIndex` at all — nothing to tear
-  // down. A settled folded-run occurrence (CL-6147) can reach the
-  // forced-undeploy fallback below with its WS entry already gone: the
-  // underlying run ended on its own between the caller's routability
-  // check and this wake actually running, with no `sendAgentUndeploy`
-  // ever called for it. Treated as "already undeployed", not an error.
-  function isNoSidecarConnected(err: unknown): boolean {
-    return (
-      err instanceof Error &&
-      err.message.includes("No sidecar connected for agent")
-    );
-  }
-
-  // A hub restart empties this process's own routable-address index
-  // (`sidecarRouter.getRoutableAddresses()`, backed by the same
-  // `addressIndex` `routeMail` delivers against — see
-  // `vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`) before the
-  // sidecar's reconnect challenge (Interchange's own reclaim protocol)
-  // has had a chance to repopulate it. A wake racing ahead of that
-  // reclaim hits this exact provision-phase rejection ("is already
-  // deployed") from the still-live agent.
-  function isPostRestartReclaimRace(err: unknown): boolean {
-    return (
-      err instanceof SessionLaunchError &&
-      err.phase === "provision" &&
-      err.message.includes("is already deployed")
-    );
-  }
-
   function isRoutable(address: string): boolean {
     return deps.sidecarRouter.getRoutableAddresses().includes(address);
   }
 
-  /**
-   * Polls the *same* routability predicate `routeMail` delivers
-   * against — never the error text alone — so "no redeploy needed" is
-   * falsifiable: an "is already deployed" rejection is only proof of
-   * liveness once the address actually shows up as routable. One INFO
-   * line opens the settle window and one closes it, regardless of how
-   * many polls it took.
-   */
-  async function waitForReclaimToSettle(address: string): Promise<boolean> {
-    wakeLogger.info`wake for ${address} raced the sidecar's own post-restart reclaim; waiting up to ~8s for the address to become routable before redeploying`;
-    for (const delay of RECLAIM_RETRY_DELAYS_MS) {
-      if (isRoutable(address)) {
-        wakeLogger.info`wake for ${address}: post-restart reclaim settled, address is live, no redeploy needed`;
-        return true;
-      }
-      await sleep(delay);
-    }
-    const settled = isRoutable(address);
-    wakeLogger.info`wake for ${address}: settle window elapsed, address is ${settled ? "now routable, no redeploy needed" : "still unroutable; forcing a redeploy"}`;
-    return settled;
-  }
-
-  // Concurrent callers already coalesce onto one in-flight wake at
-  // `@corbits/agent-lifecycle`'s `ensureAwake` (see its own doc) — this
-  // function itself only needs to make each *individual* wake episode
-  // self-sufficient. Before this fix, a single "is already deployed"
-  // rejection was trusted as proof of liveness and swallowed
-  // immediately, so a stack restart's mail-retry loop
-  // (`sendFoldedMailWithReclaimRetry` below) re-entered `deployAtHead`
-  // — and its unconditional `eventCollectors.create` — on every one of
-  // its own retry attempts, each producing its own "Collector already
-  // exists, replacing" churn. Now one call either waits out the
-  // reclaim or performs the one genuine redeploy the address needs, so
-  // the address is actually routable by the time this resolves and the
-  // outer retry loop's next `sendFoldedMail` succeeds without calling
-  // this again.
+  // CL-6267: the sidecar's own park/wake handler now owns respawning a
+  // parked-but-still-announced deployment the moment mail routes to it
+  // — a routable address is never deployed or undeployed here, this
+  // just proceeds so `sendFoldedMail` can deliver straight to it.
+  // Redeploying over it would only trip the sidecar's "already
+  // deployed" bookkeeping for a resident it never actually stopped.
+  // Only a genuinely unroutable/unannounced address gets a real
+  // deploy, and a rejection from that deploy propagates honestly.
   async function wakeByAddress(address: string): Promise<void> {
+    if (isRoutable(address)) return;
+
     const run = await findFoldedRunByAddress(deps.db, address);
     if (run === undefined || run.address === null) {
       throw new Error(`No run found for address "${address}"`);
@@ -380,67 +319,18 @@ export function createHubChatPlatform(
       principalId: run.principalId,
       foldedBody: parsedFoldedBody,
     };
-    // CL-6203: a "running" run that merely is not routable at this
-    // instant is more often a live process behind a routability blip
-    // (a WS reconnect, the sidecar's own post-restart reclaim) than a
-    // dead one. Redeploying OVER a live process moves the run's
-    // deployment anchor out from under it: the survivor's pack pushes
-    // are rejected from then on ("no live deployment anchor" /
-    // path_violation), its mail acks are withheld into a redelivery
-    // storm, and the next wake dies on signature_invalid — the channel
-    // is bricked. So a running run first gets the settle window; only
-    // when the address never comes back is the redeploy real — and
-    // then the possibly-live resident is stopped BEFORE the anchor
-    // moves, so nothing survives to push against it.
-    if (run.status === "running" && !isRoutable(address)) {
-      if (await waitForReclaimToSettle(address)) return;
-      try {
-        await deps.sidecarRouter.sendAgentUndeploy(
-          address,
-          "wake is redeploying this run; stopping the resident instance " +
-            "so it cannot push against the moved deployment anchor",
-        );
-      } catch (undeployErr) {
-        if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
-      }
-    }
-
-    const deploy = () =>
-      wakeFoldedRun(
-        foldedRunsDeps,
-        launchRow.noopInference
-          ? {
-              ...wakeParams,
-              sources: noopSourcesOverride(
-                deps.noopInferenceBaseUrl,
-                parsedFoldedBody,
-              ),
-            }
-          : wakeParams,
-      );
-    try {
-      await deploy();
-    } catch (err) {
-      if (!isPostRestartReclaimRace(err)) throw err;
-      // The rejection text alone is not proof of liveness — only
-      // `isRoutable` (the same predicate `routeMail` uses) is. If the
-      // reclaim never settles within the budget, this is not a
-      // self-healing race after all; redeploy for real instead of
-      // throwing.
-      if (await waitForReclaimToSettle(address)) return;
-      try {
-        await deps.sidecarRouter.sendAgentUndeploy(
-          address,
-          "post-restart reclaim did not settle within the wake's retry budget",
-        );
-      } catch (undeployErr) {
-        // Nothing to tear down — the address already has no WS entry
-        // in `addressIndex` (see `isNoSidecarConnected`'s own doc). The
-        // redeploy below is what actually recovers it.
-        if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
-      }
-      await deploy();
-    }
+    await wakeFoldedRun(
+      foldedRunsDeps,
+      launchRow.noopInference
+        ? {
+            ...wakeParams,
+            sources: noopSourcesOverride(
+              deps.noopInferenceBaseUrl,
+              parsedFoldedBody,
+            ),
+          }
+        : wakeParams,
+    );
   }
 
   /**
@@ -715,86 +605,13 @@ export function createHubChatPlatform(
       // a sleeping invited agent: every send, including fan-out
       // copies, goes through this one `sendMail` choke point.
       //
-      // Routability alone is not enough for a folded run: it settles
-      // to `workflow_run.status === "completed"` after every handled
-      // mail (idle until its next message — see
-      // `@corbits/folded-runs`' `isFoldedRunSettled` doc), but stays
-      // resident on the sidecar (still routable) until the idle-sleep
-      // sweep tears it down. `lifecycle.ensureAwake` no-ops on a
-      // routable address, so without this check every message sent
-      // inside that window reaches a terminal occurrence, which
-      // `vendor/intx/workflow-host/src/supervisor/supervisor.ts`
-      // permanently rejects (`workflow_run_terminal`) — the hub then
-      // redelivers into the same terminal occurrence forever, since
-      // nothing else ever redeploys it.
-      //
-      // Redeploying a settled-but-still-routable address straight from
-      // here (skipping an explicit undeploy) reliably trips the
-      // sidecar's own "is already deployed" bookkeeping — confirmed
-      // empirically against a live sidecar. Only a clean, explicit
-      // `sendAgentUndeploy` round trip through the *current* connection
-      // — not a redeploy attempt's implicit one — reliably clears it.
-      // So: undeploy first (tolerating "no WS entry", which just means
-      // it is already gone), then let the ordinary not-routable wake
-      // path below do the actual redeploy — the same path that already
-      // works for every idle-sweep-triggered wake (see the "sendMail
-      // wakes a non-routable channel" test).
-      //
-      // [Intx gap] CL-6147: even with the clean undeploy-first sequence
-      // above, redeploying (waking) a folded run's instance id a
-      // *second* time still fails once the workflow carries any
-      // attached asset pack (in practice every workflow, via the
-      // shared `corbits-tools` package registry every launch resolves)
-      // — confirmed against a live sidecar + Postgres. The failure is
-      // `session_asset_instance_id_mount_path_pk` in Postgres:
-      // `sendAttachmentPack`'s "ordinary launch" branch
-      // (`vendor/intx/hub-sessions/src/session-service.ts`) does a bare
-      // `INSERT INTO session_asset` with no conflict handling, on the
-      // documented assumption that an ordinary (non-`allocationTarget`)
-      // launch never reuses an instance id — an assumption
-      // `@corbits/folded-runs`' whole wake design (redeploy the *same*
-      // instance id to resume a folded run) breaks by construction. The
-      // `allocationTarget` branch right next to it already tolerates an
-      // identical re-insert via `onConflictDoNothing`, so the fix likely
-      // belongs there — extending that same tolerance to the ordinary
-      // path — but that is vendor code this package must not edit.
-      // Nothing before this PR's live-Ollama second-turn coverage ever
-      // exercised a real redeploy-by-address against a live sidecar
-      // with an attached asset pack, so this has apparently never fired
-      // before. Tracked upstream; not fixable from `@corbits/chat`.
-      // A "failed" folded run with its address still routable is the
-      // CL-6203 wreck: the anchored-out survivor of a redeploy-over-live,
-      // holding a WS route while every push it makes is rejected. It
-      // recovers exactly like a settled occurrence — undeploy the
-      // zombie, then wake a fresh one.
-      const residentNeedsReplacing =
-        ((await isFoldedRunSettled(deps.db, run)) ||
-          run.status === "failed") &&
-        isRoutable(run.address);
-      if (residentNeedsReplacing) {
-        wakeLogger.info`${run.address} has a ${run.status === "failed" ? "failed run's zombie" : "settled occurrence"} still resident; undeploying it so this message wakes a fresh one`;
-        try {
-          await deps.sidecarRouter.sendAgentUndeploy(
-            run.address,
-            "folded run occurrence settled; undeploying so the next " +
-              "message redeploys a fresh occurrence",
-          );
-        } catch (undeployErr) {
-          if (!isNoSidecarConnected(undeployErr)) throw undeployErr;
-        }
-        // The undeploy is a fire-and-forget frame to the sidecar; the
-        // router only drops the address once the sidecar confirms. Wait
-        // for that (bounded) so the wake below sees an unroutable
-        // address instead of no-op'ing onto the dead occurrence.
-        const undeployDeadline = Date.now() + SETTLED_UNDEPLOY_WAIT_MS;
-        while (isRoutable(run.address) && Date.now() < undeployDeadline) {
-          await sleep(100);
-        }
-        if (isRoutable(run.address)) {
-          wakeLogger.warn`${run.address} stayed routable ${SETTLED_UNDEPLOY_WAIT_MS}ms after undeploy; waking anyway`;
-        }
-        await wakeByAddress(run.address);
-      } else if (lifecycle !== undefined) {
+      // CL-6267: a parked deployment stays announced (routable), and
+      // the sidecar's own park wake-handler wakes/respawns it the
+      // moment mail routes to it — this adapter never deploys or
+      // undeploys anything for a routable address, it just proceeds to
+      // send. Only a genuinely unroutable address gets an explicit
+      // wake here.
+      if (lifecycle !== undefined) {
         await lifecycle.ensureAwake(run.address);
       } else if (!isRoutable(run.address)) {
         await wakeByAddress(run.address);
