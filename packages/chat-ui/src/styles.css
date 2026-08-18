@@ -529,8 +529,23 @@
 /* Plugins directory (CL-6215 DRAPER): a marketplace-style list, not a grid
    of grey cards — one row per connector, search on top, Active before
    Available. */
+.plugins-directory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .plugins-directory-search {
   max-width: 22rem;
+  flex: 1;
+}
+
+/* Add MCP server reads as a quiet accent-text action, matching every other
+   Connect/Override affordance on this page — never a filled button. */
+.plugins-directory-add-mcp-action {
+  flex-shrink: 0;
+  color: var(--shell-accent, var(--primary));
+  font-weight: 650;
 }
 
 .plugins-directory-group {
@@ -1622,12 +1637,18 @@
   }
 }
 
-/* Composer chrome — a single bordered input row with room to breathe. */
+/* Composer chrome — a single bordered input row with room to breathe.
+   Cap reading width to the message column so a wide stage does not stretch
+   the prompt into a wall; the @ / slash popover then matches that same box. */
 .chat-composer {
   position: relative;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 42rem;
+  margin-inline: auto;
   border-top: 1px solid var(--border);
   padding: 0.6rem 0.75rem 0.7rem;
+  box-sizing: border-box;
 }
 
 .chat-composer-attachments {
@@ -2113,15 +2134,16 @@
 .chat-mention-popover {
   position: absolute;
   bottom: 100%;
-  left: 0.85rem;
+  left: 0.75rem;
+  right: 0.75rem;
   z-index: 10;
   display: flex;
-  max-height: 12rem;
-  width: min(18rem, calc(100% - 1.7rem));
+  max-height: 18rem;
+  width: auto;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: 0.75rem;
   margin-bottom: 0.35rem;
   background: var(--popover, var(--card, var(--background)));
   box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
@@ -2148,13 +2170,32 @@
   }
 }
 
+.chat-mention-list {
+  display: flex;
+  max-height: 18rem;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+.chat-mention-group-label {
+  padding: 0.4rem 0.5rem 0.15rem;
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
 .chat-mention-option {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
   border: none;
+  border-radius: 0.45rem;
   background: none;
-  padding: 0.45rem 0.65rem;
+  padding: 0.45rem 0.5rem;
   text-align: left;
   font: inherit;
   color: var(--foreground);
@@ -2166,9 +2207,38 @@
   outline-offset: -2px;
 }
 
+.chat-mention-avatar {
+  flex-shrink: 0;
+}
+
+.chat-mention-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.chat-mention-name {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-mention-handle {
   font-weight: 600;
   font-size: 0.8125rem;
+}
+
+.chat-mention-meta .chat-mention-handle {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-mention-label {
@@ -2185,7 +2255,7 @@
 }
 
 .chat-mention-empty {
-  padding: 0.5rem 0.65rem;
+  padding: 0.75rem 0.7rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }

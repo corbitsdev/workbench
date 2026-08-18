@@ -1,12 +1,17 @@
-// Curated, well-known MCP servers (CL-6152): the owner's steer was "we
-// should be making tools MCP-based where possible" — Granola, Exa, and
-// Linear all publish a real Streamable HTTP MCP endpoint, so Settings ›
-// Connections and Plugins offer each as a one-click preset card (URL
-// prefilled, name fixed) rather than making a person paste the URL into
-// the generic "Add MCP server" form themselves. Connecting a preset still
-// goes through the exact same `mcp-server-routes.ts` probe-then-store
-// path as a hand-typed server — a preset is only a shortcut to that
-// path's `name`/`url` inputs, never a second storage mechanism.
+// Curated, well-known MCP servers (CL-6152, extended by CL-6256): the
+// owner's steer was "we should be making tools MCP-based where possible" —
+// Granola, Exa, Linear, ScrapeCreators, and Sumble each have a Streamable
+// HTTP MCP endpoint this codebase already knows is good (Granola, Exa,
+// Linear) or the owner supplied directly (ScrapeCreators, Sumble), so
+// Settings › Connections and Plugins offer each as a one-click preset card
+// (URL prefilled, name fixed) rather than making a person paste the URL
+// into the generic "Add MCP server" form themselves. Every other name on
+// the CL-6256 roster has no endpoint known-good or owner-supplied from
+// here — those ship as `./mcp-suggestions.ts` entries instead, never as a
+// preset pointed at a guessed URL. Connecting a preset still goes through
+// the exact same `mcp-server-routes.ts` probe-then-store path as a
+// hand-typed server — a preset is only a shortcut to that path's
+// `name`/`url` inputs, never a second storage mechanism.
 //
 // `keyOptional` drives the connect form's copy, not its validation: Exa's
 // MCP server answers unauthenticated requests (the owner's own steer —
@@ -66,6 +71,27 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     keyOptional: false,
     docsUrl: "https://linear.app",
     nativeConnectorId: "linear",
+  },
+  // CL-6256: owner-supplied endpoints, not independently verified from
+  // here (no network access to probe them at authoring time) — carried as
+  // real presets because the owner named the exact URL, same trust level
+  // this file already gives Granola/Exa/Linear's known-good endpoints.
+  {
+    slug: "scrapecreators",
+    displayName: "ScrapeCreators",
+    description: "Read Reddit threads and comments — via MCP.",
+    url: "https://api.scrapecreators.com/mcp",
+    keyOptional: false,
+    docsUrl: "https://scrapecreators.com",
+    nativeConnectorId: "scrapecreators",
+  },
+  {
+    slug: "sumble",
+    displayName: "Sumble",
+    description: "Look up company tech stacks and firmographics — via MCP.",
+    url: "https://sumble.com/mcp",
+    keyOptional: false,
+    docsUrl: "https://sumble.com",
   },
 ];
 

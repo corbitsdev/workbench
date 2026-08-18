@@ -10,7 +10,8 @@
     "./registry": "./src/registry.ts",
     "./plugins": "./src/plugins.ts",
     "./provider-health": "./src/provider-health.ts",
-    "./mcp-presets": "./src/mcp-presets.ts"
+    "./mcp-presets": "./src/mcp-presets.ts",
+    "./mcp-suggestions": "./src/mcp-suggestions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

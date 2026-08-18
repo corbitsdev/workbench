@@ -48,6 +48,11 @@ export {
   type McpPreset,
 } from "./mcp-presets";
 export {
+  MCP_SUGGESTIONS,
+  mcpSuggestionBySlug,
+  type McpSuggestion,
+} from "./mcp-suggestions";
+export {
   createMcpOAuthProvider,
   refreshMcpOAuthTokens,
   type McpOAuthRefreshResult,
