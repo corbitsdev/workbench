@@ -123,11 +123,25 @@ export async function assembleRunCredentialsSnapshot(
     // not ship that `run.grants` frame yet (CL-6194 reopened), so an
     // absent file is the normal case for every chat-minted channel host,
     // not evidence of a failed grants write — failing closed bricked all
-    // new workbenches (observed live 18/08). Start with an empty
-    // snapshot; the post-spawn `deliverCredentials` push in
-    // workflow-host-wiring/index.ts seeds material as before the port.
-    // Restore the fail-closed branch when the hub produces the file.
-    return { steps: [] };
+    // new workbenches (observed live 18/08). Return one empty-grants
+    // entry PER STEP — an entryless snapshot makes every credential
+    // lookup fail with "credentialsSnapshot has no entry for stepId"
+    // (observed live 18/08, second regression) — while the post-spawn
+    // `deliverCredentials` push in workflow-host-wiring/index.ts seeds
+    // the actual material as before the port. Restore the fail-closed
+    // branch when the hub produces the file.
+    const emptyHash = await hashGrants([]);
+    return {
+      steps: opts.stepOrder.map((stepId) => ({
+        stepId,
+        address: opts.deriveStepAddress({
+          runId: opts.deploymentId,
+          stepId,
+        }),
+        grants: [],
+        contentHash: emptyHash,
+      })),
+    };
   }
   const contentHash = await hashGrants(runGrants);
   const steps: CredentialsSnapshotStep[] = opts.stepOrder.map((stepId) => ({

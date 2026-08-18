@@ -307,10 +307,12 @@ test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's cre
 
 // This hub does not yet write `runs/<runId>/grants.json` on every run
 // birth path (CL-6194 reopened) — chat-minted channel hosts never get
-// one — so an absent file starts the run on an empty snapshot (material
-// arrives via the post-spawn deliverCredentials push) instead of
-// upstream's fail-closed reject, which bricked every new workbench.
-test("onRunStart starts a run with no per-run grants file on an empty snapshot", async () => {
+// one — so an absent file starts the run on an empty-GRANTS snapshot
+// with one entry PER STEP (material arrives via the post-spawn
+// deliverCredentials push) instead of upstream's fail-closed reject,
+// which bricked every new workbench; an entryless snapshot equally
+// bricked every credential lookup ("no entry for stepId").
+test("onRunStart starts a run with no per-run grants file on an empty per-step snapshot", async () => {
   const { store } = await makeRepoStore();
 
   createSidecarWorkflowSupervisor({
@@ -339,7 +341,16 @@ test("onRunStart starts a run with no per-run grants file on an empty snapshot",
 
   await expect(
     onRunStart({ runId: "run-missing", anchorRunId: "dep-9" }),
-  ).resolves.toEqual({ steps: [] });
+  ).resolves.toEqual({
+    steps: [
+      {
+        stepId: "step-a",
+        address: "dep-9-step-a@local",
+        grants: [],
+        contentHash: "stub-hash:[]",
+      },
+    ],
+  });
 });
 
 test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's observation point", async () => {
