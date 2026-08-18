@@ -58,6 +58,8 @@ const deployment = {
   status: "running",
   createdAt: new Date(Date.now() - 60_000).toISOString(),
   updatedAt: new Date(Date.now() - 60_000).toISOString(),
+  routineId: null,
+  routineName: null,
 };
 
 function json(body: unknown): Response {

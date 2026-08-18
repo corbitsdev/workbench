@@ -21,7 +21,7 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyFoldedRunsMigrations } from "../src/migrations";
 import { foldedRun } from "../src/schema";
-import { listTopLevelRuns } from "../src/scope-routes";
+import { listTopLevelRuns, listTopLevelRunFires } from "../src/scope-routes";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
@@ -192,6 +192,168 @@ describeIfDb("listTopLevelRuns", () => {
       expect(ids).not.toContain("run_unrelated_deployment1");
 
       expect(await listTopLevelRuns(db, [])).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+});
+
+const FIRES_SCHEMA = "folded_runs_scope_routes_fires_test";
+const FIRES_TENANT = "tnt_scope_routes_fires";
+
+describeIfDb("listTopLevelRunFires", () => {
+  const target = dbTargetFromUrl(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  );
+
+  beforeAll(async () => {
+    await runMigrations(target, { schema: FIRES_SCHEMA });
+    await applyFoldedRunsMigrations(databaseUrl as string);
+  });
+
+  afterAll(async () => {
+    const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
+    try {
+      for (const id of ["run_fire1", "run_channel_host_fires1"]) {
+        await db.delete(foldedRun).where(eq(foldedRun.id, id));
+      }
+    } finally {
+      await close();
+    }
+    await dropSchema(target, { schema: FIRES_SCHEMA });
+  });
+
+  test("excludes the resident never-fired deployment row, includes a routine fire with its routine's name, and falls back to the definition name for a directly-triggered deployment", async () => {
+    const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
+    try {
+      await db.insert(schema.tenant).values({
+        id: FIRES_TENANT,
+        name: "Scope Routes Fires Tenant",
+        slug: "scope-routes-fires-tenant",
+        domain: "scope-routes-fires.workbench.test",
+      });
+      await db.insert(schema.workflowDefinition).values([
+        {
+          id: "wfd_channel_digest",
+          tenantId: FIRES_TENANT,
+          name: "channel-digest",
+          status: "deployed",
+        },
+        {
+          id: "wfd_researcher",
+          tenantId: FIRES_TENANT,
+          name: "researcher",
+          status: "deployed",
+        },
+      ]);
+
+      // The resident deployment row: born "deployed", never triggered.
+      // Plumbing, not a run — must never appear in the fires feed.
+      await db.insert(schema.workflowRun).values({
+        id: "run_never_fired1",
+        definitionId: "wfd_channel_digest",
+        anchorRunId: "run_never_fired1",
+        tenantId: FIRES_TENANT,
+        address: "run_never_fired1@scope-routes-fires.workbench.test",
+        status: "deployed",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      });
+
+      // A routine fire: a folded run (marked in `folded_run`) that
+      // `resolveRoutineFires` below recognizes as a fire of "Pulse
+      // check" — must appear, carrying that routine's name.
+      await db.insert(schema.workflowRun).values({
+        id: "run_fire1",
+        definitionId: "wfd_channel_digest",
+        anchorRunId: "run_fire1",
+        tenantId: FIRES_TENANT,
+        address: "run_fire1@scope-routes-fires.workbench.test",
+        status: "running",
+        createdAt: new Date("2026-01-02T00:00:00.000Z"),
+      });
+      await db
+        .insert(foldedRun)
+        .values({ id: "run_fire1", tenantId: FIRES_TENANT });
+
+      // A channel-host folded run: no routine parent — must stay
+      // excluded even though it is fired activity, same as today.
+      await db.insert(schema.workflowRun).values({
+        id: "run_channel_host_fires1",
+        definitionId: "wfd_channel_digest",
+        anchorRunId: "run_channel_host_fires1",
+        tenantId: FIRES_TENANT,
+        address: "run_channel_host_fires1@scope-routes-fires.workbench.test",
+        status: "running",
+        createdAt: new Date("2026-01-02T12:00:00.000Z"),
+      });
+      await db
+        .insert(foldedRun)
+        .values({ id: "run_channel_host_fires1", tenantId: FIRES_TENANT });
+
+      // A plain deployment, triggered directly (no routine, no fold):
+      // must appear, with no routine parent — the honest
+      // definition-name fallback.
+      await db.insert(schema.workflowRun).values({
+        id: "run_direct_deployment1",
+        definitionId: "wfd_researcher",
+        anchorRunId: "run_direct_deployment1",
+        tenantId: FIRES_TENANT,
+        address: "run_direct_deployment1@scope-routes-fires.workbench.test",
+        status: "running",
+        createdAt: new Date("2026-01-03T00:00:00.000Z"),
+      });
+
+      const resolveRoutineFires = async (runIds: readonly string[]) => {
+        const fires = new Map<
+          string,
+          { routineId: string; routineName: string }
+        >();
+        if (runIds.includes("run_fire1")) {
+          fires.set("run_fire1", {
+            routineId: "rtn_pulse_check",
+            routineName: "Pulse check",
+          });
+        }
+        return fires;
+      };
+
+      const rows = await listTopLevelRunFires(
+        db,
+        FIRES_TENANT,
+        resolveRoutineFires,
+      );
+
+      expect(rows.map((row) => row.id).sort()).toEqual(
+        ["run_direct_deployment1", "run_fire1"].sort(),
+      );
+
+      const fire = rows.find((row) => row.id === "run_fire1");
+      expect(fire).toMatchObject({
+        definitionName: "channel-digest",
+        routineId: "rtn_pulse_check",
+        routineName: "Pulse check",
+      });
+
+      const direct = rows.find((row) => row.id === "run_direct_deployment1");
+      expect(direct).toMatchObject({
+        definitionName: "researcher",
+        routineId: null,
+        routineName: null,
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("with no resolveRoutineFires wired, every folded run drops (never a fire) while non-folded fired runs still appear", async () => {
+    const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
+    try {
+      const rows = await listTopLevelRunFires(db, FIRES_TENANT, undefined);
+      const ids = rows.map((row) => row.id);
+      expect(ids).not.toContain("run_fire1");
+      expect(ids).not.toContain("run_channel_host_fires1");
+      expect(ids).toContain("run_direct_deployment1");
+      expect(ids).not.toContain("run_never_fired1");
     } finally {
       await close();
     }

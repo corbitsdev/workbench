@@ -8,6 +8,7 @@ import {
   legDurationMs,
   legStatusTone,
   purposeRunsForInsights,
+  runDisplayName,
 } from "./insights-stats";
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
@@ -40,6 +41,8 @@ function run(
     address: "addr",
     createdAt: partial.createdAt ?? "2026-01-02T00:00:00.000Z",
     updatedAt: partial.updatedAt ?? "2026-01-02T00:00:00.000Z",
+    routineId: partial.routineId ?? null,
+    routineName: partial.routineName ?? null,
     ...partial,
   };
 }
@@ -199,9 +202,9 @@ describe("groupRunsByDefinition", () => {
       }),
     ]);
 
-    expect(groups.map((g) => g.definitionId)).toEqual(["wfd_a", "wfd_b"]);
+    expect(groups.map((g) => g.groupKey)).toEqual(["wfd_a", "wfd_b"]);
     expect(groups[0]?.runs.map((r) => r.id)).toEqual(["a2", "a1"]);
-    expect(groups[0]?.definitionName).toBe("Research brief");
+    expect(groups[0]?.displayName).toBe("Research brief");
   });
 
   test("an empty feed groups to nothing", () => {
@@ -229,7 +232,69 @@ describe("groupRunsByDefinition", () => {
     ]);
     expect(groups[0]?.runs.map((r) => r.id)).toEqual(["new", "old"]);
     // The group header should reflect the current (newest) name.
-    expect(groups[0]?.definitionName).toBe("New Name");
+    expect(groups[0]?.displayName).toBe("New Name");
+  });
+
+  test("groups a routine fire by its routine, not its shared definition, and shows the routine's name", () => {
+    const groups = groupRunsByDefinition([
+      run({
+        id: "fire1",
+        status: "running",
+        definitionId: "wfd_channel_digest",
+        definitionName: "channel-digest",
+        routineId: "rtn_pulse_check",
+        routineName: "Pulse check",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      // A second routine firing the very same definition must land in
+      // its own group, not merge with "Pulse check" above.
+      run({
+        id: "fire2",
+        status: "running",
+        definitionId: "wfd_channel_digest",
+        definitionName: "channel-digest",
+        routineId: "rtn_weekly_roundup",
+        routineName: "Weekly roundup",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(groups.map((g) => g.groupKey).sort()).toEqual(
+      ["rtn_pulse_check", "rtn_weekly_roundup"].sort(),
+    );
+    expect(groups.map((g) => g.displayName).sort()).toEqual(
+      ["Pulse check", "Weekly roundup"].sort(),
+    );
+  });
+});
+
+describe("runDisplayName", () => {
+  test("prefers the routine's name when the run fired from one", () => {
+    expect(
+      runDisplayName(
+        run({
+          id: "fire1",
+          status: "running",
+          definitionName: "channel-digest",
+          routineId: "rtn_pulse_check",
+          routineName: "Pulse check",
+        }),
+      ),
+    ).toBe("Pulse check");
+  });
+
+  test("falls back to the definition name for a run with no routine/task parent", () => {
+    expect(
+      runDisplayName(
+        run({
+          id: "direct1",
+          status: "running",
+          definitionName: "researcher",
+          routineId: null,
+          routineName: null,
+        }),
+      ),
+    ).toBe("researcher");
   });
 });
 

@@ -609,6 +609,8 @@ describe("RoutinePanel", () => {
         status: "deployed",
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
+        routineId: null,
+        routineName: null,
         ...overrides,
       };
     }

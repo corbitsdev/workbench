@@ -149,6 +149,8 @@ const purposeRun = {
   status: "running",
   createdAt: "2026-01-15T12:00:00.000Z",
   updatedAt: "2026-01-15T12:00:00.000Z",
+  routineId: null,
+  routineName: null,
 } as const;
 
 function renderAtPath(path: string): string {
@@ -591,6 +593,8 @@ function insightsRun(
     address: "addr",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
+    routineId: partial.routineId ?? null,
+    routineName: partial.routineName ?? null,
     ...partial,
   };
 }
@@ -665,6 +669,29 @@ describe("InsightsRunsHistory definition grouping", () => {
       />,
     );
     expect(el.textContent).toContain("Showing the 100 most recent runs.");
+  });
+
+  test("a routine fire's group header renders the routine's human name, not its definition name", () => {
+    const el = mount(
+      <InsightsRunsHistory
+        runs={[
+          insightsRun({
+            id: "fire1",
+            status: "running",
+            definitionId: "wfd_channel_digest",
+            definitionName: "channel-digest",
+            routineId: "rtn_pulse_check",
+            routineName: "Pulse check",
+          }),
+        ]}
+        loading={false}
+        nextCursor={null}
+        onOpenRun={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    expect(el.textContent).toContain("Pulse check");
+    expect(el.textContent).not.toContain("channel-digest");
   });
 });
 
