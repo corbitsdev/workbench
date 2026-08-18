@@ -193,6 +193,7 @@ import {
   type WsHandle,
 } from "@intx/hub-sessions";
 import { createLaunchCaches } from "./launch-caches";
+import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
@@ -946,6 +947,7 @@ export async function createHub(config: HubConfig) {
     // tenant-catalog default, instead of 409ing `not_launchable`.
     channelHostInferencePreferences: channelHostInferencePreferencesResolver,
   });
+  wireMailRedelivery({ sidecarRouter, chatPlatform });
   // Built once, beside the platform, for the process's lifetime: turns
   // an invited agent's `connector.reply` events into channel messages,
   // and a gate-blocked run's approval park into an in-chat approve
