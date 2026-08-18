@@ -326,6 +326,60 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  // CL-6164: the step's default input selector (`{ from:
+  // "trigger.payload" }`) reads the triggering mail's bare `content`
+  // verbatim and feeds it straight into `agent.send`, which throws on an
+  // empty string — and `content` is legitimately empty for
+  // attachments-only mail. A caller that knows its run never reads its
+  // input (the channel host) must be able to pin a literal instead, so
+  // an attachments-only first mail cannot crash the run before it opens.
+  test("stepInput overrides the step's default trigger.payload selector", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const sessionService = createFakeSessionService();
+
+    await launchFoldedRun(
+      {
+        db: createFakeDb() as never,
+        sessionService,
+        assetService: {} as never,
+        sidecarRouter: {} as never,
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        eventCollectors: createFakeEventCollectors(),
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_channel1",
+        triggerAddress: "ins_channel1@ten1.workbench.test",
+        definitionId: "wfd_channel1",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the channel host",
+        stepInput: { literal: "channel-host anchor turn" },
+      },
+    );
+
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      definition: { steps: Record<string, { input?: unknown }> };
+    };
+    expect(Object.values(deployed.definition.steps)[0]?.input).toEqual({
+      literal: "channel-host anchor turn",
+    });
+  });
+
   // CL-6149: a pinned tool package's calls failed every call with
   // "No matching grants" because nothing derived `tool:` grants for
   // `toolPackagePins` — the deploy-time capability walk only covers
