@@ -120,6 +120,15 @@ describe("ACTION_COMMANDS", () => {
     }
   });
 
+  test("new-workbench and new-agent speak consumer language, not mint", () => {
+    const workbench = ACTION_COMMANDS.find((c) => c.id === "new-workbench");
+    const agent = ACTION_COMMANDS.find((c) => c.id === "new-agent");
+    expect(workbench?.subtitle).toBe("Start a new workbench with Myra");
+    expect(agent?.subtitle).toBe("Start a new workbench with Myra");
+    expect(workbench?.subtitle.toLowerCase()).not.toContain("mint");
+    expect(agent?.subtitle.toLowerCase()).not.toContain("mint");
+  });
+
   test("labels 'New skill' to match the app's authoring model, not 'Install skill'", () => {
     const skillCommand = ACTION_COMMANDS.find((c) => c.id === "new-skill");
     expect(skillCommand?.title).toBe("New skill");
