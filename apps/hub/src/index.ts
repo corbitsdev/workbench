@@ -91,6 +91,7 @@ import {
   createInsightsRoutes,
   createPostgresUsageStore,
   createUsageSink,
+  withTurnPartPersistGuard,
 } from "@corbits/insights";
 import {
   applyPreferencesMigrations,
@@ -531,7 +532,12 @@ export async function createHub(config: HubConfig) {
     generateId: () => generateId("inferenceTurn"),
   });
   const eventCollectors = createEventCollectorRegistry({
-    db: withTurnPartWriteDefaults(db),
+    // `withTurnPartPersistGuard` (see @corbits/insights) wraps
+    // `withTurnPartWriteDefaults`: it retries a turn_part insert once on
+    // the collector's known turn_id/session_id FK race and makes any
+    // surviving loss loud (error-level cause, counted) instead of a
+    // swallowed WRN.
+    db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
     onTurnFinalized: (agentAddress, turn) =>
       artifactDeliveryHandlerRef.current?.(agentAddress, turn),
     // The vendored `onUsage` forward (see VENDORED.md) — the platform

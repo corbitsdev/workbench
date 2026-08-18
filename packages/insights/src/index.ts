@@ -51,3 +51,7 @@ export {
 } from "./queries";
 export { createInsightsRoutes, type CreateInsightsRoutesDeps } from "./routes";
 export { createDrizzleRunTraceReader } from "./trace-reader";
+export {
+  withTurnPartPersistGuard,
+  turnPartPersistFailures,
+} from "./turn-part-write-guard";
