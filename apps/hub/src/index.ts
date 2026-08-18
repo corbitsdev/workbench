@@ -59,6 +59,7 @@ import {
   createDrizzleBlockResponseStore,
   createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
+  createDrizzleClientIdStore,
   createDrizzlePinStore,
   createDrizzleReactionStore,
   createDrizzleThreadStore,
@@ -1014,6 +1015,7 @@ export async function createHub(config: HubConfig) {
     blockResponses: blockResponseStore,
     reactions: reactionStore,
     pins: pinStore,
+    clientIds: createDrizzleClientIdStore(db),
     channelSubscribers,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
