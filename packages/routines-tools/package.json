@@ -2,7 +2,7 @@
   "name": "@corbits/routines-tools",
   "private": true,
   "description": "Myra's routine-management tool bundle (routine_list, routine_create, routine_update, routine_run_now): an @intx/agent tool bundle calling @corbits/routines' workflow-run-authenticated routine routes, so Myra can create and manage the workbench's recurring/triggered automations from chat without reimplementing scheduling, cron, or launch logic",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

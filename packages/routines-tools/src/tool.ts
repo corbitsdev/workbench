@@ -85,7 +85,8 @@ const TriggerInput = type({
 const RoutineCreateInput = type({
   name: "string > 0",
   definitionId: "string > 0",
-  instruction: "string > 0",
+  "instruction?": "string > 0",
+  "input?": "Record<string, unknown>",
   trigger: TriggerInput,
   "enabled?": "boolean",
 });
@@ -96,12 +97,14 @@ const RoutineUpdateInput = type({
   "enabled?": "boolean",
   "name?": "string > 0",
   "instruction?": "string > 0",
+  "input?": "Record<string, unknown>",
   "trigger?": TriggerInput,
 });
 type RoutineUpdateInput = typeof RoutineUpdateInput.infer;
 
 const RoutineRunNowInput = type({
   id: "string > 0",
+  "input?": "Record<string, unknown>",
 });
 
 /** A correct, minimal trigger literal — surfaced in validation error
@@ -184,8 +187,10 @@ function coerceTriggerInput(value: unknown): unknown {
 function coerceRoutineArguments(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!("trigger" in args)) return args;
-  return { ...args, trigger: coerceTriggerInput(args.trigger) };
+  const next = { ...args };
+  if ("trigger" in next) next.trigger = coerceTriggerInput(next.trigger);
+  if ("input" in next) next.input = decodeMaybeJsonString(next.input);
+  return next;
 }
 
 function invalidInputError(toolName: string, summary: string): Error {
@@ -211,19 +216,18 @@ function clientConfig(env: WorkflowRoutineEnv) {
   };
 }
 
-/**
- * `instruction` maps to the routine's stored `input`. `@corbits/routines`'
- * own `renderRoutineInput` (`packages/routines/src/render-input.ts`)
- * renders any `Record<string, unknown>` as `key: value` lines a launched
- * run reads as its first-turn message — `{instruction: <text>}` is the
- * simplest record that survives that rendering intact, one labeled line
- * carrying Myra's free-text instruction verbatim. A workflow definition
- * expecting a richer input shape (multiple named fields) isn't served by
- * this simplification; that's future scope, not something this bundle
- * invents an opinion on today.
- */
-function toRoutineInput(instruction: string): Record<string, unknown> {
-  return { instruction };
+// `instruction` is the free-text convenience: it becomes stored
+// `{ instruction }`. A named `input` object (e.g. `{ topic: "…" }`)
+// is the real stored shape — last-30-days and any other workflow that
+// declares fields read those keys directly. When both arrive, `input`
+// wins; this is one resolver, not two create paths.
+function resolveRoutineInput(args: {
+  readonly input?: Record<string, unknown>;
+  readonly instruction?: string;
+}): Record<string, unknown> | undefined {
+  if (args.input !== undefined) return args.input;
+  if (args.instruction !== undefined) return { instruction: args.instruction };
+  return undefined;
 }
 
 async function runRoutineList(
@@ -255,12 +259,22 @@ async function runRoutineCreate(
       invalidInputError(ROUTINE_CREATE_TOOL, parsed.summary),
     );
   }
+  const input = resolveRoutineInput(parsed);
+  if (input === undefined) {
+    return errorResult(
+      call.id,
+      invalidInputError(
+        ROUTINE_CREATE_TOOL,
+        "must include input or instruction",
+      ),
+    );
+  }
   try {
     const routine = await createRoutine(clientConfig(env), {
       name: parsed.name,
       definitionId: parsed.definitionId,
       trigger: parsed.trigger as RoutineTriggerInput,
-      input: toRoutineInput(parsed.instruction),
+      input,
     });
     if (parsed.enabled === false) {
       await updateRoutine(clientConfig(env), routine.id, { enabled: false });
@@ -299,9 +313,8 @@ async function runRoutineUpdate(
   if (parsed.trigger !== undefined) {
     patch.trigger = parsed.trigger as RoutineTriggerInput;
   }
-  if (parsed.instruction !== undefined) {
-    patch.input = toRoutineInput(parsed.instruction);
-  }
+  const input = resolveRoutineInput(parsed);
+  if (input !== undefined) patch.input = input;
   try {
     const routine = await updateRoutine(clientConfig(env), parsed.id, patch);
     return {
@@ -318,7 +331,9 @@ async function runRoutineRunNow(
   env: WorkflowRoutineEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  const parsed = RoutineRunNowInput(call.arguments);
+  const parsed = RoutineRunNowInput(
+    coerceRoutineArguments(call.arguments as Record<string, unknown>),
+  );
   if (parsed instanceof type.errors) {
     return errorResult(
       call.id,
@@ -326,7 +341,11 @@ async function runRoutineRunNow(
     );
   }
   try {
-    const result = await runRoutineNow(clientConfig(env), parsed.id);
+    const result = await runRoutineNow(
+      clientConfig(env),
+      parsed.id,
+      parsed.input,
+    );
     return {
       callId: call.id,
       isError: false,
@@ -450,7 +469,17 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
             instruction: {
               type: "string",
               description:
-                "What to tell the agent to do each time this routine fires.",
+                "What to tell the agent to do each time this routine fires. " +
+                "Stored as input.instruction. Prefer `input` when the " +
+                "workflow declares named fields (for example topic).",
+            },
+            input: {
+              type: "object",
+              description:
+                "Named fields the workflow reads on launch. Example: " +
+                '{ "topic": "acme competitors" }. Wins over instruction ' +
+                "when both are sent.",
+              additionalProperties: true,
             },
             trigger: TRIGGER_SCHEMA,
             enabled: {
@@ -459,14 +488,14 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
                 "Whether the routine starts enabled. Defaults to true.",
             },
           },
-          required: ["name", "definitionId", "instruction", "trigger"],
+          required: ["name", "definitionId", "trigger"],
         },
       },
       {
         name: ROUTINE_UPDATE_TOOL,
         description:
           "Update an existing routine's enabled state, name, " +
-          "instruction, or trigger.",
+          "instruction, named input, or trigger.",
         inputSchema: {
           type: "object",
           properties: {
@@ -484,6 +513,13 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
               description:
                 "A new instruction to tell the agent each time this routine fires.",
             },
+            input: {
+              type: "object",
+              description:
+                "Named fields the workflow reads on launch. Wins over " +
+                "instruction when both are sent.",
+              additionalProperties: true,
+            },
             trigger: TRIGGER_SCHEMA,
           },
           required: ["id"],
@@ -498,6 +534,14 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
           type: "object",
           properties: {
             id: { type: "string", description: "The routine's id." },
+            input: {
+              type: "object",
+              description:
+                "Optional named fields for this one run. Overrides the " +
+                "routine's stored input when sent. Example: " +
+                '{ "topic": "acme competitors" }.',
+              additionalProperties: true,
+            },
           },
           required: ["id"],
         },

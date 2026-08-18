@@ -242,11 +242,19 @@ export async function updateRoutine(
 export async function runRoutineNow(
   config: RoutineToolClientConfig,
   routineId: string,
+  input?: Record<string, unknown>,
 ): Promise<RunRoutineNowResult> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(
     endpoint(config, `/routines/${routineId}/run`),
-    { method: "POST", headers: authHeaders(config) },
+    {
+      method: "POST",
+      headers:
+        input === undefined
+          ? authHeaders(config)
+          : { ...authHeaders(config), "content-type": "application/json" },
+      body: input === undefined ? undefined : JSON.stringify({ input }),
+    },
   );
   if (!response.ok) {
     throw new Error(

@@ -74,7 +74,7 @@ test('routine_create and routine_update grant no credentials and touch nothing e
   ]);
 });
 
-test("routine_create's input schema requires name, definitionId, instruction, and trigger", () => {
+test("routine_create's input schema requires name, definitionId, and trigger", () => {
   const bundle = routinesTools(testEnv());
   const definition = bundle.definitions.find(
     (d) => d.name === ROUTINE_CREATE_TOOL,
@@ -82,7 +82,6 @@ test("routine_create's input schema requires name, definitionId, instruction, an
   expect(definition.inputSchema.required).toEqual([
     "name",
     "definitionId",
-    "instruction",
     "trigger",
   ]);
 });
@@ -280,6 +279,139 @@ test("routine_create posts the instruction as input.instruction and returns a pl
     });
     expect(result.isError).toBeFalsy();
     expect(result.content).toBe('Created "Morning digest" (rtn_1).');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_create posts a named input object as stored input, not wrapped in instruction", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_CREATE_TOOL, {
+        name: "Last 30 days",
+        definitionId: "def_1",
+        input: { topic: "acme competitors" },
+        trigger: { kind: "daily", hour: 9, minute: 0 },
+      }),
+      new AbortController().signal,
+    );
+    expect(seenBody).toEqual({
+      name: "Last 30 days",
+      definitionId: "def_1",
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+      input: { topic: "acme competitors" },
+    });
+    expect(result.isError).toBeFalsy();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_create prefers named input over instruction when both are sent", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    await bundle.run(
+      callFor(ROUTINE_CREATE_TOOL, {
+        name: "Last 30 days",
+        definitionId: "def_1",
+        instruction: "ignore me",
+        input: { topic: "acme competitors" },
+        trigger: { kind: "daily", hour: 9, minute: 0 },
+      }),
+      new AbortController().signal,
+    );
+    expect(seenBody).toEqual({
+      name: "Last 30 days",
+      definitionId: "def_1",
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+      input: { topic: "acme competitors" },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_create rejects a call with neither input nor instruction", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return new Response(JSON.stringify(routineViewBody()), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_CREATE_TOOL, {
+        name: "Last 30 days",
+        definitionId: "def_1",
+        trigger: { kind: "daily", hour: 9, minute: 0 },
+      }),
+      new AbortController().signal,
+    );
+    expect(called).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(String(result.content)).toMatch(/input or instruction/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_update patches named input when provided", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify(routineViewBody()));
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_UPDATE_TOOL, {
+        id: "rtn_1",
+        input: { topic: "acme competitors" },
+      }),
+      new AbortController().signal,
+    );
+    expect(seenBody).toEqual({ input: { topic: "acme competitors" } });
+    expect(result.isError).toBeFalsy();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_run_now forwards an input override to the run-now route", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody =
+      init?.body === undefined ? undefined : JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ runId: "run_9" }), { status: 201 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_RUN_NOW_TOOL, {
+        id: "rtn_1",
+        input: { topic: "acme competitors" },
+      }),
+      new AbortController().signal,
+    );
+    expect(seenBody).toEqual({ input: { topic: "acme competitors" } });
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toBe("Started run run_9.");
   } finally {
     globalThis.fetch = originalFetch;
   }

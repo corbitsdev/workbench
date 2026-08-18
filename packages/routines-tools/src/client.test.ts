@@ -162,6 +162,26 @@ test("runRoutineNow posts to the routine's own run path and returns the launched
   expect(result).toEqual({ runId: "run_9" });
 });
 
+test("runRoutineNow posts a named input override when one is given", async () => {
+  let seenBody: unknown;
+  let seenHeaders: HeadersInit | undefined;
+  const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody =
+      init?.body === undefined ? undefined : JSON.parse(String(init.body));
+    seenHeaders = init?.headers;
+    return new Response(JSON.stringify({ runId: "run_9" }), { status: 201 });
+  }) as unknown as typeof fetch;
+
+  await runRoutineNow(testConfig(fetchImpl), "rtn_1", {
+    topic: "acme competitors",
+  });
+
+  expect(seenBody).toEqual({ input: { topic: "acme competitors" } });
+  expect(seenHeaders).toEqual(
+    expect.objectContaining({ "content-type": "application/json" }),
+  );
+});
+
 test("runRoutineNow throws an honest error on an unreachable hub, never fabricating a run", async () => {
   const fetchImpl = (async () => {
     throw new Error("fetch failed: connection refused");
