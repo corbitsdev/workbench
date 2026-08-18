@@ -22,13 +22,14 @@ import {
   channelsQueryKeyPrefix,
   patchChannelSettings,
 } from "@corbits/chat-ui";
-import type { Channel } from "@corbits/chat-ui";
+import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
 import { WorkingTaskRow } from "@corbits/tasks-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Hash, MessageSquare, MoreHorizontal, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { openAgentDmChat } from "../agent-dm-launch";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath } from "../channel-path";
 import {
@@ -36,6 +37,11 @@ import {
   isChannelRenameRequestFor,
 } from "../channel-rename-events";
 import { useBenchActivity } from "./bench-activity";
+import {
+  buildSidebarRows,
+  identityColorClass,
+  type SidebarRow,
+} from "./sidebar-rows";
 
 /**
  * The always-active, no-op row naming the current screen as "where the
@@ -300,6 +306,9 @@ function WorkbenchRow({
               <span className="shell-ch-live" title="Active" />
             ) : null}
           </span>
+          {channel.preview !== undefined && channel.preview !== "" ? (
+            <span className="shell-ch-preview">{channel.preview}</span>
+          ) : null}
         </span>
         <span className="shell-ch-right">
           {time !== undefined && time !== "" ? (
@@ -331,6 +340,71 @@ function WorkbenchRow({
   );
 }
 
+/**
+ * A never-opened agent's row (CL-6253): mints its DM lazily on first
+ * click, then reuses the same channel on every later click — once
+ * opened, the agent shows up as an ordinary channel row via its own DM
+ * `Channel` instead (see `unopenedAgentRows`). Disabled, with an honest
+ * join caption, when the caller isn't a member of the agent's OWNING
+ * tenant — reachable-through-inheritance is not the same as postable-in;
+ * see `packages/agent-directory/src/visible-definitions.ts`.
+ */
+function AgentRow({
+  agent,
+  isMember,
+  onNavigate,
+}: {
+  readonly agent: VisibleAgentDefinition;
+  readonly isMember: boolean;
+  readonly onNavigate: (to: string) => void;
+}) {
+  const [opening, setOpening] = useState(false);
+  const disabled = !isMember || opening;
+
+  async function handleSelect() {
+    if (disabled) return;
+    setOpening(true);
+    try {
+      await openAgentDmChat(agent.tenantId, agent.id, onNavigate);
+    } catch {
+      toast(CHAT_STRINGS.agentDmOpenError(agent.name));
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  const colorClass = identityColorClass(agent.name);
+
+  return (
+    <div className="shell-ch-row-wrap" data-ctx-agent={agent.id}>
+      <button
+        type="button"
+        className="shell-ch-row"
+        disabled={disabled}
+        aria-disabled={disabled ? "true" : undefined}
+        onClick={() => void handleSelect()}
+      >
+        <span className="shell-ch-stack" aria-hidden="true">
+          <span className={`shell-agent-avatar ${colorClass}`}>
+            {agent.name.slice(0, 1).toUpperCase()}
+          </span>
+        </span>
+        <span className="shell-ch-meta">
+          <span className="shell-ch-name-row">
+            <span className="shell-ch-name">{agent.name}</span>
+          </span>
+          {!isMember ? (
+            <span className="shell-ch-preview">
+              Lives in {agent.tenantName} — join it to chat
+            </span>
+          ) : null}
+        </span>
+        <span className="shell-ch-right" />
+      </button>
+    </div>
+  );
+}
+
 export function WorkbenchList({
   path,
   onNavigate,
@@ -338,7 +412,7 @@ export function WorkbenchList({
   readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
-  const { selectedTenantId } = useBench();
+  const { selectedTenantId, memberships } = useBench();
   const activity = useBenchActivity(selectedTenantId);
   const activeId = channelIdFromPath(path);
   const [query, setQuery] = useState("");
@@ -365,7 +439,15 @@ export function WorkbenchList({
     );
   }
 
-  const all = orderWorkbenchRows([...activity.channels, ...activity.chats]);
+  const all = buildSidebarRows(
+    activity.channels,
+    activity.chats,
+    activity.agents,
+  );
+  const memberTenantIds =
+    memberships.kind === "ready"
+      ? new Set(memberships.data.data.map((m) => m.tenantId))
+      : new Set<string>();
   const workingGroup =
     activity.workingTasks.length > 0 ? (
       <div className="panel-stack-group">
@@ -392,16 +474,14 @@ export function WorkbenchList({
     );
   }
 
+  const rowName = (row: SidebarRow): string =>
+    row.kind === "channel"
+      ? row.channel.title || CHAT_STRINGS.unnamedChannel
+      : row.agent.name;
+
   const q = query.trim().toLowerCase();
   const filtered =
-    q === ""
-      ? all
-      : all.filter((channel) => {
-          const name = (
-            channel.title || CHAT_STRINGS.unnamedChannel
-          ).toLowerCase();
-          return name.includes(q);
-        });
+    q === "" ? all : all.filter((row) => rowName(row).toLowerCase().includes(q));
 
   const tenantId = selectedTenantId ?? "";
 
@@ -426,16 +506,28 @@ export function WorkbenchList({
         />
       ) : (
         <div className="panel-stack-group">
-          {filtered.map((channel) => (
-            <WorkbenchRow
-              key={channel.id}
-              channel={channel}
-              active={channel.id === activeId}
-              tenantId={tenantId}
-              onSelect={() => onNavigate(channelPath(channel.id))}
-              signals={workbenchRowSignals(channel, channel.id === activeId)}
-            />
-          ))}
+          {filtered.map((row) =>
+            row.kind === "channel" ? (
+              <WorkbenchRow
+                key={row.channel.id}
+                channel={row.channel}
+                active={row.channel.id === activeId}
+                tenantId={tenantId}
+                onSelect={() => onNavigate(channelPath(row.channel.id))}
+                signals={workbenchRowSignals(
+                  row.channel,
+                  row.channel.id === activeId,
+                )}
+              />
+            ) : (
+              <AgentRow
+                key={row.agent.id}
+                agent={row.agent}
+                isMember={memberTenantIds.has(row.agent.tenantId)}
+                onNavigate={onNavigate}
+              />
+            ),
+          )}
         </div>
       )}
     </div>

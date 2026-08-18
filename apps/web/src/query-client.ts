@@ -97,6 +97,12 @@ export const tenantKeys = {
     ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) =>
     ["tenant", tenantId, "agents", "directory"] as const,
+  /** The sidebar's unified list of agent-DM candidates: own + ancestor
+   * definitions (see `@corbits/agent-directory`'s `listVisibleAgentDefinitions`).
+   * Kept apart from `agentDirectory` above, which is a different surface's
+   * own key. */
+  visibleAgents: (tenantId: string) =>
+    ["tenant", tenantId, "agents", "visible"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
   // Nested under `artifacts` (not a sibling key) so one

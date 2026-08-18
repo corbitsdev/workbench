@@ -1383,6 +1383,40 @@ select:disabled,
   color: var(--primary-foreground);
 }
 
+/* Agent-DM identity avatar: zero radius per brand rule, distinct from the
+   round channel-participant stack above — a small, deterministic,
+   brand-compatible palette hashed off the agent's own name (see
+   `identityColorClass` in `./shell/sidebar-rows.ts`), never a per-agent
+   custom color. */
+.shell-agent-avatar {
+  border-radius: 0;
+}
+
+.shell-agent-color-0 {
+  background: color-mix(in srgb, var(--shell-accent) 22%, transparent);
+  color: var(--shell-accent);
+}
+
+.shell-agent-color-1 {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  color: var(--ok);
+}
+
+.shell-agent-color-2 {
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  color: var(--warn);
+}
+
+.shell-agent-color-3 {
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  color: var(--foreground);
+}
+
+.shell-agent-color-4 {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+}
+
 .shell-ch-meta {
   min-width: 0;
 }
@@ -1433,6 +1467,17 @@ select:disabled,
 .shell-ch-time {
   font-size: 0.66rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
+}
+
+/* Bounded last-message/last-known-status line under the row name — a
+   channel's message preview, or an unreachable agent's join caption. */
+.shell-ch-preview {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shell-ch-row-wrap {

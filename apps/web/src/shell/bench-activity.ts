@@ -28,8 +28,9 @@ import {
   CHANNELS_MUTATED_EVENT,
   channelsQueryKeyPrefix,
   listChannels,
+  listVisibleAgentDefinitions,
 } from "@corbits/chat-ui";
-import type { Channel } from "@corbits/chat-ui";
+import type { Channel, VisibleAgentDefinition } from "@corbits/chat-ui";
 import { listTasks, workingTasks } from "@corbits/tasks-ui";
 import type { WorkingTask } from "@corbits/tasks-ui";
 
@@ -45,6 +46,7 @@ export type BenchActivityQuery =
       readonly kind: "ready";
       readonly channels: readonly Channel[];
       readonly chats: readonly Channel[];
+      readonly agents: readonly VisibleAgentDefinition[];
       readonly routines: readonly RoutineActivityItem[];
       readonly workingTasks: readonly WorkingTask[];
     };
@@ -97,10 +99,21 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     enabled,
     queryFn: () => listTasks(key),
   });
+  const agentsQuery = useQuery({
+    queryKey: tenantKeys.visibleAgents(key),
+    enabled,
+    queryFn: () => listVisibleAgentDefinitions(key),
+  });
 
   if (tenantId === null) return { kind: "empty" };
 
-  for (const query of [channelsQuery, chatsQuery, routinesQuery, tasksQuery]) {
+  for (const query of [
+    channelsQuery,
+    chatsQuery,
+    routinesQuery,
+    tasksQuery,
+    agentsQuery,
+  ]) {
     if (query.isError)
       return { kind: "error", message: errorMessage(query.error) };
   }
@@ -108,7 +121,8 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     channelsQuery.data === undefined ||
     chatsQuery.data === undefined ||
     routinesQuery.data === undefined ||
-    tasksQuery.data === undefined
+    tasksQuery.data === undefined ||
+    agentsQuery.data === undefined
   ) {
     return { kind: "loading" };
   }
@@ -117,6 +131,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     kind: "ready",
     channels: channelsQuery.data,
     chats: chatsQuery.data,
+    agents: agentsQuery.data,
     routines: routinesQuery.data,
     workingTasks: workingTasks(tasksQuery.data),
   };
