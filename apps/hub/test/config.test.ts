@@ -42,6 +42,7 @@ describe("readHubConfig", () => {
         password: "password123",
         orgSlug: "workbench",
       },
+      chatIdleReapMs: 30 * 60_000,
     });
   });
 
@@ -356,6 +357,36 @@ describe("readHubConfig", () => {
         HUB_SIDECAR_WEBSOCKET_URL: "http://not-a-websocket-url",
       });
       expect(message).toContain("HUB_SIDECAR_WEBSOCKET_URL");
+    });
+  });
+
+  describe("chatIdleReapMs", () => {
+    test("defaults to 30 minutes when WORKBENCH_CHAT_IDLE_REAP_MS is unset", () => {
+      expect(readHubConfig(validEnv).chatIdleReapMs).toBe(30 * 60_000);
+    });
+
+    test("is read from WORKBENCH_CHAT_IDLE_REAP_MS when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "5000",
+      });
+      expect(config.chatIdleReapMs).toBe(5000);
+    });
+
+    test("rejects zero", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "0",
+      });
+      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
+    });
+
+    test("rejects a non-integer value", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "not-a-number",
+      });
+      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
     });
   });
 

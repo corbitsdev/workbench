@@ -34,6 +34,7 @@ import {
 } from "@intx/db/schema";
 import { channelLaunch } from "../src/schema";
 import { foldedRun } from "@corbits/folded-runs";
+import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
@@ -1277,7 +1278,8 @@ describe("createHubChatPlatform", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: false,
-      message: "This definition declares no model requirements; cannot resolve any inference sources",
+      message:
+        "This definition declares no model requirements; cannot resolve any inference sources",
     };
 
     const db = createFakeDb({
@@ -1890,6 +1892,71 @@ describe("createHubChatPlatform", () => {
       await new Promise((resolve) => setTimeout(resolve, 40));
 
       expect(sidecarRouter.sendAgentUndeployCalls).toEqual([]);
+      globalThis.setInterval = originalSetInterval;
+    });
+
+    test("the idle sweep reaps a genuinely idle address with the state-preserving reason", async () => {
+      const originalSetInterval = globalThis.setInterval;
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        const timer = originalSetInterval(...args);
+        timer.unref?.();
+        return timer;
+      }) as typeof setInterval;
+
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address,
+          principalId: "prin_run1",
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: [address],
+      });
+      // No open turn on this address -- unlike the busy-guard test above,
+      // nothing spares it once its recorded activity goes stale past
+      // `idleSleepMs`.
+      const eventCollectors = createFakeEventCollectors({
+        busyAddresses: new Set(),
+      });
+
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
+      });
+
+      await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "hello" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([
+        { address, reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
+      ]);
       globalThis.setInterval = originalSetInterval;
     });
 

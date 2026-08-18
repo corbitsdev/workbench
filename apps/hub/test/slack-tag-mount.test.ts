@@ -42,6 +42,7 @@ const config: HubConfig = {
   sidecarProvisioner: { kind: "none" },
   envProviderKeys: {},
   envProviderBaseUrls: {},
+  chatIdleReapMs: 30 * 60_000,
   envCredentialPlantAdmin: {
     email: "alice@example.com",
     password: "password123",

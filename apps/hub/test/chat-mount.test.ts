@@ -39,6 +39,7 @@ const config: HubConfig = {
     password: "password123",
     orgSlug: "workbench",
   },
+  chatIdleReapMs: 30 * 60_000,
 };
 
 const closers: (() => Promise<void>)[] = [];
