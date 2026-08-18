@@ -35,9 +35,11 @@ import {
   type SidecarDeployRouter,
 } from "../src/workflow-host-wiring";
 import {
+  createMultistepCredentialsRouter,
   createMultistepDrainRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
+  type MultistepCredentialsRouter,
 } from "../src/workflow-run-pack-client";
 
 function createMemoryNdjsonStream() {
@@ -171,6 +173,8 @@ type Spawn = {
   childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
   supervisorToChild: ReturnType<typeof createMemoryNdjsonStream>;
   eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
+  /** Every line the supervisor wrote to the child's control channel, in order. */
+  sentControlLines: string[];
   env: Record<string, string>;
   killed: boolean;
   exitedResolved: boolean;
@@ -183,7 +187,9 @@ type Fixture = {
   dataDir: string;
 };
 
-async function makeLifecycleFixture(): Promise<Fixture> {
+async function makeLifecycleFixture(opts?: {
+  multistepCredentialsRouter?: MultistepCredentialsRouter;
+}): Promise<Fixture> {
   const spawns: Spawn[] = [];
   const spawner: SubprocessSpawner = ({ env }) => {
     const supervisorToChild = createMemoryNdjsonStream();
@@ -199,6 +205,7 @@ async function makeLifecycleFixture(): Promise<Fixture> {
       supervisorToChild,
       childToSupervisor,
       eventChildToSupervisor,
+      sentControlLines: [],
       env,
       killed: false,
       exitedResolved: false,
@@ -209,7 +216,12 @@ async function makeLifecycleFixture(): Promise<Fixture> {
     };
     const handle: SubprocessHandle = {
       pid: 5100 + spawns.length,
-      controlWriter: supervisorToChild.writer,
+      controlWriter: {
+        async write(line: string) {
+          entry.sentControlLines.push(line);
+          await supervisorToChild.writer.write(line);
+        },
+      },
       controlReader: childToSupervisor.reader,
       eventReader: eventChildToSupervisor.reader,
       kill: () => {
@@ -274,6 +286,9 @@ async function makeLifecycleFixture(): Promise<Fixture> {
     multistepMailRouter: createMultistepMailRouter(),
     multistepSignalRouter: createMultistepSignalRouter(),
     multistepDrainRouter: createMultistepDrainRouter(),
+    ...(opts?.multistepCredentialsRouter !== undefined
+      ? { multistepCredentialsRouter: opts.multistepCredentialsRouter }
+      : {}),
   });
   return { router, spawns, dataDir };
 }
@@ -632,5 +647,61 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     // The durable conversation lives under a DIFFERENT root and must
     // survive so a re-deploy restores the prior conversation.
     expect(await fs.readFile(durableConversationFile, "utf8")).toBe("x");
+  });
+
+  // CL-6192: the hub's `credentials.update` frame (a rotation, or a
+  // revocation) must reach the resident workflow-process child. Before this
+  // port, no `MultistepCredentialsRouter` handler was ever installed, so an
+  // inbound `credentials.update` frame was unrouted for every deployment.
+  test("a hub credentials.update frame reaches the child as a credentials-updated control frame", async () => {
+    const multistepCredentialsRouter = createMultistepCredentialsRouter();
+    const { router, spawns } = await makeLifecycleFixture({
+      multistepCredentialsRouter,
+    });
+    const frame = makeWorkflowFrame("run_lifecycle-credentials@example.com");
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    const delivery = {
+      bindings: [
+        {
+          handle: "mcp:exa",
+          credentialId: "cred_1",
+          consumer: "tool:@corbits/mcp-tools",
+        },
+      ],
+      materials: [
+        {
+          credentialId: "cred_1",
+          providerKey: "http",
+          origin: "https://mcp.exa.ai/mcp",
+          secret: "rotated-secret",
+        },
+      ],
+    };
+
+    const routed = await multistepCredentialsRouter.tryRoute({
+      type: "credentials.update",
+      agentAddress: frame.agentAddress,
+      delivery,
+    });
+
+    expect(routed).toBe(true);
+    const credentialsUpdatedLine = spawn.sentControlLines.find(
+      (line) =>
+        (JSON.parse(line) as { envelope: { payload: { type: string } } })
+          .envelope.payload.type === "credentials-updated",
+    );
+    if (credentialsUpdatedLine === undefined) {
+      throw new Error(
+        "expected a credentials-updated control frame after routing credentials.update",
+      );
+    }
+    const parsed = JSON.parse(credentialsUpdatedLine) as {
+      envelope: { payload: { type: string; data: { delivery: unknown } } };
+    };
+    expect(parsed.envelope.payload.data.delivery).toEqual(delivery);
   });
 });

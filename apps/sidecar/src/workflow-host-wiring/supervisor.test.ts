@@ -7,7 +7,13 @@
 // "no onSuspensionRegister sink is wired" and the suspended run parked
 // forever with zero rows in the `approval` table.
 
-import { expect, mock, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, expect, mock, test } from "bun:test";
+import type { RepoStore } from "@intx/hub-sessions";
+
+import { runGrantsPath } from "../run-grants";
 
 mock.module("@intx/workflow-host", () => ({
   createWorkflowSupervisor: mock((config: unknown) => {
@@ -20,9 +26,28 @@ mock.module("@intx/workflow-host", () => ({
   wrapHubTransportAsMailBus: () => ({
     routeInbound: async () => {},
   }),
+  hashGrants: async (grants: readonly unknown[]) =>
+    `stub-hash:${JSON.stringify(grants)}`,
 }));
 
 let capturedConfig: unknown;
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+async function makeRepoStore(): Promise<{ store: RepoStore; dir: string }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "supervisor-onrunstart-"));
+  tempDirs.push(dir);
+  const store = {
+    getRepoDir: () => dir,
+  } as unknown as RepoStore;
+  return { store, dir };
+}
 
 const { createSidecarWorkflowSupervisor, DEFAULT_MAX_GRANTS_AGE_MS } =
   await import("./supervisor");
@@ -40,6 +65,7 @@ test("createSidecarWorkflowSupervisor forwards onSuspensionRegister to the workf
     stepCount: 1,
     deploymentMailAddress: "dep-1@local",
     deriveStepAddress: () => "dep-1-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
     onSuspensionRegister: registerSuspension,
@@ -61,6 +87,7 @@ test("createSidecarWorkflowSupervisor omits onSuspensionRegister when the caller
     stepCount: 1,
     deploymentMailAddress: "dep-2@local",
     deriveStepAddress: () => "dep-2-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
   });
@@ -106,6 +133,7 @@ test("createSidecarWorkflowSupervisor forwards credentialDelivery to the workflo
     stepCount: 1,
     deploymentMailAddress: "dep-3@local",
     deriveStepAddress: () => "dep-3-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
     credentialDelivery: delivery,
@@ -125,6 +153,7 @@ test("createSidecarWorkflowSupervisor omits credentialDelivery when the deploy c
     stepCount: 1,
     deploymentMailAddress: "dep-4@local",
     deriveStepAddress: () => "dep-4-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
   });
@@ -150,6 +179,7 @@ test("createSidecarWorkflowSupervisor arms the grants-age recycle policy for a w
     stepCount: 1,
     deploymentMailAddress: "dep-5@local",
     deriveStepAddress: () => "dep-5-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
     warmKeep: true,
@@ -179,6 +209,7 @@ test("createSidecarWorkflowSupervisor omits the recycle policy for a non-warm-ke
     stepCount: 2,
     deploymentMailAddress: "dep-6@local",
     deriveStepAddress: () => "dep-6-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
     warmKeep: false,
@@ -203,6 +234,7 @@ test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a n
     stepCount: 1,
     deploymentMailAddress: "dep-7@local",
     deriveStepAddress: () => "dep-7-step@local",
+    stepOrder: ["step"],
     substrateEnv: {},
     dynamicSpawnEnv: () => ({}),
     warmKeep: true,
@@ -219,4 +251,134 @@ test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a n
 
   const age = readGrantsAgeMs();
   expect(age).toBeGreaterThanOrEqual(0);
+});
+
+// Port of upstream Interchange's `onRunStart` grants sink (CL-6194): the
+// per-run credential/grants barrier the vendor supervisor awaits before
+// every `trigger.fire`. Before this port, `createSidecarWorkflowSupervisor`
+// never wired `onRunStart`, so the supervisor fell back to a spawn-time-only
+// credentialsSnapshot and a one-shot post-spawn `deliverCredentials` push
+// stood in for a per-run refresh (removed with this port).
+test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's credentialsSnapshot from its per-run grants file", async () => {
+  const { store, dir } = await makeRepoStore();
+  const filePath = path.join(dir, runGrantsPath("run-1"));
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(
+    filePath,
+    JSON.stringify({ grants: [{ resource: "tool:echo", action: "invoke" }] }),
+  );
+
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: store,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-8" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-8",
+    stepCount: 1,
+    stepOrder: ["step-a"],
+    deploymentMailAddress: "dep-8@local",
+    deriveStepAddress: ({ stepId }) => `dep-8-${stepId}@local`,
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+  });
+
+  const onRunStart = (
+    capturedConfig as {
+      onRunStart: (args: {
+        runId: string;
+        anchorRunId: string;
+      }) => Promise<unknown>;
+    }
+  ).onRunStart;
+  const snapshot = await onRunStart({ runId: "run-1", anchorRunId: "dep-8" });
+
+  expect(snapshot).toEqual({
+    steps: [
+      {
+        stepId: "step-a",
+        address: "dep-8-step-a@local",
+        grants: [{ resource: "tool:echo", action: "invoke" }],
+        contentHash: `stub-hash:${JSON.stringify([{ resource: "tool:echo", action: "invoke" }])}`,
+      },
+    ],
+  });
+});
+
+test("onRunStart rejects a run with no per-run grants file, refusing to start it under-authorized", async () => {
+  const { store } = await makeRepoStore();
+
+  createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: store,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-9" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-9",
+    stepCount: 1,
+    stepOrder: ["step-a"],
+    deploymentMailAddress: "dep-9@local",
+    deriveStepAddress: ({ stepId }) => `dep-9-${stepId}@local`,
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+  });
+
+  const onRunStart = (
+    capturedConfig as {
+      onRunStart: (args: {
+        runId: string;
+        anchorRunId: string;
+      }) => Promise<unknown>;
+    }
+  ).onRunStart;
+
+  await expect(
+    onRunStart({ runId: "run-missing", anchorRunId: "dep-9" }),
+  ).rejects.toThrow(/no grants file/);
+});
+
+test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's observation point", async () => {
+  const { store, dir } = await makeRepoStore();
+  const filePath = path.join(dir, runGrantsPath("run-1"));
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify({ grants: [] }));
+
+  const wired = createSidecarWorkflowSupervisor({
+    transport: {} as never,
+    repoStore: store,
+    signingKeySeed: new Uint8Array(32),
+    workflowRunRepoId: { kind: "workflow-run", id: "dep-10" },
+    workflowRunRef: "refs/heads/main",
+    deploymentId: "dep-10",
+    stepCount: 1,
+    stepOrder: ["step-a"],
+    deploymentMailAddress: "dep-10@local",
+    deriveStepAddress: ({ stepId }) => `dep-10-${stepId}@local`,
+    substrateEnv: {},
+    dynamicSpawnEnv: () => ({}),
+    warmKeep: true,
+  });
+
+  const readGrantsAgeMs = (
+    capturedConfig as { readGrantsAgeMs: () => number | undefined }
+  ).readGrantsAgeMs;
+  const onRunStart = (
+    capturedConfig as {
+      onRunStart: (args: {
+        runId: string;
+        anchorRunId: string;
+      }) => Promise<unknown>;
+    }
+  ).onRunStart;
+  expect(readGrantsAgeMs()).toBeUndefined();
+
+  await onRunStart({ runId: "run-1", anchorRunId: "dep-10" });
+
+  expect(readGrantsAgeMs()).toBeGreaterThanOrEqual(0);
+  // deliverCredentials (a rotation) still refreshes the same observation
+  // point independently.
+  await wired.supervisor.deliverCredentials({
+    delivery: { bindings: [], materials: [] },
+  } as never);
+  expect(readGrantsAgeMs()).toBeGreaterThanOrEqual(0);
 });
