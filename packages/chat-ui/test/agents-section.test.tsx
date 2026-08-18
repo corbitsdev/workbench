@@ -398,6 +398,80 @@ describe("Agents section — list", () => {
     expect(titles).toEqual(["Researcher"]);
     expect(el.querySelector(".chat-settings-agent-back")).not.toBeNull();
   });
+
+  test("entityId deep-links straight into that agent's detail", async () => {
+    stubFetch({ agents: [MYRA] });
+    const el = mount(
+      baseProps({
+        entityId: "wfd_myra",
+        onEntityIdChange: () => {},
+      }),
+    );
+    await settle();
+
+    const titles = Array.from(
+      el.querySelectorAll(".chat-settings-agent-block-title"),
+    ).map((node) => node.textContent);
+    expect(titles).toEqual(["Myra"]);
+    expect(el.querySelector(".chat-settings-agent-picker-row")).toBeNull();
+  });
+
+  test("select and back report definitionId changes to the host", async () => {
+    stubFetch({ agents: [MYRA] });
+    const changes: Array<string | null> = [];
+    const el = mount(
+      baseProps({
+        onEntityIdChange: (id) => {
+          changes.push(id);
+        },
+      }),
+    );
+    await settle();
+
+    openAgent(el, "myra");
+    expect(changes).toEqual(["wfd_myra"]);
+
+    // Host owns the URL — remount with the deepened entityId.
+    act(() => {
+      root?.render(
+        createElement(
+          WorkbenchSettingsSurface,
+          baseProps({
+            entityId: "wfd_myra",
+            onEntityIdChange: (id) => {
+              changes.push(id);
+            },
+          }),
+        ),
+      );
+    });
+    await settle();
+
+    act(() => {
+      (
+        el.querySelector(".chat-settings-agent-back") as
+          | HTMLButtonElement
+          | null
+      )?.click();
+    });
+    expect(changes).toEqual(["wfd_myra", null]);
+  });
+
+  test("unknown entityId clears once the agent list loads", async () => {
+    stubFetch({ agents: [MYRA] });
+    const changes: Array<string | null> = [];
+    mount(
+      baseProps({
+        entityId: "wfd_missing",
+        onEntityIdChange: (id) => {
+          changes.push(id);
+        },
+      }),
+    );
+    await settle();
+
+    expect(changes).toEqual([null]);
+  });
 });
 
 describe("Agents section — detail", () => {
