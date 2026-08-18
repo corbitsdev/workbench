@@ -727,6 +727,7 @@
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -939,6 +940,19 @@
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/run-key-history": {
+      "name": "@corbits/run-key-history",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/log": "workspace:*",
+        "drizzle-orm": "catalog:",
+        "postgres": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1873,6 +1887,8 @@
     "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
     "@corbits/routines-tools": ["@corbits/routines-tools@workspace:packages/routines-tools"],
+
+    "@corbits/run-key-history": ["@corbits/run-key-history@workspace:packages/run-key-history"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 

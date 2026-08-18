@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/run-key-history",
+  "private": true,
+  "description": "Append-only history of a workflow run's public key, decoupled from workflow_run's own live column, so a historical signature stays re-provable after a key rotation.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/log": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
