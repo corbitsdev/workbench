@@ -358,6 +358,32 @@ describe("RoutinePanel", () => {
     });
   }
 
+  describe("shared canvas-pane chrome (CL-6200)", () => {
+    test("the list, runs, and editor views all render through the shared CanvasPaneHeader, not a hand-rolled one", async () => {
+      await renderPanel({ view: "list" });
+      let header = container.querySelector(".shell-canvas-pane-header");
+      expect(header).not.toBeNull();
+      expect(
+        header?.querySelector(".shell-canvas-pane-title")?.textContent,
+      ).toBe("Routines");
+      expect(header?.querySelector('[aria-label="Back"]')).not.toBeNull();
+
+      await renderPanel({ view: "runs" });
+      header = container.querySelector(".shell-canvas-pane-header");
+      expect(header).not.toBeNull();
+      expect(
+        header?.querySelector(".shell-canvas-pane-title")?.textContent,
+      ).toBe("Runs");
+
+      await renderPanel({ routineId: null, channelId: "ch_1" });
+      header = container.querySelector(".shell-canvas-pane-header");
+      expect(header).not.toBeNull();
+      expect(
+        header?.querySelector(".shell-canvas-pane-title")?.textContent,
+      ).toBe("Routine");
+    });
+  });
+
   describe("list view", () => {
     test("back chevron on the list view closes the canvas", async () => {
       await renderPanel({ view: "list" });
