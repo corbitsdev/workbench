@@ -218,6 +218,18 @@ const CHANNEL_HOST_STEP_INPUT: Selector = {
  */
 export type HubChatPlatform = ChatPlatform & {
   recordActivity(address: string): void;
+  /**
+   * Redeploys `address` if it is not currently routable, otherwise
+   * no-ops — the same wake path `sendMail` runs ahead of every send,
+   * exposed here for a caller outside this adapter (the hub's
+   * `mail.outbound.undelivered` handler) that needs to wake a chat
+   * resident before re-attempting delivery itself. Rejects for an
+   * address this adapter cannot resolve a folded run for — including
+   * one that was never a chat resident at all — so a caller must
+   * expect this to fail for a non-chat recipient and treat that as
+   * "not mine to wake", not a bug.
+   */
+  ensureAwake(address: string): Promise<void>;
 };
 
 /**
@@ -519,11 +531,8 @@ export function createHubChatPlatform(
       // model is never second-guessed.
       const fallbackModel =
         foldedBody.model === null
-          ? (
-              (await deps.channelHostInferencePreferences?.(
-                input.tenantId,
-              )) ?? []
-            )[0]?.model
+          ? ((await deps.channelHostInferencePreferences?.(input.tenantId)) ??
+              [])[0]?.model
           : undefined;
 
       await launchFoldedRun(foldedRunsDeps, {
@@ -947,7 +956,17 @@ export function createHubChatPlatform(
       };
     },
   };
+  async function ensureAwake(address: string): Promise<void> {
+    if (lifecycle !== undefined) {
+      await lifecycle.ensureAwake(address);
+      return;
+    }
+    if (isRoutable(address)) return;
+    await wakeByAddress(address);
+  }
+
   return Object.assign(platform, {
     recordActivity: (address: string) => lifecycle?.recordActivity(address),
+    ensureAwake,
   });
 }
