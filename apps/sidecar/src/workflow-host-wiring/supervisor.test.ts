@@ -305,7 +305,12 @@ test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's cre
   });
 });
 
-test("onRunStart rejects a run with no per-run grants file, refusing to start it under-authorized", async () => {
+// This hub does not yet write `runs/<runId>/grants.json` on every run
+// birth path (CL-6194 reopened) — chat-minted channel hosts never get
+// one — so an absent file starts the run on an empty snapshot (material
+// arrives via the post-spawn deliverCredentials push) instead of
+// upstream's fail-closed reject, which bricked every new workbench.
+test("onRunStart starts a run with no per-run grants file on an empty snapshot", async () => {
   const { store } = await makeRepoStore();
 
   createSidecarWorkflowSupervisor({
@@ -334,7 +339,7 @@ test("onRunStart rejects a run with no per-run grants file, refusing to start it
 
   await expect(
     onRunStart({ runId: "run-missing", anchorRunId: "dep-9" }),
-  ).rejects.toThrow(/no grants file/);
+  ).resolves.toEqual({ steps: [] });
 });
 
 test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's observation point", async () => {

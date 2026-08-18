@@ -113,9 +113,16 @@ export async function assembleRunCredentialsSnapshot(
     runId: opts.runId,
   });
   if (runGrants === undefined) {
-    throw new Error(
-      `sidecar onRunStart: run ${opts.runId} has no grants file at ${runGrantsPath(opts.runId)}; refusing to start the run under-authorized`,
-    );
+    // Upstream fails closed here because its hub writes
+    // `runs/<runId>/grants.json` on every run birth path. THIS hub does
+    // not ship that `run.grants` frame yet (CL-6194 reopened), so an
+    // absent file is the normal case for every chat-minted channel host,
+    // not evidence of a failed grants write — failing closed bricked all
+    // new workbenches (observed live 18/08). Start with an empty
+    // snapshot; the post-spawn `deliverCredentials` push in
+    // workflow-host-wiring/index.ts seeds material as before the port.
+    // Restore the fail-closed branch when the hub produces the file.
+    return { steps: [] };
   }
   const contentHash = await hashGrants(runGrants);
   const steps: CredentialsSnapshotStep[] = opts.stepOrder.map((stepId) => ({

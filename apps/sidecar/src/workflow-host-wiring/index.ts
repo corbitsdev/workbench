@@ -1004,6 +1004,19 @@ export function createSidecarDeployRouter(deps: {
       );
       routersRegistered = true;
 
+      // Seed the child's credential material NOW: this hub does not yet
+      // ship the per-run `run.grants` frame upstream's onRunStart barrier
+      // consumes (CL-6194 reopened), so without this push the delivered
+      // material would sit on the supervisor bindings forever and every
+      // `credentials.resolve(handle)` would fail "no credential is bound".
+      // Delete this push again only once the hub writes
+      // `runs/<runId>/grants.json` on every birth path.
+      if (spec.credentials !== undefined) {
+        await wired.supervisor.deliverCredentials({
+          delivery: spec.credentials,
+        });
+      }
+
       succeeded = true;
       return { publicKey: deploymentPublicKey };
     } finally {
