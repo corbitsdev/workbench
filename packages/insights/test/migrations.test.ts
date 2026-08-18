@@ -18,7 +18,11 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
-const migrationNames = ["0001_usage_turn", "0002_model_price"];
+const migrationNames = [
+  "0001_usage_turn",
+  "0002_model_price",
+  "0003_turn_latency",
+];
 
 describeIfDb("applyInsightsMigrations", () => {
   const scratchUrl = scratchUrlFor(
@@ -68,17 +72,18 @@ describeIfDb("applyInsightsMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'insights' AND table_name IN ` +
-          `('usage_turn', 'model_price')`,
+          `('usage_turn', 'model_price', 'turn_latency')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
         "model_price",
+        "turn_latency",
         "usage_turn",
       ]);
 
       const inPublic = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('usage_turn', 'model_price')`,
+          `('usage_turn', 'model_price', 'turn_latency')`,
       );
       expect(inPublic).toHaveLength(0);
 

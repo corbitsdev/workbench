@@ -20,12 +20,14 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import {
   activityByDay,
   emptyToolCallReader,
+  summarizeLatency,
   summarizeUsage,
   summarizeUsageByTenant,
   type RunTraceReader,
   type ToolCallReader,
 } from "./queries";
 import type { UsageStore } from "./store";
+import type { TurnLatencyStore } from "./latency-store";
 
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
@@ -65,6 +67,12 @@ export type CreateInsightsRoutesDeps = {
   requireGrant: RequireGrant;
   runTraceReader?: RunTraceReader;
   toolCallReader?: ToolCallReader;
+  /** CL-6257 per-message-run stage latency (message-received → reactor.start
+   * → inference.start → first-token → reply-posted). Omitted mounts, no
+   * `/latency` numbers — `/latency` still returns 200 with every stage
+   * null rather than 404, since latency is an optional overlay, not a
+   * required Insights capability. */
+  latencyStore?: TurnLatencyStore;
   /**
    * Tenant-hierarchy handle for scope resolution. usage/activity/tools
    * aggregate over the requested tenant plus every descendant it has
@@ -223,6 +231,24 @@ export function createInsightsRoutes(
       return c.json({ items });
     },
   );
+
+  app.get("/latency", deps.requireGrant("insights:*", "read"), async (c) => {
+    const range = parseRangeQuery(c.req.query());
+    if (range instanceof Response) return range;
+    if (deps.latencyStore === undefined) {
+      return c.json({
+        toReactorStart: { p50Ms: null, p95Ms: null, samples: 0 },
+        toInferenceStart: { p50Ms: null, p95Ms: null, samples: 0 },
+        toFirstToken: { p50Ms: null, p95Ms: null, samples: 0 },
+        toReplyPosted: { p50Ms: null, p95Ms: null, samples: 0 },
+        total: { p50Ms: null, p95Ms: null, samples: 0 },
+      });
+    }
+    const tenant = c.get("tenant");
+    const scope = await resolveScope(deps.db, tenant.id);
+    const summary = await summarizeLatency(deps.latencyStore, scope, range);
+    return c.json(summary);
+  });
 
   app.get("/scope", deps.requireGrant("insights:*", "read"), async (c) => {
     const tenant = c.get("tenant");

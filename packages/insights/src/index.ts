@@ -6,8 +6,10 @@ export {
 } from "./migrations";
 export {
   modelPrice,
+  turnLatency,
   usageTurn,
   type ModelPriceRow,
+  type TurnLatencyRow,
   type UsageTurnRow,
 } from "./schema";
 export {
@@ -32,12 +34,29 @@ export {
   type UsageSinkDeps,
 } from "./collector";
 export {
+  createMemoryTurnLatencyStore,
+  type InsertTurnLatencyInput,
+  type TurnLatencyRecord,
+  type TurnLatencyStore,
+} from "./latency-store";
+export { createPostgresTurnLatencyStore } from "./latency-pg-store";
+export {
+  createTurnLatencyTracker,
+  type LatencyStageEvent,
+  type TurnLatencyTracker,
+  type TurnLatencyTrackerDeps,
+} from "./latency-tracker";
+export {
   activityByDay,
   emptyOverallUsageSummary,
   emptyToolCallReader,
+  percentile,
+  summarizeLatency,
   summarizeUsage,
   summarizeUsageByTenant,
   type DayActivity,
+  type LatencyStageStat,
+  type LatencySummary,
   type ModelDayUsage,
   type ModelUsageSummary,
   type OverallUsageSummary,

@@ -61,3 +61,38 @@ export const modelPrice = insightsSchema.table("model_price", {
 });
 
 export type ModelPriceRow = typeof modelPrice.$inferSelect;
+
+/**
+ * One row per message run's stage timing (CL-6257). `messageRunId` is
+ * unique for the same restart-safe reason `usage_turn.turnId` is: a
+ * dispatch retry after a crash must never double-count a run. Every
+ * `*At` column but `receivedAt`/`replyPostedAt` is nullable — a stage
+ * that never ran (a warm session skips `reactorStartAt`) is an honest
+ * null, never a fabricated timestamp.
+ */
+export const turnLatency = insightsSchema.table(
+  "turn_latency",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    messageId: text("message_id").notNull(),
+    messageRunId: text("message_run_id").notNull(),
+    status: text("status").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    reactorStartAt: timestamp("reactor_start_at", { withTimezone: true }),
+    inferenceStartAt: timestamp("inference_start_at", { withTimezone: true }),
+    firstTokenAt: timestamp("first_token_at", { withTimezone: true }),
+    replyPostedAt: timestamp("reply_posted_at", {
+      withTimezone: true,
+    }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("turn_latency_message_run_id_uidx").on(table.messageRunId),
+  ],
+);
+
+export type TurnLatencyRow = typeof turnLatency.$inferSelect;
