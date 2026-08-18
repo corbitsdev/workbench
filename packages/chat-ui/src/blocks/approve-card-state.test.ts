@@ -43,13 +43,17 @@ describe("deriveApproveCardView", () => {
     expect(view).toEqual({ kind: "loading" });
   });
 
-  test("pending + canAct renders actionable with live buttons and the platform's own detail", () => {
+  test("pending + canAct (host maps a successful pending read to canAct) is actionable, never spectator", () => {
+    // Host contract: a successful needs-you GET that returns pending always
+    // sets canAct true (`apps/web/src/approval-actions.ts`). The card must
+    // then show live buttons -- not demote that to spectator.
     const view = deriveApproveCardView({
       wired: true,
       live: { kind: "ready", status: "pending", canAct: true, detail: DETAIL },
       deciding: null,
       decisionError: null,
     });
+    expect(view.kind).toBe("actionable");
     expect(view).toEqual({
       kind: "actionable",
       detail: DETAIL,
@@ -132,13 +136,21 @@ describe("deriveApproveCardView", () => {
     });
   });
 
-  test("a forbidden read cannot determine actionability or platform detail: buttons render without it, error carries through", () => {
+  test("needs-you 403 is could-not-determine, never cannot-act/spectator", () => {
+    // GET /:approvalId is gated by tenant-wide `approval:*`/"resolve". A
+    // principal scoped only to `approval:<deploymentId>` still gets 403 on
+    // that read even though the native approve/reject route may allow them.
+    // Callers must treat that 403 as "could not determine" (`forbidden` →
+    // `undetermined`, buttons stay), never as "cannot act" (`spectator`).
+    // See `packages/approvals/src/routes.ts`.
     const view = deriveApproveCardView({
       wired: true,
       live: { kind: "forbidden" },
       deciding: "approve",
       decisionError: "You do not have permission to act on this.",
     });
+    expect(view.kind).toBe("undetermined");
+    expect(view.kind).not.toBe("spectator");
     expect(view).toEqual({
       kind: "undetermined",
       deciding: "approve",

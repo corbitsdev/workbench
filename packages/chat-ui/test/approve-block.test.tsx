@@ -119,6 +119,43 @@ async function mount(actions: ApprovalActions, approvalId = "apv_1") {
 }
 
 describe("approve card round-trip", () => {
+  test("binds approvalId from the gate-blocked approve block onto getStatus and decide", async () => {
+    // The orchestrator posts `{ approvalId: approval.id }` from the row
+    // `findByCorrelationId` resolved for the gate-blocked event. The card
+    // must pass that id through — never invent one, never drop it.
+    const approvalId = "apr_from_gate_blocked";
+    const statusIds: string[] = [];
+    const decideIds: string[] = [];
+    const actions = fakeActions({
+      getStatus: async (id) => {
+        statusIds.push(id);
+        return {
+          kind: "ready",
+          status: "pending",
+          canAct: true,
+          detail: PLATFORM_DETAIL,
+        };
+      },
+      approve: async (id) => {
+        decideIds.push(id);
+        return { kind: "resolved", status: "approved" };
+      },
+    });
+    const el = await mount(actions, approvalId);
+
+    expect(statusIds).toEqual([approvalId]);
+
+    const approveButton = el.querySelector(
+      ".chat-block-actions button",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      approveButton.click();
+    });
+    expect(decideIds).toEqual([approvalId]);
+    // Re-sync after decide also keys off the same bound id.
+    expect(statusIds).toEqual([approvalId, approvalId]);
+  });
+
   test("pending + actable: buttons render enabled and call the port", async () => {
     const backend = fakeBackend("pending", true);
     const el = await mount(backend.actions);
