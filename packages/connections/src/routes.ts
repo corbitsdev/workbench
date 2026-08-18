@@ -15,12 +15,18 @@
 // display-only in this ticket), is a 404.
 import { Hono, type Context } from "hono";
 import { type } from "arktype";
+import {
+  ModelProviderResponse,
+  ProviderResponse,
+  paginatedSchema,
+} from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import {
   cookiesFromHeader,
   createHubAPI,
   ensureCredential,
   ensureProvider,
+  parseAs,
   OLLAMA_PLACEHOLDER_SECRET,
   PROVIDER_TEST_CONFIG,
   seedCatalog,
@@ -33,6 +39,109 @@ import {
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
+
+export type DisconnectConnectorArgs = {
+  readonly tenantId: string;
+  readonly connectorId: string;
+};
+
+export type DisconnectConnectorResult = {
+  /** False when this connector had no provider row to remove — the
+   * caller reads that as "already disconnected" and answers 404, never
+   * a partial success. */
+  readonly disconnected: boolean;
+};
+
+/**
+ * Undoes exactly what `/complete` (below) and `seedCatalog` planted for a
+ * connector, in the one order that satisfies the native schema's foreign
+ * keys: the catalog provider row first, then the credential provider row.
+ *
+ * `model_provider.credential_id` is `ON DELETE RESTRICT`
+ * (`vendor/intx/db/migrations`), so a settings-ui disconnect that called
+ * `DELETE /credentials/:id` directly 500'd for every inference-provider
+ * connector once `seedCatalog` had planted its catalog provider row
+ * against that credential — the connect flow worked, the disconnect
+ * button never did (CL-6258). Deleting the catalog provider row first
+ * clears that reference (and cascades its offerings — `model_offering
+ * .providerId` is `ON DELETE CASCADE` — so nothing in
+ * `getResolvedCatalog` is ever left resolving to a provider this tenant
+ * just disconnected); only then is the credential provider row itself
+ * safe to delete, which in turn cascades every credential this connector
+ * ever stored (`credential.providerId` is `ON DELETE CASCADE`) — a
+ * reconnect can leave more than one, and none should survive.
+ *
+ * A non-inference connector (Exa, Linear, GitHub, ...) never had a
+ * catalog provider row to begin with, so that first delete is a no-op by
+ * construction (`catalogProvider === undefined`) and only the second
+ * step runs — the same call handles both without a branch on connector
+ * kind.
+ */
+export async function disconnectConnector(
+  api: ApiCall,
+  cookies: string[],
+  args: DisconnectConnectorArgs,
+  log: (line: string) => void,
+): Promise<DisconnectConnectorResult> {
+  const catalogProviders = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/catalog/providers`,
+    undefined,
+    cookies,
+  );
+  const catalogProviderRows = parseAs(
+    paginatedSchema(ModelProviderResponse),
+    catalogProviders.data,
+    "catalog providers response",
+  ).data;
+  const catalogProvider = catalogProviderRows.find(
+    (row) => row.name === args.connectorId,
+  );
+  if (catalogProvider !== undefined) {
+    const deletedCatalogProvider = await api(
+      "DELETE",
+      `/api/tenants/${args.tenantId}/catalog/providers/${catalogProvider.id}`,
+      undefined,
+      cookies,
+    );
+    if (deletedCatalogProvider.status !== 204) {
+      throw new Error(
+        `couldn't remove the catalog provider for ${args.connectorId} (status ${String(deletedCatalogProvider.status)})`,
+      );
+    }
+    log(`removed catalog provider ${args.connectorId} and its offerings`);
+  }
+
+  const providers = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/providers?inherited=false`,
+    undefined,
+    cookies,
+  );
+  const providerRows = parseAs(
+    paginatedSchema(ProviderResponse),
+    providers.data,
+    "providers response",
+  ).data;
+  const providerRow = providerRows.find((row) => row.name === args.connectorId);
+  if (providerRow === undefined) {
+    return { disconnected: false };
+  }
+
+  const deletedProvider = await api(
+    "DELETE",
+    `/api/tenants/${args.tenantId}/providers/${providerRow.id}`,
+    undefined,
+    cookies,
+  );
+  if (deletedProvider.status !== 204) {
+    throw new Error(
+      `couldn't remove the provider row for ${args.connectorId} (status ${String(deletedProvider.status)})`,
+    );
+  }
+  log(`removed provider ${args.connectorId} and its credentials`);
+  return { disconnected: true };
+}
 
 // A connect-time credential test's own failure is, by construction, always
 // about the credential a person just pasted — this route's `probe` has no
@@ -81,6 +190,15 @@ export type CreateConnectionRoutesDeps = {
    * inference-provider connect seeds the catalog (and a non-inference
    * connector never does) without reaching for module mocking. */
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
+  /** Test-only override, matching every other override in this file —
+   * lets `routes.test.ts` stub disconnect's catalog/provider cleanup
+   * without reaching for module mocking. */
+  disconnectConnectorFn?: (
+    api: ApiCall,
+    cookies: string[],
+    args: DisconnectConnectorArgs,
+    log: (line: string) => void,
+  ) => ReturnType<typeof disconnectConnector>;
   /** The env bag an oauth-pkce/oauth-code descriptor's `oauth.clientId(env)`
    * reads a registered app id from (e.g. `{huggingfaceClientId}`) — the
    * same bag `createOAuthConnectRoutes` reads, so `GET /oauth-configured`
@@ -123,6 +241,8 @@ export function createConnectionRoutes(
   const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
   const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
   const runSeedCatalog = deps.seedCatalogFn ?? seedCatalog;
+  const runDisconnectConnector =
+    deps.disconnectConnectorFn ?? disconnectConnector;
 
   // Lets a settings-ui OAuth card tell "not configured" (an operator
   // hasn't registered this connector's OAuth app yet) apart from "not
@@ -344,6 +464,54 @@ export function createConnectionRoutes(
           ErrorEnvelope(
             "connection_setup_failed",
             "The key checked out, but saving the connection failed. Try again in a moment.",
+          ),
+          500,
+        );
+      }
+    },
+  );
+
+  // The one disconnect path every settings-ui card (api-key or OAuth)
+  // calls — see `disconnectConnector`'s own header for why a direct
+  // `DELETE /credentials/:id` from the browser can never do this safely
+  // on its own.
+  app.delete(
+    "/:connectorId/disconnect",
+    deps.requireGrant("credential:*", "manage"),
+    async (c) => {
+      const connectorId = c.req.param("connectorId");
+      if (registry[connectorId] === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
+          404,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const cookies = cookiesFromHeader(c.req.header("cookie"));
+      try {
+        const result = await runDisconnectConnector(
+          api,
+          cookies,
+          { tenantId: tenant.id, connectorId },
+          deps.log,
+        );
+        if (!result.disconnected) {
+          return c.json(
+            ErrorEnvelope("not_found", `${connectorId} is not connected`),
+            404,
+          );
+        }
+        return c.body(null, 204);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(
+          `disconnect failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
+        );
+        return c.json(
+          ErrorEnvelope(
+            "disconnect_failed",
+            "Couldn't disconnect — try again.",
           ),
           500,
         );

@@ -300,60 +300,120 @@
   gap: 0.85rem;
 }
 
-.settings-connections-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.75rem;
-}
-
-.settings-connection-card {
+/* Connections: rows over grid (CL-6258, DRAPER's earlier plugins-directory
+   rebuild is the reference pattern) — one row per connector, not a grid
+   of bordered cards. Same brand rules: color-mix hairline dividers, the
+   accent color only ever as text (needs-attention) or an inset edge,
+   never a filled rectangle. */
+.settings-connections-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius, 0);
+}
+
+.settings-connection-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.125rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.settings-connections-list > .settings-connection-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-connection-row-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 0;
   background: var(--card, var(--background));
-  padding: 0.85rem 1rem;
 }
 
-.settings-connection-card-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.settings-connection-card-name {
+.settings-connection-row-logo-initial {
   font-size: 0.8125rem;
+  font-weight: 650;
   color: var(--muted-foreground);
 }
 
-.settings-connection-card-pinned-row {
+.settings-connection-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.settings-connection-row-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.settings-connection-row-name {
+  font-size: 0.875rem;
+  font-weight: 640;
+}
+
+/* Plain uppercase caption, never a colored pill. */
+.settings-connection-row-status {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.settings-connection-row-status-attention {
+  color: var(--shell-accent, var(--primary));
+}
+
+.settings-connection-row-caption {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.settings-connection-row-pinned-row {
   display: flex;
   align-items: center;
   gap: 0.25rem;
 }
 
-.settings-connection-card-pinned {
-  font-size: 0.75rem;
-  line-height: 1.4;
+.settings-connection-row-action {
+  flex-shrink: 0;
+}
+
+/* Connect/Reconnect read as quiet accent-text actions, not filled
+   buttons — `--shell-accent` only ever appears as text here, never a
+   filled rectangle. */
+.settings-connection-row-connect-action {
+  color: var(--shell-accent, var(--primary));
+  font-weight: 650;
+}
+
+/* Disconnect keeps `ConfirmButton`'s confirm-step behavior but never the
+   red fill it renders once armed — overriding the literal Tailwind
+   utility class it emits for that state, the same override the plugins
+   directory's own remove action uses. */
+.settings-connection-row-disconnect-action {
   color: var(--muted-foreground);
+  font-weight: 600;
 }
 
-.settings-connection-card-actions {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
+.settings-connection-row-disconnect-action.bg-destructive {
+  background: transparent;
+  color: var(--destructive);
 }
 
-.settings-connection-card-muted {
+.settings-connection-row-muted {
   opacity: 0.75;
-}
-
-.settings-connection-card-hint {
-  font-size: 0.75rem;
-  line-height: 1.4;
-  color: var(--muted-foreground);
 }
 
 .settings-webhook-field {

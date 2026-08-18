@@ -91,3 +91,26 @@ export function completeConnectorCredential(
     { method: "POST", body: JSON.stringify({ apiKey }) },
   );
 }
+
+/**
+ * Disconnects a connector through `packages/connections`' own
+ * orchestrated route — never `DELETE /credentials/:id` directly. That
+ * native route alone 500s for any inference-provider connector once
+ * `seedCatalog` has planted a catalog provider row against the
+ * credential (`model_provider.credential_id` is `ON DELETE RESTRICT`);
+ * this route deletes the catalog provider first (cascading its
+ * offerings), then the credential provider row (cascading its
+ * credentials) — see `@workbench/connections`' `disconnectConnector` for
+ * the full ordering and why (CL-6258).
+ */
+export function disconnectConnector(
+  tenantId: string,
+  connectorId: string,
+): Promise<void> {
+  return request<void>(
+    `/api/tenants/${tenantId}/connections/${connectorId}/disconnect`,
+    (data) => data as void,
+    "disconnecting that connection",
+    { method: "DELETE" },
+  );
+}

@@ -15,19 +15,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
     "@intx/types": "workspace:*",
     "@workbench/hub-client": "workspace:*",
-    "arktype": "catalog:",
-    "lucide-react": "^1.27.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "arktype": "catalog:"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.11.2",
     "@types/bun": "catalog:",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.1",
     "typescript": "catalog:"
   }
 }

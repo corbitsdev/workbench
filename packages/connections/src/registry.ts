@@ -34,13 +34,28 @@ import {
   HUGGINGFACE_SCOPE,
 } from "./huggingface-connect";
 // simple-icons ships one brand per named export, tree-shaken by any bundler
-// that respects its `sideEffects: false` — importing the two brands this
-// registry actually has a listing for pulls in only those two icons' data,
-// not the whole ~3000-brand package. Granola, Exa, and ScrapeCreators have
-// no simple-icons listing (CL-6215's plugins-directory rebuild): those
-// three descriptors carry no `icon`, so the directory renders their
-// monochrome initial tile instead.
-import { siGithub, siLinear } from "simple-icons";
+// that respects its `sideEffects: false` — importing only the brands this
+// registry actually has a listing for pulls in only those icons' data, not
+// the whole ~3000-brand package (CC0-1.0 licensed — see the package's own
+// LICENSE — so redistributing these marks needs no separate clearance).
+// Granola, Exa, and ScrapeCreators have no simple-icons listing (CL-6215's
+// plugins-directory rebuild); OpenAI, xAI, Groq, and Opencode Zen have none
+// either (CL-6258's connections logos) — those descriptors carry no `icon`,
+// so a caller renders their monochrome initial tile instead. Google's mark
+// here is Gemini's, not the generic Google "G" — the model brand a person
+// actually recognizes from connecting an AI provider, matching
+// models.dev's own convention for this row.
+import {
+  siAnthropic,
+  siDeepseek,
+  siGithub,
+  siGooglegemini,
+  siHuggingface,
+  siLinear,
+  siMistralai,
+  siOllama,
+  siOpenrouter,
+} from "simple-icons";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
   testExaCredential,
@@ -71,6 +86,25 @@ const INFERENCE_PROVIDER_DOCS_URL: Readonly<
 // tailscale-tunneled or otherwise remote instance.
 const OLLAMA_DEFAULT_URL = "http://localhost:11434";
 
+// Every inference provider with a simple-icons listing. OpenAI, xAI, Groq,
+// and Opencode Zen have none as of simple-icons' current release; those
+// four fall through to the monochrome initial tile every iconless
+// descriptor already gets.
+const INFERENCE_PROVIDER_ICONS: Partial<
+  Record<
+    SupportedCredentialProvider,
+    { readonly path: string; readonly hex: string }
+  >
+> = {
+  anthropic: { path: siAnthropic.path, hex: siAnthropic.hex },
+  "google-genai": { path: siGooglegemini.path, hex: siGooglegemini.hex },
+  deepseek: { path: siDeepseek.path, hex: siDeepseek.hex },
+  mistral: { path: siMistralai.path, hex: siMistralai.hex },
+  ollama: { path: siOllama.path, hex: siOllama.hex },
+  openrouter: { path: siOpenrouter.path, hex: siOpenrouter.hex },
+  huggingface: { path: siHuggingface.path, hex: siHuggingface.hex },
+};
+
 function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
   const entries: Record<string, ConnectorDescriptor> = {};
   for (const [id, config] of Object.entries(PROVIDER_TEST_CONFIG)) {
@@ -80,6 +114,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
     // (see `credential-test.ts`'s own `ollama` config entry). Every
     // other connector's single form field is a real key, probed and
     // stored as-is.
+    const icon = INFERENCE_PROVIDER_ICONS[providerId];
     entries[id] =
       providerId === "ollama"
         ? {
@@ -97,6 +132,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
                 apiKey: OLLAMA_PLACEHOLDER_SECRET,
                 baseURL,
               }),
+            ...(icon !== undefined ? { icon } : {}),
           }
         : {
             id,
@@ -107,6 +143,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
             feedsTools: [],
             probe: (apiKey) =>
               testProviderCredential({ provider: providerId, apiKey }),
+            ...(icon !== undefined ? { icon } : {}),
           };
   }
   entries["openrouter"] = {
@@ -116,6 +153,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
     credentialPlugin: "http",
     docsUrl: INFERENCE_PROVIDER_DOCS_URL.openrouter,
     feedsTools: [],
+    icon: { path: siOpenrouter.path, hex: siOpenrouter.hex },
     oauth: {
       authorizeUrl: OPENROUTER_AUTH_URL,
       usesPKCE: true,
@@ -148,6 +186,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
     credentialPlugin: "http",
     docsUrl: INFERENCE_PROVIDER_DOCS_URL.huggingface,
     feedsTools: [],
+    icon: { path: siHuggingface.path, hex: siHuggingface.hex },
     oauth: {
       authorizeUrl: HUGGINGFACE_AUTHORIZE_URL,
       usesPKCE: true,

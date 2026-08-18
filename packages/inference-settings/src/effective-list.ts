@@ -24,6 +24,45 @@ export function providerDisplayName(providerName: string): string {
   return config?.displayName ?? providerName;
 }
 
+export type DefaultProviderModel = {
+  readonly canonicalName: string;
+  readonly displayName: string | null;
+};
+
+/**
+ * The one model a connected provider's settings row shows inline — CL-6258
+ * collapsed "which model does this provider default to" to exactly this:
+ * the resolved catalog's own resolution-priority order (lowest `priority`
+ * number wins, `vendor/intx/db/src/model-source-resolution.ts`'s
+ * `byPriority`), never a second, hand-maintained notion of a provider's
+ * default. A provider can serve more than one model across the resolved
+ * catalog (BYOK shadowing, a curated multi-model seed); this picks
+ * whichever single offering would actually win resolution first. `null`
+ * when the provider serves no offering at all (nothing resolved, or it
+ * offers nothing this tenant can see).
+ */
+export function defaultModelForProvider(
+  models: readonly ModelInfo[],
+  providerName: string,
+): DefaultProviderModel | null {
+  let best: (DefaultProviderModel & { priority: number }) | null = null;
+  for (const model of models) {
+    for (const offering of model.offerings) {
+      if (offering.providerName !== providerName) continue;
+      if (best === null || offering.priority < best.priority) {
+        best = {
+          canonicalName: model.canonicalName,
+          displayName: model.displayName ?? null,
+          priority: offering.priority,
+        };
+      }
+    }
+  }
+  return best === null
+    ? null
+    : { canonicalName: best.canonicalName, displayName: best.displayName };
+}
+
 export type EffectiveInferenceRow = {
   readonly offeringId: string;
   readonly modelId: string;

@@ -11,10 +11,13 @@ export type { ModelInfo, ModelOfferingInfo, ShadowOfferingInput } from "./api";
 export {
   buildEffectiveInferenceRows,
   computeReorderPatches,
+  defaultModelForProvider,
   providerDisplayName,
   restrictedOfferings,
   rowsByModel,
 } from "./effective-list";
-export type { EffectiveInferenceRow, PriorityPatch } from "./effective-list";
-export { InferenceSection } from "./inference-section";
-export { INFERENCE_STRINGS } from "./strings";
+export type {
+  DefaultProviderModel,
+  EffectiveInferenceRow,
+  PriorityPatch,
+} from "./effective-list";

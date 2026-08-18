@@ -46,7 +46,7 @@ export {
 } from "./credentials-section";
 export {
   ConnectionsSection,
-  ConnectorCardGrid,
+  ConnectorRowList,
   ConnectorCredentialDialog,
   oauthStartHref,
 } from "./connections-section";
@@ -119,6 +119,7 @@ export {
   ConnectionsApiError,
   testConnectorCredential,
   completeConnectorCredential,
+  disconnectConnector,
 } from "./connections-api";
 
 export { connectorStatus } from "./connections-status";

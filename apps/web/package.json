@@ -33,7 +33,6 @@
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/config-profiles-ui": "workspace:*",
     "@corbits/shell-layout": "workspace:*",
     "@corbits/tasks-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#5321f64b7f347a57a59002ba4160e4d0caa9c8c3",

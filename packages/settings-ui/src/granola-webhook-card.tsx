@@ -14,7 +14,6 @@
 // would be UI theater, not a real choice.
 
 import {
-  Badge,
   Button,
   Dialog,
   DialogBody,
@@ -172,35 +171,46 @@ export function GranolaWebhookCard({
         const lastFiredAt = mostRecentFiredAt(triggers);
         return (
           <>
-            <div className="settings-connection-card">
-              <span className="settings-connection-card-title">
-                {descriptor.displayName}
+            <div className="settings-connection-row">
+              <span
+                className="settings-connection-row-logo settings-connection-row-logo-initial"
+                aria-hidden="true"
+              >
+                {descriptor.displayName.charAt(0).toUpperCase()}
               </span>
-              <Badge tone={connected ? "success" : "neutral"}>
-                {connected
-                  ? SETTINGS_STRINGS.connectionsStatusConnected
-                  : SETTINGS_STRINGS.connectionsWebhookNotSetUp}
-              </Badge>
-              {connected && (
-                <span className="settings-connection-card-name">
-                  {SETTINGS_STRINGS.connectionsWebhookTriggerCount(
-                    triggers.length,
-                  )}{" "}
-                  ·{" "}
-                  {lastFiredAt !== null
-                    ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
-                        formatRelativeTime(lastFiredAt),
-                      )
-                    : SETTINGS_STRINGS.connectionsWebhookNoDeliveries}
-                </span>
-              )}
-              <span className="settings-connection-card-pinned">
-                {SETTINGS_STRINGS.connectionsWebhookDirectionNote}
-              </span>
-              <div className="settings-connection-card-actions">
+              <div className="settings-connection-row-text">
+                <div className="settings-connection-row-name-row">
+                  <span className="settings-connection-row-name">
+                    {descriptor.displayName}
+                  </span>
+                  <span className="settings-connection-row-status">
+                    {connected
+                      ? SETTINGS_STRINGS.connectionsStatusConnected
+                      : SETTINGS_STRINGS.connectionsWebhookNotSetUp}
+                  </span>
+                </div>
+                {connected && (
+                  <p className="settings-connection-row-caption">
+                    {SETTINGS_STRINGS.connectionsWebhookTriggerCount(
+                      triggers.length,
+                    )}{" "}
+                    ·{" "}
+                    {lastFiredAt !== null
+                      ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
+                          formatRelativeTime(lastFiredAt),
+                        )
+                      : SETTINGS_STRINGS.connectionsWebhookNoDeliveries}
+                  </p>
+                )}
+                <p className="settings-connection-row-caption">
+                  {SETTINGS_STRINGS.connectionsWebhookDirectionNote}
+                </p>
+              </div>
+              <div className="settings-connection-row-action">
                 <Button
-                  variant="primary"
+                  variant="ghost"
                   size="sm"
+                  className="settings-connection-row-connect-action"
                   onClick={() => setDialogOpen(true)}
                 >
                   {connected
@@ -321,11 +331,11 @@ function GranolaWebhookDialog({
                 className="settings-webhook-routine-row"
               >
                 <div className="settings-webhook-routine-row-header">
-                  <span className="settings-connection-card-title">
+                  <span className="settings-connection-row-name">
                     {binding.routine.name}
                   </span>
                   {binding.webhookTrigger !== null && (
-                    <span className="settings-connection-card-name">
+                    <span className="settings-connection-row-caption">
                       {binding.webhookTrigger.lastFiredAt !== null
                         ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
                             formatRelativeTime(

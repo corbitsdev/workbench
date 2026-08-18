@@ -246,7 +246,6 @@ export const SETTINGS_STRINGS = {
   connectionsSectionTitle: "Connections",
   connectionsSectionDescription:
     "Keys added here work in every workbench, for everyone.",
-  modelsSectionTitle: "Models",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",
@@ -259,6 +258,7 @@ export const SETTINGS_STRINGS = {
   connectionsDisconnectAction: "Disconnect",
   connectionsDisconnectConfirm: "Disconnect for good?",
   connectionsDisconnectError: "Couldn't disconnect — try again.",
+  connectionsDefaultModelLine: (model: string) => `Default model: ${model}`,
   connectionsPinnedByPrefix: "Used by workflows: ",
   connectionsPinnedByNone: "Available to any workflow",
   connectionsPinnedByApproximationNote:

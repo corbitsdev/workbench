@@ -5,7 +5,6 @@
 // (a certificate, an `other`-typed row).
 
 import {
-  Badge,
   Button,
   ConfirmButton,
   Dialog,
@@ -28,6 +27,12 @@ import {
 } from "@workbench/connections/registry";
 import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
+import {
+  defaultModelForProvider,
+  getResolvedCatalog,
+  type DefaultProviderModel,
+} from "@corbits/inference-settings";
+import type { ModelInfo } from "@intx/types";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -39,6 +44,7 @@ import {
 } from "@corbits/api-query";
 import {
   completeConnectorCredential,
+  disconnectConnector,
   fetchOAuthConfigured,
   testConnectorCredential,
 } from "./connections-api";
@@ -96,27 +102,34 @@ type ConnectionsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
   readonly oauthConfigured: Readonly<Record<string, boolean>>;
+  /** The resolved model catalog — read only to derive each connected
+   * inference provider's one default model (CL-6258's replacement for
+   * the removed Models settings page; see `defaultModelForProvider`'s
+   * own header for why this is never a second, hand-maintained notion of
+   * "the" model). */
+  readonly models: readonly ModelInfo[];
 };
 
 /**
- * The api-key connector card grid, on its own: every credentials/providers
+ * The api-key connector row list, on its own: every credentials/providers
  * fetch, the connect/reconnect dialog, and disconnect all owned here so
  * a caller only supplies the data it already has and a place to send a
  * reload/error signal. `ConnectionsSection` composes this with the OAuth
- * card row and the advanced credentials table for the full Settings >
+ * row pair and the advanced credentials table for the full Settings >
  * Connections page — its one consumer today. The onboarding wizard's own
  * "Connect your tools" step (CL-6028), which once rendered this alone
  * filtered to `feedsTools`-bearing connectors, was dropped in CL-6104:
  * connecting tools now lives only in Settings and the Plugins gallery,
- * never in onboarding. Renders bare `ConnectorCard`s — not wrapped in
- * `.settings-connections-grid` itself — so a caller controls the grid
- * container (and can put other cards, like the OAuth pair, in the same
- * grid alongside these).
+ * never in onboarding. Renders bare `ConnectorRow`s — not wrapped in
+ * `.settings-connections-list` itself — so a caller controls the list
+ * container (and can put other rows, like the OAuth pair, in the same
+ * list alongside these).
  */
-export function ConnectorCardGrid({
+export function ConnectorRowList({
   tenantId,
   credentials,
   providers,
+  models,
   filter,
   onReload,
   onError,
@@ -125,9 +138,10 @@ export function ConnectorCardGrid({
   readonly tenantId: string;
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
-  /** Narrows which registry entries render a card. Defaults to every
+  readonly models: readonly ModelInfo[];
+  /** Narrows which registry entries render a row. Defaults to every
    * api-key connector (every entry with a `probe`) — OAuth connectors
-   * are never included here regardless of filter, since this grid has
+   * are never included here regardless of filter, since this list has
    * no OAuth flow of its own. */
   readonly filter?: (descriptor: ConnectorDescriptor) => boolean;
   readonly onReload: () => void;
@@ -143,9 +157,9 @@ export function ConnectorCardGrid({
     "connect",
   );
 
-  function handleDisconnect(credential: Credential) {
+  function handleDisconnect(connectorId: string) {
     onError?.(null);
-    deleteCredential(tenantId, credential.id)
+    disconnectConnector(tenantId, connectorId)
       .then(() => {
         onReload();
         toast(SETTINGS_STRINGS.credentialRevokedToast);
@@ -161,10 +175,15 @@ export function ConnectorCardGrid({
   return (
     <>
       {descriptors.map((descriptor) => (
-        <ConnectorCard
+        <ConnectorRow
           key={descriptor.id}
           descriptor={descriptor}
           statusResult={connectorStatus(descriptor.id, credentials, providers)}
+          defaultModel={
+            descriptor.feedsTools.length === 0
+              ? defaultModelForProvider(models, descriptor.id)
+              : null
+          }
           onConnect={() => {
             setDialogMode("connect");
             setDialogDescriptor(descriptor);
@@ -173,7 +192,7 @@ export function ConnectorCardGrid({
             setDialogMode("reconnect");
             setDialogDescriptor(descriptor);
           }}
-          onDisconnect={handleDisconnect}
+          onDisconnect={() => handleDisconnect(descriptor.id)}
         />
       ))}
       <ConnectorCredentialDialog
@@ -217,12 +236,13 @@ export function ConnectionsSection({
       listCredentials(tenantId),
       listProviders(tenantId),
       fetchOAuthConfigured(tenantId),
+      getResolvedCatalog(tenantId),
     ])
-      .then(([credentials, providers, oauthConfigured]) => {
+      .then(([credentials, providers, oauthConfigured, models]) => {
         if (!cancelled)
           setQuery({
             kind: "ready",
-            data: { credentials, providers, oauthConfigured },
+            data: { credentials, providers, oauthConfigured, models },
           });
       })
       .catch((cause: unknown) => {
@@ -254,7 +274,27 @@ export function ConnectionsSection({
 
   const currentTenantId = tenantId;
 
-  function handleDisconnect(credential: Credential) {
+  // The row list's and OAuth pair's disconnect action — a connector, not
+  // a raw credential, so it goes through `disconnectConnector`'s
+  // orchestrated cleanup (catalog provider, then credential provider —
+  // see that function's own header for why a direct credential delete
+  // 500s for an inference provider, CL-6258).
+  function handleDisconnectConnector(connectorId: string) {
+    setRowError(null);
+    disconnectConnector(currentTenantId, connectorId)
+      .then(() => {
+        reload();
+        toast(SETTINGS_STRINGS.credentialRevokedToast);
+      })
+      .catch(() => setRowError(SETTINGS_STRINGS.connectionsDisconnectError));
+  }
+
+  // The Advanced disclosure's raw credentials table has no connector to
+  // orchestrate around — a certificate or `other`-typed row is never
+  // planted through `/complete`/`seedCatalog`, so it never has a catalog
+  // provider row to clean up first. A plain credential delete stays
+  // correct for exactly this escape hatch.
+  function handleDeleteCredential(credential: Credential) {
     setRowError(null);
     deleteCredential(currentTenantId, credential.id)
       .then(() => {
@@ -296,7 +336,7 @@ export function ConnectionsSection({
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
-      {({ credentials, providers, oauthConfigured }) => {
+      {({ credentials, providers, oauthConfigured, models }) => {
         const providerNameById = new Map(
           providers.map((provider) => [provider.id, provider.name]),
         );
@@ -310,16 +350,17 @@ export function ConnectionsSection({
                 {rowError}
               </p>
             )}
-            <div className="settings-connections-grid">
-              <ConnectorCardGrid
+            <div className="settings-connections-list">
+              <ConnectorRowList
                 tenantId={currentTenantId}
                 credentials={credentials}
                 providers={providers}
+                models={models}
                 onReload={reload}
                 onError={setRowError}
               />
               {OAUTH_CARDS.map((card) => (
-                <OAuthConnectorCardView
+                <OAuthConnectorRow
                   key={card.id}
                   card={card}
                   statusResult={connectorStatus(
@@ -327,11 +368,12 @@ export function ConnectionsSection({
                     credentials,
                     providers,
                   )}
+                  defaultModel={defaultModelForProvider(models, card.id)}
                   // Absent from the map reads as "not configured" — the
                   // conservative default: never render a live Connect button
                   // on data this section failed to positively confirm.
                   configured={oauthConfigured[card.id] ?? false}
-                  onDisconnect={handleDisconnect}
+                  onDisconnect={() => handleDisconnectConnector(card.id)}
                 />
               ))}
               {(() => {
@@ -363,7 +405,7 @@ export function ConnectionsSection({
                 <CredentialsTable
                   credentials={credentials}
                   providerNameById={providerNameById}
-                  onDelete={handleDisconnect}
+                  onDelete={handleDeleteCredential}
                 />
                 <CreateCredentialDialog
                   open={createOpen}
@@ -389,87 +431,155 @@ function pinnedByLine(connectorId: string): string {
   return `${SETTINGS_STRINGS.connectionsPinnedByPrefix}${names.join(", ")}`;
 }
 
-function StatusChip({
+/** Plain, uppercase status text — never a colored pill. Needs-attention is
+ * the one accent-colored state on this row (the owner's brand rule: grey
+ * for text/structure, the accent color only ever marks something to act
+ * on), matching the plugins directory's own `plugins-directory-needs-
+ * attention` convention. */
+function StatusCaption({
   statusResult,
 }: {
   readonly statusResult: ConnectorStatusResult;
 }) {
   if (statusResult.status === "connected") {
     return (
-      <Badge tone="success">
+      <span className="settings-connection-row-status">
         {SETTINGS_STRINGS.connectionsStatusConnected}
-      </Badge>
+      </span>
     );
   }
   if (statusResult.status === "needs_attention") {
     return (
-      <Badge tone="danger">
+      <span className="settings-connection-row-status settings-connection-row-status-attention">
         {SETTINGS_STRINGS.connectionsStatusNeedsAttention}
-      </Badge>
+      </span>
     );
   }
   return (
-    <Badge tone="neutral">
+    <span className="settings-connection-row-status">
       {SETTINGS_STRINGS.connectionsStatusNotConnected}
-    </Badge>
+    </span>
   );
 }
 
-function ConnectorCard({
+/** The row's brand mark: a connector's `simple-icons` path where the
+ * registry has one, a monochrome initial tile otherwise — the same tile
+ * pattern (zero radius, hairline border) the plugins directory's own
+ * `PluginLogo` uses (`packages/chat-ui/src/channel-settings/plugins-
+ * section.tsx`), reused here rather than re-derived (CL-6258). */
+function ConnectorLogo({
+  displayName,
+  icon,
+}: {
+  readonly displayName: string;
+  readonly icon?: { readonly path: string; readonly hex: string };
+}) {
+  if (icon !== undefined) {
+    return (
+      <span className="settings-connection-row-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill={`#${icon.hex}`}>
+          <path d={icon.path} />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span
+      className="settings-connection-row-logo settings-connection-row-logo-initial"
+      aria-hidden="true"
+    >
+      {displayName.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+function defaultModelCaption(defaultModel: DefaultProviderModel | null) {
+  if (defaultModel === null) return null;
+  const label = defaultModel.displayName ?? defaultModel.canonicalName;
+  return SETTINGS_STRINGS.connectionsDefaultModelLine(label);
+}
+
+function ConnectorRow({
   descriptor,
   statusResult,
+  defaultModel,
   onConnect,
   onReconnect,
   onDisconnect,
 }: {
   readonly descriptor: ConnectorDescriptor;
   readonly statusResult: ConnectorStatusResult;
+  /** This provider's one resolved default model — see
+   * `defaultModelForProvider`'s own header. `null` for a tool/plugin
+   * connector (`feedsTools.length > 0`, which shows "Used by workflows"
+   * instead) or an inference provider that resolves nothing yet. */
+  readonly defaultModel: DefaultProviderModel | null;
   readonly onConnect: () => void;
   readonly onReconnect: () => void;
-  readonly onDisconnect: (credential: Credential) => void;
+  readonly onDisconnect: () => void;
 }) {
   return (
-    <div className="settings-connection-card">
-      <span className="settings-connection-card-title">
-        {descriptor.displayName}
-      </span>
-      <StatusChip statusResult={statusResult} />
-      {statusResult.status === "connected" && (
-        <span className="settings-connection-card-name">
-          {statusResult.credential.name}
-        </span>
-      )}
-      {descriptor.feedsTools.length > 0 && (
-        <span className="settings-connection-card-pinned-row">
-          <span className="settings-connection-card-pinned">
-            {pinnedByLine(descriptor.id)}
+    <div className="settings-connection-row">
+      <ConnectorLogo
+        displayName={descriptor.displayName}
+        {...(descriptor.icon !== undefined ? { icon: descriptor.icon } : {})}
+      />
+      <div className="settings-connection-row-text">
+        <div className="settings-connection-row-name-row">
+          <span className="settings-connection-row-name">
+            {descriptor.displayName}
           </span>
-          {(CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0 && (
-            <InfoTooltip
-              label={SETTINGS_STRINGS.connectionsPinnedByApproximationNote}
-              triggerLabel={`How "${pinnedByLine(descriptor.id)}" is determined`}
-            />
+          <StatusCaption statusResult={statusResult} />
+        </div>
+        {statusResult.status === "connected" &&
+          defaultModelCaption(defaultModel) !== null && (
+            <p className="settings-connection-row-caption">
+              {defaultModelCaption(defaultModel)}
+            </p>
           )}
-        </span>
-      )}
-      <div className="settings-connection-card-actions">
+        {descriptor.feedsTools.length > 0 && (
+          <span className="settings-connection-row-pinned-row">
+            <span className="settings-connection-row-caption">
+              {pinnedByLine(descriptor.id)}
+            </span>
+            {(CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0 && (
+              <InfoTooltip
+                label={SETTINGS_STRINGS.connectionsPinnedByApproximationNote}
+                triggerLabel={`How "${pinnedByLine(descriptor.id)}" is determined`}
+              />
+            )}
+          </span>
+        )}
+      </div>
+      <div className="settings-connection-row-action">
         {statusResult.status === "connected" && (
           <ConfirmButton
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="settings-connection-row-disconnect-action"
             confirmLabel={SETTINGS_STRINGS.connectionsDisconnectConfirm}
-            onConfirm={() => onDisconnect(statusResult.credential)}
+            onConfirm={onDisconnect}
           >
             {SETTINGS_STRINGS.connectionsDisconnectAction}
           </ConfirmButton>
         )}
         {statusResult.status === "not_connected" && (
-          <Button variant="primary" size="sm" onClick={onConnect}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="settings-connection-row-connect-action"
+            onClick={onConnect}
+          >
             {SETTINGS_STRINGS.connectionsConnectAction}
           </Button>
         )}
         {statusResult.status === "needs_attention" && (
-          <Button variant="primary" size="sm" onClick={onReconnect}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="settings-connection-row-connect-action"
+            onClick={onReconnect}
+          >
             {SETTINGS_STRINGS.connectionsReconnectAction}
           </Button>
         )}
@@ -478,62 +588,91 @@ function ConnectorCard({
   );
 }
 
-function OAuthConnectorCardView({
+function OAuthConnectorRow({
   card,
   statusResult,
+  defaultModel,
   configured,
   onDisconnect,
 }: {
   readonly card: OAuthConnectorCard;
   readonly statusResult: ConnectorStatusResult;
+  readonly defaultModel: DefaultProviderModel | null;
   /** Whether an operator has registered this connector's OAuth app
    * (a client id present server-side) — distinct from `statusResult`,
    * which is about whether *this tenant* has connected, not whether
    * connecting is even possible yet. */
   readonly configured: boolean;
-  readonly onDisconnect: (credential: Credential) => void;
+  readonly onDisconnect: () => void;
 }) {
+  const icon = CONNECTOR_REGISTRY[card.id]?.icon;
+
   // An unconfigured connector never gets a live Connect button, even
   // when this tenant already holds a (now-orphaned) credential for it —
   // there is no OAuth app to round-trip through until an operator
   // registers one, so the muted state wins regardless of `statusResult`.
   if (!configured) {
     return (
-      <div className="settings-connection-card settings-connection-card-muted">
-        <span className="settings-connection-card-title">
-          {card.displayName}
-        </span>
-        <Badge tone="warning">
-          {SETTINGS_STRINGS.connectionsStatusNotConfigured}
-        </Badge>
-        <p className="settings-connection-card-hint">
-          {SETTINGS_STRINGS.connectionsNotConfiguredHint}
-        </p>
+      <div className="settings-connection-row settings-connection-row-muted">
+        <ConnectorLogo
+          displayName={card.displayName}
+          {...(icon !== undefined ? { icon } : {})}
+        />
+        <div className="settings-connection-row-text">
+          <div className="settings-connection-row-name-row">
+            <span className="settings-connection-row-name">
+              {card.displayName}
+            </span>
+            <span className="settings-connection-row-status">
+              {SETTINGS_STRINGS.connectionsStatusNotConfigured}
+            </span>
+          </div>
+          <p className="settings-connection-row-caption">
+            {SETTINGS_STRINGS.connectionsNotConfiguredHint}
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="settings-connection-card">
-      <span className="settings-connection-card-title">{card.displayName}</span>
-      <StatusChip statusResult={statusResult} />
-      {statusResult.status === "connected" && (
-        <span className="settings-connection-card-name">
-          {statusResult.credential.name}
-        </span>
-      )}
-      <div className="settings-connection-card-actions">
+    <div className="settings-connection-row">
+      <ConnectorLogo
+        displayName={card.displayName}
+        {...(icon !== undefined ? { icon } : {})}
+      />
+      <div className="settings-connection-row-text">
+        <div className="settings-connection-row-name-row">
+          <span className="settings-connection-row-name">
+            {card.displayName}
+          </span>
+          <StatusCaption statusResult={statusResult} />
+        </div>
+        {statusResult.status === "connected" &&
+          defaultModelCaption(defaultModel) !== null && (
+            <p className="settings-connection-row-caption">
+              {defaultModelCaption(defaultModel)}
+            </p>
+          )}
+      </div>
+      <div className="settings-connection-row-action">
         {statusResult.status === "connected" ? (
           <ConfirmButton
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="settings-connection-row-disconnect-action"
             confirmLabel={SETTINGS_STRINGS.connectionsDisconnectConfirm}
-            onConfirm={() => onDisconnect(statusResult.credential)}
+            onConfirm={onDisconnect}
           >
             {SETTINGS_STRINGS.connectionsDisconnectAction}
           </ConfirmButton>
         ) : (
-          <Button variant="primary" size="sm" asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="settings-connection-row-connect-action"
+            asChild
+          >
             <a href={oauthStartHref(card.id)}>
               {statusResult.status === "needs_attention"
                 ? SETTINGS_STRINGS.connectionsReconnectAction
