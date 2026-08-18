@@ -134,6 +134,27 @@ const ASSISTANT_TEAMMATE_CLAUSE =
   "once you have what you need rather than checking in again first.";
 
 /**
+ * DISCOVERY (CL-6179): the specific interview-then-propose procedure a
+ * stated outcome triggers, on top of the general "work out the team
+ * yourself" doctrine in `ASSISTANT_TRIAGE_CLAUSE` above — short and
+ * concrete rather than open-ended, so discovery never turns into a
+ * drawn-out intake form. Ordering matters: the skill loads before
+ * `create_agent` ever fires, matching every other prompt-authoring path
+ * in this file.
+ */
+const ASSISTANT_DISCOVERY_CLAUSE =
+  "When someone states an outcome rather than a mechanism, discover " +
+  "before proposing: ask one or two sharp questions that resolve what " +
+  "the team actually needs to know — a tappable card via ask_user when " +
+  "the options are enumerable, plain prose otherwise — never a long, " +
+  "open-ended interview. Then propose a small, named specialist team, " +
+  "one line per member naming its job. Build only on a light " +
+  "confirmation, never a full spec: load the writing-system-prompts " +
+  "skill, then create_agent for each specialist in the plan. Once " +
+  "they're built, hand off in one line: \"Their own chats for focused " +
+  'work. Here when you want me to run the hunt and hand things off."';
+
+/**
  * Sectioned per current cross-lab prompting guidance (Anthropic,
  * OpenAI, Google, xAI, Cursor — researched 2026-08, distilled into the
  * seeded `writing-system-prompts` skill): one-line identity first,
@@ -173,6 +194,8 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "\n" +
   "## Deciding what to do\n" +
   ASSISTANT_TRIAGE_CLAUSE +
+  " " +
+  ASSISTANT_DISCOVERY_CLAUSE +
   "\n" +
   "\n" +
   "## Being a teammate\n" +

@@ -55,6 +55,7 @@ import {
   createWorkbenchTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
+  createPendingMintRegistry,
   joinRunParticipant,
   createDrizzleBlockResponseStore,
   createDrizzleWorkbenchTenancyStore,
@@ -839,6 +840,7 @@ export async function createHub(config: HubConfig) {
         onOpen(_evt, ws) {
           handle = { send: (d: string) => ws.send(d), close: () => ws.close() };
           sidecarRouter.handleOpen(handle);
+          pendingMintRegistry.retryAll();
         },
         onMessage(evt, _ws) {
           if (typeof evt.data === "string")
@@ -1102,6 +1104,13 @@ export async function createHub(config: HubConfig) {
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
 
+  // Holds every mint whose launch is stalled on
+  // `isSidecarUnavailableLaunchError` — retried below from the raw
+  // sidecar socket's own `onOpen`, the earliest signal a sidecar is
+  // reconnecting (see `pendingMintRegistry`'s own doc for why firing
+  // before `sidecarRouter.handleOpen` finishes registering is safe).
+  const pendingMintRegistry = createPendingMintRegistry();
+
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     platform: chatPlatform,
@@ -1148,6 +1157,7 @@ export async function createHub(config: HubConfig) {
     // messages to it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
+    pendingMintRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
   // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'

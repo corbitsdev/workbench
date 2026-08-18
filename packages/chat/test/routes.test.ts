@@ -8,9 +8,11 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { InferenceResolutionError } from "@corbits/folded-runs";
+import { SessionLaunchError } from "@intx/hub-sessions";
 import { encodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
+import { createPendingMintRegistry } from "../src/mint-retry";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryThreadStore } from "../src/threads";
@@ -278,6 +280,109 @@ describe("POST /workbenches", () => {
     expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
       0,
     );
+  });
+
+  test("a sidecar-unavailable host launch never compensates — the workbench stays, marked launchPending", async () => {
+    const launches: (() => Promise<void>)[] = [];
+    const pendingMintRegistry = createPendingMintRegistry();
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+        launchWorkbench: () =>
+          Promise.reject(
+            new SessionLaunchError(
+              "provision",
+              new Error('No sidecar available for agent "wb_1@acme.example"'),
+              false,
+            ),
+          ),
+      }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
+      pendingMintRegistry,
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(response.status).toBe(201);
+    await launches[0]?.();
+
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryWorkbenchTenancyStore
+    >;
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
+    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
+      1,
+    );
+    const stalled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
+    expect(stalled?.settings["chat/launchPending"]).toBe(true);
+  });
+
+  test("a sidecar-unavailable agent launch never compensates, and the hub's reconnect retry finishes the mint", async () => {
+    const launches: (() => Promise<void>)[] = [];
+    const pendingMintRegistry = createPendingMintRegistry();
+    let sidecarUp = false;
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+        launchInvite: () => {
+          if (!sidecarUp) {
+            return Promise.reject(
+              new SessionLaunchError(
+                "provision",
+                new Error(
+                  'No sidecar connected for agent "ins_invited1@acme.example"',
+                ),
+                false,
+              ),
+            );
+          }
+          return Promise.resolve({
+            instanceId: "ins_invited1",
+            address: "ins_invited1@acme.example",
+          });
+        },
+      }),
+      runMintLaunch: (work) => {
+        launches.push(work);
+      },
+      pendingMintRegistry,
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(response.status).toBe(201);
+    await launches[0]?.();
+
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryWorkbenchTenancyStore
+    >;
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
+    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
+      1,
+    );
+    const stalled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
+    expect(stalled?.settings["chat/launchPending"]).toBe(true);
+    expect(stalled?.settings["chat/participants"]).toEqual([]);
+
+    // The hub's sidecar-connected signal fires `retryAll()`; the sidecar
+    // is now up, so the retry finishes the mint cleanly.
+    sidecarUp = true;
+    pendingMintRegistry.retryAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
+    expect(settled?.settings["chat/launchPending"]).toBeUndefined();
+    expect(settled?.settings["chat/participants"]).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+    ]);
   });
 });
 

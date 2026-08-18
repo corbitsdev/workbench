@@ -73,6 +73,11 @@ export type { ParticipantRecord } from "./participants";
 export { createChatRoutes, findExistingAgentChat } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
 
+export { createPendingMintRegistry } from "./mint-retry";
+export type { PendingMintRegistry } from "./mint-retry";
+
+export { isSidecarUnavailableLaunchError } from "./sidecar-launch-error";
+
 export { createWorkbenchSubscriberRegistry } from "./workbench-events";
 export type { WorkbenchSubscriberRegistry } from "./workbench-events";
 export type {
