@@ -62,6 +62,102 @@ function recordPath(dataDir: string, deploymentId: string): string {
   return pathJoin(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
 }
 
+const ACTIVITY_FILENAME = "activity.json";
+
+function activityPath(dataDir: string, deploymentId: string): string {
+  return pathJoin(dataDir, "workflow-runs", deploymentId, ACTIVITY_FILENAME);
+}
+
+/**
+ * Read one deployment's record by id, for the CL-5477 idle-reap wake path
+ * (`ensureAwake`), which already knows the deployment id it needs to
+ * respawn and has no reason to re-scan the whole `workflow-runs/` tree.
+ * Returns `undefined` for a missing or unparseable record -- the wake path
+ * treats either as "nothing to restore from" and fails loud itself.
+ */
+export async function readWorkflowDeploymentRecord(
+  dataDir: string,
+  deploymentId: string,
+): Promise<WorkflowDeploymentRecord | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(recordPath(dataDir, deploymentId), "utf8");
+  } catch (cause) {
+    if (isErrnoNotFound(cause)) return undefined;
+    throw cause;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const record = WorkflowDeploymentRecord(parsed);
+  if (record instanceof type.errors) return undefined;
+  return record;
+}
+
+/**
+ * Durable last-activity marker, co-located with the deployment record.
+ * CL-5477's park/wake router calls `touchActivity` in-process on every
+ * inbound mail, signal, drain, source rotation, and inference event; the
+ * router throttles the durable write to roughly a quarter of the idle-reap
+ * window (matching the sweep cadence) so a chatty deployment does not
+ * write this file on every turn. The marker is the ONLY durable signal a
+ * fresh boot has for "was this deployment active recently" -- the deploy
+ * record itself is written once at deploy time and again only on a
+ * sources rotation, so it alone would make every deployment look
+ * perpetually stale after the first message.
+ */
+export async function writeWorkflowDeploymentActivityMarker(
+  dataDir: string,
+  deploymentId: string,
+  activityMs: number,
+): Promise<void> {
+  const path = activityPath(dataDir, deploymentId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFileAtomicDurable(path, JSON.stringify({ activityMs }, null, 2), {
+    mode: 0o600,
+  });
+}
+
+/**
+ * Read a deployment's durable last-activity marker, or `undefined` if none
+ * was ever written (a deployment that has never taken a park-tracked turn,
+ * or predates this marker). The boot-time restore-as-parked decision
+ * (CL-5480) treats `undefined` as "unknown, restore live" -- the same
+ * conservative default a missing marker warrants, since restoring live is
+ * always safe (a park sweep reaps it later if it turns out idle) while
+ * restoring parked a deployment that was actually active would stall its
+ * next message behind a wake.
+ */
+export async function readWorkflowDeploymentActivityMs(
+  dataDir: string,
+  deploymentId: string,
+): Promise<number | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(activityPath(dataDir, deploymentId), "utf8");
+  } catch (cause) {
+    if (isErrnoNotFound(cause)) return undefined;
+    throw cause;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "activityMs" in parsed &&
+      typeof (parsed as { activityMs: unknown }).activityMs === "number"
+    ) {
+      return (parsed as { activityMs: number }).activityMs;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Persist a deployment record. Written after the deployment's slug is
  * claimed and before the child is spawned, so a crash mid-spawn leaves a
@@ -97,6 +193,9 @@ export async function deleteWorkflowDeploymentRecord(
   deploymentId: string,
 ): Promise<void> {
   await rm(recordPath(dataDir, deploymentId), { force: true });
+  // The activity marker has no independent lifecycle -- it only ever means
+  // something alongside a live record -- so it is reclaimed with it.
+  await rm(activityPath(dataDir, deploymentId), { force: true });
 }
 
 /** A restorable deployment: its directory-derived id plus the validated record. */

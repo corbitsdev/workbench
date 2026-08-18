@@ -47,14 +47,36 @@ const SidecarEnv = type({
   // `SIDECAR_CACHE_MAX_BYTES`-style numeric env keys.
   "CONSUMED_RETENTION_MS?": "string",
   "CHILD_READY_TIMEOUT_MS?": "string",
+  // CL-5477: how long a deployment's workflow-child may sit with no
+  // activity (inbound mail, signals, drains, source rotations, credential
+  // updates, inference events) before the deploy router parks it -- tears
+  // the child process down while keeping the persisted deployment record,
+  // slug claim, and step state, so the next inbound message respawns it
+  // through the same path a boot-time restore uses. Unlike
+  // `CONSUMED_RETENTION_MS`/`CHILD_READY_TIMEOUT_MS`, an unset value does
+  // NOT fall back to "no override" -- it applies `DEFAULT_CHILD_IDLE_REAP_MS`
+  // (30 minutes), because reaping is meant to be on by default here: an
+  // un-reaped idle fleet is exactly what forced the emergency
+  // `CHAT_IDLE_SLEEP_MS` bump on the hub side (see commit 8ca85543). Set to
+  // `0` to disable reaping entirely.
+  "WORKBENCH_CHILD_IDLE_REAP_MS?": "string",
 });
+
+/**
+ * Production default for `WORKBENCH_CHILD_IDLE_REAP_MS`: 30 minutes.
+ * Reaping is on unless an operator explicitly sets the env var to `0`.
+ */
+export const DEFAULT_CHILD_IDLE_REAP_MS = 30 * 60_000;
 
 /**
  * Parse an optional positive-finite-number env value. Returns `undefined`
  * for an unset key so the caller's binding falls back to the vendor's own
  * default rather than this boundary inventing one.
  */
-function parsePositiveMsEnv(raw: string | undefined, name: string): number | undefined {
+function parsePositiveMsEnv(
+  raw: string | undefined,
+  name: string,
+): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) {
@@ -93,6 +115,13 @@ export type SidecarConfig = {
    * override it; the supervisor applies `DEFAULT_READY_TIMEOUT_MS` (30s).
    */
   readonly readyTimeoutMs: number | undefined;
+  /**
+   * CL-5477 idle-reap threshold (ms). Always a resolved number (never
+   * `undefined`): an unset env var applies `DEFAULT_CHILD_IDLE_REAP_MS`
+   * rather than deferring to a vendor default, since reaping defaults ON
+   * for this host. `0` means the operator explicitly disabled reaping.
+   */
+  readonly idleReapMs: number;
 };
 
 /**
@@ -131,5 +160,31 @@ export function readSidecarConfig(
       parsed.CHILD_READY_TIMEOUT_MS,
       "CHILD_READY_TIMEOUT_MS",
     ),
+    idleReapMs: parseNonNegativeMsEnv(
+      parsed.WORKBENCH_CHILD_IDLE_REAP_MS,
+      "WORKBENCH_CHILD_IDLE_REAP_MS",
+      DEFAULT_CHILD_IDLE_REAP_MS,
+    ),
   };
+}
+
+/**
+ * Parse a non-negative-integer-milliseconds env value, defaulting to
+ * `fallback` when unset. Unlike `parsePositiveMsEnv`'s neighbors, `0` is a
+ * legal, meaningful value here (explicit opt-out of reaping), so this
+ * rejects only negative or non-integer input, not zero.
+ */
+function parseNonNegativeMsEnv(
+  raw: string | undefined,
+  name: string,
+  fallback: number,
+): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error(
+      `invalid sidecar environment: ${name} must be a non-negative integer (milliseconds); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return n;
 }

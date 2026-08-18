@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readSidecarConfig } from "../src/config";
+import { DEFAULT_CHILD_IDLE_REAP_MS, readSidecarConfig } from "../src/config";
 
 const VALID_ENV = {
   SIDECAR_DATA_DIR: "/var/lib/sidecar",
@@ -22,7 +22,44 @@ test("parses a complete environment into config", () => {
     toolRegistries: undefined,
     consumedRetentionMs: undefined,
     readyTimeoutMs: undefined,
+    idleReapMs: DEFAULT_CHILD_IDLE_REAP_MS,
   });
+});
+
+test("WORKBENCH_CHILD_IDLE_REAP_MS defaults to 30 minutes when unset", () => {
+  const config = readSidecarConfig(VALID_ENV);
+  expect(config.idleReapMs).toBe(30 * 60_000);
+});
+
+test("an explicit WORKBENCH_CHILD_IDLE_REAP_MS override is carried through", () => {
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    WORKBENCH_CHILD_IDLE_REAP_MS: "60000",
+  });
+  expect(config.idleReapMs).toBe(60_000);
+});
+
+test("WORKBENCH_CHILD_IDLE_REAP_MS=0 disables reaping explicitly", () => {
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    WORKBENCH_CHILD_IDLE_REAP_MS: "0",
+  });
+  expect(config.idleReapMs).toBe(0);
+});
+
+test("a negative WORKBENCH_CHILD_IDLE_REAP_MS fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({ ...VALID_ENV, WORKBENCH_CHILD_IDLE_REAP_MS: "-1" }),
+  ).toThrow(/WORKBENCH_CHILD_IDLE_REAP_MS/);
+});
+
+test("a non-integer WORKBENCH_CHILD_IDLE_REAP_MS fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({
+      ...VALID_ENV,
+      WORKBENCH_CHILD_IDLE_REAP_MS: "not-a-number",
+    }),
+  ).toThrow(/WORKBENCH_CHILD_IDLE_REAP_MS/);
 });
 
 test("carries operator overrides for consumedRetentionMs/readyTimeoutMs through when present", () => {

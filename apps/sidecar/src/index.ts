@@ -296,13 +296,17 @@ const orchestrator = createSidecarOrchestrator({
             consumedRetentionMs: config.consumedRetentionMs,
           }
         : deployRouterConfigBase;
-    const deployRouterConfig =
+    const deployRouterConfigWithReadyTimeoutMs =
       config.readyTimeoutMs !== undefined
         ? {
             ...deployRouterConfigWithConsumedRetentionMs,
             readyTimeoutMs: config.readyTimeoutMs,
           }
         : deployRouterConfigWithConsumedRetentionMs;
+    const deployRouterConfig = {
+      ...deployRouterConfigWithReadyTimeoutMs,
+      idleReapMs: config.idleReapMs,
+    };
     const router = createSidecarDeployRouter(deployRouterConfig);
     capturedRouter = router;
     return router;

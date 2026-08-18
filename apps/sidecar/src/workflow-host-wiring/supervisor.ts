@@ -22,16 +22,21 @@ import {
   type HubTransportMailBusAdapter,
   type PrincipalSigner,
   type RecyclePolicyBounds,
+  type SubprocessHandle,
   type SubprocessSpawner,
   type SuspensionRegistration,
   type WorkflowSupervisor,
 } from "@intx/workflow-host";
+
+import { getLogger } from "@intx/log";
 
 import {
   defaultSubprocessSpawner,
   SIDECAR_WORKFLOW_CHILD_BINARY,
 } from "./transport";
 import { readRunGrants, runGrantsPath } from "../run-grants";
+
+const logger = getLogger(["sidecar", "workflow-host-wiring", "supervisor"]);
 
 /**
  * Conservative default for the warm-keep recycle policy's grants-staleness
@@ -268,6 +273,17 @@ export type SidecarWorkflowSupervisor = {
   routeInbound(message: Uint8Array): Promise<void>;
   /** Snapshot accessor that proxies the supervisor's credentials view. */
   getCredentialsSnapshot(): CredentialsSnapshot | null;
+  /**
+   * Direct SIGKILL of the most recently spawned child, bypassing the
+   * supervisor's own graceful `shutdown()` sequencing entirely. The CL-5477
+   * idle-reap park path's shutdown escalation (`shutdownSupervisorWithEscalation`)
+   * calls this from a bare `setTimeout` when `shutdown()` has not settled
+   * within the escalation window, so a wedged child cannot block a park or
+   * a process-exit drain forever. Safe to call at any point, including
+   * mid-await inside `shutdown()`'s own teardown: `Bun.spawn`'s `kill()` is
+   * idempotent against an already-exited or already-killed process.
+   */
+  hardKillChild(): void;
 };
 
 /**
@@ -304,6 +320,19 @@ export function createSidecarWorkflowSupervisor(
   const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(
     opts.transport,
   );
+  // Tracks the most recently spawned child's handle so `hardKillChild` can
+  // reach it directly. The `WorkflowSupervisor` interface exposes no raw
+  // handle access, so wrapping the spawner -- the same injection point
+  // tests already use -- is the only seam that sees it. Re-assigned on
+  // every spawn call, including a recycle's respawn, so it always points
+  // at the live child.
+  let currentHandle: SubprocessHandle | undefined;
+  const baseSpawner = opts.subprocessSpawner ?? defaultSubprocessSpawner;
+  const trackingSpawner: SubprocessSpawner = (spawnArgs) => {
+    const handle = baseSpawner(spawnArgs);
+    currentHandle = handle;
+    return handle;
+  };
   // Wall-clock of the most recent credentials push -- either an `onRunStart`
   // grants-barrier snapshot or a `deliverCredentials` rotation -- read by
   // `readGrantsAgeMs` below. `undefined` until the first delivery, which
@@ -345,7 +374,7 @@ export function createSidecarWorkflowSupervisor(
       return { sig, principalKind: kind };
     }) satisfies PrincipalSigner,
     mailBus,
-    subprocessSpawner: opts.subprocessSpawner ?? defaultSubprocessSpawner,
+    subprocessSpawner: trackingSpawner,
     binaryPath: opts.binaryPath ?? SIDECAR_WORKFLOW_CHILD_BINARY,
     substrateEnv: opts.substrateEnv,
     dynamicSpawnEnv: opts.dynamicSpawnEnv,
@@ -441,5 +470,17 @@ export function createSidecarWorkflowSupervisor(
       return mailBus.routeInbound(opts.deploymentMailAddress, message);
     },
     getCredentialsSnapshot: () => supervisor.getCredentialsSnapshot(),
+    hardKillChild() {
+      // This runs from a bare `setTimeout` callback on the shutdown-escalation
+      // path: an uncaught throw here becomes an unhandled rejection that
+      // skips a clean park/exit, which is exactly the failure mode this
+      // exists to eliminate.
+      try {
+        currentHandle?.kill("SIGKILL");
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.warn`hardKillChild: kill("SIGKILL") threw: ${message}`;
+      }
+    },
   };
 }

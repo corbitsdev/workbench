@@ -50,7 +50,10 @@ import type {
 } from "../workflow-run-pack-client";
 import {
   deleteWorkflowDeploymentRecord,
+  readWorkflowDeploymentActivityMs,
+  readWorkflowDeploymentRecord,
   scanWorkflowDeploymentRecords,
+  writeWorkflowDeploymentActivityMarker,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "../workflow-deployment-record";
@@ -100,6 +103,35 @@ const logger = getLogger(["sidecar", "workflow-host-wiring"]);
  * spell the key the same way without a magic-string trip hazard.
  */
 export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
+
+/**
+ * How long CL-5477's park path (and the process-exit drain) waits for a
+ * supervisor's own graceful `shutdown()` (child signal + await exit) before
+ * also sending SIGKILL to the child directly via `hardKillChild`. Bounds an
+ * idle park's worst case to this window rather than however long a wedged
+ * child's own shutdown sequencing takes.
+ */
+export const CHILD_KILL_ESCALATION_MS = 3000;
+
+/**
+ * Await a supervisor's graceful `shutdown()`, escalating to a direct
+ * SIGKILL of its child if `shutdown()` hasn't settled within
+ * `CHILD_KILL_ESCALATION_MS` -- still awaiting `shutdown()` to completion
+ * either way, never abandoning it.
+ */
+async function shutdownSupervisorWithEscalation(
+  wired: SidecarWorkflowSupervisor,
+): Promise<void> {
+  const timer = setTimeout(() => {
+    wired.hardKillChild();
+  }, CHILD_KILL_ESCALATION_MS);
+  timer.unref?.();
+  try {
+    await wired.supervisor.shutdown();
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Derive the supervisor's principal public key from the sidecar's
@@ -407,6 +439,17 @@ export function createSidecarDeployRouter(deps: {
    * it.
    */
   writeWorkflowDeploymentRecord?: typeof writeWorkflowDeploymentRecord;
+  /**
+   * CL-5477 idle-reap threshold (ms): how long a deployment's
+   * workflow-child may sit with no activity (inbound mail, signals,
+   * drains, source rotations, credential updates, inference events)
+   * before the router parks it -- tears the child process down while
+   * keeping the persisted deployment record, slug claim, and step state,
+   * so the next inbound frame respawns it via `ensureAwake`. `undefined`
+   * or `0` disables reaping entirely (no sweep timer is armed, and boot
+   * restore never restores-as-parked).
+   */
+  idleReapMs?: number;
 }): SidecarDeployRouter {
   // Validate the signing seed at construction so a malformed key fails
   // sidecar boot rather than the first multi-step deploy, where the
@@ -452,6 +495,39 @@ export function createSidecarDeployRouter(deps: {
   // with the deployment.
   const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
 
+  // =============================================================
+  // CL-5477 idle reap: park / wake / sweep state
+  // =============================================================
+
+  /**
+   * Addresses this router has parked: idle-torn-down but still holding
+   * their slug, deployment record, and step-state scratch. Value is the
+   * address's deployment id, cached so a wake or undeploy does not
+   * re-derive it. `activeAddresses()` unions this with `activeSupervisors`
+   * so the hub keeps routing a parked address's mail here.
+   */
+  const parkedAddresses = new Map<string, string>();
+  /** Last observed activity per LIVE address, consulted by `sweepIdleDeployments`. */
+  const lastActivityAt = new Map<string, number>();
+  /**
+   * Open run ids per address. A run with an entry here is never parked,
+   * even past the idle threshold: a run quietly awaiting a slow tool call
+   * or timer emits neither frames nor inference events, and killing its
+   * child would strand the run until the next inbound frame happens to
+   * wake it. Populated/cleared by the caller's run-lifecycle wiring; this
+   * router only reads it.
+   */
+  const openRuns = new Map<string, Set<string>>();
+  /** In-flight wakes, single-flighted per address (see `ensureAwake`). */
+  const wakeInFlight = new Map<string, Promise<void>>();
+  /** In-flight parks per address (see `parkDeployment`). */
+  const parksInFlight = new Map<string, Promise<void>>();
+  /** Wall-clock of the last durable activity-marker write per address, for the write throttle in `touchActivity`. */
+  const lastActivityMarkerWriteAt = new Map<string, number>();
+  /** Flipped true during `shutdownAll`; `ensureAwake` refuses to respawn once set. */
+  let routerShuttingDown = false;
+  let idleSweepTimer: ReturnType<typeof setInterval> | undefined;
+
   // Synchronous single-flight guard for the deploy path. The real supervisor
   // does not exist until inside `spawnWorkflowDeployment`, so `deployMultiStep`
   // cannot reserve its `activeSupervisors` slot up front; instead it records
@@ -492,6 +568,49 @@ export function createSidecarDeployRouter(deps: {
   function releaseSlug(deploymentId: string, agentAddress: string): void {
     const existing = slugClaims.get(deploymentId);
     if (existing === agentAddress) slugClaims.delete(deploymentId);
+  }
+
+  /**
+   * Record that `agentAddress` just did something -- inbound mail, a
+   * signal, a drain, a source rotation, a credential update, or an
+   * inference event. Called from every one of those dispatch points on the
+   * LIVE handler path (not the parked/wake path, where activity is a
+   * contradiction) so `sweepIdleDeployments` never reaps a deployment
+   * mid-conversation, including one quietly running a long tool call
+   * between events.
+   *
+   * Updates the in-process `lastActivityAt` map unconditionally, then
+   * throttles a durable marker write (`writeWorkflowDeploymentActivityMarker`)
+   * to roughly a quarter of the idle-reap window -- the same cadence the
+   * sweep itself runs at -- so a boot restore's staleness check
+   * (`readWorkflowDeploymentActivityMs`) is never more than one sweep
+   * period behind the truth, without writing a file on every single
+   * message. Skipped entirely when reaping is disabled or no data dir is
+   * wired (a test router that never persists).
+   */
+  function touchActivity(agentAddress: string): void {
+    const now = Date.now();
+    lastActivityAt.set(agentAddress, now);
+    if (
+      deps.idleReapMs === undefined ||
+      deps.idleReapMs <= 0 ||
+      stepStateDataDir === undefined
+    ) {
+      return;
+    }
+    const throttleMs = Math.min(60_000, Math.max(1_000, deps.idleReapMs / 4));
+    const lastWrite = lastActivityMarkerWriteAt.get(agentAddress) ?? 0;
+    if (now - lastWrite < throttleMs) return;
+    lastActivityMarkerWriteAt.set(agentAddress, now);
+    const deploymentId = deriveDeploymentId(agentAddress);
+    void writeWorkflowDeploymentActivityMarker(
+      stepStateDataDir,
+      deploymentId,
+      now,
+    ).catch((cause: unknown) => {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.warn`touchActivity: failed to persist activity marker for ${agentAddress}: ${reason}`;
+    });
   }
 
   /**
@@ -599,6 +718,65 @@ export function createSidecarDeployRouter(deps: {
   }
 
   /**
+   * Wrap the substrate RepoStore so this deployment's proxied workflow-run
+   * writes maintain `openRunIds` -- the CL-5477 idle sweep's "never park a
+   * deployment with an open run" guard. Only `writeTreePreservingPrefix`
+   * against THIS deployment's workflow-run repo is intercepted -- the
+   * supervisor routes every child run-event commit through it, and its
+   * result carries the kind handler's authoritative terminal-run signal.
+   * Everything else delegates untouched.
+   */
+  function createRunTrackingRepoStore(
+    underlying: RepoStore,
+    deploymentId: string,
+    openRunIds: Set<string>,
+    onTrackedWrite: () => void,
+  ): RepoStore {
+    // Boundary type assertion: a transparent delegation proxy over the
+    // full RepoStore surface, matching the rest of this file's Proxy casts.
+    return new Proxy(underlying, {
+      get(target, prop, receiver) {
+        if (prop !== "writeTreePreservingPrefix") {
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        const write: RepoStore["writeTreePreservingPrefix"] = async (
+          principal,
+          repoId,
+          ref,
+          args,
+        ) => {
+          const tracked =
+            repoId.kind === "workflow-run" && repoId.id === deploymentId;
+          if (tracked) {
+            const match = /^runs\/([^/]+)\/events\//.exec(args.preservePrefix);
+            if (match?.[1] !== undefined) openRunIds.add(match[1]);
+            // Run-event commits also bump the durable activity marker
+            // (through the throttle in `touchActivity`), so a deployment
+            // mid-run keeps a fresh marker even when its inference events
+            // are sparse -- the boot-time restore-vs-park decision must
+            // never judge a running deployment stale.
+            onTrackedWrite();
+          }
+          const result = await target.writeTreePreservingPrefix(
+            principal,
+            repoId,
+            ref,
+            args,
+          );
+          if (tracked) {
+            for (const terminal of result.newlyTerminalRuns) {
+              openRunIds.delete(terminal.runId);
+            }
+          }
+          return result;
+        };
+        return write;
+      },
+    }) as RepoStore;
+  }
+
+  /**
    * The single owner of the workflow-deployment spawn sequence: construct
    * the supervisor, register the single-step agent's outbound key + head
    * repo + hub key, spawn the workflow-process child, then register the
@@ -693,9 +871,22 @@ export function createSidecarDeployRouter(deps: {
       // reverting to the deploy-time list.
       let currentSources = spec.sources;
 
+      // In-flight-run tracking for the idle sweep (CL-5477). Created per
+      // spawn and installed under the address only once spawn succeeds; the
+      // supervisor's proxied child writes flow through the wrap from the
+      // first commit.
+      const openRunIds = new Set<string>();
+
       const wiredBaseConfig = {
         transport: deps.transport,
-        repoStore: deps.repoStore,
+        repoStore: createRunTrackingRepoStore(
+          deps.repoStore,
+          deploymentId,
+          openRunIds,
+          () => {
+            touchActivity(spec.agentAddress);
+          },
+        ),
         signingKeySeed: deps.signingKeySeed,
         workflowRunRepoId: {
           kind: "workflow-run" as const,
@@ -839,6 +1030,11 @@ export function createSidecarDeployRouter(deps: {
             logger.warn`dropping workflow inference event for ${spec.agentAddress}: ${validated.summary}`;
             return;
           }
+          // A silent mid-turn tool call produces no mail/signal/drain
+          // traffic, so the inference event stream is the only activity
+          // signal for a long-running step; without this, the sweep could
+          // park a deployment out from under an in-flight turn.
+          touchActivity(spec.agentAddress);
           publishInferenceEvent(spec.agentAddress, validated, spec.sessionId);
         },
       };
@@ -868,6 +1064,7 @@ export function createSidecarDeployRouter(deps: {
       await wired.supervisor.spawn(spawnOpts);
       wiredForUnwind = wired;
       activeSupervisors.set(spec.agentAddress, wired);
+      openRuns.set(spec.agentAddress, openRunIds);
       supervisorRegistered = true;
 
       // Bind the deployment's mail address to this supervisor's
@@ -875,12 +1072,14 @@ export function createSidecarDeployRouter(deps: {
       // supervisor's mail-bus subscription. Registration happens after
       // `spawn` succeeds so a spawn-time rejection leaves the registry
       // untouched.
-      deps.multistepMailRouter?.register(spec.agentAddress, (message) =>
-        wired.routeInbound(message),
-      );
+      deps.multistepMailRouter?.register(spec.agentAddress, (message) => {
+        touchActivity(spec.agentAddress);
+        return wired.routeInbound(message);
+      });
       // Register the signal-delivery handler so a hub `signal.deliver` frame
       // dispatches through the supervisor's `deliverSignal`.
       deps.multistepSignalRouter?.register(spec.agentAddress, async (args) => {
+        touchActivity(spec.agentAddress);
         await wired.supervisor.deliverSignal({
           runId: args.runId,
           signalName: args.signalName,
@@ -891,6 +1090,7 @@ export function createSidecarDeployRouter(deps: {
       // Register the drain handler so a hub `drain.deliver` frame dispatches
       // through the supervisor's `drain`.
       deps.multistepDrainRouter?.register(spec.agentAddress, async (args) => {
+        touchActivity(spec.agentAddress);
         await wired.supervisor.drain({ deadlineMs: args.deadlineMs });
       });
       // Register the grants handler so a hub `run.grants` frame writes the
@@ -928,6 +1128,7 @@ export function createSidecarDeployRouter(deps: {
         deps.multistepSourcesRouter?.register(
           spec.agentAddress,
           async (args) => {
+            touchActivity(spec.agentAddress);
             const rotated = { [rotationStepId]: args.sources };
             // Swap `currentSources` synchronously BEFORE the durable persist.
             // `currentSources` is the process-local respawn hint the
@@ -997,6 +1198,7 @@ export function createSidecarDeployRouter(deps: {
       deps.multistepCredentialsRouter?.register(
         spec.agentAddress,
         async (args) => {
+          touchActivity(spec.agentAddress);
           await wired.supervisor.deliverCredentials({
             delivery: args.delivery,
           });
@@ -1017,6 +1219,13 @@ export function createSidecarDeployRouter(deps: {
         });
       }
 
+      // A newly-live deployment starts its idle clock now, whether this is
+      // a fresh deploy, a boot-time restore, or a CL-5477 wake respawn. A
+      // wake respawn also clears the parked-address bookkeeping the address
+      // held while parked -- `ensureAwake`'s wake handlers were already
+      // swapped out for the real ones registered just above.
+      touchActivity(spec.agentAddress);
+      parkedAddresses.delete(spec.agentAddress);
       succeeded = true;
       return { publicKey: deploymentPublicKey };
     } finally {
@@ -1037,6 +1246,7 @@ export function createSidecarDeployRouter(deps: {
         }
         if (supervisorRegistered) {
           activeSupervisors.delete(spec.agentAddress);
+          openRuns.delete(spec.agentAddress);
         }
         if (wiredForUnwind !== undefined) {
           await wiredForUnwind.supervisor.shutdown().catch((cause) => {
@@ -1296,6 +1506,343 @@ export function createSidecarDeployRouter(deps: {
     }
   }
 
+  /**
+   * Re-establish one persisted deployment from its on-disk record -- the
+   * shared core of the boot-time restore loop and the CL-5477 idle-reap
+   * wake path. Applies exactly the gates the live deploy path applies
+   * (address integrity, wire arktype, tool-metadata-equivalent structural
+   * projection, source admission). Soft-skips (corrupt record, failed
+   * validation, unbuildable provider) log and return without spawning,
+   * matching the boot scan's existing posture; the record is never deleted
+   * here. Throws only where the spawn core itself throws.
+   */
+  async function restoreDeploymentFromRecord(
+    dataDir: string,
+    deploymentId: string,
+    record: WorkflowDeploymentRecord,
+  ): Promise<void> {
+    // Integrity: the stored address must re-derive to its own directory
+    // name. A mismatch means a corrupt or misplaced record; skip it
+    // rather than restore a deployment under the wrong slug.
+    const derived = deriveDeploymentId(record.agentAddress);
+    if (derived !== deploymentId) {
+      logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
+      return;
+    }
+
+    // A record whose address the platform's own parser rejects is
+    // permanently unrestorable -- it predates the current run-address
+    // scheme (e.g. legacy "ins_" prefixes) and no later boot can ever
+    // revive it. A wake never reaches this branch (a wake only fires for
+    // an address the boot scan already accepted), but the boot restore
+    // loop and this shared core must agree, so the check lives here once.
+    if (!isRunAddress(record.agentAddress)) {
+      await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
+      logger.info`Pruned unrestorable workflow deployment record ${deploymentId} (legacy address ${record.agentAddress})`;
+      return;
+    }
+
+    // Re-read and RE-VALIDATE the definition off disk with the exact
+    // gates the deploy path applies: the wire arktype
+    // (`AgentDeployWorkflow`) to narrow the untrusted on-disk shape,
+    // then `validateWorkflowProjection` for the structural invariants
+    // the arktype does not cover. The on-disk `workflow.json` is
+    // untrusted at restore, so it must clear the same bar a fresh
+    // deploy frame clears -- no weaker.
+    const definitionRaw = await readWorkflowJson(dataDir, record.definitionId);
+    const projection = AgentDeployWorkflow({
+      definition: definitionRaw,
+      sources: record.sources,
+    });
+    if (projection instanceof type.errors) {
+      logger.warn`skipping workflow deployment restore for ${record.agentAddress}: workflow.json failed validation: ${projection.summary}`;
+      return;
+    }
+    validateWorkflowProjection(projection);
+
+    // Re-run the source-admission gate: refuse to restore a deployment
+    // whose pinned provider this sidecar can no longer build. Every
+    // source in a step's failover chain must be buildable, so this
+    // iterates the whole list. The record is KEPT (not deleted) so a
+    // later boot with the provider restored retries it.
+    for (const stepId of projection.definition.stepOrder) {
+      const chain = projection.sources[stepId];
+      if (chain !== undefined) {
+        for (const source of chain) deps.assertSourceBuildable(source);
+      }
+    }
+
+    const spec: WorkflowDeploySpec = {
+      agentAddress: record.agentAddress,
+      definition: projection.definition,
+      sources: projection.sources,
+      sessionId: record.sessionId,
+      hubPublicKey: record.hubPublicKey,
+      referencedDefinitionHashes: record.referencedDefinitionHashes,
+      // Frame-only, never persisted: a restore (boot-time OR a CL-5477
+      // wake) waits for the hub's next `credentials.update` push, exactly
+      // like a redeploy of a deployment that predates a credentials push.
+      credentials: undefined,
+    };
+
+    // The slug is the caller's, matching `deployMultiStep`: claim before
+    // the spawn, release on failure. Unlike deploy's soft-fail, restore
+    // does NOT delete the record and does NOT re-materialize
+    // `workflow.json` or the step grants -- all of that is already on
+    // disk from the original deploy. A failed restore just warns and
+    // leaves the record for the next boot; there is deliberately no GC
+    // of a permanently-unrestorable record here (an operator reclaims it
+    // by undeploying the address).
+    //
+    // Release only a slug THIS pass newly claimed: if the address is
+    // already live (its slug still held by the running deployment), the
+    // core's double-spawn guard throws, and freeing the slug then would
+    // strand a live deployment's collision guard. `claimSlug` is a
+    // no-op for an already-held (deploymentId, address) pair, so the
+    // pre-claim check distinguishes the two. A PARKED deployment keeps
+    // its slug claimed, so a wake respawn lands in this already-held arm.
+    const slugNewlyClaimed =
+      slugClaims.get(deploymentId) !== record.agentAddress;
+    claimSlug(deploymentId, record.agentAddress);
+    try {
+      await spawnWorkflowDeployment(spec);
+      logger.info`Restored workflow deployment for ${record.agentAddress}`;
+    } catch (cause) {
+      if (slugNewlyClaimed) {
+        releaseSlug(deploymentId, record.agentAddress);
+      }
+      throw cause;
+    }
+  }
+
+  /**
+   * Ensure the deployment at `agentAddress` has a live supervisor,
+   * respawning it from its persisted record if it is parked. Single-flight:
+   * concurrent wakes for one address share one respawn. Resolves when the
+   * supervisor is live (its real router handlers re-registered); throws if
+   * the address has no restorable record or the respawn fails, in which
+   * case the address stays parked with its wake handlers still registered
+   * so a later frame retries.
+   */
+  async function ensureAwake(agentAddress: string): Promise<void> {
+    if (routerShuttingDown) {
+      throw new Error(
+        `idle-reap wake: sidecar is shutting down; refusing to respawn ${agentAddress}`,
+      );
+    }
+    // A park mid-teardown must fully release the transport key and
+    // pack-push mapping before a respawn re-claims them, or the park's
+    // finally would unregister the FRESH deployment's registrations out
+    // from under it. Await the teardown (failure included -- the respawn
+    // below re-establishes state regardless), then re-check liveness.
+    const parking = parksInFlight.get(agentAddress);
+    if (parking !== undefined) {
+      await parking.catch(() => undefined);
+    }
+    if (activeSupervisors.has(agentAddress)) return;
+    const inFlight = wakeInFlight.get(agentAddress);
+    if (inFlight !== undefined) return await inFlight;
+    const dataDir = stepStateDataDir;
+    if (dataDir === undefined) {
+      throw new Error(
+        `idle-reap wake: no data dir is wired; cannot respawn ${agentAddress}`,
+      );
+    }
+    const deploymentId = deriveDeploymentId(agentAddress);
+    const wake = (async () => {
+      const wakeStartedMs = Date.now();
+      const record = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+      if (record === undefined) {
+        throw new Error(
+          `idle-reap wake: no restorable record for parked deployment ${agentAddress}`,
+        );
+      }
+      await restoreDeploymentFromRecord(dataDir, deploymentId, record);
+      // The restore core SOFT-SKIPS an invalid record (slug mismatch,
+      // failed workflow.json validation, unbuildable provider) -- it warns
+      // and returns without spawning. A wake must FAIL in that case, not
+      // resolve: the wake handlers re-dispatch through the router on
+      // success, and a "successful" wake that left no live supervisor
+      // would re-enter the still-registered wake handler in an unbounded
+      // loop. Restore-as-parked (boot) announces records it has not fully
+      // validated, so this is the gate that keeps an announced-but-
+      // unrestorable record to one logged failure per inbound frame.
+      if (!activeSupervisors.has(agentAddress)) {
+        throw new Error(
+          `idle-reap wake: record for ${agentAddress} did not restore to a live supervisor (see restore warnings)`,
+        );
+      }
+      // The wake-latency budget an operator watches: a user resuming a
+      // parked thread eats this before their message dispatches.
+      logger.info`Woke parked deployment ${agentAddress} in ${String(Date.now() - wakeStartedMs)}ms`;
+    })();
+    wakeInFlight.set(agentAddress, wake);
+    try {
+      await wake;
+    } finally {
+      wakeInFlight.delete(agentAddress);
+    }
+  }
+
+  /**
+   * Install the parked-state handlers for a deployment address on the
+   * routers. Each wakes the deployment (respawning its child from the
+   * persisted record) and then re-dispatches the frame through the router,
+   * which by then holds the live handlers `spawnWorkflowDeployment`
+   * registered. The respawn is what swaps these handlers out, so a wake
+   * failure leaves them in place and the next frame retries.
+   */
+  function registerWakeHandlers(agentAddress: string): void {
+    deps.multistepMailRouter?.register(agentAddress, async (message) => {
+      // Waits for the wake (so the hub-link's `mail.inbound.ack` reflects a
+      // real acceptance, matching the live handler's contract) but a wake
+      // failure is logged and swallowed rather than rejected: a failed wake
+      // leaves this handler registered so the NEXT frame retries the
+      // respawn, and rejecting here would make the hub-link withhold the
+      // ack for a message that may yet be delivered on retry. Whether THIS
+      // message is redelivered depends on the hub's retry machinery, which
+      // this layer does not control.
+      try {
+        await ensureAwake(agentAddress);
+        await deps.multistepMailRouter?.tryRoute(agentAddress, message);
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        logger.error`idle-reap wake on inbound mail failed for ${agentAddress}: ${reason}`;
+      }
+    });
+    deps.multistepSignalRouter?.register(agentAddress, async (args) => {
+      await ensureAwake(agentAddress);
+      await deps.multistepSignalRouter?.tryRoute({
+        type: "signal.deliver",
+        agentAddress,
+        runId: args.runId,
+        signalName: args.signalName,
+        signalId: args.signalId,
+        payload: args.payload,
+      });
+    });
+    deps.multistepDrainRouter?.register(agentAddress, async (_args) => {
+      // A parked deployment has no child and no in-flight runs; a drain
+      // against it is already satisfied. Waking it just to drain it would
+      // spawn a large process in order to shut it down.
+      logger.info`drain for parked deployment ${agentAddress}: nothing to drain`;
+    });
+    deps.multistepSourcesRouter?.register(agentAddress, async (args) => {
+      // A rotation must land durably even while parked, so wake and
+      // re-dispatch into the live handler, which persists the rotated
+      // record and swaps the warm agent's sources.
+      await ensureAwake(agentAddress);
+      await deps.multistepSourcesRouter?.tryRoute({
+        type: "sources.update",
+        agentAddress,
+        sources: args.sources,
+        defaultSource: args.defaultSource,
+      });
+    });
+    // Our sidecar's credentials router has no scout counterpart (CL-6194's
+    // per-child material-cell push predates the upstream port): a parked
+    // deployment must still wake for a rotation or revocation, or the
+    // delivered material would silently be lost while parked.
+    deps.multistepCredentialsRouter?.register(agentAddress, async (args) => {
+      await ensureAwake(agentAddress);
+      await deps.multistepCredentialsRouter?.tryRoute({
+        type: "credentials.update",
+        agentAddress,
+        delivery: args.delivery,
+      });
+    });
+  }
+
+  /**
+   * Park an idle deployment: tear down its supervisor and workflow-child
+   * (reclaiming the child's memory) while keeping the persisted deployment
+   * record, slug claim, and on-disk step state, so the next inbound frame
+   * respawns it via `ensureAwake`. The wake handlers are swapped in BEFORE
+   * the supervisor comes down so a frame racing the park wakes the
+   * deployment instead of dropping at an unregistered address; `ensureAwake`
+   * begins with the `activeSupervisors` check, and this function removes
+   * the entry synchronously before its first await, so a racing wake cannot
+   * observe the dying supervisor as live.
+   *
+   * Park does NOT delete the deployment record, does NOT remove the
+   * per-step scratch directory, does NOT release the slug, does NOT forget
+   * the agent's keys, and sends no hub frame -- every one of those is
+   * `undeploy`'s job, not park's. Parking is purely an in-process resource
+   * reclaim; to the hub and to disk, the deployment is still deployed.
+   */
+  function parkDeployment(agentAddress: string): Promise<void> {
+    const existing = parksInFlight.get(agentAddress);
+    if (existing !== undefined) return existing;
+    const wired = activeSupervisors.get(agentAddress);
+    if (wired === undefined) return Promise.resolve();
+    const deploymentId = deriveDeploymentId(agentAddress);
+    // Everything up to the first await runs synchronously, so a wake
+    // observing `parksInFlight` (or missing the `activeSupervisors` entry)
+    // sees a consistent parked-in-progress state, never the dying
+    // supervisor as live.
+    activeSupervisors.delete(agentAddress);
+    parkedAddresses.set(agentAddress, deploymentId);
+    lastActivityAt.delete(agentAddress);
+    openRuns.delete(agentAddress);
+    registerWakeHandlers(agentAddress);
+    logger.info`Parking idle workflow deployment ${agentAddress}`;
+    const park = (async () => {
+      try {
+        await shutdownSupervisorWithEscalation(wired);
+      } finally {
+        // Transport + pack-push registry come down AFTER the supervisor so
+        // the child's final writes still resolve an address; the wake
+        // respawn re-registers both through the ordinary spawn path.
+        // `ensureAwake` awaits this whole teardown before respawning, so
+        // these unregisters can never land on a freshly-woken deployment's
+        // registrations.
+        deps.transport.unregister(agentAddress);
+        deps.unregisterDeployment({ deploymentId, agentAddress });
+      }
+    })();
+    parksInFlight.set(agentAddress, park);
+    void park.finally(() => {
+      parksInFlight.delete(agentAddress);
+    });
+    return park;
+  }
+
+  function sweepIdleDeployments(idleReapMs: number): void {
+    const now = Date.now();
+    for (const agentAddress of [...activeSupervisors.keys()]) {
+      // A deploy in flight for this address is activity by definition.
+      if (reservingDeployAddresses.has(agentAddress)) continue;
+      // Never park a deployment with an open run: see `openRuns`'s doc
+      // comment.
+      const open = openRuns.get(agentAddress);
+      if (open !== undefined && open.size > 0) continue;
+      const last = lastActivityAt.get(agentAddress);
+      if (last === undefined) {
+        // Pre-reap spawn (or a lost entry): start its idle clock now
+        // rather than parking a deployment whose age is unknown.
+        touchActivity(agentAddress);
+        continue;
+      }
+      if (now - last < idleReapMs) continue;
+      void parkDeployment(agentAddress).catch((cause: unknown) => {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        logger.error`Failed to park idle deployment ${agentAddress}: ${reason}`;
+      });
+    }
+  }
+
+  if (deps.idleReapMs !== undefined && deps.idleReapMs > 0) {
+    const idleReapMs = deps.idleReapMs;
+    // Sweep at a quarter of the threshold, bounded to [1s, 60s], so
+    // eviction latency stays close to the threshold without a hot loop.
+    const sweepMs = Math.min(60_000, Math.max(1_000, idleReapMs / 4));
+    idleSweepTimer = setInterval(() => {
+      sweepIdleDeployments(idleReapMs);
+    }, sweepMs);
+    // Never hold the process open just to reap children.
+    idleSweepTimer.unref?.();
+  }
+
   return {
     async deploy(frame): Promise<DeployRouterResult> {
       if (frame.provisionStep === true) {
@@ -1334,6 +1881,26 @@ export function createSidecarDeployRouter(deps: {
       // registered no sources handler), matching the sibling routers.
       deps.multistepSourcesRouter?.unregister(frame.agentAddress);
       deps.multistepCredentialsRouter?.unregister(frame.agentAddress);
+      // With the routers down (no NEW wake can start), settle any in-flight
+      // CL-5477 idle-reap transition: a wake that already read the record
+      // would otherwise complete its spawn AFTER this teardown, resurrecting
+      // the deployment as an announced orphan with no record. A completed
+      // wake re-registered live router handlers via the spawn path, so the
+      // routers come down a second time below; a completed park left parked
+      // state the branch below reclaims.
+      const inFlightWake = wakeInFlight.get(frame.agentAddress);
+      if (inFlightWake !== undefined) {
+        await inFlightWake.catch(() => undefined);
+      }
+      const inFlightPark = parksInFlight.get(frame.agentAddress);
+      if (inFlightPark !== undefined) {
+        await inFlightPark.catch(() => undefined);
+      }
+      deps.multistepMailRouter?.unregister(frame.agentAddress);
+      deps.multistepSignalRouter?.unregister(frame.agentAddress);
+      deps.multistepDrainRouter?.unregister(frame.agentAddress);
+      deps.multistepSourcesRouter?.unregister(frame.agentAddress);
+      deps.multistepCredentialsRouter?.unregister(frame.agentAddress);
       // Shut the per-deployment supervisor down so the workflow-process
       // child, its IPC pipes, and its event-channel fd are released.
       // The supervisor's `shutdown()` is idempotent (returns early when
@@ -1344,6 +1911,7 @@ export function createSidecarDeployRouter(deps: {
       const wired = activeSupervisors.get(frame.agentAddress);
       if (wired !== undefined) {
         activeSupervisors.delete(frame.agentAddress);
+        openRuns.delete(frame.agentAddress);
         await wired.supervisor.shutdown();
         // Drop the deployment address's transport registration installed at
         // spawn (OUTBOUND half of mailbox ownership). Both single- and
@@ -1370,6 +1938,20 @@ export function createSidecarDeployRouter(deps: {
           );
         }
       }
+      // A PARKED deployment (CL-5477) has no live supervisor, but its wake
+      // handlers were just unregistered above and its transport registration
+      // already came down at park time. Reclaim its scratch and parked-state
+      // bookkeeping so the undeploy is as complete as the live-supervisor
+      // branch's.
+      if (parkedAddresses.delete(frame.agentAddress)) {
+        if (stepStateDataDir !== undefined) {
+          await rm(
+            pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
+            { recursive: true, force: true },
+          );
+        }
+      }
+      lastActivityAt.delete(frame.agentAddress);
       // Drop the deployment record so a boot-time restore does not re-spawn a
       // torn-down deployment. Runs on every undeploy -- not only when a
       // supervisor was active -- so a record left behind by a
@@ -1399,99 +1981,66 @@ export function createSidecarDeployRouter(deps: {
       // `hubLink.connect()`, so there are no concurrent deploys to contend
       // with. Each record's failure is caught so one bad deployment cannot
       // strand the rest.
+      //
+      // CL-5480: with reaping enabled, only a deployment active within the
+      // reap window gets a live child at boot. Everything else restores AS
+      // PARKED -- slug claimed, address announced, wake handlers registered,
+      // zero process -- and wakes on its next inbound frame through the
+      // CL-5477 wake path (which performs the full record validation the
+      // live path does here). This bounds a boot's spawn cost to the active
+      // window instead of the whole persisted fleet, and directly kills the
+      // CL-6255 boot storm: a fleet of long-idle deployments restores with
+      // zero spawned processes instead of respawning every one of them. A
+      // missing marker (a deployment that never took a park-tracked turn, or
+      // predates this marker) restores parked; the first message wakes it --
+      // the conservative direction, since restoring live is always safe
+      // (an idle one is swept later) while restoring parked something that
+      // was actually active only costs one wake's latency on its next turn.
+      const idleReapMs = deps.idleReapMs;
+      const restoreParkedBefore =
+        idleReapMs !== undefined && idleReapMs > 0
+          ? Date.now() - idleReapMs
+          : undefined;
       for (const { deploymentId, record } of scanned) {
         try {
-          // Integrity: the stored address must re-derive to its own directory
-          // name. A mismatch means a corrupt or misplaced record; skip it
-          // rather than restore a deployment under the wrong slug.
-          const derived = deriveDeploymentId(record.agentAddress);
-          if (derived !== deploymentId) {
-            logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
-            continue;
-          }
-
-          // A record whose address the platform's own parser rejects is
-          // permanently unrestorable — it predates the current run-address
-          // scheme (e.g. legacy "ins_" prefixes) and no later boot can ever
-          // revive it. Unlike transient failures (kept for retry next boot),
-          // these are pruned so they stop warning on every startup.
-          if (!isRunAddress(record.agentAddress)) {
-            await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
-            logger.info`Pruned unrestorable workflow deployment record ${deploymentId} (legacy address ${record.agentAddress})`;
-            continue;
-          }
-
-          // Re-read and RE-VALIDATE the definition off disk with the exact
-          // gates the deploy path applies: the wire arktype
-          // (`AgentDeployWorkflow`) to narrow the untrusted on-disk shape,
-          // then `validateWorkflowProjection` for the structural invariants
-          // the arktype does not cover (non-empty stepOrder, every stepOrder
-          // entry backed by a `steps` entry). The on-disk `workflow.json` is
-          // untrusted at restore, so it must clear the same bar a fresh
-          // deploy frame clears -- no weaker.
-          const definitionRaw = await readWorkflowJson(
-            dataDir,
-            record.definitionId,
-          );
-          const projection = AgentDeployWorkflow({
-            definition: definitionRaw,
-            sources: record.sources,
-          });
-          if (projection instanceof type.errors) {
-            logger.warn`skipping workflow deployment restore for ${record.agentAddress}: workflow.json failed validation: ${projection.summary}`;
-            continue;
-          }
-          validateWorkflowProjection(projection);
-
-          // Re-run the source-admission gate: refuse to restore a deployment
-          // whose pinned provider this sidecar can no longer build. Every
-          // source in a step's failover chain must be buildable, so this
-          // iterates the whole list. The record is KEPT (not deleted) so a
-          // later boot with the provider restored retries it.
-          for (const stepId of projection.definition.stepOrder) {
-            const chain = projection.sources[stepId];
-            if (chain !== undefined) {
-              for (const source of chain) deps.assertSourceBuildable(source);
+          if (restoreParkedBefore !== undefined) {
+            const activityMs = await readWorkflowDeploymentActivityMs(
+              dataDir,
+              deploymentId,
+            );
+            if (activityMs === undefined || activityMs < restoreParkedBefore) {
+              // Same integrity gate the live path applies before any state
+              // is claimed: a record whose address does not re-derive its
+              // own directory is corrupt and must not claim a slug.
+              const derived = deriveDeploymentId(record.agentAddress);
+              if (derived !== deploymentId) {
+                logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
+                continue;
+              }
+              if (!isRunAddress(record.agentAddress)) {
+                await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
+                logger.info`Pruned unrestorable workflow deployment record ${deploymentId} (legacy address ${record.agentAddress})`;
+                continue;
+              }
+              claimSlug(deploymentId, record.agentAddress);
+              parkedAddresses.set(record.agentAddress, deploymentId);
+              // Re-record the hub key a live restore would have recorded
+              // at spawn, so a pre-wake hub-signed frame against this
+              // address verifies exactly as it would against a
+              // sweep-parked deployment (whose in-memory entry survived
+              // the park).
+              if (record.hubPublicKey !== undefined) {
+                deps.keyStore.recordHubKey(
+                  record.agentAddress,
+                  record.hubPublicKey,
+                );
+              }
+              registerWakeHandlers(record.agentAddress);
+              logger.info`Restored workflow deployment ${record.agentAddress} as parked (idle beyond reap window)`;
+              continue;
             }
           }
-
-          const spec: WorkflowDeploySpec = {
-            agentAddress: record.agentAddress,
-            definition: projection.definition,
-            sources: projection.sources,
-            sessionId: record.sessionId,
-            hubPublicKey: record.hubPublicKey,
-            referencedDefinitionHashes: record.referencedDefinitionHashes,
-            credentials: undefined,
-          };
-
-          // The slug is the caller's, matching `deployMultiStep`: claim before
-          // the spawn, release on failure. Unlike deploy's soft-fail, restore
-          // does NOT delete the record and does NOT re-materialize
-          // `workflow.json` or the step grants -- all of that is already on
-          // disk from the original deploy. A failed restore just warns and
-          // leaves the record for the next boot; there is deliberately no GC
-          // of a permanently-unrestorable record here (an operator reclaims it
-          // by undeploying the address).
-          //
-          // Release only a slug THIS pass newly claimed: if the address is
-          // already live (its slug still held by the running deployment), the
-          // core's double-spawn guard throws, and freeing the slug then would
-          // strand a live deployment's collision guard. `claimSlug` is a
-          // no-op for an already-held (deploymentId, address) pair, so the
-          // pre-claim check distinguishes the two.
-          const slugNewlyClaimed =
-            slugClaims.get(deploymentId) !== record.agentAddress;
-          claimSlug(deploymentId, record.agentAddress);
-          try {
-            await spawnWorkflowDeployment(spec);
-            logger.info`Restored workflow deployment for ${record.agentAddress}`;
-          } catch (cause) {
-            if (slugNewlyClaimed) {
-              releaseSlug(deploymentId, record.agentAddress);
-            }
-            throw cause;
-          }
+          await restoreDeploymentFromRecord(dataDir, deploymentId, record);
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : String(cause);
           logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
@@ -1499,11 +2048,14 @@ export function createSidecarDeployRouter(deps: {
       }
     },
     activeAddresses(): string[] {
-      // `activeSupervisors` is keyed by deployment agent address and holds
-      // exactly the deployments with a live supervisor (deploy and restore
-      // add; undeploy and spawn-unwind remove), so its keys are the addresses
-      // this sidecar can currently route mail to.
-      return [...activeSupervisors.keys()];
+      // `activeSupervisors` holds exactly the deployments with a live
+      // supervisor; `parkedAddresses` (CL-5477) holds the idle-torn-down
+      // ones. Both are announced to the hub -- a parked address still needs
+      // its mail routed here so the wake handlers can respawn it on the
+      // next frame -- so this is their union, not `activeSupervisors` alone.
+      return [
+        ...new Set([...activeSupervisors.keys(), ...parkedAddresses.keys()]),
+      ];
     },
     async shutdownAll(): Promise<void> {
       // Process-exit drain, NOT an undeploy: every live supervisor is shut
@@ -1512,17 +2064,46 @@ export function createSidecarDeployRouter(deps: {
       // deployment record, routing registration source of truth, and the
       // durable conversation root stay on disk untouched -- the next boot's
       // `restoreWorkflowDeployments` re-establishes each deployment from
-      // them. Shutdowns run serially (mirroring restore's deterministic
-      // ordering) and one failure cannot strand the rest.
-      for (const [address, wired] of [...activeSupervisors.entries()]) {
-        activeSupervisors.delete(address);
-        try {
-          await wired.supervisor.shutdown();
-        } catch (cause) {
-          const reason = cause instanceof Error ? cause.message : String(cause);
-          logger.warn`Drain: supervisor shutdown for ${address} failed: ${reason}`;
-        }
+      // them.
+      //
+      // Stop parking AND waking first: a park racing process shutdown would
+      // tear state down under the supervisors this drain is trying to
+      // settle, and a wake would spawn a fresh child that outlives the
+      // drain (`ensureAwake` consults this flag).
+      routerShuttingDown = true;
+      if (idleSweepTimer !== undefined) {
+        clearInterval(idleSweepTimer);
+        idleSweepTimer = undefined;
       }
+      // Await sweep-initiated parks already in flight: their supervisors
+      // left `activeSupervisors` when the park began, so the snapshot below
+      // no longer covers them, and abandoning them here could exit the
+      // process with a child mid-kill and its unref'd escalation timer
+      // never firing.
+      await Promise.all(
+        [...parksInFlight.values()].map((park) => park.catch(() => undefined)),
+      );
+      // Also settle wakes that passed the `routerShuttingDown` check before
+      // the flip: a completed wake lands its supervisor in
+      // `activeSupervisors`, so awaiting it BEFORE the snapshot below means
+      // the fresh child is drained here rather than outliving the process.
+      await Promise.all(
+        [...wakeInFlight.values()].map((wake) => wake.catch(() => undefined)),
+      );
+      // Shutdowns run in parallel with escalation, mirroring `parkDeployment`
+      // -- one wedged child cannot strand the rest of the drain.
+      await Promise.all(
+        [...activeSupervisors.entries()].map(async ([address, wired]) => {
+          activeSupervisors.delete(address);
+          try {
+            await shutdownSupervisorWithEscalation(wired);
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            logger.warn`Drain: supervisor shutdown for ${address} failed: ${reason}`;
+          }
+        }),
+      );
     },
   };
 }
