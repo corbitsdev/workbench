@@ -13,8 +13,12 @@ import {
   type WorkflowRoutineRunScope,
   type WorkflowRunAuthenticator,
 } from "./workflow-routine-routes";
-import { createInMemoryRoutineStore } from "./store";
-import type { DeliverySpacePort, RoutineLauncher } from "./routes";
+import { createInMemoryRoutineStore, type RoutineStore } from "./store";
+import type {
+  ChannelNoticePort,
+  DeliverySpacePort,
+  RoutineLauncher,
+} from "./routes";
 
 const TENANT_ID = "tnt_1";
 const PRINCIPAL_ID = "prn_myra";
@@ -44,6 +48,31 @@ function fakeLauncher(): RoutineLauncher & { calls: number } {
     async launchRoutineRun() {
       calls += 1;
       return { runId: `run_${calls}` };
+    },
+  };
+}
+
+function fakeChannelNotice(): ChannelNoticePort & {
+  calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][];
+} {
+  const calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][] = [];
+  return {
+    calls,
+    async postChannelNotice(input) {
+      calls.push(input);
+    },
+  };
+}
+
+/** A store that always creates a routine already disabled — see the
+ * identical helper in `./test/routes.test.ts` for why. */
+function storeCreatingDisabled(): RoutineStore {
+  const inner = createInMemoryRoutineStore();
+  return {
+    ...inner,
+    async createRoutine(input) {
+      const row = await inner.createRoutine(input);
+      return inner.updateRoutine(input.tenantId, row.id, { enabled: false });
     },
   };
 }
@@ -358,6 +387,66 @@ test("PATCH /routines/:id updates enabled, name, trigger, and input", async () =
   expect(body["name"]).toBe("Evening digest");
   expect(body["trigger"]).toEqual({ kind: "daily", hour: 18, minute: 30 });
   expect(body["input"]).toEqual({ instruction: "Summarize today's threads" });
+});
+
+test("POST /routines posts an honest notice when created enabled", async () => {
+  const channelNotice = fakeChannelNotice();
+  const app = buildApp(buildDeps({ channelNotice }));
+  await createRoutine(app, VALID_BODY);
+
+  expect(channelNotice.calls.length).toBe(1);
+  expect(channelNotice.calls[0]?.channelId).toBe(VALID_BODY.deliveryChannelId);
+  expect(channelNotice.calls[0]?.text).toBe(
+    'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      "Disable it in the Routines panel.",
+  );
+});
+
+test("POST /routines posts nothing when created disabled", async () => {
+  const channelNotice = fakeChannelNotice();
+  const app = buildApp(
+    buildDeps({ channelNotice, store: storeCreatingDisabled() }),
+  );
+  const { response } = await createRoutine(app, VALID_BODY);
+
+  expect(response.status).toBe(201);
+  expect(channelNotice.calls.length).toBe(0);
+});
+
+test("PATCH /routines/:id posts an honest notice when flipped to enabled", async () => {
+  const channelNotice = fakeChannelNotice();
+  const store = storeCreatingDisabled();
+  const app = buildApp(buildDeps({ channelNotice, store }));
+  const { body: created } = await createRoutine(app, VALID_BODY);
+
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ enabled: true }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(channelNotice.calls.length).toBe(1);
+  expect(channelNotice.calls[0]?.text).toBe(
+    'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      "Disable it in the Routines panel.",
+  );
+});
+
+test("PATCH /routines/:id posts nothing for an update that does not flip enabled", async () => {
+  const channelNotice = fakeChannelNotice();
+  const app = buildApp(buildDeps({ channelNotice }));
+  const { body: created } = await createRoutine(app, VALID_BODY);
+  channelNotice.calls.length = 0; // clear the create notice
+
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ name: "Renamed digest" }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(channelNotice.calls.length).toBe(0);
 });
 
 test("PATCH /routines/:id 404s for a routine outside the run's own tenant", async () => {

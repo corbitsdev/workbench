@@ -10,10 +10,11 @@ import type { TenantEnv } from "@intx/hub-api";
 import {
   createRoutineRoutes,
   fireScheduledRoutine,
+  type ChannelNoticePort,
   type CreateRoutineRoutesDeps,
   type RoutineLauncher,
 } from "../src/routes";
-import { createInMemoryRoutineStore } from "../src/store";
+import { createInMemoryRoutineStore, type RoutineStore } from "../src/store";
 
 const TENANT = {
   id: "tnt_1",
@@ -41,13 +42,13 @@ function principal(id: string) {
 function fakeLauncher(): RoutineLauncher & {
   calls: number;
   lastInput: Record<string, unknown> | undefined;
-  lastLaunchInput: Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
+  lastLaunchInput:
+    Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
 } {
   let calls = 0;
   let lastInput: Record<string, unknown> | undefined;
   let lastLaunchInput:
-    | Parameters<RoutineLauncher["launchRoutineRun"]>[0]
-    | undefined;
+    Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
   return {
     get calls() {
       return calls;
@@ -63,6 +64,36 @@ function fakeLauncher(): RoutineLauncher & {
       lastInput = input.input;
       lastLaunchInput = input;
       return { runId: `run_${calls}` };
+    },
+  };
+}
+
+function fakeChannelNotice(): ChannelNoticePort & {
+  calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][];
+} {
+  const calls: Parameters<ChannelNoticePort["postChannelNotice"]>[0][] = [];
+  return {
+    calls,
+    async postChannelNotice(input) {
+      calls.push(input);
+    },
+  };
+}
+
+/** A store that always creates a routine already disabled — the real
+ * production store (and `createInMemoryRoutineStore`) always creates a
+ * routine enabled, so a disabled create can only be exercised by
+ * overriding the store this way. */
+function storeCreatingDisabled(): RoutineStore {
+  const inner = createInMemoryRoutineStore();
+  return {
+    ...inner,
+    async createRoutine(input) {
+      const row = await inner.createRoutine(input);
+      // Persist the disabled state, not just the returned object — a
+      // later `getRoutine`/`updateRoutine` in the same test must see it
+      // too.
+      return inner.updateRoutine(input.tenantId, row.id, { enabled: false });
     },
   };
 }
@@ -311,6 +342,86 @@ describe("createRoutineRoutes", () => {
       kind: "webhook",
       webhookTriggerId: "wht_1",
     });
+  });
+
+  test("posts an honest notice when a routine is created enabled", async () => {
+    const channelNotice = fakeChannelNotice();
+    const deps = buildDeps({ channelNotice });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    await createRoutine(app, VALID_BODY);
+
+    expect(channelNotice.calls.length).toBe(1);
+    expect(channelNotice.calls[0]?.channelId).toBe(
+      VALID_BODY.deliveryChannelId,
+    );
+    expect(channelNotice.calls[0]?.text).toBe(
+      'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+        "Disable it in the Routines panel.",
+    );
+  });
+
+  test("posts nothing when a routine is created disabled", async () => {
+    const channelNotice = fakeChannelNotice();
+    const deps = buildDeps({ channelNotice, store: storeCreatingDisabled() });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response } = await createRoutine(app, VALID_BODY);
+
+    expect(response.status).toBe(201);
+    expect(channelNotice.calls.length).toBe(0);
+  });
+
+  test("posts an honest notice when a disabled routine is flipped to enabled", async () => {
+    const channelNotice = fakeChannelNotice();
+    const deps = buildDeps({ channelNotice, store: storeCreatingDisabled() });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+
+    const response = await app.request(`/routines/${created["id"]}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(channelNotice.calls.length).toBe(1);
+    expect(channelNotice.calls[0]?.text).toBe(
+      'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+        "Disable it in the Routines panel.",
+    );
+  });
+
+  test("posts nothing for an update that does not flip enabled", async () => {
+    const channelNotice = fakeChannelNotice();
+    const deps = buildDeps({ channelNotice });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+    channelNotice.calls.length = 0; // clear the create notice
+
+    const response = await app.request(`/routines/${created["id"]}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Renamed digest" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(channelNotice.calls.length).toBe(0);
+  });
+
+  test("posts nothing for a patch that keeps an already-enabled routine enabled", async () => {
+    const channelNotice = fakeChannelNotice();
+    const deps = buildDeps({ channelNotice });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+    channelNotice.calls.length = 0; // clear the create notice
+
+    const response = await app.request(`/routines/${created["id"]}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(channelNotice.calls.length).toBe(0);
   });
 
   test("lists only routines for the calling tenant", async () => {
@@ -657,7 +768,6 @@ describe("createRoutineRoutes", () => {
       expect(seenInput).toEqual({ agent: "wfd_agent", prompt: "Do it" });
     });
   });
-
 });
 
 describe("fireScheduledRoutine", () => {
