@@ -7,7 +7,6 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import { createDependencies, type AdapterRegistry } from "@intx/inference";
 import {
@@ -43,6 +42,7 @@ import {
 } from "./compactors";
 import { createStepInferenceSourceResolver } from "./config";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
+import { createWorkbenchDirectorRegistry } from "./workbench-director";
 
 // Registered once and reused across every step env this builder produces:
 // the compactor is a pure, stateless `Compactor` (see `./compactors`), so
@@ -54,6 +54,12 @@ import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
 const stepCompactors = {
   [SUMMARIZE_OLDER_TURNS_NAME]: createSummarizeOlderTurnsCompactor(),
 };
+
+// Registered once and reused across every step env this builder produces:
+// the workbench director wraps DefaultDirector with empty-turn retry and
+// is the sidecar default (see `./workbench-director`). `@intx/agent/default`
+// stays resolvable for definitions that name it.
+const stepDirectors = createWorkbenchDirectorRegistry();
 
 const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
@@ -349,7 +355,7 @@ export function createSidecarStepBuildEnv(
       storage,
       workdir,
       audit: storage,
-      directors: createDefaultDirectorRegistry(),
+      directors: stepDirectors,
       compactors: stepCompactors,
       // Resolve inference adapters through the child's boot-built
       // registry (built-ins + operator custom adapters), so a
