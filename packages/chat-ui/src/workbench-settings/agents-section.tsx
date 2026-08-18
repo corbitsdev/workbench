@@ -10,6 +10,10 @@
 // workspace-wide inference catalog — see `CapabilitiesBlock` below), and
 // History (every commit to the agent's instructions/capabilities, with
 // restore). A load failure renders as an inline reason, never a fake save.
+// Selection is host-owned when `onEntityIdChange` is passed (workbench URL
+// `/settings/agents/:definitionId`); otherwise the section keeps a local
+// selection for standalone mounts.
+
 
 import { useEffect, useState } from "react";
 import {
@@ -62,13 +66,26 @@ export function AgentsSection({
   tenantId,
   workbenchId,
   onInvite,
+  entityId = null,
+  onEntityIdChange,
 }: {
   readonly tenantId: string;
   readonly workbenchId: string;
   readonly onInvite: () => void;
+  /** Host-controlled selection (`definitionId`) — driven from the URL when
+   * the workbench settings surface is deep-linked. Only honored when
+   * `onEntityIdChange` is also passed (that callback is the controlled-mode
+   * gate). */
+  readonly entityId?: string | null;
+  /** Fired when the user opens or closes an agent detail so the host can
+   * reflect it in the URL. Passing this opts into host-owned selection;
+   * omitting it keeps selection local to this section. */
+  readonly onEntityIdChange?: (definitionId: string | null) => void;
 }) {
   const [state, setState] = useState<ListState>({ kind: "loading" });
-  const [selected, setSelected] = useState<WorkbenchAgent | null>(null);
+  const [localEntityId, setLocalEntityId] = useState<string | null>(null);
+  const selectedId =
+    onEntityIdChange !== undefined ? (entityId ?? null) : localEntityId;
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +106,27 @@ export function AgentsSection({
     };
   }, [tenantId, workbenchId]);
 
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+    if (selectedId === null) return;
+    if (state.agents.some((agent) => agent.definitionId === selectedId)) {
+      return;
+    }
+    if (onEntityIdChange !== undefined) {
+      onEntityIdChange(null);
+      return;
+    }
+    setLocalEntityId(null);
+  }, [state, selectedId, onEntityIdChange]);
+
+  function select(definitionId: string | null) {
+    if (onEntityIdChange !== undefined) {
+      onEntityIdChange(definitionId);
+      return;
+    }
+    setLocalEntityId(definitionId);
+  }
+
   if (state.kind === "loading") {
     return <Skeleton className="query-skeleton" />;
   }
@@ -103,13 +141,19 @@ export function AgentsSection({
     );
   }
 
+  const selected =
+    selectedId === null
+      ? null
+      : (state.agents.find((agent) => agent.definitionId === selectedId) ??
+        null);
+
   if (selected !== null) {
     return (
       <div className="workbench-settings-pane">
         <button
           type="button"
           className="chat-settings-agent-back"
-          onClick={() => setSelected(null)}
+          onClick={() => select(null)}
         >
           <ArrowLeft aria-hidden="true" />
           {CHAT_STRINGS.workbenchSettingsAgentsBackAction}
@@ -141,7 +185,7 @@ export function AgentsSection({
                 <button
                   type="button"
                   className="chat-settings-agent-picker-row"
-                  onClick={() => setSelected(agent)}
+                  onClick={() => select(agent.definitionId)}
                 >
                   @{agent.handle}
                   <ChevronRight

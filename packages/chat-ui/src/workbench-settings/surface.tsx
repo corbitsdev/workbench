@@ -79,6 +79,8 @@ export function WorkbenchSettingsSurface({
   section = "general",
   onSectionChange,
   currentUserPrincipalId,
+  entityId = null,
+  onEntityIdChange,
 }: {
   readonly tenantId: string;
   readonly workbenchId: string;
@@ -92,13 +94,19 @@ export function WorkbenchSettingsSurface({
   readonly currentUserPrincipalId?: string;
   /** Which section is active — host-controlled the same way `settingsOpen`
    * is on `ChatWorkspace`: `/agents` opens straight to Agents rather than
-   * the default General, and a deep link (`/c/:id/settings/:section`)
+   * the default General, and a deep link (`/w/:id/settings/:section`)
    * lands directly on it. */
   readonly section?: WorkbenchSettingsSectionId;
   /** Fired when the user picks a different tab, so the host can reflect it
    * in the URL. Omitted, tab clicks have no effect — same contract as
    * `onSettingsOpenChange` being omitted on `ChatWorkspace`. */
   readonly onSectionChange?: (section: WorkbenchSettingsSectionId) => void;
+  /** Section sub-selection (`/w/:id/settings/:section/:entityId`) —
+   * currently used by Agents for the open definition id. */
+  readonly entityId?: string | null;
+  /** Fired when a section opens or closes its own detail so the host can
+   * deepen or clear the entity segment in the URL. */
+  readonly onEntityIdChange?: (entityId: string | null) => void;
 }) {
   const [query, setQuery] = useState<APIQuery<WorkbenchSettingsData>>({
     kind: "loading",
@@ -343,6 +351,10 @@ export function WorkbenchSettingsSurface({
                   tenantId={tenantId}
                   workbenchId={workbenchId}
                   onInvite={onInviteParticipant}
+                  entityId={entityId}
+                  {...(onEntityIdChange !== undefined
+                    ? { onEntityIdChange }
+                    : {})}
                 />
               ) : null}
 

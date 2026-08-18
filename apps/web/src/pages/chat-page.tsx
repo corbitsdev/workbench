@@ -26,6 +26,7 @@ import {
   workbenchPath,
   workbenchSettingsPath,
   workbenchSettingsSectionFromPath,
+  workbenchSettingsEntityIdFromPath,
   isWorkbenchSettingsPath,
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
@@ -56,6 +57,9 @@ export function ChatPage({
   const workbenchId = workbenchIdFromPath(path);
   const settingsOpen = isWorkbenchSettingsPath(path);
   const settingsSection = workbenchSettingsSectionFromPath(path) ?? "general";
+  const settingsEntityId = settingsOpen
+    ? workbenchSettingsEntityIdFromPath(path, settingsSection)
+    : null;
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
   const openArtifactInCanvas = useOpenArtifactInCanvas();
@@ -199,6 +203,17 @@ export function ChatPage({
       onSettingsSectionChange={(section) => {
         if (workbenchId === null) return;
         navigate(workbenchSettingsPath(workbenchId, section));
+      }}
+      settingsEntityId={settingsEntityId}
+      onSettingsEntityIdChange={(entityId) => {
+        if (workbenchId === null) return;
+        navigate(
+          workbenchSettingsPath(
+            workbenchId,
+            settingsSection,
+            entityId ?? undefined,
+          ),
+        );
       }}
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}
