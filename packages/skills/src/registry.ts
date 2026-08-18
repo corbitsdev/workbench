@@ -149,6 +149,34 @@ function contentErrorToRegistryError(cause: unknown): never {
   throw cause;
 }
 
+/**
+ * Guards every write path (`update`, `restore`, `setScope`). A skill
+ * inherited from an ancestor tenant is refused loudly and specifically —
+ * never silently forked into a same-named copy in the caller's own
+ * tenant — before falling through to the ordinary "only the author"
+ * check `canAdministerSkill` already makes for skills the caller's own
+ * tenant does own.
+ */
+function requireOwnTenant(
+  row: SkillAccessRow,
+  caller: SkillCaller,
+  name: string,
+  action: string,
+): void {
+  if (row.tenantId !== caller.tenantId) {
+    throw new SkillRegistryError(
+      "forbidden",
+      `"${name}" is inherited from a parent workbench — ${action} it from the workbench that owns it, not from a child.`,
+    );
+  }
+  if (!canAdministerSkill(row, caller)) {
+    throw new SkillRegistryError(
+      "forbidden",
+      `only the author of "${name}" may ${action} it`,
+    );
+  }
+}
+
 export function createSkillRegistry(
   deps: CreateSkillRegistryDeps,
 ): SkillRegistry {
@@ -267,12 +295,7 @@ export function createSkillRegistry(
 
     async restore(caller, name, commitSha) {
       const { row } = await resolveVisible(caller, name);
-      if (!canAdministerSkill(row, caller)) {
-        throw new SkillRegistryError(
-          "forbidden",
-          `only the author of "${name}" may restore one of its versions`,
-        );
-      }
+      requireOwnTenant(row, caller, name, "restore");
       const contents = await assets.readSkillMd({
         assetId: row.assetId,
         skillName: row.skillName,
@@ -296,12 +319,7 @@ export function createSkillRegistry(
     async setScope(caller, name, scope) {
       const parsedScope = assertScope(scope);
       const { row } = await resolveVisible(caller, name);
-      if (!canAdministerSkill(row, caller)) {
-        throw new SkillRegistryError(
-          "forbidden",
-          `only the author of "${name}" may change who can see it`,
-        );
-      }
+      requireOwnTenant(row, caller, name, "change who can see");
       const next: SkillAccessRow = {
         assetId: row.assetId,
         tenantId: row.tenantId,
@@ -352,7 +370,11 @@ export function createSkillRegistry(
         return summary;
       }
 
-      const existing = await assets.findByName(caller.tenantId, name);
+      // Own-tenant only, deliberately not inheritance-aware: a name
+      // already claimed by an ancestor's skill must not block this
+      // tenant from creating its own — that's the shadowing contract,
+      // not a conflict.
+      const existing = await assets.findOwnByName(caller.tenantId, name);
       if (existing !== null) {
         const existingRow = await access.get(existing.id);
         if (
@@ -418,12 +440,7 @@ export function createSkillRegistry(
       }
 
       const { row } = await resolveVisible(caller, parsedName);
-      if (!canAdministerSkill(row, caller)) {
-        throw new SkillRegistryError(
-          "forbidden",
-          `only the author of "${parsedName}" may update it`,
-        );
-      }
+      requireOwnTenant(row, caller, parsedName, "update");
       await assets.writeSkillMd({
         assetId: row.assetId,
         skillName: parsedName,

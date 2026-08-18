@@ -15,6 +15,7 @@ import { and, eq } from "drizzle-orm";
 import git from "isomorphic-git";
 
 import type { DB } from "@intx/db";
+import { listAssetsForTenant, resolveAssetByName } from "@intx/db";
 import { asset as assetTable } from "@intx/db/schema";
 import {
   AssetServiceError,
@@ -80,14 +81,13 @@ export function createHubSkillAssetStore(
     },
 
     async findByName(tenantId, name) {
-      const row = await db.query.asset.findFirst({
-        where: and(
-          eq(assetTable.tenantId, tenantId),
-          eq(assetTable.kind, SKILL_ASSET_KIND),
-          eq(assetTable.name, name),
-        ),
-      });
-      return row === undefined ? null : rowToSkillAsset(row);
+      const row = await resolveAssetByName(
+        db,
+        tenantId,
+        SKILL_ASSET_KIND,
+        name,
+      );
+      return row === null ? null : rowToSkillAsset(row);
     },
 
     async findOwnByName(tenantId, name) {
@@ -102,12 +102,7 @@ export function createHubSkillAssetStore(
     },
 
     async listForTenant(tenantId) {
-      const rows = await db.query.asset.findMany({
-        where: and(
-          eq(assetTable.tenantId, tenantId),
-          eq(assetTable.kind, SKILL_ASSET_KIND),
-        ),
-      });
+      const rows = await listAssetsForTenant(db, tenantId, SKILL_ASSET_KIND);
       return rows.map(rowToSkillAsset);
     },
 

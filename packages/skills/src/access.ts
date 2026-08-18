@@ -22,26 +22,34 @@ export type SkillCaller = {
 };
 
 /**
- * A `tenant`-scoped skill is visible to every principal in its own
- * tenant; a `private` one only to the principal who created it. A row
- * from another tenant is never visible, whatever its scope — the
- * registry's list and search paths both funnel through here so neither
- * can grow its own weaker rule.
+ * A `tenant`-scoped skill is visible to every principal in the tenant
+ * that can already reach the row; a `private` one only to the principal
+ * who created it, tenant notwithstanding — a private skill inherited
+ * from a parent stays invisible to everyone in the child but its author.
+ *
+ * This predicate only ever runs on rows `SkillAssetStore.findByName` and
+ * `SkillAccessStore.listForTenant` already resolved, both of which bound
+ * their results to the caller's own tenant plus its ancestors (the same
+ * chain-walk the native asset resolver uses, see `resolveAssetByName` /
+ * `listAssetsForTenant`) — so the tenant boundary is enforced once, at
+ * the resolution layer, not duplicated here. This function's whole job
+ * is the scope check.
  */
 export function isSkillVisibleTo(
   row: SkillAccessRow,
   caller: SkillCaller,
 ): boolean {
-  if (row.tenantId !== caller.tenantId) return false;
   if (row.scope === "tenant") return true;
   return row.creatorPrincipalId === caller.principalId;
 }
 
 /**
- * Only the creating principal may republish, restore, or change the
- * scope of a skill. Reading is scoped by `isSkillVisibleTo`; writing is
- * strictly narrower, so a tenant-shared skill cannot be rewritten by
- * everyone who can read it.
+ * Only the creating principal, calling from the tenant that owns the
+ * skill, may republish, restore, or change its scope. A row inherited
+ * from an ancestor tenant is never administerable from a descendant —
+ * even by its own author — so writes never touch an ancestor's asset;
+ * the registry refuses those explicitly rather than silently forking a
+ * copy (see `registry.ts`'s `requireOwnTenant`).
  */
 export function canAdministerSkill(
   row: SkillAccessRow,

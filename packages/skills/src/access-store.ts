@@ -1,7 +1,7 @@
 // Drizzle-backed `SkillAccessStore` over `skills.skill_access`.
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
-import type { DB } from "@intx/db";
+import { getAncestorChain, type DB } from "@intx/db";
 
 import {
   skillAccessScopeSchema,
@@ -68,11 +68,26 @@ export function createDrizzleSkillAccessStore(db: DB["db"]): SkillAccessStore {
       return found === undefined ? null : rowToAccess(found);
     },
     async listForTenant(tenantId) {
-      const rows = await db
-        .select()
-        .from(skillAccess)
-        .where(eq(skillAccess.tenantId, tenantId));
-      return rows.map(rowToAccess);
+      // Access rows aren't native assets, but the skills they gate are —
+      // an inherited skill's access row lives in the ancestor tenant that
+      // created it, so visibility has to walk the same chain
+      // `resolveAssetByName`/`listAssetsForTenant` walk. Leaf-to-root order
+      // means a tenant's own row is seen before any ancestor's, so it wins
+      // the per-name shadow below exactly like the native asset resolver.
+      const chain = await getAncestorChain(db, tenantId);
+      const bySkillName = new Map<string, SkillAccessRow>();
+      for (const tid of chain) {
+        const rows = await db
+          .select()
+          .from(skillAccess)
+          .where(eq(skillAccess.tenantId, tid));
+        for (const row of rows) {
+          const parsed = rowToAccess(row);
+          if (bySkillName.has(parsed.skillName)) continue;
+          bySkillName.set(parsed.skillName, parsed);
+        }
+      }
+      return [...bySkillName.values()];
     },
     async remove(assetId) {
       await db.delete(skillAccess).where(eq(skillAccess.assetId, assetId));
