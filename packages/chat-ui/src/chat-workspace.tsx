@@ -1826,6 +1826,7 @@ function ChatWorkspaceInner({
                       activeWorkbench?.kind === "chat" &&
                       typeof activeWorkbench.definitionId === "string"
                     }
+                    launchPending={activeWorkbench?.launchPending === true}
                     items={appendReplyTimedOutNotice(
                       mergeStreamingReply(
                         mergePendingSends(

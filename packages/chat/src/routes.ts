@@ -68,6 +68,8 @@ import {
   validateSettingsPatch,
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
+import { isSidecarUnavailableLaunchError } from "./sidecar-launch-error";
+import type { PendingMintRegistry } from "./mint-retry";
 import {
   dispatchGreetingKickoff,
   joinHumanParticipant,
@@ -263,6 +265,15 @@ export type CreateChatRoutesDeps = {
    */
   releaseAgentInstance?:
     ((address: string, reason: string) => Promise<void>) | undefined;
+  /**
+   * Where a mint's stalled launch registers its one-shot retry — see
+   * `./mint-retry.ts`. Omitted, a sidecar-unavailable mint launch still
+   * marks its workbench `chat/launchPending` and skips compensation, but
+   * nothing ever retries it; the hub composes a real registry and fires
+   * `retryAll()` from its sidecar socket's `onOpen` (see
+   * `apps/hub/src/index.ts`).
+   */
+  pendingMintRegistry?: PendingMintRegistry;
 };
 
 const log = getLogger(["chat", "routes"]);
@@ -1078,13 +1089,63 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const definitionId = body.definitionId;
         const runMintLaunch =
           deps.runMintLaunch ?? ((work: () => Promise<void>) => void work());
-        runMintLaunch(async () => {
+
+        // `currentSettings` tracks whatever this mint's launch last wrote,
+        // starting from the durable row above — every step below reads
+        // and writes through it rather than the stale `row.settings`
+        // closure, so a retry after `chat/launchPending` picks up exactly
+        // where the failed attempt left off instead of clobbering it.
+        let currentSettings = row.settings;
+
+        async function markLaunchPending(): Promise<void> {
+          currentSettings = (
+            await deps.store.updateWorkbenchSettings({
+              tenantId: tenant.id,
+              workbenchId,
+              settings: { ...currentSettings, "chat/launchPending": true },
+              updatedBy: principal.id,
+            })
+          ).settings;
+        }
+
+        async function clearLaunchPending(): Promise<void> {
+          if (currentSettings["chat/launchPending"] !== true) return;
+          const { "chat/launchPending": _pending, ...cleared } =
+            currentSettings;
+          currentSettings = (
+            await deps.store.updateWorkbenchSettings({
+              tenantId: tenant.id,
+              workbenchId,
+              settings: cleared,
+              updatedBy: principal.id,
+            })
+          ).settings;
+        }
+
+        // The mint's whole launch (host, then agent join + greeting
+        // kickoff) is safe to redo from scratch: `launchHost`/
+        // `launchAndJoinAgent` fail through `SessionLaunchError`'s own
+        // provision-phase rollback (see `packages/folded-runs/src/launch.ts`),
+        // which leaves no partial state behind beyond the durable row
+        // already written above — so a sidecar-unavailable failure at
+        // either step just re-registers this same function as the retry,
+        // rather than needing step-granular resumption.
+        async function attemptMintLaunch(): Promise<void> {
           try {
             await launchHost();
           } catch (err) {
+            if (isSidecarUnavailableLaunchError(err)) {
+              await markLaunchPending();
+              deps.pendingMintRegistry?.markPending(
+                workbenchId,
+                attemptMintLaunch,
+              );
+              return;
+            }
             await compensateMint(err, "host launch");
             return;
           }
+          await clearLaunchPending();
           try {
             const joined = await launchAndJoinAgent(
               { store: deps.store, platform: deps.platform, publish },
@@ -1093,10 +1154,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 principalId: principal.id,
                 workbenchId,
                 definitionId,
-                existingSettings: row.settings,
+                existingSettings: currentSettings,
                 invitable,
               },
             );
+            currentSettings = joined.settings;
             const senderName =
               deps.resolvePrincipalName !== undefined
                 ? await deps
@@ -1117,17 +1179,32 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               },
             );
             if (chatTitle === undefined) {
-              await deps.store.updateWorkbenchSettings({
-                tenantId: tenant.id,
-                workbenchId,
-                settings: { ...joined.settings, "chat/name": joined.handle },
-                updatedBy: principal.id,
-              });
+              currentSettings = (
+                await deps.store.updateWorkbenchSettings({
+                  tenantId: tenant.id,
+                  workbenchId,
+                  settings: {
+                    ...currentSettings,
+                    "chat/name": joined.handle,
+                  },
+                  updatedBy: principal.id,
+                })
+              ).settings;
             }
           } catch (err) {
+            if (isSidecarUnavailableLaunchError(err)) {
+              await markLaunchPending();
+              deps.pendingMintRegistry?.markPending(
+                workbenchId,
+                attemptMintLaunch,
+              );
+              return;
+            }
             await compensateMint(err, "agent launch");
           }
-        });
+        }
+
+        runMintLaunch(attemptMintLaunch);
         return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
       }
 

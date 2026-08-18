@@ -44,6 +44,7 @@ export const CHAT_STRINGS = {
   emptyTimelineTitle: "No messages yet",
   workbenchLoadingTitle: "Setting up your workbench",
   workbenchLoadingStarting: "Starting the runtime\u2026",
+  workbenchLoadingPending: "Waiting for the agent runtime\u2026",
   workbenchLoadingAgentJoined: "Myra is joining\u2026",
   emptyTimelineDescription: "Say something to get the conversation going.",
   mentionEmpty: "No matches",

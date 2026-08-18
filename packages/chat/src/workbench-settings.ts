@@ -224,6 +224,7 @@ export function workbenchView(row: {
   pinned: boolean;
   definitionId: string | null;
   participants: ParticipantRecord[];
+  launchPending: boolean;
 } {
   const kind = kindOf(row.settings);
   const name = row.settings["chat/name"];
@@ -239,5 +240,12 @@ export function workbenchView(row: {
     // than idle.
     definitionId: typeof definitionId === "string" ? definitionId : null,
     participants: participantsOf(row.settings),
+    // Set while a mint's host or agent launch is stalled specifically on
+    // `isSidecarUnavailableLaunchError` (see `routes.ts`) — the durable
+    // workbench exists and will finish launching on its own once the hub's
+    // sidecar retry fires, so chat-ui keys its "Waiting for the agent
+    // runtime…" loader copy on this rather than treating the chat as
+    // failed.
+    launchPending: row.settings["chat/launchPending"] === true,
   };
 }

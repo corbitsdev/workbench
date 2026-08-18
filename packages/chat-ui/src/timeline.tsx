@@ -1354,6 +1354,7 @@ export function WorkbenchTimeline({
   items,
   participants = [],
   settingUpAgent,
+  launchPending,
   currentUser,
   threadMetaByMessageId,
   threadAffordanceMode = "reply",
@@ -1378,6 +1379,11 @@ export function WorkbenchTimeline({
   /** True for an agent chat still finishing its background launch —
    * renders the setting-up state instead of "No messages yet". */
   readonly settingUpAgent?: boolean;
+  /** True while the workbench's launch is stalled specifically on the
+   * sidecar being unavailable (`Workbench.launchPending`) — swaps the
+   * setting-up stage copy to "Waiting for the agent runtime…" since the
+   * ordinary "Starting the runtime…" reads as further along than it is. */
+  readonly launchPending?: boolean;
   readonly currentUser?: CurrentUser;
   /** Reply-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
@@ -1518,7 +1524,9 @@ export function WorkbenchTimeline({
             <span className="chat-workbench-loading-stage">
               {agentJoined
                 ? CHAT_STRINGS.workbenchLoadingAgentJoined
-                : CHAT_STRINGS.workbenchLoadingStarting}
+                : launchPending === true
+                  ? CHAT_STRINGS.workbenchLoadingPending
+                  : CHAT_STRINGS.workbenchLoadingStarting}
             </span>
           </div>
         </div>
