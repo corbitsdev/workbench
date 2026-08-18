@@ -293,18 +293,25 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
-// Shorter than CHAT_TURN_TIMEOUT_MS is fine: the lifecycle's own busy
-// guard (wired off the event collector's current-turn id) spares a
-// mid-turn instance regardless of this value, so it only has to be
-// long enough that an agent between turns is never mistaken for idle.
+// CL-5477: chat residents no longer carry their own idle-sleep lifecycle
+// (see the removed `lifecycle` binding on `createHubChatPlatform` below).
+// The sidecar's own park/wake now owns chat idleness: an idle deployment
+// parks in-process (child torn down, identity/anchor/record/slug intact)
+// and wakes on the next inbound frame, so the hub never needs to
+// undeploy-and-hope-the-wake-path-can-revive-it. This is what actually
+// fixes the problem `CHAT_IDLE_SLEEP_MS`'s emergency 60s→8h bump
+// (8ca85543) only band-aided: that commit widened the window a lossy
+// undeploy could hide behind; this removes the lossy undeploy.
 //
-// 8h, not 60s: idle-sleep undeploys the resident, and the wake path
-// cannot yet revive a run without destroying its identity/anchor
-// (undeploy rm -rf's the agent dir — CL-6239; anchor loss — CL-6164),
-// so a 60s window meant every conversation went deaf after its first
-// quiet minute. Sleeping is killing until suspend/resume or the
-// CL-6254 re-pin lands; keep residents warm for a working day instead.
-const CHAT_IDLE_SLEEP_MS = 8 * 60 * 60 * 1000;
+// `TASK_IDLE_UNDEPLOY_MS` remains for `taskLifecycle` below, which is a
+// genuinely different case: a spawn-and-return task's `wake` is
+// unreachable by construction (a one-shot task never sends a follow-up
+// after its opening prompt), so there is nothing a park/wake cycle could
+// ever revive — undeploying an idle task-launched resident is not lossy,
+// it is exactly the intended cleanup once the task's single turn has
+// settled. 8h is generous for that cleanup lag, not a same-value
+// coincidence with the old chat threshold.
+const TASK_IDLE_UNDEPLOY_MS = 8 * 60 * 60 * 1000;
 
 // Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
 // self-serve email signup is rejected; owners add users or share a
@@ -897,7 +904,13 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     mcpCredentialBindingsFor,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
-    lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
+    // CL-5477: no `lifecycle` binding — chat residents are no longer
+    // undeployed on idle by the hub. The sidecar's own park/wake now owns
+    // idleness (see the `TASK_IDLE_UNDEPLOY_MS` comment above this
+    // function). `createHubChatPlatform`'s `lifecycle` is optional
+    // precisely so a host can opt out; every `lifecycle?.` call inside the
+    // adapter is a no-op with it unset.
+    //
     // A hand-authored definition with no model requirements of its own
     // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
     // doc) still launches on invite by falling back to this same
@@ -1532,15 +1545,18 @@ export async function createHub(config: HubConfig) {
   // plus an agent definition launches a one-shot folded run with no
   // channel, and its finalized reply lands in the Inbox through the
   // same notify delivery adapter `credentialExpirySweep` uses above.
-  // Own idle-sleep lifecycle instance (same `@corbits/agent-lifecycle`
-  // package chat's platform adapter drives, a separate instance since
-  // chat's own lifecycle isn't part of `HubChatPlatform`'s public
-  // surface) — `wake` is never actually called: a task's run only ever
-  // needs waking to deliver a follow-up message, and a one-shot task
-  // never sends one after its opening prompt.
+  // Own idle-sleep-and-UNDEPLOY lifecycle instance (the same
+  // `@corbits/agent-lifecycle` package chat's platform adapter used to
+  // drive before CL-5477 retired that binding) — kept here, unlike
+  // chat's, because `wake` is never actually called: a task's run only
+  // ever needs waking to deliver a follow-up message, and a one-shot task
+  // never sends one after its opening prompt. There is no run left to
+  // lose by undeploying once one goes idle, so this sweep's undeploy is
+  // genuine cleanup, not the lossy "kill what the wake path cannot
+  // revive" failure mode chat's own lifecycle had.
   const taskStore = createDrizzleTaskStore(db);
   const taskLifecycle = createAgentLifecycle({
-    idleSleepMs: CHAT_IDLE_SLEEP_MS,
+    idleSleepMs: TASK_IDLE_UNDEPLOY_MS,
     isRoutable: (address) =>
       sidecarRouter.getRoutableAddresses().includes(address),
     undeploy: (address, reason) =>
