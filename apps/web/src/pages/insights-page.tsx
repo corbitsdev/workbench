@@ -64,6 +64,7 @@ import { workbenchInsightsPath } from "../insights-deeplinks";
 import {
   ActivityResponseSchema,
   InsightsScopeSchema,
+  LatencySummarySchema,
   OverallUsageSchema,
   RunTraceSchema,
   TaskLegsResponseSchema,
@@ -72,6 +73,7 @@ import {
   TopLevelRunsSchema,
   WorkbenchesResponseSchema,
   insightsActivityPath,
+  insightsLatencyPath,
   insightsRunTracePath,
   insightsScopePath,
   insightsTaskByRunPath,
@@ -82,6 +84,7 @@ import {
   insightsWorkbenchesPath,
   type InsightsRun,
   type InsightsScope,
+  type LatencySummary,
   type RunTrace,
   type TaskLeg,
   type ToolCall,
@@ -149,6 +152,17 @@ function tileValue(value: string | number | null, loading: boolean): string {
   if (loading) return "…";
   if (value === null) return "—";
   return String(value);
+}
+
+/** "1.2s / 3.4s" for a latency stage's p50/p95, or an em-dash pair when
+ * the stage recorded no samples in range (see LatencyStageStat). */
+function latencyStatValue(stat: {
+  readonly p50Ms: number | null;
+  readonly p95Ms: number | null;
+}): string {
+  const p50 = stat.p50Ms === null ? "—" : durationLabel(stat.p50Ms);
+  const p95 = stat.p95Ms === null ? "—" : durationLabel(stat.p95Ms);
+  return `${p50} / ${p95}`;
 }
 
 function tokenParts(summary: OverallUsage) {
@@ -496,6 +510,7 @@ function InsightsLanding({
   runs,
   routines,
   workbenches,
+  latency,
   range,
   loading,
   onOpenRun,
@@ -513,6 +528,8 @@ function InsightsLanding({
    * show) — the activity-by-workbench chart and active-workbenches KPI
    * both hide rather than render a fabricated single-row chart. */
   readonly workbenches: readonly WorkbenchUsage[] | null;
+  /** Null while `/latency` (CL-6257) hasn't resolved. */
+  readonly latency: LatencySummary | null;
   /** Same 7-day window as usage/activity/tools requests. */
   readonly range: InsightsRange;
   readonly loading: boolean;
@@ -589,6 +606,37 @@ function InsightsLanding({
           />
         ) : null}
       </StatGrid>
+
+      {latency !== null && latency.total.samples > 0 ? (
+        <StatGrid columns={4}>
+          <InsightsStat
+            label="Turn latency (p50 / p95)"
+            value={latencyStatValue(latency.total)}
+            detail={`${formatCount(latency.total.samples)} turns`}
+            loading={loading}
+          />
+          <InsightsStat
+            label="To first token (p50 / p95)"
+            value={latencyStatValue(latency.toFirstToken)}
+            detail="inference start → first token"
+            loading={loading}
+          />
+          <InsightsStat
+            label="Reply after first token (p50 / p95)"
+            value={latencyStatValue(latency.toReplyPosted)}
+            detail="first token → reply posted"
+            loading={loading}
+          />
+          {latency.toReactorStart.samples > 0 ? (
+            <InsightsStat
+              label="Cold start (p50 / p95)"
+              value={latencyStatValue(latency.toReactorStart)}
+              detail="message received → reactor start"
+              loading={loading}
+            />
+          ) : null}
+        </StatGrid>
+      ) : null}
 
       {noUsageInWindow ? (
         <p className="insights-note">No usage recorded yet in this window.</p>
@@ -1166,6 +1214,7 @@ export function InsightsPage({
   runs,
   routines,
   workbenches,
+  latency,
   range,
   scope,
   resolveWorkbenchIdForTenant,
@@ -1186,6 +1235,8 @@ export function InsightsPage({
   readonly workbenches: APIQuery<{
     items: readonly WorkbenchUsage[];
   }>;
+  /** `/latency` — CL-6257 per-message-run stage p50/p95. */
+  readonly latency: APIQuery<LatencySummary>;
   /** Stable 7-day window created once per route mount. */
   readonly range: InsightsRange;
   /** `/scope` result — own identity, parent (if any), sibling
@@ -1248,6 +1299,7 @@ export function InsightsPage({
   const routinesData = routines.kind === "ready" ? routines.data : [];
   const workbenchesData =
     workbenches.kind === "ready" ? workbenches.data.items : null;
+  const latencyData = latency.kind === "ready" ? latency.data : null;
 
   if (mode === "run" && runId !== null) {
     const run = runsData.find((r) => r.id === runId) ?? null;
@@ -1320,6 +1372,7 @@ export function InsightsPage({
             runs={runsData}
             routines={routinesData}
             workbenches={workbenchesData}
+            latency={latencyData}
             range={range}
             loading={loading}
             onOpenRun={(id) =>
@@ -1571,6 +1624,15 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       : insightsWorkbenchesPath(effectiveTenantId, range),
     WorkbenchesResponseSchema,
   );
+  // CL-6257 turn-latency tiles: same landing-only scope as `workbenches`
+  // above (the per-workbench route renders `InsightsWorkbenchPage`'s
+  // timeline instead of this landing, so there is nothing here to show).
+  const latency = useAPIQuery(
+    effectiveTenantId === null || mode !== "landing"
+      ? ""
+      : insightsLatencyPath(effectiveTenantId, range),
+    LatencySummarySchema,
+  );
   const routines = useTenantQuery(
     selectedTenantId === null
       ? ["tenant", "none", "routines"]
@@ -1635,6 +1697,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       runs={runsForPage}
       routines={routinesForPage}
       workbenches={workbenches}
+      latency={latency}
       range={range}
       scope={scopeData}
       resolveWorkbenchIdForTenant={resolveWorkbenchIdForTenant}

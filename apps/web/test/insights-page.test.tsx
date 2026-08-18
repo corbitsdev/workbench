@@ -17,6 +17,7 @@ import { BenchProvider } from "../src/bench-context";
 import {
   type InsightsRun,
   type InsightsScope,
+  type LatencySummary,
   type RunTrace,
   type TaskLeg,
   type ToolCall,
@@ -50,6 +51,17 @@ const emptyWorkbenches: APIQuery<{ items: readonly WorkbenchUsage[] }> = {
   kind: "ready",
   data: { items: [] },
 };
+const emptyStageStat = { p50Ms: null, p95Ms: null, samples: 0 };
+const emptyLatency: APIQuery<LatencySummary> = {
+  kind: "ready",
+  data: {
+    toReactorStart: emptyStageStat,
+    toInferenceStart: emptyStageStat,
+    toFirstToken: emptyStageStat,
+    toReplyPosted: emptyStageStat,
+    total: emptyStageStat,
+  },
+};
 
 globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
   Promise.reject(
@@ -73,6 +85,7 @@ function renderLanding(args: {
             runs={emptyRuns}
             routines={emptyRoutines}
             workbenches={emptyWorkbenches}
+            latency={emptyLatency}
             range={range}
             scope={null}
             resolveWorkbenchIdForTenant={() => null}
@@ -169,6 +182,7 @@ function renderAtPath(path: string): string {
             }}
             routines={emptyRoutines}
             workbenches={emptyWorkbenches}
+            latency={emptyLatency}
             range={range}
             scope={null}
             resolveWorkbenchIdForTenant={() => null}
@@ -196,6 +210,7 @@ function renderLandingWithScope(args: {
             runs={emptyRuns}
             routines={emptyRoutines}
             workbenches={emptyWorkbenches}
+            latency={emptyLatency}
             range={range}
             scope={args.scope}
             resolveWorkbenchIdForTenant={() => null}
@@ -909,6 +924,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               runs={emptyRuns}
               routines={emptyRoutines}
               workbenches={{ kind: "ready", data: { items: workbenches } }}
+              latency={emptyLatency}
               range={range}
               scope={null}
               resolveWorkbenchIdForTenant={(tenantId) =>
@@ -974,6 +990,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               runs={emptyRuns}
               routines={emptyRoutines}
               workbenches={{ kind: "ready", data: { items: workbenches } }}
+              latency={emptyLatency}
               range={range}
               scope={null}
               resolveWorkbenchIdForTenant={() => null}
@@ -1005,6 +1022,7 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
               runs={emptyRuns}
               routines={emptyRoutines}
               workbenches={{ kind: "ready", data: { items: [] } }}
+              latency={emptyLatency}
               range={range}
               scope={null}
               resolveWorkbenchIdForTenant={() => null}
@@ -1016,5 +1034,71 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
     );
     expect(el.textContent).toContain("No usage recorded yet in this window.");
     expect(el.textContent).not.toContain("Activity by workbench");
+  });
+});
+
+describe("InsightsPage global landing — turn latency tiles (CL-6257)", () => {
+  function mountWithLatency(latency: APIQuery<LatencySummary>) {
+    return mount(
+      <TestQueryProvider>
+        <NavigationProvider navigate={() => undefined}>
+          <BenchProvider>
+            <InsightsPage
+              path="/insights"
+              summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
+              activity={{ kind: "ready", data: [] }}
+              byTool={{ kind: "ready", data: [] }}
+              runs={emptyRuns}
+              routines={emptyRoutines}
+              workbenches={emptyWorkbenches}
+              latency={latency}
+              range={range}
+              scope={null}
+              resolveWorkbenchIdForTenant={() => null}
+              scopeLabel="All workbenches"
+            />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+  }
+
+  test("no latency samples in range: tiles stay hidden, not zeroed", () => {
+    const el = mountWithLatency(emptyLatency);
+    expect(el.textContent).not.toContain("Turn latency");
+  });
+
+  test("renders p50/p95 stage tiles once samples exist", () => {
+    const el = mountWithLatency({
+      kind: "ready",
+      data: {
+        toReactorStart: { p50Ms: null, p95Ms: null, samples: 0 },
+        toInferenceStart: { p50Ms: 200, p95Ms: 400, samples: 5 },
+        toFirstToken: { p50Ms: 1_200, p95Ms: 3_400, samples: 5 },
+        toReplyPosted: { p50Ms: 2_000, p95Ms: 4_000, samples: 5 },
+        total: { p50Ms: 3_400, p95Ms: 8_000, samples: 5 },
+      },
+    });
+    expect(el.textContent).toContain("Turn latency (p50 / p95)");
+    expect(el.textContent).toContain("3.4s / 8.0s");
+    expect(el.textContent).toContain("To first token (p50 / p95)");
+    expect(el.textContent).toContain("1.2s / 3.4s");
+    // No cold starts this window — that stage tile does not render at all.
+    expect(el.textContent).not.toContain("Cold start");
+  });
+
+  test("a cold-start sample surfaces its own reactor-start tile", () => {
+    const el = mountWithLatency({
+      kind: "ready",
+      data: {
+        toReactorStart: { p50Ms: 30_000, p95Ms: 45_000, samples: 1 },
+        toInferenceStart: { p50Ms: 500, p95Ms: 500, samples: 1 },
+        toFirstToken: { p50Ms: 2_000, p95Ms: 2_000, samples: 1 },
+        toReplyPosted: { p50Ms: 1_000, p95Ms: 1_000, samples: 1 },
+        total: { p50Ms: 33_500, p95Ms: 33_500, samples: 1 },
+      },
+    });
+    expect(el.textContent).toContain("Cold start (p50 / p95)");
+    expect(el.textContent).toContain("30.0s / 45.0s");
   });
 });

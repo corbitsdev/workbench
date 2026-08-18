@@ -48,6 +48,29 @@ export const insightsMigrations: readonly InsightsMigration[] = [
       );
     `,
   },
+  {
+    name: "0003_turn_latency",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "insights"."turn_latency" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "session_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "message_run_id" text NOT NULL,
+        "status" text NOT NULL,
+        "received_at" timestamptz NOT NULL,
+        "reactor_start_at" timestamptz,
+        "inference_start_at" timestamptz,
+        "first_token_at" timestamptz,
+        "reply_posted_at" timestamptz NOT NULL,
+        "recorded_at" timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "turn_latency_message_run_id_uidx"
+        ON "insights"."turn_latency" ("message_run_id");
+      CREATE INDEX IF NOT EXISTS "turn_latency_tenant_recorded_idx"
+        ON "insights"."turn_latency" ("tenant_id", "recorded_at");
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "insights_migrations";

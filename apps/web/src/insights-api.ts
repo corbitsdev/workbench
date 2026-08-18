@@ -93,6 +93,32 @@ export function insightsWorkbenchesPath(
   );
 }
 
+/** p50/p95 (ms) over one turn stage, or null samples/values when that
+ * stage recorded nothing in range (see @corbits/insights' LatencyStageStat). */
+export const LatencyStageStatSchema = type({
+  p50Ms: "number | null",
+  p95Ms: "number | null",
+  samples: "number",
+});
+
+/** GET /latency body — LatencySummary from packages/insights. */
+export const LatencySummarySchema = type({
+  toReactorStart: LatencyStageStatSchema,
+  toInferenceStart: LatencyStageStatSchema,
+  toFirstToken: LatencyStageStatSchema,
+  toReplyPosted: LatencyStageStatSchema,
+  total: LatencyStageStatSchema,
+});
+
+export type LatencySummary = typeof LatencySummarySchema.infer;
+
+export function insightsLatencyPath(
+  tenantId: string,
+  range: InsightsRange,
+): string {
+  return withInsightsRange(`/api/tenants/${tenantId}/insights/latency`, range);
+}
+
 export const ToolCallSchema = type({
   tool: "string",
   calls: "number",

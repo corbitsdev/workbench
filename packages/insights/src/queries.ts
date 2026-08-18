@@ -7,6 +7,7 @@ import {
   type TokenRates,
 } from "./pricing";
 import type { UsageStore, UsageTurnRecord } from "./store";
+import type { TurnLatencyStore } from "./latency-store";
 
 export type TokenTotals = {
   readonly input: number;
@@ -343,6 +344,104 @@ export function emptyToolCallReader(): ToolCallReader {
     async summarize() {
       return [];
     },
+  };
+}
+
+/**
+ * Nearest-rank percentile over already-sorted-ascending values. Null on
+ * an empty input — no fabricated p50/p95 for a stage with zero samples.
+ */
+export function percentile(
+  sorted: readonly number[],
+  p: number,
+): number | null {
+  if (sorted.length === 0) return null;
+  const rank = Math.ceil(p * sorted.length) - 1;
+  const clamped = Math.min(Math.max(rank, 0), sorted.length - 1);
+  return sorted[clamped] ?? null;
+}
+
+/** p50/p95 (milliseconds) over one stage's durations, or null when that
+ * stage recorded no samples in range — e.g. `reactorStart` on a scope
+ * with no cold starts this window. */
+export type LatencyStageStat = {
+  readonly p50Ms: number | null;
+  readonly p95Ms: number | null;
+  readonly samples: number;
+};
+
+export type LatencySummary = {
+  /** message-received → reactor.start (cold starts only; see TurnLatencyRecord). */
+  readonly toReactorStart: LatencyStageStat;
+  /** reactor.start (or message-received, on a warm session) → inference.start. */
+  readonly toInferenceStart: LatencyStageStat;
+  /** inference.start → first token. */
+  readonly toFirstToken: LatencyStageStat;
+  /** first token → reply posted. */
+  readonly toReplyPosted: LatencyStageStat;
+  /** message-received → reply posted, end to end. */
+  readonly total: LatencyStageStat;
+};
+
+function stageStat(durationsMs: number[]): LatencyStageStat {
+  const sorted = [...durationsMs].sort((a, b) => a - b);
+  return {
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+    samples: sorted.length,
+  };
+}
+
+/**
+ * Aggregates recorded message-run latency into p50/p95 per stage across a
+ * tenant scope (same `tenantIds` contract as summarizeUsage). A row
+ * missing a stage's timestamp (a warm session's null `reactorStartAt`)
+ * simply contributes no sample to that stage — it is not zeroed and it
+ * is not dropped from the other stages it did record.
+ */
+export async function summarizeLatency(
+  store: TurnLatencyStore,
+  tenantIds: readonly string[],
+  opts?: { from?: Date; to?: Date },
+): Promise<LatencySummary> {
+  const rows = await store.listLatencyByTenants(tenantIds, opts);
+
+  const toReactorStart: number[] = [];
+  const toInferenceStart: number[] = [];
+  const toFirstToken: number[] = [];
+  const toReplyPosted: number[] = [];
+  const total: number[] = [];
+
+  for (const row of rows) {
+    const receivedAt = row.receivedAt.getTime();
+    const replyPostedAt = row.replyPostedAt.getTime();
+    total.push(replyPostedAt - receivedAt);
+
+    if (row.reactorStartAt !== null) {
+      toReactorStart.push(row.reactorStartAt.getTime() - receivedAt);
+    }
+    const inferenceStartFrom = row.reactorStartAt ?? row.receivedAt;
+    if (row.inferenceStartAt !== null) {
+      toInferenceStart.push(
+        row.inferenceStartAt.getTime() - inferenceStartFrom.getTime(),
+      );
+    }
+    if (row.inferenceStartAt !== null && row.firstTokenAt !== null) {
+      toFirstToken.push(
+        row.firstTokenAt.getTime() - row.inferenceStartAt.getTime(),
+      );
+    }
+    if (row.firstTokenAt !== null) {
+      toReplyPosted.push(replyPostedAt - row.firstTokenAt.getTime());
+    }
+  }
+
+  return {
+    toReactorStart: stageStat(toReactorStart),
+    toInferenceStart: stageStat(toInferenceStart),
+    toFirstToken: stageStat(toFirstToken),
+    toReplyPosted: stageStat(toReplyPosted),
+    total: stageStat(total),
   };
 }
 
