@@ -20,7 +20,11 @@ import {
   OneShotDefinitionNotFoundError,
 } from "@corbits/folded-runs";
 
-import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
+import {
+  RoutineTrigger,
+  routineCadenceLabel,
+  type RoutineTriggerT,
+} from "./trigger";
 import type {
   RoutineRow,
   RoutineRunRow,
@@ -83,6 +87,27 @@ export interface DeliverySpacePort {
     creatorUserId: string;
     name: string;
   }): Promise<{ channelId: string; compensate: () => Promise<void> }>;
+}
+
+/**
+ * Optional port: posts a plain-text notice into a channel through the
+ * host's existing chat platform — the same path a human's web-UI
+ * message takes (mirrors `slack-tag`'s own `SendMessage` port over
+ * `@corbits/chat`'s `sendChannelMessage`). Since grant-free
+ * `routine_create`/`routine_update` no longer require human approval
+ * (CL-6247), a routine created enabled or flipped to enabled posts one
+ * of these into its delivery channel so the people in that channel
+ * learn what just started running, honestly, without digging into the
+ * Routines panel first. Omitted: no notice is posted, unchanged from
+ * before this port existed.
+ */
+export interface ChannelNoticePort {
+  postChannelNotice(input: {
+    tenantId: string;
+    channelId: string;
+    principalId: string;
+    text: string;
+  }): Promise<void>;
 }
 
 /**
@@ -173,6 +198,8 @@ export type CreateRoutineRoutesDeps = {
    */
   drafts?: import("./drafts").RoutineDraftStore | undefined;
   drafting?: import("./drafts").RoutineDraftingPort | undefined;
+  /** See `ChannelNoticePort`'s own doc comment. */
+  channelNotice?: ChannelNoticePort | undefined;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -380,6 +407,50 @@ export async function isDeliveryChannelRequired(
   return deps.deliveryChannelRequired(tenantId, definitionId);
 }
 
+/**
+ * Posts the "created enabled" / "enabled" honest-notice — see
+ * `ChannelNoticePort`'s own doc comment for why this exists. Silent
+ * no-op when `channelNotice` isn't wired, or when the routine has
+ * nowhere to deliver into; a delivery failure here is logged, never
+ * thrown — the routine itself already exists (or was already updated)
+ * by the time this runs, and a missed notice must not undo that.
+ *
+ * Exported: `./workflow-routine-routes.ts` (Myra's own routine surface,
+ * where `routine_create`/`routine_update` fire this same honest notice)
+ * reuses this exact helper, never a second, drifting wording.
+ */
+export async function postRoutineEnabledNotice(
+  deps: Pick<CreateRoutineRoutesDeps, "channelNotice">,
+  input: {
+    tenantId: string;
+    principalId: string;
+    channelId: string | null;
+    name: string;
+    trigger: RoutineTriggerT;
+    verb: "Created" | "Enabled";
+  },
+): Promise<void> {
+  if (deps.channelNotice === undefined) return;
+  if (input.channelId === null || input.channelId === "") return;
+  const text =
+    `${input.verb} routine "${input.name}" — runs ` +
+    `${routineCadenceLabel(input.trigger)}. Disable it in the Routines panel.`;
+  try {
+    await deps.channelNotice.postChannelNotice({
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      principalId: input.principalId,
+      text,
+    });
+  } catch (err) {
+    log.error("Failed to post routine-{verb} notice into channel {channelId}", {
+      verb: input.verb,
+      channelId: input.channelId,
+      err,
+    });
+  }
+}
+
 export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
@@ -540,6 +611,17 @@ export function createRoutineRoutes(
         );
       }
 
+      if (row.enabled) {
+        await postRoutineEnabledNotice(deps, {
+          tenantId: tenant.id,
+          principalId: principal.id,
+          channelId: row.deliveryChannelId,
+          name: row.name,
+          trigger: row.trigger,
+          verb: "Created",
+        });
+      }
+
       return c.json(routineView(row), 201);
     },
   );
@@ -583,6 +665,7 @@ export function createRoutineRoutes(
       }
 
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const routineId = c.req.param("id");
       const existing = await deps.store.getRoutine(tenant.id, routineId);
       if (existing === undefined) {
@@ -618,6 +701,18 @@ export function createRoutineRoutes(
       }
 
       const row = await deps.store.updateRoutine(tenant.id, routineId, patch);
+
+      const isEnableFlip = body.enabled === true && !existing.enabled;
+      if (isEnableFlip) {
+        await postRoutineEnabledNotice(deps, {
+          tenantId: tenant.id,
+          principalId: principal.id,
+          channelId: row.deliveryChannelId,
+          name: row.name,
+          trigger: row.trigger,
+          verb: "Enabled",
+        });
+      }
 
       return c.json(routineView(row));
     },

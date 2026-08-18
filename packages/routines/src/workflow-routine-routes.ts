@@ -33,8 +33,10 @@ import type { RoutineRow, RoutineStore, UpdateRoutineInput } from "./store";
 import {
   isDeliveryChannelRequired,
   launchAndCorrelate,
+  postRoutineEnabledNotice,
   routineView,
   webhookTriggerValid,
+  type ChannelNoticePort,
   type DeliverySpacePort,
   type RoutineLauncher,
 } from "./routes";
@@ -152,6 +154,8 @@ export type CreateWorkflowRoutineRoutesDeps = {
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
+  /** Same contract as `CreateRoutineRoutesDeps.channelNotice`. */
+  channelNotice?: ChannelNoticePort | undefined;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -399,6 +403,17 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
+    if (row.enabled) {
+      await postRoutineEnabledNotice(deps, {
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        channelId: row.deliveryChannelId,
+        name: row.name,
+        trigger: row.trigger,
+        verb: "Created",
+      });
+    }
+
     return c.json(routineView(row), 201);
   });
 
@@ -446,6 +461,19 @@ export function createWorkflowRoutineRoutes(
       routineId,
       patch,
     );
+
+    const isEnableFlip = body.enabled === true && !existing.enabled;
+    if (isEnableFlip) {
+      await postRoutineEnabledNotice(deps, {
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        channelId: row.deliveryChannelId,
+        name: row.name,
+        trigger: row.trigger,
+        verb: "Enabled",
+      });
+    }
+
     return c.json(routineView(row));
   });
 
