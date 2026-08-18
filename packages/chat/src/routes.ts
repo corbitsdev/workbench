@@ -960,9 +960,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const invitable = isChatWithDefinition(body)
         ? await deps.platform.listInvitableDefinitions(tenant.id)
         : [];
+      const isAgentDm = isChatWithDefinition(body);
       const chatTitle =
         body.name ??
-        (isChatWithDefinition(body)
+        (isAgentDm
           ? invitable.find((definition) => definition.id === body.definitionId)
               ?.description
           : undefined);
@@ -1172,8 +1173,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 principalId: principal.id,
                 workbenchId,
                 agentAddress: joined.address,
+                isDirectChat: isAgentDm,
                 ...(senderName !== undefined ? { senderName } : {}),
-                ...(chatTitle !== undefined
+                ...(chatTitle !== undefined && !isAgentDm
                   ? { workbenchName: chatTitle }
                   : {}),
               },

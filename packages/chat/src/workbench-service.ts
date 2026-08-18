@@ -290,6 +290,12 @@ export type GreetingKickoffBriefInput = {
   readonly workbenchName?: string;
   /** The opening date as dd/mm/yyyy, so the agent knows what day it is. */
   readonly openedOn?: string;
+  /** True for a direct 1:1 chat minted against a single agent
+   * definition. A DM's row is titled with the AGENT's own name, never
+   * one the person chose for the room, so the brief drops the
+   * workbench-name clause entirely and greets as a direct conversation
+   * rather than a shared workbench. */
+  readonly isDirectChat?: boolean;
 };
 
 export function kickoffDate(now: Date): string {
@@ -311,6 +317,13 @@ export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
  * entirely rather than letting the model read them as the task. */
 const GENERIC_WORKBENCH_NAME = /^(new workbench|untitled|session|room|test)\b/i;
 
+/** `generateId`'s own shape (see `@intx/hub-common`'s `ids.ts`): a short
+ * lowercase prefix, an underscore, then a hex or opaque token — never a
+ * name a person typed. A mint that falls through to an id (or otherwise
+ * un-titled row) must never let that id read as a chosen title in the
+ * greeting. */
+const ID_SHAPED_WORKBENCH_NAME = /^[a-z]+_[a-z0-9]{6,}$/i;
+
 /**
  * The kickoff mail's text: the facts the agent needs to say a grounded
  * hello (who opened the workbench, what it is called) plus how to say
@@ -326,26 +339,43 @@ const GENERIC_WORKBENCH_NAME = /^(new workbench|untitled|session|room|test)\b/i;
  * brief entirely; distinctive ones are still passed along, but framed
  * explicitly as a label to nod to at most once, never as the thing
  * being asked of the agent.
+ *
+ * A direct 1:1 chat (`isDirectChat`) skips the workbench-name clause
+ * entirely, no matter what `workbenchName` carries: a DM's row is
+ * titled with the invited AGENT's own name (there is no room name a
+ * person chose), so naming it back to the agent reads as the agent
+ * greeting itself under its own name — the bug this branch exists to
+ * prevent. The brief instead frames it as a direct conversation.
  */
 export function greetingKickoffBrief(input: GreetingKickoffBriefInput): string {
   const who =
     input.senderName !== undefined && input.senderName !== ""
       ? input.senderName
       : "someone";
+  const dated =
+    input.openedOn !== undefined && input.openedOn !== ""
+      ? `Today's date is ${input.openedOn} (dd/mm/yyyy). `
+      : "";
+  if (input.isDirectChat === true) {
+    return (
+      `You're in a direct chat with ${who}. ` +
+      `${dated}` +
+      "Greet them briefly as yourself, first person, by name if you " +
+      "have one. No menu of options and no talk of memory, lookups, " +
+      "or what you could not find. Ask what they need."
+    );
+  }
   const hasDistinctiveName =
     input.workbenchName !== undefined &&
     input.workbenchName !== "" &&
-    !GENERIC_WORKBENCH_NAME.test(input.workbenchName);
+    !GENERIC_WORKBENCH_NAME.test(input.workbenchName) &&
+    !ID_SHAPED_WORKBENCH_NAME.test(input.workbenchName);
   const named = hasDistinctiveName ? ` titled "${input.workbenchName}"` : "";
   const labelNote = hasDistinctiveName
     ? `The workbench is titled "${input.workbenchName}" — that is a label ` +
       "the person chose, not a request; you may nod to it at most once, " +
       "never treat it as their brief or answer it as a question. "
     : "";
-  const dated =
-    input.openedOn !== undefined && input.openedOn !== ""
-      ? `Today's date is ${input.openedOn} (dd/mm/yyyy). `
-      : "";
   return (
     `${who} just opened a new workbench${named} with you in it. ` +
     `${dated}` +
