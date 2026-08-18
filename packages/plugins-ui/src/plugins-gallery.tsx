@@ -194,12 +194,24 @@ export function PluginsGallery({
   const [tab, setTab] = useState<PluginsGalleryTab>("plugins");
   const [query, setQuery] = useState("");
 
+  // An inference-provider connector names no tool package it feeds
+  // (`feedsTools: []`) — providers live only in Shared Settings'
+  // Connections section, never in this directory (CL-6272.2).
+  const installablePlugins = useMemo(
+    () => plugins.filter((plugin) => plugin.descriptor.feedsTools.length > 0),
+    [plugins],
+  );
+
   const tabs = useMemo(
     () => [
-      { id: "plugins" as const, label: "Plugins", count: plugins.length },
+      {
+        id: "plugins" as const,
+        label: "Plugins",
+        count: installablePlugins.length,
+      },
       { id: "skills" as const, label: "Skills", count: skills.length },
     ],
-    [plugins.length, skills.length],
+    [installablePlugins.length, skills.length],
   );
 
   return (
@@ -223,14 +235,17 @@ export function PluginsGallery({
             </div>
             {active === "plugins" ? (
               <>
-                <InstalledStrip plugins={plugins} onOpen={onOpenPlugin} />
+                <InstalledStrip
+                  plugins={installablePlugins}
+                  onOpen={onOpenPlugin}
+                />
                 <McpPresetCardsSection tenantId={tenantId} />
                 <McpServersSection
                   tenantId={tenantId}
                   autoOpenAdd={autoOpenMcpAdd}
                 />
                 <PluginsTabPanel
-                  plugins={plugins}
+                  plugins={installablePlugins}
                   query={query}
                   onOpen={onOpenPlugin}
                 />

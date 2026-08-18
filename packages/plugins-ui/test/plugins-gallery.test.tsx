@@ -38,7 +38,11 @@ function descriptor(
     authKind,
     docsUrl: `https://example.test/${id}`,
     credentialPlugin: "http",
-    feedsTools: [],
+    // A non-empty `feedsTools` marks a real tool connector rather than an
+    // inference provider (CL-6272.2) — every fixture here is a tool
+    // connector, never a provider, so this suite exercises the plugin
+    // grid rather than the provider-exclusion rule.
+    feedsTools: [`@corbits/${id}-tools`],
   };
 }
 
@@ -50,12 +54,15 @@ const CONNECTED: ResolvedPlugin = {
   credentialName: "GitHub",
 };
 
+// Not "scrapecreators" — that id is now an MCP-preset connector
+// (CL-6256) filtered out of this static grid, which would make this
+// fixture's row vanish for a reason unrelated to what this suite tests.
 const INHERITED: ResolvedPlugin = {
-  descriptor: descriptor("scrapecreators", "ScrapeCreators"),
+  descriptor: descriptor("notion", "Notion"),
   status: "connected",
   provenance: "inherited",
-  credentialId: "cred_scrapecreators",
-  credentialName: "ScrapeCreators",
+  credentialId: "cred_notion",
+  credentialName: "Notion",
 };
 
 const NOT_CONNECTED: ResolvedPlugin = {
@@ -71,6 +78,22 @@ const PLUGINS: readonly ResolvedPlugin[] = [
   INHERITED,
   NOT_CONNECTED,
 ];
+
+const PROVIDER: ResolvedPlugin = {
+  descriptor: {
+    id: "anthropic",
+    displayName: "Anthropic",
+    authKind: "api-key",
+    docsUrl: "https://example.test/anthropic",
+    credentialPlugin: "http",
+    // Real inference-provider descriptors feed no tool package.
+    feedsTools: [],
+  },
+  status: "connected",
+  provenance: "this-workbench",
+  credentialId: "cred_anthropic",
+  credentialName: "Anthropic",
+};
 
 const SKILLS: readonly SkillCardData[] = [
   {
@@ -94,7 +117,7 @@ const SKILLS: readonly SkillCardData[] = [
 globalThis.fetch = (async () =>
   new Response(JSON.stringify({ data: [] }))) as unknown as typeof fetch;
 
-function renderGallery() {
+function renderGallery(plugins: readonly ResolvedPlugin[] = PLUGINS) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
@@ -102,7 +125,7 @@ function renderGallery() {
     root.render(
       <PluginsGallery
         tenantId="tenant_test"
-        plugins={PLUGINS}
+        plugins={plugins}
         skills={SKILLS}
         onOpenPlugin={() => {}}
         onOpenSkill={() => {}}
@@ -117,7 +140,7 @@ describe("PluginsGallery", () => {
     const { container } = renderGallery();
 
     expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).toContain("ScrapeCreators");
+    expect(container.textContent).toContain("Notion");
     expect(container.textContent).toContain("Hugging Face");
     expect(container.textContent).toContain(
       "Lets agents read and open pull requests in your GitHub repos.",
@@ -180,5 +203,12 @@ describe("PluginsGallery", () => {
     );
     expect(container.textContent).toContain("Shared with everyone");
     expect(container.textContent).toContain("Just you");
+  });
+
+  test("an inference provider never appears in the plugin directory (CL-6272.2)", () => {
+    const { container } = renderGallery([...PLUGINS, PROVIDER]);
+
+    expect(container.textContent).toContain("GitHub");
+    expect(container.textContent).not.toContain("Anthropic");
   });
 });

@@ -229,16 +229,13 @@ describe("PluginsRoute", () => {
     expect(dialog?.textContent).toContain("GitHub");
   });
 
-  // CL-6105: the OAuth connect round-trip (OpenRouter/Hugging Face) lands
-  // back on `/plugins?connect=<id>&outcome=connected&tenantSlug=...` once
-  // the hub has durably stored the credential — this is a full browser
-  // navigation (the connect panel's own `<a href>`, not a client route),
-  // so the gallery mounts fresh and its unconditional load-on-mount is
-  // the only thing that has to see the freshly stored credential. Stubs
-  // the resolver to answer "connected" for OpenRouter exactly as the hub
-  // would right after `testAndPersistCredential` stores it under the
-  // connector's own display name.
-  test("a fresh mount on the OAuth connect return shows the card as connected", async () => {
+  // CL-6272.2: a provider connector (OpenRouter, Anthropic, ...) never
+  // gets a card on this page at all — providers live only in Shared
+  // Settings' Connections section. The OAuth-connect-return-shows-
+  // connected assertion this used to cover now lives in
+  // `@corbits/settings-ui`'s own Connections suites, the one surface
+  // that still offers a provider a Connect button to return from.
+  test("a fresh mount never shows a provider connector, even one resolved as connected", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals"))
@@ -268,8 +265,7 @@ describe("PluginsRoute", () => {
 
     const el = await mount();
 
-    expect(el.textContent).toContain("OpenRouter");
-    expect(el.textContent).toContain("Connected");
+    expect(el.textContent).not.toContain("OpenRouter");
   });
 
   // CL-6092: a deep link naming a provider with no matching gallery card
