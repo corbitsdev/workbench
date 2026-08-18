@@ -50,6 +50,7 @@ describe("resolveSeedWorkflows", () => {
       "assistant",
       "channel-digest",
       "recurring-task",
+      "last-30-days-research",
     ]);
   });
 
@@ -62,6 +63,7 @@ describe("resolveSeedWorkflows", () => {
       "assistant",
       "channel-digest",
       "recurring-task",
+      "last-30-days-research",
       "heartbeat",
     ]);
   });

@@ -77,6 +77,19 @@ function baseRoutes(method: string, path: string) {
     return { status: 404, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
     return { status: 201, data: {} };
+  // CL-6201: `ensureDefaultRoutines` runs at the end of every seed and
+  // lists both surfaces before deciding what (if anything) to plant.
+  // Every test in this file that doesn't care about routine seeding
+  // gets an empty answer from both, so the preset loop finds no
+  // deployed definition to target and skips quietly rather than the
+  // fake handler throwing "unexpected hub call".
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+  )
+    return emptyPage();
+  if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+    return { status: 200, data: { items: [] } };
   return undefined;
 }
 
@@ -564,14 +577,16 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is echo, assistant, channel-digest, and recurring-task", () => {
+  test("the default set consumed by real tenant provisioning is echo, assistant, channel-digest, recurring-task, and last-30-days-research", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup. channel-digest is the
     // seed automation the Routines picker can honestly offer;
     // recurring-task is the bridge "Make this a routine" (an Inbox
     // action on a completed task result) prefills the create dialog
     // with — every real tenant needs it deployed for that action to
-    // ever resolve a definitionId. The remaining catalog-test workflows
+    // ever resolve a definitionId. last-30-days-research (CL-6201) is
+    // deployed so `ensureDefaultRoutines` has a real definition to
+    // un-strand into a routine. The remaining catalog-test workflows
     // exist only to exercise the platform continuously and must never
     // reach a real user through this array — they are seeded only via
     // the explicit CATALOG_TEST_WORKFLOWS opt-in.
@@ -580,6 +595,7 @@ describe("seedTenant", () => {
       "assistant",
       "channel-digest",
       "recurring-task",
+      "last-30-days-research",
     ]);
   });
 
