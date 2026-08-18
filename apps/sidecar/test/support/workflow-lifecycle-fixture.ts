@@ -2,10 +2,9 @@
 // end-to-end against a mock workflow-process child: an in-memory
 // NDJSON control channel, an in-memory event-channel frame stream, and a
 // minimal `RepoStore` stub that answers only the calls the deploy router's
-// grants bridge and credentials snapshot assembly make. Shared by
-// `workflow-deploy-lifecycle.test.ts` (deploy/undeploy/drain) and
-// `workflow-idle-reap.test.ts` (CL-5477 park/wake/sweep) so neither
-// reinvents the mock child handshake.
+// grants bridge and credentials snapshot assembly make. Shared by every
+// test that exercises `createSidecarDeployRouter` end-to-end so none of
+// them reinvent the mock child handshake.
 
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -194,7 +193,6 @@ export type Fixture = {
 };
 
 export async function makeLifecycleFixture(opts?: {
-  idleReapMs?: number;
   /**
    * Reuse a prior fixture's data dir, so a test can construct a SECOND
    * router against the SAME on-disk state to model a sidecar process
@@ -307,7 +305,6 @@ export async function makeLifecycleFixture(opts?: {
     multistepDrainRouter,
     multistepSourcesRouter,
     multistepCredentialsRouter,
-    ...(opts?.idleReapMs !== undefined ? { idleReapMs: opts.idleReapMs } : {}),
   });
   return {
     router,

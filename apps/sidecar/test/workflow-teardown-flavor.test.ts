@@ -1,0 +1,121 @@
+// `teardownDeployment` is the shared body behind `undeploy` (`reclaimDirs:
+// true` -- forget the deployment entirely) and the state-preserving
+// "hibernate" flavor (`reclaimDirs: false` -- tear the child down while
+// keeping the deployment record and on-disk step state so a later `deploy`
+// call for the same address resumes rather than starts fresh). No caller in
+// this lane invokes the hibernate flavor yet -- the hub-side reap-and-relaunch
+// flow that will is a separate lane -- so this suite drives it directly
+// through the router's `teardownDeployment` method.
+
+import { describe, test, expect } from "bun:test";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import { deriveDeploymentId } from "../src/workflow-host-wiring";
+import {
+  answerReadyHandshake,
+  makeLifecycleFixture,
+  makeWorkflowFrame,
+} from "./support/workflow-lifecycle-fixture";
+
+describe("teardownDeployment reclaimDirs flavors", () => {
+  test("reclaimDirs: true (undeploy) deletes the step-state dir and the deployment record", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_teardown-reclaim@example.com");
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
+    const recordFile = path.join(
+      dataDir,
+      "workflow-runs",
+      deploymentId,
+      "deployment.json",
+    );
+    const stepStateDir = path.join(
+      dataDir,
+      "workflow-step-state",
+      deploymentId,
+    );
+    await fs.mkdir(stepStateDir, { recursive: true });
+    await fs.writeFile(path.join(stepStateDir, "marker.txt"), "x");
+
+    await router.teardownDeployment(frame.agentAddress, {
+      reclaimDirs: true,
+    });
+
+    expect(spawn.killed).toBe(true);
+    await expect(fs.stat(recordFile)).rejects.toThrow();
+    await expect(fs.stat(stepStateDir)).rejects.toThrow();
+    expect(router.activeAddresses()).toEqual([]);
+  });
+
+  test("reclaimDirs: false (hibernate) preserves the step-state dir and the deployment record", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_teardown-hibernate@example.com");
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
+    const recordFile = path.join(
+      dataDir,
+      "workflow-runs",
+      deploymentId,
+      "deployment.json",
+    );
+    const stepStateDir = path.join(
+      dataDir,
+      "workflow-step-state",
+      deploymentId,
+    );
+    await fs.mkdir(stepStateDir, { recursive: true });
+    await fs.writeFile(path.join(stepStateDir, "marker.txt"), "x");
+
+    await router.teardownDeployment(frame.agentAddress, {
+      reclaimDirs: false,
+    });
+
+    // The child is gone -- a hibernate still kills the process...
+    expect(spawn.killed).toBe(true);
+    // ...but every piece of durable state a relaunch resumes from survives.
+    await expect(fs.stat(recordFile)).resolves.toBeDefined();
+    await expect(fs.stat(stepStateDir)).resolves.toBeDefined();
+    expect(
+      await fs.readFile(path.join(stepStateDir, "marker.txt"), "utf8"),
+    ).toBe("x");
+    // The address is no longer live/routable: a relaunch re-establishes it
+    // through the ordinary deploy path, not a resumed registration.
+    expect(router.activeAddresses()).toEqual([]);
+  });
+
+  test("both flavors unregister the transport, routers, and deployment-address mapping", async () => {
+    const { router, spawns, multistepMailRouter, multistepCredentialsRouter } =
+      await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_teardown-unregister@example.com");
+    const deployPromise = router.deploy(frame);
+    await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    await router.teardownDeployment(frame.agentAddress, {
+      reclaimDirs: false,
+    });
+
+    // No live mail/credentials handler remains registered for the address:
+    // routing a frame against it fails to find a handler.
+    expect(
+      multistepMailRouter.tryRoute(
+        frame.agentAddress,
+        new TextEncoder().encode("post-hibernate"),
+      ),
+    ).toBeNull();
+    expect(
+      await multistepCredentialsRouter.tryRoute({
+        type: "credentials.update",
+        agentAddress: frame.agentAddress,
+        delivery: { bindings: [], materials: [] },
+      }),
+    ).toBe(false);
+  });
+});
