@@ -357,6 +357,21 @@ export function AgentBadge() {
   );
 }
 
+/** The one visible cue a message this reader just sent is still in
+ * flight — reuses the muted-foreground token every other quiet status
+ * glyph in this file already sits on, never a bespoke color. */
+function PendingGlyph() {
+  return (
+    <span
+      className="chat-pending-glyph"
+      aria-label={CHAT_STRINGS.pendingSendLabel}
+      title={CHAT_STRINGS.pendingSendLabel}
+    >
+      <Clock aria-hidden="true" />
+    </span>
+  );
+}
+
 function TextBubble({
   text,
   createdAt,
@@ -366,6 +381,9 @@ function TextBubble({
   onOpenProfile,
   onFixConnection,
   showHeader = true,
+  pendingStatus,
+  pendingNonce,
+  pendingActions,
 }: {
   text: string;
   createdAt: string;
@@ -380,6 +398,16 @@ function TextBubble({
    * avatar gutter instead, matching the compact grouped-message pattern
    * modern chat UIs use rather than repeating the header on every line. */
   showHeader?: boolean;
+  /** Set while this reader's own send is still in flight or has failed
+   * (CL-6251/CL-5879) — the bubble renders exactly like any confirmed
+   * message; `"sending"` only adds `PendingGlyph` next to the timestamp,
+   * `"failed"` appends `PendingFailedRow` inside this same bubble, never
+   * a different layout. */
+  pendingStatus?: PendingMessageStatus;
+  /** The failed bubble's own retry/discard target — see `PendingActions`.
+   * Only read when `pendingStatus === "failed"`. */
+  pendingNonce?: string;
+  pendingActions?: PendingActions;
 }) {
   const display = senderDisplay(sender, participants, currentUser);
   const isOwn =
@@ -428,7 +456,7 @@ function TextBubble({
           />
         </button>
       )}
-      <div className="chat-bubble" data-own={isOwn}>
+      <div className="chat-bubble" data-own={isOwn} data-pending={pendingStatus}>
         {showHeader ? (
           <div className="chat-bubble-head">
             {display !== undefined && (
@@ -455,11 +483,15 @@ function TextBubble({
             <span className="chat-bubble-time">
               {formatTimestamp(createdAt)}
             </span>
+            {pendingStatus === "sending" ? <PendingGlyph /> : null}
           </div>
         ) : (
-          <span className="chat-bubble-time-grouped">
-            {formatTimestamp(createdAt)}
-          </span>
+          <>
+            <span className="chat-bubble-time-grouped">
+              {formatTimestamp(createdAt)}
+            </span>
+            {pendingStatus === "sending" ? <PendingGlyph /> : null}
+          </>
         )}
         <div className="chat-bubble-text">
           <Markdown text={text} />
@@ -476,6 +508,12 @@ function TextBubble({
               {CHAT_STRINGS.fixConnectionAction}
             </Button>
           )}
+        {pendingStatus === "failed" && pendingActions !== undefined ? (
+          <PendingFailedRow
+            nonce={pendingNonce ?? ""}
+            pendingActions={pendingActions}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -674,87 +712,41 @@ function messageText(item: MessageItem): string {
 }
 
 /**
- * An optimistic message's own bubble: no hover toolbar, no context menu,
- * no reactions or pin toggle — none of those round-trips make sense
- * against a message the server hasn't issued an id for yet. `"sending"`
- * renders quietly (reduced opacity, a small clock glyph in place of the
- * timestamp); `"failed"` renders its own inline error state — a red
- * accent on the bubble and "Not sent" with Retry/Discard right there —
- * rather than a status line elsewhere on the page disconnected from the
- * message it describes.
+ * A failed send's inline recovery row (CL-6251/CL-5879): appended below
+ * the bubble text of the exact same message group a confirmed message
+ * would render as — never a status line elsewhere on the page,
+ * disconnected from the message it describes.
  */
-function PendingMessageGroup({
-  item,
-  pendingStatus,
+function PendingFailedRow({
+  nonce,
   pendingActions,
-  currentUser,
-  showDayDivider,
 }: {
-  readonly item: TimelineMessageItem;
-  readonly pendingStatus: PendingMessageStatus;
-  readonly pendingActions: PendingActions | undefined;
-  readonly currentUser: CurrentUser | undefined;
-  readonly showDayDivider: boolean;
+  readonly nonce: string;
+  readonly pendingActions: PendingActions;
 }) {
-  const text = messageText(item);
-  const label = currentUser?.name ?? CHAT_STRINGS.senderYou;
-  const nonce = item.pendingNonce ?? item.id;
-
   return (
-    <div
-      className="chat-message-group"
-      id={messageDomId(item.id)}
-      data-pending={pendingStatus}
-    >
-      {showDayDivider && <DayDivider createdAt={item.createdAt} />}
-      <div className="chat-bubble-row" data-own="true">
-        <div
-          className="chat-bubble"
-          data-own="true"
-          data-pending={pendingStatus}
-        >
-          <div className="chat-bubble-head">
-            <span className="chat-bubble-sender">{label}</span>
-            {pendingStatus === "sending" ? (
-              <span
-                className="chat-pending-glyph"
-                aria-label={CHAT_STRINGS.pendingSendLabel}
-                title={CHAT_STRINGS.pendingSendLabel}
-              >
-                <Clock aria-hidden="true" />
-              </span>
-            ) : null}
-          </div>
-          <div className="chat-bubble-text">
-            <Markdown text={text} />
-          </div>
-          {pendingStatus === "failed" && pendingActions !== undefined ? (
-            <div className="chat-pending-failed-row" role="alert">
-              <span className="chat-pending-failed-label">
-                {CHAT_STRINGS.pendingSendFailedLabel}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="chat-pending-retry"
-                onClick={() => pendingActions.onRetry(nonce)}
-              >
-                {CHAT_STRINGS.pendingSendRetryAction}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="chat-pending-discard"
-                onClick={() => pendingActions.onDiscard(nonce)}
-              >
-                {CHAT_STRINGS.pendingSendDiscardAction}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+    <div className="chat-pending-failed-row" role="alert">
+      <span className="chat-pending-failed-label">
+        {CHAT_STRINGS.pendingSendFailedLabel}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="chat-pending-retry"
+        onClick={() => pendingActions.onRetry(nonce)}
+      >
+        {CHAT_STRINGS.pendingSendRetryAction}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="chat-pending-discard"
+        onClick={() => pendingActions.onDiscard(nonce)}
+      >
+        {CHAT_STRINGS.pendingSendDiscardAction}
+      </Button>
     </div>
   );
 }
@@ -1061,8 +1053,9 @@ function MessageParts({
   blockResponses,
   reactionActions,
   pinActions,
+  pendingActions,
 }: {
-  readonly item: MessageItem;
+  readonly item: TimelineMessageItem;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
@@ -1085,18 +1078,39 @@ function MessageParts({
   readonly blockResponses?: BlockResponseActions;
   readonly reactionActions?: ReactionActions;
   readonly pinActions?: PinActions;
+  /** This reader's own failed send's inline Retry/Discard — see
+   * `PendingActions`. Undefined on every ordinary message; on a failed
+   * pending item (`item.pendingStatus === "failed"`) with no actions
+   * wired, the failed row simply doesn't render. */
+  readonly pendingActions?: PendingActions;
 }) {
+  // A message this reader's own composer submitted and the server hasn't
+  // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
+  // none of the round-trips below — reactions, pin, thread, context menu —
+  // since every one of them targets a server-issued message id that
+  // doesn't exist yet for this item.
+  const isPending = item.pendingStatus !== undefined;
   const contextMenu = useContextMenuState();
-  const menu = buildMessageMenu({
-    item,
-    threadAffordanceMode,
-    onOpenThread,
-    pinActions,
-  });
+  const menu = isPending
+    ? { entries: [] }
+    : buildMessageMenu({
+        item,
+        threadAffordanceMode,
+        onOpenThread,
+        pinActions,
+      });
   const replyCount = threadMeta?.replyCount ?? 0;
+  const pendingNonce = item.pendingNonce ?? item.id;
+  // Same identity `ChannelTimeline`'s render loop keys this whole group
+  // under (`clientId` when the wire echoed one, else `id`) — reused here
+  // for each part's own key so a pending send's `TextBubble` (and its
+  // avatar) is the very DOM node its later confirmed copy updates in
+  // place, never a remount keyed off the pending nonce vs. the eventual
+  // server-issued id.
+  const groupKey = item.clientId ?? item.id;
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
-    if (isContextMenuEmpty(menu)) return;
+    if (isPending || isContextMenuEmpty(menu)) return;
     event.preventDefault();
     contextMenu.show(event.clientX, event.clientY, menu, event.currentTarget);
   }
@@ -1106,11 +1120,12 @@ function MessageParts({
       className="chat-message-group"
       id={messageDomId(item.id)}
       data-grouped={!showHeader}
+      data-pending={item.pendingStatus}
       onContextMenu={handleContextMenu}
     >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       {item.parts.map((part, index) => {
-        const key = `${item.id}-${index}`;
+        const key = `${groupKey}-${index}`;
         if (part.kind === "text") {
           return (
             <TextBubble
@@ -1121,6 +1136,10 @@ function MessageParts({
               participants={participants}
               currentUser={currentUser}
               showHeader={showHeader}
+              {...(item.pendingStatus !== undefined
+                ? { pendingStatus: item.pendingStatus, pendingNonce }
+                : {})}
+              {...(pendingActions !== undefined ? { pendingActions } : {})}
               {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
               {...(onFixConnection !== undefined ? { onFixConnection } : {})}
             />
@@ -1161,8 +1180,9 @@ function MessageParts({
         }
         return <FallbackPart key={key} part={part} />;
       })}
-      {(reactionActions !== undefined && (item.reactions?.length ?? 0) > 0) ||
-      pinActions !== undefined ? (
+      {!isPending &&
+      ((reactionActions !== undefined && (item.reactions?.length ?? 0) > 0) ||
+        pinActions !== undefined) ? (
         <div className="chat-message-actions">
           {reactionActions !== undefined ? (
             <ReactionChips
@@ -1180,7 +1200,7 @@ function MessageParts({
           ) : null}
         </div>
       ) : null}
-      {onOpenThread !== undefined && replyCount > 0 ? (
+      {!isPending && onOpenThread !== undefined && replyCount > 0 ? (
         <ThreadAffordance
           messageId={item.id}
           meta={threadMeta}
@@ -1189,15 +1209,17 @@ function MessageParts({
           onOpen={() => onOpenThread(item.id)}
         />
       ) : null}
-      <MessageHoverToolbar
-        messageId={item.id}
-        menu={menu}
-        menuOpen={contextMenu.open}
-        onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
-        threadAffordanceMode={threadAffordanceMode}
-        {...(onOpenThread !== undefined ? { onOpenThread } : {})}
-        {...(reactionActions !== undefined ? { reactionActions } : {})}
-      />
+      {!isPending ? (
+        <MessageHoverToolbar
+          messageId={item.id}
+          menu={menu}
+          menuOpen={contextMenu.open}
+          onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
+          threadAffordanceMode={threadAffordanceMode}
+          {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+          {...(reactionActions !== undefined ? { reactionActions } : {})}
+        />
+      ) : null}
       <ContextMenuView
         x={contextMenu.x}
         y={contextMenu.y}
@@ -1217,9 +1239,11 @@ function MessageParts({
  * continues an unbroken run of text messages from the same author as
  * `previous` — the compact grouped-message pattern modern chat UIs use so a
  * quick back-to-back exchange doesn't repeat the same name and avatar on
- * every line. Never groups across a day divider, a pending (optimistic)
- * item, or a message that isn't itself a plain text bubble (an event line
- * or a fallback block always gets its own header on the next real bubble).
+ * every line. Never groups across a day divider or a message that isn't
+ * itself a plain text bubble (an event line or a fallback block always
+ * gets its own header on the next real bubble). A pending (optimistic)
+ * send groups exactly like any confirmed message from the same author —
+ * CL-5879 renders it through this same path, not a separate tier.
  */
 function isGroupedWithPrevious(
   item: TimelineMessageItem,
@@ -1227,12 +1251,6 @@ function isGroupedWithPrevious(
   showDayDivider: boolean,
 ): boolean {
   if (showDayDivider || previous === undefined) return false;
-  if (
-    item.pendingStatus !== undefined ||
-    previous.pendingStatus !== undefined
-  ) {
-    return false;
-  }
   const isTextOnly = (target: TimelineMessageItem) =>
     target.parts.every((part) => part.kind === "text") &&
     target.parts.some((part) => part.kind === "text");
@@ -1523,24 +1541,20 @@ export function ChannelTimeline({
             new Date(previous.createdAt),
             new Date(item.createdAt),
           );
+        // Keyed by `clientId` (falling back to `id`) when present: a
+        // pending send and the confirmed message that later reconciles
+        // it (CL-6251's wire `clientId`) share this key, so React
+        // updates the same DOM node in place — avatar, header and all —
+        // rather than unmounting a "sending" bubble and mounting an
+        // unrelated "confirmed" one, which is what used to read as an
+        // unsent→sent swap (CL-6251, reopened).
+        const key = item.clientId ?? item.id;
         if (item.streaming === true) {
           return (
             <StreamingMessageGroup
-              key={item.id}
+              key={key}
               item={item}
               participants={participants}
-              currentUser={currentUser}
-              showDayDivider={showDayDivider}
-            />
-          );
-        }
-        if (item.pendingStatus !== undefined) {
-          return (
-            <PendingMessageGroup
-              key={item.id}
-              item={item}
-              pendingStatus={item.pendingStatus}
-              pendingActions={pendingActions}
               currentUser={currentUser}
               showDayDivider={showDayDivider}
             />
@@ -1553,7 +1567,7 @@ export function ChannelTimeline({
         );
         return (
           <MessageParts
-            key={item.id}
+            key={key}
             item={item}
             participants={participants}
             currentUser={currentUser}
@@ -1572,6 +1586,7 @@ export function ChannelTimeline({
             {...(blockResponses !== undefined ? { blockResponses } : {})}
             {...(reactionActions !== undefined ? { reactionActions } : {})}
             {...(pinActions !== undefined ? { pinActions } : {})}
+            {...(pendingActions !== undefined ? { pendingActions } : {})}
           />
         );
       })}

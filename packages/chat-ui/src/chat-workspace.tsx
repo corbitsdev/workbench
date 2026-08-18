@@ -327,31 +327,54 @@ export function resetPendingSendNonceForTests(): void {
   pendingSendSeq = 0;
 }
 
+/** Random per-page-load prefix: a pending nonce doubles as the message's
+ * wire `clientId` (CL-6251), which the server persists — a bare counter
+ * would repeat `pending_1` on every reload, colliding with a prior
+ * session's stored clientId in the same channel (wrong-message matches
+ * in `mergePendingSends`, duplicate React keys in `ChannelTimeline`). */
+const pendingSendSession = Math.random().toString(36).slice(2, 10);
+
 function nextPendingSendNonce(): string {
   pendingSendSeq += 1;
-  return `pending_${pendingSendSeq}`;
+  return `pending_${pendingSendSession}_${pendingSendSeq}`;
+}
+
+/** The sender address a pending send's synthetic item renders under —
+ * `senderDisplay` (`timeline.tsx`) matches its local part against
+ * `currentUser.principalId` to render "You" regardless of domain, so the
+ * `@pending.local` half is never load-bearing, only honest about the
+ * item not being server-issued yet. Shared with `sendPending`'s own
+ * synchronous insert (`chat-workspace.tsx`) so a message never changes
+ * sender identity mid-flight. */
+export function pendingSenderAddress(
+  currentUserPrincipalId: string | undefined,
+): string {
+  return `${currentUserPrincipalId ?? "you"}@pending.local`;
 }
 
 /**
- * Folds this workspace's own optimistic sends onto the end of the
- * server's message list, oldest-first like the rest of the timeline — a
- * pending send is definitionally newer than anything the server has
- * confirmed for this composer submit. Rendered as `TimelineMessageItem`s
- * carrying no `reactions`/`pinned` (a pending entry has neither yet) and
- * a sender built from the signed-in principal, the same address shape
- * `senderDisplay` already matches against `currentUser.principalId` to
- * render "You".
+ * Folds this workspace's own still-in-flight sends onto the end of the
+ * server's message list, oldest-first like the rest of the timeline —
+ * one message list, rendered through the exact same path as any
+ * confirmed message (`ChannelTimeline`'s `MessageParts`), never a
+ * separate visually-distinct tier. `pendingStatus`/`pendingNonce` are
+ * the only markers that distinguish it: a small "sending" clock glyph,
+ * or (once failed) an inline retry row — see `TimelineMessageItem`.
  *
- * A pending send's `nonce` is also the `clientId` it sent on the wire
- * (see `sendPending` in `chat-workspace.tsx`) — CL-6251's fix for the
- * double-render defect: once `items` contains a confirmed message
- * carrying that same `clientId` (from the POST response landing, or
- * from a later `GET .../messages` page — whichever arrives first), the
- * pending bubble is identity-matched and dropped here rather than
- * rendered alongside its own confirmed copy. This is never a
- * heuristic guess from content/timing; a message with no `clientId` at
- * all (sent before this feature, or by a peer) never matches any
- * pending entry.
+ * A pending send's `nonce` doubles as the `clientId` it sent on the wire
+ * (see `sendPending`) and is carried onto the synthetic item's own
+ * `clientId` too, so it keys identically to whichever confirmed message
+ * later reconciles it — `ChannelTimeline` renders both under the same
+ * React key, updating one DOM node in place rather than unmounting a
+ * pending bubble and mounting an unrelated confirmed one.
+ *
+ * Once `items` contains a confirmed message carrying that same
+ * `clientId` (from the POST response landing, or from a later `GET
+ * .../messages` page — whichever arrives first), the pending entry is
+ * identity-matched and dropped here rather than rendered alongside its
+ * own confirmed copy. This is never a heuristic guess from
+ * content/timing; a message with no `clientId` at all (sent before this
+ * feature, or by a peer) never matches any pending entry.
  */
 export function mergePendingSends(
   items: readonly MessageItem[],
@@ -368,13 +391,14 @@ export function mergePendingSends(
     (pending) => !confirmedClientIds.has(pending.nonce),
   );
   if (unresolvedSends.length === 0) return items;
-  const senderAddress = `${currentUserPrincipalId ?? "you"}@pending.local`;
+  const senderAddress = pendingSenderAddress(currentUserPrincipalId);
   const pendingItems: TimelineMessageItem[] = unresolvedSends.map(
     (pending) => ({
       id: pending.nonce,
       createdAt: pending.createdAt,
       parts: partsForSend(pending.text, pending.attachments),
       sender: { name: null, address: senderAddress },
+      clientId: pending.nonce,
       pendingStatus: pending.status,
       pendingNonce: pending.nonce,
     }),
@@ -1165,10 +1189,19 @@ function ChatWorkspaceInner({
    * The optimistic core both a fresh composer submit and a bubble's own
    * Retry button drive: adds (or resets) a pending entry before the
    * request goes out, so the sender sees their message land in the
-   * timeline immediately rather than waiting on the round-trip, then
-   * either drops the pending entry (the next `loadMessages` folds in the
-   * server's real one) or flips it to `"failed"` in place — never a
-   * status line disconnected from the message it describes.
+   * timeline immediately rather than waiting on the round-trip. Once the
+   * POST resolves, the confirmed item (built straight from its response —
+   * no extra round-trip) replaces the pending entry in the very same
+   * state update: there is never a render where the message has vanished
+   * from both `pendingSends` and `messagesState.items` while a fresh
+   * `GET` is still in flight to reintroduce it, and never a render where
+   * both the pending and confirmed copies show at once. The follow-up
+   * background `loadMessages` still runs to pick up server-only detail
+   * (real sender record, reactions, thread meta) — it settles into that
+   * data under the same `clientId` key, so it never re-triggers the
+   * mount/unmount swap this replaces. A rejected send flips the pending
+   * entry to `"failed"` in place instead — never a status line
+   * disconnected from the message it describes.
    */
   async function sendPending(
     nonce: string,
@@ -1188,14 +1221,20 @@ function ChatWorkspaceInner({
     // matching `clientId`, so whichever wins this race, the other is
     // a no-op.
     try {
+      let sent: {
+        readonly id: string;
+        readonly createdAt: string;
+        readonly threadId?: string;
+        readonly clientId?: string;
+      };
       if (openThreadId !== null) {
-        await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeChannelId, parts, {
           threadId: openThreadId,
           clientId: nonce,
           ...inviteOption,
         });
       } else if (pendingParentMessageId !== null) {
-        const sent = await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeChannelId, parts, {
           inReplyToMessageId: pendingParentMessageId,
           clientId: nonce,
           ...inviteOption,
@@ -1205,11 +1244,33 @@ function ChatWorkspaceInner({
           setPendingParentMessageId(null);
         }
       } else {
-        await sendMessage(tenantId, activeChannelId, parts, {
+        sent = await sendMessage(tenantId, activeChannelId, parts, {
           clientId: nonce,
           ...inviteOption,
         });
       }
+      const confirmed: MessageItem = {
+        id: sent.id,
+        createdAt: sent.createdAt,
+        parts,
+        sender: {
+          name: null,
+          address: pendingSenderAddress(currentUser?.principalId),
+        },
+        clientId: sent.clientId ?? nonce,
+      };
+      // A background refresh may have already folded the confirmed
+      // message into `items` (refresh-first interleaving) — appending
+      // unconditionally would render it twice under one key.
+      setMessagesState((current) => {
+        if (current.kind !== "ready") return current;
+        const alreadyPresent = current.items.some(
+          (item) =>
+            item.id === confirmed.id || item.clientId === confirmed.clientId,
+        );
+        if (alreadyPresent) return current;
+        return { kind: "ready", items: [...current.items, confirmed] };
+      });
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       // A message just landed in a channel with an agent in it: a reply
       // is owed, so show the typing indicator now rather than sitting

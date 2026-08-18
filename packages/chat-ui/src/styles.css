@@ -822,13 +822,6 @@
   flex-shrink: 0;
 }
 
-/* A pending own message renders no avatar chip until the server echo
-   replaces it — indent it to the shared text column so a just-sent
-   message never jumps sideways on landing. */
-.chat-message-group[data-pending] > .chat-bubble-row {
-  padding-left: calc(0.45rem + 2.15rem + 0.65rem);
-}
-
 /* Wraps a message sender's avatar with room for the shared-channel
    tenant-monogram badge (CL-5882), positioned bottom-right — only
    rendered when the server annotates the sender with a
