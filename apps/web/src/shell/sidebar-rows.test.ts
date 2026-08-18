@@ -108,6 +108,39 @@ describe("buildSidebarRows", () => {
 
     expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
+
+  test("DMs with the same agent identity minted from different ancestor tenants collapse to the most recent one (CL-6271)", () => {
+    const staleDm = workbench({
+      id: "ch_myra_ancestor",
+      kind: "chat",
+      title: "Myra",
+      definitionId: "wfd_myra_ancestor",
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+    });
+    const freshDm = workbench({
+      id: "ch_myra_leaf",
+      kind: "chat",
+      title: "Myra",
+      definitionId: "wfd_myra_leaf",
+      lastActivityAt: "2026-01-05T00:00:00.000Z",
+    });
+
+    const rows = buildSidebarRows([], [staleDm, freshDm], []);
+
+    expect(rows).toEqual([{ kind: "workbench", workbench: freshDm }]);
+  });
+
+  test("group workbenches are never mistaken for agent DMs during dedupe", () => {
+    const groupOne = workbench({ id: "ch_group_1", title: "Launch plan" });
+    const groupTwo = workbench({ id: "ch_group_2", title: "Launch plan" });
+
+    const rows = buildSidebarRows([], [groupOne, groupTwo], []);
+
+    expect(rows.map((row) => (row.kind === "workbench" ? row.workbench.id : null))).toEqual([
+      "ch_group_1",
+      "ch_group_2",
+    ]);
+  });
 });
 
 describe("identityColorClass", () => {
