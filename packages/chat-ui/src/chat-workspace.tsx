@@ -78,6 +78,7 @@ import type {
   PendingMessageStatus,
   PinActions,
   ReactionActions,
+  ScrollSnapshot,
   ThreadAffordanceMeta,
   TimelineMessageItem,
 } from "./timeline";
@@ -422,6 +423,50 @@ export function mergeStreamingReply(
       streaming: true,
     },
   ];
+}
+
+/** The client-side id the reply-timeout notice renders under — same
+ * "never a server-issued id" contract as `STREAMING_REPLY_ITEM_ID`. */
+const REPLY_TIMED_OUT_ITEM_ID = "reply_timed_out_notice";
+
+/**
+ * Appends an honest inline notice once `useStreamingReply`'s own backstop
+ * (`PENDING_REPLY_CLEAR_MS`) has fired — a turn that opened but never got a
+ * single token and never closed out either, so the reader was left staring
+ * at a typing indicator that just vanished with no explanation. Renders
+ * through the same event-line path `mergeStreamingReply`'s bubble and every
+ * other system line already use — no new CSS, no new item shape.
+ */
+export function appendReplyTimedOutNotice(
+  items: readonly TimelineMessageItem[],
+  replyTimedOut: boolean,
+): readonly TimelineMessageItem[] {
+  if (!replyTimedOut) return items;
+  return [
+    ...items,
+    {
+      id: REPLY_TIMED_OUT_ITEM_ID,
+      createdAt: new Date().toISOString(),
+      parts: [{ kind: "event", event: "chat.reply-timed-out", data: {} }],
+      sender: { name: null, address: "" },
+    },
+  ];
+}
+
+/**
+ * Records one channel's scroll snapshot into the map, pure — a fresh `Map`
+ * copy rather than a mutation, so `scrollSnapshotsRef.current` always holds
+ * exactly the value this function returned, never a same-reference object
+ * mutated out from under a caller still holding the old one.
+ */
+export function withScrollSnapshot(
+  snapshots: ReadonlyMap<string, ScrollSnapshot>,
+  channelId: string,
+  snapshot: ScrollSnapshot,
+): ReadonlyMap<string, ScrollSnapshot> {
+  const next = new Map(snapshots);
+  next.set(channelId, snapshot);
+  return next;
 }
 
 /**
@@ -1053,11 +1098,37 @@ function ChatWorkspaceInner({
     useTypingIndicator(currentUser?.principalId, activeChannelId);
   const {
     streamingReply,
+    replyTimedOut,
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
   } = useStreamingReply(activeChannelId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
     useTurnActivity(activeChannelId);
+
+  // Opening Settings swaps `ChannelTimeline` out for `ChannelSettingsSurface`
+  // entirely (see the early `settingsOpen` return below) — closing it
+  // remounts a fresh `ChannelTimeline` with no memory of where the reader
+  // was. A ref (not state) holds each channel's last snapshot: recording it
+  // never needs to trigger a re-render, only be there the next time this
+  // channel's `ChannelTimeline` mounts.
+  const scrollSnapshotsRef = useRef<ReadonlyMap<string, ScrollSnapshot>>(
+    new Map(),
+  );
+  const restoredScrollSnapshot =
+    activeChannelId !== null
+      ? scrollSnapshotsRef.current.get(activeChannelId)
+      : undefined;
+  const handleScrollSnapshot = useCallback(
+    (snapshot: ScrollSnapshot) => {
+      if (activeChannelId === null) return;
+      scrollSnapshotsRef.current = withScrollSnapshot(
+        scrollSnapshotsRef.current,
+        activeChannelId,
+        snapshot,
+      );
+    },
+    [activeChannelId],
+  );
 
   useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
@@ -1676,14 +1747,17 @@ function ChatWorkspaceInner({
                       activeChannel?.kind === "chat" &&
                       typeof activeChannel.definitionId === "string"
                     }
-                    items={mergeStreamingReply(
-                      mergePendingSends(
-                        messagesState.items,
-                        pendingSends,
-                        currentUser?.principalId,
+                    items={appendReplyTimedOutNotice(
+                      mergeStreamingReply(
+                        mergePendingSends(
+                          messagesState.items,
+                          pendingSends,
+                          currentUser?.principalId,
+                        ),
+                        streamingReply,
+                        activeChannel?.participants ?? [],
                       ),
-                      streamingReply,
-                      activeChannel?.participants ?? [],
+                      replyTimedOut,
                     )}
                     participants={activeChannel?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
@@ -1714,6 +1788,10 @@ function ChatWorkspaceInner({
                       onRetry: retryPendingSend,
                       onDiscard: discardPendingSend,
                     }}
+                    {...(restoredScrollSnapshot !== undefined
+                      ? { scrollRestore: restoredScrollSnapshot }
+                      : {})}
+                    onScrollSnapshot={handleScrollSnapshot}
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   {typingState !== null ? (

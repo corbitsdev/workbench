@@ -298,15 +298,27 @@ export function nextTurnActivityState(
   return { ...base, thinking };
 }
 
+/** How long an open turn may sit with no consumed event before the strip
+ * clears itself — the backstop for a turn whose `reactor.done`/
+ * `inference.done` (or `.error`) never arrives (agent down, SSE dropped
+ * mid-reconnect), mirroring `streaming-reply.ts`'s
+ * `PENDING_REPLY_CLEAR_MS`. */
+const TURN_ACTIVITY_STALE_MS = 120_000;
+
 /**
  * Owns the turn-activity state end to end, mirroring
  * `useStreamingReply`'s shape exactly: feed it every stream event and it
  * tracks the active turn's tool calls, thinking, and retries, clearing
  * the moment the turn ends. `channelId` resets it immediately on a
  * channel switch — activity from the channel just left belongs to that
- * channel, not the new one.
+ * channel, not the new one. `staleMs` (default `TURN_ACTIVITY_STALE_MS`)
+ * is a test seam, mirroring `useTypingIndicator`'s own configurable
+ * timeout.
  */
-export function useTurnActivity(channelId: string | null): {
+export function useTurnActivity(
+  channelId: string | null,
+  staleMs: number = TURN_ACTIVITY_STALE_MS,
+): {
   readonly activity: TurnActivityState;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
 } {
@@ -315,6 +327,19 @@ export function useTurnActivity(channelId: string | null): {
   useEffect(() => {
     setActivity(null);
   }, [channelId]);
+
+  // Reset (clear + re-arm) on every event that actually changes the
+  // activity object — an ignored event never resets the clock, since
+  // nothing about the open turn changed. A dropped stream leaves
+  // `activity` referentially stable forever, so this timer is the only
+  // thing that ever clears it in that case.
+  useEffect(() => {
+    if (activity === null) return;
+    const timer = setTimeout(() => {
+      setActivity((current) => (current === activity ? null : current));
+    }, staleMs);
+    return () => clearTimeout(timer);
+  }, [activity, staleMs]);
 
   function handleStreamEvent(eventType: string, data: unknown) {
     setActivity((current) =>

@@ -113,39 +113,55 @@ export function openPendingReply(
  * never arrive (agent down, SSE dropped mid-reconnect). */
 const PENDING_REPLY_CLEAR_MS = 120_000;
 
-export function useStreamingReply(channelId: string | null): {
+export function useStreamingReply(
+  channelId: string | null,
+  clearMs: number = PENDING_REPLY_CLEAR_MS,
+): {
   readonly streamingReply: StreamingReplyState;
+  /** True once the backstop above has fired for the turn just cleared —
+   * the host's cue to render `CHAT_STRINGS.replyTimedOutNotice` rather
+   * than silently dropping back to no indicator at all. Reset on the
+   * next channel switch, stream event, or awaited reply, same lifecycle
+   * as `streamingReply` itself. */
+  readonly replyTimedOut: boolean;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
   readonly noteAwaitingReply: () => void;
 } {
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
+  const [replyTimedOut, setReplyTimedOut] = useState(false);
 
   useEffect(() => {
     setStreamingReply(null);
+    setReplyTimedOut(false);
   }, [channelId]);
 
   useEffect(() => {
     if (streamingReply === null || streamingReply.text !== "") return;
     const timer = setTimeout(() => {
-      setStreamingReply((current) =>
-        current === streamingReply ? null : current,
-      );
-    }, PENDING_REPLY_CLEAR_MS);
+      // The dependency below re-arms this effect (clearing this exact
+      // timer) the instant `streamingReply` changes, so this callback only
+      // ever runs while it's still the same pending reply it was armed
+      // for — no need to re-check identity here.
+      setStreamingReply(null);
+      setReplyTimedOut(true);
+    }, clearMs);
     return () => clearTimeout(timer);
-  }, [streamingReply]);
+  }, [streamingReply, clearMs]);
 
   function handleStreamEvent(eventType: string, data: unknown) {
+    setReplyTimedOut(false);
     setStreamingReply((current) =>
       nextStreamingReplyState(current, { eventType, data }),
     );
   }
 
   function noteAwaitingReply() {
+    setReplyTimedOut(false);
     setStreamingReply(openPendingReply);
   }
 
-  return { streamingReply, handleStreamEvent, noteAwaitingReply };
+  return { streamingReply, replyTimedOut, handleStreamEvent, noteAwaitingReply };
 }
 
 /**

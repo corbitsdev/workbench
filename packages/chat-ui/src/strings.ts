@@ -186,6 +186,7 @@ export const CHAT_STRINGS = {
   },
   turnActivityThinking: "Thinking…",
   turnActivityRetry: (attempt: number) => `Retrying (attempt ${attempt})…`,
+  replyTimedOutNotice: "No reply arrived — the agent may be unavailable.",
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",

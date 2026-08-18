@@ -138,7 +138,38 @@ export type CurrentUser = {
    */
   readonly principalId: string;
   readonly name?: string;
+  /**
+   * A handle/email fallback for the own-message avatar's initial when no
+   * `name` is set — never shown as the "You" label itself, only used to
+   * derive a single honest initial (see `ownAvatarInitials`) instead of
+   * running `initialsOf` over the literal word "You".
+   */
+  readonly handle?: string;
 };
+
+/** Fallback glyph for an own-message avatar with no name and no handle to
+ * derive an initial from — never a guess, never "YO" from the "You" label
+ * itself. */
+const UNKNOWN_INITIAL = "•";
+
+/**
+ * The signed-in reader's own avatar initials: `currentUser.name`'s real
+ * initials when set, else the first letter of `currentUser.handle`
+ * (a mention handle or email — whichever the host had on hand), else
+ * `UNKNOWN_INITIAL`. Deliberately never derived from the "You" label
+ * itself — `initialsOf("You")` reads as "YO", a fabricated pair of
+ * letters with no relationship to the actual signed-in person.
+ */
+function ownAvatarInitials(currentUser: CurrentUser): string {
+  if (currentUser.name !== undefined && currentUser.name.trim().length > 0) {
+    return initialsOf(currentUser.name);
+  }
+  const handle = currentUser.handle?.trim();
+  if (handle !== undefined && handle.length > 0) {
+    return handle.charAt(0).toUpperCase();
+  }
+  return UNKNOWN_INITIAL;
+}
 
 export function localPartOf(address: string): string {
   const at = address.indexOf("@");
@@ -240,7 +271,7 @@ function senderDisplay(
     localPartOf(sender.address) === currentUser.principalId
   ) {
     const label = currentUser.name ?? CHAT_STRINGS.senderYou;
-    return { label, isAgent: false, initials: initialsOf(label) };
+    return { label, isAgent: false, initials: ownAvatarInitials(currentUser) };
   }
 
   const matched = participants.find(
@@ -509,6 +540,8 @@ function friendlyEventText(
       }
       return CHAT_STRINGS.eventSettingsChanged;
     }
+    case "chat.reply-timed-out":
+      return CHAT_STRINGS.replyTimedOutNotice;
     case "block.response": {
       const kind = data !== undefined ? data.kind : undefined;
       return kind === "poll"
@@ -875,6 +908,24 @@ function MessageHoverToolbar({
   readonly reactionActions?: ReactionActions;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerAnchorRef = useRef<HTMLSpanElement>(null);
+
+  // A click/tap anywhere outside the picker closes it, same as Escape —
+  // without this, the picker is the one popover on this surface that only
+  // ever closes on a second click of its own trigger or a selection.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const anchor = pickerAnchorRef.current;
+      if (anchor === null) return;
+      if (event.target instanceof Node && anchor.contains(event.target)) {
+        return;
+      }
+      setPickerOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [pickerOpen]);
 
   function toggleReaction(emoji: string) {
     reactionActions?.onToggle(messageId, emoji);
@@ -897,7 +948,7 @@ function MessageHoverToolbar({
       data-open={pickerOpen || menuOpen}
     >
       {reactionActions !== undefined ? (
-        <span className="chat-reaction-picker-anchor">
+        <span className="chat-reaction-picker-anchor" ref={pickerAnchorRef}>
           <button
             type="button"
             className="chat-reaction-add"
@@ -1269,6 +1320,14 @@ function ThreadAffordance({
   );
 }
 
+/** A channel's scroll position, captured/restored across a
+ * `ChannelTimeline` unmount-remount (e.g. opening/closing Settings) — see
+ * `ChannelTimeline`'s `scrollRestore`/`onScrollSnapshot`. */
+export type ScrollSnapshot = {
+  readonly scrollTop: number;
+  readonly pinned: boolean;
+};
+
 export function ChannelTimeline({
   items,
   participants = [],
@@ -1286,6 +1345,8 @@ export function ChannelTimeline({
   reactionActions,
   pinActions,
   pendingActions,
+  scrollRestore,
+  onScrollSnapshot,
 }: {
   /** Server-issued messages, oldest→newest, plus any optimistic entries
    * the host is still resolving — see `TimelineMessageItem`'s
@@ -1333,12 +1394,28 @@ export function ChannelTimeline({
    * `PendingActions`. Undefined renders a failed pending item with no
    * recovery affordance at all (still shown as failed). */
   readonly pendingActions?: PendingActions;
+  /** The scroll position to restore on mount — the host's own memory of
+   * where this channel's reader last was, captured via `onScrollSnapshot`
+   * the last time this component unmounted (e.g. opening Settings, which
+   * swaps this whole component out for the settings surface). Undefined
+   * mounts pinned to the bottom, same as a channel's first-ever render. */
+  readonly scrollRestore?: ScrollSnapshot;
+  /** Called once, from this component's unmount cleanup, with its final
+   * scroll position — the host's only chance to remember it, since this
+   * component owns no state itself once it's gone. */
+  readonly onScrollSnapshot?: (snapshot: ScrollSnapshot) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Starts true so a channel's first render always lands pinned to the
-  // bottom; afterward it tracks whether the reader is near the bottom so a
-  // background message doesn't yank them away from history they're reading.
-  const pinnedRef = useRef(true);
+  // Starts pinned (true) unless a restored snapshot says otherwise — a
+  // channel's first-ever render always lands at the bottom, but remounting
+  // after Settings closes restores exactly how the reader left it.
+  const pinnedRef = useRef(scrollRestore?.pinned ?? true);
+
+  // Kept current every render (never a dependency) so the unmount cleanup
+  // below always calls the host's latest callback, not a stale one closed
+  // over at mount time.
+  const onScrollSnapshotRef = useRef(onScrollSnapshot);
+  onScrollSnapshotRef.current = onScrollSnapshot;
 
   const BOTTOM_PIN_THRESHOLD_PX = 40;
 
@@ -1357,6 +1434,44 @@ export function ChannelTimeline({
       container.scrollTop = container.scrollHeight;
     }
   }, [items.length]);
+
+  // Restores an unpinned reader's exact offset once, on mount — the
+  // items.length effect above already handles the pinned case (it fires on
+  // this same mount). Deliberately empty deps: this only ever runs once, a
+  // restore is a one-time act on remount, not something to repeat every
+  // time `scrollRestore` happens to be a new object.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null) return;
+    if (scrollRestore !== undefined && !scrollRestore.pinned) {
+      container.scrollTop = scrollRestore.scrollTop;
+    }
+    return () => {
+      onScrollSnapshotRef.current?.({
+        scrollTop: container.scrollTop,
+        pinned: pinnedRef.current,
+      });
+    };
+  }, []);
+
+  // A sibling mounting or growing below the timeline (the turn-activity
+  // strip, a typing indicator) changes the scroll container's content
+  // height without changing `items.length` — the effect above never fires
+  // for it, so a pinned reader would otherwise watch their own view get
+  // visually shoved by chrome they never asked to track. `ResizeObserver`
+  // is absent in some test environments (jsdom has no implementation), so
+  // this is a no-op there rather than a crash.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null) return;
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!pinnedRef.current) return;
+      container.scrollTop = container.scrollHeight;
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   if (items.length === 0) {
     // A freshly minted agent chat answers before its launches finish
