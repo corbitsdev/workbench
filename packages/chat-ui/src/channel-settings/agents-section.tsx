@@ -1,34 +1,149 @@
-// Agents section: the agent participants split out from humans (see
-// MembersSection), plus the autonomy callout — per-channel autonomy
-// overrides are draft UI until their store lands.
+// Agents: master-detail over every agent participant this channel has
+// (CL-6215). The list (every invited agent, Invite agent, the autonomy
+// callout) is the whole surface until one is picked; clicking a row opens
+// that agent's detail — the editor the old, separate "Myra" tab rendered,
+// generalized to any agent: name/instructions (`getAgentInstructions`/
+// `updateAgentInstructions`, `@corbits/agent-directory`'s own routes, a
+// different backend than every other section here, which all PATCH
+// through the channel settings surface's top-bar Save), Capabilities
+// (tools/skills, plus a model picker fed from this tenant's resolved,
+// workspace-wide inference catalog — see `CapabilitiesBlock` below), and
+// History (every commit to the agent's instructions/capabilities, with
+// restore). A load failure renders as an inline reason, never a fake save.
 
-import { Button } from "@corbits/react-ui";
-import { isAgentAddress } from "@corbits/chat/mentions";
-import { UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  formatRelativeTime,
+  toast,
+} from "@corbits/react-ui";
+import { getResolvedCatalog, providerDisplayName } from "@corbits/inference-settings";
+import type { ModelInfo } from "@corbits/inference-settings";
+import { ArrowLeft, CircleAlert, UserPlus } from "lucide-react";
 
-import type { ParticipantRecord } from "../api";
+import {
+  addAgentCapability,
+  describeChatError,
+  getAgentInstructions,
+  listAgentVersions,
+  listCapabilityInventory,
+  listChannelAgents,
+  refreshChannelAgent,
+  restoreAgentVersion,
+  updateAgentInstructions,
+} from "../api";
+import type {
+  AgentDetail,
+  AgentVersion,
+  CapabilityAddition,
+  CapabilityInventory,
+  ChannelAgent,
+} from "../api";
 import { CHAT_STRINGS } from "../strings";
 
+type ListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly agents: readonly ChannelAgent[] };
+
 export function AgentsSection({
-  participants,
+  tenantId,
+  channelId,
   onInvite,
 }: {
-  readonly participants: readonly ParticipantRecord[];
+  readonly tenantId: string;
+  readonly channelId: string;
   readonly onInvite: () => void;
 }) {
-  const agents = participants.filter((p) => isAgentAddress(p.address));
+  const [state, setState] = useState<ListState>({ kind: "loading" });
+  const [selected, setSelected] = useState<ChannelAgent | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    listChannelAgents(tenantId, channelId)
+      .then((agents) => {
+        if (!cancelled) setState({ kind: "ready", agents });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setState({
+          kind: "error",
+          message: describeChatError(cause, "Couldn't load the agents."),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, channelId]);
+
+  if (state.kind === "loading") {
+    return <Skeleton className="query-skeleton" />;
+  }
+
+  if (state.kind === "error") {
+    return (
+      <EmptyState
+        icon={<CircleAlert />}
+        title="Couldn't load agents"
+        description={state.message}
+      />
+    );
+  }
+
+  if (selected !== null) {
+    return (
+      <div className="channel-settings-pane">
+        <button
+          type="button"
+          className="chat-settings-agent-back"
+          onClick={() => setSelected(null)}
+        >
+          <ArrowLeft aria-hidden="true" />
+          {CHAT_STRINGS.channelSettingsAgentsBackAction}
+        </button>
+        <AgentDetailEditor
+          tenantId={tenantId}
+          channelId={channelId}
+          agent={selected}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="channel-settings-pane">
       <div className="chat-settings-field">
         <span>{CHAT_STRINGS.channelSettingsAgentsLabel}</span>
-        {agents.length === 0 ? (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.channelSettingsAgentsInviteHint}
+        </p>
+        {state.agents.length === 0 ? (
           <p className="chat-settings-field-hint">
             {CHAT_STRINGS.channelSettingsNoAgents}
           </p>
         ) : (
           <ul className="chat-settings-participants-list">
-            {agents.map((participant) => (
-              <li key={participant.address}>@{participant.handle}</li>
+            {state.agents.map((agent) => (
+              <li key={agent.address}>
+                <button
+                  type="button"
+                  className="chat-settings-agent-picker-row"
+                  onClick={() => setSelected(agent)}
+                >
+                  @{agent.handle}
+                </button>
+              </li>
             ))}
           </ul>
         )}
@@ -41,6 +156,576 @@ export function AgentsSection({
         <strong>{CHAT_STRINGS.channelSettingsAutonomyTitle}</strong>
         <p>{CHAT_STRINGS.channelSettingsAutonomyBody}</p>
       </div>
+    </div>
+  );
+}
+
+type EditorState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly detail: AgentDetail };
+
+function AgentDetailEditor({
+  tenantId,
+  channelId,
+  agent,
+}: {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly agent: ChannelAgent;
+}) {
+  const [state, setState] = useState<EditorState>({ kind: "loading" });
+  const [name, setName] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAgentInstructions(tenantId, agent.definitionId)
+      .then((detail) => {
+        if (cancelled) return;
+        setName(detail.name);
+        setInstructions(detail.systemPrompt);
+        setState({ kind: "ready", detail });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setState({
+          kind: "error",
+          message: describeChatError(cause, "Couldn't load the agent."),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, agent.definitionId]);
+
+  const label =
+    state.kind === "ready" && state.detail.name.trim() !== ""
+      ? state.detail.name
+      : `@${agent.handle}`;
+
+  if (state.kind === "loading") {
+    return <Skeleton className="query-skeleton" />;
+  }
+
+  // No backing route succeeded for this agent's definition — render the
+  // reason, not a form with nothing behind it. Never a fake save.
+  if (state.kind === "error") {
+    return (
+      <EmptyState
+        icon={<CircleAlert />}
+        title={CHAT_STRINGS.channelSettingsAgentDetailLoadError}
+        description={state.message}
+      />
+    );
+  }
+
+  const dirty =
+    name !== state.detail.name || instructions !== state.detail.systemPrompt;
+
+  function handleCancel() {
+    if (state.kind !== "ready") return;
+    setName(state.detail.name);
+    setInstructions(state.detail.systemPrompt);
+    setSaveError(null);
+  }
+
+  function handleSave() {
+    if (state.kind !== "ready" || !dirty) return;
+    setSaving(true);
+    setSaveError(null);
+    updateAgentInstructions(tenantId, agent.definitionId, {
+      name,
+      systemPrompt: instructions,
+    })
+      .then((saved) =>
+        refreshChannelAgent(tenantId, channelId, agent.address).then(
+          () => saved,
+        ),
+      )
+      .then((saved) => {
+        toast(CHAT_STRINGS.channelSettingsAgentDetailSavedToast);
+        setState((prev) =>
+          prev.kind === "ready"
+            ? {
+                kind: "ready",
+                detail: { ...prev.detail, ...saved },
+              }
+            : prev,
+        );
+      })
+      .catch(() =>
+        setSaveError(CHAT_STRINGS.channelSettingsAgentDetailSaveError),
+      )
+      .finally(() => setSaving(false));
+  }
+
+  return (
+    <div className="chat-settings-agent-block">
+      <h3 className="chat-settings-agent-block-title">{label}</h3>
+      <label className="chat-settings-field">
+        <span>{CHAT_STRINGS.channelSettingsAgentDetailNameLabel}</span>
+        <Input value={name} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <label className="chat-settings-field">
+        <span>{CHAT_STRINGS.channelSettingsAgentDetailInstructionsLabel}</span>
+        <textarea
+          className="chat-textarea"
+          value={instructions}
+          onChange={(event) => setInstructions(event.target.value)}
+          rows={10}
+        />
+      </label>
+      <p className="chat-settings-field-hint">
+        {CHAT_STRINGS.channelSettingsAgentDetailInstructionsHint}
+      </p>
+      {saveError !== null ? (
+        <p className="chat-dialog-error" role="alert">
+          {saveError}
+        </p>
+      ) : null}
+      <div className="chat-settings-field-actions">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleCancel}
+          disabled={!dirty || saving}
+        >
+          {CHAT_STRINGS.channelSettingsAgentDetailCancel}
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+        >
+          {saving
+            ? CHAT_STRINGS.channelSettingsAgentDetailSaving
+            : CHAT_STRINGS.channelSettingsAgentDetailSave}
+        </Button>
+      </div>
+
+      <CapabilitiesBlock
+        tenantId={tenantId}
+        channelId={channelId}
+        agent={agent}
+        detail={state.detail}
+        onChanged={(detail) => setState({ kind: "ready", detail })}
+      />
+
+      <HistoryBlock
+        tenantId={tenantId}
+        channelId={channelId}
+        agent={agent}
+        onRestored={(detail) => {
+          setName(detail.name);
+          setInstructions(detail.systemPrompt);
+          setState({ kind: "ready", detail });
+        }}
+      />
+    </div>
+  );
+}
+
+// --- Capabilities (tools, skills, and — the per-agent inference picker —
+// model, fed from this tenant's resolved catalog: the workspace-wide pool
+// of providers actually connected, the same read the Models settings
+// section itself resolves from, never a second store of "what's
+// available") ---
+
+type InventoryState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error" }
+  | { readonly kind: "ready"; readonly inventory: CapabilityInventory };
+
+type ModelOption = { readonly canonicalName: string; readonly label: string };
+
+type CatalogState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error" }
+  | { readonly kind: "ready"; readonly models: readonly ModelInfo[] };
+
+/** Only a model with at least one offering is actually launchable for this
+ * tenant — an entry with none has no provider connected anywhere up the
+ * ancestor chain, so it is left off the picker rather than offered to fail
+ * at launch. Labeled by its top (highest-priority) offering's provider —
+ * the same one `getResolvedCatalog`'s resolution would pick. */
+function connectedModelOptions(
+  models: readonly ModelInfo[],
+  alreadySet: string | undefined,
+): readonly ModelOption[] {
+  return models
+    .filter(
+      (model) =>
+        model.offerings.length > 0 && model.canonicalName !== alreadySet,
+    )
+    .map((model) => {
+      const topOffering = model.offerings[0];
+      return {
+        canonicalName: model.canonicalName,
+        label: CHAT_STRINGS.channelSettingsAgentDetailModelOption(
+          model.displayName ?? model.canonicalName,
+          topOffering === undefined
+            ? ""
+            : providerDisplayName(topOffering.providerName),
+        ),
+      };
+    });
+}
+
+function CapabilitiesBlock({
+  tenantId,
+  channelId,
+  agent,
+  detail,
+  onChanged,
+}: {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly agent: ChannelAgent;
+  readonly detail: AgentDetail;
+  readonly onChanged: (detail: AgentDetail) => void;
+}) {
+  const [inventoryState, setInventoryState] = useState<InventoryState>({
+    kind: "loading",
+  });
+  const [catalogState, setCatalogState] = useState<CatalogState>({
+    kind: "loading",
+  });
+  const [kind, setKind] = useState<CapabilityAddition["kind"]>("toolPackage");
+  const [choice, setChoice] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listCapabilityInventory(tenantId)
+      .then((inventory) => {
+        if (!cancelled) setInventoryState({ kind: "ready", inventory });
+      })
+      .catch(() => {
+        if (!cancelled) setInventoryState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getResolvedCatalog(tenantId)
+      .then((models) => {
+        if (!cancelled) setCatalogState({ kind: "ready", models });
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
+
+  const modelOptions =
+    catalogState.kind === "ready"
+      ? connectedModelOptions(catalogState.models, detail.model)
+      : [];
+
+  const options =
+    kind === "toolPackage"
+      ? inventoryState.kind === "ready"
+        ? inventoryState.inventory.toolPackages
+            .map((entry) => entry.name)
+            .filter(
+              (name) =>
+                !detail.toolPackagePins.some((pin) => pin.name === name),
+            )
+        : []
+      : kind === "skill"
+        ? inventoryState.kind === "ready"
+          ? inventoryState.inventory.skills
+              .map((entry) => entry.name)
+              .filter((name) => !detail.skills.includes(name))
+          : []
+        : modelOptions.map((option) => option.canonicalName);
+
+  const optionsLoading =
+    kind === "model"
+      ? catalogState.kind === "loading"
+      : inventoryState.kind === "loading";
+
+  function addition(): CapabilityAddition | undefined {
+    if (choice === "") return undefined;
+    if (kind === "model") return { kind: "model", canonicalName: choice };
+    return { kind, name: choice };
+  }
+
+  function handleAdd() {
+    const next = addition();
+    if (next === undefined) return;
+    setAdding(true);
+    setAddError(null);
+    addAgentCapability(tenantId, agent.definitionId, next)
+      .then((capabilities) =>
+        refreshChannelAgent(tenantId, channelId, agent.address).then(
+          () => capabilities,
+        ),
+      )
+      .then((capabilities) => {
+        toast(CHAT_STRINGS.channelSettingsAgentDetailSavedToast);
+        onChanged({ ...detail, ...capabilities });
+        setChoice("");
+      })
+      .catch(() =>
+        setAddError(CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityError),
+      )
+      .finally(() => setAdding(false));
+  }
+
+  const hasCapabilities =
+    detail.toolPackagePins.length > 0 ||
+    detail.skills.length > 0 ||
+    detail.model !== undefined;
+
+  return (
+    <div className="chat-settings-agent-block-section">
+      <h4>{CHAT_STRINGS.channelSettingsAgentDetailCapabilitiesTitle}</h4>
+      <p className="chat-settings-field-hint">
+        {CHAT_STRINGS.channelSettingsAgentDetailCapabilitiesHint}
+      </p>
+
+      {hasCapabilities ? (
+        <ul className="chat-settings-capability-list">
+          {detail.toolPackagePins.map((pin) => (
+            <li key={`tool-${pin.name}`}>
+              <Badge tone="neutral">{pin.name}</Badge>
+            </li>
+          ))}
+          {detail.skills.map((skillName) => (
+            <li key={`skill-${skillName}`}>
+              <Badge tone="neutral">{skillName}</Badge>
+            </li>
+          ))}
+          {detail.model !== undefined ? (
+            <li key="model">
+              <Badge tone="neutral">
+                {CHAT_STRINGS.channelSettingsAgentDetailModelLabel}:{" "}
+                {detail.model}
+              </Badge>
+            </li>
+          ) : null}
+        </ul>
+      ) : (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.channelSettingsAgentDetailNoCapabilities}
+        </p>
+      )}
+
+      {inventoryState.kind === "error" ? (
+        <p className="chat-dialog-error" role="alert">
+          {CHAT_STRINGS.channelSettingsAgentDetailCapabilityInventoryError}
+        </p>
+      ) : (
+        <div className="chat-settings-capability-add">
+          <label className="chat-settings-field">
+            <span>
+              {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityLabel}
+            </span>
+            <select
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value as CapabilityAddition["kind"]);
+                setChoice("");
+              }}
+            >
+              <option value="toolPackage">
+                {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityKindTool}
+              </option>
+              <option value="skill">
+                {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityKindSkill}
+              </option>
+              <option value="model">
+                {CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityKindModel}
+              </option>
+            </select>
+          </label>
+          <label className="chat-settings-field">
+            <select
+              value={choice}
+              onChange={(event) => setChoice(event.target.value)}
+              disabled={optionsLoading || options.length === 0}
+            >
+              <option value="" />
+              {kind === "model"
+                ? modelOptions.map((option) => (
+                    <option key={option.canonicalName} value={option.canonicalName}>
+                      {option.label}
+                    </option>
+                  ))
+                : options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+            </select>
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleAdd}
+            disabled={choice === "" || adding}
+          >
+            {adding
+              ? CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityAdding
+              : CHAT_STRINGS.channelSettingsAgentDetailAddCapabilityButton}
+          </Button>
+        </div>
+      )}
+      {kind === "model" &&
+      catalogState.kind === "ready" &&
+      modelOptions.length === 0 ? (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.channelSettingsAgentDetailNoConnectedModels}
+        </p>
+      ) : null}
+      {addError !== null ? (
+        <p className="chat-dialog-error" role="alert">
+          {addError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// --- History ---
+
+type HistoryState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly versions: readonly AgentVersion[] };
+
+function HistoryBlock({
+  tenantId,
+  channelId,
+  agent,
+  onRestored,
+}: {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly agent: ChannelAgent;
+  readonly onRestored: (detail: AgentDetail) => void;
+}) {
+  const [state, setState] = useState<HistoryState>({ kind: "loading" });
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  function reload() {
+    setState({ kind: "loading" });
+    listAgentVersions(tenantId, agent.definitionId)
+      .then((versions) => setState({ kind: "ready", versions }))
+      .catch((cause: unknown) =>
+        setState({
+          kind: "error",
+          message: describeChatError(
+            cause,
+            CHAT_STRINGS.channelSettingsAgentDetailHistoryLoadError,
+          ),
+        }),
+      );
+  }
+
+  useEffect(reload, [tenantId, agent.definitionId]);
+
+  function handleRestore(commitSha: string) {
+    setRestoring(commitSha);
+    setRestoreError(null);
+    restoreAgentVersion(tenantId, agent.definitionId, commitSha)
+      .then((detail) =>
+        refreshChannelAgent(tenantId, channelId, agent.address).then(
+          () => detail,
+        ),
+      )
+      .then((detail) => {
+        toast(CHAT_STRINGS.channelSettingsAgentDetailSavedToast);
+        onRestored(detail);
+        reload();
+      })
+      .catch(() =>
+        setRestoreError(
+          CHAT_STRINGS.channelSettingsAgentDetailHistoryRestoreError,
+        ),
+      )
+      .finally(() => setRestoring(null));
+  }
+
+  return (
+    <div className="chat-settings-agent-block-section">
+      <h4>{CHAT_STRINGS.channelSettingsAgentDetailHistoryTitle}</h4>
+      <p className="chat-settings-field-hint">
+        {CHAT_STRINGS.channelSettingsAgentDetailHistoryHint}
+      </p>
+
+      {state.kind === "loading" ? (
+        <Skeleton className="query-skeleton" />
+      ) : state.kind === "error" ? (
+        <p className="chat-dialog-error" role="alert">
+          {state.message}
+        </p>
+      ) : state.versions.length === 0 ? (
+        <p className="chat-settings-field-hint">
+          {CHAT_STRINGS.channelSettingsAgentDetailHistoryEmpty}
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Change</TableHead>
+              <TableHead>Who</TableHead>
+              <TableHead>When</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {state.versions.map((version) => (
+              <TableRow key={version.commitSha}>
+                <TableCell className="text-sm" title={version.commitSha}>
+                  {version.message}
+                  {version.current ? (
+                    <Badge tone="success" className="ml-2">
+                      {CHAT_STRINGS.channelSettingsAgentDetailHistoryCurrent}
+                    </Badge>
+                  ) : null}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {version.author}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {formatRelativeTime(version.committedAtIso, Date.now())}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={version.current || restoring !== null}
+                    onClick={() => handleRestore(version.commitSha)}
+                  >
+                    {restoring === version.commitSha
+                      ? CHAT_STRINGS.channelSettingsAgentDetailHistoryRestoring
+                      : CHAT_STRINGS.channelSettingsAgentDetailHistoryRestore}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {restoreError !== null ? (
+        <p className="chat-dialog-error" role="alert">
+          {restoreError}
+        </p>
+      ) : null}
     </div>
   );
 }

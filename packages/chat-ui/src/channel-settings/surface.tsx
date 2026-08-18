@@ -26,7 +26,6 @@ import {
 import type { ChannelSettings } from "../api";
 import { CHAT_STRINGS } from "../strings";
 import { AgentsSection } from "./agents-section";
-import { AssistantSection } from "./assistant-section";
 import { CapacitySection } from "./capacity-section";
 import { getCapacityPlacement } from "./capacity-api";
 import {
@@ -36,9 +35,7 @@ import {
 import type { ContextWindowMode } from "./context-window";
 import { DangerSection } from "./danger-section";
 import { GeneralSection } from "./general-section";
-import { InferenceSection } from "@corbits/inference-settings";
-import { ApplyProfilePanel } from "@corbits/config-profiles-ui";
-import { KeysPluginsSection } from "./keys-plugins-section";
+import { PluginsSection } from "./plugins-section";
 import { MembersSection } from "./members-section";
 import { channelSettingsSections } from "./model";
 import type { ChannelSettingsSection, ChannelSettingsSectionId } from "./model";
@@ -176,7 +173,6 @@ export function ChannelSettingsSurface({
   const sections = channelSettingsSections(
     ready !== undefined ? ready.data.kind : "channel",
     isDm,
-    hasAgent,
     ready?.capacityAvailable ?? false,
   );
   const firstSection = sections[0];
@@ -333,24 +329,14 @@ export function ChannelSettingsSurface({
 
               {activeSection.id === "agents" ? (
                 <AgentsSection
-                  participants={data.participants}
+                  tenantId={tenantId}
+                  channelId={channelId}
                   onInvite={onInviteParticipant}
                 />
               ) : null}
 
-              {activeSection.id === "assistant" ? (
-                <AssistantSection tenantId={tenantId} channelId={channelId} />
-              ) : null}
-
-              {activeSection.id === "keys-plugins" ? (
-                <KeysPluginsSection tenantId={tenantId} />
-              ) : null}
-
-              {activeSection.id === "inference" ? (
-                <>
-                  <InferenceSection tenantId={tenantId} />
-                  <ApplyProfilePanel tenantId={tenantId} />
-                </>
+              {activeSection.id === "plugins" ? (
+                <PluginsSection tenantId={tenantId} />
               ) : null}
 
               {activeSection.id === "capacity" ? (

@@ -1,5 +1,6 @@
-// The workbench "Keys & plugins" section (CL-6099 workstream 1): every
-// registered connector's status for this exact workbench tenant, with
+// The workbench Plugins section (CL-6215, following CL-6099 workstream 1):
+// every registered TOOL/plugin connector's status for this exact workbench
+// tenant (Granola, Exa, Linear, GitHub, ScrapeCreators, ...), with
 // provenance ("Connected here" vs "Using shared key") straight from
 // `@workbench/connections/plugins`'s `listPluginsForTenant` — the same
 // chain-aware resolver the global Connections settings section and the
@@ -7,7 +8,13 @@
 // theirs about what "inherited" means. A connected-here plugin can be
 // removed; an inherited one can be overridden by connecting this
 // workbench's own key, which shadows the ancestor's from that point on.
-
+//
+// `listPluginsForTenant`'s registry also carries the inference-provider
+// connectors (Anthropic, OpenAI, Groq, Ollama, Opencode Zen, ...) — those
+// now live only in Shared Settings' Connections section, never here.
+// `feedsTools` is the one field that tells the two apart: every tool/plugin
+// connector names at least one tool package it feeds; every inference
+// provider names none (see `packages/connections/src/registry.ts`).
 import {
   Badge,
   Button,
@@ -36,13 +43,17 @@ import {
 } from "@corbits/api-query";
 import {
   completeConnectorCredential,
-  KeysPluginsApiError,
+  PluginsApiError,
   removeWorkbenchCredential,
   testConnectorCredential,
-} from "./keys-plugins-api";
+} from "./plugins-api";
 
 function errorMessage(cause: unknown, fallback: string): string {
-  return cause instanceof KeysPluginsApiError ? cause.message : fallback;
+  return cause instanceof PluginsApiError ? cause.message : fallback;
+}
+
+function isToolConnector(plugin: ResolvedPlugin): boolean {
+  return plugin.descriptor.feedsTools.length > 0;
 }
 
 /** One status per card, not two: an actionable problem ("Needs attention")
@@ -68,7 +79,7 @@ export function pluginCardStatus(plugin: ResolvedPlugin): {
   return { label: "Not connected", tone: "neutral" };
 }
 
-export function KeysPluginsSection({
+export function PluginsSection({
   tenantId,
 }: {
   readonly tenantId: string;
@@ -84,7 +95,9 @@ export function KeysPluginsSection({
   function load() {
     setQuery({ kind: "loading" });
     listPluginsForTenant(tenantId)
-      .then((plugins) => setQuery({ kind: "ready", data: plugins }))
+      .then((plugins) =>
+        setQuery({ kind: "ready", data: plugins.filter(isToolConnector) }),
+      )
       .catch((cause: unknown) => {
         if (cause instanceof UnauthenticatedError) {
           setQuery({ kind: "unauthenticated" });
@@ -114,12 +127,12 @@ export function KeysPluginsSection({
   }
 
   return (
-    <QueryView query={query} label="Keys & plugins">
+    <QueryView query={query} label="Plugins">
       {(plugins) => (
         <div className="channel-settings-pane">
           <p className="chat-settings-field-hint">
-            Keys added here are used only by this workbench. Everything else
-            uses the keys from Shared Settings.
+            Connections added here are used only by this workbench. Inference
+            provider keys live in Shared Settings, not here.
           </p>
           {rowError !== null ? (
             <p className="chat-dialog-error" role="alert">

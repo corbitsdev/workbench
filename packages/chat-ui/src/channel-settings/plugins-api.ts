@@ -1,4 +1,4 @@
-// Keys & plugins section seam onto the connector-registry routes
+// Plugins section seam onto the connector-registry routes
 // (`/api/tenants/:tenantId/connections/:connectorId/*`,
 // `@workbench/connections`'s route factory) and the native credential
 // delete route. Same shape as `@corbits/settings-ui`'s own
@@ -9,7 +9,7 @@
 import { type } from "arktype";
 import { UnauthenticatedError } from "@corbits/api-query";
 
-export class KeysPluginsApiError extends Error {
+export class PluginsApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
@@ -34,7 +34,7 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new KeysPluginsApiError(
+    throw new PluginsApiError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
@@ -44,7 +44,7 @@ async function request<T>(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
     const envelope = type({ error: { message: "string" } })(body);
-    throw new KeysPluginsApiError(
+    throw new PluginsApiError(
       envelope instanceof type.errors
         ? `The server answered ${response.status} while ${verb}.`
         : envelope.error.message,
@@ -55,7 +55,7 @@ async function request<T>(
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new KeysPluginsApiError(
+    throw new PluginsApiError(
       `Unexpected response shape while ${verb}: ${parsed.summary}`,
     );
   }
@@ -76,7 +76,7 @@ export async function testConnectorCredential(
     );
     return { ok: true };
   } catch (cause) {
-    if (cause instanceof KeysPluginsApiError && cause.status === 422) {
+    if (cause instanceof PluginsApiError && cause.status === 422) {
       return { ok: false, message: cause.message };
     }
     throw cause;

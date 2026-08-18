@@ -18,7 +18,6 @@
     "@corbits/chat": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
-    "@corbits/config-profiles-ui": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#5321f64b7f347a57a59002ba4160e4d0caa9c8c3",
     "@tanstack/react-query": "catalog:",

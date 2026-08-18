@@ -402,7 +402,6 @@
       "dependencies": {
         "@corbits/api-query": "workspace:*",
         "@corbits/chat": "workspace:*",
-        "@corbits/config-profiles-ui": "workspace:*",
         "@corbits/context-menu": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/preferences": "workspace:*",

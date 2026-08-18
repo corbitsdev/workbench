@@ -3,7 +3,7 @@
 // load now offers the shared Retry affordance, and a 401 renders as
 // sign-in-required rather than the generic error copy. This stands in for
 // both this package's LoadState consumers (surface.tsx and
-// keys-plugins-section.tsx share the same fetch-and-render pattern).
+// plugins-section.tsx share the same fetch-and-render pattern).
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";

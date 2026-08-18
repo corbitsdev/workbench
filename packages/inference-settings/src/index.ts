@@ -11,6 +11,7 @@ export type { ModelInfo, ModelOfferingInfo, ShadowOfferingInput } from "./api";
 export {
   buildEffectiveInferenceRows,
   computeReorderPatches,
+  providerDisplayName,
   restrictedOfferings,
   rowsByModel,
 } from "./effective-list";

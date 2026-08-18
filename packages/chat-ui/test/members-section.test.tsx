@@ -3,7 +3,7 @@
 // DELETEs the participant, shows a busy state while the request is in
 // flight, disables the signed-in viewer's own row, and refetches the
 // channel's participants on success — the same effect-driven mount
-// `assistant-section.test.tsx` uses. Stubs `global.fetch` directly,
+// `agents-section.test.tsx` uses. Stubs `global.fetch` directly,
 // never `mock.module`.
 
 import { afterEach, describe, expect, test } from "bun:test";

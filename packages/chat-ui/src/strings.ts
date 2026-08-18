@@ -201,9 +201,7 @@ export const CHAT_STRINGS = {
   channelSettingsSectionGeneral: "General",
   channelSettingsSectionMembers: "Members",
   channelSettingsSectionAgents: "Agents",
-  channelSettingsSectionAssistant: "Myra",
-  channelSettingsSectionKeysPlugins: "Keys & plugins",
-  channelSettingsSectionInference: "Inference",
+  channelSettingsSectionPlugins: "Plugins",
   channelSettingsSectionCapacity: "Capacity",
   channelSettingsSectionNotifications: "Notifications",
   channelSettingsSectionDanger: "Danger zone",
@@ -240,43 +238,52 @@ export const CHAT_STRINGS = {
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
     "Per-conversation autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",
-  channelSettingsAssistantNameLabel: "Name",
-  channelSettingsAssistantInstructionsLabel: "Instructions",
-  channelSettingsAssistantInstructionsHint:
+  channelSettingsAgentsBackAction: "All agents",
+  channelSettingsAgentsInviteHint:
+    "Every agent participant in this workbench — click one to edit its instructions, capabilities, and inference model.",
+  channelSettingsAgentDetailNameLabel: "Name",
+  channelSettingsAgentDetailInstructionsLabel: "Instructions",
+  channelSettingsAgentDetailInstructionsHint:
     "How this agent should act and what it knows to do. Applies from this agent's next reply in this conversation; other conversations with the same agent pick it up the next time their agent wakes.",
-  channelSettingsAssistantLoadError: "Couldn't load this agent's instructions",
-  channelSettingsAssistantSaveError: "Couldn't save these changes — try again.",
-  channelSettingsAssistantSavedToast: "Instructions saved",
-  channelSettingsAssistantSave: "Save",
-  channelSettingsAssistantSaving: "Saving…",
-  channelSettingsAssistantCancel: "Cancel",
-  channelSettingsAssistantNoAgents:
+  channelSettingsAgentDetailLoadError: "Couldn't load this agent's instructions",
+  channelSettingsAgentDetailSaveError: "Couldn't save these changes — try again.",
+  channelSettingsAgentDetailSavedToast: "Instructions saved",
+  channelSettingsAgentDetailSave: "Save",
+  channelSettingsAgentDetailSaving: "Saving…",
+  channelSettingsAgentDetailCancel: "Cancel",
+  channelSettingsAgentDetailNoAgents:
     "No agents to configure in this conversation.",
-  channelSettingsAssistantCapabilitiesTitle: "Capabilities",
-  channelSettingsAssistantCapabilitiesHint:
+  channelSettingsAgentDetailCapabilitiesTitle: "Capabilities",
+  channelSettingsAgentDetailCapabilitiesHint:
     "What this agent can use. Add a tool, skill, or model from what's available in this workbench.",
-  channelSettingsAssistantNoCapabilities: "No tools, skills, or model set yet.",
-  channelSettingsAssistantModelLabel: "Model",
-  channelSettingsAssistantAddCapabilityLabel: "Add a capability",
-  channelSettingsAssistantAddCapabilityKindTool: "Tool",
-  channelSettingsAssistantAddCapabilityKindSkill: "Skill",
-  channelSettingsAssistantAddCapabilityKindModel: "Model",
-  channelSettingsAssistantAddCapabilityButton: "Add",
-  channelSettingsAssistantAddCapabilityAdding: "Adding…",
-  channelSettingsAssistantAddCapabilityError:
+  channelSettingsAgentDetailNoCapabilities: "No tools, skills, or model set yet.",
+  channelSettingsAgentDetailModelLabel: "Model",
+  channelSettingsAgentDetailAddCapabilityLabel: "Add a capability",
+  channelSettingsAgentDetailAddCapabilityKindTool: "Tool",
+  channelSettingsAgentDetailAddCapabilityKindSkill: "Skill",
+  channelSettingsAgentDetailAddCapabilityKindModel: "Provider + model",
+  channelSettingsAgentDetailAddCapabilityButton: "Add",
+  channelSettingsAgentDetailAddCapabilityAdding: "Adding…",
+  channelSettingsAgentDetailAddCapabilityError:
     "Couldn't add that — it may no longer be available.",
-  channelSettingsAssistantCapabilityInventoryError:
+  channelSettingsAgentDetailCapabilityInventoryError:
     "Couldn't load what's available to add.",
-  channelSettingsAssistantHistoryTitle: "History",
-  channelSettingsAssistantHistoryHint:
+  channelSettingsAgentDetailModelOption: (
+    canonicalName: string,
+    providerName: string,
+  ) => `${canonicalName} · ${providerName}`,
+  channelSettingsAgentDetailNoConnectedModels:
+    "No connected providers yet — connect one in Shared Settings.",
+  channelSettingsAgentDetailHistoryTitle: "History",
+  channelSettingsAgentDetailHistoryHint:
     "Every change to this agent's instructions and capabilities, oldest actions first.",
-  channelSettingsAssistantHistoryLoadError:
+  channelSettingsAgentDetailHistoryLoadError:
     "Couldn't load this agent's history",
-  channelSettingsAssistantHistoryEmpty: "No history yet.",
-  channelSettingsAssistantHistoryCurrent: "Current",
-  channelSettingsAssistantHistoryRestore: "Restore",
-  channelSettingsAssistantHistoryRestoring: "Restoring…",
-  channelSettingsAssistantHistoryRestoreError:
+  channelSettingsAgentDetailHistoryEmpty: "No history yet.",
+  channelSettingsAgentDetailHistoryCurrent: "Current",
+  channelSettingsAgentDetailHistoryRestore: "Restore",
+  channelSettingsAgentDetailHistoryRestoring: "Restoring…",
+  channelSettingsAgentDetailHistoryRestoreError:
     "Couldn't restore that version — try again.",
   channelSettingsNotificationsLabel: "Notifications",
   channelSettingsNotifyAll: "All messages",
