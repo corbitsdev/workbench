@@ -348,6 +348,17 @@ describe("Agents section — list", () => {
     expect(el.textContent).toContain("Autonomy");
   });
 
+  test("each row carries a persistent trailing chevron", async () => {
+    stubFetch({ agents: [MYRA] });
+    const el = mount(baseProps());
+    await settle();
+
+    const row = el.querySelector(".chat-settings-agent-picker-row");
+    expect(
+      row?.querySelector(".chat-settings-agent-picker-row-chevron"),
+    ).not.toBeNull();
+  });
+
   test("no agents invited yet reads honestly, not as an empty list", async () => {
     // A channel (not a DM chat), so the empty agent list itself is under
     // test rather than the separate DM trim that hides Agents entirely.
@@ -408,7 +419,7 @@ describe("Agents section — detail", () => {
     setTextareaValue(textarea, "Be a blunt, no-nonsense assistant.");
     await settle();
 
-    const saveButton = findButton(el, "Save");
+    const saveButton = findButton(el, "Save instructions");
     expect(saveButton).toBeDefined();
     act(() => {
       saveButton?.click();
@@ -420,7 +431,7 @@ describe("Agents section — detail", () => {
       systemPrompt: "Be a blunt, no-nonsense assistant.",
     });
     expect(refreshCalls).toEqual(["myra@acme.example"]);
-    expect(findButton(el, "Save")?.disabled).toBe(true);
+    expect(findButton(el, "Save instructions")?.disabled).toBe(true);
   });
 
   test("a failed save shows an inline error and keeps the edit", async () => {
@@ -436,7 +447,7 @@ describe("Agents section — detail", () => {
     setTextareaValue(textarea, "Try to save this.");
     await settle();
 
-    const saveButton = findButton(el, "Save");
+    const saveButton = findButton(el, "Save instructions");
     act(() => {
       saveButton?.click();
     });
@@ -527,6 +538,24 @@ describe("Agents section — Capabilities", () => {
     expect(toolOptions).toContain("@corbits/granola-tools");
   });
 
+  test("a static capability chip is a plain caption tint, not button chrome", async () => {
+    const withCapabilities: AgentFixture = {
+      ...MYRA,
+      toolPackagePins: [{ name: "@corbits/github-tools", version: "*" }],
+      skills: [],
+    };
+    stubFetch({ agents: [withCapabilities] });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const chip = el.querySelector(".chat-settings-capability-chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.tagName).toBe("SPAN");
+    expect(chip?.className).not.toContain("border");
+  });
+
   test("the model picker is the tenant's resolved catalog, labeled by its connected provider", async () => {
     stubFetch({
       catalogModels: [
@@ -560,9 +589,10 @@ describe("Agents section — Capabilities", () => {
       ".chat-settings-capability-add select",
     )[1] as HTMLSelectElement | null;
     const labels = Array.from(choiceSelect?.options ?? [])
-      .map((option) => option.textContent)
-      .filter((text) => text !== "");
+      .filter((option) => option.value !== "")
+      .map((option) => option.textContent);
     expect(labels).toEqual(["Claude Sonnet · Anthropic"]);
+    expect(choiceSelect?.options[0]?.textContent).toBe("Choose a model…");
   });
 
   test("adding a capability calls the capabilities route, refreshes the running instance, and reflects the addition", async () => {

@@ -67,7 +67,9 @@ function baseProps(
   };
 }
 
-function stubFetch() {
+function stubFetch(
+  options: { readonly inheritedConnectorId?: string } = {},
+) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
@@ -84,10 +86,25 @@ function stubFetch() {
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
     }
-    // Every connector (tool and inference-provider alike) resolves
-    // "not connected" — this test only cares which descriptors ever
-    // reach the DOM, not their connection status.
-    if (/\/credentials\/resolve\//.test(path)) {
+    const resolveMatch = /\/credentials\/resolve\/([^/]+)$/.exec(path);
+    if (resolveMatch !== null) {
+      const name = decodeURIComponent(resolveMatch[1] as string);
+      // GitHub resolves from an ancestor tenant, never this one — the
+      // directory's "Inherited" caption case. Every other connector
+      // (tool and inference-provider alike) resolves "not connected" —
+      // this test only cares which descriptors ever reach the DOM and
+      // how the one inherited connection reads.
+      if (
+        options.inheritedConnectorId !== undefined &&
+        name === options.inheritedConnectorId
+      ) {
+        return json({
+          id: "cred_1",
+          tenantId: "tnt_ancestor",
+          name,
+          status: "active",
+        });
+      }
       return json({}, 404);
     }
     throw new Error(`unstubbed fetch: ${path}`);
@@ -100,18 +117,88 @@ describe("Plugins section", () => {
     const el = mount(baseProps());
     await settle();
 
-    const cardTitles = Array.from(
-      el.querySelectorAll(".settings-connection-card-title"),
+    const names = Array.from(
+      el.querySelectorAll(".plugins-directory-name"),
     ).map((node) => node.textContent);
 
-    expect(cardTitles).toContain("Granola");
-    expect(cardTitles).toContain("Exa");
-    expect(cardTitles).toContain("Linear");
-    expect(cardTitles).toContain("GitHub");
-    expect(cardTitles).toContain("ScrapeCreators");
-    expect(cardTitles).not.toContain("Anthropic");
-    expect(cardTitles).not.toContain("OpenAI");
-    expect(cardTitles).not.toContain("Groq");
-    expect(cardTitles).not.toContain("Ollama");
+    expect(names).toContain("Granola");
+    expect(names).toContain("Exa");
+    expect(names).toContain("Linear");
+    expect(names).toContain("GitHub");
+    expect(names).toContain("ScrapeCreators");
+    expect(names).not.toContain("Anthropic");
+    expect(names).not.toContain("OpenAI");
+    expect(names).not.toContain("Groq");
+    expect(names).not.toContain("Ollama");
+  });
+
+  test("everything not connected anywhere lists under Available with a quiet Connect action", async () => {
+    stubFetch();
+    const el = mount(baseProps());
+    await settle();
+
+    const groupLabels = Array.from(
+      el.querySelectorAll(".plugins-directory-group-label"),
+    ).map((node) => node.textContent);
+    expect(groupLabels).toEqual(["Available"]);
+
+    const connectButtons = Array.from(
+      el.querySelectorAll(".plugins-directory-connect-action"),
+    );
+    expect(connectButtons.length).toBeGreaterThan(0);
+    expect(
+      connectButtons.every((button) => button.textContent === "Connect"),
+    ).toBe(true);
+    expect(
+      el.querySelectorAll(".plugins-directory-remove-action").length,
+    ).toBe(0);
+  });
+
+  test("a connection inherited from an ancestor tenant lists as Active with an Inherited caption and an Override action", async () => {
+    stubFetch({ inheritedConnectorId: "GitHub" });
+    const el = mount(baseProps());
+    await settle();
+
+    const groupLabels = Array.from(
+      el.querySelectorAll(".plugins-directory-group-label"),
+    ).map((node) => node.textContent);
+    expect(groupLabels).toEqual(["Active", "Available"]);
+
+    const activeGroup = el.querySelectorAll(".plugins-directory-group")[0];
+    expect(activeGroup?.textContent).toContain("GitHub");
+    expect(
+      activeGroup?.querySelector(".plugins-directory-ownership")?.textContent,
+    ).toBe("Inherited");
+    expect(
+      activeGroup?.querySelector(".plugins-directory-connect-action")
+        ?.textContent,
+    ).toBe("Override");
+    expect(
+      activeGroup?.querySelector(".plugins-directory-remove-action"),
+    ).toBeNull();
+  });
+
+  test("search narrows the directory to matching plugins", async () => {
+    stubFetch();
+    const el = mount(baseProps());
+    await settle();
+
+    const search = el.querySelector(
+      ".plugins-directory-search",
+    ) as HTMLInputElement | null;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(search, "linear");
+      search?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    const names = Array.from(
+      el.querySelectorAll(".plugins-directory-name"),
+    ).map((node) => node.textContent);
+    expect(names).toEqual(["Linear"]);
   });
 });

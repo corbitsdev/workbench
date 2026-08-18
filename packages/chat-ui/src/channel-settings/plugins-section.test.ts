@@ -1,16 +1,21 @@
-// CL-6151: the Keys & plugins card collapsed its two badges (a connection
-// status chip and a separate "Set here"/"Workbench default" provenance
-// chip) into the one status a person actually needs — see
-// `pluginCardStatus`'s doc comment for why "Needs attention" always wins.
+// CL-6215: the Plugins section is a marketplace-style directory — every
+// registered tool connector, active (connected here or inherited) first,
+// available below — rather than a grid of status cards. These are the pure
+// pieces the directory's render depends on: which group a resolved plugin
+// falls into, and which of it matches a search query.
 
 import { describe, expect, test } from "bun:test";
 
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { pluginCardStatus } from "./plugins-section";
+import { splitPluginDirectory } from "./plugins-section";
 
 function plugin(overrides: Record<string, unknown> = {}): ResolvedPlugin {
   return {
-    descriptor: { id: "anthropic", displayName: "Anthropic" },
+    descriptor: {
+      id: "anthropic",
+      displayName: "Anthropic",
+      feedsTools: ["@corbits/some-tools"],
+    },
     status: "not_connected",
     provenance: null,
     credentialId: null,
@@ -19,39 +24,36 @@ function plugin(overrides: Record<string, unknown> = {}): ResolvedPlugin {
   } as unknown as ResolvedPlugin;
 }
 
-describe("pluginCardStatus", () => {
-  test("connected here reads as its own status, not a second chip", () => {
-    expect(
-      pluginCardStatus(
-        plugin({ status: "connected", provenance: "this-workbench" }),
-      ),
-    ).toEqual({ label: "Connected here", tone: "success" });
+describe("splitPluginDirectory", () => {
+  test("a connected-here plugin is active", () => {
+    const { active, available } = splitPluginDirectory([
+      plugin({ status: "connected", provenance: "this-workbench" }),
+    ]);
+    expect(active).toHaveLength(1);
+    expect(available).toHaveLength(0);
   });
 
-  test("an inherited connection reads as using the shared key", () => {
-    expect(
-      pluginCardStatus(
-        plugin({ status: "connected", provenance: "inherited" }),
-      ),
-    ).toEqual({ label: "Using shared key", tone: "neutral" });
+  test("an inherited plugin is active, not merely available", () => {
+    const { active, available } = splitPluginDirectory([
+      plugin({ status: "connected", provenance: "inherited" }),
+    ]);
+    expect(active).toHaveLength(1);
+    expect(available).toHaveLength(0);
   });
 
-  test("nothing connected anywhere reads not connected", () => {
-    expect(
-      pluginCardStatus(plugin({ status: "not_connected", provenance: null })),
-    ).toEqual({ label: "Not connected", tone: "neutral" });
+  test("a needs-attention plugin stays active — it's a broken connection, not a bare listing", () => {
+    const { active, available } = splitPluginDirectory([
+      plugin({ status: "needs_attention", provenance: "this-workbench" }),
+    ]);
+    expect(active).toHaveLength(1);
+    expect(available).toHaveLength(0);
   });
 
-  test("needs_attention always wins, regardless of provenance", () => {
-    expect(
-      pluginCardStatus(
-        plugin({ status: "needs_attention", provenance: "this-workbench" }),
-      ),
-    ).toEqual({ label: "Needs attention", tone: "danger" });
-    expect(
-      pluginCardStatus(
-        plugin({ status: "needs_attention", provenance: "inherited" }),
-      ),
-    ).toEqual({ label: "Needs attention", tone: "danger" });
+  test("nothing connected anywhere is available, not active", () => {
+    const { active, available } = splitPluginDirectory([
+      plugin({ status: "not_connected", provenance: null }),
+    ]);
+    expect(active).toHaveLength(0);
+    expect(available).toHaveLength(1);
   });
 });
