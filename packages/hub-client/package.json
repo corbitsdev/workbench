@@ -22,6 +22,7 @@
     "@corbits/channel-digest-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
     "@corbits/heartbeat-workflow": "workspace:*",
+    "@corbits/last-30-days-research-workflow": "workspace:*",
     "@corbits/recurring-task-workflow": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*"

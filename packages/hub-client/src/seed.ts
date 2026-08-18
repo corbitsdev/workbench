@@ -39,6 +39,10 @@ import {
   serializeHeartbeatWorkflow,
 } from "@corbits/heartbeat-workflow";
 import {
+  buildLast30DaysResearchWorkflow,
+  serializeLast30DaysResearchWorkflow,
+} from "@corbits/last-30-days-research-workflow";
+import {
   buildRecurringTaskWorkflow,
   serializeRecurringTaskWorkflow,
 } from "@corbits/recurring-task-workflow";
@@ -49,6 +53,7 @@ import {
 } from "@corbits/tool-registry-publish";
 import { CliError } from "./errors";
 import { DEFAULT_SKILLS } from "./default-skills";
+import { ensureDefaultRoutines } from "./default-routines";
 import { parseAs, type ApiCall } from "./hub";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
@@ -71,6 +76,11 @@ const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 // so this timeout only bounds the deploy-time definition, never a real
 // turn.
 const RECURRING_TASK_TURN_TIMEOUT_MS = 30 * 1000;
+// A research turn fans out across multiple source tools and writes a
+// long-form report, so it gets the same generous allowance as the
+// other conversational workflows above, not the short catalog-test
+// budget.
+const LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -267,6 +277,25 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
         }),
       ),
   },
+  {
+    assetName: "last-30-days-research",
+    displayName: catalogDisplayName("last-30-days-research"),
+    automatable: catalogAutomatable("last-30-days-research"),
+    // CL-6201: deployed so `ensureDefaultRoutines` (default-routines.ts)
+    // has a real definition to un-strand into a routine row. It was
+    // never in this array before that ticket, which is exactly why the
+    // routine could never appear: nothing deployed its definition.
+    buildJson: (tenantDomain, model) =>
+      serializeLast30DaysResearchWorkflow(
+        buildLast30DaysResearchWorkflow({
+          triggerAddress: `last-30-days-research@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
 ];
 
 /**
@@ -311,6 +340,13 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
   { resource: "workflow-run:*", action: "read" },
+  // CL-6201: `ensureDefaultRoutines` lists deployed definitions (GET
+  // .../workflows/definitions) and creates/disables preset routines
+  // (POST/PATCH .../routines) — none of the grants above cover those
+  // routes, which gate on their own resource/action pairs.
+  { resource: "workflow-definition:*", action: "read" },
+  { resource: "workflow-run:*", action: "create" },
+  { resource: "workflow-run:*", action: "write" },
 ];
 
 // The grants table has no unique constraint and the create route is a
@@ -819,6 +855,15 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
   }
+
+  // CL-6201: every default workflow above is now deployed, so any
+  // preset routine whose definition just landed can be planted. Runs
+  // after the deploy loop (never before) — a preset targeting a
+  // workflow this call didn't deploy is skipped with a log line rather
+  // than failing seeding outright, which keeps a narrowed `workflows`
+  // list (as several tests here pass) a partial-but-valid seed.
+  await ensureDefaultRoutines(api, cookies, tenant.tenantId, log);
+
   log(
     confirmDeployments
       ? `seed complete: ${confirmed} workflow(s) deployed and confirmed`
