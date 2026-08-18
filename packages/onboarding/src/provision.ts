@@ -161,18 +161,16 @@ const WorkflowDeploymentStatus = type({
   status: "string",
 });
 
-/**
- * Whether every default workflow already has an active deployment on
- * this tenant. Read-only: it never creates or deploys anything, it
- * only tells the caller whether `seedTenant` still has work to do —
- * the same asset-then-deployment lookup `seedTenant` itself performs
- * before deciding to skip a step.
- */
-export async function isFullySeeded(
+/** Which of `DEFAULT_WORKFLOWS`' asset names already carry an active
+ * deployment on this tenant, split from those that do not — the same
+ * asset-then-deployment lookup `isFullySeeded` and `seedTenant` each
+ * perform before deciding whether a step has already run. Read-only: it
+ * never creates or deploys anything. */
+async function seededWorkflowNames(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-): Promise<boolean> {
+): Promise<{ deployed: string[]; pending: string[] }> {
   const assetsResponse = await api(
     "GET",
     `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
@@ -197,14 +195,51 @@ export async function isFullySeeded(
     "deployments response",
   );
 
-  return DEFAULT_WORKFLOWS.every((workflow) => {
+  const deployed: string[] = [];
+  const pending: string[] = [];
+  for (const workflow of DEFAULT_WORKFLOWS) {
     const asset = assets.find((a) => a.name === workflow.assetName);
-    if (asset === undefined) return false;
-    return deployments.some(
-      (d) =>
-        d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
-    );
-  });
+    const isDeployed =
+      asset !== undefined &&
+      deployments.some(
+        (d) =>
+          d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
+      );
+    (isDeployed ? deployed : pending).push(workflow.assetName);
+  }
+  return { deployed, pending };
+}
+
+/**
+ * Whether every default workflow already has an active deployment on
+ * this tenant. Read-only: it never creates or deploys anything, it
+ * only tells the caller whether `seedTenant` still has work to do —
+ * the same asset-then-deployment lookup `seedTenant` itself performs
+ * before deciding to skip a step.
+ */
+export async function isFullySeeded(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<boolean> {
+  const { pending } = await seededWorkflowNames(api, cookies, tenantId);
+  return pending.length === 0;
+}
+
+/**
+ * The honest partial-seed report `ensureSeeded` reads after catching a
+ * sidecar-unavailable deploy failure (CL-6264): which default workflows
+ * already deployed before the sidecar dropped out, and which are still
+ * waiting on it. Exported so `@workbench/onboarding`'s
+ * `complete-credential.ts` never re-derives this asset-then-deployment
+ * lookup by hand.
+ */
+export async function seededWorkflowStatus(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<{ deployed: string[]; pending: string[] }> {
+  return seededWorkflowNames(api, cookies, tenantId);
 }
 
 /**

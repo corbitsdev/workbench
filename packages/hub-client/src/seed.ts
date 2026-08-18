@@ -51,7 +51,7 @@ import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
 } from "@corbits/tool-registry-publish";
-import { CliError } from "./errors";
+import { CliError, SidecarUnavailableError } from "./errors";
 import { DEFAULT_SKILLS } from "./default-skills";
 import { ensureDefaultRoutines } from "./default-routines";
 import { parseAs, type ApiCall } from "./hub";
@@ -591,7 +591,7 @@ async function ensureDeployment(
     cookies,
   );
   if (deployed.status === 502) {
-    throw new CliError(
+    throw new SidecarUnavailableError(
       `the hub could not deploy workflow ${args.assetName}: the sidecar is unavailable (${JSON.stringify(deployed.data)})`,
       "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
     );

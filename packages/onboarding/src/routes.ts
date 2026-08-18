@@ -631,8 +631,26 @@ export function createOnboardingRoutes(
       }
       // The credential is durably seeded — clear any stale needs-attention
       // record for this provider (CL-6092), the same clear-on-success rule
-      // `@workbench/connections`' own routes follow.
+      // `@workbench/connections`' own routes follow. This runs for both
+      // `seeded` and `seeded-pending-agents`: the credential itself is
+      // proven-durable in either case, only the workflow deploy is still
+      // catching up.
       deps.providerHealth?.clear(result.tenantId, parsed.provider);
+      if (result.kind === "seeded-pending-agents") {
+        // CL-6264: reuses the same pending-seed row an OAuth connect
+        // writes (`./pending-seed.ts`) rather than a new queue, so this
+        // account's next `POST /complete-setup` (the onboarding page's
+        // own reload follow-up) picks up exactly where the sidecar-down
+        // deploy left off and finishes the remaining default workflows.
+        await deps.pendingSeedStore.put({
+          userId: user.id,
+          tenantId: result.tenantId,
+          principalId: result.principalId,
+          tenantDomain: result.tenantDomain,
+          provider: parsed.provider,
+          apiKey: parsed.apiKey,
+        });
+      }
       return c.json(result, 200);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -741,6 +759,26 @@ export function createOnboardingRoutes(
         provider: pending.provider,
         apiKey: pending.apiKey,
       });
+
+      if (seeded.kind === "seeded-pending-agents") {
+        // Sidecar-unavailable (CL-6264): the pending row is left in
+        // place, on purpose — it is exactly what lets the next
+        // `POST /complete-setup` (another reload, or a retry the
+        // onboarding page schedules itself) pick this back up and finish
+        // the deferred workflows once the sidecar is back.
+        return c.json(
+          {
+            kind: "seeded-pending-agents",
+            tenantId: tenant.tenantId,
+            tenantSlug: tenant.tenantSlug,
+            deployed: seeded.deployed,
+            pending: seeded.pending,
+            message: seeded.message,
+          },
+          200,
+        );
+      }
+
       await deps.pendingSeedStore.clear({
         userId: user.id,
         tenantId: tenant.tenantId,

@@ -5,7 +5,12 @@
 
 export type { ApiCall, ApiResult, Session } from "./hub";
 export { authenticate, createHubAPI, parseAs, signIn } from "./hub";
-export { CliError, isCliError } from "./errors";
+export {
+  CliError,
+  isCliError,
+  isSidecarUnavailableError,
+  SidecarUnavailableError,
+} from "./errors";
 export { cookiesFromHeader } from "./cookies";
 export type {
   DefaultWorkflow,

@@ -50,6 +50,7 @@ import { PrincipalSummary, TenantResponse, paginatedSchema } from "@intx/types";
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
+  isSidecarUnavailableError,
   ollamaOpenAICompatBaseURL,
   parseAs,
   seedCatalog,
@@ -63,7 +64,16 @@ import {
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
-import { personalTenantSlug } from "./provision";
+import { personalTenantSlug, seededWorkflowStatus } from "./provision";
+
+/** The onboarding UI's copy for a partial seed: every durable step
+ * (credential, tenant, grants, assets) already succeeded, and the
+ * deferred workflows finish deploying on their own the next time this
+ * account's onboarding page reads `POST /complete-setup` — see
+ * `ensureSeeded`'s own doc comment below for the sidecar-unavailable
+ * class this covers. */
+export const AGENTS_PENDING_MESSAGE =
+  "Your workbench is ready — agents will come online shortly.";
 
 export type PersonalTenant = {
   readonly tenantId: string;
@@ -84,10 +94,22 @@ export type TestAndPersistCredentialResult =
   | { readonly kind: "no-personal-bench" }
   | ({ readonly kind: "connected" } & PersonalTenant);
 
-export type EnsureSeededResult = {
-  readonly kind: "seeded";
-  readonly workflows: string[];
-};
+export type EnsureSeededResult =
+  | { readonly kind: "seeded"; readonly workflows: string[] }
+  /**
+   * The deploy step hit the sidecar-unavailable class specifically
+   * (CL-6264): every durable step ahead of it (credential, tenant,
+   * grants, catalog, workflow assets) is intact, `deployed` names the
+   * default workflows that made it live before the sidecar dropped out,
+   * and `pending` names the rest. Never produced for any other deploy
+   * failure — those still throw, same as before.
+   */
+  | {
+      readonly kind: "seeded-pending-agents";
+      readonly deployed: string[];
+      readonly pending: string[];
+      readonly message: string;
+    };
 
 export type CompleteCredentialResult =
   | { readonly kind: "invalid-credential"; readonly message: string }
@@ -97,6 +119,22 @@ export type CompleteCredentialResult =
       readonly tenantId: string;
       readonly tenantSlug: string;
       readonly workflows: string[];
+    }
+  | {
+      readonly kind: "seeded-pending-agents";
+      readonly tenantId: string;
+      readonly tenantSlug: string;
+      /** Threaded through to `routes.ts`'s `/complete` handler, which
+       * writes them into the same `pendingSeedStore` row an OAuth
+       * connect writes (see `./pending-seed.ts`) so `POST
+       * /complete-setup`'s existing retry path — no new queue — finishes
+       * the deferred workflows on this account's next onboarding-page
+       * visit. */
+      readonly principalId: string;
+      readonly tenantDomain: string;
+      readonly deployed: string[];
+      readonly pending: string[];
+      readonly message: string;
     };
 
 type CommonArgs = {
@@ -288,6 +326,17 @@ export async function testAndPersistCredential(
  * step it drives (`seedTenant`'s asset and deployment creation) is
  * itself ensure-then-create, so two overlapping calls (a duplicate
  * "finish setup" request, a retried one) never double-deploy.
+ *
+ * CL-6264: a deploy failure in the sidecar-unavailable class specifically
+ * (`isSidecarUnavailableError`, the 502 `ensureDeployment` raises when
+ * the hub cannot reach the sidecar) does not fail this call — every step
+ * ahead of the deploy loop already durably succeeded, and the sidecar
+ * coming back is an operational fact outside the caller's control, not
+ * a reason to tell someone their onboarding failed. `seededWorkflowStatus`
+ * re-reads the tenant's actual asset/deployment state (rather than
+ * hand-tracking a loop index) to report exactly which default workflows
+ * made it live and which are still pending. Any other error out of
+ * `seedTenant` still throws, unchanged.
  */
 export async function ensureSeeded(
   args: EnsureSeededArgs,
@@ -309,11 +358,29 @@ export async function ensureSeeded(
     workflows: DEFAULT_WORKFLOWS,
     confirmDeployments: false,
   };
-  await runSeedTenant(
-    args.publishToolRegistry !== undefined
-      ? { ...seedTenantArgs, publishToolRegistry: args.publishToolRegistry }
-      : seedTenantArgs,
-  );
+  try {
+    await runSeedTenant(
+      args.publishToolRegistry !== undefined
+        ? { ...seedTenantArgs, publishToolRegistry: args.publishToolRegistry }
+        : seedTenantArgs,
+    );
+  } catch (cause) {
+    if (!isSidecarUnavailableError(cause)) throw cause;
+    args.log(
+      `sidecar unavailable while deploying default workflows for tenant ${args.tenant.tenantId}; completing onboarding with agents pending: ${cause.message}`,
+    );
+    const { deployed, pending } = await seededWorkflowStatus(
+      args.api,
+      args.cookies,
+      args.tenant.tenantId,
+    );
+    return {
+      kind: "seeded-pending-agents",
+      deployed,
+      pending,
+      message: AGENTS_PENDING_MESSAGE,
+    };
+  }
 
   return {
     kind: "seeded",
@@ -357,6 +424,19 @@ export async function completeCredentialSetup(
       ? { ...withPublishToolRegistry, seedTenantFn: args.seedTenantFn }
       : withPublishToolRegistry,
   );
+
+  if (seeded.kind === "seeded-pending-agents") {
+    return {
+      kind: "seeded-pending-agents",
+      tenantId: persisted.tenantId,
+      tenantSlug: persisted.tenantSlug,
+      principalId: persisted.principalId,
+      tenantDomain: persisted.tenantDomain,
+      deployed: seeded.deployed,
+      pending: seeded.pending,
+      message: seeded.message,
+    };
+  }
 
   return {
     kind: "seeded",
