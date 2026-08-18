@@ -1853,6 +1853,23 @@ export async function createHub(config: HubConfig) {
     joinDeliveryChannel: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
+  const routineChannelNotice = {
+    postChannelNotice: (input: {
+      tenantId: string;
+      channelId: string;
+      principalId: string;
+      text: string;
+    }) =>
+      sendChannelMessage(
+        { store: chatStore, platform: chatPlatform },
+        {
+          tenantId: input.tenantId,
+          principalId: input.principalId,
+          channelId: input.channelId,
+          messageParts: [{ kind: "text", text: input.text }],
+        },
+      ).then(() => undefined),
+  };
   // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
   // mount at the tenant root (same pattern as a package that ships absolute
   // resource paths) rather than under a second `/routines` segment.
@@ -1861,18 +1878,7 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
-      channelNotice: {
-        postChannelNotice: (input) =>
-          sendChannelMessage(
-            { store: chatStore, platform: chatPlatform },
-            {
-              tenantId: input.tenantId,
-              principalId: input.principalId,
-              channelId: input.channelId,
-              messageParts: [{ kind: "text", text: input.text }],
-            },
-          ).then(() => undefined),
-      },
+      channelNotice: routineChannelNotice,
       // Myra-backed drafting (CL-5917): a real one-shot inference call,
       // mirroring `@corbits/task-planner`'s own Myra auto-dispatch
       // wiring below (`plannerInventorySources`/`dispatchWithPlanner`)
@@ -1969,18 +1975,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowRoutineRoutes({
       store: routineStore,
       launcher: routineLauncher,
-      channelNotice: {
-        postChannelNotice: (input) =>
-          sendChannelMessage(
-            { store: chatStore, platform: chatPlatform },
-            {
-              tenantId: input.tenantId,
-              principalId: input.principalId,
-              channelId: input.channelId,
-              messageParts: [{ kind: "text", text: input.text }],
-            },
-          ).then(() => undefined),
-      },
+      channelNotice: routineChannelNotice,
       authenticator: createWorkflowRunAuthenticator({ db }),
       definitionInTenant: async (tenantId, definitionId) => {
         const row = await db.query.workflowDefinition.findFirst({

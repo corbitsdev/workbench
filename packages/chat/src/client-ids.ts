@@ -111,7 +111,12 @@ export function createDrizzleClientIdStore<
     async listClientIdsForMessages(tenantId, channelId, messageIds) {
       if (messageIds.length === 0) return [];
       const rows = await db
-        .select()
+        .select({
+          tenantId: messageClientIds.tenantId,
+          channelId: messageClientIds.channelId,
+          messageId: messageClientIds.messageId,
+          clientId: messageClientIds.clientId,
+        })
         .from(messageClientIds)
         .where(
           and(
@@ -120,7 +125,7 @@ export function createDrizzleClientIdStore<
             inArray(messageClientIds.messageId, messageIds),
           ),
         );
-      return rows as ClientIdRow[];
+      return rows;
     },
   };
 }
