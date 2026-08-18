@@ -12,8 +12,10 @@ import type {
 } from "@intx/hub-sessions";
 import {
   createWorkflowSupervisor,
+  hashGrants,
   wrapHubTransportAsMailBus,
   type CredentialsSnapshot,
+  type CredentialsSnapshotStep,
   type DeriveStepAddress,
   type DeriveStepRepoId,
   type DispatchTimingMark,
@@ -29,14 +31,16 @@ import {
   defaultSubprocessSpawner,
   SIDECAR_WORKFLOW_CHILD_BINARY,
 } from "./transport";
+import { readRunGrants, runGrantsPath } from "../run-grants";
 
 /**
  * Conservative default for the warm-keep recycle policy's grants-staleness
  * bound. A warm-keep child's agent runs for the deployment's whole
- * lifetime on the grants pushed at spawn (`deliverCredentials`); this forces
- * a clean respawn -- which re-reads every step's grants from the repo store
- * during `recycle`'s respawn step -- rather than let a long-lived agent run
- * indefinitely on hours-old material. 24h mirrors
+ * lifetime on the grants pushed by `onRunStart` at each run's dispatch
+ * barrier; this forces a clean respawn -- which re-reads every step's
+ * grants from the repo store during `recycle`'s respawn step -- rather
+ * than let a long-lived agent run indefinitely on hours-old material
+ * between runs. 24h mirrors
  * `DEFAULT_CONSUMED_RETENTION_MS`'s order of magnitude.
  */
 export const DEFAULT_MAX_GRANTS_AGE_MS = 24 * 60 * 60 * 1000;
@@ -58,6 +62,74 @@ export const DEFAULT_MAX_GRANTS_AGE_MS = 24 * 60 * 60 * 1000;
  * the vendor surfaces the live child's pid across a recycle.
  */
 
+// `assembleRunCredentialsSnapshot` and the `onRunStart` wiring below are
+// ported from upstream Interchange's sidecar (apps/sidecar/src/
+// workflow-host-wiring.ts at the vendored pin 55c4431e), adapted only to
+// this directory's `deploymentId` naming (upstream: `anchorRunId`) for the
+// deployment-level id. Before this port, `createSidecarWorkflowSupervisor`
+// never wired `onRunStart`, so the vendor supervisor's per-run grants
+// barrier (`pushRunGrants`) never armed and a one-shot post-spawn
+// `deliverCredentials` push stood in as an interim substitute (removed by
+// this port).
+
+export type AssembleRunCredentialsSnapshotOpts = {
+  /** Substrate handle the sink reads the per-run grants file from. */
+  repoStore: RepoStore;
+  /** Deployment id keying the workflow-run repo the grants file lives in. */
+  deploymentId: string;
+  /** Run whose per-run grants file is read. */
+  runId: string;
+  /** Step ids in `stepOrder`; the per-run grants apply uniformly across them. */
+  stepOrder: readonly string[];
+  /** Per-step mail-address derivation. */
+  deriveStepAddress: DeriveStepAddress;
+};
+
+/**
+ * Resolve a run's credentials snapshot for the `onRunStart` grants
+ * barrier from its per-run grants file.
+ *
+ * Every legitimate run birth path writes `runs/<runId>/grants.json` in
+ * the deployment's workflow-run repo before the run dispatches -- the
+ * external trigger route and the mail-triggered path both ship a
+ * `run.grants` frame the sidecar writes, and a spawned child inherits its
+ * parent's grants directly at spawn without reaching this barrier. The
+ * per-run file IS the run's snapshot: the run's single flat grant set is
+ * applied uniformly across every step, keyed on each step's address.
+ *
+ * A missing file is therefore not an internal run inheriting deploy-time
+ * grants -- it is a run that reached its barrier with no grants written,
+ * so it FAILS CLOSED here rather than running under-authorized. A file
+ * that exists but is malformed also throws (via `readRunGrants`), for the
+ * same reason: the file's presence implies a grants frame was delivered,
+ * so a structural failure is a boundary bug, not a default.
+ */
+export async function assembleRunCredentialsSnapshot(
+  opts: AssembleRunCredentialsSnapshotOpts,
+): Promise<CredentialsSnapshot> {
+  const runGrants = await readRunGrants({
+    repoStore: opts.repoStore,
+    deploymentId: opts.deploymentId,
+    runId: opts.runId,
+  });
+  if (runGrants === undefined) {
+    throw new Error(
+      `sidecar onRunStart: run ${opts.runId} has no grants file at ${runGrantsPath(opts.runId)}; refusing to start the run under-authorized`,
+    );
+  }
+  const contentHash = await hashGrants(runGrants);
+  const steps: CredentialsSnapshotStep[] = opts.stepOrder.map((stepId) => ({
+    stepId,
+    address: opts.deriveStepAddress({
+      runId: opts.deploymentId,
+      stepId,
+    }),
+    grants: runGrants,
+    contentHash,
+  }));
+  return { steps };
+}
+
 export type CreateSidecarWorkflowSupervisorOpts = {
   /** Sidecar's hub mail transport. */
   transport: HubTransport;
@@ -77,6 +149,13 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * collapses onto the head for a single-step deployment.
    */
   stepCount: number;
+  /**
+   * Step ids in the deployed `WorkflowDefinition`'s `stepOrder`. The
+   * `onRunStart` grants sink walks these to assemble the per-run
+   * credentialsSnapshot from each step's per-run grants file, so the sink
+   * needs the ordered ids rather than the bare count.
+   */
+  stepOrder: readonly string[];
   /** Deployment's mail address. */
   deploymentMailAddress: string;
   /** Per-step mail-address derivation. */
@@ -218,7 +297,8 @@ export function createSidecarWorkflowSupervisor(
   const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(
     opts.transport,
   );
-  // Wall-clock of the most recent `deliverCredentials` push, read by
+  // Wall-clock of the most recent credentials push -- either an `onRunStart`
+  // grants-barrier snapshot or a `deliverCredentials` rotation -- read by
   // `readGrantsAgeMs` below. `undefined` until the first delivery, which
   // matches the vendor reader's contract: "or `undefined` if no refresh
   // has been observed yet" (`types.ts:483-488`).
@@ -226,6 +306,30 @@ export function createSidecarWorkflowSupervisor(
   const supervisorPrincipal: WorkflowRunSupervisorPrincipal = {
     kind: "supervisor",
     anchorRunId: opts.deploymentId,
+  };
+  // Per-run grants sink. The supervisor awaits this and pushes the
+  // resulting snapshot to the child before the run's `trigger.fire`; a
+  // throw propagates and the dispatch barrier fails the run rather than
+  // firing the trigger against absent grants. The snapshot is the run's
+  // own per-run grants file, which every legitimate birth path writes
+  // before dispatch (see `assembleRunCredentialsSnapshot`). Once wired,
+  // this is the SOLE grants push for the deployment's lifetime (the
+  // vendor supervisor suppresses its own spawn-time push), so it is also
+  // the observation point `readGrantsAgeMs` below keys off for a
+  // warm-keep deployment's staleness bound.
+  const onRunStart = async (args: {
+    runId: string;
+    anchorRunId: string;
+  }): Promise<CredentialsSnapshot> => {
+    const snapshot = await assembleRunCredentialsSnapshot({
+      repoStore: opts.repoStore,
+      deploymentId: args.anchorRunId,
+      runId: args.runId,
+      stepOrder: opts.stepOrder,
+      deriveStepAddress: opts.deriveStepAddress,
+    });
+    lastGrantsRefreshAt = Date.now();
+    return snapshot;
   };
   const supervisorBaseConfig = {
     repoStore: opts.repoStore,
@@ -238,6 +342,7 @@ export function createSidecarWorkflowSupervisor(
     binaryPath: opts.binaryPath ?? SIDECAR_WORKFLOW_CHILD_BINARY,
     substrateEnv: opts.substrateEnv,
     dynamicSpawnEnv: opts.dynamicSpawnEnv,
+    onRunStart,
     workflowRunRepoId: opts.workflowRunRepoId,
     workflowRunRef: opts.workflowRunRef,
     anchorRunId: opts.deploymentId,

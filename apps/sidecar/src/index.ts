@@ -44,6 +44,7 @@ import {
 } from "./workflow-host-wiring";
 import {
   createDeploymentAddressRegistry,
+  createMultistepCredentialsRouter,
   createMultistepDrainRouter,
   createMultistepGrantsRouter,
   createMultistepMailRouter,
@@ -108,6 +109,7 @@ const multistepSignalRouter = createMultistepSignalRouter();
 const multistepDrainRouter = createMultistepDrainRouter();
 const multistepGrantsRouter = createMultistepGrantsRouter();
 const multistepSourcesRouter = createMultistepSourcesRouter();
+const multistepCredentialsRouter = createMultistepCredentialsRouter();
 
 const transport = createInMemoryTransport();
 
@@ -210,6 +212,7 @@ const orchestrator = createSidecarOrchestrator({
   drainInboundRouter: multistepDrainRouter,
   grantsInboundRouter: multistepGrantsRouter,
   sourcesInboundRouter: multistepSourcesRouter,
+  credentialsInboundRouter: multistepCredentialsRouter,
   // Install Hub-authoritative workflow-run history before a replacement
   // supervisor spawns, against the unwrapped substrate so the restore is
   // never echoed back to the Hub as a new sidecar-authored update.
@@ -282,6 +285,7 @@ const orchestrator = createSidecarOrchestrator({
       multistepDrainRouter,
       multistepGrantsRouter,
       multistepSourcesRouter,
+      multistepCredentialsRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent,
     };

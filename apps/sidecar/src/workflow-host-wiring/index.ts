@@ -41,6 +41,7 @@ import {
 } from "@intx/types/sidecar";
 
 import type {
+  MultistepCredentialsRouter,
   MultistepDrainRouter,
   MultistepGrantsRouter,
   MultistepMailRouter,
@@ -351,6 +352,20 @@ export function createSidecarDeployRouter(deps: {
    * installed for any deployment.
    */
   multistepSourcesRouter?: MultistepSourcesRouter;
+  /**
+   * Per-deployment-address credential-delivery handler registry the sidecar
+   * hub-link's `credentials.update` path consults. Registered for EVERY
+   * deployment (not only warm single-step ones) once `supervisor.spawn`
+   * succeeds -- the material cell is per-child and read by every step's
+   * tool capabilities -- so a hub-side `credentials.update` frame dispatches
+   * through the supervisor's `deliverCredentials`, refreshing the child's
+   * material cell without ever persisting the secret to disk.
+   *
+   * Optional so tests that exercise deploys without a credential-rotation
+   * loop can omit the binding; an absent registry means an inbound
+   * `credentials.update` frame is unrouted for every deployment.
+   */
+  multistepCredentialsRouter?: MultistepCredentialsRouter;
   /**
    * Optional per-message dispatch-timing observer the multi-step branch
    * forwards to each supervisor it constructs. Resolved at the sidecar
@@ -689,6 +704,7 @@ export function createSidecarDeployRouter(deps: {
         workflowRunRef: "refs/heads/main",
         deploymentId,
         stepCount: spec.definition.stepOrder.length,
+        stepOrder: spec.definition.stepOrder,
         warmKeep,
         deploymentMailAddress: spec.agentAddress,
         deriveStepAddress: stepStrategy.deriveStepAddress,
@@ -850,18 +866,6 @@ export function createSidecarDeployRouter(deps: {
       // registered against the deployment address only after spawn succeeds,
       // so a spawn-time rejection leaves the registry untouched.
       await wired.supervisor.spawn(spawnOpts);
-      // Seed the child's credential material NOW, before inbound mail is
-      // registered below: the supervisor's own pre-trigger barrier
-      // (`pushRunGrants`, the only other `credentials-updated` producer)
-      // is armed solely by an `onRunStart` binding this wiring does not
-      // supply, so without this push the delivered material would sit on
-      // the supervisor bindings forever and every
-      // `credentials.resolve(handle)` would fail "no credential is bound".
-      if (spec.credentials !== undefined) {
-        await wired.supervisor.deliverCredentials({
-          delivery: spec.credentials,
-        });
-      }
       wiredForUnwind = wired;
       activeSupervisors.set(spec.agentAddress, wired);
       supervisorRegistered = true;
@@ -982,6 +986,22 @@ export function createSidecarDeployRouter(deps: {
           },
         );
       }
+
+      // Register the credential-delivery handler for EVERY deployment (not
+      // only warm single-step ones): the material cell is per-child and read
+      // by every step's tool capabilities. The handler hands the delivery to
+      // the supervisor's `deliverCredentials`, which sends a
+      // `credentials-updated` control frame to the child where the material
+      // cell is swapped. No durable persist -- credential material never
+      // touches disk.
+      deps.multistepCredentialsRouter?.register(
+        spec.agentAddress,
+        async (args) => {
+          await wired.supervisor.deliverCredentials({
+            delivery: args.delivery,
+          });
+        },
+      );
       routersRegistered = true;
 
       succeeded = true;
@@ -1000,6 +1020,7 @@ export function createSidecarDeployRouter(deps: {
           // an address that never registered one, so a multi-step unwind
           // safely calls it too.
           deps.multistepSourcesRouter?.unregister(spec.agentAddress);
+          deps.multistepCredentialsRouter?.unregister(spec.agentAddress);
         }
         if (supervisorRegistered) {
           activeSupervisors.delete(spec.agentAddress);
@@ -1299,6 +1320,7 @@ export function createSidecarDeployRouter(deps: {
       // Unregister unconditionally (a no-op for a multi-step address that
       // registered no sources handler), matching the sibling routers.
       deps.multistepSourcesRouter?.unregister(frame.agentAddress);
+      deps.multistepCredentialsRouter?.unregister(frame.agentAddress);
       // Shut the per-deployment supervisor down so the workflow-process
       // child, its IPC pipes, and its event-channel fd are released.
       // The supervisor's `shutdown()` is idempotent (returns early when
