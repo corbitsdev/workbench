@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import {
   bridgeChannelStream,
   createChannelSubscriberRegistry,
+  createPlatformChannelFanout,
 } from "../src/channel-events";
 import type { ChatChannelEvent, ChannelEvents } from "../src/platform-port";
 
@@ -59,6 +60,87 @@ describe("createChannelSubscriberRegistry", () => {
     registry.publish("chan_1", { type: "chat.typing", data: {} });
 
     expect(received).toHaveLength(0);
+  });
+});
+
+describe("createPlatformChannelFanout", () => {
+  test("N subscribers on one channel share a single upstream subscription", () => {
+    let subscribeCalls = 0;
+    let upstreamUnsubscribeCalls = 0;
+    const platform: ChannelEvents = {
+      subscribeToChannel() {
+        subscribeCalls += 1;
+        return () => {
+          upstreamUnsubscribeCalls += 1;
+        };
+      },
+    };
+    const fanout = createPlatformChannelFanout(platform);
+
+    const unsubscribeA = fanout.subscribeToChannel("chan_1", () => undefined);
+    const unsubscribeB = fanout.subscribeToChannel("chan_1", () => undefined);
+    const unsubscribeC = fanout.subscribeToChannel("chan_1", () => undefined);
+
+    expect(subscribeCalls).toBe(1);
+
+    unsubscribeA();
+    unsubscribeB();
+    expect(upstreamUnsubscribeCalls).toBe(0);
+
+    unsubscribeC();
+    expect(upstreamUnsubscribeCalls).toBe(1);
+  });
+
+  test("a fanned-out event reaches every local subscriber of that channel", () => {
+    let deliver: ((event: ChatChannelEvent) => void) | undefined;
+    const platform: ChannelEvents = {
+      subscribeToChannel(_channelId, onEvent) {
+        deliver = onEvent;
+        return () => undefined;
+      },
+    };
+    const fanout = createPlatformChannelFanout(platform);
+    const receivedA: ChatChannelEvent[] = [];
+    const receivedB: ChatChannelEvent[] = [];
+    fanout.subscribeToChannel("chan_1", (event) => receivedA.push(event));
+    fanout.subscribeToChannel("chan_1", (event) => receivedB.push(event));
+
+    deliver?.({ type: "chat.agent", data: {} });
+
+    expect(receivedA).toHaveLength(1);
+    expect(receivedB).toHaveLength(1);
+  });
+
+  test("releasing and resubscribing to the same channel re-subscribes upstream", () => {
+    let subscribeCalls = 0;
+    const platform: ChannelEvents = {
+      subscribeToChannel() {
+        subscribeCalls += 1;
+        return () => undefined;
+      },
+    };
+    const fanout = createPlatformChannelFanout(platform);
+
+    fanout.subscribeToChannel("chan_1", () => undefined)();
+    fanout.subscribeToChannel("chan_1", () => undefined);
+
+    expect(subscribeCalls).toBe(2);
+  });
+
+  test("different channels each get their own upstream subscription", () => {
+    let subscribeCalls = 0;
+    const platform: ChannelEvents = {
+      subscribeToChannel() {
+        subscribeCalls += 1;
+        return () => undefined;
+      },
+    };
+    const fanout = createPlatformChannelFanout(platform);
+
+    fanout.subscribeToChannel("chan_1", () => undefined);
+    fanout.subscribeToChannel("chan_2", () => undefined);
+
+    expect(subscribeCalls).toBe(2);
   });
 });
 
@@ -116,6 +198,36 @@ describe("bridgeChannelStream", () => {
     // — a zombie subscriber would keep attempting (and failing) writes
     // forever.
     expect(writeCount).toBe(1);
+  });
+
+  test("a platform subscribe that throws still opens the stream, registry-only", async () => {
+    const registry = createChannelSubscriberRegistry();
+    const writes: unknown[] = [];
+    const stream = fakeStream((message) => {
+      writes.push(message);
+      return Promise.resolve();
+    });
+    const throwingPlatform: ChannelEvents = {
+      subscribeToChannel() {
+        throw new Error("folded run not resolved yet");
+      },
+    };
+
+    expect(() =>
+      bridgeChannelStream({
+        registry,
+        platform: throwingPlatform,
+        channelId: "chan_1",
+        stream,
+        authorize: alwaysAuthorized,
+      }),
+    ).not.toThrow();
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(1);
   });
 
   test("authorize going false unsubscribes both sources and closes the stream, without writing the event", async () => {
