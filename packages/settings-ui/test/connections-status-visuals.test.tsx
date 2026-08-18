@@ -36,6 +36,9 @@ describe("Connections status chips", () => {
       if (url === "/api/tenants/ten_1/connections/oauth-configured") {
         return json({});
       }
+      if (url === "/api/tenants/ten_1/models") {
+        return json([]);
+      }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;
 
@@ -51,16 +54,27 @@ describe("Connections status chips", () => {
       expect(container.textContent).toContain("Needs setup");
       expect(container.textContent).toContain("Not connected");
 
-      const badges = [...container.querySelectorAll('[data-slot="badge"]')];
-      const needsSetupBadge = badges.find(
-        (badge) => badge.textContent === "Needs setup",
+      const statusCaptions = [
+        ...container.querySelectorAll(".settings-connection-row-status"),
+      ];
+      const needsSetupCaption = statusCaptions.find(
+        (caption) => caption.textContent === "Needs setup",
       );
-      const notConnectedBadge = badges.find(
-        (badge) => badge.textContent === "Not connected",
+      const notConnectedCaption = statusCaptions.find(
+        (caption) => caption.textContent === "Not connected",
       );
-      expect(needsSetupBadge).not.toBeUndefined();
-      expect(notConnectedBadge).not.toBeUndefined();
-      expect(needsSetupBadge?.className).not.toBe(notConnectedBadge?.className);
+      expect(needsSetupCaption).not.toBeUndefined();
+      expect(notConnectedCaption).not.toBeUndefined();
+      // The two states share the plain caption look -- "not configured"
+      // is not a colored-accent state -- but they're still rendered from
+      // distinct branches (the muted, no-Connect-button OAuth row vs. an
+      // ordinary api-key row), each identifiable by its own row wrapper.
+      expect(
+        needsSetupCaption?.closest(".settings-connection-row-muted"),
+      ).not.toBeNull();
+      expect(
+        notConnectedCaption?.closest(".settings-connection-row-muted"),
+      ).toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();

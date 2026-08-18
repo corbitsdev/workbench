@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   ConnectionsApiError,
   completeConnectorCredential,
+  disconnectConnector,
   fetchOAuthConfigured,
   testConnectorCredential,
 } from "../src/connections-api";
@@ -108,5 +109,25 @@ describe("completeConnectorCredential", () => {
       "/api/tenants/tnt_1/connections/granola/complete",
     );
     expect(result).toEqual({ credentialId: "cred_1", status: "active" });
+  });
+});
+
+describe("disconnectConnector", () => {
+  test("DELETEs the connector's disconnect route", async () => {
+    const calls = stubFetch(() => json(undefined, 204));
+    await disconnectConnector("tnt_1", "granola");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tnt_1/connections/granola/disconnect",
+    );
+    expect(calls[0]?.init?.method).toBe("DELETE");
+  });
+
+  test("throws ConnectionsApiError with the envelope message on a non-2xx", async () => {
+    stubFetch(() =>
+      json({ error: { code: "disconnect_failed", message: "try again" } }, 500),
+    );
+    await expect(disconnectConnector("tnt_1", "granola")).rejects.toThrow(
+      "try again",
+    );
   });
 });

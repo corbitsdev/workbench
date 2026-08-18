@@ -18,6 +18,31 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
+  // CL-6258: every provider row in Settings > Connections needs a logo
+  // tile -- a simple-icons mark where one exists, a monochrome initial
+  // tile (rendered from `displayName` alone) where it doesn't.
+  test("every inference provider with a simple-icons listing carries a hex-keyed icon", () => {
+    for (const id of [
+      "anthropic",
+      "google-genai",
+      "deepseek",
+      "mistral",
+      "ollama",
+      "openrouter",
+      "huggingface",
+    ]) {
+      const descriptor = CONNECTOR_REGISTRY[id];
+      expect(descriptor?.icon?.path.length).toBeGreaterThan(0);
+      expect(descriptor?.icon?.hex).toMatch(/^[0-9A-F]{6}$/i);
+    }
+  });
+
+  test("providers with no simple-icons listing fall back to no icon (initial tile)", () => {
+    for (const id of ["openai", "xai", "groq", "opencode-zen"]) {
+      expect(CONNECTOR_REGISTRY[id]?.icon).toBeUndefined();
+    }
+  });
+
   test("includes OpenRouter and Hugging Face as oauth-pkce connectors, no probe", () => {
     for (const id of ["openrouter", "huggingface"]) {
       const descriptor = CONNECTOR_REGISTRY[id];

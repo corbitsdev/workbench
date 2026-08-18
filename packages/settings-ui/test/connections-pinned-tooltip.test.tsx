@@ -37,6 +37,9 @@ function mockFetch() {
     if (url === "/api/tenants/ten_1/connections/oauth-configured") {
       return json({});
     }
+    if (url === "/api/tenants/ten_1/models") {
+      return json([]);
+    }
     throw new Error(`unexpected fetch: ${url}`);
   }) as unknown as typeof fetch;
 }
@@ -58,14 +61,14 @@ describe("Connections 'Used by workflows' tooltip", () => {
       expect(container.textContent).toContain("Used by workflows:");
 
       const pinnedSpans = [
-        ...container.querySelectorAll(".settings-connection-card-pinned"),
+        ...container.querySelectorAll(".settings-connection-row-caption"),
       ];
       for (const span of pinnedSpans) {
         expect(span.getAttribute("title")).toBeNull();
       }
 
       const trigger = container.querySelector(
-        ".settings-connection-card-pinned-row button",
+        ".settings-connection-row-pinned-row button",
       ) as HTMLButtonElement | null;
       expect(trigger).not.toBeNull();
       expect(trigger?.tagName).toBe("BUTTON");
@@ -88,7 +91,7 @@ describe("Connections 'Used by workflows' tooltip", () => {
       await settle();
 
       const trigger = container.querySelector(
-        ".settings-connection-card-pinned-row button",
+        ".settings-connection-row-pinned-row button",
       ) as HTMLButtonElement;
 
       act(() => {
@@ -124,17 +127,13 @@ describe("Connections 'Used by workflows' tooltip", () => {
       // github has feedsTools but an empty pinned-workflows list in the
       // fixture data — "Available to any workflow", no approximation to
       // caveat, so no tooltip trigger should render for that card.
-      const cards = [
-        ...container.querySelectorAll(".settings-connection-card"),
-      ];
+      const cards = [...container.querySelectorAll(".settings-connection-row")];
       const githubCard = cards.find((card) =>
         card.textContent?.includes("GitHub"),
       );
       expect(githubCard).not.toBeUndefined();
       expect(
-        githubCard?.querySelector(
-          ".settings-connection-card-pinned-row button",
-        ),
+        githubCard?.querySelector(".settings-connection-row-pinned-row button"),
       ).toBeNull();
     } finally {
       act(() => root.unmount());

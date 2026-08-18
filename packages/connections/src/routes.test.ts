@@ -10,8 +10,9 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ConnectorDescriptor } from "./descriptor";
+import type { ApiCall } from "@workbench/hub-client";
 import { createProviderHealthStore } from "./provider-health";
-import { createConnectionRoutes } from "./routes";
+import { createConnectionRoutes, disconnectConnector } from "./routes";
 
 const TENANT = {
   id: "tnt_1",
@@ -126,6 +127,9 @@ function buildApp(
     seedCatalogFn?: Parameters<
       typeof createConnectionRoutes
     >[0]["seedCatalogFn"];
+    disconnectConnectorFn?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["disconnectConnectorFn"];
     oauthEnv?: Readonly<Record<string, string | undefined>>;
     providerHealth?: Parameters<
       typeof createConnectionRoutes
@@ -147,6 +151,8 @@ function buildApp(
     routeArgs.ensureCredentialFn = overrides.ensureCredentialFn;
   if (overrides.seedCatalogFn !== undefined)
     routeArgs.seedCatalogFn = overrides.seedCatalogFn;
+  if (overrides.disconnectConnectorFn !== undefined)
+    routeArgs.disconnectConnectorFn = overrides.disconnectConnectorFn;
   if (overrides.oauthEnv !== undefined) routeArgs.oauthEnv = overrides.oauthEnv;
   if (overrides.providerHealth !== undefined)
     routeArgs.providerHealth = overrides.providerHealth;
@@ -706,5 +712,218 @@ describe("GET /provider-health", () => {
     const response = await app.request("/provider-health");
     const body = (await response.json()) as Record<string, unknown>;
     expect("connectedProviderCount" in body).toBe(false);
+  });
+});
+
+// A fake `ApiCall` for `disconnectConnector` itself: unlike the route
+// tests above (which stub the whole function), these exercise the real
+// cleanup ordering against a scripted native-hub double, the same
+// `fakeAPI`-style pattern `packages/hub-client/test/helpers.ts` uses for
+// `ensureProvider`/`ensureCredential`/`seedCatalog`.
+type FakeCall = {
+  readonly method: string;
+  readonly path: string;
+};
+
+function page(data: readonly unknown[]) {
+  return { status: 200, data: { data, nextCursor: null } };
+}
+
+const STAMP = "2026-01-01T00:00:00.000Z";
+
+function catalogProviderRow(id: string, name: string) {
+  return {
+    id,
+    tenantId: "tnt_1",
+    name,
+    plugin: "anthropic",
+    baseURL: "https://api.anthropic.com",
+    credentialId: "crd_1",
+    disabled: false,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  };
+}
+
+function providerRow(id: string, name: string) {
+  return {
+    id,
+    tenantId: "tnt_1",
+    name,
+    plugin: "http",
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  };
+}
+
+function fakeDisconnectAPI(
+  handler: (call: FakeCall) => { status: number; data: unknown } | undefined,
+): { api: ApiCall; calls: FakeCall[] } {
+  const calls: FakeCall[] = [];
+  const api: ApiCall = async (method, path) => {
+    calls.push({ method, path });
+    const response = handler({ method, path });
+    if (response === undefined) {
+      throw new Error(`unexpected hub call in test: ${method} ${path}`);
+    }
+    return { status: response.status, data: response.data, cookies: [] };
+  };
+  return { api, calls };
+}
+
+describe("disconnectConnector", () => {
+  const TENANT_ID = "tnt_1";
+
+  test("an inference connector (catalog provider present) deletes the catalog provider before the credential provider, cascading offerings", async () => {
+    const { api, calls } = fakeDisconnectAPI(({ method, path }) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return page([catalogProviderRow("mprv_1", "anthropic")]);
+      }
+      if (
+        method === "DELETE" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`
+      ) {
+        return { status: 204, data: null };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return page([providerRow("prv_1", "anthropic")]);
+      }
+      if (
+        method === "DELETE" &&
+        path === `/api/tenants/${TENANT_ID}/providers/prv_1`
+      ) {
+        return { status: 204, data: null };
+      }
+      return undefined;
+    });
+
+    const result = await disconnectConnector(
+      api,
+      [],
+      { tenantId: TENANT_ID, connectorId: "anthropic" },
+      () => {},
+    );
+
+    expect(result.disconnected).toBe(true);
+    const catalogDeleteIndex = calls.findIndex(
+      (call) =>
+        call.path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`,
+    );
+    const providerDeleteIndex = calls.findIndex(
+      (call) => call.path === `/api/tenants/${TENANT_ID}/providers/prv_1`,
+    );
+    expect(catalogDeleteIndex).toBeGreaterThanOrEqual(0);
+    expect(providerDeleteIndex).toBeGreaterThan(catalogDeleteIndex);
+  });
+
+  test("a non-inference (MCP-style) connector with no catalog provider still removes its provider row", async () => {
+    const { api } = fakeDisconnectAPI(({ method, path }) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return page([]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return page([providerRow("prv_exa", "exa")]);
+      }
+      if (
+        method === "DELETE" &&
+        path === `/api/tenants/${TENANT_ID}/providers/prv_exa`
+      ) {
+        return { status: 204, data: null };
+      }
+      return undefined;
+    });
+
+    const result = await disconnectConnector(
+      api,
+      [],
+      { tenantId: TENANT_ID, connectorId: "exa" },
+      () => {},
+    );
+
+    expect(result.disconnected).toBe(true);
+  });
+
+  test("a connector with no provider row at all reports not disconnected, without attempting a delete", async () => {
+    const { api, calls } = fakeDisconnectAPI(({ method, path }) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return page([]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return page([]);
+      }
+      return undefined;
+    });
+
+    const result = await disconnectConnector(
+      api,
+      [],
+      { tenantId: TENANT_ID, connectorId: "never-connected" },
+      () => {},
+    );
+
+    expect(result.disconnected).toBe(false);
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+  });
+});
+
+describe("DELETE /:connectorId/disconnect", () => {
+  test("unknown connector 404s", async () => {
+    const app = buildApp();
+    const response = await app.request("/not-a-connector/disconnect", {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(404);
+  });
+
+  test("a registered connector with nothing to disconnect 404s", async () => {
+    const app = buildApp({
+      disconnectConnectorFn: async () => ({ disconnected: false }),
+    });
+    const response = await app.request("/accepting-connector/disconnect", {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(404);
+  });
+
+  test("a successful disconnect 204s with no body", async () => {
+    const app = buildApp({
+      disconnectConnectorFn: async () => ({ disconnected: true }),
+    });
+    const response = await app.request("/accepting-connector/disconnect", {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(204);
+  });
+
+  test("a cleanup failure 500s rather than leaving the client guessing", async () => {
+    const app = buildApp({
+      disconnectConnectorFn: async () => {
+        throw new Error("the hub rejected the catalog provider delete");
+      },
+    });
+    const response = await app.request("/accepting-connector/disconnect", {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("disconnect_failed");
   });
 });

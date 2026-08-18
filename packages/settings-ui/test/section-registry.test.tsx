@@ -52,7 +52,7 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account", "chat"] },
       {
         id: "everyone",
-        sections: ["connections", "models", "people", "roles", "grants", "audit"],
+        sections: ["connections", "people", "roles", "grants", "audit"],
       },
     ]);
   });
@@ -79,7 +79,7 @@ describe("resolveSettingsSectionGroups", () => {
     ).toEqual(["roles", "grants", "audit"]);
     expect(
       sections?.filter((section) => section.advanced !== true).map((s) => s.id),
-    ).toEqual(["connections", "models", "people"]);
+    ).toEqual(["connections", "people"]);
   });
 
   test("never registers the personal agent section — no preference store exists to back it yet", () => {

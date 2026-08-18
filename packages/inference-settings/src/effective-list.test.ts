@@ -5,6 +5,7 @@ import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 import {
   buildEffectiveInferenceRows,
   computeReorderPatches,
+  defaultModelForProvider,
   providerDisplayName,
   restrictedOfferings,
   rowsByModel,
@@ -72,6 +73,49 @@ function model(overrides: Partial<ModelInfo> = {}): ModelInfo {
     ...overrides,
   };
 }
+
+describe("defaultModelForProvider", () => {
+  test("picks the offering with the lowest priority number for that provider", () => {
+    const models: ModelInfo[] = [
+      model(),
+      model({
+        id: "model-2",
+        canonicalName: "gpt-4o-mini",
+        displayName: "GPT-4o mini",
+        offerings: [
+          {
+            offeringId: "offering-c",
+            providerId: "provider-a",
+            providerName: "anthropic",
+            plugin: "anthropic",
+            priority: 5,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+    ];
+    // "anthropic" serves two models here (priority 0 on claude-sonnet-5,
+    // priority 5 on gpt-4o-mini) -- the lower number wins.
+    expect(defaultModelForProvider(models, "anthropic")).toEqual({
+      canonicalName: "claude-sonnet-5",
+      displayName: "Claude Sonnet 5",
+    });
+  });
+
+  test("returns null when the provider serves no offering", () => {
+    expect(defaultModelForProvider([model()], "groq")).toBeNull();
+  });
+
+  test("falls back to a null displayName when the model has none", () => {
+    const models: ModelInfo[] = [model({ displayName: null })];
+    expect(defaultModelForProvider(models, "anthropic")).toEqual({
+      canonicalName: "claude-sonnet-5",
+      displayName: null,
+    });
+  });
+});
 
 describe("buildEffectiveInferenceRows", () => {
   test("marks an owned offering id set-here and everything else inherited", () => {
