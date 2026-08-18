@@ -13,6 +13,7 @@ import {
   createHubAPI,
   DEFAULT_WORKFLOWS,
   inferenceCredentialName,
+  isCliError,
   parseAs,
   supportedCredentialProviders,
   type ApiCall,
@@ -638,11 +639,12 @@ export function createOnboardingRoutes(
       (deps.logError ?? deps.log)(
         `credential setup failed for user ${user.id}: ${message}`,
       );
-      // ProvisionError messages are written to be shown (they name the
-      // actual step that failed); anything else stays behind the generic
-      // sentence rather than leaking an internal error shape at a user.
+      // ProvisionError and CliError messages are both written to be shown
+      // (they name the actual step that failed); anything else stays
+      // behind the generic sentence rather than leaking an internal error
+      // shape at a user.
       const shown =
-        cause instanceof ProvisionError
+        cause instanceof ProvisionError || isCliError(cause)
           ? `Your key was added, but setting up your workbench failed: ${cause.message}.`
           : "Your key was added, but setting up your workbench failed. " +
             "The hub log has the underlying error.";
