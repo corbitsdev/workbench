@@ -7,7 +7,12 @@
 // — the reactor suspends the call as a pending approval BEFORE this
 // bundle's `run` ever executes, renders it in-chat as an approve/deny
 // card, and only resumes into `run` once a human allows it. This
-// bundle's own code never sees or controls that gate.
+// bundle's own code never sees or controls that gate. Reviewed under
+// CL-6209's grant-free-write policy and kept as `ask`, deliberately:
+// `create_agent` can pin `toolPackagePins` directly onto the new
+// definition (a capability grant), invites the new agent into the
+// channel by default, and materializes a brand-new autonomous agent —
+// none of that is a plain tenant-internal state write.
 //
 // `hubAgentDirectoryUrl`/`hubChatUrl`/`sidecarToken`/`address` are
 // threaded onto `env` by the sidecar's per-step env builder, the same

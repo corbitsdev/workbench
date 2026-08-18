@@ -6,13 +6,17 @@
 // `@corbits/capability-tools`' `request_capability`, over the same
 // workflow-run-authenticated surfaces `./client.ts` calls.
 //
-// Every write here is `approval: "ask"` (`@intx/agent`'s native
-// per-invocation gate, `vendor/intx/agent/src/tool.ts`): the reactor
+// `create_skill` and `update_skill` (CL-6209) grant no credentials or
+// capability pins and write only a tenant-internal skill row — a
+// skill's body is durable know-how, not something any agent's
+// capabilities or autonomy hinge on until a human separately pins it
+// onto a definition. `pin_skill`, by contrast, still declares
+// `approval: "ask"` (`@intx/agent`'s native per-invocation gate,
+// `vendor/intx/agent/src/tool.ts`): it can change ANY agent
+// definition's own behavior, not just this run's — the reactor
 // suspends the call as a pending approval BEFORE this bundle's `run`
-// ever executes, and only resumes once a human allows it — a skill's
-// body or a definition's pinned-skill list is workbench-durable state,
-// never written on a model's say-so alone. `list_skills` is plain
-// reading and carries no approval gate.
+// ever executes, and only resumes once a human allows it. `list_skills`
+// and `read_skill` are plain reading and carry no approval gate.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -209,8 +213,8 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
   definitions: [
     { name: LIST_SKILLS_TOOL },
     { name: READ_SKILL_TOOL },
-    { name: CREATE_SKILL_TOOL, approval: "ask" },
-    { name: UPDATE_SKILL_TOOL, approval: "ask" },
+    { name: CREATE_SKILL_TOOL },
+    { name: UPDATE_SKILL_TOOL },
     { name: PIN_SKILL_TOOL, approval: "ask" },
   ],
   factory: (env) => ({
@@ -245,8 +249,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
         description:
           "Capture repeatable know-how as a new, workbench-wide skill. " +
           "Use this only once a genuinely reusable procedure has come " +
-          "up in conversation — never speculatively. A human must " +
-          "approve before the skill is created.",
+          "up in conversation — never speculatively.",
         inputSchema: {
           type: "object",
           properties: {
@@ -273,8 +276,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
         description:
           "Republish an existing skill's instructions — a new version " +
           "on the same skill, not a new skill. Omit description to " +
-          "leave it exactly as it already is. A human must approve " +
-          "before the update is written.",
+          "leave it exactly as it already is.",
         inputSchema: {
           type: "object",
           properties: {

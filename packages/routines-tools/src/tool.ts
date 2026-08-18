@@ -1,13 +1,25 @@
 // The `@corbits/routines-tools` bundle: `routine_list`, `routine_create`,
 // `routine_update`, and `routine_run_now` — Myra's in-chat way to manage
-// the workbench's recurring/triggered automations. Every write is
-// declared `approval: "ask"` (`@intx/agent`'s native per-invocation
-// gate): the reactor suspends the call as a pending approval BEFORE this
-// bundle's `run` ever executes, renders it in-chat as an approve/deny
-// card, and only resumes into `run` once a human allows it — the same
-// shape `@corbits/capability-tools`' `request_capability` uses.
-// `routine_list` is read-only and carries no `approval` key at all,
-// mirroring `@corbits/memory-tools`' `memory_list`.
+// the workbench's recurring/triggered automations.
+//
+// Only `routine_run_now` declares `approval: "ask"` (`@intx/agent`'s
+// native per-invocation gate): it fires a routine's target agent
+// definition immediately, taking whatever external action that
+// definition's own already-granted capabilities allow — the reactor
+// suspends the call as a pending approval BEFORE this bundle's `run`
+// ever executes, renders it in-chat as an approve/deny card, and only
+// resumes into `run` once a human allows it, the same shape
+// `@corbits/capability-tools`' `request_capability` uses.
+//
+// `routine_create` and `routine_update` (CL-6209) grant no credentials
+// or capability pins and write only a tenant-internal routine row —
+// scheduling metadata pointing at a definitionId whose own capabilities
+// were already approved separately. Neither call touches anything
+// external itself, so neither carries an `approval` key; the human gate
+// that matters is the one on the definition's own tools, which fires
+// again every time the routine actually runs. `routine_list` is
+// read-only and carries no `approval` key either, mirroring
+// `@corbits/memory-tools`' `memory_list`.
 //
 // `definitionId` is a required input on `routine_create`, never
 // auto-resolved: Myra must name the agent definition a routine runs
@@ -402,8 +414,8 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
   requires: ["hubRoutinesUrl", "sidecarToken", "address"],
   definitions: [
     { name: ROUTINE_LIST_TOOL },
-    { name: ROUTINE_CREATE_TOOL, approval: "ask" },
-    { name: ROUTINE_UPDATE_TOOL, approval: "ask" },
+    { name: ROUTINE_CREATE_TOOL },
+    { name: ROUTINE_UPDATE_TOOL },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
   ],
   factory: (env) => ({
@@ -420,8 +432,7 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         name: ROUTINE_CREATE_TOOL,
         description:
           "Create a new routine: a recurring or triggered automation " +
-          "that runs an agent definition on a schedule or webhook. A " +
-          "human must approve before it's created.",
+          "that runs an agent definition on a schedule or webhook.",
         inputSchema: {
           type: "object",
           properties: {
@@ -455,8 +466,7 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         name: ROUTINE_UPDATE_TOOL,
         description:
           "Update an existing routine's enabled state, name, " +
-          "instruction, or trigger. A human must approve before " +
-          "anything changes.",
+          "instruction, or trigger.",
         inputSchema: {
           type: "object",
           properties: {
