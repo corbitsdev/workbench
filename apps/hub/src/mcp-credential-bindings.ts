@@ -19,13 +19,11 @@ export function createMcpCredentialBindingsFor(
 ): McpCredentialBindingsFor {
   return async (tenantId: string) => {
     const connections = await listMcpServerConnections(db, tenantId);
-    return connections.map(
-      (connection): CredentialBinding => ({
-        package: MCP_TOOLS_PACKAGE,
-        handle: `mcp:${connection.slug}`,
-        provider: `mcp:${connection.slug}`,
-        locator: "tenant",
-      }),
-    );
+    return connections.map((connection): CredentialBinding => ({
+      package: MCP_TOOLS_PACKAGE,
+      handle: `mcp:${connection.slug}`,
+      provider: `mcp:${connection.slug}`,
+      locator: "tenant",
+    }));
   };
 }

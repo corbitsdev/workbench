@@ -5,8 +5,10 @@ export type UsageTurnRecord = {
   readonly tenantId: string;
   readonly sessionId: string;
   readonly turnId: string;
+  readonly provider: string | null;
   readonly model: string;
   readonly tokens: TokenClasses;
+  readonly reportedCostUsd: number | null;
   readonly recordedAt: Date;
 };
 
@@ -20,8 +22,10 @@ export type InsertUsageInput = {
   readonly tenantId: string;
   readonly sessionId: string;
   readonly turnId: string;
+  readonly provider?: string;
   readonly model: string;
   readonly tokens: TokenClasses;
+  readonly reportedCostUsd?: number;
   readonly recordedAt?: Date;
 };
 
@@ -64,8 +68,10 @@ export function createMemoryUsageStore(
         tenantId: input.tenantId,
         sessionId: input.sessionId,
         turnId: input.turnId,
+        provider: input.provider ?? null,
         model: input.model,
         tokens: input.tokens,
+        reportedCostUsd: input.reportedCostUsd ?? null,
         recordedAt: input.recordedAt ?? new Date(),
       };
       turns.set(record.id, record);

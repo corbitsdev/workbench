@@ -57,7 +57,7 @@ test("the definition is a six-step pipeline with no intake gate", () => {
 test("ground is the first step and reads the triggering mail as topic/focus", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
   const ground = stepPrimitive(definition, "ground");
-  expect(ground.after).toBeUndefined();
+  expect(ground.after).toEqual([]);
   expect(ground.input).toEqual({ from: "trigger.payload" });
 });
 

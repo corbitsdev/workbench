@@ -1,8 +1,6 @@
-// The "Used by workflows" approximation caveat used to ride a bare `title`
-// attribute on a non-interactive <span> — reachable by mouse hover only,
-// never announced by a screen reader, never reachable by keyboard or touch.
-// It now uses react-ui's InfoTooltip: a focusable trigger button whose note
-// is bound via aria-describedby.
+// MCP-first services are omitted from the static connector list. GitHub is
+// the remaining tool connector there and is available to every workflow, so
+// its row must not imply a pinned-workflow restriction or show a caveat.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -10,7 +8,6 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { ConnectionsSection } from "../src/connections-section";
-import { SETTINGS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -43,79 +40,20 @@ function mockFetch() {
     if (url === "/api/tenants/ten_1/catalog/offerings") {
       return json({ data: [], nextCursor: null });
     }
+    if (url === "/api/tenants/ten_1/routines") {
+      return json({ items: [] });
+    }
+    if (url.startsWith("/api/tenants/ten_1/workflows/definitions?")) {
+      return json({ data: [], nextCursor: null });
+    }
+    if (url === "/api/tenants/ten_1/webhook-triggers") {
+      return json({ items: [] });
+    }
     throw new Error(`unexpected fetch: ${url}`);
   }) as unknown as typeof fetch;
 }
 
-describe("Connections 'Used by workflows' tooltip", () => {
-  test("the approximation note is a focusable, keyboard-reachable trigger — not a bare title attribute", async () => {
-    mockFetch();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root: Root = createRoot(container);
-    try {
-      act(() => {
-        root.render(<ConnectionsSection tenantId="ten_1" />);
-      });
-      await settle();
-
-      // Granola has both feedsTools and pinned workflows in the fixture
-      // data, so its card carries the approximation note.
-      expect(container.textContent).toContain("Used by workflows:");
-
-      const pinnedSpans = [
-        ...container.querySelectorAll(".settings-connection-row-caption"),
-      ];
-      for (const span of pinnedSpans) {
-        expect(span.getAttribute("title")).toBeNull();
-      }
-
-      const trigger = container.querySelector(
-        ".settings-connection-row-pinned-row button",
-      ) as HTMLButtonElement | null;
-      expect(trigger).not.toBeNull();
-      expect(trigger?.tagName).toBe("BUTTON");
-      expect(trigger?.getAttribute("type")).toBe("button");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("focusing the trigger reveals and associates the approximation note text", async () => {
-    mockFetch();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root: Root = createRoot(container);
-    try {
-      act(() => {
-        root.render(<ConnectionsSection tenantId="ten_1" />);
-      });
-      await settle();
-
-      const trigger = container.querySelector(
-        ".settings-connection-row-pinned-row button",
-      ) as HTMLButtonElement;
-
-      act(() => {
-        trigger.focus();
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-
-      const describedBy = trigger.getAttribute("aria-describedby");
-      expect(describedBy).not.toBeNull();
-      const content = document.getElementById(describedBy as string);
-      expect(content?.textContent).toBe(
-        SETTINGS_STRINGS.connectionsPinnedByApproximationNote,
-      );
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
+describe("Connections pinned-by rendering", () => {
   test("a connector with feedsTools but no pinned workflows shows the line with no tooltip trigger", async () => {
     mockFetch();
     const container = document.createElement("div");

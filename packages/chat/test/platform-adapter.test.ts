@@ -286,7 +286,10 @@ function createFakeDb(opts: {
   const fake = {
     query: {
       workflowRun: {
-        findFirst: async () => opts.workflowRunRow,
+        findFirst: async () =>
+          opts.workflowRunRow ??
+          (inserted.findLast((row) => row.table === workflowRun)?.values as
+            typeof opts.workflowRunRow | undefined),
       },
       sessionMail: {
         findFirst: async () => opts.sessionMailRow,
@@ -304,10 +307,15 @@ function createFakeDb(opts: {
         from(table: unknown) {
           if (table === asset) return selectChain([opts.assetRow]);
           if (table === workbenchLaunch) {
+            const insertedLaunch = inserted.findLast(
+              (row) => row.table === workbenchLaunch,
+            )?.values;
             return selectChain(
               opts.workbenchLaunchRow !== undefined
                 ? [opts.workbenchLaunchRow]
-                : [],
+                : insertedLaunch !== undefined
+                  ? [insertedLaunch]
+                  : [],
             );
           }
           if (table === agentSession) {
@@ -325,10 +333,14 @@ function createFakeDb(opts: {
           }
           if (table === foldedRun) {
             const marker = opts.foldedRunMarker ?? true;
+            const runId =
+              opts.workflowRunRow?.id ??
+              (
+                inserted.findLast((row) => row.table === foldedRun)?.values as
+                  { id: string } | undefined
+              )?.id;
             return selectChain(
-              marker && opts.workflowRunRow !== undefined
-                ? [{ id: opts.workflowRunRow.id }]
-                : [],
+              marker && runId !== undefined ? [{ id: runId }] : [],
             );
           }
           return selectChain([]);
@@ -554,7 +566,7 @@ const WORKBENCH_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
 );
 
 describe("createHubChatPlatform", () => {
-  test("launchWorkbench extracts the folded body, pins the noop inference source, and deploys via deployInstanceAtHead without touching the catalog", async () => {
+  test("launchWorkbench mints immediately and ensureAwake deploys with the noop source", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     // Deliberately left `ok: false`: a host launch must never reach
     // `resolveDefinitionSources` at all, so this stub result — which
@@ -577,7 +589,7 @@ describe("createHubChatPlatform", () => {
     });
     const sessionService = createFakeSessionService();
     const assetService = createFakeAssetService();
-    const sidecarRouter = createFakeSidecarRouter();
+    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
@@ -602,9 +614,13 @@ describe("createHubChatPlatform", () => {
 
     expect(launched.instanceId).toBe("ins_workbench1");
 
-    // The anchor's event collector is opened before the deploy call, so
-    // its runtime status/readiness (health, SSE replay) is never
-    // permanently "not_ready".
+    expect(eventCollectors.createCalls).toEqual([]);
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
+
+    await platform.ensureAwake("ins_workbench1@ten1.workbench.test");
+
+    // The asynchronous wake opens the collector before deploying.
     expect(eventCollectors.createCalls).toEqual([
       [
         "ins_workbench1@ten1.workbench.test",
@@ -707,7 +723,7 @@ describe("createHubChatPlatform", () => {
     );
   });
 
-  test("launchWorkbench rolls back the committed rows and abandons the collector when the deploy fails", async () => {
+  test("a failed host wake keeps the minted run retryable and abandons its collector", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -737,7 +753,7 @@ describe("createHubChatPlatform", () => {
       throw deployError;
     };
     const assetService = createFakeAssetService();
-    const sidecarRouter = createFakeSidecarRouter();
+    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
@@ -751,14 +767,15 @@ describe("createHubChatPlatform", () => {
       eventCollectors,
     });
 
+    await platform.launchWorkbench({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      workbenchId: "ins_workbench1",
+      triggerAddress: "ins_workbench1@ten1.workbench.test",
+      definition: WORKBENCH_WORKFLOW_JSON,
+    });
     await expect(
-      platform.launchWorkbench({
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        workbenchId: "ins_workbench1",
-        triggerAddress: "ins_workbench1@ten1.workbench.test",
-        definition: WORKBENCH_WORKFLOW_JSON,
-      }),
+      platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
     ).rejects.toThrow(deployError);
 
     // The collector opened before the deploy attempt is abandoned, not
@@ -767,24 +784,14 @@ describe("createHubChatPlatform", () => {
       "ins_workbench1@ten1.workbench.test",
     ]);
 
-    // The committed session is ended, and -- since this error is not a
-    // SessionLaunchError with leakedAgent, i.e. no child was left
-    // running on the sidecar -- the run is rolled back entirely rather
-    // than left "running" as a permanently unlistenable ghost, and the
-    // instance principal is deactivated.
-    const sessionUpdate = db.updated.find((row) => row.table === agentSession);
-    expect(sessionUpdate?.values).toMatchObject({ status: "ended" });
-
-    // The run row and its `@corbits/folded-runs`-owned folded-run
-    // marker (see `launchFoldedRun`'s own doc comment) are rolled back
-    // together.
-    expect(db.deleted).toEqual([{ table: workflowRun }, { table: foldedRun }]);
-
-    const principalUpdate = db.updated.find((row) => row.table === principal);
-    expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });
+    // A wake failure is recoverable on the next message, so it never
+    // deactivates or deletes the already-durable run.
+    expect(db.updated).toEqual([]);
+    expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
+    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
   });
 
-  test("launchWorkbench marks the run failed (not deleted) when the deploy leaks a running child", async () => {
+  test("a failed host wake keeps the run retryable even when a child leaked", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -813,7 +820,7 @@ describe("createHubChatPlatform", () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
     const assetService = createFakeAssetService();
-    const sidecarRouter = createFakeSidecarRouter();
+    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
@@ -827,19 +834,21 @@ describe("createHubChatPlatform", () => {
       eventCollectors,
     });
 
+    await platform.launchWorkbench({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      workbenchId: "ins_workbench1",
+      triggerAddress: "ins_workbench1@ten1.workbench.test",
+      definition: WORKBENCH_WORKFLOW_JSON,
+    });
     await expect(
-      platform.launchWorkbench({
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        workbenchId: "ins_workbench1",
-        triggerAddress: "ins_workbench1@ten1.workbench.test",
-        definition: WORKBENCH_WORKFLOW_JSON,
-      }),
+      platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
     ).rejects.toThrow(SessionLaunchError);
 
-    expect(db.deleted).toEqual([]);
+    expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
+    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
-    expect(runUpdate?.values).toEqual({ status: "failed" });
+    expect(runUpdate).toBeUndefined();
   });
 
   // A workbench host's noop pin is a deliberate improvement over the
@@ -932,7 +941,7 @@ describe("createHubChatPlatform", () => {
     );
   });
 
-  test("launchInvite hydrates the target definition's body from its asset and deploys via deployInstanceAtHead", async () => {
+  test("launchInvite mints from the target definition and ensureAwake deploys it", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
@@ -968,7 +977,7 @@ describe("createHubChatPlatform", () => {
     const assetService = createFakeAssetService({
       assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
     });
-    const sidecarRouter = createFakeSidecarRouter();
+    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
@@ -994,6 +1003,10 @@ describe("createHubChatPlatform", () => {
     expect(assetService.readAssetBlobCalls).toEqual([
       { assetId: "asst_echo", path: "workflow.json" },
     ]);
+
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
+    await platform.ensureAwake(launched.address);
 
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
     const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
@@ -1070,7 +1083,7 @@ describe("createHubChatPlatform", () => {
     const assetService = createFakeAssetService({
       assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
     });
-    const sidecarRouter = createFakeSidecarRouter();
+    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
     const credentialCipher = {
       encrypt: async (plaintext: string) => plaintext,
@@ -1089,11 +1102,12 @@ describe("createHubChatPlatform", () => {
       credentialCipher,
     });
 
-    await platform.launchInvite({
+    const launched = await platform.launchInvite({
       tenantId: "ten_1",
       creatorPrincipalId: "prin_creator",
       definitionId: "wfd_echo",
     });
+    await platform.ensureAwake(launched.address);
 
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
     expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
@@ -1206,17 +1220,18 @@ describe("createHubChatPlatform", () => {
       assetService: createFakeAssetService({
         assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
       }),
-      sidecarRouter: createFakeSidecarRouter(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
 
-    await expect(
-      platform.launchInvite({
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        definitionId: "wfd_echo",
-      }),
-    ).rejects.toThrow(/seed a tenant catalog source/);
+    const launched = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+    await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
+      /seed a tenant catalog source/,
+    );
   });
 
   // A `create_agent`-minted definition with no `model` of its own
@@ -1276,7 +1291,7 @@ describe("createHubChatPlatform", () => {
       assetService: createFakeAssetService({
         assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
       }),
-      sidecarRouter: createFakeSidecarRouter(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
       workbenchHostInferencePreferences: async (tenantId) =>
         tenantId === "ten_1"
@@ -1289,6 +1304,7 @@ describe("createHubChatPlatform", () => {
       creatorPrincipalId: "prin_creator",
       definitionId: "wfd_echo",
     });
+    await platform.ensureAwake(launched.address);
 
     expect(launched.instanceId).toMatch(/^run_/);
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
@@ -1331,18 +1347,19 @@ describe("createHubChatPlatform", () => {
       assetService: createFakeAssetService({
         assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
       }),
-      sidecarRouter: createFakeSidecarRouter(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
       workbenchHostInferencePreferences: async () => [],
     });
 
-    await expect(
-      platform.launchInvite({
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        definitionId: "wfd_echo",
-      }),
-    ).rejects.toThrow(/seed a tenant catalog source/);
+    const launched = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+    await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
+      /seed a tenant catalog source/,
+    );
 
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
     expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
@@ -1449,6 +1466,35 @@ describe("createHubChatPlatform", () => {
   });
 
   describe("listMail", () => {
+    test("returns an empty page while an asynchronously minted workbench has no run yet", async () => {
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "workbench-1",
+          displayName: null,
+        },
+        definitionId: "wfd_workbench1",
+      });
+      const platform = createHubChatPlatform({
+        hubPublicKey: "hub-key",
+        toolGrantsForPins: () => [],
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await expect(
+        platform.listMail({
+          tenantId: "ten_1",
+          workbenchId: "ins_workbench1",
+        }),
+      ).resolves.toEqual({ items: [] });
+    });
+
     test("walks three pages via keyset pagination, with a stable order across a createdAt tie", async () => {
       const RAW_MIME = new TextEncoder().encode(
         "Content-Type: text/plain\r\n\r\nhello",

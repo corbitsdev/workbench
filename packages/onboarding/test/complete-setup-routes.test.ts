@@ -604,9 +604,8 @@ describe("POST /complete-setup", () => {
       expect(firstBody.kind).toBe("seeded");
       expect(secondBody.kind).toBe("seeded");
 
-      // Every ensure-then-create helper hit its 409 branch on the
-      // overlapping call — nothing was ever planted twice. One extra
-      // asset beyond the workflow set is the tenant's own
+      // Both requests share one seed operation, so nothing is planted
+      // twice. One extra asset beyond the workflow set is the tenant's own
       // corbits-tools package-registry asset, which `seedTenant`
       // publishes ahead of any workflow deploy and which shares this
       // fake hub's one `/assets` create route with the workflow assets.

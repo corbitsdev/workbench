@@ -34,9 +34,7 @@ function countingAssetService(heads: Map<string, string | null>): {
     readAssetBlob: (params) => {
       readCalls.push(params);
       const sha = heads.get(params.ref ?? HEAD_REF) ?? "missing";
-      return Promise.resolve(
-        new TextEncoder().encode(`${params.path}@${sha}`),
-      );
+      return Promise.resolve(new TextEncoder().encode(`${params.path}@${sha}`));
     },
     listAssetBlobs: (params) => {
       listCalls.push(params);
@@ -144,8 +142,14 @@ describe("createLaunchCaches: assetService reads", () => {
       repoStore,
     });
 
-    await caches.assetService.listAssetBlobs({ assetId: ASSET_ID, dir: "tarballs" });
-    await caches.assetService.listAssetBlobs({ assetId: ASSET_ID, dir: "tarballs" });
+    await caches.assetService.listAssetBlobs({
+      assetId: ASSET_ID,
+      dir: "tarballs",
+    });
+    await caches.assetService.listAssetBlobs({
+      assetId: ASSET_ID,
+      dir: "tarballs",
+    });
 
     expect(inner.listCalls.length).toBe(1);
   });
@@ -159,7 +163,9 @@ describe("createLaunchCaches: assetService reads", () => {
       repoStore,
     });
 
-    expect(caches.assetService.createAsset).toBe(inner.assetService.createAsset);
+    expect(caches.assetService.createAsset).toBe(
+      inner.assetService.createAsset,
+    );
     expect(caches.assetService.populateAsset).toBe(
       inner.assetService.populateAsset,
     );
@@ -178,8 +184,16 @@ describe("createLaunchCaches: repoStore packs", () => {
       repoStore,
     });
 
-    const first = await caches.repoStore.createPack(principal, repoId, HEAD_REF);
-    const second = await caches.repoStore.createPack(principal, repoId, HEAD_REF);
+    const first = await caches.repoStore.createPack(
+      principal,
+      repoId,
+      HEAD_REF,
+    );
+    const second = await caches.repoStore.createPack(
+      principal,
+      repoId,
+      HEAD_REF,
+    );
 
     expect(createPackCalls.length).toBe(1);
     expect(second).toEqual(first);
@@ -244,11 +258,20 @@ describe("createLaunchCaches: bounded LRU eviction", () => {
 
     const bigPath = "tarballs/" + "a".repeat(20) + ".tgz";
     const otherPath = "tarballs/" + "b".repeat(20) + ".tgz";
-    await caches.assetService.readAssetBlob({ assetId: ASSET_ID, path: bigPath });
-    await caches.assetService.readAssetBlob({ assetId: ASSET_ID, path: otherPath });
+    await caches.assetService.readAssetBlob({
+      assetId: ASSET_ID,
+      path: bigPath,
+    });
+    await caches.assetService.readAssetBlob({
+      assetId: ASSET_ID,
+      path: otherPath,
+    });
     // The budget is too small to hold both; the first entry should have
     // been evicted, so re-reading it calls through again.
-    await caches.assetService.readAssetBlob({ assetId: ASSET_ID, path: bigPath });
+    await caches.assetService.readAssetBlob({
+      assetId: ASSET_ID,
+      path: bigPath,
+    });
 
     expect(inner.readCalls.length).toBe(3);
   });

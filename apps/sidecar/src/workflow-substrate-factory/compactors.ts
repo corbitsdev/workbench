@@ -62,7 +62,11 @@ export type SummarizeOlderTurnsOptions = {
 };
 
 function roleLabel(role: ConversationTurn["role"]): string {
-  return role === "user" ? "User" : role === "assistant" ? "Assistant" : "System";
+  return role === "user"
+    ? "User"
+    : role === "assistant"
+      ? "Assistant"
+      : "System";
 }
 
 /**

@@ -21,7 +21,7 @@ function createFakeDb(): DB["db"] {
 }
 
 describe("createEventCollector inference.usage forwarding", () => {
-  test("forwards turnId, model, and usage to onUsage — CL-5879 kill-date 2026-09-05", async () => {
+  test("forwards turnId, provider, model, and usage to onUsage — CL-5879 kill-date 2026-09-05", async () => {
     const forwarded: UsageForwarded[] = [];
     const collector = createEventCollector({
       db: createFakeDb(),
@@ -62,6 +62,7 @@ describe("createEventCollector inference.usage forwarding", () => {
     expect(forwarded).toHaveLength(1);
     expect(forwarded[0]).toEqual({
       turnId,
+      provider: "anthropic",
       model: "claude-sonnet",
       usage: {
         input: 100,

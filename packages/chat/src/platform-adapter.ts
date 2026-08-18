@@ -14,7 +14,7 @@ import {
   domainOf,
   findFoldedRunByAddress,
   findFoldedRunById,
-  launchFoldedRun,
+  mintFoldedRun,
   listFoldedMail,
   readDefinitionJSON,
   readFoldedBody,
@@ -346,6 +346,16 @@ export function createHubChatPlatform(
         `workbench_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
       );
     }
+    // A definition that declares no model of its own resolves the same
+    // catalog default here that `launchInvite` used to resolve at
+    // launch time — every deploy of such a run now goes through this
+    // wake path (launches mint only), and a slept one always did.
+    const fallbackModel =
+      !launchRow.noopInference && parsedFoldedBody.model === null
+        ? ((await deps.workbenchHostInferencePreferences?.(
+            launchRow.tenantId,
+          )) ?? [])[0]?.model
+        : undefined;
     const wakeParams = {
       tenantId: launchRow.tenantId,
       instanceId: run.id,
@@ -364,7 +374,10 @@ export function createHubChatPlatform(
             ),
             stepInput: WORKBENCH_HOST_STEP_INPUT,
           }
-        : wakeParams,
+        : {
+            ...wakeParams,
+            ...(fallbackModel !== undefined ? { fallbackModel } : {}),
+          },
     );
   }
 
@@ -437,28 +450,27 @@ export function createHubChatPlatform(
 
       const foldedBody = readFoldedBody(definitionJSON);
 
-      await launchFoldedRun(foldedRunsDeps, {
+      // Mint only — DB rows, no sidecar, no deploy. The host deploys
+      // through `wakeByAddress` on its first traffic (the join event or
+      // the canned greeting, moments later), so workbench creation
+      // returns in database time instead of deploy time. The wake pins
+      // the noop inference source per `noopInference: true` below: a
+      // workbench host never replies — its mailbox is the timeline and
+      // its system prompt forbids answering — so it never resolves
+      // against the tenant catalog and launches with zero sources
+      // seeded.
+      await mintFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,
         instanceId: input.workbenchId,
         triggerAddress: input.triggerAddress,
         definitionId,
-        foldedBody,
-        launchLabel: "the workbench host",
-        // A workbench host never replies — its mailbox is the
-        // timeline and its system prompt forbids answering — so its
-        // launch is pinned to the hub's own noop endpoint rather than
-        // resolved against the tenant catalog. This is what lets a
-        // workbench launch (and, per `noopInference` below, every wake
-        // of it) succeed with zero catalog sources seeded.
-        sources: noopSourcesOverride(deps.noopInferenceBaseUrl, foldedBody),
-        stepInput: WORKBENCH_HOST_STEP_INPUT,
-        // The launch body is persisted with the launch itself, in the
+        // The launch body is persisted with the mint itself, in the
         // same transaction, so a wake can rebuild the deploy config
         // without reaching for the definition's asset — a workbench
         // host's asset never holds a workflow.json, so this row is
         // the only wake-time source. Chat owns this table; folded-runs
-        // never imports it. `noopInference: true` records this launch
-        // as a host, so its wake pins the same noop source rather than
+        // never imports it. `noopInference: true` records this mint
+        // as a host, so its wake pins the noop source rather than
         // re-deriving "is this a host" from anything else.
         persistExtra: async (tx) => {
           await tx.insert(workbenchLaunch).values({
@@ -470,9 +482,6 @@ export function createHubChatPlatform(
           });
         },
       });
-
-      lifecycle?.track(input.triggerAddress);
-      lifecycle?.recordActivity(input.triggerAddress);
 
       return { instanceId: input.workbenchId };
     },
@@ -523,31 +532,19 @@ export function createHubChatPlatform(
       const instanceId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
-      // A definition that declares no model requirements of its own
-      // (`foldedBody.model === null`) would otherwise 409 as
-      // `not_launchable` — resolve the same catalog default a fresh
-      // workbench host gets instead of failing loud. Only consulted when
-      // the definition truly names nothing; a definition with its own
-      // model is never second-guessed.
-      const fallbackModel =
-        foldedBody.model === null
-          ? ((await deps.workbenchHostInferencePreferences?.(input.tenantId)) ??
-              [])[0]?.model
-          : undefined;
-
-      await launchFoldedRun(foldedRunsDeps, {
+      // Mint only — DB rows, no sidecar, no deploy. The agent deploys
+      // through `wakeByAddress` on its first inbound mail (or an
+      // explicit `ensureAwake` pre-warm), so an invite returns in
+      // database time. Its inference sources — including the catalog
+      // fallback a definition with no model of its own needs — resolve
+      // fresh inside the wake, per `noopInference: false` below: an
+      // invited agent's replies are real, so it resolves against the
+      // tenant catalog on every deploy.
+      await mintFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,
         instanceId,
         triggerAddress,
         definitionId: input.definitionId,
-        foldedBody,
-        launchLabel: "the invited agent",
-        ...(fallbackModel !== undefined ? { fallbackModel } : {}),
-        // Unchanged from before this pin existed: an invited agent's
-        // replies are real, so its inference sources still resolve
-        // against the tenant catalog. `noopInference: false` (matching
-        // the column's own default) records this launch as not a
-        // host, so its wake resolves against the catalog too.
         persistExtra: async (tx) => {
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,
@@ -558,9 +555,6 @@ export function createHubChatPlatform(
           });
         },
       });
-
-      lifecycle?.track(triggerAddress);
-      lifecycle?.recordActivity(triggerAddress);
 
       return { instanceId, address: triggerAddress };
     },
@@ -713,7 +707,7 @@ export function createHubChatPlatform(
     async listMail(input): Promise<ListedMail> {
       const run = await findFoldedRunById(deps.db, input.workbenchId);
       if (run === undefined) {
-        throw new Error(`No workbench run for "${input.workbenchId}"`);
+        return { items: [] };
       }
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
       const listMailBase = { tenantId: input.tenantId, sessionId };
@@ -955,18 +949,18 @@ export function createHubChatPlatform(
         unsubscribeAgent?.();
       };
     },
+
+    async ensureAwake(address: string): Promise<void> {
+      if (lifecycle !== undefined) {
+        await lifecycle.ensureAwake(address);
+        return;
+      }
+      if (isRoutable(address)) return;
+      await wakeByAddress(address);
+    },
   };
-  async function ensureAwake(address: string): Promise<void> {
-    if (lifecycle !== undefined) {
-      await lifecycle.ensureAwake(address);
-      return;
-    }
-    if (isRoutable(address)) return;
-    await wakeByAddress(address);
-  }
 
   return Object.assign(platform, {
     recordActivity: (address: string) => lifecycle?.recordActivity(address),
-    ensureAwake,
   });
 }

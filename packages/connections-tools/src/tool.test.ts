@@ -80,7 +80,7 @@ test("list_connections summarizes connected and not-connected connectors from th
     expect(result.content).toMatch(/Connected: GitHub/);
     expect(result.content).toMatch(/Exa \(via MCP\)/);
     expect(result.content).toMatch(/Notion \(MCP server\)/);
-    expect(result.content).toMatch(/Not connected: ScrapeCreators/);
+    expect(result.content).toMatch(/Not connected: [^.]*ScrapeCreators/);
     expect(result.content).toMatch(/Granola/);
     expect(result.content).not.toMatch(/Exa,/); // Exa never listed twice
   } finally {

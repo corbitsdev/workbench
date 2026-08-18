@@ -1,11 +1,11 @@
 import type { AuditAuthz } from "@intx/types/audit";
 
 import {
-  computeCost,
+  costUsd,
   totalTokens,
   type TokenClasses,
-  type TokenRates,
-} from "./pricing";
+} from "@corbits/provider-pricing";
+
 import type { UsageStore, UsageTurnRecord } from "./store";
 import type { TurnLatencyStore } from "./latency-store";
 
@@ -23,8 +23,8 @@ export type ModelUsageSummary = {
   readonly turns: number;
   readonly tokens: TokenTotals;
   /**
-   * USD cost for this model, or null when any class with tokens lacks a
-   * rate (or the model has no price row at all and has tokens).
+   * USD cost for this model, or null when any contributing turn has no
+   * reported cost and no (provider, model) rate.
    */
   readonly costUsd: number | null;
 };
@@ -91,33 +91,41 @@ export function emptyOverallUsageSummary(): OverallUsageSummary {
   };
 }
 
-function modelCost(
-  tokens: TokenClasses,
-  rates: TokenRates | undefined,
-): number | null {
-  if (rates === undefined) return totalTokens(tokens) === 0 ? 0 : null;
-  return computeCost(tokens, rates).totalUsd;
+function turnCostUsd(row: UsageTurnRecord): number | null {
+  if (row.reportedCostUsd !== null) return row.reportedCostUsd;
+  return costUsd({
+    provider: row.provider ?? "",
+    model: row.model,
+    tokens: row.tokens,
+  });
+}
+
+function addCosts(a: number | null, b: number | null): number | null {
+  if (a === null || b === null) return null;
+  return a + b;
 }
 
 /** Fold a row set already scoped to the caller's tenant(s) into an overall
  * summary — the shared core `summarizeUsage` and `summarizeUsageByTenant`
  * both reduce to, so per-tenant and cross-tenant totals can never drift
  * apart in how a rate is applied or a null cost is decided. */
-function summarizeRows(
-  rows: readonly UsageTurnRecord[],
-  priceByModel: ReadonlyMap<string, TokenRates>,
-): OverallUsageSummary {
+function summarizeRows(rows: readonly UsageTurnRecord[]): OverallUsageSummary {
   if (rows.length === 0) return emptyOverallUsageSummary();
 
-  const byModel = new Map<string, { turns: number; tokens: TokenClasses }>();
+  const byModel = new Map<
+    string,
+    { turns: number; tokens: TokenClasses; costUsd: number | null }
+  >();
   for (const row of rows) {
     const current = byModel.get(row.model) ?? {
       turns: 0,
       tokens: emptyTokens(),
+      costUsd: 0,
     };
     byModel.set(row.model, {
       turns: current.turns + 1,
       tokens: addTokens(current.tokens, row.tokens),
+      costUsd: addCosts(current.costUsd, turnCostUsd(row)),
     });
   }
 
@@ -129,21 +137,16 @@ function summarizeRows(
   for (const [model, agg] of [...byModel.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    const cost = modelCost(agg.tokens, priceByModel.get(model));
-
     modelSummaries.push({
       model,
       turns: agg.turns,
       tokens: toTotals(agg.tokens),
-      costUsd: cost,
+      costUsd: agg.costUsd,
     });
 
     overallTokens = addTokens(overallTokens, agg.tokens);
     overallTurns += agg.turns;
-    if (overallCost !== null) {
-      if (cost === null) overallCost = null;
-      else overallCost += cost;
-    }
+    overallCost = addCosts(overallCost, agg.costUsd);
   }
 
   return {
@@ -152,13 +155,6 @@ function summarizeRows(
     costUsd: overallCost,
     byModel: modelSummaries,
   };
-}
-
-async function loadPriceByModel(
-  store: UsageStore,
-): Promise<ReadonlyMap<string, TokenRates>> {
-  const prices = await store.listPrices();
-  return new Map(prices.map((p) => [p.model, p.rates]));
 }
 
 /**
@@ -177,8 +173,7 @@ export async function summarizeUsage(
 ): Promise<OverallUsageSummary> {
   const rows = await store.listUsageByTenants(tenantIds, opts);
   if (rows.length === 0) return emptyOverallUsageSummary();
-  const priceByModel = await loadPriceByModel(store);
-  return summarizeRows(rows, priceByModel);
+  return summarizeRows(rows);
 }
 
 /**
@@ -195,7 +190,6 @@ export async function summarizeUsageByTenant(
   opts?: { from?: Date; to?: Date },
 ): Promise<readonly WorkbenchUsage[]> {
   const rows = await store.listUsageByTenants(tenantIds, opts);
-  const priceByModel = await loadPriceByModel(store);
 
   const byTenant = new Map<string, UsageTurnRecord[]>();
   for (const row of rows) {
@@ -205,7 +199,7 @@ export async function summarizeUsageByTenant(
   }
 
   return tenantIds.map((tenantId) => {
-    const summary = summarizeRows(byTenant.get(tenantId) ?? [], priceByModel);
+    const summary = summarizeRows(byTenant.get(tenantId) ?? []);
     return {
       tenantId,
       turns: summary.turns,
@@ -226,10 +220,13 @@ export async function activityByDay(
   opts?: { from?: Date; to?: Date },
 ): Promise<readonly DayActivity[]> {
   const rows = await store.listUsageByTenants(tenantIds, opts);
-  const priceByModel = await loadPriceByModel(store);
   const days = new Map<
     string,
-    { turns: number; tokens: number; byModel: Map<string, TokenClasses> }
+    {
+      turns: number;
+      tokens: number;
+      byModel: Map<string, { tokens: TokenClasses; costUsd: number | null }>;
+    }
   >();
 
   for (const row of rows) {
@@ -237,14 +234,18 @@ export async function activityByDay(
     const current = days.get(day) ?? {
       turns: 0,
       tokens: 0,
-      byModel: new Map<string, TokenClasses>(),
+      byModel: new Map(),
     };
     current.turns += 1;
     current.tokens += totalTokens(row.tokens);
-    current.byModel.set(
-      row.model,
-      addTokens(current.byModel.get(row.model) ?? emptyTokens(), row.tokens),
-    );
+    const modelAgg = current.byModel.get(row.model) ?? {
+      tokens: emptyTokens(),
+      costUsd: 0,
+    };
+    current.byModel.set(row.model, {
+      tokens: addTokens(modelAgg.tokens, row.tokens),
+      costUsd: addCosts(modelAgg.costUsd, turnCostUsd(row)),
+    });
     days.set(day, current);
   }
 
@@ -256,10 +257,10 @@ export async function activityByDay(
       tokens: agg.tokens,
       byModel: [...agg.byModel.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([model, tokens]) => ({
+        .map(([model, modelAgg]) => ({
           model,
-          tokens: totalTokens(tokens),
-          costUsd: modelCost(tokens, priceByModel.get(model)),
+          tokens: totalTokens(modelAgg.tokens),
+          costUsd: modelAgg.costUsd,
         })),
     }));
 }

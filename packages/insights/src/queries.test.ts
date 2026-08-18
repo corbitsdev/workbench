@@ -21,25 +21,15 @@ describe("summarizeUsage", () => {
   });
 
   test("aggregates by model and overall with known rates", async () => {
-    const store = createMemoryUsageStore([
-      {
-        model: "claude-sonnet",
-        rates: {
-          inputPerMTok: 3,
-          outputPerMTok: 15,
-          cacheReadPerMTok: 0.3,
-          cacheWritePerMTok: 3.75,
-          thinkingPerMTok: 15,
-        },
-      },
-    ]);
+    const store = createMemoryUsageStore();
 
     await store.insertUsage({
       id: "u1",
       tenantId: "tenant-acme",
       sessionId: "s1",
       turnId: "t1",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 1_000_000,
         cacheRead: 0,
@@ -54,7 +44,8 @@ describe("summarizeUsage", () => {
       tenantId: "tenant-acme",
       sessionId: "s1",
       turnId: "t2",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 0,
         cacheRead: 0,
@@ -69,9 +60,32 @@ describe("summarizeUsage", () => {
     expect(summary.turns).toBe(2);
     expect(summary.tokens.input).toBe(1_000_000);
     expect(summary.tokens.output).toBe(1_000_000);
-    expect(summary.costUsd).toBe(3 + 15);
+    expect(summary.costUsd).toBe(2 + 10);
     expect(summary.byModel).toHaveLength(1);
-    expect(summary.byModel[0]?.model).toBe("claude-sonnet");
+    expect(summary.byModel[0]?.model).toBe("claude-sonnet-5");
+  });
+
+  test("uses a provider-reported cost instead of the static rate", async () => {
+    const store = createMemoryUsageStore();
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "tenant-acme",
+      sessionId: "s1",
+      turnId: "t1",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      tokens: {
+        input: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
+      reportedCostUsd: 1.25,
+    });
+
+    const summary = await summarizeUsage(store, ["tenant-acme"]);
+    expect(summary.costUsd).toBe(1.25);
   });
 
   test("unknown model rate yields null cost, not zero", async () => {
@@ -128,24 +142,14 @@ describe("summarizeUsage", () => {
   });
 
   test("multi-tenant scope aggregates equal the sum of each tenant alone", async () => {
-    const store = createMemoryUsageStore([
-      {
-        model: "claude-sonnet",
-        rates: {
-          inputPerMTok: 3,
-          outputPerMTok: 15,
-          cacheReadPerMTok: 0.3,
-          cacheWritePerMTok: 3.75,
-          thinkingPerMTok: 15,
-        },
-      },
-    ]);
+    const store = createMemoryUsageStore();
     await store.insertUsage({
       id: "u1",
       tenantId: "workbench-a",
       sessionId: "s1",
       turnId: "t1",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 100,
         cacheRead: 0,
@@ -159,7 +163,8 @@ describe("summarizeUsage", () => {
       tenantId: "workbench-b",
       sessionId: "s2",
       turnId: "t2",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 0,
         cacheRead: 0,
@@ -173,7 +178,8 @@ describe("summarizeUsage", () => {
       tenantId: "workbench-unrelated",
       sessionId: "s3",
       turnId: "t3",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 9999,
         cacheRead: 0,
@@ -251,24 +257,14 @@ describe("activityByDay", () => {
   });
 
   test("splits each day's tokens/cost by model for a stacked chart", async () => {
-    const store = createMemoryUsageStore([
-      {
-        model: "claude-sonnet",
-        rates: {
-          inputPerMTok: 3,
-          outputPerMTok: 15,
-          cacheReadPerMTok: 0.3,
-          cacheWritePerMTok: 3.75,
-          thinkingPerMTok: 15,
-        },
-      },
-    ]);
+    const store = createMemoryUsageStore();
     await store.insertUsage({
       id: "u1",
       tenantId: "tenant-acme",
       sessionId: "s1",
       turnId: "t1",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 1_000_000,
         cacheRead: 0,
@@ -296,7 +292,7 @@ describe("activityByDay", () => {
 
     const [day] = await activityByDay(store, ["tenant-acme"]);
     expect(day?.byModel).toEqual([
-      { model: "claude-sonnet", tokens: 1_000_000, costUsd: 3 },
+      { model: "claude-sonnet-5", tokens: 1_000_000, costUsd: 2 },
       { model: "gpt-unpriced", tokens: 100, costUsd: null },
     ]);
   });
@@ -393,24 +389,14 @@ describe("summarizeUsageByTenant", () => {
   });
 
   test("per-tenant totals sum to the same aggregate summarizeUsage reports for that scope", async () => {
-    const store = createMemoryUsageStore([
-      {
-        model: "claude-sonnet",
-        rates: {
-          inputPerMTok: 3,
-          outputPerMTok: 15,
-          cacheReadPerMTok: 0.3,
-          cacheWritePerMTok: 3.75,
-          thinkingPerMTok: 15,
-        },
-      },
-    ]);
+    const store = createMemoryUsageStore();
     await store.insertUsage({
       id: "u1",
       tenantId: "workbench-a",
       sessionId: "s1",
       turnId: "t1",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 1_000_000,
         cacheRead: 0,
@@ -424,7 +410,8 @@ describe("summarizeUsageByTenant", () => {
       tenantId: "workbench-b",
       sessionId: "s2",
       turnId: "t2",
-      model: "claude-sonnet",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
       tokens: {
         input: 0,
         cacheRead: 0,
@@ -439,10 +426,7 @@ describe("summarizeUsageByTenant", () => {
     const aggregate = await summarizeUsage(store, scope);
 
     const summedTurns = perTenant.reduce((sum, w) => sum + w.turns, 0);
-    const summedCost = perTenant.reduce(
-      (sum, w) => sum + (w.costUsd ?? 0),
-      0,
-    );
+    const summedCost = perTenant.reduce((sum, w) => sum + (w.costUsd ?? 0), 0);
     expect(summedTurns).toBe(aggregate.turns);
     expect(aggregate.costUsd).not.toBeNull();
     expect(summedCost).toBe(aggregate.costUsd ?? 0);

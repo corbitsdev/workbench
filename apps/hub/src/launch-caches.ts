@@ -99,7 +99,9 @@ class BoundedCache<V> {
   }
 
   #isOverBudget(): boolean {
-    return this.#entries.size > this.#maxEntries || this.#bytes > this.#maxBytes;
+    return (
+      this.#entries.size > this.#maxEntries || this.#bytes > this.#maxBytes
+    );
   }
 }
 

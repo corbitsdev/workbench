@@ -65,7 +65,9 @@ function storedDefinitionBytes(): Uint8Array {
 /** A `readAssetBlob` that always answers `workflow.json` — pinned skills
  * no longer live in the asset tree, so a test that needs a definition's
  * skills seeds a `DefinitionSkillsStore` directly instead. */
-function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
+function readAssetBlobFor(
+  workflowBytes: Uint8Array,
+): AssetService["readAssetBlob"] {
   return () => Promise.resolve(workflowBytes);
 }
 

@@ -418,7 +418,7 @@ describe("Agents section — list", () => {
 
   test("select and back report definitionId changes to the host", async () => {
     stubFetch({ agents: [MYRA] });
-    const changes: Array<string | null> = [];
+    const changes: (string | null)[] = [];
     const el = mount(
       baseProps({
         onEntityIdChange: (id) => {
@@ -449,9 +449,9 @@ describe("Agents section — list", () => {
 
     act(() => {
       (
-        el.querySelector(".chat-settings-agent-back") as
-          | HTMLButtonElement
-          | null
+        el.querySelector(
+          ".chat-settings-agent-back",
+        ) as HTMLButtonElement | null
       )?.click();
     });
     expect(changes).toEqual(["wfd_myra", null]);
@@ -459,7 +459,7 @@ describe("Agents section — list", () => {
 
   test("unknown entityId clears once the agent list loads", async () => {
     stubFetch({ agents: [MYRA] });
-    const changes: Array<string | null> = [];
+    const changes: (string | null)[] = [];
     mount(
       baseProps({
         entityId: "wfd_missing",

@@ -62,7 +62,11 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
 
 type Block =
   | { readonly kind: "code"; readonly code: string }
-  | { readonly kind: "list"; readonly ordered: boolean; readonly items: readonly string[] }
+  | {
+      readonly kind: "list";
+      readonly ordered: boolean;
+      readonly items: readonly string[];
+    }
   | { readonly kind: "heading"; readonly text: string }
   | { readonly kind: "paragraph"; readonly text: string };
 
@@ -77,7 +81,10 @@ function parseBlocks(source: string): Block[] {
     if (line.trim().startsWith("```")) {
       const codeLines: string[] = [];
       index++;
-      while (index < lines.length && !(lines[index] ?? "").trim().startsWith("```")) {
+      while (
+        index < lines.length &&
+        !(lines[index] ?? "").trim().startsWith("```")
+      ) {
         codeLines.push(lines[index] ?? "");
         index++;
       }

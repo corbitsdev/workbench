@@ -125,7 +125,9 @@ function typeInto(element: HTMLTextAreaElement, text: string) {
   });
 }
 
-function mountWithMentions(onSend: (payload: ComposerSendPayload) => Promise<boolean>) {
+function mountWithMentions(
+  onSend: (payload: ComposerSendPayload) => Promise<boolean>,
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);

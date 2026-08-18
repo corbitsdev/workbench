@@ -50,6 +50,7 @@ export function fakePlatform(
       creatorPrincipalId: string;
       definitionId: string;
     }) => Promise<{ instanceId: string; address: string }>;
+    ensureAwake?: (address: string) => Promise<void>;
     fetchBlob?: (
       workbenchId: string,
       blobId: string,
@@ -83,6 +84,7 @@ export function fakePlatform(
     creatorPrincipalId: string;
     definitionId: string;
   }[];
+  ensureAwakeCalls: string[];
 } {
   const sentMail: {
     workbenchId: string;
@@ -95,6 +97,7 @@ export function fakePlatform(
     creatorPrincipalId: string;
     definitionId: string;
   }[] = [];
+  const ensureAwakeCalls: string[] = [];
   const mailByWorkbench = new Map<
     string,
     { id: string; createdAt: string; mail: unknown }[]
@@ -109,6 +112,7 @@ export function fakePlatform(
   return {
     sentMail,
     launchInviteCalls,
+    ensureAwakeCalls,
     refreshCalls,
     async launchWorkbench(input) {
       if (opts.launchWorkbench !== undefined)
@@ -122,6 +126,10 @@ export function fakePlatform(
         instanceId: "ins_invited1",
         address: "ins_invited1@acme.example",
       };
+    },
+    async ensureAwake(address) {
+      ensureAwakeCalls.push(address);
+      await opts.ensureAwake?.(address);
     },
     async listInvitableDefinitions() {
       return opts.invitable ?? [];
@@ -239,10 +247,16 @@ export function mountAs(
   return app;
 }
 
+/** Every message fan-out any `buildDeps` routes have started, awaited
+ * by `settleFanout`. A posted message returns before its recipients are
+ * delivered (see `sendWorkbenchMessage`), so a test asserting on
+ * delivered copies — or on their order — has to settle them first. */
+const startedFanouts: Promise<void>[] = [];
+
 export function buildDeps(
   overrides: Partial<CreateChatRoutesDeps> = {},
 ): CreateChatRoutesDeps {
-  return {
+  const deps: CreateChatRoutesDeps = {
     store: createInMemoryChatStore(),
     platform: fakePlatform(),
     tenancy: createInMemoryWorkbenchTenancyStore(),
@@ -254,8 +268,25 @@ export function buildDeps(
     workbenchHostInferencePreferences: async () => [
       { provider: "anthropic", model: "claude-sonnet-5" },
     ],
+    onMessageFanout: (fanoutDelivered) => {
+      startedFanouts.push(fanoutDelivered);
+    },
     ...overrides,
   };
+  return deps;
+}
+
+/**
+ * Awaits every message fan-out started so far, making assertions about
+ * delivered copies (and their ordering) deterministic. `sendText` calls
+ * this for you; a test that posts through `app.request` directly calls
+ * it itself. Loops because a settled fan-out can itself post — an
+ * undelivered notice — starting another.
+ */
+export async function settleFanout(): Promise<void> {
+  while (startedFanouts.length > 0) {
+    await Promise.all(startedFanouts.splice(0));
+  }
 }
 
 export interface WorkbenchView {
@@ -290,9 +321,13 @@ export async function sendText(
   workbenchId: string,
   text: string,
 ): Promise<Response> {
-  return app.request(`/workbenches/${workbenchId}/messages`, {
+  const response = await app.request(`/workbenches/${workbenchId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ parts: [{ kind: "text", text }] }),
   });
+  // The route answers before its recipients are delivered; settling
+  // here keeps every caller's view of `sentMail` ordered by send.
+  await settleFanout();
+  return response;
 }

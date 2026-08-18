@@ -14,7 +14,6 @@
 // `/settings/agents/:definitionId`); otherwise the section keeps a local
 // selection for standalone mounts.
 
-
 import { useEffect, useState } from "react";
 import {
   Button,

@@ -105,7 +105,9 @@ async function throwForFailedResponse(
       );
     }
   }
-  throw new Error(`${action} failed: ${response.status} ${response.statusText}`);
+  throw new Error(
+    `${action} failed: ${response.status} ${response.statusText}`,
+  );
 }
 
 /** Searches the tenant's memory. Throws on any transport, HTTP, or shape failure. */

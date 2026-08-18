@@ -10,7 +10,10 @@ function startUnauthorizedServer(): { url: string; stop: () => void } {
     port: 0,
     fetch: () => new Response("unauthorized", { status: 401 }),
   });
-  return { url: `http://localhost:${server.port}/mcp`, stop: () => server.stop(true) };
+  return {
+    url: `http://localhost:${server.port}/mcp`,
+    stop: () => server.stop(true),
+  };
 }
 
 function startOAuthGatedServer(): { url: string; stop: () => void } {
@@ -36,7 +39,10 @@ function startOAuthGatedServer(): { url: string; stop: () => void } {
       return new Response("unauthorized", { status: 401 });
     },
   });
-  return { url: `http://localhost:${server.port}/mcp`, stop: () => server.stop(true) };
+  return {
+    url: `http://localhost:${server.port}/mcp`,
+    stop: () => server.stop(true),
+  };
 }
 
 describe("probeMcpServer", () => {
@@ -70,9 +76,7 @@ describe("probeMcpServer", () => {
       const result = await probeMcpServer(stub.url, undefined);
       expect(result.ok).toBe(false);
       if (!result.ok && result.requiresOAuth) {
-        expect(result.authorizationServerUrl).toBe(
-          new URL(stub.url).origin,
-        );
+        expect(result.authorizationServerUrl).toBe(new URL(stub.url).origin);
       } else {
         throw new Error("expected requiresOAuth: true");
       }

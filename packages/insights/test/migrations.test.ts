@@ -22,6 +22,7 @@ const migrationNames = [
   "0001_usage_turn",
   "0002_model_price",
   "0003_turn_latency",
+  "0004_usage_turn_provider_cost",
 ];
 
 describeIfDb("applyInsightsMigrations", () => {

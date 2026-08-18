@@ -26,10 +26,12 @@ export {
 export {
   deployAtHead,
   launchFoldedRun,
+  mintFoldedRun,
   parseSourcesOverride,
   SourcesOverride,
   InferenceResolutionError,
   type LaunchFoldedRunParams,
+  type MintFoldedRunParams,
   type LaunchedFoldedRun,
 } from "./launch";
 export { wakeFoldedRun, type WakeFoldedRunParams } from "./wake";

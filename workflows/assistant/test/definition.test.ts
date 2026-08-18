@@ -72,11 +72,17 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   expect(agent.toolFactories).toEqual([]);
 });
 
-test("the prompt tells Myra to greet from the kickoff brief as a teammate — by name, one-line intro, a first step or a question, never a menu", () => {
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("kickoff brief");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("greet them by name");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("introduce yourself as Myra");
-  expect(ASSISTANT_SYSTEM_PROMPT).toContain("one concrete first step");
+test("the prompt tells Myra a canned opener already greeted under her name — answer the first message, never greet again", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "posted on the timeline under your name",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "Never greet or introduce yourself again",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "answer their first message directly",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("kickoff brief");
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
     "Never list your capabilities as a menu",
   );

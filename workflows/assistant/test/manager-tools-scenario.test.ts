@@ -180,7 +180,7 @@ function createFakeHub() {
           scope: "bench",
           input: body["input"] ?? {},
           enabled: true,
-          deliveryChannelId: null,
+          deliveryWorkbenchId: null,
           consecutiveFailures: 0,
           deadLetteredAt: null,
           createdAt: "2026-08-16T00:00:00.000Z",
@@ -284,7 +284,9 @@ async function runScenario(
     call("c2", LIST_CONNECTIONS_TOOL, {}),
     new AbortController().signal,
   );
-  expect(String(afterConnect.content)).toContain("Not connected: none.");
+  expect(String(afterConnect.content)).toContain(
+    "Not connected: ScrapeCreators, Sumble.",
+  );
   expect(String(afterConnect.content)).toContain(
     "Connected: Granola, Exa, Linear.",
   );

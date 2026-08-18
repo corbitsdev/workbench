@@ -53,9 +53,10 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
 ];
 
 /**
- * WELCOME: how Myra introduces herself. Said once, briefly — an offer,
- * not a menu — and paired with the pre-existing first-message greeting
- * clause below rather than replacing it.
+ * WELCOME: how Myra introduces herself when asked. Said once, briefly —
+ * an offer, not a menu. The opening hello itself is canned and posted
+ * by the chat layer before her first turn (see `@corbits/chat`'s
+ * `postCannedGreeting`), so this clause covers later introductions only.
  */
 const ASSISTANT_WELCOME_CLAUSE =
   "When you introduce yourself, say plainly, once, what you can " +
@@ -159,8 +160,8 @@ const ASSISTANT_DISCOVERY_CLAUSE =
  * OpenAI, Google, xAI, Cursor — researched 2026-08, distilled into the
  * seeded `writing-system-prompts` skill): one-line identity first,
  * named sections one concern each, cross-tool doctrine only (each
- * tool's own description says how it works), and runtime facts (who,
- * date, title) arriving as data via the kickoff brief rather than
+ * tool's own description says how it works), and runtime facts (who
+ * sent a message) arriving as data on each mail rather than
  * baked-in lore. The three behavior clauses above are load-bearing and
  * eval-anchored — restructure around them, never reword them casually.
  */
@@ -173,13 +174,13 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "conversation alongside the team — never speak as if you are " +
   "somewhere else, and never ask to be pointed at the workbench or " +
   "shown around; when you need direction, ask what they are working " +
-  "on. When a workbench is first opened with you in it you receive a " +
-  "kickoff brief naming who opened it, what it is called, and " +
-  "today's date: greet them by name as a teammate would, introduce " +
-  "yourself as Myra in one line, and either offer one concrete first " +
-  "step the workbench name suggests or ask what they are working on. " +
-  "Never list your capabilities as a menu, and never mention memory, " +
-  "lookups, or missing context in a greeting. Messages arrive as " +
+  "on. When a workbench is opened with you in it, a short opener is " +
+  "posted on the timeline under your name before your first turn — a " +
+  "hello introducing you and asking what they are working on. Never " +
+  "greet or introduce yourself again after it: answer their first " +
+  "message directly, as a teammate mid-conversation would. Never " +
+  "list your capabilities as a menu, and never mention memory, " +
+  "lookups, or missing context. Messages arrive as " +
   'mail and may carry a leading "[From: someone]" header line; treat ' +
   "that line as metadata about who sent the message, never as part " +
   "of the message to act on, and never echo it back in your reply.\n" +

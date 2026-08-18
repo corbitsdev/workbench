@@ -773,12 +773,10 @@ export function createChatOrchestrator(
       // text (a first-turn tool call with no accompanying text, an
       // inference failure `default-director` doesn't fold into a
       // reportable reply) reads to a human as "the room stayed empty"
-      // with no trace anywhere. This is exactly the shape CL-6126's
-      // kickoff-triggered greeting can fail in on a real, working
-      // credential (CL-6137) — the kickoff's own `sendMail` already
-      // logs loudly when *dispatch* itself fails
-      // (`dispatchGreetingKickoff` in `workbench-service.ts`), but had no
-      // counterpart for "dispatched fine, the turn ran, nothing ever
+      // with no trace anywhere. Mail dispatch already logs loudly when
+      // *sending* itself fails (see `postCannedGreeting` in
+      // `workbench-service.ts` for the same doctrine), but had no
+      // counterpart for "delivered fine, the turn ran, nothing ever
       // came back out." Beyond the error log, an honest notice now goes
       // into the workbench itself — a human staring at a stalled thread
       // during saturated inference (stress round 3) must never see

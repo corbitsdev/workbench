@@ -8,152 +8,84 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import {
-  dispatchGreetingKickoff,
-  greetingKickoffBrief,
-  kickoffDate,
-} from "../src/workbench-service";
+import { cannedGreeting, postCannedGreeting } from "../src/workbench-service";
 import {
   buildDeps,
   createWorkbench,
   fakePlatform,
   mountAs,
+  settleFanout,
   TENANT,
 } from "./test-support";
 
-describe("dispatchGreetingKickoff (CL-6126)", () => {
-  test("sends a kickoff mail straight to the agent's own mailbox, not the chat's", async () => {
+describe("postCannedGreeting (CL-6126)", () => {
+  test("posts the greeting onto the chat's own timeline, attributed to the agent's run", async () => {
     const platform = fakePlatform();
 
-    await dispatchGreetingKickoff(
+    await postCannedGreeting(
       { platform },
       {
         tenantId: TENANT.id,
-        principalId: "prn_alice",
         workbenchId: "chan_1",
         agentAddress: "ins_agent1@acme.example",
+        agentName: "Myra",
+        senderName: "Alice",
       },
     );
 
     expect(platform.sentMail).toHaveLength(1);
-    const kickoff = platform.sentMail[0];
-    expect(kickoff?.workbenchId).toBe("ins_agent1");
-    expect(kickoff?.fromWorkbenchId).toBe("chan_1");
-    expect(kickoff?.content).toEqual({
-      content: greetingKickoffBrief({ openedOn: kickoffDate(new Date()) }),
+    const posted = platform.sentMail[0];
+    expect(posted?.workbenchId).toBe("chan_1");
+    expect(posted?.fromWorkbenchId).toBe("ins_agent1");
+    expect(posted?.content).toEqual({
+      content: cannedGreeting({
+        workbenchId: "chan_1",
+        agentName: "Myra",
+        senderName: "Alice",
+      }),
     });
   });
 
-  test("kickoffDate formats as dd/mm/yyyy", () => {
-    expect(kickoffDate(new Date(2026, 7, 17))).toBe("17/08/2026");
-    expect(kickoffDate(new Date(2026, 0, 3))).toBe("03/01/2026");
-  });
-
-  test("the kickoff brief carries who opened the workbench and what it is called, and asks for a teammate's hello — never a menu", () => {
-    const brief = greetingKickoffBrief({
+  test("the greeting names the opener and the agent, and asks a question — never a menu or the workbench title", () => {
+    const greeting = cannedGreeting({
+      workbenchId: "chan_1",
+      agentName: "Myra",
       senderName: "Ada",
-      workbenchName: "GTM research",
     });
-    expect(brief).toContain("Ada");
-    expect(brief).toContain("GTM research");
-    expect(brief).toMatch(/teammate/i);
-    expect(brief).toMatch(/no menu/i);
-    expect(brief).toMatch(/memory/i);
-    expect(greetingKickoffBrief({})).not.toContain("undefined");
+    expect(greeting).toContain("Ada");
+    expect(greeting).toContain("Myra");
+    expect(greeting).toMatch(/\?$/);
+    expect(greeting).not.toContain("undefined");
   });
 
-  test("a distinctive workbench name is framed as a chosen label, never a brief to answer", () => {
-    const brief = greetingKickoffBrief({
-      senderName: "Ada",
-      workbenchName: "Copywriter test",
-    });
-    expect(brief).toContain('titled "Copywriter test"');
-    expect(brief).toMatch(/label the person chose, not a request/i);
-    expect(brief).toMatch(
-      /never treat it as their brief or answer it as a question/i,
+  test("the same chat always gets the same variation", () => {
+    const input = { workbenchId: "chan_1", agentName: "Myra" };
+    expect(cannedGreeting(input)).toBe(cannedGreeting(input));
+  });
+
+  test("different chats reach every variation", () => {
+    const seeds = Array.from({ length: 32 }, (_, i) => `chan_${i}`);
+    const variations = new Set(
+      seeds.map((workbenchId) =>
+        cannedGreeting({ workbenchId, agentName: "Myra" }),
+      ),
     );
-    expect(brief).not.toContain("undefined");
+    expect(variations.size).toBe(4);
   });
 
-  test.each(["New Workbench", "Untitled", "Session A", "Room 3", "test run"])(
-    "a generic workbench name (%s) is omitted from the brief entirely",
-    (workbenchName) => {
-      const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
-      expect(brief).not.toContain(workbenchName);
-      expect(brief).not.toContain("titled");
-      expect(brief).not.toContain("undefined");
+  test.each(["chan_0", "chan_1", "chan_2", "chan_3"])(
+    "an absent or empty sender name reads naturally (%s)",
+    (workbenchId) => {
+      const unnamed = cannedGreeting({ workbenchId, agentName: "Myra" });
+      expect(unnamed).not.toContain("undefined");
+      expect(unnamed).not.toContain("  ");
+      expect(unnamed).toBe(
+        cannedGreeting({ workbenchId, agentName: "Myra", senderName: "" }),
+      );
     },
   );
 
-  test.each(["run_0123456789abcdef", "wfd_a1b2c3d4e5f6", "ins_agent1"])(
-    "an id-shaped workbench name (%s) is omitted from the brief entirely",
-    (workbenchName) => {
-      const brief = greetingKickoffBrief({ senderName: "Ada", workbenchName });
-      expect(brief).not.toContain(workbenchName);
-      expect(brief).not.toContain("titled");
-      expect(brief).not.toContain("undefined");
-    },
-  );
-
-  test("an explicit human title is still included alongside a real name", () => {
-    const brief = greetingKickoffBrief({
-      senderName: "Ada",
-      workbenchName: "Myra",
-    });
-    expect(brief).toContain('titled "Myra"');
-  });
-
-  test("an absent workbench name is omitted from the brief entirely", () => {
-    const brief = greetingKickoffBrief({ senderName: "Ada" });
-    expect(brief).not.toContain("titled");
-    expect(brief).not.toContain("undefined");
-  });
-
-  test("a direct chat greets as a conversation, never a workbench, and drops any name it was given", () => {
-    const brief = greetingKickoffBrief({
-      senderName: "alice",
-      workbenchName: "Myra",
-      isDirectChat: true,
-    });
-    expect(brief).toContain("direct chat with alice");
-    expect(brief).not.toContain("workbench");
-    expect(brief).not.toContain("Myra");
-    expect(brief).not.toContain("titled");
-    expect(brief).toMatch(/ask what they need/i);
-  });
-
-  test("a direct chat with no resolved sender name still reads naturally", () => {
-    const brief = greetingKickoffBrief({ isDirectChat: true });
-    expect(brief).toContain("direct chat with someone");
-    expect(brief).not.toContain("undefined");
-  });
-
-  test("a group workbench greeting is unaffected by isDirectChat being absent/false", () => {
-    const brief = greetingKickoffBrief({
-      senderName: "Ada",
-      workbenchName: "GTM research",
-      isDirectChat: false,
-    });
-    expect(brief).toContain('titled "GTM research"');
-    expect(brief).toMatch(/what they are working on/i);
-  });
-
-  test("the brief carries the opening date when given one", () => {
-    const brief = greetingKickoffBrief({
-      senderName: "Ada",
-      openedOn: "17/08/2026",
-    });
-    expect(brief).toContain("17/08/2026");
-    expect(brief).toMatch(/today/i);
-  });
-
-  test("an absent opening date is omitted from the brief entirely", () => {
-    const brief = greetingKickoffBrief({ senderName: "Ada" });
-    expect(brief).not.toMatch(/today/i);
-    expect(brief).not.toContain("undefined");
-  });
-
-  test("a dispatch failure is swallowed, never thrown", async () => {
+  test("a post failure is swallowed, never thrown", async () => {
     const platform = fakePlatform({
       sendMail: async () => {
         throw new Error("agent unreachable");
@@ -161,13 +93,13 @@ describe("dispatchGreetingKickoff (CL-6126)", () => {
     });
 
     await expect(
-      dispatchGreetingKickoff(
+      postCannedGreeting(
         { platform },
         {
           tenantId: TENANT.id,
-          principalId: "prn_alice",
           workbenchId: "chan_1",
           agentAddress: "ins_agent1@acme.example",
+          agentName: "Myra",
         },
       ),
     ).resolves.toBeUndefined();
@@ -200,6 +132,85 @@ describe("message fan-out", () => {
     const copy = platform.sentMail[1];
     expect(copy?.workbenchId).toBe("ins_echo1");
     expect(copy?.fromWorkbenchId).toBe(workbench.id);
+  });
+
+  test("a posted message returns before its recipients are delivered", async () => {
+    // The delivery is held open, so "the sender's own message is on the
+    // timeline while the fan-out is still in flight" is a fact about
+    // ordering rather than a race the in-memory fake happens to win.
+    let releaseDelivery!: () => void;
+    const delivery = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const platform = fakePlatform();
+    const deliverMail = platform.sendMail.bind(platform);
+    platform.sendMail = async (input) => {
+      if (input.workbenchId === "ins_echo1") await delivery;
+      return deliverMail(input);
+    };
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "hi @ins_echo1" }],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail[0]?.workbenchId).toBe(workbench.id);
+
+    releaseDelivery();
+    await settleFanout();
+    expect(platform.sentMail).toHaveLength(2);
+    expect(platform.sentMail[1]?.workbenchId).toBe("ins_echo1");
+  });
+
+  test("an undeliverable recipient is reported on the timeline in its own voice", async () => {
+    const platform = fakePlatform();
+    const deliverMail = platform.sendMail.bind(platform);
+    platform.sendMail = async (input) => {
+      if (input.workbenchId === "ins_echo1") {
+        throw new Error("agent is unreachable");
+      }
+      return deliverMail(input);
+    };
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "hi @ins_echo1" }],
+        }),
+      },
+    );
+
+    // The sender's own message still stands — only its delivery failed.
+    expect(response.status).toBe(201);
+    await settleFanout();
+
+    const notice = platform.sentMail[platform.sentMail.length - 1];
+    expect(notice?.workbenchId).toBe(workbench.id);
+    expect(notice?.fromWorkbenchId).toBe("ins_echo1");
+    expect(notice?.content.content).toContain("send it again");
   });
 
   test("a message to a chat delivers to its agent without a mention", async () => {
@@ -516,6 +527,7 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
@@ -565,6 +577,7 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
@@ -619,6 +632,7 @@ describe("message fan-out", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "kept" }] }),
     });
+    await settleFanout();
     const response = await app.request(
       `/workbenches/${workbench.id}/messages`,
       {
@@ -630,6 +644,7 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
 
     const copy = platform.sentMail[platform.sentMail.length - 1];
     const [contextPart] = decodeParts(copy?.content ?? { content: "" });

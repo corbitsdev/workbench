@@ -55,7 +55,6 @@ import {
   createWorkbenchTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
-  createPendingMintRegistry,
   joinRunParticipant,
   createDrizzleBlockResponseStore,
   createDrizzleWorkbenchTenancyStore,
@@ -161,6 +160,7 @@ import {
 import {
   createDrizzleRunKeyHistoryStore,
   createRunKeyHistoryListener,
+  lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
 import {
   createMyraAgentDefinitionDrafting,
@@ -468,6 +468,10 @@ export async function createHub(config: HubConfig) {
     reservedPackageRegistryNames: new Set(REGISTRIES.keys()),
   });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
+  // Shared with `createRunKeyHistoryListener` below: one store instance
+  // for the process, read here ahead of `workflow_run` and written to
+  // there off every `agent.deploy.ack`.
+  const runKeyHistoryStore = createDrizzleRunKeyHistoryStore(db);
   // A folded run (a workbench host, an invited agent, a task) settles
   // "completed" between message occurrences as part of its own normal
   // wake/redeploy cycle — not "done forever" the way a one-shot
@@ -484,6 +488,21 @@ export async function createHub(config: HubConfig) {
   const lookups = {
     ...baseLookups,
     async lookupPublicKey(agentAddress: string): Promise<string | null> {
+      // CL-6281: the repair runs before `baseLookups` because the case
+      // it exists for is exactly the one `baseLookups` answers WRONGLY —
+      // a live run whose `workflow_run.public_key` missed its own
+      // `agent.deploy.ack` — so deferring to that answer would never
+      // reach the repair at all. It cannot widen which runs may
+      // reconnect: it reads the same `liveWorkflowRunStatuses` gate
+      // `baseLookups` does, so a retired run still fails closed here.
+      // See `@corbits/run-key-history`'s `reconnect.ts` for why
+      // preferring this package's own record on disagreement is safe.
+      const reconciled = await lookupRunKeyHistoryReconnectKey(
+        db,
+        runKeyHistoryStore,
+        agentAddress,
+      );
+      if (reconciled !== null) return reconciled;
       const key = await baseLookups.lookupPublicKey(agentAddress);
       if (key !== null) return key;
       return lookupFoldedRunReconnectKey(db, agentAddress);
@@ -568,13 +587,14 @@ export async function createHub(config: HubConfig) {
     // The vendored `onUsage` forward (see VENDORED.md) — the platform
     // collector accumulates turns per session but never persisted
     // `inference.usage`; this is the first point tenantId + turnId +
-    // model + tokens are all in scope at once.
+    // provider + model + tokens are all in scope at once.
     onUsage: (_agentAddress, tenantId, sessionId, usage) => {
       void usageSink
         .handle({
           turnId: usage.turnId,
           tenantId,
           sessionId,
+          provider: usage.provider,
           model: usage.model,
           tokens: usage.usage,
         })
@@ -628,7 +648,7 @@ export async function createHub(config: HubConfig) {
   // event.
   createRunKeyHistoryListener({
     events: sidecarRouter.events,
-    store: createDrizzleRunKeyHistoryStore(db),
+    store: runKeyHistoryStore,
   });
   // CL-6225: the launch path re-reads every tool-package tarball and
   // rebuilds a full git pack of every attached asset on every agent
@@ -840,7 +860,6 @@ export async function createHub(config: HubConfig) {
         onOpen(_evt, ws) {
           handle = { send: (d: string) => ws.send(d), close: () => ws.close() };
           sidecarRouter.handleOpen(handle);
-          pendingMintRegistry.retryAll();
         },
         onMessage(evt, _ws) {
           if (typeof evt.data === "string")
@@ -1104,13 +1123,6 @@ export async function createHub(config: HubConfig) {
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
 
-  // Holds every mint whose launch is stalled on
-  // `isSidecarUnavailableLaunchError` — retried below from the raw
-  // sidecar socket's own `onOpen`, the earliest signal a sidecar is
-  // reconnecting (see `pendingMintRegistry`'s own doc for why firing
-  // before `sidecarRouter.handleOpen` finishes registering is safe).
-  const pendingMintRegistry = createPendingMintRegistry();
-
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     platform: chatPlatform,
@@ -1157,7 +1169,6 @@ export async function createHub(config: HubConfig) {
     // messages to it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
-    pendingMintRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
   // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'

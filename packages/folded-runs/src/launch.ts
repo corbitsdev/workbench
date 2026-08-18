@@ -388,19 +388,24 @@ export type LaunchedFoldedRun = {
   readonly sessionId: string;
 };
 
+export type MintFoldedRunParams = Pick<
+  LaunchFoldedRunParams,
+  "tenantId" | "instanceId" | "triggerAddress" | "definitionId" | "persistExtra"
+>;
+
 /**
- * The launch core shared by a workbench host and an invited agent alike
- * (or any other folded-run launch a host composes): resolve inference
- * sources against the tenant catalog, write the folded run's
- * principal/session/run rows, open the event collector, and deploy via
- * `deployInstanceAtHead` — with the same failure-path cleanup a deploy
- * failure needs. Only how the launch body (`foldedBody`) and the
- * instance's identity (`instanceId`/`triggerAddress`/`definitionId`)
- * are sourced is the caller's concern.
+ * The mint half of a folded-run launch: one transaction writing the
+ * run's principal/session/run rows (plus the caller's `persistExtra`),
+ * touching no sidecar and deploying nothing. A run minted this way is
+ * fully addressable — `sendMail`'s wake choke point deploys it from
+ * the caller's persisted launch body on its first traffic — so a
+ * caller that wants a snappy, DB-only mint (chat creation) uses this
+ * directly, while a caller whose run must be executing the moment the
+ * call returns (tasks, routines) stays on `launchFoldedRun` below.
  */
-export async function launchFoldedRun(
-  deps: FoldedRunsDeps,
-  params: LaunchFoldedRunParams,
+export async function mintFoldedRun(
+  deps: Pick<FoldedRunsDeps, "db">,
+  params: MintFoldedRunParams,
 ): Promise<LaunchedFoldedRun> {
   const instancePrincipalId = generateId("principal");
   const sessionId = generateId("session");
@@ -485,6 +490,33 @@ export async function launchFoldedRun(
     if (params.persistExtra !== undefined) {
       await params.persistExtra(tx);
     }
+  });
+
+  return { instancePrincipalId, sessionId };
+}
+
+/**
+ * The launch core shared by a task run and a routine occurrence alike
+ * (or any other folded-run launch a host composes): mint via
+ * `mintFoldedRun`, then resolve inference sources against the tenant
+ * catalog, open the event collector, and deploy via
+ * `deployInstanceAtHead` — with the same failure-path cleanup a deploy
+ * failure needs. Only how the launch body (`foldedBody`) and the
+ * instance's identity (`instanceId`/`triggerAddress`/`definitionId`)
+ * are sourced is the caller's concern.
+ */
+export async function launchFoldedRun(
+  deps: FoldedRunsDeps,
+  params: LaunchFoldedRunParams,
+): Promise<LaunchedFoldedRun> {
+  const { instancePrincipalId, sessionId } = await mintFoldedRun(deps, {
+    tenantId: params.tenantId,
+    instanceId: params.instanceId,
+    triggerAddress: params.triggerAddress,
+    definitionId: params.definitionId,
+    ...(params.persistExtra !== undefined
+      ? { persistExtra: params.persistExtra }
+      : {}),
   });
 
   try {

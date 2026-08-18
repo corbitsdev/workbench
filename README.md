@@ -150,13 +150,13 @@ process under test. `scripts/e2e/smoke-*.test.ts` are the CL-6004 smoke
 suite, one scenario per file, each independent and safe to run alone or
 in any order:
 
-| File                       | Proves                                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `smoke-auth.test.ts`       | Email sign-up mints a session cookie that authorizes a session-gated route                                          |
-| `smoke-onboarding.test.ts` | `POST /api/onboarding/provision` mints a personal bench and reports it unseeded when no seed model is configured    |
+| File                       | Proves                                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `smoke-auth.test.ts`       | Email sign-up mints a session cookie that authorizes a session-gated route                                            |
+| `smoke-onboarding.test.ts` | `POST /api/onboarding/provision` mints a personal bench and reports it unseeded when no seed model is configured      |
 | `smoke-chat.test.ts`       | A workbench is created, a message posts and reads back intact, and the invited-agent listing has its documented shape |
-| `smoke-library.test.ts`    | An artifact uploads through the multipart route and round-trips through list and get-by-id                          |
-| `smoke-webhook.test.ts`    | A signed delivery to the public webhook ingress route launches a real run for a routine bound to that trigger       |
+| `smoke-library.test.ts`    | An artifact uploads through the multipart route and round-trips through list and get-by-id                            |
+| `smoke-webhook.test.ts`    | A signed delivery to the public webhook ingress route launches a real run for a routine bound to that trigger         |
 
 **Needs:** a reachable Postgres named by `DATABASE_URL` in `.env` (see
 [Running locally](#running-locally)). Each suite reuses a sibling

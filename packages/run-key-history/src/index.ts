@@ -15,3 +15,4 @@ export {
   runKeyHistorySchema,
   type RunKeyHistoryRow,
 } from "./schema";
+export { lookupRunKeyHistoryReconnectKey } from "./reconnect";

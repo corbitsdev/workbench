@@ -308,7 +308,10 @@ describe("tenant inheritance", () => {
 
   test("a tenant-scoped skill authored on a parent is visible and loadable from a child tenant", async () => {
     const { registry: inheriting } = createInheritingRegistry();
-    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+    await inheriting.create(PARENT_AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "tenant",
+    });
 
     expect((await inheriting.list(CHILD_MEMBER)).map((s) => s.name)).toEqual([
       "triage",
@@ -341,7 +344,10 @@ describe("tenant inheritance", () => {
 
   test("a private skill authored on the parent is invisible from the child, except to its own creator", async () => {
     const { registry: inheriting } = createInheritingRegistry();
-    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "private" });
+    await inheriting.create(PARENT_AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "private",
+    });
 
     expect(await inheriting.list(CHILD_MEMBER)).toHaveLength(0);
     expect(inheriting.load(CHILD_MEMBER, "triage")).rejects.toThrow(
@@ -358,7 +364,10 @@ describe("tenant inheritance", () => {
 
   test("updating an inherited skill from the child is refused loudly, never forked into a child-owned copy", async () => {
     const { registry: inheriting, assets } = createInheritingRegistry();
-    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+    await inheriting.create(PARENT_AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "tenant",
+    });
 
     const parentAuthorInChild = {
       tenantId: CHILD_TENANT,
@@ -382,7 +391,10 @@ describe("tenant inheritance", () => {
 
   test("restore and setScope on an inherited skill are refused the same way", async () => {
     const { registry: inheriting } = createInheritingRegistry();
-    await inheriting.create(PARENT_AUTHOR, { ...CREATE_INPUT, scope: "tenant" });
+    await inheriting.create(PARENT_AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "tenant",
+    });
     const parentAuthorInChild = {
       tenantId: CHILD_TENANT,
       principalId: PARENT_AUTHOR.principalId,

@@ -57,10 +57,7 @@ import {
   type SubstrateFactory,
   type SubstrateFactoryEnv,
 } from "@intx/workflow-host";
-import {
-  type ReadParkedApprovalOps,
-  type StepInvoker,
-} from "@intx/workflow";
+import { type ReadParkedApprovalOps, type StepInvoker } from "@intx/workflow";
 
 import {
   createToolBearingAgentFactory,

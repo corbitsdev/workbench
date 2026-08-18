@@ -71,6 +71,14 @@ export const insightsMigrations: readonly InsightsMigration[] = [
         ON "insights"."turn_latency" ("tenant_id", "recorded_at");
     `,
   },
+  {
+    name: "0004_usage_turn_provider_cost",
+    sql: `
+      ALTER TABLE "insights"."usage_turn"
+        ADD COLUMN IF NOT EXISTS "provider" text,
+        ADD COLUMN IF NOT EXISTS "reported_cost_usd" numeric;
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "insights_migrations";

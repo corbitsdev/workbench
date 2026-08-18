@@ -75,9 +75,7 @@ describe("workbench settings path helpers", () => {
   test("isWorkbenchSettingsPath is true for /settings, /settings/:section, and entity", () => {
     expect(isWorkbenchSettingsPath("/w/ch_1/settings")).toBe(true);
     expect(isWorkbenchSettingsPath("/w/ch_1/settings/members")).toBe(true);
-    expect(isWorkbenchSettingsPath("/w/ch_1/settings/agents/wfd_1")).toBe(
-      true,
-    );
+    expect(isWorkbenchSettingsPath("/w/ch_1/settings/agents/wfd_1")).toBe(true);
     expect(isWorkbenchSettingsPath("/w/ch_1")).toBe(false);
     expect(isWorkbenchSettingsPath("/w")).toBe(false);
   });

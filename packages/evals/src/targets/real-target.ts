@@ -363,14 +363,14 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
       );
     }
 
-    // `POST /channels` fires `dispatchGreetingKickoff` fire-and-forget
+    // `POST /channels` fires `postCannedGreeting` fire-and-forget
     // (see `packages/chat/src/routes.ts`) right after the chat mints —
-    // the unprompted-greeting turn `greeting-delivery.test.ts` proves
+    // the unprompted canned greeting `greeting-delivery.test.ts` proves
     // lands with zero user messages sent. That test waits for the
     // greeting's own agent-authored message to land *before* sending
     // its first human turn; this target must do the same, or the first
     // scripted turn's human message and mail fan-out race the still
-    // in-flight greeting turn's own record-mail to the channel host,
+    // in-flight greeting post's own record-mail to the channel host,
     // which is what the "run 'run_<channelId>' is terminal" rejection
     // traces back to. The greeting's message id (and its tool calls) are
     // folded in as already-seen so `sendTurn`'s own reply/tool-call

@@ -57,7 +57,7 @@ test("requires the sanctioned workflow-skills-write env keys", () => {
   ]);
 });
 
-test("the two reads and the two grant-free writes (create_skill, update_skill) carry no approval gate; pin_skill, which changes another agent's own behavior, keeps approval: \"ask\"", () => {
+test('the two reads and the two grant-free writes (create_skill, update_skill) carry no approval gate; pin_skill, which changes another agent\'s own behavior, keeps approval: "ask"', () => {
   expect(skillsTools.definitions).toEqual([
     { name: LIST_SKILLS_TOOL },
     { name: READ_SKILL_TOOL },

@@ -200,8 +200,9 @@ async function loadServerTools(
   const resolved = await resolveMcpFetch(env, server.slug);
   if (resolved.fetch === null) return { tools: null, reason: resolved.reason };
   const fetchImpl = resolved.fetch;
-  const tools = await withMcpConnection({ url: server.url, fetchImpl }, (client) =>
-    listMcpTools(client),
+  const tools = await withMcpConnection(
+    { url: server.url, fetchImpl },
+    (client) => listMcpTools(client),
   );
   return { tools };
 }
@@ -301,11 +302,11 @@ async function runListToolsForPattern(
     );
   }
   const servers = await listMcpServers(registryConfig(env));
-  const matches: Array<{
+  const matches: {
     server: string;
     tool: ReturnType<typeof toolSummary>;
-  }> = [];
-  const unreachable: Array<{ server: string; reason: string }> = [];
+  }[] = [];
+  const unreachable: { server: string; reason: string }[] = [];
   for (const server of servers) {
     const serverMatches = regex.test(server.slug) || regex.test(server.name);
     const loaded = await loadServerTools(env, server);
@@ -323,7 +324,9 @@ async function runListToolsForPattern(
     callId: call.id,
     isError: false,
     content: JSON.stringify(
-      unreachable.length > 0 ? { pattern, matches, unreachable } : { pattern, matches },
+      unreachable.length > 0
+        ? { pattern, matches, unreachable }
+        : { pattern, matches },
     ),
   };
 }

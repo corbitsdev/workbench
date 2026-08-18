@@ -137,9 +137,9 @@ describe("PluginConnectPanel", () => {
       credentialName: "GitHub",
     });
 
-    const disconnectButton = [
-      ...container.querySelectorAll("button"),
-    ].find((button) => button.textContent?.includes("Disconnect") === true);
+    const disconnectButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Disconnect") === true,
+    );
     expect(disconnectButton).not.toBeUndefined();
 
     act(() => {

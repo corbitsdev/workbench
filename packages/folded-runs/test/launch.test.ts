@@ -71,8 +71,12 @@ mock.module("@intx/db", () => ({
   },
 }));
 
-const { launchFoldedRun, deployAtHead, InferenceResolutionError } =
-  await import("../src/launch");
+const {
+  launchFoldedRun,
+  mintFoldedRun,
+  deployAtHead,
+  InferenceResolutionError,
+} = await import("../src/launch");
 const { wakeFoldedRun } = await import("../src/wake");
 const { sessionAsset } = await import("@intx/db/schema");
 
@@ -227,6 +231,45 @@ const FOLDED_BODY: FoldedBody = {
   credentialBindings: [],
   model: "claude-sonnet-5",
 };
+
+describe("mintFoldedRun", () => {
+  test("writes the folded run rows and deploys nothing", async () => {
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+    const persistExtraCalls: unknown[] = [];
+
+    const result = await mintFoldedRun(
+      { db: db as never },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
+        persistExtra: async (tx) => {
+          persistExtraCalls.push(tx);
+        },
+      },
+    );
+
+    expect(result.sessionId).toBeTruthy();
+    expect(result.instancePrincipalId).toBeTruthy();
+    // The caller's own row commits inside the same transaction as the
+    // principal/session/run inserts, exactly as it does on a launch.
+    expect(persistExtraCalls).toHaveLength(1);
+    expect(db.inserted.map((row) => row.table)).toEqual([
+      principal,
+      agentSession,
+      workflowRun,
+      foldedRun,
+    ]);
+
+    // The whole point of a mint: an addressable run with no sidecar
+    // traffic and no collector — the first mail wakes it instead.
+    expect(sessionService.deployInstanceAtHeadCalls).toEqual([]);
+    expect(eventCollectors.createCalls).toEqual([]);
+  });
+});
 
 describe("launchFoldedRun", () => {
   test("resolves sources, writes the folded run rows, and deploys via deployInstanceAtHead", async () => {

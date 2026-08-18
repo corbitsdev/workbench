@@ -40,9 +40,10 @@ export type TurnFinalized = {
 // Forwarded on every `inference.usage` event so product-side consumers
 // (see @corbits/insights' createUsageSink) can persist tokens without the
 // collector's private turn-accumulation state. Deliberately as narrow as
-// `TokenUsage` + the turn/model identity needed to attribute it.
+// `TokenUsage` + the turn/source identity needed to attribute it.
 export type UsageForwarded = {
   turnId: string;
+  provider: string;
   model: string;
   usage: TokenUsage;
 };
@@ -128,6 +129,7 @@ export function createEventCollector(
         if (currentTurnId !== null && onUsage) {
           onUsage({
             turnId: currentTurnId,
+            provider: event.data.source.provider,
             model: currentModel,
             usage: event.data.usage,
           });

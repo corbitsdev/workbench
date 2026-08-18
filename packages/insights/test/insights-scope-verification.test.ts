@@ -123,6 +123,29 @@ describeIfDb("pg-store listUsageByTenants (real Postgres)", () => {
     expect(single).toHaveLength(1);
   });
 
+  test("provider and reported cost survive the Postgres round trip", async () => {
+    const inserted = await pg.store.insertUsage({
+      id: generateId("inferenceTurn"),
+      tenantId: "wb-priced",
+      sessionId: "s-priced",
+      turnId: "t-priced",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      tokens: tokens(12, 34),
+      reportedCostUsd: 0.000364,
+    });
+
+    expect(inserted).toMatchObject({
+      provider: "anthropic",
+      reportedCostUsd: 0.000364,
+    });
+    const [listed] = await pg.store.listUsageByTenants(["wb-priced"]);
+    expect(listed).toMatchObject({
+      provider: "anthropic",
+      reportedCostUsd: 0.000364,
+    });
+  });
+
   test("empty scope returns no rows", async () => {
     expect(await pg.store.listUsageByTenants([])).toEqual([]);
   });

@@ -68,10 +68,8 @@ import {
   validateSettingsPatch,
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
-import { isSidecarUnavailableLaunchError } from "./sidecar-launch-error";
-import type { PendingMintRegistry } from "./mint-retry";
 import {
-  dispatchGreetingKickoff,
+  postCannedGreeting,
   joinHumanParticipant,
   launchAndJoinAgent,
   removeWorkbenchParticipant,
@@ -160,7 +158,7 @@ export type CreateChatRoutesDeps = {
   ) => Promise<readonly InferencePreference[]>;
   /**
    * Resolves a principal to the display name a greeting can use. The
-   * hub wires this to its user table; omitted, the greeting kickoff
+   * hub wires this to its user table; omitted, the canned greeting
    * simply carries no name.
    */
   resolvePrincipalName?: (
@@ -168,11 +166,21 @@ export type CreateChatRoutesDeps = {
     principalId: string,
   ) => Promise<string | undefined>;
   /**
-   * Runs the mint's launch work after the 201 has left. Production
-   * fire-and-forgets (the default); tests inject an awaiting runner so
-   * assertions see the launched state deterministically.
+   * Runs a fresh chat's post-mint delivery chain (join event → canned
+   * greeting → agent pre-warm) after the 201 — the sends that carry
+   * the host and agent deploys, off the request path. Production
+   * fire-and-forgets (the default); tests capture the work so
+   * assertions can await it deterministically.
    */
-  runMintLaunch?: (work: () => Promise<void>) => void;
+  runPostMintDelivery?: (work: () => Promise<void>) => void;
+  /**
+   * Observes a posted message's recipient fan-out (see
+   * `sendWorkbenchMessage`'s `fanoutDelivered`). Production ignores it —
+   * the whole point is that the sender's own message returns without
+   * waiting on any delivery — while tests await it so assertions about
+   * delivered copies are deterministic rather than racing.
+   */
+  onMessageFanout?: (fanoutDelivered: Promise<void>) => void;
   /**
    * Thread identity store (root / reply / delivery). When omitted,
    * thread list routes return empty and delivery-thread creation is
@@ -265,15 +273,6 @@ export type CreateChatRoutesDeps = {
    */
   releaseAgentInstance?:
     ((address: string, reason: string) => Promise<void>) | undefined;
-  /**
-   * Where a mint's stalled launch registers its one-shot retry — see
-   * `./mint-retry.ts`. Omitted, a sidecar-unavailable mint launch still
-   * marks its workbench `chat/launchPending` and skips compensation, but
-   * nothing ever retries it; the hub composes a real registry and fires
-   * `retryAll()` from its sidecar socket's `onOpen` (see
-   * `apps/hub/src/index.ts`).
-   */
-  pendingMintRegistry?: PendingMintRegistry;
 };
 
 const log = getLogger(["chat", "routes"]);
@@ -978,10 +977,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
 
       // A workbench is a child tenant of the bench it is created in from
-      // the moment it exists — minted before the workbench host launches.
+      // the moment it exists — minted before the workbench host is.
       // The mint itself is one transaction (see `workbench-tenancy.ts`),
-      // so it never lands half-seeded; but the launch that follows it
-      // is a separate step against separate machinery, so a failure
+      // so it never lands half-seeded; but the host mint that follows it
+      // is a separate transaction against separate tables, so a failure
       // there is compensated for explicitly below rather than trusted
       // to ordering alone. The creator becomes the child tenant's
       // native owner exactly as the native tenant-creation route seeds
@@ -1033,7 +1032,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      async function launchHost() {
+      async function mintHost() {
         await deps.platform.launchWorkbench({
           tenantId: tenant.id,
           creatorPrincipalId: principal.id,
@@ -1079,141 +1078,105 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         updatedBy: principal.id,
       });
 
-      // The agent-chat mint answers BEFORE its launches: the workbench
-      // row and tenant above are the durable mint, the two launches
-      // (host + agent) take seconds each, and the client already
-      // renders the setup state until `workbench.agent-joined` streams
-      // in. DMs and plain workbenches keep the synchronous launch — their
-      // join step mails through the host, so the host must exist
-      // before this handler can finish their setup.
+      // Everything on the request path below is database work — host
+      // and agent launches are mints (see `WorkbenchLauncher`'s own
+      // docs), so the 201 returns in database time with the agent
+      // already a participant. The deploys ride the post-mint delivery
+      // chain: the join event's send wakes the host, the greeting
+      // follows it, and an explicit pre-warm deploys the agent ahead
+      // of the member's first message.
       if (!isChatWithPrincipal(body) && isChatWithDefinition(body)) {
         const definitionId = body.definitionId;
-        const runMintLaunch =
-          deps.runMintLaunch ?? ((work: () => Promise<void>) => void work());
+        const runPostMintDelivery =
+          deps.runPostMintDelivery ??
+          ((work: () => Promise<void>) => void work());
 
-        // `currentSettings` tracks whatever this mint's launch last wrote,
-        // starting from the durable row above — every step below reads
-        // and writes through it rather than the stale `row.settings`
-        // closure, so a retry after `chat/launchPending` picks up exactly
-        // where the failed attempt left off instead of clobbering it.
-        let currentSettings = row.settings;
-
-        async function markLaunchPending(): Promise<void> {
-          currentSettings = (
-            await deps.store.updateWorkbenchSettings({
-              tenantId: tenant.id,
-              workbenchId,
-              settings: { ...currentSettings, "chat/launchPending": true },
-              updatedBy: principal.id,
-            })
-          ).settings;
+        try {
+          await mintHost();
+        } catch (err) {
+          await compensateMint(err, "host mint");
+          throw err;
         }
 
-        async function clearLaunchPending(): Promise<void> {
-          if (currentSettings["chat/launchPending"] !== true) return;
-          const { "chat/launchPending": _pending, ...cleared } =
-            currentSettings;
-          currentSettings = (
-            await deps.store.updateWorkbenchSettings({
+        let joined: Awaited<ReturnType<typeof launchAndJoinAgent>>;
+        try {
+          joined = await launchAndJoinAgent(
+            { store: deps.store, platform: deps.platform, publish },
+            {
               tenantId: tenant.id,
+              principalId: principal.id,
               workbenchId,
-              settings: cleared,
-              updatedBy: principal.id,
-            })
-          ).settings;
+              definitionId,
+              existingSettings: row.settings,
+              invitable,
+            },
+          );
+        } catch (err) {
+          await compensateMint(err, "agent mint");
+          throw err;
         }
 
-        // The mint's whole launch (host, then agent join + greeting
-        // kickoff) is safe to redo from scratch: `launchHost`/
-        // `launchAndJoinAgent` fail through `SessionLaunchError`'s own
-        // provision-phase rollback (see `packages/folded-runs/src/launch.ts`),
-        // which leaves no partial state behind beyond the durable row
-        // already written above — so a sidecar-unavailable failure at
-        // either step just re-registers this same function as the retry,
-        // rather than needing step-granular resumption.
-        async function attemptMintLaunch(): Promise<void> {
-          try {
-            await launchHost();
-          } catch (err) {
-            if (isSidecarUnavailableLaunchError(err)) {
-              await markLaunchPending();
-              deps.pendingMintRegistry?.markPending(
-                workbenchId,
-                attemptMintLaunch,
-              );
-              return;
-            }
-            await compensateMint(err, "host launch");
-            return;
-          }
-          await clearLaunchPending();
-          try {
-            const joined = await launchAndJoinAgent(
-              { store: deps.store, platform: deps.platform, publish },
-              {
-                tenantId: tenant.id,
-                principalId: principal.id,
-                workbenchId,
-                definitionId,
-                existingSettings: currentSettings,
-                invitable,
-              },
-            );
-            currentSettings = joined.settings;
-            const senderName =
-              deps.resolvePrincipalName !== undefined
-                ? await deps
-                    .resolvePrincipalName(tenant.id, principal.id)
-                    .catch(() => undefined)
-                : undefined;
-            void dispatchGreetingKickoff(
-              { platform: deps.platform },
-              {
-                tenantId: tenant.id,
-                principalId: principal.id,
-                workbenchId,
-                agentAddress: joined.address,
-                isDirectChat: isAgentDm,
-                ...(senderName !== undefined ? { senderName } : {}),
-                ...(chatTitle !== undefined && !isAgentDm
-                  ? { workbenchName: chatTitle }
-                  : {}),
-              },
-            );
-            if (chatTitle === undefined) {
-              currentSettings = (
+        const finalSettings =
+          chatTitle === undefined
+            ? (
                 await deps.store.updateWorkbenchSettings({
                   tenantId: tenant.id,
                   workbenchId,
-                  settings: {
-                    ...currentSettings,
-                    "chat/name": joined.handle,
-                  },
+                  settings: { ...joined.settings, "chat/name": joined.handle },
                   updatedBy: principal.id,
                 })
-              ).settings;
-            }
-          } catch (err) {
-            if (isSidecarUnavailableLaunchError(err)) {
-              await markLaunchPending();
-              deps.pendingMintRegistry?.markPending(
-                workbenchId,
-                attemptMintLaunch,
-              );
-              return;
-            }
-            await compensateMint(err, "agent launch");
-          }
-        }
+              ).settings
+            : joined.settings;
 
-        runMintLaunch(attemptMintLaunch);
-        return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
+        const agentAddress = joined.address;
+        const joinEventDelivered = joined.joinEventDelivered;
+        const agentDisplayName =
+          invitable.find((definition) => definition.id === definitionId)
+            ?.description ?? joined.handle;
+        runPostMintDelivery(async () => {
+          const senderName =
+            deps.resolvePrincipalName !== undefined
+              ? await deps
+                  .resolvePrincipalName(tenant.id, principal.id)
+                  .catch(() => undefined)
+              : undefined;
+          // Greeting after the join event, so the timeline reads
+          // joined-then-hello; neither ever rejects.
+          await joinEventDelivered;
+          await postCannedGreeting(
+            { platform: deps.platform },
+            {
+              tenantId: tenant.id,
+              workbenchId,
+              agentAddress,
+              agentName: agentDisplayName,
+              ...(senderName !== undefined ? { senderName } : {}),
+            },
+          );
+          await deps.platform
+            .ensureAwake(agentAddress)
+            .catch((err: unknown) => {
+              log.error(
+                "Pre-warm deploy failed for workbench {workbenchId}'s agent " +
+                  "{agentAddress}; the next message to it retries the wake",
+                { workbenchId, agentAddress, err },
+              );
+            });
+        });
+
+        return c.json(
+          withTenancy(
+            workbenchView({ workbenchId, settings: finalSettings }),
+            workbenchTenant,
+          ),
+          201,
+        );
       }
 
       try {
-        await launchHost();
+        await mintHost();
       } catch (err) {
-        await compensateMint(err, "host launch");
+        await compensateMint(err, "host mint");
         throw err;
       }
 
@@ -1270,7 +1233,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         } catch (err) {
           log.error(
             "Adding the person-DM participant failed for workbench " +
-              "{workbenchId} after the host launched and settings were " +
+              "{workbenchId} after the host was minted and settings were " +
               "written; compensating the workbench tenant and deleting " +
               "its settings",
             { workbenchId, tenantId: workbenchTenant.tenantId, err },
@@ -1935,6 +1898,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
         throw err;
       }
+      deps.onMessageFanout?.(sent.fanoutDelivered);
 
       if (parsed.clientId !== undefined && deps.clientIds !== undefined) {
         await deps.clientIds.recordClientId({
@@ -2078,7 +2042,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // by the workbench's normal host routing, no side channel only the
       // agent can read.
       if (payload.kind === "question") {
-        await sendWorkbenchMessage(
+        const answer = await sendWorkbenchMessage(
           { store: deps.store, platform: deps.platform },
           {
             tenantId: ownerTenantId,
@@ -2087,6 +2051,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             messageParts: [{ kind: "text", text: payload.answer }],
           },
         );
+        deps.onMessageFanout?.(answer.fanoutDelivered);
       }
 
       // A machine-readable event into the same workbench timeline the

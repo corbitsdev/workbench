@@ -155,7 +155,11 @@ function McpPresetCard({
   );
 }
 
-export function McpPresetCardsSection({ tenantId }: { readonly tenantId: string }) {
+export function McpPresetCardsSection({
+  tenantId,
+}: {
+  readonly tenantId: string;
+}) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
     new Map(),
@@ -197,7 +201,9 @@ export function McpPresetCardsSection({ tenantId }: { readonly tenantId: string 
             toolCount={toolCounts.get(preset.slug)}
             onChanged={(toolCount) => {
               if (toolCount !== undefined) {
-                setToolCounts((prev) => new Map(prev).set(preset.slug, toolCount));
+                setToolCounts((prev) =>
+                  new Map(prev).set(preset.slug, toolCount),
+                );
               }
               reload();
             }}

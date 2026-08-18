@@ -37,6 +37,7 @@ import {
   ensureSeeded,
   findPersonalTenant,
   testAndPersistCredential,
+  type EnsureSeededResult,
   type PersonalTenant,
   type TestAndPersistCredentialResult,
 } from "./complete-credential";
@@ -146,6 +147,8 @@ export type CreateOnboardingRoutesDeps = {
   credentialCipher?: CredentialCipher;
 };
 
+type CompleteSetupOutcome = { readonly kind: "unseeded" } | EnsureSeededResult;
+
 /**
  * The idempotent-duplicate-callback recovery: when a callback's own
  * single-use state comes back already consumed, that is not on its own
@@ -225,6 +228,73 @@ export function createOnboardingRoutes(
   // short because successful provisioning resolves immediately.
   const PROVISION_RATE_LIMIT_MS = 10_000;
   const lastProvisionByUser = new Map<string, number>();
+  const completeSetupInFlight = new Map<
+    string,
+    Promise<CompleteSetupOutcome>
+  >();
+
+  async function completeSetupOnce(args: {
+    userId: string;
+    cookies: string[];
+    tenant: PersonalTenant;
+  }): Promise<CompleteSetupOutcome> {
+    const key = JSON.stringify([args.userId, args.tenant.tenantId]);
+    const existing = completeSetupInFlight.get(key);
+    if (existing) return existing;
+
+    const operation = (async (): Promise<CompleteSetupOutcome> => {
+      const fullySeeded = await isFullySeeded(
+        api,
+        args.cookies,
+        args.tenant.tenantId,
+      );
+      if (fullySeeded) {
+        await deps.pendingSeedStore.clear({
+          userId: args.userId,
+          tenantId: args.tenant.tenantId,
+        });
+        return {
+          kind: "seeded",
+          workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
+        };
+      }
+
+      const pending = await deps.pendingSeedStore.read({
+        userId: args.userId,
+        tenantId: args.tenant.tenantId,
+      });
+      if (pending === undefined) return { kind: "unseeded" };
+
+      const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
+      const seeded = await runEnsureSeeded({
+        api,
+        cookies: args.cookies,
+        hubUrl: deps.hubUrl,
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+        tenant: args.tenant,
+        provider: pending.provider,
+        apiKey: pending.apiKey,
+      });
+
+      if (seeded.kind === "seeded") {
+        await deps.pendingSeedStore.clear({
+          userId: args.userId,
+          tenantId: args.tenant.tenantId,
+        });
+      }
+      return seeded;
+    })();
+
+    completeSetupInFlight.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      if (completeSetupInFlight.get(key) === operation) {
+        completeSetupInFlight.delete(key);
+      }
+    }
+  }
 
   app.post("/provision", async (c) => {
     const user = c.get("user");
@@ -715,50 +785,14 @@ export function createOnboardingRoutes(
         );
       }
 
-      const fullySeeded = await isFullySeeded(api, cookies, tenant.tenantId);
-      if (fullySeeded) {
-        // A pending row has done its job once the bench reads as
-        // seeded — whether it was this very call's ensureSeeded run or
-        // a concurrent one that beat it there — so it must not linger
-        // in the store, plaintext key and all, for the rest of its TTL.
-        await deps.pendingSeedStore.clear({
-          userId: user.id,
-          tenantId: tenant.tenantId,
-        });
-        return c.json(
-          {
-            kind: "seeded",
-            tenantId: tenant.tenantId,
-            tenantSlug: tenant.tenantSlug,
-            workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
-          },
-          200,
-        );
-      }
-
-      // A row that fails to validate (expired, wrong user/tenant,
-      // corrupt) is cleared by `read` itself — see `./pending-seed.ts`'s
-      // `PendingSeedStore.read` doc comment — so there is nothing left
-      // to clean up here beyond the success path below.
-      const pending = await deps.pendingSeedStore.read({
+      const seeded = await completeSetupOnce({
         userId: user.id,
-        tenantId: tenant.tenantId,
+        cookies,
+        tenant,
       });
-      if (pending === undefined) {
+      if (seeded.kind === "unseeded") {
         return c.json({ kind: "unseeded" }, 200);
       }
-
-      const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
-      const seeded = await runEnsureSeeded({
-        api,
-        cookies,
-        hubUrl: deps.hubUrl,
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-        tenant,
-        provider: pending.provider,
-        apiKey: pending.apiKey,
-      });
 
       if (seeded.kind === "seeded-pending-agents") {
         // Sidecar-unavailable (CL-6264): the pending row is left in
@@ -779,10 +813,6 @@ export function createOnboardingRoutes(
         );
       }
 
-      await deps.pendingSeedStore.clear({
-        userId: user.id,
-        tenantId: tenant.tenantId,
-      });
       return c.json(
         {
           kind: "seeded",

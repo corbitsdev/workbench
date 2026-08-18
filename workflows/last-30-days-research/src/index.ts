@@ -284,6 +284,7 @@ export function buildLast30DaysResearchWorkflow(
         id: "last-30-days-research-ground",
         systemPrompt: GROUNDING_PROMPT,
         input: { from: "trigger.payload" },
+        after: [],
         timeoutMs: input.turnTimeoutMs,
         inferencePreferences: defaultPreferences,
       }),

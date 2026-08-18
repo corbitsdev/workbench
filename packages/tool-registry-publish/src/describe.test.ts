@@ -28,7 +28,7 @@ describe("describeCorbitsToolPackages", () => {
     }
   });
 
-  test("routines-tools' write tools are marked ask; its read tool is not", async () => {
+  test("routines-tools gates only immediate routine execution", async () => {
     const descriptions = await describeCorbitsToolPackages();
     const routines = descriptions.find(
       (description) => description.name === "@corbits/routines-tools",
@@ -40,11 +40,15 @@ describe("describeCorbitsToolPackages", () => {
     expect(
       byQualifiedId.get("@corbits/routines-tools/routines:routine_create")
         ?.approval,
-    ).toBe("ask");
+    ).toBeUndefined();
     expect(
-      byQualifiedId.get("@corbits/routines-tools/routines:routine_list")
+      byQualifiedId.get("@corbits/routines-tools/routines:routine_update")
         ?.approval,
     ).toBeUndefined();
+    expect(
+      byQualifiedId.get("@corbits/routines-tools/routines:routine_run_now")
+        ?.approval,
+    ).toBe("ask");
   });
 
   test("caches across calls (same source for the process lifetime)", async () => {

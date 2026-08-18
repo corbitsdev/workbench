@@ -11,8 +11,10 @@ export type UsageEvent = {
   readonly turnId: string;
   readonly tenantId: string;
   readonly sessionId: string;
+  readonly provider?: string;
   readonly model: string;
   readonly tokens: TokenClasses;
+  readonly reportedCostUsd?: number;
   readonly recordedAt?: Date;
 };
 
@@ -36,6 +38,10 @@ export function createUsageSink(deps: UsageSinkDeps) {
         turnId: event.turnId,
         model: event.model,
         tokens: event.tokens,
+        ...(event.provider === undefined ? {} : { provider: event.provider }),
+        ...(event.reportedCostUsd === undefined
+          ? {}
+          : { reportedCostUsd: event.reportedCostUsd }),
       };
       const result = await deps.store.insertUsage(
         event.recordedAt === undefined

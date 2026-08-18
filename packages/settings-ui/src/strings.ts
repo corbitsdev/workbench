@@ -260,7 +260,8 @@ export const SETTINGS_STRINGS = {
   connectionsDisconnectError: "Couldn't disconnect — try again.",
   connectionsDefaultModelLine: (model: string) => `Default model: ${model}`,
   connectionsDefaultModelLabel: "Default model:",
-  connectionsSetDefaultModelError: "Couldn't set the default model — try again.",
+  connectionsSetDefaultModelError:
+    "Couldn't set the default model — try again.",
   connectionsPinnedByPrefix: "Used by workflows: ",
   connectionsPinnedByNone: "Available to any workflow",
   connectionsPinnedByApproximationNote:

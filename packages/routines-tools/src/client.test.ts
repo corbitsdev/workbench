@@ -164,7 +164,7 @@ test("runRoutineNow posts to the routine's own run path and returns the launched
 
 test("runRoutineNow posts a named input override when one is given", async () => {
   let seenBody: unknown;
-  let seenHeaders: HeadersInit | undefined;
+  let seenHeaders: RequestInit["headers"];
   const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
     seenBody =
       init?.body === undefined ? undefined : JSON.parse(String(init.body));

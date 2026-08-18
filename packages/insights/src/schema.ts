@@ -30,12 +30,14 @@ export const usageTurn = insightsSchema.table(
     tenantId: text("tenant_id").notNull(),
     sessionId: text("session_id").notNull(),
     turnId: text("turn_id").notNull(),
+    provider: text("provider"),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
     cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     thinkingTokens: integer("thinking_tokens").notNull().default(0),
+    reportedCostUsd: numeric("reported_cost_usd"),
     recordedAt: timestamp("recorded_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

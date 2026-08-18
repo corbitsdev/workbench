@@ -8,11 +8,9 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { InferenceResolutionError } from "@corbits/folded-runs";
-import { SessionLaunchError } from "@intx/hub-sessions";
 import { encodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
-import { createPendingMintRegistry } from "../src/mint-retry";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryThreadStore } from "../src/threads";
@@ -27,6 +25,45 @@ import {
 } from "./test-support";
 
 describe("POST /workbenches", () => {
+  test("does not expose an agent chat until its host run is minted", async () => {
+    let finishHostLaunch: (() => void) | undefined;
+    const hostLaunch = new Promise<void>((resolve) => {
+      finishHostLaunch = resolve;
+    });
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+        launchWorkbench: async () => {
+          await hostLaunch;
+          return { instanceId: "launched" };
+        },
+      }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    let answered = false;
+    const request = createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    }).then((result) => {
+      answered = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(answered).toBe(false);
+    expect(deliveries).toHaveLength(0);
+
+    finishHostLaunch?.();
+    const { response } = await request;
+    expect(response.status).toBe(201);
+    expect(deliveries).toHaveLength(1);
+  });
+
   test("launches an instance and seeds workbench_settings with kind defaults", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -81,9 +118,10 @@ describe("POST /workbenches", () => {
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const { response } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
     expect(response.status).toBe(403);
@@ -104,15 +142,15 @@ describe("POST /workbenches", () => {
   });
 
   test("creating an unnamed chat titles it by the agent's display name, tenant row included", async () => {
-    const launches: Array<() => Promise<void>> = [];
+    const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [
           { id: "wfd_assist", name: "assistant", description: "Myra" },
         ],
       }),
-      runMintLaunch: (work) => {
-        launches.push(work);
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
       },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -122,14 +160,15 @@ describe("POST /workbenches", () => {
       definitionId: "wfd_assist",
     });
 
-    // The 201 answers before the launches: the title is already the
-    // agent's display name (known from the definition), participants
-    // stream in once the background launch joins the agent.
+    // Both runs are minted before the 201, so the title and participant
+    // are durable while timeline delivery and pre-warming remain queued.
     expect(response.status).toBe(201);
     expect(body.title).toBe("Myra");
-    expect(body.participants).toEqual([]);
-    expect(launches).toHaveLength(1);
-    await launches[0]?.();
+    expect(body.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "myra" },
+    ]);
+    expect(deliveries).toHaveLength(1);
+    await deliveries[0]?.();
 
     const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
     expect(settled?.settings["chat/participants"]).toEqual([
@@ -143,11 +182,11 @@ describe("POST /workbenches", () => {
   });
 
   test("creating a chat auto-invites its agent and titles it by handle", async () => {
-    const launches: Array<() => Promise<void>> = [];
+    const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-      runMintLaunch: (work) => {
-        launches.push(work);
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
       },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -159,7 +198,10 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(201);
     expect(body.kind).toBe("chat");
-    await launches[0]?.();
+    expect(body.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+    ]);
+    await deliveries[0]?.();
 
     const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
     expect(settled?.settings["chat/name"]).toBe("echo");
@@ -185,14 +227,43 @@ describe("POST /workbenches", () => {
     expect(decoded.kind).toBe("event");
     expect(decoded.event).toBe("workbench.agent-joined");
 
-    // CL-6126: the agent speaks first on every mint — a kickoff mail
-    // goes straight to the agent's own mailbox (never the chat's own
-    // workbench id), so it never renders as a human bubble on the
-    // chat's timeline, with no user message anywhere in this flow.
-    const kickoff = platform.sentMail[1];
-    expect(kickoff?.workbenchId).toBe("ins_invited1");
-    expect(kickoff?.fromWorkbenchId).toBe(body.id);
-    expect(kickoff?.content.content).toMatch(/just opened a new workbench/);
+    // CL-6126: the agent speaks first on every mint — a canned greeting
+    // is posted straight onto the chat's own timeline under the agent's
+    // run (never as a mail to the agent's mailbox), so the room opens
+    // with a hello without waiting on an inference turn.
+    const greeting = platform.sentMail[1];
+    expect(greeting?.workbenchId).toBe(body.id);
+    expect(greeting?.fromWorkbenchId).toBe("ins_invited1");
+    expect(greeting?.content.content).toContain("echo");
+    expect(greeting?.content.content).toMatch(/\?$/);
+  });
+
+  test("creating a chat deploys nothing on the request path — the deploys ride the post-mint delivery", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    // The 201 carries a joined agent, but nothing has been deployed for
+    // it yet: host and invite are mints, and the pre-warm is deferred.
+    expect(response.status).toBe(201);
+    expect(body.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+    ]);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.ensureAwakeCalls).toEqual([]);
+
+    await deliveries[0]?.();
+    expect(platform.ensureAwakeCalls).toEqual(["ins_invited1@acme.example"]);
   });
 
   test("creating a chat with an explicit name keeps that name as the title", async () => {
@@ -211,8 +282,7 @@ describe("POST /workbenches", () => {
     expect(body.title).toBe("My Assistant");
   });
 
-  test("an unlaunchable agent compensates the mint in the background — the workbench vanishes cleanly", async () => {
-    const launches: Array<() => Promise<void>> = [];
+  test("an agent mint failure compensates the workbench before returning", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -223,9 +293,6 @@ describe("POST /workbenches", () => {
           );
         },
       }),
-      runMintLaunch: (work) => {
-        launches.push(work);
-      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -235,11 +302,7 @@ describe("POST /workbenches", () => {
       body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
-    // The mint answers before the launch — the failure lands in the
-    // background and rolls the workbench back instead of surfacing a
-    // status code the caller has already stopped waiting for.
-    expect(response.status).toBe(201);
-    await launches[0]?.();
+    expect(response.status).toBe(500);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -250,17 +313,13 @@ describe("POST /workbenches", () => {
     );
   });
 
-  test("agent launch failure compensates the workbench in the background, so a retry starts clean", async () => {
-    const launches: Array<() => Promise<void>> = [];
+  test("a generic agent mint failure compensates the workbench so a retry starts clean", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
         launchInvite: () =>
           Promise.reject(new Error("blocked: too many @mentions; max 5")),
       }),
-      runMintLaunch: (work) => {
-        launches.push(work);
-      },
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -270,8 +329,7 @@ describe("POST /workbenches", () => {
       body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
-    expect(response.status).toBe(201);
-    await launches[0]?.();
+    expect(response.status).toBe(500);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -282,75 +340,42 @@ describe("POST /workbenches", () => {
     );
   });
 
-  test("a sidecar-unavailable host launch never compensates — the workbench stays, marked launchPending", async () => {
-    const launches: (() => Promise<void>)[] = [];
-    const pendingMintRegistry = createPendingMintRegistry();
+  test("a host mint failure compensates the workbench", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
         launchWorkbench: () =>
-          Promise.reject(
-            new SessionLaunchError(
-              "provision",
-              new Error('No sidecar available for agent "wb_1@acme.example"'),
-              false,
-            ),
-          ),
+          Promise.reject(new Error("database unavailable")),
       }),
-      runMintLaunch: (work) => {
-        launches.push(work);
-      },
-      pendingMintRegistry,
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const { response, body } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
-    expect(response.status).toBe(201);
-    await launches[0]?.();
+    expect(response.status).toBe(500);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
     >;
-    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(0);
     expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      1,
+      0,
     );
-    const stalled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
-    expect(stalled?.settings["chat/launchPending"]).toBe(true);
   });
 
-  test("a sidecar-unavailable agent launch never compensates, and the hub's reconnect retry finishes the mint", async () => {
-    const launches: (() => Promise<void>)[] = [];
-    const pendingMintRegistry = createPendingMintRegistry();
-    let sidecarUp = false;
+  test("a failed agent pre-warm leaves the minted chat ready for first-message retry", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
-        launchInvite: () => {
-          if (!sidecarUp) {
-            return Promise.reject(
-              new SessionLaunchError(
-                "provision",
-                new Error(
-                  'No sidecar connected for agent "ins_invited1@acme.example"',
-                ),
-                false,
-              ),
-            );
-          }
-          return Promise.resolve({
-            instanceId: "ins_invited1",
-            address: "ins_invited1@acme.example",
-          });
-        },
+        ensureAwake: () => Promise.reject(new Error("sidecar unavailable")),
       }),
-      runMintLaunch: (work) => {
-        launches.push(work);
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
       },
-      pendingMintRegistry,
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -359,7 +384,7 @@ describe("POST /workbenches", () => {
       definitionId: "wfd_echo",
     });
     expect(response.status).toBe(201);
-    await launches[0]?.();
+    await deliveries[0]?.();
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -368,21 +393,12 @@ describe("POST /workbenches", () => {
     expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
       1,
     );
-    const stalled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
-    expect(stalled?.settings["chat/launchPending"]).toBe(true);
-    expect(stalled?.settings["chat/participants"]).toEqual([]);
-
-    // The hub's sidecar-connected signal fires `retryAll()`; the sidecar
-    // is now up, so the retry finishes the mint cleanly.
-    sidecarUp = true;
-    pendingMintRegistry.retryAll();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
-    expect(settled?.settings["chat/launchPending"]).toBeUndefined();
     expect(settled?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "echo" },
     ]);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.ensureAwakeCalls).toEqual(["ins_invited1@acme.example"]);
   });
 });
 

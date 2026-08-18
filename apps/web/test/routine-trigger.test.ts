@@ -30,6 +30,10 @@ describe("approximateNextRun", () => {
     ).toBeNull();
   });
 
+  test("one-shot triggers have no future estimate", () => {
+    expect(approximateNextRun({ kind: "once" }, new Date())).toBeNull();
+  });
+
   test("raw cron is estimated through the same package the hub uses", () => {
     const next = approximateNextRun(
       { kind: "cron", expression: "0 9 * * *" },

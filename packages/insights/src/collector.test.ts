@@ -16,6 +16,7 @@ describe("createUsageSink", () => {
       turnId: "turn-1",
       tenantId: "tenant-acme",
       sessionId: "session-1",
+      provider: "anthropic",
       model: "claude-sonnet",
       tokens: {
         input: 100,
@@ -24,13 +25,16 @@ describe("createUsageSink", () => {
         output: 50,
         thinking: 0,
       },
+      reportedCostUsd: 0.00125,
     });
 
     expect(status).toBe("inserted");
     const rows = await store.listUsageByTenants(["tenant-acme"]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.turnId).toBe("turn-1");
+    expect(rows[0]?.provider).toBe("anthropic");
     expect(rows[0]?.tokens.input).toBe(100);
+    expect(rows[0]?.reportedCostUsd).toBe(0.00125);
   });
 
   test("duplicate turnId is a no-op (restart-safe)", async () => {

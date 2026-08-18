@@ -37,6 +37,14 @@ export type WakeFoldedRunParams = {
    * on the very next mail this occurrence receives.
    */
   stepInput?: Selector;
+  /**
+   * See `deployAtHead`'s own doc on the same field. A definition that
+   * declares no model of its own resolves a catalog default at every
+   * deploy; the caller re-derives it fresh here the same way the
+   * original launch did, so a wake of such a run never fails on
+   * "declares no model requirements".
+   */
+  fallbackModel?: string;
 };
 
 export async function wakeFoldedRun(
@@ -72,9 +80,19 @@ export async function wakeFoldedRun(
     foldedBody: params.foldedBody,
     launchLabel: "the woken instance",
   };
-  await deployAtHead(deps, {
-    ...deployAtHeadParams,
-    ...(params.sources !== undefined ? { sources: params.sources } : {}),
-    ...(params.stepInput !== undefined ? { stepInput: params.stepInput } : {}),
-  });
+  try {
+    await deployAtHead(deps, {
+      ...deployAtHeadParams,
+      ...(params.sources !== undefined ? { sources: params.sources } : {}),
+      ...(params.stepInput !== undefined
+        ? { stepInput: params.stepInput }
+        : {}),
+      ...(params.fallbackModel !== undefined
+        ? { fallbackModel: params.fallbackModel }
+        : {}),
+    });
+  } catch (error) {
+    deps.eventCollectors.abandon(params.triggerAddress);
+    throw error;
+  }
 }

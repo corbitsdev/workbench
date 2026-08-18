@@ -42,7 +42,13 @@ export function approximateNextRun(
   trigger: RoutineTrigger,
   now: Date,
 ): Date | null {
-  if (trigger === null || trigger.kind === "webhook") return null;
+  if (
+    trigger === null ||
+    trigger.kind === "webhook" ||
+    trigger.kind === "once"
+  ) {
+    return null;
+  }
   try {
     return nextCronFireAfter(
       cronExpressionForTrigger(trigger),

@@ -1,22 +1,19 @@
 // CL-6137: proves the unprompted greeting (CL-6126) actually lands in
 // a chat's timeline on a real mint — not merely that the mint request
-// itself succeeds. `dispatchGreetingKickoff` fires fire-and-forget
-// right after `launchAndJoinAgent` in `POST /workbenches`
-// (`packages/chat/src/routes.ts`); this suite is the only coverage
-// that proves the kickoff's mail actually turns into a workbench
-// message an agent-authored, not merely that the route returns 201.
+// itself succeeds. `postCannedGreeting` fires fire-and-forget right
+// after `launchAndJoinAgent` in `POST /workbenches`
+// (`packages/chat/src/routes.ts`), posting a canned opener onto the
+// chat's timeline under the agent's own run with no inference turn;
+// this suite is the only coverage that proves that post actually
+// turns into an agent-authored workbench message on real machinery,
+// not merely that the route returns 201.
 //
 // Mirrors `local-rip.test.ts`'s phase A (onboard → connect a real
 // credential through the key path) rather than `chat.test.ts`'s
-// zero-credential `seedCatalog` setup: the whole point here is that a
-// genuine turn fires and posts a genuine reply, and the cheapest
-// honest proof of that is the same one `local-rip.test.ts` uses — a
-// stub key dialing the real Anthropic host, whose 401 folds into a
-// completed turn carrying a self-describing credential-error report
-// (`vendor/intx/inference/src/default-director.ts`). That report
-// landing in the workbench with zero user messages sent is exactly as
-// good a proof the kickoff fired as a real reply would be, and
-// requires no paid key.
+// zero-credential `seedCatalog` setup: the greeting mail rides the
+// same host-session delivery path as every real reply, so it landing
+// with zero user messages sent — on a mint wired to a genuine (stub)
+// credential — proves the whole delivery chain without a paid key.
 
 import { describe, expect, test } from "bun:test";
 
@@ -62,15 +59,16 @@ if (databaseUrl === undefined) {
 }
 
 // Never sent anywhere for real: onboarding never probes it (CL-6123),
-// and the deployments it seeds carry it as a stored, never-triggered
-// source until the assistant's own opening turn genuinely dials it.
+// the deployments it seeds carry it as a stored, never-triggered
+// source, and the canned opening greeting never dials a model — only
+// the Ollama rapid-turn leg ever runs real inference.
 const STUB_API_KEY = "e2e-greeting-delivery-stub-key-not-real";
 
 // E2E_PROVIDER=ollama + OLLAMA_BASE_URL turns this suite into a live
 // acceptance gate the same way `walkthrough.ts`'s E2E_PROVIDER_API_KEY
-// does for Anthropic: a real Ollama instance actually answers the
-// greeting kickoff, so the final assertion below expects real prose
-// instead of the stub key's credential-error report.
+// does for Anthropic: the rapid-turn leg below then exercises real
+// inference. The opening greeting itself is canned either way — it
+// never dials a model.
 const OLLAMA_BASE_URL = process.env["OLLAMA_BASE_URL"];
 const USE_OLLAMA =
   process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
@@ -387,16 +385,10 @@ describe.skipIf(databaseUrl === undefined)(
 
       // The proof: poll the freshly minted chat's own timeline for an
       // agent-authored message, sending no user message at any point.
-      // A stub key dialing the real Anthropic host answers with a real
-      // 401, which the platform's own inference director folds into a
-      // *completed* turn carrying a self-describing credential-error
-      // report rather than failing the run outright (see
-      // `vendor/intx/inference/src/default-director.ts` and
-      // `local-rip.test.ts`'s task leg, which asserts the identical
-      // text for the same reason) — that report landing here, with
-      // zero human messages sent, is the honest, deterministic proof
-      // that the greeting kickoff's mail actually triggered the
-      // agent's turn.
+      // The greeting is canned (`packages/chat`'s `GREETING_VARIATIONS`)
+      // and posts with no inference turn, so in both provider modes the
+      // first agent-authored message is deterministic prose naming the
+      // agent and asking a question — never a credential error.
       await hop(
         "an agent-authored message lands in the chat with no user message ever sent",
         async () => {
@@ -428,28 +420,17 @@ describe.skipIf(databaseUrl === undefined)(
                 .filter((p) => p.kind === "text")
                 .map((p) => p.text ?? "")
                 .join("");
-              if (USE_OLLAMA) {
-                // A live Ollama instance actually answers: the opening
-                // turn must be real prose, never the stub-key credential
-                // error this suite otherwise proves against Anthropic.
-                if (
-                  text.trim().length === 0 ||
-                  /credential error/i.test(text)
-                ) {
-                  throw new Error(
-                    `expected a real Ollama greeting, got: ${JSON.stringify(agentMessage)}`,
-                  );
-                }
-                console.log(`  Myra's unprompted greeting (ollama): ${text}`);
-              } else if (
-                !text.includes("credential error") ||
-                !/40[13]/.test(text)
+              if (
+                !/Myra/.test(text) ||
+                !text.trimEnd().endsWith("?") ||
+                /credential error/i.test(text)
               ) {
                 throw new Error(
-                  `expected the agent's greeting-turn message to report the ` +
-                    `stub key's credential error, got: ${JSON.stringify(agentMessage)}`,
+                  `expected the canned opener naming Myra and asking a ` +
+                    `question, got: ${JSON.stringify(agentMessage)}`,
                 );
               }
+              console.log(`  Myra's canned opener: ${text}`);
               return;
             }
             if (Date.now() > deadline) {

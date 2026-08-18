@@ -77,6 +77,13 @@ export interface ChatWorkbenchEvent {
 /** Launching a workbench host and inviting an already-deployed agent
  * into one. */
 export interface WorkbenchLauncher {
+  /**
+   * Mints the workbench host's own run — DB rows only, addressable but
+   * not yet deployed. The host deploys through the platform's wake
+   * choke point on its first traffic, so this returns in database
+   * time; a caller that wants the deploy started ahead of traffic
+   * pre-warms with `ensureAwake`.
+   */
   launchWorkbench(input: {
     readonly tenantId: string;
     readonly creatorPrincipalId: string;
@@ -86,18 +93,26 @@ export interface WorkbenchLauncher {
   }): Promise<LaunchedWorkbench>;
 
   /**
-   * Launches an interactive instance of an already-deployed workflow
+   * Mints an interactive instance of an already-deployed workflow
    * definition — the invited agent's own run, distinct from the
-   * workbench's own anchor run — and returns its mail address. Uses the
-   * same `deployInstanceAtHead` machinery `launchWorkbench` uses for the
-   * host, sharing its launch core; only the source of the launch body
-   * (an existing definition id vs. a freshly synthesized one) differs.
+   * workbench's own anchor run — and returns its mail address. Like
+   * `launchWorkbench`, this writes DB rows only; the instance deploys
+   * on its first inbound mail or an explicit `ensureAwake` pre-warm.
    */
   launchInvite(input: {
     readonly tenantId: string;
     readonly creatorPrincipalId: string;
     readonly definitionId: string;
   }): Promise<LaunchedInvite>;
+
+  /**
+   * Deploys the run behind `address` if it is not currently routable —
+   * the same wake `sendMail` performs implicitly before delivering.
+   * Used to pre-warm a freshly minted (or slept) instance ahead of the
+   * traffic that would otherwise pay the deploy inline. Concurrent
+   * calls for one address coalesce onto a single deploy.
+   */
+  ensureAwake(address: string): Promise<void>;
 
   /**
    * Lists the tenant's deployed, launchable workflow definitions an

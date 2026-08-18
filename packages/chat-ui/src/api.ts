@@ -46,12 +46,6 @@ const WorkbenchWire = type({
   kind: "string",
   pinned: "boolean",
   "definitionId?": "string | null",
-  // Set while a mint's launch is stalled specifically on the sidecar
-  // being unavailable (see `packages/chat/src/routes.ts`'s
-  // `isSidecarUnavailableLaunchError`): the workbench is durable and will
-  // finish launching on its own, so the setup loader shows a distinct
-  // "waiting for the runtime" stage instead of the ordinary starting one.
-  "launchPending?": "boolean",
   participants: "unknown[]",
   "legacy?": "boolean",
   // Row signals `GET /workbenches` annotates when it can resolve a

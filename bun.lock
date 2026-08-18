@@ -206,7 +206,7 @@
     },
     "packages/agent-directory-tools": {
       "name": "@corbits/agent-directory-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -526,7 +526,7 @@
     },
     "packages/connections-tools": {
       "name": "@corbits/connections-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -726,6 +726,7 @@
       "name": "@corbits/insights",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/provider-pricing": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
@@ -774,7 +775,7 @@
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -802,7 +803,7 @@
     },
     "packages/memory-tools": {
       "name": "@corbits/memory-tools",
-      "version": "0.0.2",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -902,6 +903,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/provider-pricing": {
+      "name": "@corbits/provider-pricing",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/inference-catalog": "workspace:*",
+        "@workbench/hub-client": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/reddit-tools": {
       "name": "@corbits/reddit-tools",
       "version": "0.0.2",
@@ -937,7 +950,7 @@
     },
     "packages/routines-tools": {
       "name": "@corbits/routines-tools",
-      "version": "0.0.2",
+      "version": "0.0.5",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -952,6 +965,7 @@
       "name": "@corbits/run-key-history",
       "version": "0.0.1",
       "dependencies": {
+        "@intx/db": "workspace:*",
         "@intx/log": "workspace:*",
         "drizzle-orm": "catalog:",
         "postgres": "catalog:",
@@ -1038,7 +1052,7 @@
     },
     "packages/skills-tools": {
       "name": "@corbits/skills-tools",
-      "version": "0.0.3",
+      "version": "0.0.5",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1395,6 +1409,10 @@
       "devDependencies": {
         "@intx/mime": "workspace:*",
       },
+    },
+    "vendor/intx/inference-catalog": {
+      "name": "@intx/inference-catalog",
+      "version": "0.2.2",
     },
     "vendor/intx/log": {
       "name": "@intx/log",
@@ -1878,6 +1896,8 @@
 
     "@corbits/process-granola-call-workflow": ["@corbits/process-granola-call-workflow@workspace:workflows/process-granola-call"],
 
+    "@corbits/provider-pricing": ["@corbits/provider-pricing@workspace:packages/provider-pricing"],
+
     "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#0627774", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@radix-ui/react-tooltip": "^1.2.8", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-0627774", "sha512-OHaNP6/tS4EtOXo+jcK3d7ke9tjMeZpnqzRI5CwP68LholuZreZgXRaaaQ3/uTyprvB4ZAzdA+eDHDBMmh8vTw=="],
 
     "@corbits/recurring-task-workflow": ["@corbits/recurring-task-workflow@workspace:workflows/recurring-task"],
@@ -2045,6 +2065,8 @@
     "@intx/hub-sessions": ["@intx/hub-sessions@workspace:vendor/intx/hub-sessions"],
 
     "@intx/inference": ["@intx/inference@workspace:vendor/intx/inference"],
+
+    "@intx/inference-catalog": ["@intx/inference-catalog@workspace:vendor/intx/inference-catalog"],
 
     "@intx/log": ["@intx/log@workspace:vendor/intx/log"],
 

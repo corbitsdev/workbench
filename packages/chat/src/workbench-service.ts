@@ -50,7 +50,8 @@ import type { ChatStore } from "./store";
 const contextLog = getLogger(["chat", "context"]);
 const provisionLog = getLogger(["chat", "provision-space"]);
 const removeLog = getLogger(["chat", "remove-participant"]);
-const greetingLog = getLogger(["chat", "greeting-kickoff"]);
+const greetingLog = getLogger(["chat", "canned-greeting"]);
+const fanoutLog = getLogger(["chat", "message-fanout"]);
 
 export type ProvisionSpaceWorkbenchDeps = {
   readonly tenancy: Pick<
@@ -191,6 +192,14 @@ export type LaunchAndJoinAgentResult = {
   readonly definitionId: string;
   readonly handle: string;
   readonly settings: Record<string, unknown>;
+  /**
+   * Settles when the timeline's `workbench.agent-joined` event has been
+   * delivered (or its failure logged — it never rejects). The send may
+   * be the workbench host's first traffic, which deploys the host, so
+   * it must never block the join itself; a caller that posts follow-up
+   * mail (the canned greeting) chains on this to keep timeline order.
+   */
+  readonly joinEventDelivered: Promise<void>;
 };
 
 /**
@@ -259,12 +268,26 @@ export async function launchAndJoinAgent(
       invitedBy: input.principalId,
     },
   };
-  await deps.platform.sendMail({
-    tenantId: input.tenantId,
-    workbenchId: input.workbenchId,
-    principalId: input.principalId,
-    content: encodeParts([joinEvent]),
-  });
+  // Not awaited: the participant record above is the durable source of
+  // truth, and this send may be the host's first traffic — the wake it
+  // triggers deploys the host, which must never put deploy time back
+  // on the caller's path. A delivery failure is logged, never thrown.
+  const joinEventDelivered = deps.platform
+    .sendMail({
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      principalId: input.principalId,
+      content: encodeParts([joinEvent]),
+    })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      greetingLog.error(
+        "Join event delivery failed for workbench {workbenchId}'s agent " +
+          "{address}; the participant record is durable, only the " +
+          "timeline's joined line is missing",
+        { workbenchId: input.workbenchId, address: launched.address, err },
+      );
+    });
 
   deps.publish(input.workbenchId, {
     type: "chat.settings",
@@ -276,163 +299,110 @@ export async function launchAndJoinAgent(
     definitionId: input.definitionId,
     handle: desiredHandle,
     settings: row.settings,
+    joinEventDelivered,
   };
 }
 
-export type DispatchGreetingKickoffDeps = {
+export type PostCannedGreetingDeps = {
   readonly platform: Pick<WorkbenchMail, "sendMail">;
 };
 
-export type GreetingKickoffBriefInput = {
+export type CannedGreetingInput = {
+  /** The chat's own workbench id — the seed that picks which greeting
+   * variation this chat gets, so the same chat always renders the same
+   * opener. */
+  readonly workbenchId: string;
+  /** The agent's display name ("Myra"), never its mention handle. */
+  readonly agentName: string;
   /** The opener's display name, when the host can resolve one. */
   readonly senderName?: string;
-  /** The workbench's title, when it has one beyond its id. */
-  readonly workbenchName?: string;
-  /** The opening date as dd/mm/yyyy, so the agent knows what day it is. */
-  readonly openedOn?: string;
-  /** True for a direct 1:1 chat minted against a single agent
-   * definition. A DM's row is titled with the AGENT's own name, never
-   * one the person chose for the room, so the brief drops the
-   * workbench-name clause entirely and greets as a direct conversation
-   * rather than a shared workbench. */
-  readonly isDirectChat?: boolean;
 };
 
-export function kickoffDate(now: Date): string {
-  const dd = String(now.getDate()).padStart(2, "0");
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}/${now.getFullYear()}`;
-}
-
-export type DispatchGreetingKickoffInput = GreetingKickoffBriefInput & {
+export type PostCannedGreetingInput = CannedGreetingInput & {
   readonly tenantId: string;
-  readonly principalId: string;
-  readonly workbenchId: string;
   readonly agentAddress: string;
 };
 
-/** Placeholder titles a workbench gets by default, not a brief the
- * opener chose to type — "Session A", "test", "Untitled" and the like
- * describe the box, not the ask, so the kickoff brief omits them
- * entirely rather than letting the model read them as the task. */
-const GENERIC_WORKBENCH_NAME = /^(new workbench|untitled|session|room|test)\b/i;
-
-/** `generateId`'s own shape (see `@intx/hub-common`'s `ids.ts`): a short
- * lowercase prefix, an underscore, then a hex or opaque token — never a
- * name a person typed. A mint that falls through to an id (or otherwise
- * un-titled row) must never let that id read as a chosen title in the
- * greeting. */
-const ID_SHAPED_WORKBENCH_NAME = /^[a-z]+_[a-z0-9]{6,}$/i;
-
 /**
- * The kickoff mail's text: the facts the agent needs to say a grounded
- * hello (who opened the workbench, what it is called) plus how to say
- * it. It is delivered to the agent's own mailbox and never rendered on
- * the timeline, so it reads as a brief, not as a human message. Keeping
- * the greeting dynamic (the model writes it from these facts) rather
- * than a canned script is what lets it name the person and the
- * workbench, and lead with a first step when the name hints at one.
- *
- * A workbench's title is a label the opener picked for the room, never
- * a task description — a chat named "Copywriter test" is not a request
- * for copywriting. Generic/placeholder titles are dropped from the
- * brief entirely; distinctive ones are still passed along, but framed
- * explicitly as a label to nod to at most once, never as the thing
- * being asked of the agent.
- *
- * A direct 1:1 chat (`isDirectChat`) skips the workbench-name clause
- * entirely, no matter what `workbenchName` carries: a DM's row is
- * titled with the invited AGENT's own name (there is no room name a
- * person chose), so naming it back to the agent reads as the agent
- * greeting itself under its own name — the bug this branch exists to
- * prevent. The brief instead frames it as a direct conversation.
+ * The opener variations. Canned rather than model-written so the
+ * greeting is on the timeline the moment the agent joins — a fresh
+ * chat used to stay silent through a whole kickoff inference turn, and
+ * a person who typed into that silence wrong-footed the conversation.
+ * Each takes the leading address (" Alice" or "") and the agent's
+ * display name; none may mention the workbench's title (a label the
+ * opener picked, never a request) or capabilities-as-a-menu.
  */
-export function greetingKickoffBrief(input: GreetingKickoffBriefInput): string {
+const GREETING_VARIATIONS: readonly ((who: string, agent: string) => string)[] =
+  [
+    (who, agent) =>
+      `Hey${who} — good to have a space to work in together. I'm ${agent}, ` +
+      "your teammate here; I can write, plan, pull pieces together, and " +
+      "line up the specialists and automations when we need them. What " +
+      "are you working on?",
+    (who, agent) =>
+      `Hi${who}, I'm ${agent} — your teammate here. Drafting, planning, ` +
+      "research, lining up automations: all fair game. What should we " +
+      "dig into first?",
+    (who, agent) =>
+      `Welcome in${who}. I'm ${agent}; think of me as the teammate who ` +
+      "writes, plans, and pulls in the right specialists when a job " +
+      "calls for them. What's on your plate?",
+    (who, agent) =>
+      `Hey${who} — ${agent} here. This space is ours to work in: I can ` +
+      "draft, plan, and wire things up as we go. What are you working on?",
+  ];
+
+function greetingVariationIndex(workbenchId: string): number {
+  let sum = 0;
+  for (const character of workbenchId) {
+    sum = (sum + (character.codePointAt(0) ?? 0)) % GREETING_VARIATIONS.length;
+  }
+  return sum;
+}
+
+export function cannedGreeting(input: CannedGreetingInput): string {
   const who =
     input.senderName !== undefined && input.senderName !== ""
-      ? input.senderName
-      : "someone";
-  const dated =
-    input.openedOn !== undefined && input.openedOn !== ""
-      ? `Today's date is ${input.openedOn} (dd/mm/yyyy). `
+      ? ` ${input.senderName}`
       : "";
-  if (input.isDirectChat === true) {
-    return (
-      `You're in a direct chat with ${who}. ` +
-      `${dated}` +
-      "Greet them briefly as yourself, first person, by name if you " +
-      "have one. No menu of options and no talk of memory, lookups, " +
-      "or what you could not find. Ask what they need."
-    );
-  }
-  const hasDistinctiveName =
-    input.workbenchName !== undefined &&
-    input.workbenchName !== "" &&
-    !GENERIC_WORKBENCH_NAME.test(input.workbenchName) &&
-    !ID_SHAPED_WORKBENCH_NAME.test(input.workbenchName);
-  const named = hasDistinctiveName ? ` titled "${input.workbenchName}"` : "";
-  const labelNote = hasDistinctiveName
-    ? `The workbench is titled "${input.workbenchName}" — that is a label ` +
-      "the person chose, not a request; you may nod to it at most once, " +
-      "never treat it as their brief or answer it as a question. "
-    : "";
-  return (
-    `${who} just opened a new workbench${named} with you in it. ` +
-    `${dated}` +
-    `${labelNote}` +
-    "Say hello as a teammate would: two or three sentences, first " +
-    "person, address them by name if you have one. No menu of " +
-    "options and no talk of memory, lookups, or what you could not " +
-    "find. Ask what they are working on."
-  );
+  const variation =
+    GREETING_VARIATIONS[greetingVariationIndex(input.workbenchId)];
+  if (variation === undefined) throw new Error("no greeting variations");
+  return variation(who, input.agentName);
 }
 
 /**
- * Fires a newly-minted chat's one agent's very first turn the moment
- * it joins, so a fresh room is never silent until a human speaks
- * first. Sends a kickoff mail straight to the agent's own mailbox —
- * never the chat's own workbench id — the exact opening-mail pattern
- * `startWorkflowCommand` already uses; only mail sent to the chat's
- * own workbench id is ever rendered onto its timeline, so this
- * structurally cannot appear as a human bubble. The visible greeting
- * text itself comes entirely from the agent's own system prompt (the
- * assistant workflow and task-planner drafting both already carry a
- * greet-first instruction) — this call only supplies the trigger.
+ * Posts a newly-minted chat's opening greeting onto its timeline under
+ * the joining agent's own name, so a fresh room is never silent until
+ * a human speaks first. The text is canned (see `GREETING_VARIATIONS`)
+ * and sent to the chat's own workbench id with the agent's run as
+ * `fromWorkbenchId` — exactly how the orchestrator's `postReply`
+ * attributes an agent's real replies — so no inference turn runs and
+ * the greeting lands the moment the agent joins. The agent's own
+ * system prompt tells it a canned opener was already posted under its
+ * name, so its first real turn answers the person instead of greeting
+ * again.
  *
  * Errors are logged, never thrown: the caller fires this after the
  * chat has already been minted successfully, and a greeting that
- * fails to dispatch must never fail — or roll back — the mint itself.
+ * fails to post must never fail — or roll back — the mint itself.
  */
-export async function dispatchGreetingKickoff(
-  deps: DispatchGreetingKickoffDeps,
-  input: DispatchGreetingKickoffInput,
+export async function postCannedGreeting(
+  deps: PostCannedGreetingDeps,
+  input: PostCannedGreetingInput,
 ): Promise<void> {
   try {
     await deps.platform.sendMail({
       tenantId: input.tenantId,
-      workbenchId: localPartOf(input.agentAddress),
-      principalId: input.principalId,
-      content: encodeParts([
-        {
-          kind: "text",
-          text: greetingKickoffBrief({
-            ...(input.senderName !== undefined
-              ? { senderName: input.senderName }
-              : {}),
-            ...(input.workbenchName !== undefined
-              ? { workbenchName: input.workbenchName }
-              : {}),
-            openedOn: kickoffDate(new Date()),
-          }),
-        },
-      ]),
-      fromWorkbenchId: input.workbenchId,
+      workbenchId: input.workbenchId,
+      content: encodeParts([{ kind: "text", text: cannedGreeting(input) }]),
+      fromWorkbenchId: localPartOf(input.agentAddress),
     });
   } catch (err) {
     greetingLog.error(
-      "Greeting kickoff dispatch failed for workbench {workbenchId}'s agent " +
-        "{agentAddress}; the chat was minted successfully but its agent " +
-        "will only speak once a human sends the first message",
+      "Canned greeting post failed for workbench {workbenchId}'s agent " +
+        "{agentAddress}; the chat was minted successfully but stays " +
+        "silent until a human sends the first message",
       { workbenchId: input.workbenchId, agentAddress: input.agentAddress, err },
     );
   }
@@ -467,6 +437,8 @@ export type JoinHumanParticipantResult = {
   readonly address: string;
   readonly handle: string;
   readonly settings: Record<string, unknown>;
+  /** See `LaunchAndJoinAgentResult`'s field of the same name. */
+  readonly joinEventDelivered: Promise<void>;
 };
 
 /**
@@ -507,12 +479,29 @@ export async function joinHumanParticipant(
       invitedBy: input.principalId,
     },
   };
-  await deps.platform.sendMail({
-    tenantId: input.tenantId,
-    workbenchId: input.workbenchId,
-    principalId: input.principalId,
-    content: encodeParts([joinEvent]),
-  });
+  // Not awaited, for the same reason `launchAndJoinAgent`'s own join
+  // event isn't: the participant record above is the durable source of
+  // truth, and this send can carry the host's deploy.
+  const joinEventDelivered = deps.platform
+    .sendMail({
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      principalId: input.principalId,
+      content: encodeParts([joinEvent]),
+    })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      greetingLog.error(
+        "Member-joined event delivery failed for workbench {workbenchId}'s " +
+          "member {memberPrincipalId}; the participant record is durable, " +
+          "only the timeline's joined line is missing",
+        {
+          workbenchId: input.workbenchId,
+          memberPrincipalId: input.memberPrincipalId,
+          err,
+        },
+      );
+    });
 
   deps.publish(input.workbenchId, {
     type: "chat.settings",
@@ -523,6 +512,7 @@ export async function joinHumanParticipant(
     address: input.memberPrincipalId,
     handle: input.memberHandle,
     settings: row.settings,
+    joinEventDelivered,
   };
 }
 
@@ -925,6 +915,15 @@ export type SendWorkbenchMessageInput = {
 export type SendWorkbenchMessageResult = {
   readonly id: string;
   readonly createdAt: string;
+  /**
+   * Settles when every recipient this message routes to has been
+   * delivered (or its failure surfaced as a notice on the timeline —
+   * it never rejects). A delivery can wake a slept agent, which is a
+   * full redeploy, so the sender's own message is persisted and
+   * returned without waiting on any of it; a caller that needs the
+   * fan-out settled (a test, or a synchronous relay) awaits this.
+   */
+  readonly fanoutDelivered: Promise<void>;
 };
 
 /**
@@ -979,6 +978,47 @@ export async function sendWorkbenchMessage(
     content: encodeParts(input.messageParts),
   });
 
+  return { ...sent, fanoutDelivered: fanOutMessage(deps, input, sent.id) };
+}
+
+/**
+ * Everything the sender's own message does NOT have to wait for:
+ * resolving recipients, loading the re-situating context a mentioned
+ * agent needs, and delivering one copy per recipient. Every delivery
+ * goes through `sendMail`, which wakes an unroutable target first — a
+ * full redeploy of a slept agent — so keeping this off the request
+ * path is what stops a quiet workbench's first message from paying
+ * deploy time before the sender's own bubble confirms.
+ *
+ * Never rejects. A recipient that stays unreachable through
+ * `sendMail`'s own reclaim retries gets an honest notice on the
+ * timeline in that agent's own voice, matching how the orchestrator
+ * already reports a turn that produced nothing (see
+ * `chat-orchestrator.ts`'s silent-turn notice) — a sender must never
+ * be left believing an agent received something it never did.
+ */
+async function fanOutMessage(
+  deps: SendWorkbenchMessageDeps,
+  input: SendWorkbenchMessageInput,
+  sentMailId: string,
+): Promise<void> {
+  try {
+    await deliverFanout(deps, input, sentMailId);
+  } catch (err) {
+    fanoutLog.error(
+      "Fan-out failed for workbench {workbenchId}'s message {messageId}; " +
+        "the sender's own message is durable, but its recipients may not " +
+        "have received it",
+      { workbenchId: input.workbenchId, messageId: sentMailId, err },
+    );
+  }
+}
+
+async function deliverFanout(
+  deps: SendWorkbenchMessageDeps,
+  input: SendWorkbenchMessageInput,
+  sentMailId: string,
+): Promise<void> {
   const settingsRow = await deps.store.getWorkbenchSettings(
     input.tenantId,
     input.workbenchId,
@@ -1017,7 +1057,7 @@ export async function sendWorkbenchMessage(
           platform: deps.platform,
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
-          excludeMailId: sent.id,
+          excludeMailId: sentMailId,
           participants,
           contextWindow: resolveContextWindow(
             settingsRow?.settings ?? {},
@@ -1033,19 +1073,77 @@ export async function sendWorkbenchMessage(
       ? (mergeContextIntoParts(contextText, input.messageParts) as PartType[])
       : input.messageParts;
 
-  for (const participant of recipients) {
-    // The chat orchestrator (built once by the host, subscribed to the
-    // sidecar's own event stream) is what turns this participant's
-    // eventual `connector.reply` back into a workbench message — no
-    // per-delivery arming needed here anymore.
-    await deps.platform.sendMail({
-      tenantId: input.tenantId,
-      workbenchId: localPartOf(participant),
-      principalId: input.principalId,
-      content: encodeParts(fanoutParts, { replyTo: input.workbenchId }),
-      fromWorkbenchId: input.workbenchId,
-    });
-  }
+  // Concurrent: recipients are independent mailboxes, and a delivery
+  // that has to wake its target pays a full redeploy — serially, one
+  // slept agent would delay every agent mentioned after it.
+  await Promise.all(
+    recipients.map(async (participant) => {
+      try {
+        // The chat orchestrator (built once by the host, subscribed to
+        // the sidecar's own event stream) is what turns this
+        // participant's eventual `connector.reply` back into a workbench
+        // message — no per-delivery arming needed here anymore.
+        await deps.platform.sendMail({
+          tenantId: input.tenantId,
+          workbenchId: localPartOf(participant),
+          principalId: input.principalId,
+          content: encodeParts(fanoutParts, { replyTo: input.workbenchId }),
+          fromWorkbenchId: input.workbenchId,
+        });
+      } catch (err) {
+        fanoutLog.error(
+          "Delivery to {participant} failed for workbench {workbenchId}'s " +
+            "message {messageId}; posting an undelivered notice in its voice",
+          {
+            participant,
+            workbenchId: input.workbenchId,
+            messageId: sentMailId,
+            err,
+          },
+        );
+        await postUndeliveredNotice(deps.platform, {
+          tenantId: input.tenantId,
+          workbenchId: input.workbenchId,
+          agentAddress: participant,
+        });
+      }
+    }),
+  );
+}
 
-  return sent;
+/**
+ * Reports one undeliverable fan-out copy on the timeline, in the
+ * agent's own voice and from its own address — the same attribution
+ * its real replies carry — so an unreachable teammate reads as a
+ * teammate who missed the message rather than as silence. Swallows its
+ * own failure: if the timeline itself is unreachable there is nowhere
+ * left to say so, and the error is already logged by the caller.
+ */
+async function postUndeliveredNotice(
+  deps: Pick<SendWorkbenchMessageDeps["platform"], "sendMail">,
+  input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly agentAddress: string;
+  },
+): Promise<void> {
+  try {
+    await deps.sendMail({
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      content: encodeParts([
+        {
+          kind: "text",
+          text: "I didn't get that one — send it again and I'll pick it up.",
+        },
+      ]),
+      fromWorkbenchId: localPartOf(input.agentAddress),
+    });
+  } catch (err) {
+    fanoutLog.error(
+      "Could not post the undelivered notice for {agentAddress} onto " +
+        "workbench {workbenchId}'s timeline",
+      { agentAddress: input.agentAddress, workbenchId: input.workbenchId, err },
+    );
+  }
 }
