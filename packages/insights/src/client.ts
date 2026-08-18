@@ -29,10 +29,27 @@ export type OverallUsage = {
   readonly byModel: readonly ModelUsage[];
 };
 
+export type ModelDayUsage = {
+  readonly model: string;
+  readonly tokens: number;
+  readonly costUsd: number | null;
+};
+
 export type DayActivity = {
   readonly day: string;
   readonly turns: number;
   readonly tokens: number;
+  readonly byModel: readonly ModelDayUsage[];
+};
+
+/** One workbench's usage totals, ranked for the global landing's
+ * activity-by-workbench chart. */
+export type WorkbenchUsage = {
+  readonly tenantId: string;
+  readonly name: string;
+  readonly turns: number;
+  readonly tokens: TokenTotals;
+  readonly costUsd: number | null;
 };
 
 /** Stable ISO from/to shared by usage, activity, and tools path builders. */
@@ -106,9 +123,35 @@ export function activitySeriesForWindow(
   for (let offset = windowDays - 1; offset >= 0; offset -= 1) {
     const key = new Date(endUTC - offset * dayMs).toISOString().slice(0, 10);
     const hit = byDay.get(key);
-    out.push(hit ?? { day: key, turns: 0, tokens: 0 });
+    out.push(hit ?? { day: key, turns: 0, tokens: 0, byModel: [] });
   }
   return out;
+}
+
+/**
+ * Top N models by total cost across `days` (ties broken by tokens), for the
+ * global landing's tokens/cost-over-time chart — same "≤5 series, sum the
+ * rest" rule `TimeSeriesChart` itself documents, applied before the data
+ * reaches it rather than inside it.
+ */
+export function topModelsByCost(
+  days: readonly DayActivity[],
+  limit = 5,
+): readonly string[] {
+  const totals = new Map<string, { cost: number; tokens: number }>();
+  for (const day of days) {
+    for (const entry of day.byModel) {
+      const current = totals.get(entry.model) ?? { cost: 0, tokens: 0 };
+      totals.set(entry.model, {
+        cost: current.cost + (entry.costUsd ?? 0),
+        tokens: current.tokens + entry.tokens,
+      });
+    }
+  }
+  return [...totals.entries()]
+    .sort(([, a], [, b]) => b.cost - a.cost || b.tokens - a.tokens)
+    .slice(0, limit)
+    .map(([model]) => model);
 }
 
 /**

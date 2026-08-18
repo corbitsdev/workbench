@@ -12,7 +12,7 @@
 // membership in.
 import { Hono } from "hono";
 import { type } from "arktype";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 import { getDescendantTenants, schema, type DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -21,6 +21,7 @@ import {
   activityByDay,
   emptyToolCallReader,
   summarizeUsage,
+  summarizeUsageByTenant,
   type RunTraceReader,
   type ToolCallReader,
 } from "./queries";
@@ -87,6 +88,54 @@ async function resolveScope(
 }
 
 /**
+ * Shared `?from=&to=` parsing for every range-scoped route below (`/usage`,
+ * `/activity`, `/tools`, `/workbenches`) — one bad-request shape instead of
+ * four near-identical copies drifting apart.
+ */
+function parseRangeQuery(
+  query: Record<string, string>,
+): { from?: Date; to?: Date } | Response {
+  const raw = RangeQuery(query);
+  if (raw instanceof type.errors) {
+    return Response.json(
+      ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+      { status: 400 },
+    );
+  }
+  const range = parseRange(raw);
+  if (range instanceof type.errors) {
+    return Response.json(
+      ErrorEnvelope("bad_request", "invalid from/to timestamp"),
+      { status: 400 },
+    );
+  }
+  return range;
+}
+
+/**
+ * Display names for a tenant scope. Never falls back to querying the DB
+ * with an empty `id` list, and never invents a name — a scope id with no
+ * matching tenant row (deleted between the descendant walk and this
+ * lookup) just falls back to its own id, same as `/scope`'s own
+ * best-effort labeling does for a parent row that vanished mid-request.
+ */
+async function tenantNames(
+  db: DB["db"] | undefined,
+  tenantId: string,
+  tenantName: string,
+  scope: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  if (db === undefined || scope.length === 0) {
+    return new Map([[tenantId, tenantName]]);
+  }
+  const rows = await db.query.tenant.findMany({
+    where: inArray(schema.tenant.id, scope as string[]),
+    columns: { id: true, name: true },
+  });
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+/**
  * The set of tenant ids the calling user holds an active principal in —
  * the same `principal.kind === "user" && principal.refId === user.id`
  * lookup `/api/me/principals` (vendor's `routes/me.ts`) uses to derive a
@@ -116,20 +165,8 @@ export function createInsightsRoutes(
   const tools = deps.toolCallReader ?? emptyToolCallReader();
 
   app.get("/usage", deps.requireGrant("insights:*", "read"), async (c) => {
-    const raw = RangeQuery(c.req.query());
-    if (raw instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
-        400,
-      );
-    }
-    const range = parseRange(raw);
-    if (range instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
-        400,
-      );
-    }
+    const range = parseRangeQuery(c.req.query());
+    if (range instanceof Response) return range;
     const tenant = c.get("tenant");
     const scope = await resolveScope(deps.db, tenant.id);
     const summary = await summarizeUsage(deps.store, scope, range);
@@ -137,20 +174,8 @@ export function createInsightsRoutes(
   });
 
   app.get("/activity", deps.requireGrant("insights:*", "read"), async (c) => {
-    const raw = RangeQuery(c.req.query());
-    if (raw instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
-        400,
-      );
-    }
-    const range = parseRange(raw);
-    if (range instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
-        400,
-      );
-    }
+    const range = parseRangeQuery(c.req.query());
+    if (range instanceof Response) return range;
     const tenant = c.get("tenant");
     const scope = await resolveScope(deps.db, tenant.id);
     const days = await activityByDay(deps.store, scope, range);
@@ -158,25 +183,46 @@ export function createInsightsRoutes(
   });
 
   app.get("/tools", deps.requireGrant("insights:*", "read"), async (c) => {
-    const raw = RangeQuery(c.req.query());
-    if (raw instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
-        400,
-      );
-    }
-    const range = parseRange(raw);
-    if (range instanceof type.errors) {
-      return c.json(
-        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
-        400,
-      );
-    }
+    const range = parseRangeQuery(c.req.query());
+    if (range instanceof Response) return range;
     const tenant = c.get("tenant");
     const scope = await resolveScope(deps.db, tenant.id);
     const toolsSummary = await tools.summarize(scope, range);
     return c.json({ tools: toolsSummary });
   });
+
+  /**
+   * The global Insights landing's "activity by workbench" chart: the same
+   * usage rollup `/usage` already computes for the whole scope, split back
+   * out per tenant and named — so the landing can rank workbenches and
+   * link each bar to `/insights/workbench/:tenantId` instead of only
+   * seeing the scope's sum. Calling it for a leaf workbench (no
+   * descendants) returns that one workbench's own row.
+   */
+  app.get(
+    "/workbenches",
+    deps.requireGrant("insights:*", "read"),
+    async (c) => {
+      const range = parseRangeQuery(c.req.query());
+      if (range instanceof Response) return range;
+      const tenant = c.get("tenant");
+      const scope = await resolveScope(deps.db, tenant.id);
+      const [rows, names] = await Promise.all([
+        summarizeUsageByTenant(deps.store, scope, range),
+        tenantNames(deps.db, tenant.id, tenant.name, scope),
+      ]);
+      const items = rows
+        .map((row) => ({
+          tenantId: row.tenantId,
+          name: names.get(row.tenantId) ?? row.tenantId,
+          turns: row.turns,
+          tokens: row.tokens,
+          costUsd: row.costUsd,
+        }))
+        .sort((a, b) => b.turns - a.turns);
+      return c.json({ items });
+    },
+  );
 
   app.get("/scope", deps.requireGrant("insights:*", "read"), async (c) => {
     const tenant = c.get("tenant");

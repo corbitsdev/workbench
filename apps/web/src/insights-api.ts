@@ -48,16 +48,49 @@ export const OverallUsageSchema = type({
   byModel: ModelUsageSchema.array(),
 });
 
+export const ModelDayUsageSchema = type({
+  model: "string",
+  tokens: "number",
+  costUsd: "number | null",
+});
+
 export const DayActivitySchema = type({
   day: "string",
   turns: "number",
   tokens: "number",
+  byModel: ModelDayUsageSchema.array(),
 });
 
 /** GET /activity envelope. */
 export const ActivityResponseSchema = type({
   days: DayActivitySchema.array(),
 });
+
+/** One workbench's usage totals — GET /workbenches item. */
+export const WorkbenchUsageSchema = type({
+  tenantId: "string",
+  name: "string",
+  turns: "number",
+  tokens: TokenTotalsSchema,
+  costUsd: "number | null",
+});
+
+/** GET /workbenches envelope. */
+export const WorkbenchesResponseSchema = type({
+  items: WorkbenchUsageSchema.array(),
+});
+
+export type WorkbenchUsage = typeof WorkbenchUsageSchema.infer;
+
+export function insightsWorkbenchesPath(
+  tenantId: string,
+  range: InsightsRange,
+): string {
+  return withInsightsRange(
+    `/api/tenants/${tenantId}/insights/workbenches`,
+    range,
+  );
+}
 
 export const ToolCallSchema = type({
   tool: "string",

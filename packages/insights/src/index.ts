@@ -36,7 +36,9 @@ export {
   emptyOverallUsageSummary,
   emptyToolCallReader,
   summarizeUsage,
+  summarizeUsageByTenant,
   type DayActivity,
+  type ModelDayUsage,
   type ModelUsageSummary,
   type OverallUsageSummary,
   type RunTrace,
@@ -45,6 +47,7 @@ export {
   type TokenTotals,
   type ToolCallReader,
   type ToolCallSummary,
+  type WorkbenchUsage,
 } from "./queries";
 export { createInsightsRoutes, type CreateInsightsRoutesDeps } from "./routes";
 export { createDrizzleRunTraceReader } from "./trace-reader";

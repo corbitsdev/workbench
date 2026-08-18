@@ -1,6 +1,11 @@
 import type { AuditAuthz } from "@intx/types/audit";
 
-import { computeCost, totalTokens, type TokenClasses } from "./pricing";
+import {
+  computeCost,
+  totalTokens,
+  type TokenClasses,
+  type TokenRates,
+} from "./pricing";
 import type { UsageStore, UsageTurnRecord } from "./store";
 
 export type TokenTotals = {
@@ -30,11 +35,31 @@ export type OverallUsageSummary = {
   readonly byModel: readonly ModelUsageSummary[];
 };
 
+/** One model's tokens/cost within a single day bucket. */
+export type ModelDayUsage = {
+  readonly model: string;
+  readonly tokens: number;
+  /** USD cost for this model on this day, or null when its rate is unknown. */
+  readonly costUsd: number | null;
+};
+
 export type DayActivity = {
   /** ISO date (YYYY-MM-DD) in UTC. */
   readonly day: string;
   readonly turns: number;
   readonly tokens: number;
+  /** Same day's tokens/cost split by model — the global landing's
+   * tokens/cost-over-time chart stacks on this rather than re-querying. */
+  readonly byModel: readonly ModelDayUsage[];
+};
+
+/** One workbench's usage totals — the global landing's per-workbench
+ * activity chart. */
+export type WorkbenchUsage = {
+  readonly tenantId: string;
+  readonly turns: number;
+  readonly tokens: TokenTotals;
+  readonly costUsd: number | null;
 };
 
 function emptyTokens(): TokenClasses {
@@ -65,25 +90,25 @@ export function emptyOverallUsageSummary(): OverallUsageSummary {
   };
 }
 
-/**
- * Aggregate usage by model and overall for a tenant scope. `tenantIds`
- * is one tenant for a single-workbench view, or a workspace parent plus
- * its child workbenches for the cross-workbench rollup — the sum happens
- * here, at the DB-query layer, not by the caller fetching per tenant and
- * adding client-side. Empty sink → zeros (see emptyOverallUsageSummary).
- * Cost is null when any contributing class lacks a rate — never a
- * fabricated cost for unknown rates.
- */
-export async function summarizeUsage(
-  store: UsageStore,
-  tenantIds: readonly string[],
-  opts?: { from?: Date; to?: Date },
-): Promise<OverallUsageSummary> {
-  const rows = await store.listUsageByTenants(tenantIds, opts);
+function modelCost(
+  tokens: TokenClasses,
+  rates: TokenRates | undefined,
+): number | null {
+  if (rates === undefined) return totalTokens(tokens) === 0 ? 0 : null;
+  return computeCost(tokens, rates).totalUsd;
+}
+
+/** Fold a row set already scoped to the caller's tenant(s) into an overall
+ * summary — the shared core `summarizeUsage` and `summarizeUsageByTenant`
+ * both reduce to, so per-tenant and cross-tenant totals can never drift
+ * apart in how a rate is applied or a null cost is decided. */
+function summarizeRows(
+  rows: readonly UsageTurnRecord[],
+  priceByModel: ReadonlyMap<string, TokenRates>,
+): OverallUsageSummary {
   if (rows.length === 0) return emptyOverallUsageSummary();
 
   const byModel = new Map<string, { turns: number; tokens: TokenClasses }>();
-
   for (const row of rows) {
     const current = byModel.get(row.model) ?? {
       turns: 0,
@@ -95,9 +120,6 @@ export async function summarizeUsage(
     });
   }
 
-  const prices = await store.listPrices();
-  const priceByModel = new Map(prices.map((p) => [p.model, p.rates]));
-
   const modelSummaries: ModelUsageSummary[] = [];
   let overallTokens = emptyTokens();
   let overallTurns = 0;
@@ -106,13 +128,7 @@ export async function summarizeUsage(
   for (const [model, agg] of [...byModel.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    const rates = priceByModel.get(model);
-    const cost =
-      rates === undefined
-        ? totalTokens(agg.tokens) === 0
-          ? 0
-          : null
-        : computeCost(agg.tokens, rates).totalUsd;
+    const cost = modelCost(agg.tokens, priceByModel.get(model));
 
     modelSummaries.push({
       model,
@@ -137,6 +153,67 @@ export async function summarizeUsage(
   };
 }
 
+async function loadPriceByModel(
+  store: UsageStore,
+): Promise<ReadonlyMap<string, TokenRates>> {
+  const prices = await store.listPrices();
+  return new Map(prices.map((p) => [p.model, p.rates]));
+}
+
+/**
+ * Aggregate usage by model and overall for a tenant scope. `tenantIds`
+ * is one tenant for a single-workbench view, or a workspace parent plus
+ * its child workbenches for the cross-workbench rollup — the sum happens
+ * here, at the DB-query layer, not by the caller fetching per tenant and
+ * adding client-side. Empty sink → zeros (see emptyOverallUsageSummary).
+ * Cost is null when any contributing class lacks a rate — never a
+ * fabricated cost for unknown rates.
+ */
+export async function summarizeUsage(
+  store: UsageStore,
+  tenantIds: readonly string[],
+  opts?: { from?: Date; to?: Date },
+): Promise<OverallUsageSummary> {
+  const rows = await store.listUsageByTenants(tenantIds, opts);
+  if (rows.length === 0) return emptyOverallUsageSummary();
+  const priceByModel = await loadPriceByModel(store);
+  return summarizeRows(rows, priceByModel);
+}
+
+/**
+ * Same rollup as `summarizeUsage`, but split back out per tenant — the
+ * global Insights landing's "activity by workbench" chart, so it can rank
+ * and link to individual workbenches instead of only seeing their sum.
+ * Every id in `tenantIds` gets an entry, zeroed when that tenant recorded
+ * no usage in range, so a quiet workbench still shows up as a zero bar
+ * rather than silently disappearing from the ranking.
+ */
+export async function summarizeUsageByTenant(
+  store: UsageStore,
+  tenantIds: readonly string[],
+  opts?: { from?: Date; to?: Date },
+): Promise<readonly WorkbenchUsage[]> {
+  const rows = await store.listUsageByTenants(tenantIds, opts);
+  const priceByModel = await loadPriceByModel(store);
+
+  const byTenant = new Map<string, UsageTurnRecord[]>();
+  for (const row of rows) {
+    const bucket = byTenant.get(row.tenantId);
+    if (bucket === undefined) byTenant.set(row.tenantId, [row]);
+    else bucket.push(row);
+  }
+
+  return tenantIds.map((tenantId) => {
+    const summary = summarizeRows(byTenant.get(tenantId) ?? [], priceByModel);
+    return {
+      tenantId,
+      turns: summary.turns,
+      tokens: summary.tokens,
+      costUsd: summary.costUsd,
+    };
+  });
+}
+
 /**
  * Activity histogram by UTC day across a tenant scope (see summarizeUsage
  * for what `tenantIds` means). Token totals are always known for recorded
@@ -148,20 +225,42 @@ export async function activityByDay(
   opts?: { from?: Date; to?: Date },
 ): Promise<readonly DayActivity[]> {
   const rows = await store.listUsageByTenants(tenantIds, opts);
-  const days = new Map<string, { turns: number; tokens: number }>();
+  const priceByModel = await loadPriceByModel(store);
+  const days = new Map<
+    string,
+    { turns: number; tokens: number; byModel: Map<string, TokenClasses> }
+  >();
 
   for (const row of rows) {
     const day = row.recordedAt.toISOString().slice(0, 10);
-    const current = days.get(day) ?? { turns: 0, tokens: 0 };
-    days.set(day, {
-      turns: current.turns + 1,
-      tokens: current.tokens + totalTokens(row.tokens),
-    });
+    const current = days.get(day) ?? {
+      turns: 0,
+      tokens: 0,
+      byModel: new Map<string, TokenClasses>(),
+    };
+    current.turns += 1;
+    current.tokens += totalTokens(row.tokens);
+    current.byModel.set(
+      row.model,
+      addTokens(current.byModel.get(row.model) ?? emptyTokens(), row.tokens),
+    );
+    days.set(day, current);
   }
 
   return [...days.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, agg]) => ({ day, turns: agg.turns, tokens: agg.tokens }));
+    .map(([day, agg]) => ({
+      day,
+      turns: agg.turns,
+      tokens: agg.tokens,
+      byModel: [...agg.byModel.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([model, tokens]) => ({
+          model,
+          tokens: totalTokens(tokens),
+          costUsd: modelCost(tokens, priceByModel.get(model)),
+        })),
+    }));
 }
 
 /**

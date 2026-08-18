@@ -19,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TimeSeriesChart,
   TokenMosaic,
   TraceWaterfall,
   type TraceSpan,
@@ -38,6 +39,7 @@ import {
   INSIGHTS_WINDOW_DAYS,
   modelsWithMissingRates,
   tokensLabel,
+  topModelsByCost,
   type DayActivity,
   type InsightsRange,
   type ModelUsage,
@@ -57,6 +59,7 @@ import {
   TaskResponseSchema,
   ToolsResponseSchema,
   TopLevelRunsSchema,
+  WorkbenchesResponseSchema,
   insightsActivityPath,
   insightsRunTracePath,
   insightsScopePath,
@@ -65,11 +68,13 @@ import {
   insightsToolsPath,
   insightsTopLevelRunsPath,
   insightsUsagePath,
+  insightsWorkbenchesPath,
   type InsightsRun,
   type InsightsScope,
   type RunTrace,
   type TaskLeg,
   type ToolCall,
+  type WorkbenchUsage,
 } from "../insights-api";
 import {
   computeInsightsStats,
@@ -269,6 +274,96 @@ function ActivityBars({ days }: { readonly days: readonly DayActivity[] }) {
   );
 }
 
+/** Workbenches that recorded at least one turn in the window — the global
+ * landing's "active workbenches" KPI. Never counts a workbench that only
+ * exists (a leaf with zero usage) as active. */
+function activeWorkbenchCount(workbenches: readonly WorkbenchUsage[]): number {
+  return workbenches.filter((w) => w.turns > 0).length;
+}
+
+const WORKBENCH_BARS_LIMIT = 8;
+
+/**
+ * Ranked activity-by-workbench list: the tenancy-wide landing's answer to
+ * "which workbenches are actually busy" — each row a mini bar (relative to
+ * the busiest workbench in view) that opens that workbench's own scoped
+ * view, same clickable-row affordance as the rest of this page
+ * (`onRowActivate`) rather than a bespoke chart interaction.
+ */
+function WorkbenchActivityBars({
+  workbenches,
+  onSelectWorkbench,
+}: {
+  readonly workbenches: readonly WorkbenchUsage[];
+  readonly onSelectWorkbench: (tenantId: string) => void;
+}) {
+  const ranked = [...workbenches]
+    .sort((a, b) => b.turns - a.turns)
+    .slice(0, WORKBENCH_BARS_LIMIT);
+  const max = Math.max(1, ...ranked.map((w) => w.turns));
+
+  return (
+    <Table aria-label="Activity by workbench" className="insights-data-table">
+      <TableBody>
+        {ranked.map((workbench) => (
+          <TableRow
+            key={workbench.tenantId}
+            {...onRowActivate(() => onSelectWorkbench(workbench.tenantId))}
+          >
+            <TableCell>
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="truncate text-sm font-semibold">
+                  {workbench.name}
+                </span>
+                <div className="insights-workbench-bar-track">
+                  <div
+                    className="insights-workbench-bar-fill"
+                    style={{ width: `${(workbench.turns / max) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatCount(workbench.turns)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** "Done" folds every settled-without-error outcome (deployed and manually
+ * stopped) together — the landing asks for done vs. failed, not a full
+ * status breakdown (that detail stays on the KPI tiles / run history). */
+function runOutcomeData(stats: {
+  readonly deployed: number;
+  readonly stopped: number;
+  readonly errored: number;
+  readonly running: number;
+}) {
+  return [
+    { label: "Done", value: stats.deployed + stats.stopped },
+    { label: "Failed", value: stats.errored },
+    { label: "Running", value: stats.running },
+  ];
+}
+
+/** Tokens-by-model series for the tokens-over-time chart — token volume
+ * (unlike cost) is always a known number for a recorded turn, so this
+ * stays honest for every model without a null-rate caveat. Capped to the
+ * top models by cost (the models that matter most to the spend story),
+ * same as `TimeSeriesChart`'s own "≤5 series" rule. */
+function tokensOverTimeSeries(days: readonly DayActivity[]) {
+  const models = topModelsByCost(days);
+  return models.map((model) => ({
+    label: model,
+    values: days.map(
+      (day) => day.byModel.find((m) => m.model === model)?.tokens ?? 0,
+    ),
+  }));
+}
+
 function ModelCostTable({
   models,
 }: {
@@ -388,10 +483,12 @@ function InsightsLanding({
   byTool,
   runs,
   routines,
+  workbenches,
   range,
   loading,
   onOpenRun,
   onOpenRuns,
+  onSelectWorkbench,
 }: {
   readonly summary: OverallUsage | null;
   readonly activity: readonly DayActivity[] | null;
@@ -399,11 +496,17 @@ function InsightsLanding({
   readonly byTool: readonly ToolCall[] | null;
   readonly runs: readonly InsightsRun[];
   readonly routines: readonly Routine[];
+  /** Null while `/workbenches` hasn't resolved (or this landing is already
+   * scoped to one workbench, where a breakdown of one has nothing to
+   * show) — the activity-by-workbench chart and active-workbenches KPI
+   * both hide rather than render a fabricated single-row chart. */
+  readonly workbenches: readonly WorkbenchUsage[] | null;
   /** Same 7-day window as usage/activity/tools requests. */
   readonly range: InsightsRange;
   readonly loading: boolean;
   readonly onOpenRun: (id: string) => void;
   readonly onOpenRuns: () => void;
+  readonly onSelectWorkbench: (tenantId: string) => void;
 }) {
   // KPI count + recent list only — history/detail keep full run list.
   const windowedRuns = filterRunsByCreatedAt(runs, range.from, range.to);
@@ -420,6 +523,8 @@ function InsightsLanding({
   const models = byModel !== null && byModel.length > 0 ? byModel : null;
   const tools = byTool !== null && byTool.length > 0 ? byTool : null;
   const recent = purposeRuns.slice(0, 12);
+  const tokensSeries = tokensOverTimeSeries(activityDays);
+  const noUsageInWindow = !loading && usage.turns === 0;
 
   return (
     <div className="insights-layout">
@@ -437,12 +542,32 @@ function InsightsLanding({
           loading={loading}
         />
         <InsightsStat
+          label="Tokens in / out"
+          value={tileValue(
+            `${formatCount(usage.tokens.input)} / ${formatCount(usage.tokens.output)}`,
+            loading,
+          )}
+          detail="input / output"
+          loading={loading}
+        />
+        <InsightsStat
           label="Runs"
           value={tileValue(formatCount(stats.totalRuns), loading)}
           detail={runsDetailLabel(stats)}
           onClick={onOpenRuns}
           loading={loading}
         />
+        {workbenches !== null ? (
+          <InsightsStat
+            label="Active workbenches"
+            value={tileValue(
+              `${formatCount(activeWorkbenchCount(workbenches))} / ${formatCount(workbenches.length)}`,
+              loading,
+            )}
+            detail="with usage this window"
+            loading={loading}
+          />
+        ) : null}
         {stats.running > 0 || loading ? (
           <InsightsStat
             label="Running now"
@@ -452,6 +577,10 @@ function InsightsLanding({
           />
         ) : null}
       </StatGrid>
+
+      {noUsageInWindow ? (
+        <p className="insights-note">No usage recorded yet in this window.</p>
+      ) : null}
 
       {missingRates.length > 0 ? (
         <p className="insights-note">
@@ -495,6 +624,41 @@ function InsightsLanding({
           <section className="insights-panel">
             <h3>Calls by tool</h3>
             <ToolCallsTable tools={tools} />
+          </section>
+        ) : null}
+
+        {tokensSeries.length > 0 ? (
+          <section className="insights-panel">
+            <TimeSeriesChart
+              title="Tokens over time by model"
+              description={`Last ${activityDays.length} days`}
+              labels={activityDays.map((d) => dayWeekdayLabel(d.day))}
+              series={tokensSeries}
+              variant="area"
+              format={formatCount}
+            />
+          </section>
+        ) : null}
+
+        {stats.totalRuns > 0 ? (
+          <section className="insights-panel">
+            <BarChart
+              title="Run outcomes"
+              description={`${formatCount(stats.totalRuns)} purpose runs`}
+              data={runOutcomeData(stats)}
+              valueLabel="Runs"
+              format={formatCount}
+            />
+          </section>
+        ) : null}
+
+        {workbenches !== null && workbenches.length > 0 ? (
+          <section className="insights-panel">
+            <h3>Activity by workbench</h3>
+            <WorkbenchActivityBars
+              workbenches={workbenches}
+              onSelectWorkbench={onSelectWorkbench}
+            />
           </section>
         ) : null}
       </div>
@@ -1000,6 +1164,7 @@ export function InsightsPage({
   byTool,
   runs,
   routines,
+  workbenches,
   range,
   scope,
   activeWorkbenchId,
@@ -1014,6 +1179,13 @@ export function InsightsPage({
     nextCursor: string | null;
   }>;
   readonly routines: APIQuery<readonly Routine[]>;
+  /** `/workbenches` — this scope's own row plus one per descendant
+   * workbench, used for the "activity by workbench" chart and the
+   * "active workbenches" KPI. Not fetched (stays a `ready` empty list)
+   * once the landing is already scoped to a single workbench. */
+  readonly workbenches: APIQuery<{
+    items: readonly WorkbenchUsage[];
+  }>;
   /** Stable 7-day window created once per route mount. */
   readonly range: InsightsRange;
   /** `/scope` result — own identity, parent (if any), sibling
@@ -1073,6 +1245,8 @@ export function InsightsPage({
   const runsData = runs.kind === "ready" ? runs.data.data : [];
   const runsNextCursor = runs.kind === "ready" ? runs.data.nextCursor : null;
   const routinesData = routines.kind === "ready" ? routines.data : [];
+  const workbenchesData =
+    workbenches.kind === "ready" ? workbenches.data.items : null;
 
   if (mode === "run" && runId !== null) {
     const run = runsData.find((r) => r.id === runId) ?? null;
@@ -1152,12 +1326,16 @@ export function InsightsPage({
               byTool={byToolData}
               runs={runsData}
               routines={routinesData}
+              workbenches={workbenchesData}
               range={range}
               loading={loading}
               onOpenRun={(id) =>
                 navigate(`/insights/runs/${encodeURIComponent(id)}`)
               }
               onOpenRuns={() => navigate("/insights/runs")}
+              onSelectWorkbench={(tenantId) =>
+                navigate(`/insights/workbench/${encodeURIComponent(tenantId)}`)
+              }
             />
           )}
         </PageShell>
@@ -1275,6 +1453,15 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       : insightsTopLevelRunsPath(effectiveTenantId),
     TopLevelRunsSchema,
   );
+  // Only meaningful on the cross-workbench landing — a `/insights/workbench/
+  // :id` deep link renders WorkbenchTimelineRoute instead of InsightsLanding,
+  // so there is nothing here to chart and the fetch stays disabled.
+  const workbenches = useAPIQuery(
+    effectiveTenantId === null || workbenchId !== null
+      ? ""
+      : insightsWorkbenchesPath(effectiveTenantId, range),
+    WorkbenchesResponseSchema,
+  );
   const routines = useTenantQuery(
     selectedTenantId === null
       ? ["tenant", "none", "routines"]
@@ -1322,6 +1509,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       byTool={emptyList(byTool)}
       runs={runsForPage}
       routines={routinesForPage}
+      workbenches={workbenches}
       range={range}
       scope={scopeData}
       activeWorkbenchId={workbenchId}
