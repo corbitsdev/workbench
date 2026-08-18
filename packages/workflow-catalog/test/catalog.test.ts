@@ -6,6 +6,7 @@ import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
+  isConversationalWorkflowName,
   RECURRING_TASK_ASSET_NAME,
   validateTriggerFieldsInput,
   workflowDisplayName,
@@ -94,6 +95,34 @@ describe("workflow catalog", () => {
       "Weekly brief",
     );
     expect(workflowDisplayName("last-30-days")).toBe("Last 30 Days");
+  });
+
+  describe("isConversationalWorkflowName", () => {
+    test("marks only the seeded assistant/Myra definition conversational", () => {
+      expect(isConversationalWorkflowName("assistant")).toBe(true);
+    });
+
+    test("marks every workflow utility, automatable or not, non-conversational", () => {
+      expect(isConversationalWorkflowName("echo")).toBe(false);
+      expect(isConversationalWorkflowName("workbench-digest")).toBe(false);
+      expect(isConversationalWorkflowName(RECURRING_TASK_ASSET_NAME)).toBe(
+        false,
+      );
+      expect(isConversationalWorkflowName("last-30-days-research")).toBe(false);
+      expect(isConversationalWorkflowName("heartbeat")).toBe(false);
+      expect(isConversationalWorkflowName("process-granola-call")).toBe(false);
+    });
+
+    test("treats a name absent from the catalog as conversational — a runtime agent-directory definition", () => {
+      expect(isConversationalWorkflowName("my-researcher")).toBe(true);
+      expect(isConversationalWorkflowName("wfd_deadbeef")).toBe(true);
+    });
+
+    test("every catalog entry declares a conversational flag", () => {
+      for (const entry of WORKFLOW_CATALOG) {
+        expect(typeof entry.conversational).toBe("boolean");
+      }
+    });
   });
 
   test("every catalog entry has a non-empty display name", () => {

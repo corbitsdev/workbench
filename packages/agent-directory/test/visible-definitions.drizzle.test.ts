@@ -211,6 +211,56 @@ describeIfDb(
       }
     });
 
+    test("a seeded workflow-catalog utility is never listed as a DM-able definition", async () => {
+      const { db, close } = createDB({ ...target, schema: SCHEMA });
+      try {
+        await seedTenant(db, { id: "tnt_dm_catalog_guard" });
+        await seedDefinition(db, {
+          id: "wfd_echo",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "echo",
+        });
+        await seedDefinition(db, {
+          id: "wfd_last_30_days",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "last-30-days-research",
+        });
+        await seedDefinition(db, {
+          id: "wfd_recurring_task",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "recurring-task",
+        });
+        await seedDefinition(db, {
+          id: "wfd_workbench_digest",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "workbench-digest",
+        });
+        await seedDefinition(db, {
+          id: "wfd_assistant",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "assistant",
+          description: "Myra",
+        });
+        await seedDefinition(db, {
+          id: "wfd_custom_agent",
+          tenantId: "tnt_dm_catalog_guard",
+          name: "my-researcher",
+          description: "My researcher",
+        });
+
+        const definitions = await listVisibleAgentDefinitions(
+          db,
+          "tnt_dm_catalog_guard",
+        );
+
+        expect(definitions.map((d) => d.id).sort()).toEqual(
+          ["wfd_assistant", "wfd_custom_agent"].sort(),
+        );
+      } finally {
+        await close();
+      }
+    });
+
     test("a definition with no materialized asset is not launchable yet, so it isn't listed", async () => {
       const { db, close } = createDB({ ...target, schema: SCHEMA });
       try {
