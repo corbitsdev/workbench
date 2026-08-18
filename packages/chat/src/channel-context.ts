@@ -14,6 +14,96 @@ const CONTEXT_HEADER =
  * lead rather than blown out in full, keeping the block scannable. */
 const MAX_MESSAGE_LENGTH = 500;
 
+/**
+ * Upper bound on how many of the most recent dropped messages the
+ * caller should even look at when building a recap — see
+ * `buildDroppedRecap`. Keeps the recap's own cost bounded regardless of
+ * how far back a channel's history goes; anything older than this is
+ * never inspected, only counted as "possibly more" via
+ * `moreBeyondFold`.
+ */
+export const DROPPED_RECAP_LOOKBACK = 60;
+
+/** Per-message lead length folded into a recap, and the recap's own
+ * total character budget — both deliberately far below
+ * `MAX_MESSAGE_LENGTH`, since a recap stands in for many messages at
+ * once rather than rendering one. */
+const DROPPED_LEAD_LENGTH = 100;
+const DROPPED_FOLD_CHAR_BUDGET = 1200;
+
+/** The recap's sender label: system-ish framing, matching the
+ * `label: text` shape every other context line renders as, but never
+ * attributable to a real person or agent. */
+const RECAP_LABEL = "system";
+
+function formatRecapDate(iso: string): string {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime())
+    ? iso
+    : parsed.toISOString().slice(0, 10);
+}
+
+export interface DroppedRecapInput {
+  /** Total messages the context window dropped, capped to what the
+   * caller actually looked at (at most `DROPPED_RECAP_LOOKBACK`). */
+  readonly droppedCount: number;
+  /** True when the dropped span continues further back than the
+   * caller chose to look — the count and fold tail are then marked as
+   * a lower bound rather than claiming an exact total. */
+  readonly moreBeyondFold: boolean;
+  readonly firstDate?: string;
+  readonly lastDate?: string;
+  /** The dropped span's HUMAN messages, oldest first, already capped
+   * to `DROPPED_RECAP_LOOKBACK` — agents' replies are derivative, so
+   * only human messages carry facts worth folding in. */
+  readonly humanTexts: readonly string[];
+}
+
+/**
+ * Builds the one synthetic context entry that stands in for a
+ * channel-context window's dropped history — deterministic v1, no LLM
+ * summarization: a bounded fold of each dropped human message's first
+ * ~100 chars, oldest first, capped at ~1200 chars total with an honest
+ * "… and N more" tail for whatever didn't fit or wasn't even looked at.
+ * Never exceeds its own cap regardless of how much history it is
+ * standing in for.
+ */
+export function buildDroppedRecap(
+  input: DroppedRecapInput,
+): ChannelContextItem {
+  const countLabel = `${input.droppedCount}${input.moreBeyondFold ? "+" : ""}`;
+  const dateRange =
+    input.firstDate !== undefined && input.lastDate !== undefined
+      ? `, from ${formatRecapDate(input.firstDate)} to ${formatRecapDate(input.lastDate)}`
+      : "";
+
+  const leads: string[] = [];
+  let used = 0;
+  for (const text of input.humanTexts) {
+    const lead = text.slice(0, DROPPED_LEAD_LENGTH);
+    const addition = (leads.length === 0 ? 0 : 2) + lead.length;
+    if (used + addition > DROPPED_FOLD_CHAR_BUDGET) break;
+    leads.push(lead);
+    used += addition;
+  }
+  const omittedHuman = input.humanTexts.length - leads.length;
+  const moreTail =
+    omittedHuman > 0
+      ? ` … and ${omittedHuman}${input.moreBeyondFold ? "+" : ""} more`
+      : input.moreBeyondFold
+        ? " … and possibly more"
+        : "";
+  const body =
+    leads.length > 0 ? leads.join("; ") : "(no human messages in this span)";
+
+  return {
+    label: RECAP_LABEL,
+    text:
+      `Earlier in this conversation (${countLabel} older messages${dateRange}): ` +
+      `${body}${moreTail}`,
+  };
+}
+
 export interface ChannelContextItem {
   /**
    * The sender label to render a message under: `@handle` for an agent
@@ -41,11 +131,23 @@ function truncate(text: string): string {
  */
 export function renderChannelContext(input: {
   readonly items: readonly ChannelContextItem[];
+  /**
+   * The dropped-history recap (see `buildDroppedRecap`), prepended
+   * right after the header, ahead of every kept item. Rendered
+   * verbatim, bypassing the per-item `truncate` below: it already
+   * enforces its own tighter cap and stands for many messages at once,
+   * not just the one `truncate` sizes for.
+   */
+  readonly recap?: ChannelContextItem;
 }): string {
   const lines = input.items.map(
     (item) => `${item.label}: ${truncate(item.text)}`,
   );
-  return [CONTEXT_HEADER, ...lines].join("\n");
+  const recapLine =
+    input.recap !== undefined
+      ? [`${input.recap.label}: ${input.recap.text}`]
+      : [];
+  return [CONTEXT_HEADER, ...recapLine, ...lines].join("\n");
 }
 
 /**

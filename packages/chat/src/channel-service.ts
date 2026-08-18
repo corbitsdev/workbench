@@ -15,6 +15,8 @@ import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
 import {
+  buildDroppedRecap,
+  DROPPED_RECAP_LOOKBACK,
   mergeContextIntoParts,
   renderChannelContext,
   type ChannelContextItem,
@@ -40,6 +42,7 @@ import type {
   ChannelMail,
   ChatChannelEvent,
   InvitableDefinition,
+  ListedMailItem,
 } from "./platform-port";
 import type { ChannelTenancyStore } from "./channel-tenancy";
 import type { ChatStore } from "./store";
@@ -720,6 +723,34 @@ function labelForSender(
 }
 
 /**
+ * Decodes a single listed mail item into a context item, or `undefined`
+ * for event-only mail with no text parts — contributes nothing a
+ * context block can render.
+ */
+async function decodeContextItem(
+  platform: Pick<ChannelMail, "fetchBlob">,
+  channelId: string,
+  item: ListedMailItem,
+  participants: readonly ParticipantRecord[],
+): Promise<ChannelContextItem | undefined> {
+  const parts = await decodeMail(item.mail, {
+    fetchBlob: (blobId) => platform.fetchBlob(channelId, blobId),
+  });
+  const texts = parts
+    .filter(
+      (part): part is Extract<PartType, { kind: "text" }> =>
+        part.kind === "text",
+    )
+    .map((part) => part.text);
+  if (texts.length === 0) return undefined;
+  const sender = senderOf(item.mail);
+  return {
+    label: labelForSender(sender.address, participants),
+    text: texts.join(" "),
+  };
+}
+
+/**
  * Loads and decodes the channel's recent timeline into context items
  * for a mention fan-out copy, excluding the just-sent message (matched
  * by mail id, since it is typically the newest item in the listing)
@@ -727,9 +758,21 @@ function labelForSender(
  * contributes nothing a context block can render). Capped to the
  * channel's resolved `contextWindow` (most-recent-first before the
  * final oldest-first slice, so a window of 0 loads nothing and a small
- * window keeps only the newest few). Returns `undefined` on empty
- * history — the "zero context" case, where a fan-out copy carries no
- * context part at all — or when the timeline fails to load or decode:
+ * window keeps only the newest few).
+ *
+ * When the channel carries more messages than the window keeps, the
+ * dropped span (CL-6204) is folded into one synthetic recap entry
+ * (`buildDroppedRecap`) prepended ahead of the kept items, rather than
+ * silently vanishing. The listing is paged (`listMail`'s own cursor)
+ * out to `contextWindow + DROPPED_RECAP_LOOKBACK` items — just enough
+ * to cover the window plus the recap's own bounded lookback — never
+ * further: a dropped span longer than that is still counted (and its
+ * date range still reported) from what was fetched, just marked as a
+ * lower bound (`moreBeyondFold`) rather than pretending to know the
+ * exact total.
+ *
+ * Returns `undefined` when there is nothing to show at all — no kept
+ * items and no recap — or when the timeline fails to load or decode:
  * that failure must never break the send, so it is logged and
  * swallowed here, leaving the caller to fan out un-situated.
  */
@@ -743,39 +786,77 @@ async function loadChannelContext(input: {
 }): Promise<string | undefined> {
   if (input.contextWindow === 0) return undefined;
   try {
-    const listed = await input.platform.listMail({
-      tenantId: input.tenantId,
-      channelId: input.channelId,
-    });
-    const newestFirstExcludingSent = listed.items.filter(
-      (item) => item.id !== input.excludeMailId,
-    );
-    const oldestFirst = newestFirstExcludingSent
-      .slice(0, input.contextWindow)
-      .reverse();
+    const fetchCap = input.contextWindow + DROPPED_RECAP_LOOKBACK;
+    const fetched: ListedMailItem[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await input.platform.listMail(
+        cursor === undefined
+          ? { tenantId: input.tenantId, channelId: input.channelId }
+          : { tenantId: input.tenantId, channelId: input.channelId, cursor },
+      );
+      fetched.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined && fetched.length < fetchCap);
+
+    const newestFirstExcludingSent = fetched
+      .filter((item) => item.id !== input.excludeMailId)
+      .slice(0, fetchCap);
+    const moreBeyondFold = cursor !== undefined;
+
+    const windowMail = newestFirstExcludingSent.slice(0, input.contextWindow);
+    const droppedMail = newestFirstExcludingSent.slice(input.contextWindow);
+    const wasDropped = droppedMail.length > 0 || moreBeyondFold;
 
     const items: ChannelContextItem[] = [];
-    for (const item of oldestFirst) {
-      const parts = await decodeMail(item.mail, {
-        fetchBlob: (blobId) =>
-          input.platform.fetchBlob(input.channelId, blobId),
-      });
-      const texts = parts
-        .filter(
-          (part): part is Extract<PartType, { kind: "text" }> =>
-            part.kind === "text",
-        )
-        .map((part) => part.text);
-      if (texts.length === 0) continue;
-      const sender = senderOf(item.mail);
-      items.push({
-        label: labelForSender(sender.address, input.participants),
-        text: texts.join(" "),
-      });
+    for (const item of [...windowMail].reverse()) {
+      const decoded = await decodeContextItem(
+        input.platform,
+        input.channelId,
+        item,
+        input.participants,
+      );
+      if (decoded !== undefined) items.push(decoded);
     }
 
-    if (items.length === 0) return undefined;
-    return renderChannelContext({ items });
+    let recap: ChannelContextItem | undefined;
+    if (wasDropped) {
+      const droppedItems: ChannelContextItem[] = [];
+      for (const item of droppedMail) {
+        const decoded = await decodeContextItem(
+          input.platform,
+          input.channelId,
+          item,
+          input.participants,
+        );
+        if (decoded !== undefined) droppedItems.push(decoded);
+      }
+      const humanTexts = [...droppedItems]
+        .reverse()
+        .filter((item) => item.label === "user")
+        .map((item) => item.text);
+      const oldestDropped = droppedMail[droppedMail.length - 1];
+      const newestDropped = droppedMail[0];
+      recap =
+        oldestDropped !== undefined && newestDropped !== undefined
+          ? buildDroppedRecap({
+              droppedCount: droppedMail.length,
+              moreBeyondFold,
+              humanTexts,
+              firstDate: oldestDropped.createdAt,
+              lastDate: newestDropped.createdAt,
+            })
+          : buildDroppedRecap({
+              droppedCount: droppedMail.length,
+              moreBeyondFold,
+              humanTexts,
+            });
+    }
+
+    if (items.length === 0 && recap === undefined) return undefined;
+    return recap !== undefined
+      ? renderChannelContext({ items, recap })
+      : renderChannelContext({ items });
   } catch (err) {
     contextLog.warn`failed to load channel context for mention fan-out on channel ${input.channelId}: ${
       err instanceof Error ? err.message : String(err)
