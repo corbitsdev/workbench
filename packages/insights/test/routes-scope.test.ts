@@ -362,6 +362,84 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
     }
   });
 
+  test("/workbenches splits the parent's aggregate back out per child, named and ranked by turns", async () => {
+    const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
+    try {
+      await store.insertUsage({
+        id: "w1",
+        tenantId: childAId,
+        sessionId: "sw1",
+        turnId: "tw1",
+        model: "m",
+        tokens: {
+          input: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          thinking: 0,
+        },
+      });
+      await store.insertUsage({
+        id: "w2",
+        tenantId: childBId,
+        sessionId: "sw2",
+        turnId: "tw2",
+        model: "m",
+        tokens: {
+          input: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          thinking: 0,
+        },
+      });
+      await store.insertUsage({
+        id: "w3",
+        tenantId: childBId,
+        sessionId: "sw3",
+        turnId: "tw3",
+        model: "m",
+        tokens: {
+          input: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          thinking: 0,
+        },
+      });
+
+      const response = await appFor(parentId, db).request("/workbenches");
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        items: { tenantId: string; name: string; turns: number }[];
+      };
+      // Ranked by turns descending — childB has recorded more turns than
+      // childA across this describe block's fixtures, and the parent
+      // itself (a rolled-up total, no usage of its own) sorts last.
+      expect(body.items.map((i) => i.tenantId)).toEqual([
+        childBId,
+        childAId,
+        parentId,
+      ]);
+      expect(body.items.find((i) => i.tenantId === childBId)?.name).toBe(
+        "Acme — Sales",
+      );
+      expect(body.items.find((i) => i.tenantId === parentId)?.turns).toBe(0);
+      // The unrelated root tenant never appears in the parent's scope.
+      expect(body.items.some((i) => i.tenantId === unrelatedId)).toBe(false);
+
+      const leafResponse = await appFor(childAId, db).request("/workbenches");
+      const leafBody = (await leafResponse.json()) as {
+        items: { tenantId: string; turns: number }[];
+      };
+      // A leaf workbench (no descendants) returns just its own row.
+      expect(leafBody.items).toHaveLength(1);
+      expect(leafBody.items[0]?.tenantId).toBe(childAId);
+    } finally {
+      await close();
+    }
+  });
+
   test("/scope with no authenticated caller falls back to self only, discloses nothing else", async () => {
     const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
     try {

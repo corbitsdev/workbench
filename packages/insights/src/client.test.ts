@@ -7,6 +7,7 @@ import {
   formatCount,
   formatUsd,
   INSIGHTS_WINDOW_DAYS,
+  topModelsByCost,
 } from "./client";
 
 // Fixed clock so range math is deterministic regardless of suite time.
@@ -64,8 +65,13 @@ describe("empty usage defaults", () => {
     const range = createInsightsWindow(INSIGHTS_WINDOW_DAYS, NOW);
     const series = activitySeriesForWindow(
       [
-        { day: "2026-01-14", turns: 3, tokens: 900 },
-        { day: "2026-01-15", turns: 1, tokens: 100 },
+        {
+          day: "2026-01-14",
+          turns: 3,
+          tokens: 900,
+          byModel: [{ model: "claude-sonnet", tokens: 900, costUsd: 1.2 }],
+        },
+        { day: "2026-01-15", turns: 1, tokens: 100, byModel: [] },
       ],
       range,
     );
@@ -74,13 +80,38 @@ describe("empty usage defaults", () => {
       day: "2026-01-14",
       turns: 3,
       tokens: 900,
+      byModel: [{ model: "claude-sonnet", tokens: 900, costUsd: 1.2 }],
     });
     expect(series.find((d) => d.day === "2026-01-15")).toEqual({
       day: "2026-01-15",
       turns: 1,
       tokens: 100,
+      byModel: [],
     });
     expect(series.find((d) => d.day === "2026-01-10")?.turns).toBe(0);
+    expect(series.find((d) => d.day === "2026-01-10")?.byModel).toEqual([]);
+  });
+
+  test("topModelsByCost ranks by total cost across the window, capped at the limit", () => {
+    const days = [
+      {
+        day: "2026-01-14",
+        turns: 2,
+        tokens: 900,
+        byModel: [
+          { model: "cheap-model", tokens: 500, costUsd: 0.1 },
+          { model: "pricey-model", tokens: 400, costUsd: 5 },
+        ],
+      },
+      {
+        day: "2026-01-15",
+        turns: 1,
+        tokens: 100,
+        byModel: [{ model: "cheap-model", tokens: 100, costUsd: 0.02 }],
+      },
+    ];
+    expect(topModelsByCost(days, 1)).toEqual(["pricey-model"]);
+    expect(topModelsByCost(days)).toEqual(["pricey-model", "cheap-model"]);
   });
 
   test("formatUsd keeps em-dash for unknown rates, not for zero", () => {

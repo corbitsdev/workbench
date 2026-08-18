@@ -5,6 +5,7 @@ import {
   activityByDay,
   emptyOverallUsageSummary,
   summarizeUsage,
+  summarizeUsageByTenant,
 } from "./queries";
 
 describe("summarizeUsage", () => {
@@ -234,8 +235,69 @@ describe("activityByDay", () => {
 
     const days = await activityByDay(store, ["tenant-acme"]);
     expect(days).toEqual([
-      { day: "2026-08-01", turns: 1, tokens: 10 },
-      { day: "2026-08-02", turns: 1, tokens: 5 },
+      {
+        day: "2026-08-01",
+        turns: 1,
+        tokens: 10,
+        byModel: [{ model: "m", tokens: 10, costUsd: null }],
+      },
+      {
+        day: "2026-08-02",
+        turns: 1,
+        tokens: 5,
+        byModel: [{ model: "m", tokens: 5, costUsd: null }],
+      },
+    ]);
+  });
+
+  test("splits each day's tokens/cost by model for a stacked chart", async () => {
+    const store = createMemoryUsageStore([
+      {
+        model: "claude-sonnet",
+        rates: {
+          inputPerMTok: 3,
+          outputPerMTok: 15,
+          cacheReadPerMTok: 0.3,
+          cacheWritePerMTok: 3.75,
+          thinkingPerMTok: 15,
+        },
+      },
+    ]);
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "tenant-acme",
+      sessionId: "s1",
+      turnId: "t1",
+      model: "claude-sonnet",
+      tokens: {
+        input: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
+      recordedAt: new Date("2026-08-01T10:00:00Z"),
+    });
+    await store.insertUsage({
+      id: "u2",
+      tenantId: "tenant-acme",
+      sessionId: "s1",
+      turnId: "t2",
+      model: "gpt-unpriced",
+      tokens: {
+        input: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
+      recordedAt: new Date("2026-08-01T11:00:00Z"),
+    });
+
+    const [day] = await activityByDay(store, ["tenant-acme"]);
+    expect(day?.byModel).toEqual([
+      { model: "claude-sonnet", tokens: 1_000_000, costUsd: 3 },
+      { model: "gpt-unpriced", tokens: 100, costUsd: null },
     ]);
   });
 
@@ -267,6 +329,122 @@ describe("activityByDay", () => {
     });
 
     const days = await activityByDay(store, ["workbench-a", "workbench-b"]);
-    expect(days).toEqual([{ day: "2026-08-01", turns: 2, tokens: 15 }]);
+    expect(days).toEqual([
+      {
+        day: "2026-08-01",
+        turns: 2,
+        tokens: 15,
+        byModel: [{ model: "m", tokens: 15, costUsd: null }],
+      },
+    ]);
+  });
+});
+
+describe("summarizeUsageByTenant", () => {
+  test("every requested tenant id gets an entry, zeroed when it recorded nothing", async () => {
+    const store = createMemoryUsageStore();
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "workbench-a",
+      sessionId: "s1",
+      turnId: "t1",
+      model: "m",
+      tokens: {
+        input: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
+    });
+
+    const rows = await summarizeUsageByTenant(store, [
+      "workbench-a",
+      "workbench-b",
+    ]);
+    expect(rows).toEqual([
+      {
+        tenantId: "workbench-a",
+        turns: 1,
+        tokens: {
+          input: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          thinking: 0,
+          total: 100,
+        },
+        costUsd: null,
+      },
+      {
+        tenantId: "workbench-b",
+        turns: 0,
+        tokens: {
+          input: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          thinking: 0,
+          total: 0,
+        },
+        costUsd: 0,
+      },
+    ]);
+  });
+
+  test("per-tenant totals sum to the same aggregate summarizeUsage reports for that scope", async () => {
+    const store = createMemoryUsageStore([
+      {
+        model: "claude-sonnet",
+        rates: {
+          inputPerMTok: 3,
+          outputPerMTok: 15,
+          cacheReadPerMTok: 0.3,
+          cacheWritePerMTok: 3.75,
+          thinkingPerMTok: 15,
+        },
+      },
+    ]);
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "workbench-a",
+      sessionId: "s1",
+      turnId: "t1",
+      model: "claude-sonnet",
+      tokens: {
+        input: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
+    });
+    await store.insertUsage({
+      id: "u2",
+      tenantId: "workbench-b",
+      sessionId: "s2",
+      turnId: "t2",
+      model: "claude-sonnet",
+      tokens: {
+        input: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 1_000_000,
+        thinking: 0,
+      },
+    });
+
+    const scope = ["workbench-a", "workbench-b"];
+    const perTenant = await summarizeUsageByTenant(store, scope);
+    const aggregate = await summarizeUsage(store, scope);
+
+    const summedTurns = perTenant.reduce((sum, w) => sum + w.turns, 0);
+    const summedCost = perTenant.reduce(
+      (sum, w) => sum + (w.costUsd ?? 0),
+      0,
+    );
+    expect(summedTurns).toBe(aggregate.turns);
+    expect(aggregate.costUsd).not.toBeNull();
+    expect(summedCost).toBe(aggregate.costUsd ?? 0);
   });
 });

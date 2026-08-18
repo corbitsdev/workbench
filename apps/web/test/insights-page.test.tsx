@@ -20,6 +20,7 @@ import {
   type RunTrace,
   type TaskLeg,
   type ToolCall,
+  type WorkbenchUsage,
 } from "../src/insights-api";
 import { NavigationProvider } from "../src/navigation";
 import {
@@ -45,6 +46,10 @@ const emptyRoutines: APIQuery<readonly Routine[]> = {
   kind: "ready",
   data: [],
 };
+const emptyWorkbenches: APIQuery<{ items: readonly WorkbenchUsage[] }> = {
+  kind: "ready",
+  data: { items: [] },
+};
 
 globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
   Promise.reject(
@@ -67,6 +72,7 @@ function renderLanding(args: {
             byTool={args.byTool}
             runs={emptyRuns}
             routines={emptyRoutines}
+            workbenches={emptyWorkbenches}
             range={range}
             scope={null}
             activeWorkbenchId={null}
@@ -160,6 +166,7 @@ function renderAtPath(path: string): string {
               data: { data: [purposeRun], nextCursor: null },
             }}
             routines={emptyRoutines}
+            workbenches={emptyWorkbenches}
             range={range}
             scope={null}
             activeWorkbenchId={null}
@@ -187,6 +194,7 @@ function renderLandingWithScope(args: {
             byTool={{ kind: "ready", data: [] }}
             runs={emptyRuns}
             routines={emptyRoutines}
+            workbenches={emptyWorkbenches}
             range={range}
             scope={args.scope}
             activeWorkbenchId={args.activeWorkbenchId}
@@ -807,5 +815,152 @@ describe("InsightsRunDetailRoute wiring", () => {
     expect(el.textContent).not.toContain(
       "Couldn't check this run's task context",
     );
+  });
+});
+
+// CL-6224: the global (all-workbenches) landing's KPI band and
+// activity-by-workbench chart, fed by `/insights/workbenches`.
+describe("InsightsPage global landing — KPIs and activity by workbench", () => {
+  const usageWithSpend: OverallUsage = {
+    turns: 42,
+    tokens: {
+      input: 1000,
+      cacheRead: 0,
+      cacheWrite: 0,
+      output: 500,
+      thinking: 0,
+      total: 1500,
+    },
+    costUsd: 12.5,
+    byModel: [],
+  };
+
+  const workbenches: readonly WorkbenchUsage[] = [
+    {
+      tenantId: "tnt_a",
+      name: "Support",
+      turns: 30,
+      tokens: {
+        input: 900,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 400,
+        thinking: 0,
+        total: 1300,
+      },
+      costUsd: 10,
+    },
+    {
+      tenantId: "tnt_b",
+      name: "Sales",
+      turns: 12,
+      tokens: {
+        input: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 100,
+        thinking: 0,
+        total: 200,
+      },
+      costUsd: 2.5,
+    },
+    {
+      tenantId: "tnt_c",
+      name: "Quiet workbench",
+      turns: 0,
+      tokens: {
+        input: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+        total: 0,
+      },
+      costUsd: 0,
+    },
+  ];
+
+  function mountGlobalLanding(navigate: (path: string) => void) {
+    return mount(
+      <TestQueryProvider>
+        <NavigationProvider navigate={navigate}>
+          <BenchProvider>
+            <InsightsPage
+              path="/insights"
+              summary={{ kind: "ready", data: usageWithSpend }}
+              activity={{ kind: "ready", data: [] }}
+              byTool={{ kind: "ready", data: [] }}
+              runs={emptyRuns}
+              routines={emptyRoutines}
+              workbenches={{ kind: "ready", data: { items: workbenches } }}
+              range={range}
+              scope={null}
+              activeWorkbenchId={null}
+              scopeLabel="All workbenches"
+            />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+  }
+
+  test("renders the KPI band from stubbed usage/workbenches data", () => {
+    const el = mountGlobalLanding(() => undefined);
+    expect(el.textContent).toContain("$12.50");
+    expect(el.textContent).toContain("Tokens in / out");
+    expect(el.textContent).toContain("1,000 / 500");
+    expect(el.textContent).toContain("Active workbenches");
+    // 2 of 3 workbenches recorded turns > 0 in this fixture.
+    expect(el.textContent).toContain("2 / 3");
+  });
+
+  test("ranks workbenches by turns and links each bar to its own scoped view", () => {
+    const el = mountGlobalLanding(() => undefined);
+    expect(el.textContent).toContain("Activity by workbench");
+    const rows = [...el.querySelectorAll("table[aria-label='Activity by workbench'] tbody tr")];
+    expect(rows.map((r) => r.textContent?.match(/Support|Sales|Quiet workbench/)?.[0])).toEqual([
+      "Support",
+      "Sales",
+      "Quiet workbench",
+    ]);
+  });
+
+  test("clicking a workbench bar navigates to /insights/workbench/:tenantId", () => {
+    const navigated: string[] = [];
+    const el = mountGlobalLanding((path) => navigated.push(path));
+    const salesRow = [...el.querySelectorAll("tbody tr")].find((row) =>
+      row.textContent?.includes("Sales"),
+    );
+    expect(salesRow).toBeDefined();
+    act(() => {
+      salesRow?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigated).toEqual(["/insights/workbench/tnt_b"]);
+  });
+
+  test("an all-zero workbenches window shows the honest empty note, not a fabricated chart", () => {
+    const el = mount(
+      <TestQueryProvider>
+        <NavigationProvider navigate={() => undefined}>
+          <BenchProvider>
+            <InsightsPage
+              path="/insights"
+              summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
+              activity={{ kind: "ready", data: [] }}
+              byTool={{ kind: "ready", data: [] }}
+              runs={emptyRuns}
+              routines={emptyRoutines}
+              workbenches={{ kind: "ready", data: { items: [] } }}
+              range={range}
+              scope={null}
+              activeWorkbenchId={null}
+              scopeLabel="All workbenches"
+            />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+    expect(el.textContent).toContain("No usage recorded yet in this window.");
+    expect(el.textContent).not.toContain("Activity by workbench");
   });
 });
