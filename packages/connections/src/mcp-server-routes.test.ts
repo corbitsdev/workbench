@@ -59,9 +59,14 @@ type CredentialRow = {
 function fakeHub(seed: {
   providers?: ProviderRow[];
   credentials?: CredentialRow[];
+  /** Providers visible when the caller asks `?inherited=true` — an
+   * ancestor's rows plus this tenant's own. Defaults to `providers`
+   * (own-tenant), matching a tenant with no inherited MCP servers. */
+  inheritedProviders?: ProviderRow[];
 }) {
   const providers = seed.providers ?? [];
   const credentials = seed.credentials ?? [];
+  const inheritedProviders = seed.inheritedProviders ?? providers;
   let nextId = 1;
 
   const apiCall: ApiCall = async (method, path, body) => {
@@ -69,6 +74,13 @@ function fakeHub(seed: {
       return {
         status: 200,
         data: { data: providers, nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (method === "GET" && path.endsWith("/providers?inherited=true")) {
+      return {
+        status: 200,
+        data: { data: inheritedProviders, nextCursor: null },
         cookies: [],
       };
     }
@@ -301,6 +313,34 @@ describe("GET / and DELETE /:slug", () => {
     const app = buildApp({ apiCall: hub.apiCall });
     const response = await app.request("/nope", { method: "DELETE" });
     expect(response.status).toBe(404);
+  });
+
+  test("disconnecting a connection inherited from a parent workbench is refused, not deleted", async () => {
+    const hub = fakeHub({
+      providers: [],
+      credentials: [],
+      inheritedProviders: [
+        {
+          id: "prv_parent_granola",
+          tenantId: "tnt_parent",
+          name: "mcp:granola",
+          plugin: "http",
+          apiBaseUrl: "https://mcp.granola.ai",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/granola", { method: "DELETE" });
+
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("forbidden");
+    // Never mutated: the inherited provider row is untouched, and no
+    // shadow-delete row was created at the child either.
+    expect(hub.providers).toHaveLength(0);
   });
 });
 
