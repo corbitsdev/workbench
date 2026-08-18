@@ -38,7 +38,7 @@ function PluginGrid({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+    <div className="flex flex-col">
       {plugins.map((plugin) => (
         <PluginCard
           key={plugin.descriptor.id}
@@ -164,7 +164,7 @@ function SkillsTabPanel({
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+    <div className="flex flex-col">
       {filtered.map((skill) => (
         <SkillCard
           key={skill.assetId}

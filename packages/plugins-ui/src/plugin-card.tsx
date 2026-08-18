@@ -1,31 +1,24 @@
-// One plugin, one card: icon, name, the outcome sentence, and a single
-// action that reads honestly off `ResolvedPlugin`'s status — never a
-// generic "manage" button that hides what state the connector is
-// actually in.
+// One plugin, one dense data row: a small logo tile, name, the outcome
+// sentence truncated to a single line, a status/provenance caption, and
+// a single quiet action that reads honestly off `ResolvedPlugin`'s
+// status — never a generic "manage" button that hides what state the
+// connector is actually in. Density over cards: this is a directory to
+// scan, not a set of tiles to admire (CL-6272.1).
 
-import {
-  Badge,
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-} from "@corbits/react-ui";
+import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { Plus } from "lucide-react";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
 
-const STATUS_BADGE: Record<
-  ResolvedPlugin["status"],
-  { readonly label: string; readonly tone: "success" | "danger" | "neutral" }
-> = {
-  connected: { label: "Connected", tone: "success" },
-  needs_attention: { label: "Needs attention", tone: "danger" },
-  not_connected: { label: "Not connected", tone: "neutral" },
+const STATUS_CAPTION: Record<ResolvedPlugin["status"], string> = {
+  connected: "Connected",
+  needs_attention: "Needs attention",
+  not_connected: "Not connected",
 };
 
 /** Plain words, matching the plugin provenance labels the coordinator
- * asked skill scope badges to mirror. */
+ * asked skill scope captions to mirror. */
 const PROVENANCE_LABEL: Record<"this-workbench" | "inherited", string> = {
   "this-workbench": "Connected here",
   inherited: "Inherited",
@@ -39,45 +32,45 @@ export function PluginCard({
   readonly onOpen: () => void;
 }) {
   const Icon = pluginIcon(plugin.descriptor.id);
-  const badge = STATUS_BADGE[plugin.status];
+  const caption =
+    plugin.provenance !== null
+      ? `${STATUS_CAPTION[plugin.status]} · ${PROVENANCE_LABEL[plugin.provenance]}`
+      : STATUS_CAPTION[plugin.status];
 
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <span
-          aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
-        >
-          <Icon className="size-4" />
+    <div className="flex h-10 items-center gap-3 border-b border-border px-2 last:border-b-0">
+      <span
+        aria-hidden="true"
+        className="flex size-5 shrink-0 items-center justify-center text-muted-foreground"
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="shrink-0 text-sm font-medium">
+          {plugin.descriptor.displayName}
         </span>
-        {plugin.status === "not_connected" ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="primary"
-            aria-label={`Connect ${plugin.descriptor.displayName}`}
-            onClick={onOpen}
-          >
-            <Plus className="size-3.5" />
-          </Button>
-        ) : (
-          <Button type="button" size="sm" variant="outline" onClick={onOpen}>
-            Manage
-          </Button>
-        )}
-      </div>
-      <div className="flex flex-col gap-1">
-        <CardTitle>{plugin.descriptor.displayName}</CardTitle>
-        <CardDescription>
+        <span className="truncate text-xs text-muted-foreground">
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
-        </CardDescription>
+        </span>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={badge.tone}>{badge.label}</Badge>
-        {plugin.provenance !== null ? (
-          <Badge tone="neutral">{PROVENANCE_LABEL[plugin.provenance]}</Badge>
-        ) : null}
-      </div>
-    </Card>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {caption}
+      </span>
+      {plugin.status === "not_connected" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label={`Connect ${plugin.descriptor.displayName}`}
+          onClick={onOpen}
+        >
+          <Plus className="size-3.5" />
+        </Button>
+      ) : (
+        <Button type="button" size="sm" variant="ghost" onClick={onOpen}>
+          Manage
+        </Button>
+      )}
+    </div>
   );
 }
