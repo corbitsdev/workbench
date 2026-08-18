@@ -22,6 +22,7 @@
  * across package roots — cast only at the mount boundary.
  */
 import type { Hono } from "hono";
+import { type } from "arktype";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import {
@@ -32,6 +33,32 @@ import {
 } from "@corbits/memory";
 
 const log = getLogger(["hub", "memory-mount"]);
+
+// The one boundary this module parses: whether the memory plane is
+// configured at all. `"string > 0"` rejects a blank `EMBED_BASE_URL=`
+// the same as an absent one — both mean "no memory plane" — while
+// catching a non-string env value at the arktype boundary rather than
+// letting a falsy check quietly wave through something unexpected.
+const MemoryMountEnv = type({
+  "EMBED_BASE_URL?": "string > 0",
+});
+
+function embedBaseUrlFrom(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  // Build the input object with the key OMITTED rather than present with
+  // an `undefined` value: arktype's optional-key check is keyed off
+  // property presence, and `process.env` (and this suite's env stashing)
+  // both sometimes leave an unset variable as a present-but-`undefined`
+  // own property rather than an absent one.
+  const rawValue = env["EMBED_BASE_URL"];
+  const input = rawValue === undefined ? {} : { EMBED_BASE_URL: rawValue };
+  const parsed = MemoryMountEnv(input);
+  if (parsed instanceof type.errors) {
+    throw new Error(`invalid memory-plane environment: ${parsed.summary}`);
+  }
+  return parsed.EMBED_BASE_URL;
+}
 
 export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
@@ -57,8 +84,8 @@ export async function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
 ): Promise<MemoryMountHandle | undefined> {
   const optional = options.optional !== false;
-  const embedBaseUrl = process.env["EMBED_BASE_URL"];
-  if (!embedBaseUrl) {
+  const embedBaseUrl = embedBaseUrlFrom(process.env);
+  if (embedBaseUrl === undefined) {
     if (optional) {
       log.info("EMBED_BASE_URL not set — memory plane will not be mounted");
       return undefined;

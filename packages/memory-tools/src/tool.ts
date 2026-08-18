@@ -138,6 +138,16 @@ async function runMemoryList(
       content: JSON.stringify({ entries }),
     };
   } catch (err) {
+    if (err instanceof MemoryUnavailableError) {
+      return {
+        callId: call.id,
+        isError: false,
+        content: JSON.stringify({
+          entries: [],
+          note: MEMORY_NOT_SET_UP_MESSAGE,
+        }),
+      };
+    }
     return errorResult(call.id, err);
   }
 }
