@@ -11,6 +11,8 @@ import { describe, test, expect } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
+
 import { deriveDeploymentId } from "../src/workflow-host-wiring";
 import {
   answerReadyHandshake,
@@ -117,5 +119,57 @@ describe("teardownDeployment reclaimDirs flavors", () => {
         delivery: { bindings: [], materials: [] },
       }),
     ).toBe(false);
+  });
+
+  test("undeploy(frame) picks the flavor from frame.reason", async () => {
+    const hibernating = await makeLifecycleFixture();
+    const hibernateFrame = makeWorkflowFrame(
+      "run_undeploy-reason-hibernate@example.com",
+    );
+    const hibernateDeploy = hibernating.router.deploy(hibernateFrame);
+    await answerReadyHandshake(hibernating.spawns, 0);
+    await hibernateDeploy;
+    const hibernateDeploymentId = deriveDeploymentId(
+      hibernateFrame.agentAddress,
+    );
+    const hibernateStepStateDir = path.join(
+      hibernating.dataDir,
+      "workflow-step-state",
+      hibernateDeploymentId,
+    );
+    await fs.mkdir(hibernateStepStateDir, { recursive: true });
+
+    await hibernating.router.undeploy?.({
+      type: "agent.undeploy",
+      agentAddress: hibernateFrame.agentAddress,
+      reason: IDLE_HIBERNATE_UNDEPLOY_REASON,
+    });
+
+    // Tagged with the hub idle-reap's reason: preserved, not reclaimed.
+    await expect(fs.stat(hibernateStepStateDir)).resolves.toBeDefined();
+
+    const reclaiming = await makeLifecycleFixture();
+    const reclaimFrame = makeWorkflowFrame(
+      "run_undeploy-reason-reclaim@example.com",
+    );
+    const reclaimDeploy = reclaiming.router.deploy(reclaimFrame);
+    await answerReadyHandshake(reclaiming.spawns, 0);
+    await reclaimDeploy;
+    const reclaimDeploymentId = deriveDeploymentId(reclaimFrame.agentAddress);
+    const reclaimStepStateDir = path.join(
+      reclaiming.dataDir,
+      "workflow-step-state",
+      reclaimDeploymentId,
+    );
+    await fs.mkdir(reclaimStepStateDir, { recursive: true });
+
+    await reclaiming.router.undeploy?.({
+      type: "agent.undeploy",
+      agentAddress: reclaimFrame.agentAddress,
+      reason: "channel-deleted",
+    });
+
+    // Any other reason still gets the destructive default.
+    await expect(fs.stat(reclaimStepStateDir)).rejects.toThrow();
   });
 });

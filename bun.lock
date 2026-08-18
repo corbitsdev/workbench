@@ -46,6 +46,7 @@
         "@corbits/preferences": "workspace:*",
         "@corbits/presence": "workspace:*",
         "@corbits/routines": "workspace:*",
+        "@corbits/run-key-history": "workspace:*",
         "@corbits/sidecar-placement": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@corbits/slack-tag": "workspace:*",
@@ -90,6 +91,7 @@
         "workflow-child": "./bin/workflow-child",
       },
       "dependencies": {
+        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",

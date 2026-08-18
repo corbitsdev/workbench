@@ -28,6 +28,7 @@ import {
   type SuspensionRegistration,
 } from "@intx/workflow-host";
 import { hexEncode, isRunAddress } from "@intx/types";
+import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import {
   parseInferenceEvent,
   type CryptoProvider,
@@ -192,12 +193,14 @@ export interface SidecarDeployRouter extends DeployRouter {
    */
   shutdownAll(): Promise<void>;
   /**
-   * Shared teardown body `undeploy` calls with `reclaimDirs: true`. Exposed
-   * on the router surface for a hub-driven reap-and-relaunch flow to call
-   * with `reclaimDirs: false` (a state-preserving "hibernate") -- not yet
-   * wired to any such caller in this lane. See `reclaimDirs`'s doc comment
-   * on the internal `teardownDeployment` for the exact split between the
-   * two flavors.
+   * Shared teardown body. `undeploy` calls this itself, choosing
+   * `reclaimDirs` from `frame.reason`: `IDLE_HIBERNATE_UNDEPLOY_REASON`
+   * (`@corbits/agent-lifecycle`, tagged by the hub's idle-reap sweep) gets
+   * `false` (a state-preserving "hibernate"); every other reason gets the
+   * destructive `true`. Also exposed directly on the router surface for a
+   * caller that wants to choose the flavor itself. See `reclaimDirs`'s doc
+   * comment on the internal `teardownDeployment` for the exact split
+   * between the two flavors.
    */
   teardownDeployment(
     agentAddress: string,
@@ -1525,7 +1528,16 @@ export function createSidecarDeployRouter(deps: {
       );
     },
     async undeploy(frame): Promise<void> {
-      await teardownDeployment(frame.agentAddress, { reclaimDirs: true });
+      // `frame.reason` rides the wire from `sendAgentUndeploy(address,
+      // reason)` verbatim (`AgentUndeployFrame.reason`, `@intx/types`). The
+      // hub's idle-reap lifecycle (`@corbits/agent-lifecycle`'s sweep) tags
+      // its own reap-driven undeploys with `IDLE_HIBERNATE_UNDEPLOY_REASON`
+      // specifically so this router can tell "sleep it, a relaunch will
+      // resume it" apart from every other undeploy reason (channel
+      // deletion, member removal, ...), which still gets the destructive
+      // default.
+      const reclaimDirs = frame.reason !== IDLE_HIBERNATE_UNDEPLOY_REASON;
+      await teardownDeployment(frame.agentAddress, { reclaimDirs });
     },
     teardownDeployment,
     async restoreWorkflowDeployments(): Promise<void> {
