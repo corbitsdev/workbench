@@ -53,9 +53,7 @@ export function PluginCard({
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>
       </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {caption}
-      </span>
+      <span className="shrink-0 text-xs text-muted-foreground">{caption}</span>
       {plugin.status === "not_connected" ? (
         <Button
           type="button"
