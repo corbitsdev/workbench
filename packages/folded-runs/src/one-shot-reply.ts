@@ -167,6 +167,7 @@ export async function runOneShotFoldedPrompt(
     instanceId,
     triggerAddress,
     definitionId: input.definitionId,
+    invokerPrincipalId: input.principalId,
     foldedBody,
     launchLabel: "the planning run",
   });

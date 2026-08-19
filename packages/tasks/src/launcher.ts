@@ -232,6 +232,7 @@ async function launchRun(
     instanceId: input.instanceId,
     triggerAddress,
     definitionId: input.definitionId,
+    invokerPrincipalId: input.principalId,
     foldedBody: input.foldedBody,
     launchLabel: "the task agent",
     persistExtra: input.persistExtra,

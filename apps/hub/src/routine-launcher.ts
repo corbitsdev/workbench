@@ -176,6 +176,7 @@ export function createHubRoutineLauncher(
         instanceId,
         triggerAddress,
         definitionId: input.definitionId,
+        invokerPrincipalId: input.principalId,
         foldedBody,
         launchLabel: "a routine",
       });

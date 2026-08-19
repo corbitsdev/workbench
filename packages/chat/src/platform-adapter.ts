@@ -464,6 +464,7 @@ export function createHubChatPlatform(
         instanceId: input.workbenchId,
         triggerAddress: input.triggerAddress,
         definitionId,
+        invokerPrincipalId: input.creatorPrincipalId,
         // The launch body is persisted with the mint itself, in the
         // same transaction, so a wake can rebuild the deploy config
         // without reaching for the definition's asset — a workbench
@@ -545,6 +546,7 @@ export function createHubChatPlatform(
         instanceId,
         triggerAddress,
         definitionId: input.definitionId,
+        invokerPrincipalId: input.creatorPrincipalId,
         persistExtra: async (tx) => {
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,

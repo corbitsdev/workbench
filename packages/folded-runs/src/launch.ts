@@ -360,6 +360,19 @@ export type LaunchFoldedRunParams = {
   instanceId: string;
   triggerAddress: string;
   definitionId: string;
+  /**
+   * The principal who started this run — always a person's, never the
+   * run's own. A run is bounded by whoever invoked it: it resolves the
+   * same `source: "invoker"` credentials that person holds, and its
+   * hub-side authority is the intersection of what its pinned tools need
+   * with what that person actually has. Required at every call site, with
+   * no null case, because a run that could reach further than the person
+   * who started it is privilege escalation wearing a tool pin.
+   *
+   * For a scheduled routine or a webhook there is nobody in the loop, so
+   * the invoker is whoever created the routine or the trigger.
+   */
+  invokerPrincipalId: string;
   foldedBody: FoldedBody;
   /** Named in the "seed a tenant catalog source" error, e.g. "the workbench host" or "the invited agent". */
   launchLabel: string;
@@ -390,7 +403,12 @@ export type LaunchedFoldedRun = {
 
 export type MintFoldedRunParams = Pick<
   LaunchFoldedRunParams,
-  "tenantId" | "instanceId" | "triggerAddress" | "definitionId" | "persistExtra"
+  | "tenantId"
+  | "instanceId"
+  | "triggerAddress"
+  | "definitionId"
+  | "invokerPrincipalId"
+  | "persistExtra"
 >;
 
 /**
@@ -514,6 +532,7 @@ export async function launchFoldedRun(
     instanceId: params.instanceId,
     triggerAddress: params.triggerAddress,
     definitionId: params.definitionId,
+    invokerPrincipalId: params.invokerPrincipalId,
     ...(params.persistExtra !== undefined
       ? { persistExtra: params.persistExtra }
       : {}),

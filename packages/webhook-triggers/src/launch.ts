@@ -116,6 +116,10 @@ export async function launchWebhookTrigger(
     instanceId,
     triggerAddress,
     definitionId: trigger.workflowDefinitionId,
+    // Nobody is in the loop for a webhook, so the run is bounded by
+    // whoever created the trigger — the last person who chose that this
+    // definition should run on this payload.
+    invokerPrincipalId: trigger.createdBy,
     foldedBody,
     launchLabel: `webhook trigger "${trigger.name}"`,
   });
