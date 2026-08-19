@@ -4,6 +4,17 @@
 // last touched this file, not an oversight. A file only belongs here once
 // it actually trips one of those two classes; grep before adding a row.
 //
+// A row also stops belonging here the moment its file stops tripping a
+// class — `packages/chat-ui/src/timeline.tsx` was carried long after it had
+// nothing left to exclude, since it imports react-ui's `Button` and that
+// takes it out of the raw-button class outright. A stale row reads as
+// accepted debt that isn't there, and every row here once cited a ticket
+// that had closed (or, for one, no ticket at all), which hid that the ledger
+// had no live work behind it. `ticket` must therefore name an OPEN issue:
+// if the work is done, delete the row instead of repointing it. Run the
+// check after removing a row — the checker's classes are narrower than a
+// grep, so "this file looks clean" is not the same as it counting zero.
+//
 // `REACT_UI_DRIFT_SNAPSHOT` is the total ratcheted violation count (raw
 // form controls outside this list + every raw `<table>` + raw buttons
 // outside this list) recorded the last time this ledger was updated.
@@ -21,20 +32,16 @@ export interface DriftAllowlistEntry {
 export const REACT_UI_DRIFT_ALLOWLIST: readonly DriftAllowlistEntry[] = [
   {
     relPath: "packages/tasks-ui/src/task-composer-dialog.tsx",
-    ticket: "CL-6066",
+    ticket: "CL-6320",
   },
   {
     relPath: "packages/tasks-ui/src/myra-agent-selection-strategy.tsx",
-    ticket: "CL-6066",
-  },
-  {
-    relPath: "packages/chat-ui/src/timeline.tsx",
-    ticket: "CL-6067",
+    ticket: "CL-6320",
   },
   {
     relPath: "apps/web/src/pages/insights-page.tsx",
-    ticket: "wave 3 lane",
+    ticket: "CL-6320",
   },
 ];
 
-export const REACT_UI_DRIFT_SNAPSHOT = 55;
+export const REACT_UI_DRIFT_SNAPSHOT = 52;
