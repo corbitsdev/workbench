@@ -12,7 +12,11 @@ import { createInMemoryGrantStore } from "@intx/authz";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { createAccountCallerResolver, mountMemory } from "./memory-mount";
+import {
+  createAccountCallerResolver,
+  createMemoryCallerScopeDescriber,
+  mountMemory,
+} from "./memory-mount";
 
 const KEYS = ["DATABASE_URL", "EMBED_BASE_URL", "EMBED_MODEL"] as const;
 
@@ -143,12 +147,12 @@ type Seat = {
   kind?: "user" | "agent" | "workflow";
 };
 
-function appWithResolver(
-  db: Parameters<typeof createAccountCallerResolver>[0],
-  operatorTenantId: string | undefined,
+function appSeatedAs(
   seat: Seat,
+  resolve: (
+    c: Parameters<ReturnType<typeof createAccountCallerResolver>>[0],
+  ) => unknown,
 ) {
-  const resolver = createAccountCallerResolver(db, operatorTenantId);
   const app = new Hono<TenantEnv>();
   app.use("*", async (c, next) => {
     c.set("tenant", {
@@ -173,10 +177,50 @@ function appWithResolver(
     await next();
   });
   app.get("/resolve", async (c) => {
-    const resolved = await resolver(c);
+    const resolved = await resolve(c);
     return c.json(resolved);
   });
   return app;
+}
+
+function appWithResolver(
+  db: Parameters<typeof createAccountCallerResolver>[0],
+  operatorTenantId: string | undefined,
+  seat: Seat,
+) {
+  const resolver = createAccountCallerResolver(db, operatorTenantId);
+  return appSeatedAs(seat, (c) => resolver(c));
+}
+
+function appWithScopeDescriber(
+  db: Parameters<typeof createMemoryCallerScopeDescriber>[0],
+  operatorTenantId: string | undefined,
+  seat: Seat,
+) {
+  const describeScope = createMemoryCallerScopeDescriber(db, operatorTenantId);
+  return appSeatedAs(seat, (c) => describeScope(c));
+}
+
+async function seedOrgAndWorkbench(
+  db: ReturnType<typeof createDB>["db"],
+  slug: string,
+): Promise<{ orgTenantId: string; workbenchTenantId: string }> {
+  const orgTenantId = `tnt_${slug}_org`;
+  const workbenchTenantId = `tnt_${slug}_workbench`;
+  await db.insert(schema.tenant).values({
+    id: orgTenantId,
+    name: "Org",
+    slug: `${slug}-org`,
+    domain: `${slug}-org.workbench.test`,
+  });
+  await db.insert(schema.tenant).values({
+    id: workbenchTenantId,
+    name: "Workbench",
+    slug: `${slug}-workbench`,
+    domain: `${slug}-workbench.workbench.test`,
+    parentId: orgTenantId,
+  });
+  return { orgTenantId, workbenchTenantId };
 }
 
 // `createAccountCallerResolver` is `registerMemoryRoutes`'s `CallerResolver`
@@ -198,28 +242,6 @@ describeIfDb("createAccountCallerResolver", () => {
   afterAll(async () => {
     await dropSchema(target, { schema: CALLER_RESOLVER_SCHEMA });
   });
-
-  async function seedOrgAndWorkbench(
-    db: ReturnType<typeof createDB>["db"],
-    slug: string,
-  ): Promise<{ orgTenantId: string; workbenchTenantId: string }> {
-    const orgTenantId = `tnt_${slug}_org`;
-    const workbenchTenantId = `tnt_${slug}_workbench`;
-    await db.insert(schema.tenant).values({
-      id: orgTenantId,
-      name: "Org",
-      slug: `${slug}-org`,
-      domain: `${slug}-org.workbench.test`,
-    });
-    await db.insert(schema.tenant).values({
-      id: workbenchTenantId,
-      name: "Workbench",
-      slug: `${slug}-workbench`,
-      domain: `${slug}-workbench.workbench.test`,
-      parentId: orgTenantId,
-    });
-    return { orgTenantId, workbenchTenantId };
-  }
 
   test("resolves a member to their OWN principal in the org tenant, not the workbench principal they are calling with", async () => {
     const { db, close } = createDB({
@@ -410,6 +432,132 @@ describeIfDb("createAccountCallerResolver", () => {
       });
       const res = await app.request("/resolve");
       expect(await res.json()).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+});
+
+const SCOPE_DESCRIBER_SCHEMA = "hub_memory_scope_describer_test";
+
+// The Memory page reads this, and every memory data route reads
+// `createAccountCallerResolver`. Both run the same rule, so a person is
+// never told they have memory here and then refused when they use it —
+// which is what a bare 403 mid-page used to look like.
+describeIfDb("createMemoryCallerScopeDescriber", () => {
+  const target = dbTargetFromUrl(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  );
+
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCOPE_DESCRIBER_SCHEMA });
+  });
+
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCOPE_DESCRIBER_SCHEMA });
+  });
+
+  test("reports a member as scoped", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: SCOPE_DESCRIBER_SCHEMA,
+    });
+    try {
+      const { orgTenantId, workbenchTenantId } = await seedOrgAndWorkbench(
+        db,
+        "scoped",
+      );
+      await db.insert(schema.principal).values({
+        id: "prn_scoped_org",
+        tenantId: orgTenantId,
+        kind: "user",
+        refId: "usr_scoped",
+        status: "active",
+      });
+
+      const app = appWithScopeDescriber(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_scoped_workbench",
+        refId: "usr_scoped",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({ kind: "scoped" });
+    } finally {
+      await close();
+    }
+  });
+
+  test("names a guest's missing org principal, so the page can explain it instead of reporting a fault", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: SCOPE_DESCRIBER_SCHEMA,
+    });
+    try {
+      const { workbenchTenantId } = await seedOrgAndWorkbench(db, "unscoped");
+
+      const app = appWithScopeDescriber(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_unscoped_workbench",
+        refId: "usr_unscoped",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({
+        kind: "unscoped",
+        reason: "no-org-principal",
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("names the operator tenant's missing account rather than blaming the caller", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: SCOPE_DESCRIBER_SCHEMA,
+    });
+    try {
+      const operatorTenantId = "tnt_describer_operator";
+      await db.insert(schema.tenant).values({
+        id: operatorTenantId,
+        name: "Operator",
+        slug: "describer-operator",
+        domain: "describer-operator.workbench.test",
+      });
+
+      const app = appWithScopeDescriber(db, operatorTenantId, {
+        tenantId: operatorTenantId,
+        principalId: "prn_describer_admin",
+        refId: "usr_describer_admin",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({
+        kind: "unscoped",
+        reason: "no-account-tenant",
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("names a non-person caller — a run reaches memory through its own granted authority, never this browser surface", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: SCOPE_DESCRIBER_SCHEMA,
+    });
+    try {
+      const { workbenchTenantId } = await seedOrgAndWorkbench(db, "nonperson");
+
+      const app = appWithScopeDescriber(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_nonperson_run",
+        refId: "wfr_nonperson",
+        kind: "workflow",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({
+        kind: "unscoped",
+        reason: "not-a-person",
+      });
     } finally {
       await close();
     }

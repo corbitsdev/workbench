@@ -14,7 +14,10 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { MemorySection } from "../src/memory-section";
-import type { MemoryPlaneStatus } from "../src/memory-api";
+import type {
+  MemoryCallerScope,
+  MemoryPlaneStatus,
+} from "../src/memory-api";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -38,9 +41,25 @@ const NO_DEGRADE = {
   escalated: {},
 };
 
-function renderSection(status: MemoryPlaneStatus) {
+// A working plane, so a test about who is asking can never pass because the
+// plane itself happened to be unavailable.
+const LEXICAL_PLANE: MemoryPlaneStatus = {
+  source: "lexical-only",
+  embeddingsConfigured: false,
+  embed: null,
+  rerank: { configured: false },
+  degrade: NO_DEGRADE,
+  missing: [],
+  setupOptions: [],
+};
+
+function renderSection(
+  plane: MemoryPlaneStatus,
+  caller: MemoryCallerScope = { kind: "scoped" },
+) {
   globalThis.fetch = (async (url: string) => {
-    if (url === "/api/tenants/ten_1/memory/status") return json(status);
+    if (url === "/api/tenants/ten_1/memory/status")
+      return json({ plane, caller });
     throw new Error(`unexpected fetch: ${url}`);
   }) as unknown as typeof fetch;
 
@@ -219,6 +238,47 @@ describe("MemorySection", () => {
       await settle();
 
       expect(container.textContent).toContain("No workbench selected");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+  // A guest holds no memory here. Before this, the same situation reached
+  // the page as a thrown 403 and rendered "Memory can't run on this deploy"
+  // with a Check again button — telling a person the server is broken and
+  // inviting them to retry something that will never succeed.
+  test("a guest is told the memory here isn't theirs — never that the deploy is broken, and with nothing to retry", async () => {
+    const { container, root } = renderSection(LEXICAL_PLANE, {
+      kind: "unscoped",
+      reason: "no-org-principal",
+    });
+    try {
+      act(() => {
+        root.render(<MemorySection tenantId="ten_1" />);
+      });
+      await settle();
+
+      expect(container.textContent).toContain("Memory here isn't yours");
+      expect(container.textContent).not.toContain("Check again");
+      expect(container.textContent).not.toContain("an operator");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a caller above every account is told there is no account to remember under", async () => {
+    const { container, root } = renderSection(LEXICAL_PLANE, {
+      kind: "unscoped",
+      reason: "no-account-tenant",
+    });
+    try {
+      act(() => {
+        root.render(<MemorySection tenantId="ten_1" />);
+      });
+      await settle();
+
+      expect(container.textContent).toContain("No account to remember under");
     } finally {
       act(() => root.unmount());
       container.remove();

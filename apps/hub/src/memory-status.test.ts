@@ -219,6 +219,7 @@ describe("createMemoryStatusRoutes' grant guard", () => {
       createMemoryStatusRoutes({
         plane: { describeStatus: async () => READY_STATUS },
         requireGrant: recordingRequireGrant,
+        describeCaller: async () => ({ kind: "scoped" }),
       }),
     );
 
@@ -226,6 +227,52 @@ describe("createMemoryStatusRoutes' grant guard", () => {
 
     expect(response.status).toBe(200);
     expect(seen).toEqual([{ resource: "memory", action: "status" }]);
+  });
+
+  test("answers with the plane's facts and this caller's own scope, so the page never has to guess which one a failure was about", async () => {
+    const app = mountAs(
+      createMemoryStatusRoutes({
+        plane: { describeStatus: async () => READY_STATUS },
+        requireGrant: () => async (_c, next) => {
+          await next();
+        },
+        describeCaller: async () => ({ kind: "scoped" }),
+      }),
+    );
+
+    const response = await app.request("/status");
+
+    expect(await response.json()).toEqual({
+      plane: READY_STATUS,
+      caller: { kind: "scoped" },
+    });
+  });
+
+  // A guest holds no principal in the org tenant memory lives in, so a
+  // search would refuse them. That is a fact about who is asking, not a
+  // fault, so it rides back on a 200 the page can explain — never the bare
+  // 403 that reads to a person as the deploy being broken.
+  test("reports a caller who holds no memory here by name, on a 200 rather than an error", async () => {
+    const app = mountAs(
+      createMemoryStatusRoutes({
+        plane: { describeStatus: async () => READY_STATUS },
+        requireGrant: () => async (_c, next) => {
+          await next();
+        },
+        describeCaller: async () => ({
+          kind: "unscoped",
+          reason: "no-org-principal",
+        }),
+      }),
+    );
+
+    const response = await app.request("/status");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      plane: READY_STATUS,
+      caller: { kind: "unscoped", reason: "no-org-principal" },
+    });
   });
 
   // Nothing plants a grant on the `memory` resource. Every tenant owner
@@ -260,6 +307,7 @@ describe("createMemoryStatusRoutes' grant guard", () => {
       createMemoryStatusRoutes({
         plane: { describeStatus: async () => READY_STATUS },
         requireGrant: denyingRequireGrant,
+        describeCaller: async () => ({ kind: "scoped" }),
       }),
     );
 
