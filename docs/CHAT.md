@@ -349,11 +349,18 @@ blob has no stored link back to a specific Library artifact, so the most a
 host can do is navigate to the Library at large — a real per-artifact deep
 link (and opening in canvas rather than navigating away) is follow-up work.
 
-A typing banner renders between the timeline and the composer, driven by
-the `chat.typing` event `POST /workbenches/:id/typing` already publishes to
-the live stream (see the HTTP surface table above) — `ChatWorkspace` tracks
-the latest ping with a short expiry and resolves it to the typist's
-participant handle, never a raw principal id.
+A quiet typing pulse occupies the incoming-message slot after the last
+timeline message — the same left indent as the next agent reply. It
+lights up from two sources: the `chat.typing` event
+`POST /workbenches/:id/typing` already publishes to the live stream (see
+the HTTP surface table above), and an owed agent reply that has not
+streamed tokens yet. `ChatWorkspace` tracks the latest human ping with a
+short expiry and resolves it to the typist's participant handle, never a
+raw principal id. The who-is-typing copy is announced to assistive tech;
+the visual is a small three-dot bubble. The pulse stays up across tool
+rounds (`inference.done` does not wipe an empty pending) and is held for
+a short floor so a fast first token cannot flash it. The signed-in
+reader's own messages sit on the right, like an outgoing iMessage.
 
 ### Reactions and pinned messages (CL-6030)
 
