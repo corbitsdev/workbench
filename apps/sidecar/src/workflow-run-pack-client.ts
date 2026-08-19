@@ -330,7 +330,13 @@ export function createMultistepGrantsRouter(): MultistepGrantsRouter {
     },
     async tryRoute(frame) {
       const handler = handlers.get(frame.agentAddress);
-      if (handler === undefined) return false;
+      if (handler === undefined) {
+        // The run's grants never reach disk, so its `onRunStart` barrier
+        // fails closed and the run dies before its first step. Silence
+        // here made that look like an unexplained run failure.
+        logger.error`run.grants for run ${frame.runId} dropped: no grants handler registered for deployment ${frame.agentAddress}; the run will fail its onRunStart barrier closed`;
+        return false;
+      }
       await handler({ runId: frame.runId, stepGrants: frame.stepGrants });
       return true;
     },

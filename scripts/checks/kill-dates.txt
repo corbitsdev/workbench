@@ -13,6 +13,7 @@
 # node_modules excluded). check:killdates recomputes it and fails on
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
+apps/sidecar | sawyer | 2026-09-14
 vendor/intx/agent | sawyer | 2026-09-14 | 478b17dfc4e71da8c7b15b51bdf74d6476459e58c7a251aa3eaabfdda6276d45
 vendor/intx/authz | sawyer | 2026-09-14 | 38d6760b35a9ce4ccbadc07b1d4d1d24fbe50dbde2200179009035b7c08bf2ec
 vendor/intx/crypto | sawyer | 2026-09-14 | 98cec0405dec9eadc8daeae161231b9bc980cb076daf43ef4f617a3b1c1d7096

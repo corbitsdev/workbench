@@ -14,6 +14,7 @@ import path from "node:path";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 
 import { deriveDeploymentId } from "../src/workflow-host-wiring";
+import { readWorkflowDeploymentRecord } from "../src/workflow-deployment-record";
 import {
   answerReadyHandshake,
   makeLifecycleFixture,
@@ -90,6 +91,29 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     // The address is no longer live/routable: a relaunch re-establishes it
     // through the ordinary deploy path, not a resumed registration.
     expect(router.activeAddresses()).toEqual([]);
+
+    // The kept record is stamped as parked -- the durable marker a boot
+    // scan reads to tell "the hub parked this" from "this was live when
+    // the process stopped".
+    const record = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+    expect(record?.parkedAt).toBeDefined();
+  });
+
+  test("reclaimDirs: true (undeploy) never stamps a parked marker (the record is gone)", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_teardown-reclaim-no-mark@example.com");
+    const deployPromise = router.deploy(frame);
+    await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
+    await router.teardownDeployment(frame.agentAddress, {
+      reclaimDirs: true,
+    });
+
+    await expect(
+      readWorkflowDeploymentRecord(dataDir, deploymentId),
+    ).resolves.toBeUndefined();
   });
 
   test("both flavors unregister the transport, routers, and deployment-address mapping", async () => {

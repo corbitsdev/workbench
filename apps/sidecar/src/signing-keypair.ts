@@ -1,6 +1,14 @@
 // The host's persisted Ed25519 identity. One key, one identity for the
 // sidecar process: whatever execution body runs on this host signs as
 // this keypair, so the identity survives the body being replaced.
+//
+// Copied near-verbatim from Interchange's own
+// `apps/sidecar/src/signing-keypair.ts` (faremeter/interchange @
+// 59f5e7b9) — see the `apps/sidecar` row in VENDORED.md. This is a host
+// identity, distinct from the per-agent keys `@intx/hub-agent`'s
+// `agent-key-store.ts` custodies: an agent key answers "which agent is
+// this" on a challenge, while this one signs the workflow-run commits
+// the supervisor and each workflow-process child produce.
 
 import fs from "node:fs/promises";
 import path from "node:path";

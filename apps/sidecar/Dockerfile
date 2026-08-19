@@ -6,12 +6,16 @@
 #
 # (see `bun run build:sidecar-image` in the root package.json)
 
-FROM oven/bun:1.2 AS base
+FROM oven/bun:1.3.9 AS base
 WORKDIR /repo
 
 FROM base AS install
 COPY . .
-RUN bun install --frozen-lockfile
+# Scoped to the sidecar's own workspace closure: an unfiltered install
+# pulls the whole monorepo's dependency graph (the web app's frontend
+# stack included), which is both wasted image weight and enough memory
+# pressure to OOM a small build container.
+RUN bun install --frozen-lockfile --filter=@workbench/sidecar
 
 FROM base AS runtime
 RUN addgroup --system sidecar \

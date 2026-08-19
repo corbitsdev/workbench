@@ -16,6 +16,7 @@ import {
 } from "@intx/workflow-host";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
+import { getLogger } from "@intx/log";
 import { runGrantsPath } from "../run-grants";
 
 /**
@@ -112,6 +113,8 @@ export function createStepStrategy(args: {
   };
 }
 
+const logger = getLogger(["sidecar", "step-grants"]);
+
 /**
  * Write every step's grants into its agent-state repo so the
  * supervisor's `assembleCredentialsSnapshot` (invoked inside `spawn()`)
@@ -158,6 +161,7 @@ export async function writeStepGrants(args: {
         message: `Write run grants for ${args.runId}`,
       },
     );
+    logger.info`Wrote run grants for run ${args.runId} at ${runGrantsPath(args.runId)} in workflow-run repo ${args.deploymentId}`;
     return;
   }
   for (const stepId of args.stepOrder) {

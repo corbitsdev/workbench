@@ -13,7 +13,7 @@ import { type } from "arktype";
 import { derivePublicKeyBytes } from "@intx/crypto";
 import { getLogger } from "@intx/log";
 import type { HubTransport } from "@intx/mail-memory";
-import { type RepoStore } from "@intx/hub-sessions";
+import { parseAgentId, type RepoStore } from "@intx/hub-sessions";
 import type {
   AgentKeyStore,
   DeployRouter,
@@ -51,6 +51,7 @@ import type {
 } from "../workflow-run-pack-client";
 import {
   deleteWorkflowDeploymentRecord,
+  markWorkflowDeploymentRecordParked,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
@@ -1283,6 +1284,34 @@ export function createSidecarDeployRouter(deps: {
         grants: frame.config.grants,
       });
 
+      // Per-run grants bridge, for the same reason the per-step write
+      // above exists: the barrier must find the file before the run can
+      // read it. A single-step deploy is self-anchored -- its run id IS
+      // the address's instance id -- and `spawn` replays any mail already
+      // sitting in the inbox, which births that run immediately. The
+      // hub's own `run.grants` frame cannot win that race: it is sent
+      // only after the deploy ack returns, so a wake with mail pending
+      // reached `onRunStart` with no grants file and failed the run
+      // closed. Writing the operator-approved `frame.config.grants` here
+      // -- the same set the frame carries for a self-anchored run --
+      // closes it; the hub's later frame rewrites identical bytes, and
+      // `writeTree` without a `clearPrefix` is purely additive, so it
+      // never disturbs the run's events. Guarded on `isRunAddress`: only
+      // a run address names a self-anchored run id.
+      if (
+        projection.definition.stepOrder.length === 1 &&
+        isRunAddress(frame.agentAddress)
+      ) {
+        await writeStepGrants({
+          repoStore: deps.repoStore,
+          deploymentId,
+          stepOrder: projection.definition.stepOrder,
+          deriveStepRepoId: stepStrategy.deriveStepRepoId,
+          grants: frame.config.grants,
+          runId: parseAgentId(frame.agentAddress),
+        });
+      }
+
       // Hand off to the shared spawn core.
       return await spawnWorkflowDeployment(spec);
     } catch (cause) {
@@ -1492,6 +1521,16 @@ export function createSidecarDeployRouter(deps: {
     if (opts.reclaimDirs && stepStateDataDir !== undefined) {
       await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
     }
+    // Stamp the kept record as parked. This is the ONLY durable signal that
+    // distinguishes "the hub parked this deployment on purpose" from "this
+    // record is here because the process crashed or exited while the
+    // deployment was still live" -- both leave the record on disk with no
+    // marker otherwise. The boot scan reads this to REPORT parked-vs-live
+    // counts today; it does not yet change what it spawns (that cutover is
+    // CL-6282).
+    if (!opts.reclaimDirs && stepStateDataDir !== undefined) {
+      await markWorkflowDeploymentRecordParked(stepStateDataDir, deploymentId);
+    }
     if (opts.reclaimDirs) {
       releaseSlug(deploymentId, agentAddress);
     }
@@ -1537,6 +1576,20 @@ export function createSidecarDeployRouter(deps: {
       }
 
       const scanned = await scanWorkflowDeploymentRecords(dataDir);
+      // Report parked-vs-live counts from the `parkedAt` marker
+      // (`markWorkflowDeploymentRecordParked`, written on the hibernate
+      // teardown) before restoring anything. This is REPORT-ONLY: every
+      // record below still restores LIVE regardless of this count, exactly
+      // as before this marker existed. Making the boot scan actually skip
+      // (or defer) the parked ones is CL-6282 -- a separate change, once its
+      // design pass lands -- and needs a signal this scan cannot see on its
+      // own before that cutover is safe: whether the hub still wants a
+      // parked deployment running is a hub-side decision, not something a
+      // sidecar with no hub connection yet can determine at boot.
+      const parkedCount = scanned.filter(
+        ({ record }) => record.parkedAt !== undefined,
+      ).length;
+      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parkedCount} parked, ${scanned.length - parkedCount} live; restoring all of them (parked-aware boot restore is CL-6282)`;
       // Restore serially, not in parallel: deterministic boot-log ordering,
       // one isolable warning per failed record, and no concurrent
       // child-spawn / transport-register storm. Restore runs before

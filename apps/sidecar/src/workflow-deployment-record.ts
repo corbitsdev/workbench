@@ -55,6 +55,16 @@ export const WorkflowDeploymentRecord = type({
   "referencedDefinitionHashes?": {
     "[string]": "string > 0",
   },
+  // Written only on the state-preserving hibernate teardown
+  // (`teardownDeployment({ reclaimDirs: false })`), never on deploy or
+  // rotation. Its presence is the durable answer to "did the hub park this
+  // deployment on purpose", as opposed to a record left behind by a crash
+  // or a bare process exit -- both of which leave no marker at all. Absent
+  // on every record written before this field existed and on every record
+  // for a deployment that has never been hibernated; `readWorkflowDeploymentRecord`
+  // and the boot scan both treat an absent marker as "live", so an old
+  // on-disk record keeps loading and restoring exactly as before.
+  "parkedAt?": "string > 0",
 });
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
 
@@ -112,6 +122,29 @@ export async function writeWorkflowDeploymentRecord(
   // sidecar.
   await writeFileAtomicDurable(path, JSON.stringify(record, null, 2), {
     mode: 0o600,
+  });
+}
+
+/**
+ * Mark an existing deployment record as parked: stamp `parkedAt` with the
+ * current time and rewrite the record in place. Called from the
+ * state-preserving hibernate teardown, after the record has already been
+ * confirmed to exist (a hibernate never writes a fresh record, only
+ * annotates the one the original deploy or a later rotation left behind).
+ * A missing record is not an error -- there is nothing to mark, and the
+ * caller's own "record IS the durable state" invariant means this should
+ * not happen outside a race with a concurrent reclaim, which just leaves
+ * the reclaim as the last write.
+ */
+export async function markWorkflowDeploymentRecordParked(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  const existing = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+  if (existing === undefined) return;
+  await writeWorkflowDeploymentRecord(dataDir, deploymentId, {
+    ...existing,
+    parkedAt: new Date().toISOString(),
   });
 }
 
