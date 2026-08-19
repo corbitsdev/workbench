@@ -22,13 +22,41 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ALL_EVALS } from "./cases/index.ts";
-import { renderResultsMarkdown } from "./report.ts";
-import { runMatrix } from "./runner.ts";
-import { applyEvalsMigrations } from "./store/migrations.ts";
-import { createPostgresEvalRunStore } from "./store/pg-store.ts";
-import { bootMyraTarget } from "./targets/real-target.ts";
-import type { EvalRunResult, RunConfig } from "./types.ts";
+import {
+  ALL_EVALS,
+  applyEvalsMigrations,
+  bootMyraTarget,
+  createPostgresEvalRunStore,
+  renderResultsMarkdown,
+  runMatrix,
+  type EvalRunResult,
+  type MyraTargetInfra,
+  type RunConfig,
+} from "@corbits/evals";
+import { resetSchema, setupDatabase } from "./db-setup.ts";
+import {
+  api,
+  connectE2eDb,
+  e2eDatabaseUrl,
+  expectStatus,
+  freePort,
+  provisionSidecar,
+  startHub,
+  startSidecar,
+} from "./e2e/harness.ts";
+
+const infra: MyraTargetInfra = {
+  api,
+  connectE2eDb,
+  e2eDatabaseUrl,
+  expectStatus,
+  freePort,
+  provisionSidecar,
+  resetSchema,
+  setupDatabase,
+  startHub,
+  startSidecar,
+};
 
 function databaseUrl(): string | undefined {
   const url = process.env["DATABASE_URL"];
@@ -97,7 +125,7 @@ async function main(): Promise<void> {
     if (config === undefined) {
       throw new Error(`no RunConfig registered for "${configName}"`);
     }
-    return bootMyraTarget(config);
+    return bootMyraTarget(config, infra);
   });
 
   if (!live) {
@@ -113,7 +141,13 @@ async function main(): Promise<void> {
   const markdown = renderResultsMarkdown(evalNames, configNames, results);
   process.stdout.write(`${markdown}\n`);
 
-  const reportPath = path.join(import.meta.dir, "..", "eval-report.md");
+  const reportPath = path.join(
+    import.meta.dir,
+    "..",
+    "packages",
+    "evals",
+    "eval-report.md",
+  );
   await mkdir(path.dirname(reportPath), { recursive: true });
   await writeFile(reportPath, markdown);
 

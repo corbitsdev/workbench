@@ -10,8 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "eval": "bun run src/cli.ts"
+    "test": "bun test"
   },
   "dependencies": {
     "@corbits/assistant-workflow": "workspace:*",

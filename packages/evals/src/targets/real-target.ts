@@ -29,26 +29,69 @@ import {
 import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 
-import { resetSchema, setupDatabase } from "../../../../scripts/db-setup.ts";
-import {
-  api,
-  connectE2eDb,
-  e2eDatabaseUrl,
-  expectStatus,
-  freePort,
-  provisionSidecar,
-  startHub,
-  startSidecar,
-  type ApiResult,
-  type HubHandle,
-  type SpawnedApp,
-} from "../../../../scripts/e2e/harness.ts";
 import type { RunConfig, Target, Turn } from "../types.ts";
 import {
   newToolCallsSince,
   readAllToolCalls,
   type SqlClientLike,
 } from "./trace.ts";
+
+export interface EvalSpawnedApp {
+  output(): string;
+  exited(): boolean;
+  stop(): Promise<void>;
+}
+
+export interface EvalHubHandle extends EvalSpawnedApp {
+  readonly baseUrl: string;
+}
+
+export interface EvalApiResult {
+  status: number;
+  data: unknown;
+  cookies: string[];
+}
+
+/**
+ * The deployment plumbing `bootMyraTarget` runs on, injected by the
+ * caller (the repo's own e2e harness in `scripts/e2e/harness.ts` and
+ * `scripts/db-setup.ts`) so this package never reaches outside its own
+ * pack for repo-level scripts.
+ */
+export interface MyraTargetInfra {
+  e2eDatabaseUrl(): string | undefined;
+  resetSchema(databaseUrl: string): Promise<void>;
+  setupDatabase(databaseUrl: string): Promise<{ action: string }>;
+  provisionSidecar(
+    databaseUrl: string,
+    sidecarId: string,
+    token: string,
+  ): Promise<void>;
+  startHub(options: {
+    databaseUrl: string;
+    port: number;
+    sessionSecret: string;
+    dataDir: string;
+  }): Promise<EvalHubHandle>;
+  startSidecar(options: {
+    hubPort: number;
+    sidecarId: string;
+    token: string;
+    dataDir: string;
+  }): EvalSpawnedApp;
+  api(
+    base: string,
+    method: string,
+    route: string,
+    body?: unknown,
+    cookies?: string[],
+  ): Promise<EvalApiResult>;
+  expectStatus(what: string, result: EvalApiResult, expected: number): void;
+  connectE2eDb(
+    databaseUrl: string,
+  ): Promise<SqlClientLike & { end(): Promise<void> }>;
+  freePort(): number;
+}
 
 /** Never sent anywhere for real in plumbing mode — see the module
  * comment. Only used when `EVAL_PROVIDER_API_KEY` is unset. */
@@ -129,7 +172,22 @@ async function pollUntil<T>(
  * opens is released there, in reverse order, even if a later step in
  * this function throws partway through boot.
  */
-export async function bootMyraTarget(config: RunConfig): Promise<Target> {
+export async function bootMyraTarget(
+  config: RunConfig,
+  infra: MyraTargetInfra,
+): Promise<Target> {
+  const {
+    api,
+    connectE2eDb,
+    e2eDatabaseUrl,
+    expectStatus,
+    freePort,
+    provisionSidecar,
+    resetSchema,
+    setupDatabase,
+    startHub,
+    startSidecar,
+  } = infra;
   if (
     config.systemPromptOverride !== undefined ||
     config.toolPins !== undefined
@@ -174,7 +232,7 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
     await provisionSidecar(databaseUrl, sidecarId, sidecarToken);
 
     const hubDataDir = await mkdtemp(path.join(tmpdir(), "evals-hub-data-"));
-    const hub: HubHandle = await startHub({
+    const hub: EvalHubHandle = await startHub({
       databaseUrl,
       port: freePort(),
       sessionSecret: Buffer.from(
@@ -188,7 +246,7 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
     const sidecarDataDir = await mkdtemp(
       path.join(tmpdir(), "evals-sidecar-data-"),
     );
-    const sidecar: SpawnedApp = startSidecar({
+    const sidecar: EvalSpawnedApp = startSidecar({
       hubPort: Number(new URL(hub.baseUrl).port || "80"),
       sidecarId,
       token: sidecarToken,
@@ -319,7 +377,7 @@ export async function bootMyraTarget(config: RunConfig): Promise<Target> {
             `sidecar exited before chat creation; output:\n${sidecar.output()}`,
           );
         }
-        const res: ApiResult = await api(
+        const res: EvalApiResult = await api(
           hub.baseUrl,
           "POST",
           `/api/tenants/${seeded.tenantId}/chat/channels`,

@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@corbits/sandbox-sidecar": "workspace:*",
-    "@intx/hub-sessions": "workspace:*"
+    "@intx/hub-sessions": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
