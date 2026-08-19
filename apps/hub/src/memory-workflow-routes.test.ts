@@ -18,16 +18,24 @@
 // rather than a fake standing in for it — zero real keys, and the ONLY
 // inference this test performs is the plane's own lexical (Postgres FTS)
 // fallback.
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
-import { createNoopCredentialCipher } from "@intx/crypto";
+import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 import {
   createWorkflowMemoryRoutes,
   createWorkflowMemoryStore,
 } from "@corbits/memory-hub";
 import type { ResolvedWorkflowRunScope } from "@corbits/artifacts-hub";
 
+import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { mountMemory } from "./memory-mount";
 
 const KEYS = [
@@ -78,10 +86,21 @@ const TENANT_B: ResolvedWorkflowRunScope = {
 const TOKEN_A = "token-a";
 const TOKEN_B = "token-b";
 
+const WORKFLOW_ROUTES_SCHEMA = "hub_memory_workflow_routes_test";
+
 describeIfDb(
   "createWorkflowMemoryRoutes against a real memory plane (degraded, no working embed)",
   () => {
+    const target = dbTargetFromUrl(
+      databaseUrl ?? "postgres://localhost:5432/unused",
+    );
+
+    beforeAll(async () => {
+      await runMigrations(target, { schema: WORKFLOW_ROUTES_SCHEMA });
+    });
+
     afterAll(async () => {
+      await dropSchema(target, { schema: WORKFLOW_ROUTES_SCHEMA });
       const postgres = (await import("postgres")).default;
       const sql = postgres(databaseUrl as string, { max: 1 });
       try {
@@ -97,10 +116,31 @@ describeIfDb(
       process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
       process.env["EMBED_MODEL"] = "test-embedding-model";
 
-      const handle = mountMemory({
+      const { db, close } = createDB({
+        ...target,
+        schema: WORKFLOW_ROUTES_SCHEMA,
+      });
+      // No operator tenant configured on this deploy — each run's tenant
+      // is already a root bench, so it resolves to itself (CL-6289's
+      // account-scoping root rule); this proves that root rule end to end
+      // over real HTTP rather than only unit-testing the resolver.
+      await db.insert(schema.tenant).values({
+        id: TENANT_A.tenantId,
+        name: "Tenant A",
+        slug: "memory-workflow-routes-tenant-a",
+        domain: "memory-workflow-routes-tenant-a.workbench.test",
+      });
+      await db.insert(schema.tenant).values({
+        id: TENANT_B.tenantId,
+        name: "Tenant B",
+        slug: "memory-workflow-routes-tenant-b",
+        domain: "memory-workflow-routes-tenant-b.workbench.test",
+      });
+
+      const handle = await mountMemory({
         app: new Hono(),
-        db: undefined as never, // never touched: EMBED_BASE_URL is set, so the env step wins without a credential lookup
-        credentialCipher: createNoopCredentialCipher(),
+        db,
+        databaseUrl: databaseUrl as string,
         grantStore: createInMemoryGrantStore([]),
         conditionRegistry: {},
       });
@@ -113,7 +153,7 @@ describeIfDb(
             return null;
           },
         },
-        store: createWorkflowMemoryStore(handle.memory),
+        store: createWorkflowMemoryStore(handle.memory, { db }),
       });
 
       const addFor = (token: string, title: string, text: string) =>
@@ -172,6 +212,8 @@ describeIfDb(
         data: { items: { title: string }[] };
       };
       expect(bodyB.data.items.map((i) => i.title)).toEqual(["Decision B"]);
+
+      await close();
     }, 20000);
   },
 );

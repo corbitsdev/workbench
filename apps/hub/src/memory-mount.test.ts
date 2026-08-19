@@ -7,16 +7,12 @@ import {
   test,
 } from "bun:test";
 import { Hono } from "hono";
+import type { TenantEnv } from "@intx/hub-api";
 import { createInMemoryGrantStore } from "@intx/authz";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
-import { credentialAad } from "@intx/types";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { createLazyMemoryPlane, mountMemory } from "./memory-mount";
+import { createAccountCallerResolver, mountMemory } from "./memory-mount";
 
 const KEYS = ["DATABASE_URL", "EMBED_BASE_URL", "EMBED_MODEL"] as const;
 
@@ -45,55 +41,18 @@ function stashEnv(): void {
   }
 }
 
-describe("mountMemory", () => {
-  test("mounts synchronously and always returns a handle — nothing is built at mount time", () => {
-    stashEnv();
-    process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
-    const app = new Hono();
-    const handle = mountMemory({
-      app,
-      db: undefined as never, // never touched: mounting registers routes only, it never resolves config
-      credentialCipher: createNoopCredentialCipher(),
-      grantStore: createInMemoryGrantStore([]),
-      conditionRegistry: {},
-    });
-    expect(handle.memory).toBeDefined();
-  });
-
-  test("registers the status route at /api/tenants/:tenantId/memory/status", async () => {
-    stashEnv();
-    process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
-    const app = new Hono();
-    mountMemory({
-      app,
-      db: undefined as never,
-      credentialCipher: createNoopCredentialCipher(),
-      grantStore: createInMemoryGrantStore([]),
-      conditionRegistry: {},
-    });
-    // No principal on the request context: the status route's own
-    // fail-closed guard rejects with 401 before the (lazy, DB-touching)
-    // status handler ever runs — this only proves the route exists and is
-    // guarded, not that it works end-to-end.
-    const res = await app.request("/api/tenants/tnt_1/memory/status");
-    expect(res.status).toBe(401);
-  });
-});
-
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
 // existing convention for tests that talk to a real Postgres (see
-// packages/approvals/test/needs-you.test.ts). Proves the actual cutover:
-// mounting never touches the database, and the first real memory request
-// (not the mount call) is what lands the engine's tables under its own
-// `memory` schema, never `public`.
+// packages/approvals/test/needs-you.test.ts). There is no non-DB-gated
+// path left to test: config is env-only now (CL-6289), but `mountMemory`
+// always runs `runMemoryMigrations` against `DATABASE_URL` at boot — env,
+// or the lexical-only floor, both still need a real Postgres to migrate.
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
 const CORE_SCHEMA = "hub_memory_mount_test";
 
-describeIfDb("mountMemory: schema isolation against a real database", () => {
-  // `describe.skip` still evaluates this body to register skipped tests,
-  // so this must parse even when `databaseUrl` is unset.
+describeIfDb("mountMemory", () => {
   const target = dbTargetFromUrl(
     databaseUrl ?? "postgres://localhost:5432/unused",
   );
@@ -113,29 +72,20 @@ describeIfDb("mountMemory: schema isolation against a real database", () => {
     }
   });
 
-  test("the first real memory call (not mount) creates tables under `memory`, not `public`", async () => {
+  test("mounts at boot — migrations run and tables land under `memory`, never `public`", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = databaseUrl;
-
     const { db, close } = createDB({ ...target, schema: CORE_SCHEMA });
     try {
       const app = new Hono();
-      // Lexical-only floor: no EMBED_* set, and no credential exists for
-      // this fresh tenant, so this reaches lexical-only without ever
-      // needing a seeded provider/credential row.
-      const handle = mountMemory({
+      const handle = await mountMemory({
         app,
         db,
-        credentialCipher: createNoopCredentialCipher(),
+        databaseUrl: databaseUrl as string,
         grantStore: createInMemoryGrantStore([]),
         conditionRegistry: {},
       });
-
-      await handle.memory.add({
-        tenantId: "tnt_memory_mount_lazy",
-        principalId: "prn_memory_mount_lazy",
-        content: { title: "t", text: "hello" },
-      });
+      expect(handle.memory).toBeDefined();
 
       const postgres = (await import("postgres")).default;
       const sql = postgres(databaseUrl as string, { max: 1 });
@@ -159,132 +109,146 @@ describeIfDb("mountMemory: schema isolation against a real database", () => {
       await close();
     }
   });
-});
 
-const LAZY_STATUS_SCHEMA = "hub_memory_mount_lazy_status_test";
-
-describeIfDb("createLazyMemoryPlane: lexical-only end-to-end", () => {
-  const target = dbTargetFromUrl(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
-
-  beforeAll(async () => {
-    await runMigrations(target, { schema: LAZY_STATUS_SCHEMA });
-  });
-
-  afterAll(async () => {
-    await dropSchema(target, { schema: LAZY_STATUS_SCHEMA });
-    const postgres = (await import("postgres")).default;
-    const sql = postgres(databaseUrl as string, { max: 1 });
+  test("registers the status route at /api/tenants/:tenantId/memory/status", async () => {
+    stashEnv();
+    process.env["DATABASE_URL"] = databaseUrl;
+    const { db, close } = createDB({ ...target, schema: CORE_SCHEMA });
     try {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "memory" CASCADE`);
-    } finally {
-      await sql.end();
-    }
-  });
-
-  test("builds lazily on first use and reports lexical-only status — never built at construction time", async () => {
-    const { db, close } = createDB({ ...target, schema: LAZY_STATUS_SCHEMA });
-    try {
-      const plane = createLazyMemoryPlane({
-        env: { DATABASE_URL: databaseUrl as string },
+      const app = new Hono();
+      await mountMemory({
+        app,
         db,
-        credentialCipher: createNoopCredentialCipher(),
+        databaseUrl: databaseUrl as string,
         grantStore: createInMemoryGrantStore([]),
         conditionRegistry: {},
       });
-
-      const [first, second] = await Promise.all([
-        plane.describeStatus("tnt_memory_plane_lazy"),
-        plane.describeStatus("tnt_memory_plane_lazy"),
-      ]);
-
-      expect(first.source).toBe("lexical-only");
-      expect(first.embeddingsConfigured).toBe(false);
-      expect(first.embed).toBeNull();
-      expect(second.source).toBe("lexical-only");
+      // No principal on the request context: the status route's own
+      // fail-closed guard rejects with 401 before the status handler ever
+      // runs — this only proves the route exists and is guarded.
+      const res = await app.request("/api/tenants/tnt_1/memory/status");
+      expect(res.status).toBe(401);
     } finally {
       await close();
     }
   });
 });
 
-const CROSS_TENANT_SCHEMA = "hub_memory_mount_cross_tenant_test";
+const CALLER_RESOLVER_SCHEMA = "hub_memory_caller_resolver_test";
 
-describeIfDb(
-  "createLazyMemoryPlane: a non-operator tenant's own credential never configures the shared plane",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
-
-    beforeAll(async () => {
-      await runMigrations(target, { schema: CROSS_TENANT_SCHEMA });
+function appWithResolver(
+  db: Parameters<typeof createAccountCallerResolver>[0],
+  operatorTenantId: string | undefined,
+  seat: { tenantId: string; principalId: string },
+) {
+  const resolver = createAccountCallerResolver(db, operatorTenantId);
+  const app = new Hono<TenantEnv>();
+  app.use("*", async (c, next) => {
+    c.set("tenant", {
+      id: seat.tenantId,
+      name: seat.tenantId,
+      slug: seat.tenantId,
+      domain: `${seat.tenantId}.workbench.test`,
+      parentId: null,
+      config: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
-
-    afterAll(async () => {
-      await dropSchema(target, { schema: CROSS_TENANT_SCHEMA });
-      const postgres = (await import("postgres")).default;
-      const sql = postgres(databaseUrl as string, { max: 1 });
-      try {
-        await sql.unsafe(`DROP SCHEMA IF EXISTS "memory" CASCADE`);
-      } finally {
-        await sql.end();
-      }
+    c.set("principal", {
+      id: seat.principalId,
+      tenantId: seat.tenantId,
+      kind: "user",
+      refId: seat.principalId,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
+    await next();
+  });
+  app.get("/resolve", async (c) => {
+    const resolved = await resolver(c);
+    return c.json(resolved);
+  });
+  return app;
+}
 
-    test("the first caller's OWN connected credential is never consulted when it isn't the operator tenant", async () => {
-      const { db, close } = createDB({
-        ...target,
-        schema: CROSS_TENANT_SCHEMA,
+// `createAccountCallerResolver` is `registerMemoryRoutes`'s `CallerResolver`
+// — the seam every memory route's identity actually flows through (see
+// `memory-mount.ts`'s module doc comment). Exercised here as an isolated
+// unit against a real tenant hierarchy: this is where CL-6289's security
+// property — same scope in a workbench and its bench, never across
+// accounts, never into the operator tenant — actually gets wired to HTTP.
+describeIfDb("createAccountCallerResolver", () => {
+  const target = dbTargetFromUrl(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  );
+
+  beforeAll(async () => {
+    await runMigrations(target, { schema: CALLER_RESOLVER_SCHEMA });
+  });
+
+  afterAll(async () => {
+    await dropSchema(target, { schema: CALLER_RESOLVER_SCHEMA });
+  });
+
+  test("remaps a workbench caller's tenant to the bench tenant, keeping the caller's own principal id", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
+    });
+    try {
+      const benchTenantId = "tnt_resolver_bench";
+      const workbenchTenantId = "tnt_resolver_workbench";
+      await db.insert(schema.tenant).values({
+        id: benchTenantId,
+        name: "Bench",
+        slug: "resolver-bench",
+        domain: "resolver-bench.workbench.test",
       });
-      try {
-        const cipher = createEnvKeyCredentialCipher(new Uint8Array(32).fill(9));
-        const firstCallerTenantId = "tnt_memory_cross_tenant_first_caller";
-        await db.insert(schema.tenant).values({
-          id: firstCallerTenantId,
-          name: "First Caller Tenant",
-          slug: "memory-cross-tenant-first-caller",
-          domain: "memory-cross-tenant-first-caller.workbench.test",
-        });
-        await db.insert(schema.provider).values({
-          id: "prov_memory_cross_tenant_openai",
-          tenantId: firstCallerTenantId,
-          name: "openai",
-          plugin: "http",
-        });
-        const credentialId = "cred_memory_cross_tenant_openai";
-        await db.insert(schema.credential).values({
-          id: credentialId,
-          tenantId: firstCallerTenantId,
-          providerId: "prov_memory_cross_tenant_openai",
-          name: "OpenAI",
-          type: "api_key",
-          secret: await cipher.encrypt(
-            "sk-first-caller-secret",
-            credentialAad(credentialId, "secret"),
-          ),
-          status: "active",
-        });
+      await db.insert(schema.tenant).values({
+        id: workbenchTenantId,
+        name: "Workbench",
+        slug: "resolver-workbench",
+        domain: "resolver-workbench.workbench.test",
+        parentId: benchTenantId,
+      });
 
-        // No `operatorTenantId` configured (matching `OPERATOR_TENANT_ID`
-        // unset): even though this tenant connected its own OpenAI
-        // credential AND is the very first (only) caller, its credential
-        // must never power the shared plane.
-        const plane = createLazyMemoryPlane({
-          env: { DATABASE_URL: databaseUrl as string },
-          db,
-          credentialCipher: cipher,
-          grantStore: createInMemoryGrantStore([]),
-          conditionRegistry: {},
-        });
+      const app = appWithResolver(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_alice",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({
+        tenantId: benchTenantId,
+        principalId: "prn_alice",
+      });
+    } finally {
+      await close();
+    }
+  });
 
-        const status = await plane.describeStatus(firstCallerTenantId);
-        expect(status.source).toBe("lexical-only");
-        expect(status.embeddingsConfigured).toBe(false);
-      } finally {
-        await close();
-      }
+  test("a caller whose own tenant IS the operator tenant resolves to null (401 via resolveCaller), never a fallback scope", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
     });
-  },
-);
+    try {
+      const operatorTenantId = "tnt_resolver_operator";
+      await db.insert(schema.tenant).values({
+        id: operatorTenantId,
+        name: "Operator",
+        slug: "resolver-operator",
+        domain: "resolver-operator.workbench.test",
+      });
+
+      const app = appWithResolver(db, operatorTenantId, {
+        tenantId: operatorTenantId,
+        principalId: "prn_operator_admin",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+});

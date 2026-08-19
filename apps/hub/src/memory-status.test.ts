@@ -113,7 +113,7 @@ describe("buildMemoryPlaneStatus", () => {
       },
     };
     const status = buildMemoryPlaneStatus(
-      "connected-credential",
+      "env",
       config,
       { embeddingsConfigured: true },
       degrade,

@@ -1,36 +1,33 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
-import { createEnvKeyCredentialCipher } from "@intx/crypto";
-import { credentialAad } from "@intx/types";
+import { describe, expect, test } from "bun:test";
 
-import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import {
-  resolveConfigFromConnectedCredential,
   resolveConfigFromEnv,
   resolveConfigLexicalOnly,
   resolveMemoryConfig,
 } from "./memory-config";
 
-const BASE_ENV = { DATABASE_URL: "postgres://localhost:5432/workbench" };
+const DATABASE_URL = "postgres://localhost:5432/workbench";
 
 describe("resolveConfigFromEnv", () => {
-  test("returns undefined when EMBED_BASE_URL is unset — the next step gets a turn", () => {
-    expect(resolveConfigFromEnv(BASE_ENV)).toBeUndefined();
+  test("returns undefined when EMBED_BASE_URL is unset — the lexical-only floor applies", () => {
+    expect(resolveConfigFromEnv({}, DATABASE_URL)).toBeUndefined();
   });
 
   test("returns undefined when EMBED_BASE_URL is blank", () => {
     expect(
-      resolveConfigFromEnv({ ...BASE_ENV, EMBED_BASE_URL: "" }),
+      resolveConfigFromEnv({ EMBED_BASE_URL: "" }, DATABASE_URL),
     ).toBeUndefined();
   });
 
   test("builds an embed config when EMBED_BASE_URL and EMBED_MODEL are both set", () => {
-    const config = resolveConfigFromEnv({
-      ...BASE_ENV,
-      EMBED_BASE_URL: "https://api.openai.com/v1",
-      EMBED_MODEL: "text-embedding-3-small",
-      EMBED_API_KEY: "sk-test",
-    });
+    const config = resolveConfigFromEnv(
+      {
+        EMBED_BASE_URL: "https://api.openai.com/v1",
+        EMBED_MODEL: "text-embedding-3-small",
+        EMBED_API_KEY: "sk-test",
+      },
+      DATABASE_URL,
+    );
     expect(config?.memory.embed).toEqual({
       baseUrl: "https://api.openai.com/v1",
       model: "text-embedding-3-small",
@@ -42,28 +39,33 @@ describe("resolveConfigFromEnv", () => {
 
   test("throws when EMBED_BASE_URL is set but EMBED_MODEL is missing — a real operator mistake, never silently skipped", () => {
     expect(() =>
-      resolveConfigFromEnv({
-        ...BASE_ENV,
-        EMBED_BASE_URL: "https://api.openai.com/v1",
-      }),
+      resolveConfigFromEnv(
+        { EMBED_BASE_URL: "https://api.openai.com/v1" },
+        DATABASE_URL,
+      ),
     ).toThrow();
   });
 
-  test("throws when DATABASE_URL is missing", () => {
+  test("throws when databaseUrl is empty", () => {
     expect(() =>
-      resolveConfigFromEnv({
-        EMBED_BASE_URL: "https://api.openai.com/v1",
-        EMBED_MODEL: "text-embedding-3-small",
-      }),
+      resolveConfigFromEnv(
+        {
+          EMBED_BASE_URL: "https://api.openai.com/v1",
+          EMBED_MODEL: "text-embedding-3-small",
+        },
+        "",
+      ),
     ).toThrow(/DATABASE_URL/);
   });
 
   test("rerank stays unset when its env vars are absent", () => {
-    const config = resolveConfigFromEnv({
-      ...BASE_ENV,
-      EMBED_BASE_URL: "https://api.openai.com/v1",
-      EMBED_MODEL: "text-embedding-3-small",
-    });
+    const config = resolveConfigFromEnv(
+      {
+        EMBED_BASE_URL: "https://api.openai.com/v1",
+        EMBED_MODEL: "text-embedding-3-small",
+      },
+      DATABASE_URL,
+    );
     expect(config?.memory.rerank).toEqual({
       baseUrl: undefined,
       model: undefined,
@@ -76,245 +78,37 @@ describe("resolveConfigFromEnv", () => {
 
 describe("resolveConfigLexicalOnly", () => {
   test("omits embed entirely — the floor needs nothing beyond DATABASE_URL", () => {
-    const config = resolveConfigLexicalOnly(BASE_ENV);
+    const config = resolveConfigLexicalOnly({}, DATABASE_URL);
     expect(config.memory.embed).toBeUndefined();
-    expect(config.memory.databaseUrl).toBe(BASE_ENV.DATABASE_URL);
+    expect(config.memory.databaseUrl).toBe(DATABASE_URL);
   });
 
-  test("throws when DATABASE_URL is missing", () => {
-    expect(() => resolveConfigLexicalOnly({})).toThrow(/DATABASE_URL/);
+  test("throws when databaseUrl is empty", () => {
+    expect(() => resolveConfigLexicalOnly({}, "")).toThrow(/DATABASE_URL/);
   });
 });
 
-// DB-gated: skipped when no DATABASE_URL is reachable (a fresh checkout
-// still runs the unit gates above), matching this repo's existing
-// convention for tests that talk to a real Postgres (`memory-mount.test.ts`).
-//
-// Proves precedence step (b) — the OPERATOR tenant's own connected OpenAI
-// credential — resolves through the platform's own
-// ownership-walk-the-ancestor-chain resolver (`resolveCredentialRequirement`,
-// never a hand-rolled query); that `resolveMemoryConfig` prefers it over
-// the lexical-only floor when no `EMBED_BASE_URL` is set, but never
-// touches it when one is; and — the regression this exists to guard —
-// that a credential connected on any tenant OTHER than the operator
-// tenant is never consulted, however that tenant's own request happens to
-// be the one that triggers the plane's first build.
-const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
-
-const SCHEMA = "hub_memory_config_test";
-const CIPHER = createEnvKeyCredentialCipher(new Uint8Array(32).fill(7));
-
-describeIfDb("resolveConfigFromConnectedCredential", () => {
-  const target = dbTargetFromUrl(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
-
-  beforeAll(async () => {
-    await runMigrations(target, { schema: SCHEMA });
+describe("resolveMemoryConfig", () => {
+  test("source is 'env' when EMBED_BASE_URL is set — a pure, synchronous decision", () => {
+    const resolution = resolveMemoryConfig({
+      env: {
+        EMBED_BASE_URL: "https://api.openai.com/v1",
+        EMBED_MODEL: "text-embedding-3-small",
+      },
+      databaseUrl: DATABASE_URL,
+    });
+    expect(resolution.source).toBe("env");
+    expect(resolution.config.memory.embed?.model).toBe(
+      "text-embedding-3-small",
+    );
   });
 
-  afterAll(async () => {
-    await dropSchema(target, { schema: SCHEMA });
-  });
-
-  test("undefined for an operator tenant with no connected openai credential", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      await db.insert(schema.tenant).values({
-        id: "tnt_memory_no_credential",
-        name: "No Credential Tenant",
-        slug: "memory-no-credential-tenant",
-        domain: "memory-no-credential.workbench.test",
-      });
-
-      const config = await resolveConfigFromConnectedCredential({
-        env: BASE_ENV,
-        db,
-        operatorTenantId: "tnt_memory_no_credential",
-        credentialCipher: CIPHER,
-      });
-      expect(config).toBeUndefined();
-    } finally {
-      await close();
-    }
-  });
-
-  test("decrypts the operator tenant's connected openai credential into an embed config", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      const operatorTenantId = "tnt_memory_has_credential";
-      await db.insert(schema.tenant).values({
-        id: operatorTenantId,
-        name: "Has Credential Tenant",
-        slug: "memory-has-credential-tenant",
-        domain: "memory-has-credential.workbench.test",
-      });
-      await db.insert(schema.provider).values({
-        id: "prov_memory_openai",
-        tenantId: operatorTenantId,
-        name: "openai",
-        plugin: "http",
-      });
-      const credentialId = "cred_memory_openai";
-      await db.insert(schema.credential).values({
-        id: credentialId,
-        tenantId: operatorTenantId,
-        providerId: "prov_memory_openai",
-        name: "OpenAI",
-        type: "api_key",
-        secret: await CIPHER.encrypt(
-          "sk-test-secret",
-          credentialAad(credentialId, "secret"),
-        ),
-        status: "active",
-      });
-
-      const config = await resolveConfigFromConnectedCredential({
-        env: BASE_ENV,
-        db,
-        operatorTenantId,
-        credentialCipher: CIPHER,
-      });
-      expect(config?.memory.embed).toEqual({
-        baseUrl: "https://api.openai.com/v1",
-        model: "text-embedding-3-small",
-        apiStyle: "openai",
-        apiKey: "sk-test-secret",
-        timeoutMs: undefined,
-      });
-
-      const resolution = await resolveMemoryConfig({
-        env: BASE_ENV,
-        db,
-        operatorTenantId,
-        credentialCipher: CIPHER,
-      });
-      expect(resolution.source).toBe("connected-credential");
-    } finally {
-      await close();
-    }
-  });
-
-  test("a credential connected on a non-operator tenant never configures the plane", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      const operatorTenantId = "tnt_memory_operator_no_credential";
-      const otherTenantId = "tnt_memory_other_tenant_has_credential";
-      await db.insert(schema.tenant).values([
-        {
-          id: operatorTenantId,
-          name: "Operator Tenant",
-          slug: "memory-operator-tenant",
-          domain: "memory-operator.workbench.test",
-        },
-        {
-          id: otherTenantId,
-          name: "Some Other Tenant",
-          slug: "memory-other-tenant",
-          domain: "memory-other-tenant.workbench.test",
-        },
-      ]);
-      // A credential connected on `otherTenantId` — a real tenant's own
-      // bench, NOT the operator tenant — must be invisible to step (b):
-      // a tenant connecting its own key never funds or configures any
-      // other tenant's embeddings.
-      await db.insert(schema.provider).values({
-        id: "prov_memory_other_openai",
-        tenantId: otherTenantId,
-        name: "openai",
-        plugin: "http",
-      });
-      const credentialId = "cred_memory_other_openai";
-      await db.insert(schema.credential).values({
-        id: credentialId,
-        tenantId: otherTenantId,
-        providerId: "prov_memory_other_openai",
-        name: "OpenAI",
-        type: "api_key",
-        secret: await CIPHER.encrypt(
-          "sk-other-tenant-secret",
-          credentialAad(credentialId, "secret"),
-        ),
-        status: "active",
-      });
-
-      const directResolution = await resolveConfigFromConnectedCredential({
-        env: BASE_ENV,
-        db,
-        operatorTenantId,
-        credentialCipher: CIPHER,
-      });
-      expect(directResolution).toBeUndefined();
-
-      const resolution = await resolveMemoryConfig({
-        env: BASE_ENV,
-        db,
-        operatorTenantId,
-        credentialCipher: CIPHER,
-      });
-      expect(resolution.source).toBe("lexical-only");
-      expect(resolution.config.memory.embed).toBeUndefined();
-    } finally {
-      await close();
-    }
-  });
-
-  test("resolveMemoryConfig falls to lexical-only when the operator tenant is unset", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      const resolution = await resolveMemoryConfig({
-        env: BASE_ENV,
-        db,
-        credentialCipher: CIPHER,
-      });
-      expect(resolution.source).toBe("lexical-only");
-      expect(resolution.config.memory.embed).toBeUndefined();
-    } finally {
-      await close();
-    }
-  });
-
-  test("resolveMemoryConfig falls to lexical-only when neither env nor an operator credential is set", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      const operatorTenantId = "tnt_memory_lexical_only";
-      await db.insert(schema.tenant).values({
-        id: operatorTenantId,
-        name: "Lexical Only Tenant",
-        slug: "memory-lexical-only-tenant",
-        domain: "memory-lexical-only.workbench.test",
-      });
-
-      const resolution = await resolveMemoryConfig({
-        env: BASE_ENV,
-        db,
-        operatorTenantId,
-        credentialCipher: CIPHER,
-      });
-      expect(resolution.source).toBe("lexical-only");
-      expect(resolution.config.memory.embed).toBeUndefined();
-    } finally {
-      await close();
-    }
-  });
-
-  test("env, when set, wins without ever touching the database for a credential", async () => {
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      const resolution = await resolveMemoryConfig({
-        env: {
-          ...BASE_ENV,
-          EMBED_BASE_URL: "https://api.openai.com/v1",
-          EMBED_MODEL: "text-embedding-3-small",
-        },
-        db,
-        operatorTenantId: "tnt_never_queried",
-        credentialCipher: CIPHER,
-      });
-      expect(resolution.source).toBe("env");
-    } finally {
-      await close();
-    }
+  test("source is 'lexical-only' when no embed endpoint is configured — the only other state", () => {
+    const resolution = resolveMemoryConfig({
+      env: {},
+      databaseUrl: DATABASE_URL,
+    });
+    expect(resolution.source).toBe("lexical-only");
+    expect(resolution.config.memory.embed).toBeUndefined();
   });
 });

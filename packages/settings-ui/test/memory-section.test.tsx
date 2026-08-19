@@ -1,12 +1,12 @@
 // CL-6289: the settings-UI half of the Memory section. Pins the copy for
-// each `source` state, that lexical-only never reads as broken or as an
-// alarm, that setup options render with the right per-kind treatment
-// (an operator-only env-var row, a clickable connect-provider row, an
-// already-active lexical-only row), that a real degrade escalation IS
-// surfaced while the deliberate `lexical_only` flag never is, and that any
-// failure of this route (by construction, always a genuine infra fault —
-// see `apps/hub/src/memory-mount.ts`) reads as an operator problem rather
-// than a fixable-looking button.
+// each `source` state (env-only now — no connected-credential state left),
+// that lexical-only never reads as broken or as an alarm, that setup
+// options render with the right per-kind treatment (an operator-only
+// env-var row, an already-active lexical-only row), that a real degrade
+// escalation IS surfaced while the deliberate `lexical_only` flag never is,
+// and that any failure of this route (by construction, always a genuine
+// infra fault — see `apps/hub/src/memory-mount.ts`) reads as an operator
+// problem rather than a fixable-looking button.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -51,40 +51,6 @@ function renderSection(status: MemoryPlaneStatus) {
 }
 
 describe("MemorySection", () => {
-  test("a connected-credential source reads as working, by meaning, attributed to Connections", async () => {
-    const { container, root } = renderSection({
-      source: "connected-credential",
-      embeddingsConfigured: true,
-      embed: { model: "text-embedding-3-small", host: "api.openai.com" },
-      rerank: { configured: false },
-      degrade: NO_DEGRADE,
-      missing: [],
-      setupOptions: [],
-    });
-    try {
-      act(() => {
-        root.render(<MemorySection tenantId="ten_1" />);
-      });
-      await settle();
-
-      expect(container.textContent).toContain(
-        "The assistant can find memories by meaning, not just matching words.",
-      );
-      expect(container.textContent).toContain("Working");
-      expect(container.textContent).toContain(
-        "Using the OpenAI key connected in Connections.",
-      );
-      // Model/host are diagnostics, not headline copy.
-      expect(
-        container.querySelector(".settings-connection-row-name")?.textContent,
-      ).not.toContain("text-embedding-3-small");
-      expect(container.textContent).toContain("text-embedding-3-small");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
   test("an env source reads as working, attributed to the deploy's own setup", async () => {
     const { container, root } = renderSection({
       source: "env",
@@ -117,19 +83,12 @@ describe("MemorySection", () => {
       embed: null,
       rerank: { configured: false },
       degrade: NO_DEGRADE,
-      missing: [
-        "a dense embedding endpoint — set one for this deploy, or connect an OpenAI credential",
-      ],
+      missing: ["a dense embedding endpoint — set one for this deploy"],
       setupOptions: [
         {
           kind: "set-env",
           label: "Set an embedding endpoint for this deploy",
           envVars: ["EMBED_BASE_URL", "EMBED_MODEL"],
-        },
-        {
-          kind: "connect-provider",
-          label: "Connect an OpenAI API key",
-          provider: "openai",
         },
         {
           kind: "lexical-only",
@@ -160,56 +119,11 @@ describe("MemorySection", () => {
       expect(container.textContent).toContain(
         "An operator sets: EMBED_BASE_URL, EMBED_MODEL",
       );
-      expect(container.textContent).toContain("Connect an OpenAI API key");
       expect(container.textContent).toContain(
         "Stay on full-text search (lexical-only)",
       );
       expect(container.textContent).toContain("Currently active");
       expect(container.textContent).toContain("No embeddings account needed");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("the connect-provider row is a real, clickable action to Connections when navigate is wired", async () => {
-    const navigated: string[] = [];
-    const { container, root } = renderSection({
-      source: "lexical-only",
-      embeddingsConfigured: false,
-      embed: null,
-      rerank: { configured: false },
-      degrade: NO_DEGRADE,
-      missing: ["a dense embedding endpoint"],
-      setupOptions: [
-        {
-          kind: "connect-provider",
-          label: "Connect an OpenAI API key",
-          provider: "openai",
-        },
-      ],
-    });
-    try {
-      act(() => {
-        root.render(
-          <MemorySection
-            tenantId="ten_1"
-            navigate={(to) => navigated.push(to)}
-          />,
-        );
-      });
-      await settle();
-
-      const button = [...container.querySelectorAll("button")].find(
-        (candidate) => candidate.textContent === "Open Connections",
-      );
-      expect(button).not.toBeUndefined();
-      act(() => {
-        button?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true, cancelable: true }),
-        );
-      });
-      expect(navigated).toEqual(["/settings/connections"]);
     } finally {
       act(() => root.unmount());
       container.remove();
