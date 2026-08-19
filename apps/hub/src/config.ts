@@ -151,11 +151,23 @@ const HubEnv = type({
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
   ),
-  "SIDECAR_PROVISIONER?": type("'docker'").describe(
-    "the sidecar-allocation backend for workbenches placed on their own exclusive sidecar; unset (default) keeps the hub on its current single shared sidecar with no exclusive-placement backend available, 'docker' provisions one container per allocation via @corbits/docker-provisioner",
+  "SIDECAR_PROVISIONERS?": type("string").describe(
+    "comma-separated sidecar-allocation backend ids to register for workbenches placed on their own exclusive sidecar, e.g. 'docker'; unset or empty (default) keeps the hub on its current single shared sidecar with no exclusive-placement backend available",
+  ),
+  "SIDECAR_DEFAULT_PROVISIONER?": type("string > 0").describe(
+    "which id listed in SIDECAR_PROVISIONERS is the default backend exclusive placements provision on; required when SIDECAR_PROVISIONERS lists more than one id, optional (defaults to that one id) when it lists exactly one",
+  ),
+  "E2B_API_KEY?": type("string > 0").describe(
+    "the E2B API key the e2b sidecar provisioner authenticates with; required when SIDECAR_PROVISIONERS includes 'e2b'",
+  ),
+  "E2B_TEMPLATE?": type("string > 0").describe(
+    "the immutable E2B template id sandboxes are created from; required when SIDECAR_PROVISIONERS includes 'e2b'",
+  ),
+  "E2B_SANDBOX_TIMEOUT_MS?": type("string > 0").describe(
+    "how long an E2B sandbox may live before E2B reclaims it; defaults to 15 minutes",
   ),
   "DOCKER_PROVISIONER_IMAGE?": type("string > 0").describe(
-    "the container image the docker sidecar provisioner runs for each exclusive allocation; required when SIDECAR_PROVISIONER=docker",
+    "the container image the docker sidecar provisioner runs for each exclusive allocation; required when SIDECAR_PROVISIONERS includes 'docker'",
   ),
   "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
     "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
@@ -216,9 +228,39 @@ export type ModelSource = {
   readonly apiKey: string;
 };
 
+// One member per implemented `SidecarProvisioner` backend. Adding a new
+// backend (e.g. a remote sandbox) is: implement the contract in its own
+// package, add a member here with its settings, add its id to
+// `SIDECAR_PROVISIONER_IDS`, and register it in
+// `sidecarProvisionerFrom`'s per-id parsing below.
+export type DockerSidecarProvisionerConfig = {
+  readonly id: "docker";
+  readonly image: string;
+};
+
+/** The sandbox backend. Its API key and template come from the process
+ * environment; its hub-side state directory is derived from `hubDataDir`,
+ * never configured separately, so it cannot drift from the other backends'
+ * state or be confused with the sandbox's own `SIDECAR_DATA_DIR`. */
+export type E2BSidecarProvisionerConfig = {
+  readonly id: "e2b";
+  readonly apiKey: string;
+  readonly template: string;
+  readonly sandboxTimeoutMs?: string;
+};
+
 export type SidecarProvisionerConfig =
-  | { readonly kind: "none" }
-  | { readonly kind: "docker"; readonly image: string };
+  | DockerSidecarProvisionerConfig
+  | E2BSidecarProvisionerConfig;
+
+const SIDECAR_PROVISIONER_IDS = ["docker", "e2b"] as const;
+type SidecarProvisionerId = (typeof SIDECAR_PROVISIONER_IDS)[number];
+
+function isSidecarProvisionerId(
+  value: string,
+): value is SidecarProvisionerId {
+  return (SIDECAR_PROVISIONER_IDS as readonly string[]).includes(value);
+}
 
 export type SocialProviderId = "google" | "github";
 
@@ -254,7 +296,14 @@ export type HubConfig = {
   /** Dev/test-only opt-in to skip @workbench/access-policy's email-
    * verification requirement. */
   readonly allowUnverifiedEmails: boolean;
-  readonly sidecarProvisioner: SidecarProvisionerConfig;
+  /** Every sidecar-allocation backend registered for exclusive placement,
+   * zero or more, each addressable by its provisioner id. Empty when
+   * unconfigured — the registry then holds no provisioners and every
+   * exclusive placement fails closed at deployment time. */
+  readonly sidecarProvisioners: readonly SidecarProvisionerConfig[];
+  /** Which registered id exclusive placements provision on. Undefined
+   * exactly when `sidecarProvisioners` is empty. */
+  readonly defaultSidecarProvisionerId?: string;
   /** Overrides the ws(s):// URL a provisioned sidecar dials back to reach
    * this hub. Unset derives it from baseUrl instead. */
   readonly sidecarWebSocketUrl?: string;
@@ -339,24 +388,128 @@ function socialProvidersFrom(
   return providers;
 }
 
+type SidecarProvisionersConfig = {
+  readonly provisioners: readonly SidecarProvisionerConfig[];
+  readonly defaultProvisionerId?: string;
+};
+
 /**
- * Resolves the sidecar-provisioner backend. `SIDECAR_PROVISIONER=docker`
- * requires `DOCKER_PROVISIONER_IMAGE`; a half-configured pair fails boot
- * loudly rather than silently falling back to the no-provisioner default.
+ * Resolves every sidecar-provisioner backend named in
+ * `SIDECAR_PROVISIONERS` plus which one is the default. Each named
+ * backend's own required settings (e.g. `DOCKER_PROVISIONER_IMAGE` for
+ * `docker`) must be present, and an unknown id, a duplicate id, or a
+ * `SIDECAR_DEFAULT_PROVISIONER` naming a backend that isn't listed all
+ * fail boot loudly — never silently falling back to the no-provisioner
+ * default. With `SIDECAR_PROVISIONERS` unset or empty, this returns no
+ * provisioners and no default, so every exclusive placement fails
+ * closed at deployment time rather than falling back to the shared
+ * sidecar.
  */
-function sidecarProvisionerFrom(
+function sidecarProvisionersFrom(
   parsed: ParsedHubEnv,
-): SidecarProvisionerConfig {
-  if (parsed.SIDECAR_PROVISIONER === undefined) return { kind: "none" };
-  if (parsed.DOCKER_PROVISIONER_IMAGE === undefined) {
+): SidecarProvisionersConfig {
+  const ids = (parsed.SIDECAR_PROVISIONERS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+  if (ids.length === 0) {
+    if (parsed.SIDECAR_DEFAULT_PROVISIONER !== undefined) {
+      throw new Error(
+        [
+          `invalid hub environment: SIDECAR_DEFAULT_PROVISIONER=${parsed.SIDECAR_DEFAULT_PROVISIONER} names a backend but SIDECAR_PROVISIONERS is unset`,
+          "List that id in SIDECAR_PROVISIONERS, or unset SIDECAR_DEFAULT_PROVISIONER to leave exclusive sidecar placement disabled; see .env.example.",
+        ].join("\n"),
+      );
+    }
+    return { provisioners: [] };
+  }
+
+  const seen = new Set<string>();
+  const provisioners: SidecarProvisionerConfig[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) {
+      throw new Error(
+        `invalid hub environment: SIDECAR_PROVISIONERS lists ${id} more than once`,
+      );
+    }
+    seen.add(id);
+    if (!isSidecarProvisionerId(id)) {
+      throw new Error(
+        [
+          `invalid hub environment: SIDECAR_PROVISIONERS names unknown backend ${id}`,
+          `Supported ids: ${SIDECAR_PROVISIONER_IDS.join(", ")}.`,
+        ].join("\n"),
+      );
+    }
+    provisioners.push(sidecarProvisionerConfigFor(id, parsed));
+  }
+
+  const defaultProvisionerId = parsed.SIDECAR_DEFAULT_PROVISIONER;
+  if (defaultProvisionerId === undefined) {
+    if (provisioners.length > 1) {
+      throw new Error(
+        [
+          "invalid hub environment: SIDECAR_DEFAULT_PROVISIONER must be set when SIDECAR_PROVISIONERS lists more than one backend",
+          "Set SIDECAR_DEFAULT_PROVISIONER to one of the listed ids; see .env.example.",
+        ].join("\n"),
+      );
+    }
+    const onlyId = provisioners[0]?.id;
+    return onlyId === undefined
+      ? { provisioners }
+      : { provisioners, defaultProvisionerId: onlyId };
+  }
+  if (!seen.has(defaultProvisionerId)) {
     throw new Error(
       [
-        "invalid hub environment: DOCKER_PROVISIONER_IMAGE must be set when SIDECAR_PROVISIONER=docker",
-        "Set DOCKER_PROVISIONER_IMAGE in .env, or unset SIDECAR_PROVISIONER to leave exclusive sidecar placement disabled; see .env.example.",
+        `invalid hub environment: SIDECAR_DEFAULT_PROVISIONER=${defaultProvisionerId} is not listed in SIDECAR_PROVISIONERS`,
+        "Add it to SIDECAR_PROVISIONERS, or point SIDECAR_DEFAULT_PROVISIONER at a listed id; see .env.example.",
       ].join("\n"),
     );
   }
-  return { kind: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
+  return { provisioners, defaultProvisionerId };
+}
+
+function sidecarProvisionerConfigFor(
+  id: SidecarProvisionerId,
+  parsed: ParsedHubEnv,
+): SidecarProvisionerConfig {
+  switch (id) {
+    case "docker": {
+      if (parsed.DOCKER_PROVISIONER_IMAGE === undefined) {
+        throw new Error(
+          [
+            "invalid hub environment: DOCKER_PROVISIONER_IMAGE must be set when SIDECAR_PROVISIONERS includes docker",
+            "Set DOCKER_PROVISIONER_IMAGE in .env, or remove docker from SIDECAR_PROVISIONERS; see .env.example.",
+          ].join("\n"),
+        );
+      }
+      return { id: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
+    }
+    case "e2b": {
+      if (parsed.E2B_API_KEY === undefined || parsed.E2B_TEMPLATE === undefined) {
+        throw new Error(
+          [
+            "invalid hub environment: E2B_API_KEY and E2B_TEMPLATE must both be set when SIDECAR_PROVISIONERS includes e2b",
+            "Set them in .env (E2B_TEMPLATE is the immutable template id printed by the template build), or remove e2b from SIDECAR_PROVISIONERS; see .env.example.",
+          ].join("\n"),
+        );
+      }
+      return parsed.E2B_SANDBOX_TIMEOUT_MS === undefined
+        ? {
+            id: "e2b",
+            apiKey: parsed.E2B_API_KEY,
+            template: parsed.E2B_TEMPLATE,
+          }
+        : {
+            id: "e2b",
+            apiKey: parsed.E2B_API_KEY,
+            template: parsed.E2B_TEMPLATE,
+            sandboxTimeoutMs: parsed.E2B_SANDBOX_TIMEOUT_MS,
+          };
+    }
+  }
 }
 
 function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
@@ -392,6 +545,7 @@ export function readHubConfig(
 
   const seedModel = seedModelFrom(parsed);
   const socialProviders = socialProvidersFrom(parsed);
+  const sidecarProvisioners = sidecarProvisionersFrom(parsed);
 
   const allowedEmailDomains =
     parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS === undefined ||
@@ -412,7 +566,7 @@ export function readHubConfig(
     allowedEmailDomains,
     allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
     allowUnverifiedEmails: parsed.ALLOW_UNVERIFIED_EMAILS !== undefined,
-    sidecarProvisioner: sidecarProvisionerFrom(parsed),
+    sidecarProvisioners: sidecarProvisioners.provisioners,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
@@ -444,5 +598,8 @@ export function readHubConfig(
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
   if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
     hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
+  if (sidecarProvisioners.defaultProvisionerId !== undefined)
+    hubConfig.defaultSidecarProvisionerId =
+      sidecarProvisioners.defaultProvisionerId;
   return hubConfig;
 }

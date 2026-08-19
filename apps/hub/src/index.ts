@@ -158,8 +158,13 @@ import {
   launchTaskLeg,
 } from "@corbits/tasks";
 import {
+  createSidecarProvisioner as createE2BSidecarProvisioner,
+  readProvisionerConfig as readE2BProvisionerConfig,
+} from "@corbits/e2b-sandbox-sidecar";
+import {
   createDrizzleRunKeyHistoryStore,
   createRunKeyHistoryListener,
+  createRunKeyHistoryRoutes,
   lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
 import {
@@ -271,7 +276,12 @@ import {
   CORBITS_TOOLS_REGISTRY,
   describeCorbitsToolPackages,
 } from "@corbits/tool-registry-publish";
-import { readHubConfig, type HubConfig } from "./config";
+import {
+  readHubConfig,
+  type HubConfig,
+  type SidecarProvisionerConfig,
+} from "./config";
+import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
@@ -415,6 +425,48 @@ export function credentialCipherFrom(
   return createEnvKeyCredentialCipher(
     Buffer.from(config.credentialEncryptionKeyHex, "hex"),
   );
+}
+
+/**
+ * Instantiates one configured sidecar-provisioner backend. This is the
+ * extension point named in `.env.example` and `apps/hub/src/config.ts`:
+ * a new backend gets a case here once its config member exists on
+ * `SidecarProvisionerConfig`.
+ */
+function buildSidecarProvisioner(
+  config: SidecarProvisionerConfig,
+  hubDataDir: string,
+): SidecarProvisioner {
+  switch (config.id) {
+    case "docker":
+      return createDockerSidecarProvisioner({
+        config: {
+          image: config.image,
+          stateFilePath: path.resolve(
+            hubDataDir,
+            "docker-provisioner",
+            "state.json",
+          ),
+        },
+      });
+    case "e2b":
+      // Same derivation as docker's: the backend's hub-side allocation
+      // state (generation fences, destroy tombstones, sandbox refs) lives
+      // under the hub's own data dir. Distinct from the sandbox's own
+      // SIDECAR_DATA_DIR, which start-sidecar.ts creates inside the VM.
+      return createE2BSidecarProvisioner({
+        config: readE2BProvisionerConfig(
+          {
+            E2B_API_KEY: config.apiKey,
+            E2B_TEMPLATE: config.template,
+            ...(config.sandboxTimeoutMs === undefined
+              ? {}
+              : { E2B_SANDBOX_TIMEOUT_MS: config.sandboxTimeoutMs }),
+          },
+          path.resolve(hubDataDir, "e2b-provisioner"),
+        ),
+      });
+  }
 }
 
 export async function createHub(config: HubConfig) {
@@ -685,29 +737,20 @@ export async function createHub(config: HubConfig) {
   // Provisioner plugins are injected at the application composition
   // boundary, mirroring @intx/hub-sessions's own reference wiring: the
   // registry always exists, but ships with no provisioners (and no
-  // default) until SIDECAR_PROVISIONER names a build. A workbench's
-  // "run this workbench on its own sidecar" setting can then always
-  // write a tenant's exclusive `sidecarPlacement`; without a configured
-  // provisioner that placement simply fails closed at deployment time
-  // rather than silently falling back to the shared sidecar.
+  // default) until SIDECAR_PROVISIONERS names one or more builds. A
+  // workbench's "run this workbench on its own sidecar" setting can then
+  // always write a tenant's exclusive `sidecarPlacement`; without any
+  // configured provisioner that placement simply fails closed at
+  // deployment time rather than silently falling back to the shared
+  // sidecar. Adding a new backend here is: implement `SidecarProvisioner`
+  // in its own package, add a case to `buildSidecarProvisioner`, and add
+  // its id to `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
   const sidecarPlugins = createSidecarPluginRegistry({
-    provisioners:
-      config.sidecarProvisioner.kind === "docker"
-        ? [
-            createDockerSidecarProvisioner({
-              config: {
-                image: config.sidecarProvisioner.image,
-                stateFilePath: path.resolve(
-                  config.hubDataDir,
-                  "docker-provisioner",
-                  "state.json",
-                ),
-              },
-            }),
-          ]
-        : [],
-    ...(config.sidecarProvisioner.kind === "docker"
-      ? { defaultProvisionerId: "docker" }
+    provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
+      buildSidecarProvisioner(provisionerConfig, config.hubDataDir),
+    ),
+    ...(config.defaultSidecarProvisionerId !== undefined
+      ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
       : {}),
   });
   const workflowAllocationService = createWorkflowAllocationService({
@@ -1250,6 +1293,21 @@ export async function createHub(config: HubConfig) {
       db,
     }),
   );
+  // Run key identity diagnostics: read side of the append-only
+  // `run_key_history` table above — per-run key lifecycle, divergence
+  // against `workflow_run.public_key`, and tenant-wide counts by
+  // identity state, so diagnosing a stranded run never again requires
+  // hand-comparing a sidecar's on-disk key against this table.
+  app.route(
+    `${TENANT_PREFIX}/run-key-history`,
+    createRunKeyHistoryRoutes({
+      db,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   // Preferences: a single per-(tenant, principal) JSONB bag for small UI
   // choices a surface wants to remember across reload (col2 collapse,
   // theme, ...). Package-owned table, migrated at hub start like insights.
@@ -1302,7 +1360,7 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/sidecar-placement`,
     createSidecarPlacementRoutes({
       store: createDrizzleSidecarPlacementStore(db),
-      hasProvisioner: config.sidecarProvisioner.kind !== "none",
+      hasProvisioner: config.sidecarProvisioners.length > 0,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,

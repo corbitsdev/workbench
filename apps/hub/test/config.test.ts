@@ -34,7 +34,7 @@ describe("readHubConfig", () => {
       signupRateLimit: { windowSeconds: 60, max: 5 },
       allowPlaintextSecrets: false,
       allowUnverifiedEmails: false,
-      sidecarProvisioner: { kind: "none" },
+      sidecarProvisioners: [],
       envProviderKeys: {},
       envProviderBaseUrls: {},
       envCredentialPlantAdmin: {
@@ -298,40 +298,77 @@ describe("readHubConfig", () => {
     expect(config.baseUrl).toStartWith("https://");
   });
 
-  describe("sidecarProvisioner", () => {
-    test("defaults to none, matching the current static-sidecar behavior", () => {
-      expect(readHubConfig(validEnv).sidecarProvisioner).toEqual({
-        kind: "none",
-      });
+  describe("sidecarProvisioners", () => {
+    test("defaults to empty with no default id, matching the current static-sidecar behavior", () => {
+      const config = readHubConfig(validEnv);
+      expect(config.sidecarProvisioners).toEqual([]);
+      expect(config.defaultSidecarProvisionerId).toBeUndefined();
     });
 
-    test("SIDECAR_PROVISIONER=docker with an image is wired", () => {
+    test("SIDECAR_PROVISIONERS=docker with an image is wired and becomes the default", () => {
       const config = readHubConfig({
         ...validEnv,
-        SIDECAR_PROVISIONER: "docker",
+        SIDECAR_PROVISIONERS: "docker",
         DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
       });
-      expect(config.sidecarProvisioner).toEqual({
-        kind: "docker",
-        image: "ghcr.io/corbits/sidecar:latest",
-      });
+      expect(config.sidecarProvisioners).toEqual([
+        { id: "docker", image: "ghcr.io/corbits/sidecar:latest" },
+      ]);
+      expect(config.defaultSidecarProvisionerId).toBe("docker");
     });
 
-    test("SIDECAR_PROVISIONER=docker without DOCKER_PROVISIONER_IMAGE fails loudly at boot", () => {
+    test("SIDECAR_PROVISIONERS=docker without DOCKER_PROVISIONER_IMAGE fails loudly at boot", () => {
       const message = readExpectingError({
         ...validEnv,
-        SIDECAR_PROVISIONER: "docker",
+        SIDECAR_PROVISIONERS: "docker",
       });
       expect(message).toContain("DOCKER_PROVISIONER_IMAGE");
-      expect(message).toContain("SIDECAR_PROVISIONER=docker");
+      expect(message).toContain("SIDECAR_PROVISIONERS includes docker");
     });
 
-    test("rejects a provisioner value other than 'docker'", () => {
+    test("rejects a provisioner id no backend implements", () => {
       const message = readExpectingError({
         ...validEnv,
-        SIDECAR_PROVISIONER: "e2b",
+        SIDECAR_PROVISIONERS: "firecracker",
       });
-      expect(message).toContain("SIDECAR_PROVISIONER");
+      expect(message).toContain("unknown backend firecracker");
+    });
+
+    test("rejects a duplicate id", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker,docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(message).toContain("more than once");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER selects the default among several ids", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+        SIDECAR_DEFAULT_PROVISIONER: "docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(config.defaultSidecarProvisionerId).toBe("docker");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER naming an unlisted id fails loudly", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+        SIDECAR_DEFAULT_PROVISIONER: "e2b",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(message).toContain("is not listed in SIDECAR_PROVISIONERS");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER set with SIDECAR_PROVISIONERS unset fails loudly", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_DEFAULT_PROVISIONER: "docker",
+      });
+      expect(message).toContain("SIDECAR_PROVISIONERS is unset");
     });
   });
 

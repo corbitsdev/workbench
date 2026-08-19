@@ -13,6 +13,19 @@ import { TenantConfig, type SidecarPlacementRequirement } from "@intx/types";
  * The one placement this setting ever writes: an exclusive sidecar that
  * still reuses the same deployment across a workbench's own workflow
  * occurrences, rather than provisioning fresh infrastructure per run.
+ *
+ * This cannot name which backend serves that exclusive sidecar.
+ * `SidecarPlacementRequirement` (vendor/intx/types/src/sidecar-placement.ts)
+ * carries only `sharing`/`reuse`, and `@intx/hub-sessions`'s
+ * `WorkflowAllocationService.prepareExclusiveDeployment` always resolves
+ * the backend via `plugins.getDefaultProvisioner()` — there is no per-
+ * placement provisioner id anywhere in the platform's exclusive-placement
+ * path (CL-6283 investigation). Which backend an exclusive placement
+ * actually lands on is therefore a hub-wide setting
+ * (`SIDECAR_DEFAULT_PROVISIONER` in `apps/hub/src/config.ts`), not a
+ * per-tenant one; a parallel side-channel here would not be honored by
+ * the platform, so this store intentionally stays boolean-only until the
+ * platform's own type grows a provisioner id.
  */
 export const WORKBENCH_OWN_SIDECAR_PLACEMENT: SidecarPlacementRequirement =
   Object.freeze({

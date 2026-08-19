@@ -23,7 +23,7 @@ const baseConfig: HubConfig = {
   allowedEmailDomains: [],
   allowPlaintextSecrets: false,
   allowUnverifiedEmails: false,
-  sidecarProvisioner: { kind: "none" },
+  sidecarProvisioners: [],
   envProviderKeys: {},
   envProviderBaseUrls: {},
   envCredentialPlantAdmin: {

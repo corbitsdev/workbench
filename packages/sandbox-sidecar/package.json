@@ -1,7 +1,7 @@
 {
-  "name": "@corbits/docker-provisioner",
+  "name": "@corbits/sandbox-sidecar",
   "private": true,
-  "description": "SidecarProvisioner plugin that runs sidecar containers with the local Docker CLI",
+  "description": "Backend-agnostic sidecar allocation lifecycle: state store and ensure/destroy convergence for a SidecarProvisioner",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -13,8 +13,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/sandbox-sidecar": "workspace:*",
-    "@intx/hub-sessions": "workspace:*"
+    "@intx/crypto": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

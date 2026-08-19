@@ -20,7 +20,7 @@ export type CreateSidecarPlacementRoutesDeps = {
   requireGrant: RequireGrant;
   /**
    * Whether the hub has a sidecar provisioner registered
-   * (SIDECAR_PROVISIONER set to a real backend). When false, exclusive
+   * (SIDECAR_PROVISIONERS names a real backend). When false, exclusive
    * placement can never actually take effect — enabling it would silently
    * leave a workbench on the shared sidecar despite the setting reading
    * "on" — so PUT enabling it fails closed with 409, and GET exposes the

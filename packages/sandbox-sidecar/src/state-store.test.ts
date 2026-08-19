@@ -162,17 +162,17 @@ describe("observeDestroy", () => {
     });
   });
 
-  test("carries the recorded containerId into the tombstone", async () => {
+  test("carries the recorded externalRef into the tombstone", async () => {
     const store = createAllocationStateStore(statePath());
     await store.observeEnsure({
       allocationId: "alloc-1",
       sidecarId: "sidecar-1",
       generation: 1,
     });
-    await store.recordContainer({
+    await store.recordUnit({
       allocationId: "alloc-1",
       generation: 1,
-      containerId: "container-abc",
+      externalRef: "container-abc",
       tokenHashSha256: "deadbeef",
     });
     const result = await store.observeDestroy({
@@ -182,12 +182,12 @@ describe("observeDestroy", () => {
     });
     expect(result).toMatchObject({
       kind: "observed",
-      record: { containerId: "container-abc" },
+      record: { externalRef: "container-abc" },
     });
   });
 });
 
-describe("recordContainer", () => {
+describe("recordUnit", () => {
   test("fails when the allocation was superseded by a newer generation", async () => {
     const store = createAllocationStateStore(statePath());
     await store.observeEnsure({
@@ -200,10 +200,10 @@ describe("recordContainer", () => {
       sidecarId: "sidecar-1",
       generation: 2,
     });
-    const recorded = await store.recordContainer({
+    const recorded = await store.recordUnit({
       allocationId: "alloc-1",
       generation: 1,
-      containerId: "container-abc",
+      externalRef: "container-abc",
       tokenHashSha256: "deadbeef",
     });
     expect(recorded).toBe(false);
@@ -221,30 +221,30 @@ describe("recordContainer", () => {
       sidecarId: "sidecar-1",
       generation: 1,
     });
-    const recorded = await store.recordContainer({
+    const recorded = await store.recordUnit({
       allocationId: "alloc-1",
       generation: 1,
-      containerId: "container-abc",
+      externalRef: "container-abc",
       tokenHashSha256: "deadbeef",
     });
     expect(recorded).toBe(false);
   });
 
-  test("persists the containerId and token hash to disk", async () => {
+  test("persists the externalRef and token hash to disk", async () => {
     const store = createAllocationStateStore(statePath());
     await store.observeEnsure({
       allocationId: "alloc-1",
       sidecarId: "sidecar-1",
       generation: 1,
     });
-    await store.recordContainer({
+    await store.recordUnit({
       allocationId: "alloc-1",
       generation: 1,
-      containerId: "container-abc",
+      externalRef: "container-abc",
       tokenHashSha256: "deadbeef",
     });
     const raw = JSON.parse(await readFile(statePath(), "utf8"));
-    expect(raw.records[0].containerId).toBe("container-abc");
+    expect(raw.records[0].externalRef).toBe("container-abc");
     expect(raw.records[0].tokenHashSha256).toBe("deadbeef");
   });
 });

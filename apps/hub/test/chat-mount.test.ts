@@ -31,7 +31,7 @@ const config: HubConfig = {
   // credential-cipher seam, so the dev opt-in keeps boot working.
   allowPlaintextSecrets: true,
   allowUnverifiedEmails: true,
-  sidecarProvisioner: { kind: "none" },
+  sidecarProvisioners: [],
   envProviderKeys: {},
   envProviderBaseUrls: {},
   envCredentialPlantAdmin: {

@@ -15,7 +15,7 @@ export {
   createAllocationStateStore,
   type AllocationStateStore,
   type AllocationRecord,
-} from "./state-store";
+} from "@corbits/sandbox-sidecar";
 export type {
   DestroySidecarRequest,
   DestroySidecarResult,

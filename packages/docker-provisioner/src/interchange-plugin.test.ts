@@ -11,7 +11,7 @@ import { createDockerSidecarProvisioner } from "./interchange-plugin";
 import {
   createAllocationStateStore,
   type AllocationStateStore,
-} from "./state-store";
+} from "@corbits/sandbox-sidecar";
 
 const IMAGE = "ghcr.io/corbits/sidecar:latest";
 const TOKEN = "s3cr3t-bootstrap-token";

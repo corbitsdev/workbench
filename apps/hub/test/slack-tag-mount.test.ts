@@ -39,7 +39,7 @@ const config: HubConfig = {
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
   allowUnverifiedEmails: true,
-  sidecarProvisioner: { kind: "none" },
+  sidecarProvisioners: [],
   envProviderKeys: {},
   envProviderBaseUrls: {},
   chatIdleReapMs: 30 * 60_000,

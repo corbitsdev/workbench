@@ -6,3 +6,6 @@ node_modules
 dist
 **/dist
 *.log
+.env
+.env.*
+!.env.example

@@ -1,3 +1,8 @@
+// Backend-agnostic allocation state store, extracted from
+// packages/docker-provisioner/src/state-store.ts: generation fencing,
+// destroy tombstones, atomic writes, and arktype-validated state. Both
+// docker-provisioner and e2b-sandbox-sidecar consume this so neither
+// backend re-derives fencing correctness on its own.
 import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -9,7 +14,7 @@ const AllocationRecord = type({
   sidecarId: "string > 0",
   generation: "number.integer > 0",
   desiredState: "'ensured' | 'destroyed'",
-  containerId: "string | null",
+  externalRef: "string | null",
   tokenHashSha256: "string | null",
   updatedAt: "string > 0",
 });
@@ -58,14 +63,14 @@ export interface AllocationStateStore {
     generation: number;
   }): Promise<ObserveDestroyResult>;
   /**
-   * Persists the container created for an ensured generation. Returns
+   * Persists the compute unit started for an ensured generation. Returns
    * false (without writing) if the allocation was superseded or
-   * destroyed while the docker run was in flight.
+   * destroyed while the unit was starting.
    */
-  recordContainer(args: {
+  recordUnit(args: {
     allocationId: string;
     generation: number;
-    containerId: string;
+    externalRef: string;
     tokenHashSha256: string;
   }): Promise<boolean>;
   getRecord(allocationId: string): Promise<AllocationRecord | null>;
@@ -106,7 +111,7 @@ export function createAllocationStateStore(
         initialized = true;
         return;
       }
-      throw new Error(`Unable to read docker provisioner state ${statePath}`, {
+      throw new Error(`Unable to read sidecar allocation state ${statePath}`, {
         cause,
       });
     }
@@ -114,18 +119,18 @@ export function createAllocationStateStore(
     try {
       parsedJSON = JSON.parse(raw);
     } catch (cause) {
-      throw new Error(`Invalid JSON in docker provisioner state ${statePath}`, {
+      throw new Error(`Invalid JSON in sidecar allocation state ${statePath}`, {
         cause,
       });
     }
     const parsed = StateFile(parsedJSON);
     if (parsed instanceof type.errors) {
-      throw new Error(`Invalid docker provisioner state: ${parsed.summary}`);
+      throw new Error(`Invalid sidecar allocation state: ${parsed.summary}`);
     }
     for (const record of parsed.records) {
       if (records.has(record.allocationId)) {
         throw new Error(
-          `Duplicate docker provisioner state for ${record.allocationId}`,
+          `Duplicate sidecar allocation state for ${record.allocationId}`,
         );
       }
       records.set(record.allocationId, record);
@@ -180,7 +185,7 @@ export function createAllocationStateStore(
           sidecarId: args.sidecarId,
           generation: args.generation,
           desiredState: "ensured",
-          containerId: null,
+          externalRef: null,
           tokenHashSha256: null,
           updatedAt: now().toISOString(),
         };
@@ -222,7 +227,7 @@ export function createAllocationStateStore(
           sidecarId: args.sidecarId,
           generation: args.generation,
           desiredState: "destroyed",
-          containerId: existing?.containerId ?? null,
+          externalRef: existing?.externalRef ?? null,
           tokenHashSha256: existing?.tokenHashSha256 ?? null,
           updatedAt: now().toISOString(),
         };
@@ -233,7 +238,7 @@ export function createAllocationStateStore(
         return { kind: "observed", record };
       }),
 
-    recordContainer: (args) =>
+    recordUnit: (args) =>
       runExclusive(async () => {
         await initialize();
         const record = records.get(args.allocationId);
@@ -246,7 +251,7 @@ export function createAllocationStateStore(
         }
         const updated: AllocationRecord = {
           ...record,
-          containerId: args.containerId,
+          externalRef: args.externalRef,
           tokenHashSha256: args.tokenHashSha256,
           updatedAt: now().toISOString(),
         };

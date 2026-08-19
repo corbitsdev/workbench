@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { createFakeCommandRunner } from "./fake-command-runner";
 import { createDockerSidecarProvisioner } from "./interchange-plugin";
-import { createAllocationStateStore } from "./state-store";
+import { createAllocationStateStore } from "@corbits/sandbox-sidecar";
 
 const IMAGE = "ghcr.io/corbits/sidecar:latest";
 
@@ -75,7 +75,7 @@ describe("fencing edge cases", () => {
     expect(runs.length).toBe(1);
     expect(firstResult).toEqual(secondResult);
     const record = await store.getRecord("alloc-1");
-    expect(record?.containerId).toBe("container-1");
+    expect(record?.externalRef).toBe("container-1");
   });
 
   test("newer-generation ensure removes the older generation's container", async () => {
@@ -120,7 +120,7 @@ describe("fencing edge cases", () => {
     expect(stops).toContainEqual(["stop", "container-1"]);
     expect(stops).not.toContainEqual(["stop", "container-2"]);
     const record = await store.getRecord("alloc-1");
-    expect(record?.containerId).toBe("container-2");
+    expect(record?.externalRef).toBe("container-2");
   });
 
   test("destroy at a newer generation than the record still removes the recorded container", async () => {
