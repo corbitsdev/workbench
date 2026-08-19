@@ -51,8 +51,8 @@ exactly this reason.
 
 ## Memory plane
 
-The memory plane (`@corbits/memory`, wired through `@corbits/memory-plane`
-and mounted at `apps/hub/src/memory-mount.ts`) always mounts, but its real
+The memory plane (`@corbits/memory`, composed at `apps/hub/src/memory-mount.ts`,
+`memory-config.ts`, and `memory-status.ts`) always mounts, but its real
 engine (DB pool, migrations, embed client) builds lazily — on a tenant's
 first actual memory call, not at hub boot. `GET
 /api/tenants/:tenantId/memory/status` reports what a tenant currently has
@@ -72,9 +72,10 @@ Per tenant, in order:
    lexical search.
 
 Because step 2 depends on a tenant's connected credentials, the plane
-cannot resolve its config at boot; `@corbits/memory-plane`'s
-`resolveMemoryConfig`/`createLazyMemoryPlane` is what defers that
-resolution to first use, memoized per process once it succeeds.
+cannot resolve its config at boot; `memory-config.ts`'s
+`resolveMemoryConfig` and `memory-mount.ts`'s `createLazyMemoryPlane` are
+what defer that resolution to first use, memoized per process once it
+succeeds.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 
