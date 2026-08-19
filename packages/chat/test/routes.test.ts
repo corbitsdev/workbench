@@ -2628,3 +2628,190 @@ describe("cross-tenant workbench isolation", () => {
     expect(denied.status).toBe(404);
   });
 });
+
+// CL-6313: thread membership is a property of a message, not a function
+// of which endpoint the client called. `GET /messages` already loads the
+// whole mailbox and already resolves assignments to filter the per-thread
+// feed — stamping the resolved id on every item lets one client query
+// serve the root feed, every open thread, and reply counts, instead of a
+// refresh fanning out one request per thread.
+describe("GET /workbenches/:id/messages — thread membership on every item (CL-6313)", () => {
+  test("stamps the resolved threadId on each message, defaulting to the root thread", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const rootPost = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
+      },
+    );
+    const rootSent = (await rootPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    const replyPost = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "reply note" }],
+          inReplyToMessageId: rootSent.id,
+        }),
+      },
+    );
+    const replySent = (await replyPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    // A message the platform delivered directly (an agent reply) carries
+    // no membership row at all — it belongs to the root feed by default,
+    // and must be stamped as such rather than left absent.
+    const agentSent = await deps.platform.sendMail({
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+      principalId: "prn_agent",
+      content: { content: "agent reply" },
+    });
+
+    const res = await app.request(`/workbenches/${workbench.id}/messages`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: { id: string; threadId: string }[];
+    };
+    const threadIdById = new Map(body.items.map((i) => [i.id, i.threadId]));
+    expect(threadIdById.get(rootSent.id)).toBe(rootSent.threadId);
+    expect(threadIdById.get(replySent.id)).toBe(replySent.threadId);
+    expect(threadIdById.get(agentSent.id)).toBe(rootSent.threadId);
+  });
+
+  test("threadId is present even when the host mounts no thread store", async () => {
+    const deps = buildDeps({});
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi" }] }),
+    });
+
+    const res = await app.request(`/workbenches/${workbench.id}/messages`);
+    const body = (await res.json()) as {
+      items: { threadId?: string }[];
+    };
+    // No thread store means no threads at all — the field is absent
+    // rather than a fabricated id, matching `GET /threads`' own
+    // `rootThreadId: ""` shape for that deployment.
+    expect(body.items[0]?.threadId).toBeUndefined();
+  });
+});
+
+describe("GET /workbenches/:id/threads — reply activity on each row (CL-6313)", () => {
+  test("carries replyCount and lastActivityAt so the client never fans out per thread", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const rootPost = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
+      },
+    );
+    const rootSent = (await rootPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    const firstReply = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "one" }],
+          inReplyToMessageId: rootSent.id,
+        }),
+      },
+    );
+    const replySent = (await firstReply.json()) as {
+      id: string;
+      threadId: string;
+    };
+    const secondReply = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "two" }],
+          threadId: replySent.threadId,
+        }),
+      },
+    );
+    const lastSent = (await secondReply.json()) as { createdAt: string };
+
+    const res = await app.request(`/workbenches/${workbench.id}/threads`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rootThreadId: string;
+      items: {
+        id: string;
+        replyCount: number;
+        lastActivityAt: string | null;
+      }[];
+    };
+    const reply = body.items.find((t) => t.id === replySent.threadId);
+    expect(reply?.replyCount).toBe(2);
+    expect(reply?.lastActivityAt).toBe(lastSent.createdAt);
+  });
+
+  test("a thread with no messages yet reports zero replies and no activity", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    const rootPost = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
+      },
+    );
+    const rootSent = (await rootPost.json()) as { id: string };
+
+    const forked = await app.request(
+      `/workbenches/${workbench.id}/threads/fork`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentMessageId: rootSent.id }),
+      },
+    );
+    const thread = (await forked.json()) as { id: string };
+
+    const res = await app.request(`/workbenches/${workbench.id}/threads`);
+    const body = (await res.json()) as {
+      items: { id: string; replyCount: number; lastActivityAt: string | null }[];
+    };
+    const row = body.items.find((t) => t.id === thread.id);
+    expect(row?.replyCount).toBe(0);
+    expect(row?.lastActivityAt).toBeNull();
+  });
+});
