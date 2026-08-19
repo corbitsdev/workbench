@@ -53,26 +53,30 @@ exactly this reason.
 
 The memory plane (`@corbits/memory`, composed at `apps/hub/src/memory-mount.ts`,
 `memory-config.ts`, and `memory-status.ts`) always mounts, but its real
-engine (DB pool, migrations, embed client) builds lazily — on a tenant's
-first actual memory call, not at hub boot. `GET
-/api/tenants/:tenantId/memory/status` reports what a tenant currently has
-and how to change it.
+engine (DB pool, migrations, embed client) builds lazily — on the first
+actual memory call from any tenant, not at hub boot. `GET
+/api/tenants/:tenantId/memory/status` reports what the process currently
+has and how to change it.
 
-Per tenant, in order:
+One config for the whole process, resolved tenant-independently, in
+order:
 
 1. `EMBED_BASE_URL`/`EMBED_MODEL` (see `.env.example`) — one embed
    endpoint for the whole deploy.
-2. Otherwise, a tenant's own OpenAI credential connected through
-   Settings → Connections. Resolved the same ownership-walk-the-
-   ancestor-chain way a definition's model requirements are — no env
-   needed, and it takes effect immediately, no hub restart.
+2. Otherwise, the OPERATOR tenant's (`OPERATOR_TENANT_ID`) own OpenAI
+   credential connected through Settings → Connections — resolved the
+   same ownership-walk-the-ancestor-chain way a definition's model
+   requirements are, no env needed, takes effect immediately, no hub
+   restart. Never any other tenant's credential, and never whichever
+   tenant's request happens to trigger the build: a tenant connecting its
+   own key must never fund or configure another tenant's embeddings.
 3. Otherwise, lexical-only: full-text search only, no embed endpoint.
    This needs nothing beyond a pgvector-capable Postgres and is a fully-
-   supported mode, not a degraded one — a tenant always has at least
+   supported mode, not a degraded one — every tenant always has at least
    lexical search.
 
-Because step 2 depends on a tenant's connected credentials, the plane
-cannot resolve its config at boot; `memory-config.ts`'s
+Because step 2 depends on the operator tenant's connected credentials,
+the plane cannot resolve its config at boot; `memory-config.ts`'s
 `resolveMemoryConfig` and `memory-mount.ts`'s `createLazyMemoryPlane` are
 what defer that resolution to first use, memoized per process once it
 succeeds.
