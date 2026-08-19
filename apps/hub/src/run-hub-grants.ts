@@ -127,7 +127,16 @@ async function resolveRows(
     return [];
   }
 
-  const invokerGrants = await deps.grantStore.collectGrantsInChain(
+  // Single-tenant, never `collectGrantsInChain`. The chain variant unions
+  // in every ancestor tenant, and upstream reserves it for the
+  // credential-use check alone — "the general RBAC path stays on the
+  // single-tenant `collectGrants`" (`@intx/types`' `GrantStore`), which is
+  // what `requireGrant` on the memory routes actually evaluates. Collecting
+  // wider than the routes honour would let a grant stamped with an ancestor
+  // tenant mint the run a row in the org tenant that its invoker cannot use
+  // themselves — authority created out of nothing, which is the whole
+  // failure this plane exists to prevent.
+  const invokerGrants = await deps.grantStore.collectGrants(
     invokerOrgPrincipalId,
     orgTenantId,
   );
@@ -165,8 +174,9 @@ async function resolveRows(
       // keeps its rows: the platform deactivates a terminal run's
       // principal rather than deleting it, so the FK cascade never fires.
       // Those rows are inert — an inactive principal is refused a seat —
-      // but they do accumulate per run, which a periodic reaper over
-      // deactivated principals should collect.
+      // but they do accumulate per run. A periodic sweep over deactivated
+      // principals collects them; that sweep is tracked separately and is
+      // not part of this plane.
       expiresAt: null,
       createdAt: now,
       updatedAt: now,

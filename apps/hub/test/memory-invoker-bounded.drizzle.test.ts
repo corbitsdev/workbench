@@ -99,6 +99,13 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
      * someone invited into a single workbench actually looks.
      */
     invokerGrants: readonly (readonly [string, "system" | "invoker"])[];
+    /**
+     * Stamp the invoker's grants with the OPERATOR (ancestor) tenant rather
+     * than the org tenant. `requireGrant` on the memory routes evaluates a
+     * single tenant, so a grant sitting on an ancestor is one the invoker
+     * cannot actually exercise.
+     */
+    stampGrantsOnAncestor?: boolean;
   }) {
     stashEnv();
     process.env["DATABASE_URL"] = databaseUrl;
@@ -151,7 +158,10 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       for (const [action, origin] of options.invokerGrants) {
         await db.insert(schema.grant).values({
           id: generateId("grant"),
-          tenantId: orgTenantId,
+          tenantId:
+            options.stampGrantsOnAncestor === true
+              ? operatorTenantId
+              : orgTenantId,
           principalId: invokerOrgPrincipalId,
           resource: "memory",
           action,
@@ -380,6 +390,33 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
         where: eq(schema.grant.principalId, runPrincipalId),
       });
       expect(rows).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 20000);
+  // The invoker's authority is collected from one tenant, never the ancestor
+  // chain: the chain variant is upstream's credential-use path, while
+  // `requireGrant` on these routes evaluates a single tenant. Collecting
+  // wider than the routes honour would mint the run a usable row in the org
+  // tenant from a grant its invoker cannot exercise anywhere — authority
+  // created out of nothing.
+  test("ignores invoker grants stamped with an ancestor tenant the routes never honour", async () => {
+    const { app, db, close, runPrincipalId } = await seed({
+      invokerGrants: [
+        ["add", "system"],
+        ["search", "system"],
+      ],
+      stampGrantsOnAncestor: true,
+    });
+    try {
+      const rows = await db.query.grant.findMany({
+        where: eq(schema.grant.principalId, runPrincipalId),
+      });
+      expect(rows).toEqual([]);
+      expect(
+        (await app.request("/api/tenants/x/memory/search", searchRequest()))
+          .status,
+      ).toBe(403);
     } finally {
       await close();
     }
