@@ -1404,7 +1404,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     tenantId: string,
     workbenchId: string,
   ): Promise<
-    | { readonly rootThreadId: string; readonly threadIdOf: (id: string) => string }
+    | {
+        readonly rootThreadId: string;
+        readonly threadIdOf: (id: string) => string;
+      }
     | undefined
   > {
     if (deps.threads === undefined) return undefined;

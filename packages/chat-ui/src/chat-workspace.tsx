@@ -237,7 +237,7 @@ export function mergeStreamingReply(
 ): readonly TimelineMessageItem[] {
   // A pending reply with no tokens yet stays off the timeline — an
   // empty bubble with no timestamp reads as broken; the typing pulse
-  // just above the prompt owns that phase until the first delta lands.
+  // in the incoming-message slot owns that phase until the first delta lands.
   if (streamingReply === null || streamingReply.text === "") return items;
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
@@ -1167,24 +1167,26 @@ function ChatWorkspaceInner({
                       ? { scrollRestore: restoredScrollSnapshot }
                       : {})}
                     onScrollSnapshot={handleScrollSnapshot}
+                    footer={
+                      typingState !== null ? (
+                        <TypingIndicator
+                          label={typingLabel(
+                            typingState.principalId,
+                            activeWorkbench?.participants ?? [],
+                          )}
+                        />
+                      ) : (
+                        <AgentTypingIndicator
+                          names={typingAgentNames(
+                            streamingReply,
+                            activeWorkbench?.participants ?? [],
+                          )}
+                        />
+                      )
+                    }
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
-                    {typingState !== null ? (
-                      <TypingIndicator
-                        label={typingLabel(
-                          typingState.principalId,
-                          activeWorkbench?.participants ?? [],
-                        )}
-                      />
-                    ) : (
-                      <AgentTypingIndicator
-                        names={typingAgentNames(
-                          streamingReply,
-                          activeWorkbench?.participants ?? [],
-                        )}
-                      />
-                    )}
                     <Composer
                       ref={composerRef}
                       agents={mentionCandidatesFromParticipants(

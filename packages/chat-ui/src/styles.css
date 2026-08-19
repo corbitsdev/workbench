@@ -1922,9 +1922,8 @@
   color: var(--warn, #b7791f);
 }
 
-/* Quiet iMessage-style pulse: a small grey pill of three bouncing dots
-   occupying the incoming-message slot (same indent as a grouped reply),
-   so it sits where the next response bubble will land. Who-is-typing
+/* iMessage-style pulse: a small grey bubble of three bouncing dots in
+   the incoming-message slot (same indent as a grouped reply). Who-is-typing
    copy is visually hidden. */
 .chat-typing-row {
   padding-left: calc(0.45rem + 2.15rem + 0.65rem);
@@ -1934,19 +1933,17 @@
   background: transparent;
 }
 
-.chat-typing-row .chat-typing-indicator {
-  margin: 0;
-}
-
 .chat-typing-indicator {
   position: relative;
   display: inline-flex;
-  align-self: flex-start;
+  flex: 0 0 auto;
   align-items: center;
-  margin: 0 0 0.35rem;
-  padding: 0.32rem 0.52rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 8%, var(--background));
+  justify-content: center;
+  min-width: 3.25rem;
+  min-height: 1.85rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 1.05rem 1.05rem 1.05rem 0.3rem;
+  background: color-mix(in srgb, var(--foreground) 10%, var(--background));
 }
 
 .chat-typing-indicator-label {
@@ -1964,15 +1961,15 @@
 .chat-typing-indicator-dots {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  height: 0.7rem;
+  gap: 0.28rem;
+  height: 0.9rem;
 }
 
 .chat-typing-indicator-dots span {
-  width: 0.28rem;
-  height: 0.28rem;
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1993,12 +1990,12 @@
   0%,
   60%,
   100% {
-    opacity: 0.4;
+    opacity: 0.45;
     transform: translateY(0);
   }
   30% {
-    opacity: 0.95;
-    transform: translateY(-0.18rem);
+    opacity: 1;
+    transform: translateY(-0.22rem);
   }
 }
 

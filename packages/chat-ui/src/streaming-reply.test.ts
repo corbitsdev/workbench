@@ -44,6 +44,16 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
     ).toEqual({ text: "" });
   });
 
+  test("inference.start never wipes tokens already streamed", () => {
+    const state = { text: "Hello" };
+    expect(
+      nextStreamingReplyState(
+        state,
+        agentEvent({ type: "inference.start", seq: 9, data: { model: "x" } }),
+      ),
+    ).toBe(state);
+  });
+
   test("each text delta replaces the reply with that delta's cumulative text", () => {
     let state = nextStreamingReplyState(
       null,
@@ -65,6 +75,33 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
       }),
     );
     expect(state).toBeNull();
+  });
+
+  test("inference.done keeps an empty pending reply — the next inference round is still owed", () => {
+    const pending = { text: "" };
+    expect(
+      nextStreamingReplyState(
+        pending,
+        agentEvent({
+          type: "inference.done",
+          seq: 5,
+          data: { turn: {}, usage: {}, source: "primary" },
+        }),
+      ),
+    ).toBe(pending);
+  });
+
+  test("inference.done while idle stays idle — a late done is not a new turn", () => {
+    expect(
+      nextStreamingReplyState(
+        null,
+        agentEvent({
+          type: "inference.done",
+          seq: 5,
+          data: { turn: {}, usage: {}, source: "primary" },
+        }),
+      ),
+    ).toBeNull();
   });
 
   test("inference.error clears the reply rather than leaving a stuck cursor", () => {

@@ -2808,7 +2808,11 @@ describe("GET /workbenches/:id/threads — reply activity on each row (CL-6313)"
 
     const res = await app.request(`/workbenches/${workbench.id}/threads`);
     const body = (await res.json()) as {
-      items: { id: string; replyCount: number; lastActivityAt: string | null }[];
+      items: {
+        id: string;
+        replyCount: number;
+        lastActivityAt: string | null;
+      }[];
     };
     const row = body.items.find((t) => t.id === thread.id);
     expect(row?.replyCount).toBe(0);

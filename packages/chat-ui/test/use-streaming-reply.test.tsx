@@ -13,7 +13,11 @@ import type { StreamingReplyState } from "../src/streaming-reply";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function mount(initialWorkbenchId: string | null, clearMs?: number) {
+function mount(
+  initialWorkbenchId: string | null,
+  clearMs?: number,
+  minVisibleMs = 0,
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -31,7 +35,7 @@ function mount(initialWorkbenchId: string | null, clearMs?: number) {
       replyTimedOut,
       handleStreamEvent,
       noteAwaitingReply,
-    } = useStreamingReply(workbenchId, clearMs);
+    } = useStreamingReply(workbenchId, clearMs, minVisibleMs);
     latestState = streamingReply;
     latestTimedOut = replyTimedOut;
     send = handleStreamEvent;
@@ -178,6 +182,21 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
 
     harness.awaitReply();
     expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+});
+
+describe("useStreamingReply's typing-pulse floor", () => {
+  test("a token arriving immediately still leaves the empty pulse up until minVisibleMs", async () => {
+    const harness = mount("chan_a", undefined, 40);
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ text: "" });
+
+    harness.send("chat.agent", delta("Hi"));
+    expect(harness.get()).toEqual({ text: "" });
+
+    await harness.settle(60);
+    expect(harness.get()).toEqual({ text: "Hi" });
     harness.unmount();
   });
 });

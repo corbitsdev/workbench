@@ -11,7 +11,7 @@
 // "all text streamed so far," not just the new token — so this module never
 // concatenates fragments itself; it just takes the latest one.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import type { ParticipantRecord } from "./api";
@@ -79,7 +79,8 @@ export function nextStreamingReplyState(
   }
   if (innerType === "inference.error") return null;
   if (innerType === "inference.done") {
-    return current === null || current.text === "" ? (current ?? { text: "" }) : null;
+    if (current === null || current.text === "") return current;
+    return null;
   }
 
   const delta = parseInferenceDeltaEvent(event.data);
@@ -113,9 +114,15 @@ export function openPendingReply(
  * never arrive (agent down, SSE dropped mid-reconnect). */
 const PENDING_REPLY_CLEAR_MS = 120_000;
 
+/** Floor on how long the empty typing pulse stays up after it first
+ * appears. Fast models can emit `inference.start` + first token in the
+ * same tick; without this the bubble flashes and vanishes. */
+const TYPING_INDICATOR_MIN_VISIBLE_MS = 700;
+
 export function useStreamingReply(
   workbenchId: string | null,
   clearMs: number = PENDING_REPLY_CLEAR_MS,
+  minVisibleMs: number = TYPING_INDICATOR_MIN_VISIBLE_MS,
 ): {
   readonly streamingReply: StreamingReplyState;
   /** True once the backstop above has fired for the turn just cleared —
@@ -130,10 +137,17 @@ export function useStreamingReply(
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
   const [replyTimedOut, setReplyTimedOut] = useState(false);
+  const pendingSinceRef = useRef<number | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setStreamingReply(null);
     setReplyTimedOut(false);
+    pendingSinceRef.current = null;
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
   }, [workbenchId]);
 
   useEffect(() => {
@@ -145,20 +159,65 @@ export function useStreamingReply(
       // for — no need to re-check identity here.
       setStreamingReply(null);
       setReplyTimedOut(true);
+      pendingSinceRef.current = null;
     }, clearMs);
     return () => clearTimeout(timer);
   }, [streamingReply, clearMs]);
 
+  function commitReply(
+    next: StreamingReplyState,
+    current: StreamingReplyState,
+  ): StreamingReplyState {
+    const now = Date.now();
+    const becamePending =
+      next !== null &&
+      next.text === "" &&
+      (current === null || current.text !== "");
+    if (becamePending) pendingSinceRef.current = now;
+
+    const leavingPending =
+      current !== null &&
+      current.text === "" &&
+      (next === null || next.text !== "");
+    if (
+      leavingPending &&
+      pendingSinceRef.current !== null &&
+      now - pendingSinceRef.current < minVisibleMs
+    ) {
+      if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
+      const remaining = minVisibleMs - (now - pendingSinceRef.current);
+      const held = next;
+      holdTimerRef.current = setTimeout(() => {
+        holdTimerRef.current = null;
+        pendingSinceRef.current = null;
+        setStreamingReply(held);
+      }, remaining);
+      return current;
+    }
+
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (next === null || next.text !== "") pendingSinceRef.current = null;
+    return next;
+  }
+
   function handleStreamEvent(eventType: string, data: unknown) {
     setReplyTimedOut(false);
     setStreamingReply((current) =>
-      nextStreamingReplyState(current, { eventType, data }),
+      commitReply(
+        nextStreamingReplyState(current, { eventType, data }),
+        current,
+      ),
     );
   }
 
   function noteAwaitingReply() {
     setReplyTimedOut(false);
-    setStreamingReply(openPendingReply);
+    setStreamingReply((current) =>
+      commitReply(openPendingReply(current), current),
+    );
   }
 
   return {

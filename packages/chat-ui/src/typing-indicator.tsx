@@ -136,9 +136,10 @@ export function useTypingIndicator(
   return { typingState, handleStreamEvent };
 }
 
-/** Quiet three-dot bubble in the incoming-message slot. Who-is-typing copy is
- * visually hidden so the pulse stays iMessage-subtle without dropping
- * the live-region announcement. */
+/** Quiet three-dot bubble in the incoming-message slot — same left
+ * indent as the next agent reply. Who-is-typing copy is visually hidden
+ * so the pulse stays iMessage-subtle without dropping the live-region
+ * announcement. */
 function TypingDotsBubble({ status }: { readonly status: string }) {
   return (
     <div className="chat-bubble-row chat-typing-row" data-own="false">

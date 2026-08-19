@@ -828,6 +828,6 @@ describe("TypingIndicator", () => {
     expect(markup).toContain("ada is typing");
     expect(markup).toContain('role="status"');
     expect(markup).toContain("chat-typing-row");
-    expect(markup).toContain("chat-typing-indicator-dots");
+    expect(markup).toContain('data-own="false"');
   });
 });

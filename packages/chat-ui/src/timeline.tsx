@@ -1484,9 +1484,8 @@ export function WorkbenchTimeline({
    * scroll position — the host's only chance to remember it, since this
    * component owns no state itself once it's gone. */
   readonly onScrollSnapshot?: (snapshot: ScrollSnapshot) => void;
-  /** Composer-adjacent pulse (typing / pending-reply) rendered as the last
-   * row in this scroll well so it sits with the messages, not in the
-   * prompt chrome. */
+  /** Incoming-slot pulse (typing / pending-reply) rendered after the last
+   * message so it sits where the next agent reply will land. */
   readonly footer?: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
