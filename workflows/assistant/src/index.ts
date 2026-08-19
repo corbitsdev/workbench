@@ -46,7 +46,7 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/routines-tools", version: "0.0.5" },
   { name: "@corbits/agent-directory-tools", version: "0.0.3" },
   { name: "@corbits/task-dispatch-tools", version: "0.0.2" },
-  { name: "@corbits/connections-tools", version: "0.0.3" },
+  { name: "@corbits/connections-tools", version: "0.0.4" },
   { name: "@corbits/skills-tools", version: "0.0.5" },
   { name: "@corbits/mcp-tools", version: "0.0.4" },
   { name: "@corbits/interaction-tools", version: "0.0.2" },
