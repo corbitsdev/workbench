@@ -302,8 +302,8 @@ worth stating rather than discovering:
   routine, or webhook run that completes normally keeps them. Upstream
   deactivates a terminal run's principal rather than deleting it, so the
   `grant.principalId` cascade never fires. The rows are inert — an inactive
-  principal is refused a seat — but they accumulate per run, and a periodic
-  reaper over deactivated principals should collect them.
+  principal is refused a seat — but they accumulate per run. A periodic sweep
+  over deactivated principals is tracked as its own piece of work.
 
 ## Interchange gaps (upstream only)
 
