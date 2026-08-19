@@ -109,9 +109,12 @@ describeIfDb("agent-directory routes against a real assetService", () => {
   let app: Hono<TenantEnv>;
 
   beforeAll(async () => {
-    await applyAgentDirectoryMigrations(databaseUrl!);
+    if (databaseUrl === undefined) {
+      throw new Error("DATABASE_URL is unset — describeIfDb should skip");
+    }
+    await applyAgentDirectoryMigrations(databaseUrl);
 
-    const handle = createDB(dbTargetFromUrl(databaseUrl!));
+    const handle = createDB(dbTargetFromUrl(databaseUrl));
     db = handle.db;
     close = handle.close;
 

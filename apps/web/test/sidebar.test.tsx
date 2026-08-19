@@ -239,7 +239,7 @@ describe("Sidebar", () => {
     };
 
     function stubAgentSidebar(): void {
-      globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      globalThis.fetch = ((input: RequestInfo | URL, _init?: RequestInit) => {
         const path = typeof input === "string" ? input : String(input);
         if (path.includes("/api/me/principals"))
           return Promise.resolve(json(membership));

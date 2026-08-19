@@ -9,7 +9,7 @@ import type { ProvisionerConfig } from "./config";
 import { readProvisionerConfig } from "./config";
 import { createE2BBackend } from "./e2b-backend";
 
-const PROVISIONER_API_VERSION: 1 = 1;
+const PROVISIONER_API_VERSION = 1 as const;
 
 function requireDataDir(dataDir: string | undefined): string {
   if (dataDir === undefined) {

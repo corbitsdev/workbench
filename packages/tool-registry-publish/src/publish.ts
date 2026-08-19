@@ -163,7 +163,7 @@ export class TarballVersionCollisionError extends Error {
  * code change requires a version bump; the skip is logged loudly by the
  * caller so a forgotten bump is visible, never silent. */
 export function shouldPublishTarball(
-  filename: string,
+  _filename: string,
   existingIntegrity: string | undefined,
 ): boolean {
   return existingIntegrity === undefined;

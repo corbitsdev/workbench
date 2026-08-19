@@ -12,7 +12,7 @@ import {
 } from "./config";
 import { createDockerBackend } from "./docker-backend";
 
-const PROVISIONER_API_VERSION: 1 = 1;
+const PROVISIONER_API_VERSION = 1 as const;
 
 export type CreateDockerSidecarProvisionerOpts = {
   readonly env?: Record<string, string | undefined>;

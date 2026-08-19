@@ -151,6 +151,7 @@ function parseManifest(
   } catch (err) {
     throw new Error(
       `tool-package freshness: ${label} is not valid JSON: ${String(err)}`,
+      { cause: err },
     );
   }
   const parsed = PackageManifest(raw);
