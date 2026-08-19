@@ -43,6 +43,12 @@ import {
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
+// ANSI color sequences the hub and sidecar wrap their dev output in;
+// stripped before any of it is filtered or printed here.
+const ESC = "\u001b";
+const ANSI_COLOR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
+const strip = (text: string) => text.replace(ANSI_COLOR, "");
+
 const tracked: SpawnedApp[] = [];
 const tempDir = (prefix: string) => mkdtemp(pathJoin(tmpdir(), prefix));
 const track = (app: SpawnedApp) => {
@@ -52,7 +58,9 @@ process.on("exit", () => {
   for (const a of tracked) {
     try {
       void a.stop();
-    } catch {}
+    } catch {
+      // Best-effort teardown on exit: a child already gone is fine.
+    }
   }
 });
 
@@ -460,7 +468,7 @@ async function main(): Promise<void> {
   );
 
   // ---- play loop -----------------------------------------------------
-  let seenIds = new Set<string>();
+  const seenIds = new Set<string>();
   async function listAgentMessages(): Promise<
     { id: string; text: string; createdAt: string }[]
   > {
@@ -574,8 +582,7 @@ async function main(): Promise<void> {
     if (!answered) {
       console.log(`!!! no reply within ${TURN_TIMEOUT_MS / 1000}s`);
       const tail = (s: string) =>
-        s
-          .replace(/\x1b\[[0-9;]*m/g, "")
+        strip(s)
           .split("\n")
           .filter(
             (l) =>
@@ -596,14 +603,21 @@ async function main(): Promise<void> {
     }
   }
   if (process.env["PLAY_DUMP"] === "1") {
-    const strip = (x: string) => x.replace(/\x1b\[[0-9;]*m/g, "");
+    console.log("=== HUB ERRORS ===");
+    console.log(
+      strip(hub.output())
+        .split("\n")
+        .filter((l) => /ERR|WRN/.test(l))
+        .slice(-40)
+        .join("\n"),
+    );
     console.log("=== SIDECAR OUTPUT (filtered) ===");
     console.log(
       strip(sidecar.output())
         .split("\n")
         .filter(
           (l) =>
-            /capabilit|tool|Tool|ERR/.test(l) &&
+            /capabilit|tool|Tool|grants|ERR/.test(l) &&
             !/hub·requests|pack push|bootstrap/.test(l),
         )
         .slice(-60)
