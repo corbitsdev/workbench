@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { MemoryConfig } from "@corbits/memory";
 
 import {
   buildMemoryPlaneStatus,
+  createMemoryStatusRoutes,
   hostOnly,
   MEMORY_SETUP_OPTIONS,
+  type MemoryPlaneStatus,
 } from "./memory-status";
 
 const baseConfig: MemoryConfig = {
@@ -146,5 +151,94 @@ describe("buildMemoryPlaneStatus", () => {
       host: "rerank.example.com",
     });
     expect(JSON.stringify(status)).not.toContain("shh");
+  });
+});
+
+const TENANT = {
+  id: "tnt_1",
+  name: "Acme",
+  slug: "acme",
+  domain: "acme.example",
+  parentId: null,
+  config: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const PRINCIPAL = {
+  id: "prn_alice",
+  tenantId: TENANT.id,
+  kind: "user" as const,
+  refId: "prn_alice",
+  status: "active" as const,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const READY_STATUS: MemoryPlaneStatus = {
+  source: "lexical-only",
+  embeddingsConfigured: false,
+  embed: null,
+  rerank: { configured: false },
+  degrade: {
+    totalSearches: 0,
+    since: new Date("2026-08-01T00:00:00.000Z").toISOString(),
+    windowSize: 0,
+    windowedDegradeRate: {},
+    escalated: {},
+  },
+  missing: ["a dense embedding endpoint"],
+  setupOptions: MEMORY_SETUP_OPTIONS,
+};
+
+function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
+  const asTenant: MiddlewareHandler<TenantEnv> = async (c, next) => {
+    c.set("tenant", TENANT);
+    c.set("principal", PRINCIPAL);
+    await next();
+  };
+  const app = new Hono<TenantEnv>();
+  app.use("*", asTenant);
+  app.route("/", routes);
+  return app;
+}
+
+describe("createMemoryStatusRoutes' grant guard", () => {
+  test("gates on the workbench-owned memory:status action — never memory:read, and never one of @corbits/memory's own add/search/forget/purge actions", async () => {
+    const seen: { resource: string; action: string }[] = [];
+    const recordingRequireGrant: RequireGrant = (resource, action) => {
+      seen.push({ resource: resource as string, action });
+      return async (_c, next) => {
+        await next();
+      };
+    };
+
+    const app = mountAs(
+      createMemoryStatusRoutes({
+        plane: { describeStatus: async () => READY_STATUS },
+        requireGrant: recordingRequireGrant,
+      }),
+    );
+
+    const response = await app.request("/status");
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([{ resource: "memory", action: "status" }]);
+  });
+
+  test("403s a principal who was never granted memory:status", async () => {
+    const denyingRequireGrant: RequireGrant = () => async (c) =>
+      c.json({ error: { code: "forbidden", message: "not granted" } }, 403);
+
+    const app = mountAs(
+      createMemoryStatusRoutes({
+        plane: { describeStatus: async () => READY_STATUS },
+        requireGrant: denyingRequireGrant,
+      }),
+    );
+
+    const response = await app.request("/status");
+
+    expect(response.status).toBe(403);
   });
 });

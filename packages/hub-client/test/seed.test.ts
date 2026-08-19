@@ -173,6 +173,81 @@ describe("seedTenant", () => {
     expect(output).toContain("seed complete: 1 workflow(s)");
   });
 
+  test("plants a memory:status grant for the tenant's own principal — CL-6289's Memory settings section depends on it", async () => {
+    // Without this row, the tenant's own principal has no grant at all on
+    // the `memory` resource: the settings-ui access probe (`packages/
+    // settings-ui/src/access.ts`) resolves denied, and the Memory section
+    // — whose entire purpose is telling someone memory isn't configured —
+    // silently disappears from the settings nav, including for the
+    // tenant owner. This asserts the grant is actually issued by the one
+    // path both `workbench seed` and self-serve onboarding provisioning
+    // (`@workbench/onboarding`'s `provisionPersonalTenantIfNeeded`) run
+    // through, not merely that a constant somewhere lists it.
+    const { push } = recordingPusher();
+    const plantedGrants: { resource: string; action: string }[] = [];
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const { resource, action } = body as {
+          resource: string;
+          action: string;
+        };
+        plantedGrants.push({ resource, action });
+        return { status: 201, data: {} };
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_1", "echo") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            runId: "dep_1",
+            address: `ins_dep_1@${TENANT_DOMAIN}`,
+            messageId: "<m1@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({ api: fakeAPI(handler), pushWorkflow: push, workflows: echoOnly }),
+    );
+
+    expect(plantedGrants).toContainEqual({
+      resource: "memory",
+      action: "status",
+    });
+  });
+
   test("publishes the tenant's corbits-tools registry before deploying any workflow", async () => {
     const { push } = recordingPusher();
     const publishCalls: { tenantId: string; hubUrl: string }[] = [];
