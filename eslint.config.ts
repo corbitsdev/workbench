@@ -68,4 +68,10 @@ export default defineConfig(
     files: ["scripts/**/*.ts"],
     rules: { "no-console": 0 },
   },
+  {
+    // Strips real ANSI escape codes from captured process output; the
+    // control character is the point, not a mistake.
+    files: ["scripts/e2e/**/*.ts"],
+    rules: { "no-control-regex": 0 },
+  },
 );
