@@ -52,34 +52,31 @@ exactly this reason.
 ## Memory plane
 
 The memory plane (`@corbits/memory`, composed at `apps/hub/src/memory-mount.ts`,
-`memory-config.ts`, and `memory-status.ts`) always mounts, but its real
-engine (DB pool, migrations, embed client) builds lazily — on the first
-actual memory call from any tenant, not at hub boot. `GET
+`memory-config.ts`, and `memory-status.ts`) mounts at hub boot — config
+and migrations both resolve then, not on first request. `GET
 /api/tenants/:tenantId/memory/status` reports what the process currently
 has and how to change it.
 
-One config for the whole process, resolved tenant-independently, in
-order:
+Config is env-only — deployment infrastructure, one per process, never
+per-tenant and never from a connected credential:
 
 1. `EMBED_BASE_URL`/`EMBED_MODEL` (see `.env.example`) — one embed
    endpoint for the whole deploy.
-2. Otherwise, the OPERATOR tenant's (`OPERATOR_TENANT_ID`) own OpenAI
-   credential connected through Settings → Connections — resolved the
-   same ownership-walk-the-ancestor-chain way a definition's model
-   requirements are, no env needed, takes effect immediately, no hub
-   restart. Never any other tenant's credential, and never whichever
-   tenant's request happens to trigger the build: a tenant connecting its
-   own key must never fund or configure another tenant's embeddings.
-3. Otherwise, lexical-only: full-text search only, no embed endpoint.
+2. Otherwise, lexical-only: full-text search only, no embed endpoint.
    This needs nothing beyond a pgvector-capable Postgres and is a fully-
    supported mode, not a degraded one — every tenant always has at least
    lexical search.
 
-Because step 2 depends on the operator tenant's connected credentials,
-the plane cannot resolve its config at boot; `memory-config.ts`'s
-`resolveMemoryConfig` and `memory-mount.ts`'s `createLazyMemoryPlane` are
-what defer that resolution to first use, memoized per process once it
-succeeds.
+Data SCOPE is a separate axis from config, and is resolved per request,
+automatically: every caller's tenant is walked up to its bench/account
+tenant (`packages/memory-hub/src/account-tenant.ts`'s
+`resolveAccountTenantId`, via `@corbits/memory`'s `CallerResolver` seam),
+so a caller in a workbench and the same caller in the bench itself always
+reach the same memory, two different accounts never collide, and the walk
+never ascends into an operator tenant (which would merge every account's
+memory into one store). `packages/memory-hub`'s workflow-run routes apply
+the same remap, so an agent running in a workbench reads and writes the
+exact memory its human teammates do there.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 
