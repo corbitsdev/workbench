@@ -6,11 +6,14 @@
 // slots in as one more value here, never a reshape.
 //
 // Also mounts the tenant-scoped, read-only status route itself —
-// `GET /api/tenants/:tenantId/memory/status` — guarded the same way the
-// rest of the settings-facing surface is (`packages/connections`'
-// `requireGrant("credential:*", "read")` sibling: here it's the memory
-// plane's own `"memory"` resource, matching `@corbits/memory`'s own route
-// guards). This ticket ships no config-write route.
+// `GET /api/tenants/:tenantId/memory/status` — guarded on the `"memory"`
+// resource, `packages/connections`' `requireGrant("credential:*", "read")`
+// sibling in spirit. The action is `"status"`, not `"read"` and not one of
+// `@corbits/memory`'s own `MEMORY_GRANT_REQUIREMENTS` actions
+// (`add`/`search`/`forget`/`purge`) — this is a workbench-owned action for
+// "can see whether the plane is configured," deliberately distinct from the
+// authority to search or mutate a tenant's memories. This ticket ships no
+// config-write route.
 import { Hono } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type {
@@ -196,7 +199,16 @@ export function createMemoryStatusRoutes(
       }
       await next();
     },
-    deps.requireGrant("memory", "read"),
+    // "status" is a workbench-owned action on the `memory` resource — it is
+    // NOT one of `@corbits/memory`'s own `MEMORY_GRANT_REQUIREMENTS`
+    // (`add`/`search`/`forget`/`purge`), and granting one of those four to
+    // read this route would be a real over-grant: reading whether the
+    // plane is configured is not the same authority as searching or
+    // mutating a tenant's memories. Seeded onto every tenant's own
+    // principal by `packages/hub-client/src/seed.ts`'s `SEED_GRANTS` (which
+    // `@workbench/onboarding`'s self-serve provisioning also runs through),
+    // never invented ad hoc per caller.
+    deps.requireGrant("memory", "status"),
     async (c) => {
       const tenant = c.get("tenant");
       const status = await deps.plane.describeStatus(tenant.id);

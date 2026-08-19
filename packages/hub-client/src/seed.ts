@@ -347,6 +347,19 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow-definition:*", action: "read" },
   { resource: "workflow-run:*", action: "create" },
   { resource: "workflow-run:*", action: "write" },
+  // CL-6289: the Memory settings section's status route
+  // (`apps/hub/src/memory-status.ts`) gates on `memory:status` — a
+  // workbench-owned action, NOT one of `@corbits/memory`'s own
+  // `MEMORY_GRANT_REQUIREMENTS` (`add`/`search`/`forget`/`purge`) and never
+  // "read" (nothing grants that). Without this row the tenant's own
+  // principal has no grant on the `memory` resource at all, the settings
+  // registry's access probe resolves denied, and the section — whose
+  // entire purpose is telling someone memory isn't configured — silently
+  // disappears from the nav for every principal, including the tenant
+  // owner. `resource: "memory"` is a single tenant-wide resource, not a
+  // per-instance one, so it is planted bare, never wildcard-scoped like
+  // the workflow rows above.
+  { resource: "memory", action: "status" },
 ];
 
 // The grants table has no unique constraint and the create route is a

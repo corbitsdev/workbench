@@ -23,6 +23,11 @@ function useResourceAccess(
   tenantId: string | null,
   principalId: string | null,
   resource: string,
+  // Every existing section here reads on "read" — Memory is the first
+  // exception: its route guards on "status", a workbench-owned action
+  // distinct from "read" and from `@corbits/memory`'s own
+  // add/search/forget/purge actions (see `apps/hub/src/memory-status.ts`).
+  action = "read",
 ): SectionAccess {
   const [access, setAccess] = useState<SectionAccess>("loading");
 
@@ -33,7 +38,7 @@ function useResourceAccess(
     }
     let cancelled = false;
     setAccess("loading");
-    evaluate(tenantId, principalId, resource, "read")
+    evaluate(tenantId, principalId, resource, action)
       .then((result) => {
         if (!cancelled)
           setAccess(result.effect === "allow" ? "allowed" : "denied");
@@ -44,7 +49,7 @@ function useResourceAccess(
     return () => {
       cancelled = true;
     };
-  }, [tenantId, principalId, resource]);
+  }, [tenantId, principalId, resource, action]);
 
   return access;
 }
@@ -61,6 +66,6 @@ export function useTenancyAccess(
     roles: useResourceAccess(tenantId, principalId, "role"),
     grants: useResourceAccess(tenantId, principalId, "grant"),
     credentials: useResourceAccess(tenantId, principalId, "credential"),
-    memory: useResourceAccess(tenantId, principalId, "memory"),
+    memory: useResourceAccess(tenantId, principalId, "memory", "status"),
   };
 }

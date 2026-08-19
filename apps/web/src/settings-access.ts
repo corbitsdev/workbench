@@ -17,9 +17,14 @@ async function probe(
   tenantId: string,
   principalId: string,
   resource: string,
+  // Every existing probe here reads on "read" — Memory is the first
+  // exception: its route guards on "status", a workbench-owned action
+  // distinct from "read" and from `@corbits/memory`'s own
+  // add/search/forget/purge actions (see `apps/hub/src/memory-status.ts`).
+  action = "read",
 ): Promise<SectionAccess> {
   try {
-    const result = await evaluate(tenantId, principalId, resource, "read");
+    const result = await evaluate(tenantId, principalId, resource, action);
     return result.effect === "allow" ? "allowed" : "denied";
   } catch {
     return "denied";
@@ -54,7 +59,7 @@ export function useSettingsAccess(
         probe(tenantId, principalId, "role"),
         probe(tenantId, principalId, "grant"),
         probe(tenantId, principalId, "credential"),
-        probe(tenantId, principalId, "memory"),
+        probe(tenantId, principalId, "memory", "status"),
       ]);
       return { people, roles, grants, credentials, memory };
     },
