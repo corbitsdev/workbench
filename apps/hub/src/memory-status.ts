@@ -15,6 +15,7 @@
 // authority to search or mutate a tenant's memories. This ticket ships no
 // config-write route.
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type {
   DegradeMetricsSnapshot,
@@ -152,6 +153,42 @@ export function buildMemoryPlaneStatus(
   };
 }
 
+/**
+ * Why this caller has no memory of their own, when they don't. Memory
+ * belongs to the org tenant and a caller reaches it through their own
+ * principal there (`./memory-mount.ts`'s caller resolver), so there are
+ * exactly three ways to hold none:
+ *
+ *   - `no-org-principal` — a guest invited into a single workbench whose own
+ *     parent tenancy is elsewhere. The correct default in both directions:
+ *     the host's memory is not exposed to them, and theirs is not exposed to
+ *     the host.
+ *   - `no-account-tenant` — the caller's own tenant IS the operator tenant,
+ *     so there is no account beneath it to keep memories under.
+ *   - `not-a-person` — the caller is not a `kind: "user"` principal. A run
+ *     reaches memory through the grants written onto it at launch, never
+ *     through this browser surface.
+ */
+export type MemoryUnscopedReason =
+  | "no-org-principal"
+  | "no-account-tenant"
+  | "not-a-person";
+
+export type MemoryCallerScope =
+  | { readonly kind: "scoped" }
+  | { readonly kind: "unscoped"; readonly reason: MemoryUnscopedReason };
+
+/**
+ * What `GET /status` answers with: the plane's own facts, and whether this
+ * caller has any memory in it. The two are independent — a fully configured
+ * plane still holds nothing for a guest — so they stay separate fields
+ * rather than one flattened shape that would make the page guess.
+ */
+export type MemoryStatusResponse = {
+  readonly plane: MemoryPlaneStatus;
+  readonly caller: MemoryCallerScope;
+};
+
 export type MemoryStatusPlane = {
   describeStatus(tenantId: string): Promise<MemoryPlaneStatus>;
 };
@@ -159,6 +196,13 @@ export type MemoryStatusPlane = {
 export type MemoryStatusRouteDeps = {
   readonly plane: MemoryStatusPlane;
   readonly requireGrant: RequireGrant;
+  /**
+   * Runs the same resolution every memory data route runs, so the page's
+   * explanation can never disagree with what a search would actually do.
+   */
+  readonly describeCaller: (
+    c: Context<TenantEnv>,
+  ) => Promise<MemoryCallerScope>;
 };
 
 export function createMemoryStatusRoutes(
@@ -199,8 +243,9 @@ export function createMemoryStatusRoutes(
     deps.requireGrant("memory", "status"),
     async (c) => {
       const tenant = c.get("tenant");
-      const status = await deps.plane.describeStatus(tenant.id);
-      return c.json(status);
+      const plane = await deps.plane.describeStatus(tenant.id);
+      const caller = await deps.describeCaller(c);
+      return c.json({ plane, caller } satisfies MemoryStatusResponse);
     },
   );
   return app;

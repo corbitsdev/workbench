@@ -22,8 +22,10 @@ import { SignedOutNotice, UnauthenticatedError } from "@corbits/api-query";
 
 import {
   fetchMemoryStatus,
+  type MemoryCallerScope,
   type MemoryPlaneStatus,
   type MemorySetupOption,
+  type MemoryStatusResponse,
 } from "./memory-api";
 import {
   MEMORY_ALARM_DEGRADE_FLAGS,
@@ -56,7 +58,7 @@ export function MemorySection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [query, setQuery] = useState<APIQuery<MemoryPlaneStatus>>({
+  const [query, setQuery] = useState<APIQuery<MemoryStatusResponse>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -80,12 +82,13 @@ export function MemorySection({
           return;
         }
         // `describeStatus` never throws for "lexical-only" — the floor
-        // every config resolves to — so a thrown error here is always a
-        // genuine infrastructure fault (a missing pgvector extension, an
-        // unreachable database), never a fixable-from-here setting. The
-        // contract gives no way to tell one infra fault from another, so
-        // the copy stays honest about "an operator must look at the
-        // server" rather than naming a specific cause it can't confirm.
+        // every config resolves to — and a caller who holds no memory here
+        // is reported as an `unscoped` 200 rather than raised, so a thrown
+        // error is always a genuine infrastructure fault (a missing
+        // pgvector extension, an unreachable database), never a person's
+        // own access. The contract gives no way to tell one infra fault
+        // from another, so the copy stays honest about "an operator must
+        // look at the server" rather than naming a cause it can't confirm.
         setQuery({
           kind: "error",
           message: SETTINGS_STRINGS.memoryErrorDescription,
@@ -132,15 +135,46 @@ export function MemorySection({
         />
       );
     case "ready":
+      if (query.data.caller.kind === "unscoped") {
+        return <UnscopedNotice reason={query.data.caller.reason} />;
+      }
       return (
         <SettingsPanel
           title={SETTINGS_STRINGS.memorySectionTitle}
           description={SETTINGS_STRINGS.memorySectionDescription}
         >
-          <MemoryStatusBody data={query.data} />
+          <MemoryStatusBody data={query.data.plane} />
         </SettingsPanel>
       );
   }
+}
+
+/**
+ * Holding no memory under this org is a fact about who is asking, not a
+ * fault — so it reads as an explanation with no retry button, never as the
+ * infrastructure error that a bare 403 used to surface as.
+ */
+function UnscopedNotice({
+  reason,
+}: {
+  readonly reason: Extract<MemoryCallerScope, { kind: "unscoped" }>["reason"];
+}) {
+  const copy = {
+    "no-org-principal": {
+      title: SETTINGS_STRINGS.memoryGuestTitle,
+      description: SETTINGS_STRINGS.memoryGuestDescription,
+    },
+    "no-account-tenant": {
+      title: SETTINGS_STRINGS.memoryNoAccountTitle,
+      description: SETTINGS_STRINGS.memoryNoAccountDescription,
+    },
+    "not-a-person": {
+      title: SETTINGS_STRINGS.memoryNotAPersonTitle,
+      description: SETTINGS_STRINGS.memoryNotAPersonDescription,
+    },
+  }[reason];
+
+  return <EmptyState title={copy.title} description={copy.description} />;
 }
 
 function sourceCaption(data: MemoryPlaneStatus): string | null {

@@ -61,12 +61,28 @@ const MemoryPlaneStatusSchema = type({
 });
 export type MemoryPlaneStatus = typeof MemoryPlaneStatusSchema.infer;
 
+// Whether the person asking holds any memory under this org — a separate
+// axis from whether the plane itself works, so a guest gets an explanation
+// instead of the plane's own healthy report or the operator-facing
+// infrastructure copy.
+const MemoryCallerScopeSchema = type({ kind: "'scoped'" }).or({
+  kind: "'unscoped'",
+  reason: "'no-org-principal' | 'no-account-tenant' | 'not-a-person'",
+});
+export type MemoryCallerScope = typeof MemoryCallerScopeSchema.infer;
+
+const MemoryStatusResponseSchema = type({
+  plane: MemoryPlaneStatusSchema,
+  caller: MemoryCallerScopeSchema,
+});
+export type MemoryStatusResponse = typeof MemoryStatusResponseSchema.infer;
+
 export function fetchMemoryStatus(
   tenantId: string,
-): Promise<MemoryPlaneStatus> {
+): Promise<MemoryStatusResponse> {
   return request(
     `/api/tenants/${tenantId}/memory/status`,
-    MemoryPlaneStatusSchema,
+    MemoryStatusResponseSchema,
     "loading your memory status",
   );
 }

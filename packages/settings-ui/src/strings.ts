@@ -311,6 +311,15 @@ export const SETTINGS_STRINGS = {
   memoryErrorDescription:
     "This depends on the database it runs on, not on anything this screen controls. If it doesn't clear up, an operator needs to check the server's setup.",
   memoryCheckAgainAction: "Check again",
+  memoryGuestTitle: "Memory here isn't yours",
+  memoryGuestDescription:
+    "You're a guest in this workspace. What you remember stays with your own account, and what this team remembers stays with theirs.",
+  memoryNoAccountTitle: "No account to remember under",
+  memoryNoAccountDescription:
+    "Memory is kept per account, and this workspace sits above every account on the deploy. Open a workspace inside one to see its memory.",
+  memoryNotAPersonTitle: "Memory is per person",
+  memoryNotAPersonDescription:
+    "This screen shows what you remember. Sign in as yourself to see it.",
   memoryHeadlineSemantic:
     "The assistant can find memories by meaning, not just matching words.",
   memoryHeadlineLexical:

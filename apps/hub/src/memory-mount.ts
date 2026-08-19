@@ -65,7 +65,11 @@ import {
   buildMemoryPlaneStatus,
   createMemoryStatusRoutes,
 } from "./memory-status";
-import type { MemoryPlaneStatus } from "./memory-status";
+import type {
+  MemoryCallerScope,
+  MemoryPlaneStatus,
+  MemoryUnscopedReason,
+} from "./memory-status";
 
 const log = getLogger(["hub", "memory-mount"]);
 
@@ -164,6 +168,64 @@ async function resolveOrgPrincipalId(
   return row?.id ?? null;
 }
 
+type SessionScope =
+  | { readonly ok: true; readonly tenantId: string; readonly principalId: string }
+  | { readonly ok: false; readonly reason: MemoryUnscopedReason };
+
+/**
+ * The one rule for where a browser caller's memory lives and who they are
+ * in it. `createAccountCallerResolver` collapses a failure to `null` (which
+ * upstream turns into a 401); `createMemoryCallerScopeDescriber` reports the
+ * same failure by name so the Memory page can explain it. Both read this,
+ * so the page can never describe an access the data routes would refuse.
+ */
+async function resolveSessionScope(
+  db: DB["db"],
+  operatorTenantId: string | undefined,
+  caller: { readonly kind: string; readonly refId: string },
+  callerTenantId: string,
+): Promise<SessionScope> {
+  if (caller.kind !== "user") return { ok: false, reason: "not-a-person" };
+
+  const scope = await accountScopeFor(db, operatorTenantId, callerTenantId);
+  if (scope === null) return { ok: false, reason: "no-account-tenant" };
+
+  const principalId = await resolveOrgPrincipalId(
+    db,
+    scope.tenantId,
+    caller.refId,
+  );
+  if (principalId === null) return { ok: false, reason: "no-org-principal" };
+
+  return { ok: true, tenantId: scope.tenantId, principalId };
+}
+
+/**
+ * Reports whether the calling person has any memory under this org, for
+ * `./memory-status.ts`'s read-only status route. A caller with no session
+ * at all is `not-a-person`: the status route's own fail-closed guard has
+ * already rejected that case before this runs, so it is unreachable in the
+ * mounted host and exists only so this function is total.
+ */
+export function createMemoryCallerScopeDescriber(
+  db: DB["db"],
+  operatorTenantId: string | undefined,
+): (c: Context<TenantEnv>) => Promise<MemoryCallerScope> {
+  return async (c) => {
+    const caller = c.get("principal");
+    const tenant = c.get("tenant");
+    if (!caller || !tenant) return { kind: "unscoped", reason: "not-a-person" };
+
+    const scope = await resolveSessionScope(
+      db,
+      operatorTenantId,
+      caller,
+      tenant.id,
+    );
+    return scope.ok ? { kind: "scoped" } : { kind: "unscoped", reason: scope.reason };
+  };
+}
+
 /**
  * Resolves a caller's own tenant up to its bench/account tenant, and seats
  * that as the scope `registerMemoryRoutes` sees — never the workbench
@@ -227,18 +289,15 @@ export function createAccountCallerResolver(
     const caller = c.get("principal");
     const tenant = c.get("tenant");
     if (!caller || !tenant) return null;
-    if (caller.kind !== "user") return null;
 
-    const scope = await accountScopeFor(db, operatorTenantId, tenant.id);
-    if (scope === null) return null;
-
-    const orgPrincipalId = await resolveOrgPrincipalId(
+    const scope = await resolveSessionScope(
       db,
-      scope.tenantId,
-      caller.refId,
+      operatorTenantId,
+      caller,
+      tenant.id,
     );
-    if (orgPrincipalId === null) return null;
-    return { tenantId: scope.tenantId, principalId: orgPrincipalId };
+    if (!scope.ok) return null;
+    return { tenantId: scope.tenantId, principalId: scope.principalId };
   };
 }
 
@@ -394,6 +453,10 @@ export async function mountMemory<E extends object = object>(
     createMemoryStatusRoutes({
       plane: { describeStatus },
       requireGrant: requireGrant as never,
+      describeCaller: createMemoryCallerScopeDescriber(
+        options.db,
+        options.operatorTenantId,
+      ),
     }) as never,
   );
 
