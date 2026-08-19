@@ -29,7 +29,7 @@ import {
   SmilePlus,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import type {
   MessageItem,
@@ -1094,6 +1094,10 @@ function MessageParts({
   // since every one of them targets a server-issued message id that
   // doesn't exist yet for this item.
   const isPending = item.pendingStatus !== undefined;
+  const isOwn =
+    currentUser !== undefined &&
+    item.sender !== undefined &&
+    localPartOf(item.sender.address) === currentUser.principalId;
   const contextMenu = useContextMenuState();
   const menu = isPending
     ? { entries: [] }
@@ -1124,6 +1128,7 @@ function MessageParts({
       className="chat-message-group"
       id={messageDomId(item.id)}
       data-grouped={!showHeader}
+      data-own={isOwn}
       data-pending={item.pendingStatus}
       onContextMenu={handleContextMenu}
     >
@@ -1394,6 +1399,7 @@ export function WorkbenchTimeline({
   pendingActions,
   scrollRestore,
   onScrollSnapshot,
+  footer,
 }: {
   /** Server-issued messages, oldest→newest, plus any optimistic entries
    * the host is still resolving — see `TimelineMessageItem`'s
@@ -1451,6 +1457,10 @@ export function WorkbenchTimeline({
    * scroll position — the host's only chance to remember it, since this
    * component owns no state itself once it's gone. */
   readonly onScrollSnapshot?: (snapshot: ScrollSnapshot) => void;
+  /** Composer-adjacent pulse (typing / pending-reply) rendered as the last
+   * row in this scroll well so it sits with the messages, not in the
+   * prompt chrome. */
+  readonly footer?: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts pinned (true) unless a restored snapshot says otherwise — a
@@ -1480,7 +1490,7 @@ export function WorkbenchTimeline({
     if (pinnedRef.current) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [items.length]);
+  }, [items.length, footer != null]);
 
   // Restores an unpinned reader's exact offset once, on mount — the
   // items.length effect above already handles the pinned case (it fires on
@@ -1502,12 +1512,12 @@ export function WorkbenchTimeline({
   }, []);
 
   // A sibling mounting or growing below the timeline (the turn-activity
-  // strip, a typing indicator) changes the scroll container's content
-  // height without changing `items.length` — the effect above never fires
-  // for it, so a pinned reader would otherwise watch their own view get
-  // visually shoved by chrome they never asked to track. `ResizeObserver`
-  // is absent in some test environments (jsdom has no implementation), so
-  // this is a no-op there rather than a crash.
+  // strip) changes the scroll container's client height without changing
+  // `items.length` — the effect above never fires for it, so a pinned
+  // reader would otherwise watch their own view get visually shoved by
+  // chrome they never asked to track. `ResizeObserver` is absent in some
+  // test environments (jsdom has no implementation), so this is a no-op
+  // there rather than a crash.
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) return;
@@ -1614,6 +1624,7 @@ export function WorkbenchTimeline({
           />
         );
       })}
+      {footer}
     </div>
   );
 }

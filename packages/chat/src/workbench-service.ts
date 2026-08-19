@@ -284,7 +284,7 @@ export async function launchAndJoinAgent(
       greetingLog.error(
         "Join event delivery failed for workbench {workbenchId}'s agent " +
           "{address}; the participant record is durable, only the " +
-          "timeline's joined line is missing",
+          "timeline's joined line is missing: {err}",
         { workbenchId: input.workbenchId, address: launched.address, err },
       );
     });
@@ -402,7 +402,7 @@ export async function postCannedGreeting(
     greetingLog.error(
       "Canned greeting post failed for workbench {workbenchId}'s agent " +
         "{agentAddress}; the chat was minted successfully but stays " +
-        "silent until a human sends the first message",
+        "silent until a human sends the first message: {err}",
       { workbenchId: input.workbenchId, agentAddress: input.agentAddress, err },
     );
   }
@@ -1093,7 +1093,7 @@ async function deliverFanout(
       } catch (err) {
         fanoutLog.error(
           "Delivery to {participant} failed for workbench {workbenchId}'s " +
-            "message {messageId}; posting an undelivered notice in its voice",
+            "message {messageId}; posting an undelivered notice in its voice: {err}",
           {
             participant,
             workbenchId: input.workbenchId,
@@ -1142,7 +1142,7 @@ async function postUndeliveredNotice(
   } catch (err) {
     fanoutLog.error(
       "Could not post the undelivered notice for {agentAddress} onto " +
-        "workbench {workbenchId}'s timeline",
+        "workbench {workbenchId}'s timeline: {err}",
       { agentAddress: input.agentAddress, workbenchId: input.workbenchId, err },
     );
   }

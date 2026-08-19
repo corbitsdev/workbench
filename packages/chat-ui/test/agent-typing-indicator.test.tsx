@@ -1,6 +1,6 @@
-// The composer-adjacent "N is/are typing…" line for in-flight agent
-// streams: renders nothing for zero names, and mini avatars + the right
-// CHAT_STRINGS.agentsTyping copy for one, two, and three-or-more.
+// The incoming-slot pulse for in-flight agent streams: renders nothing
+// for zero names, and a dots bubble whose hidden live-region copy
+// matches CHAT_STRINGS.agentsTyping for one, two, and three-or-more.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -18,8 +18,7 @@ function render(names: readonly string[]) {
   return {
     container,
     label: () =>
-      container.querySelector(".chat-agent-typing-indicator > span:last-child")
-        ?.textContent,
+      container.querySelector(".chat-typing-indicator-label")?.textContent,
     unmount: () => root.unmount(),
   };
 }
@@ -27,25 +26,28 @@ function render(names: readonly string[]) {
 describe("AgentTypingIndicator", () => {
   test("renders nothing when no agent is streaming", () => {
     const { container, unmount } = render([]);
-    expect(container.querySelector(".chat-agent-typing-indicator")).toBeNull();
+    expect(container.querySelector(".chat-typing-indicator")).toBeNull();
     unmount();
   });
 
-  test("one agent reads as a single typist with one avatar", () => {
+  test("one agent reads as a single typist", () => {
     const { container, label, unmount } = render(["Myra"]);
     expect(label()).toBe("Myra is typing…");
     expect(
-      container.querySelectorAll(".chat-agent-typing-avatar"),
-    ).toHaveLength(1);
+      container.querySelector(".chat-typing-indicator-dots"),
+    ).not.toBeNull();
+    expect(container.querySelectorAll(".chat-agent-typing-avatar")).toHaveLength(
+      0,
+    );
+    expect(
+      container.querySelector(".chat-typing-row")?.getAttribute("data-own"),
+    ).toBe("false");
     unmount();
   });
 
   test("two agents are joined with 'and'", () => {
-    const { container, label, unmount } = render(["Myra", "Scribe"]);
+    const { label, unmount } = render(["Myra", "Scribe"]);
     expect(label()).toBe("Myra and Scribe are typing…");
-    expect(
-      container.querySelectorAll(".chat-agent-typing-avatar"),
-    ).toHaveLength(2);
     unmount();
   });
 

@@ -52,15 +52,14 @@ function innerEventType(data: unknown): string | null {
 
 /**
  * The streaming reply's whole state machine, pure: an `inference.start`
- * opens an empty in-progress reply, each `inference.text.delta` replaces it
- * with that delta's cumulative text, and `inference.done`/`inference.error`
- * clear it — the turn is over, and the real persisted message (fetched by
- * the same refetch every non-typing `chat.agent` event already triggers)
- * takes over from here. Every other event type (tool calls, thinking,
- * usage) leaves the current state untouched. Kept separate from the
- * `useState` that holds it in `useStreamingReply` so the rule is testable
- * without mounting anything, matching `nextTypingState`'s split in
- * `typing-indicator.tsx`.
+ * opens an empty in-progress reply if nothing is showing yet (it never
+ * wipes tokens already streamed), each `inference.text.delta` replaces it
+ * with that delta's cumulative text, and `reactor.done`/`reactor.error`
+ * clear it — the turn is over. `inference.done` only clears once tokens
+ * have streamed (the persisted message takes over); an empty pending
+ * survives so the typing pulse stays up across tool rounds. `inference.error`
+ * always clears. Every other event type (tool calls, thinking, usage)
+ * leaves the current state untouched.
  */
 export function nextStreamingReplyState(
   current: StreamingReplyState,
@@ -69,7 +68,7 @@ export function nextStreamingReplyState(
   if (event.eventType !== "chat.agent") return current;
 
   const innerType = innerEventType(event.data);
-  if (innerType === "inference.start") return { text: "" };
+  if (innerType === "inference.start") return current ?? { text: "" };
   // `reactor.start` is the earliest "the agent is on it" signal — it
   // fires before any tokens, often seconds before a slow model's
   // `inference.start` — so it opens the indicator without waiting for
@@ -78,8 +77,9 @@ export function nextStreamingReplyState(
   if (innerType === "reactor.done" || innerType === "reactor.error") {
     return null;
   }
-  if (innerType === "inference.done" || innerType === "inference.error") {
-    return null;
+  if (innerType === "inference.error") return null;
+  if (innerType === "inference.done") {
+    return current === null || current.text === "" ? (current ?? { text: "" }) : null;
   }
 
   const delta = parseInferenceDeltaEvent(event.data);
@@ -170,7 +170,7 @@ export function useStreamingReply(
 }
 
 /**
- * The handle(s) to show as "typing" above the composer while a reply is
+ * The handle(s) to show as "typing" in the incoming-message slot while a reply is
  * owed but no tokens have streamed yet — mirrors `mergeStreamingReply`'s
  * attribution exactly (the
  * workbench's first agent participant), since a `chat.agent` event carries no

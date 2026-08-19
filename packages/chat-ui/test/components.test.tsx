@@ -207,7 +207,19 @@ describe("WorkbenchTimeline", () => {
       />,
     );
     expect(markup).toContain("You");
+    expect(markup).toContain('data-own="true"');
     expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("renders a footer after the last message", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={items}
+        footer={<span className="chat-typing-indicator">typing</span>}
+      />,
+    );
+    const timelineClose = markup.lastIndexOf("</div>");
+    expect(markup.slice(0, timelineClose)).toContain("chat-typing-indicator");
   });
 
   test("renders an event part as a friendly humanized line", () => {
@@ -755,5 +767,7 @@ describe("TypingIndicator", () => {
     const markup = renderToStaticMarkup(<TypingIndicator label="ada" />);
     expect(markup).toContain("ada is typing");
     expect(markup).toContain('role="status"');
+    expect(markup).toContain("chat-typing-row");
+    expect(markup).toContain('data-own="false"');
   });
 });

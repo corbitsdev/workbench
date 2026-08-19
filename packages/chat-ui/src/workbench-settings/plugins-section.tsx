@@ -24,16 +24,14 @@
 // MCP endpoint URL and, once the server-side probe (`mcp-probe.ts`) proves
 // it's real — detecting either OAuth+DCR support or plain API-key/open
 // access — it becomes a row here exactly like any curated connector. A
-// curated MCP preset (Granola, Exa, Linear, ScrapeCreators, Sumble —
-// `mcp-presets.ts`) and a hand-added server both resolve through the same
+// curated one-click MCP preset (Granola, Exa, Linear, Notion, Sentry,
+// Attio, Railway, PostHog, Sumble —
+// `mcp-presets.ts`) and an already-connected custom server both resolve through the same
 // `mcp-server-routes.ts` store; `directoryEntryFromMcpPreset` and
 // `directoryEntryFromMcpServer` below only adapt each into the one
 // `DirectoryEntry` shape this page already renders everything through —
-// there is no second row-rendering path. CL-6256's roster names with no
-// endpoint known-good or owner-supplied from here render as
-// `directoryEntryFromSuggestion` rows instead: a name and a logo whose one
-// action opens the same "Add MCP server" dialog, prefilled, rather than a
-// Connect button pointed at nothing.
+// there is no second row-rendering path. Catalog entries without a verified
+// one-click authorization path are intentionally omitted.
 import {
   Button,
   ConfirmButton,
@@ -52,7 +50,6 @@ import {
   type ResolvedPlugin,
 } from "@workbench/connections/plugins";
 import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
-import { MCP_SUGGESTIONS } from "@workbench/connections/mcp-suggestions";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -69,13 +66,10 @@ import {
 } from "./plugins-api";
 import {
   connectMcpPreset,
-  connectMcpServer,
   disconnectMcpServer,
   listMcpPresets,
   listMcpServers,
   mcpOAuthStartPath,
-  mcpOAuthStartPathForServer,
-  McpServersApiError,
   type McpPresetRow,
   type McpServer,
 } from "./mcp-servers-api";
@@ -86,6 +80,10 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 function isToolConnector(plugin: ResolvedPlugin): boolean {
   return plugin.descriptor.feedsTools.length > 0;
+}
+
+function isConnectedLegacyPlugin(plugin: ResolvedPlugin): boolean {
+  return plugin.status !== "not_connected";
 }
 
 /** Whether a plugin has anything to remove or override — a connected-here
@@ -111,8 +109,8 @@ function isInherited(plugin: ResolvedPlugin): boolean {
 
 /** The one row shape this whole directory renders through, regardless of
  * whether the entry came from the static connector registry, a curated MCP
- * preset, a hand-added MCP server, or a roster suggestion with no endpoint
- * yet — CL-6261's "dynamic and curated entries share the same row shape,
+ * preset, or an already-connected custom MCP server — CL-6261's "dynamic
+ * and curated entries share the same row shape,
  * no parallel path" rule, made concrete as a type every adapter below
  * produces and `PluginRow` is the only thing that reads. */
 type DirectoryEntry = {
@@ -123,7 +121,7 @@ type DirectoryEntry = {
   readonly status: "connected" | "needs_attention" | "not_connected";
   readonly inherited: boolean;
   /** A connected-here entry that this page can remove outright — an
-   * inherited connector, a suggestion, or a not-yet-connected preset never
+   * inherited connector or a not-yet-connected preset never
    * is. */
   readonly removable: boolean;
   readonly connectLabel: string;
@@ -184,30 +182,13 @@ function directoryEntryFromMcpPreset(
     key: `mcp-preset:${preset.slug}`,
     displayName: preset.displayName,
     description: preset.description,
+    ...(preset.icon !== undefined ? { icon: preset.icon } : {}),
     status: preset.connected ? "connected" : "not_connected",
     inherited: false,
     removable: preset.connected,
     connectLabel: "Connect",
     onConnect: () => onConnect(preset),
     onRemove: () => onRemove(preset),
-  };
-}
-
-function directoryEntryFromSuggestion(
-  suggestion: (typeof MCP_SUGGESTIONS)[number],
-  onConnect: (suggestion: (typeof MCP_SUGGESTIONS)[number]) => void,
-): DirectoryEntry {
-  return {
-    key: `mcp-suggestion:${suggestion.slug}`,
-    displayName: suggestion.displayName,
-    description: "Available via Add MCP server.",
-    ...(suggestion.icon !== undefined ? { icon: suggestion.icon } : {}),
-    status: "not_connected",
-    inherited: false,
-    removable: false,
-    connectLabel: "Connect",
-    onConnect: () => onConnect(suggestion),
-    onRemove: () => undefined,
   };
 }
 
@@ -306,15 +287,6 @@ function PluginRow({ entry }: { readonly entry: DirectoryEntry }) {
   );
 }
 
-/** What `AddMcpServerDialog` is doing — a hand-typed server (name and URL
- * both editable, optionally prefilled with a suggestion's name), or a
- * curated preset (name and URL fixed, only the token field is live). Both
- * branches end at the same probe-then-store route; this only decides which
- * fields the dialog shows and which client call it makes. */
-type AddMcpServerTarget =
-  | { readonly kind: "custom"; readonly initialName: string }
-  | { readonly kind: "preset"; readonly preset: McpPresetRow };
-
 export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
   const [query, setQuery] = useState<APIQuery<readonly ResolvedPlugin[]>>({
     kind: "loading",
@@ -325,8 +297,6 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
   const [connectTarget, setConnectTarget] = useState<ResolvedPlugin | null>(
     null,
   );
-  const [addServerTarget, setAddServerTarget] =
-    useState<AddMcpServerTarget | null>(null);
   const [search, setSearch] = useState("");
 
   function load() {
@@ -394,8 +364,8 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
   }
 
   function handleConnectMcpPreset(preset: McpPresetRow) {
-    if (!preset.keyOptional) {
-      setAddServerTarget({ kind: "preset", preset });
+    if (preset.connectionMode === "oauth") {
+      window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
       return;
     }
     setRowError(null);
@@ -406,16 +376,7 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
           `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
         );
       })
-      .catch((cause: unknown) => {
-        if (
-          cause instanceof McpServersApiError &&
-          cause.code === "oauth_required"
-        ) {
-          window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
-          return;
-        }
-        setAddServerTarget({ kind: "preset", preset });
-      });
+      .catch(() => setRowError("Couldn't connect — try again."));
   }
 
   return (
@@ -424,7 +385,8 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
         const connectorEntries = plugins
           .filter(
             (plugin) =>
-              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
+              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
+              isConnectedLegacyPlugin(plugin),
           )
           .map((plugin) =>
             directoryEntryFromResolvedPlugin(
@@ -433,10 +395,12 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
               handleRemove,
             ),
           );
-        const mcpServerSlugs = new Set(mcpServers.map((server) => server.slug));
-        const mcpServerEntries = mcpServers.map((server) =>
-          directoryEntryFromMcpServer(server, handleRemoveMcpServer),
-        );
+        const presetSlugs = new Set(mcpPresets.map((preset) => preset.slug));
+        const mcpServerEntries = mcpServers
+          .filter((server) => !presetSlugs.has(server.slug))
+          .map((server) =>
+            directoryEntryFromMcpServer(server, handleRemoveMcpServer),
+          );
         const presetEntries = mcpPresets.map((preset) =>
           directoryEntryFromMcpPreset(
             preset,
@@ -444,21 +408,10 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
             handleRemoveMcpPreset,
           ),
         );
-        const suggestionEntries = MCP_SUGGESTIONS.filter(
-          (suggestion) => !mcpServerSlugs.has(suggestion.slug),
-        ).map((suggestion) =>
-          directoryEntryFromSuggestion(suggestion, (picked) =>
-            setAddServerTarget({
-              kind: "custom",
-              initialName: picked.displayName,
-            }),
-          ),
-        );
         const allEntries = [
           ...connectorEntries,
           ...presetEntries,
           ...mcpServerEntries,
-          ...suggestionEntries,
         ];
         const filtered = allEntries.filter((entry) =>
           matchesQuery(entry, search),
@@ -483,16 +436,6 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
                 onChange={(event) => setSearch(event.target.value)}
                 aria-label="Search plugins"
               />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="plugins-directory-add-mcp-action"
-                onClick={() =>
-                  setAddServerTarget({ kind: "custom", initialName: "" })
-                }
-              >
-                Add MCP server
-              </Button>
             </div>
             {active.length === 0 && available.length === 0 ? (
               <p className="chat-settings-field-hint">
@@ -527,15 +470,6 @@ export function PluginsSection({ tenantId }: { readonly tenantId: string }) {
               onConnected={() => {
                 setConnectTarget(null);
                 load();
-              }}
-            />
-            <AddMcpServerDialog
-              tenantId={tenantId}
-              target={addServerTarget}
-              onClose={() => setAddServerTarget(null)}
-              onConnected={() => {
-                setAddServerTarget(null);
-                loadMcp();
               }}
             />
           </div>
@@ -642,182 +576,6 @@ function ConnectDialog({
             onClick={handleSubmit}
           >
             {submitting ? "Saving…" : "Test & Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** The "Add MCP server" dialog CL-6261 asks for: paste a full endpoint URL
- * (never truncated to origin — a bare origin dies at the CDN, the CloudFront
- * lesson `mcp-server-routes.ts` already documents) and the server-side probe
- * decides what happens next. Doubles as the curated-preset connect dialog
- * (`target.kind === "preset"`) so a preset needing a token — unlike Exa,
- * which connects with one click — gets the exact same field, never a second
- * form. */
-function AddMcpServerDialog({
-  tenantId,
-  target,
-  onClose,
-  onConnected,
-}: {
-  readonly tenantId: string;
-  readonly target: AddMcpServerTarget | null;
-  readonly onClose: () => void;
-  readonly onConnected: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [token, setToken] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (target === null) return;
-    setName(
-      target.kind === "preset" ? target.preset.displayName : target.initialName,
-    );
-    setUrl(target.kind === "preset" ? target.preset.url : "");
-    setToken("");
-    setError(null);
-    setSubmitting(false);
-  }, [target]);
-
-  function handleSubmit() {
-    if (target === null) return;
-    if (target.kind === "custom" && (name.trim() === "" || url.trim() === "")) {
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    const trimmedToken = token.trim();
-    const connect =
-      target.kind === "preset"
-        ? connectMcpPreset(
-            tenantId,
-            target.preset.slug,
-            trimmedToken === "" ? undefined : trimmedToken,
-          )
-        : connectMcpServer(tenantId, {
-            name: name.trim(),
-            url: url.trim(),
-            token: trimmedToken === "" ? undefined : trimmedToken,
-          });
-    connect
-      .then((result) => {
-        toast(
-          `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
-        );
-        onConnected();
-      })
-      .catch((cause: unknown) => {
-        if (
-          cause instanceof McpServersApiError &&
-          cause.code === "oauth_required"
-        ) {
-          window.location.href =
-            target.kind === "preset"
-              ? mcpOAuthStartPath(tenantId, target.preset.slug)
-              : mcpOAuthStartPathForServer(tenantId, name.trim(), url.trim());
-          return;
-        }
-        setError(
-          cause instanceof McpServersApiError
-            ? cause.message
-            : "Couldn't connect that MCP server.",
-        );
-      })
-      .finally(() => setSubmitting(false));
-  }
-
-  const isPreset = target?.kind === "preset";
-
-  return (
-    <Dialog
-      open={target !== null}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {isPreset && target?.kind === "preset"
-              ? `Connect ${target.preset.displayName}`
-              : "Add MCP server"}
-          </DialogTitle>
-          <DialogDescription>
-            {isPreset
-              ? "This key is only used for this workbench."
-              : "Paste any MCP server's full endpoint URL — its tools become available to every agent here once it checks out."}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="settings-form-stack">
-          {!isPreset ? (
-            <>
-              <label className="settings-form-field">
-                <span>Name</span>
-                <Input
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    setError(null);
-                  }}
-                />
-              </label>
-              <label className="settings-form-field">
-                <span>URL</span>
-                <Input
-                  type="url"
-                  placeholder="https://example.com/mcp"
-                  value={url}
-                  onChange={(event) => {
-                    setUrl(event.target.value);
-                    setError(null);
-                  }}
-                />
-              </label>
-            </>
-          ) : null}
-          <label className="settings-form-field">
-            <span>
-              Access token
-              {!isPreset ||
-              (target?.kind === "preset" && target.preset.keyOptional)
-                ? " (optional)"
-                : ""}
-            </span>
-            <Input
-              type="password"
-              autoComplete="off"
-              value={token}
-              onChange={(event) => {
-                setToken(event.target.value);
-                setError(null);
-              }}
-            />
-          </label>
-          {error !== null ? (
-            <p className="settings-inline-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            disabled={
-              submitting ||
-              (target?.kind === "custom" &&
-                (name.trim() === "" || url.trim() === ""))
-            }
-            onClick={handleSubmit}
-          >
-            {submitting ? "Connecting…" : "Connect"}
           </Button>
         </DialogFooter>
       </DialogContent>

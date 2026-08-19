@@ -1,5 +1,5 @@
 // CL-6215: the workbench Plugins section carries only tool/plugin
-// connections — Granola, Exa, Linear, GitHub, ScrapeCreators, ... —
+// connections — Granola, Exa, Linear, and other verified MCP presets —
 // never the inference-provider connectors (Anthropic, OpenAI, Groq,
 // Ollama, Opencode Zen, ...) that also live in
 // `@workbench/connections`'s registry. Those now live only in Shared
@@ -73,7 +73,7 @@ const STUB_MCP_PRESETS = [
     displayName: "Granola",
     description: "Pull your Granola meeting notes and transcripts — via MCP.",
     url: "https://mcp.granola.ai/mcp",
-    keyOptional: false,
+    connectionMode: "oauth",
     docsUrl: "https://www.granola.ai",
     connected: false,
   },
@@ -82,7 +82,7 @@ const STUB_MCP_PRESETS = [
     displayName: "Exa",
     description: "Search the web (Exa) — no key needed.",
     url: "https://mcp.exa.ai/mcp",
-    keyOptional: true,
+    connectionMode: "keyless",
     docsUrl: "https://exa.ai",
     connected: false,
   },
@@ -91,26 +91,62 @@ const STUB_MCP_PRESETS = [
     displayName: "Linear",
     description: "Manage Linear issues and projects — via MCP.",
     url: "https://mcp.linear.app/mcp",
-    keyOptional: false,
+    connectionMode: "oauth",
     docsUrl: "https://linear.app",
     connected: false,
   },
   {
-    slug: "scrapecreators",
-    displayName: "ScrapeCreators",
-    description: "Read Reddit threads and comments — via MCP.",
-    url: "https://api.scrapecreators.com/mcp",
-    keyOptional: false,
-    docsUrl: "https://scrapecreators.com",
+    slug: "notion",
+    displayName: "Notion",
+    description: "Search and update pages, databases, and workspace content.",
+    url: "https://mcp.notion.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp",
+    connected: false,
+  },
+  {
+    slug: "sentry",
+    displayName: "Sentry",
+    description: "Investigate errors, traces, releases, and projects.",
+    url: "https://mcp.sentry.dev/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://mcp.sentry.dev/",
+    connected: false,
+  },
+  {
+    slug: "attio",
+    displayName: "Attio",
+    description: "Work with CRM records, lists, notes, and tasks.",
+    url: "https://mcp.attio.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://docs.attio.com/mcp/overview",
+    connected: false,
+  },
+  {
+    slug: "railway",
+    displayName: "Railway",
+    description: "Inspect and manage projects, services, and deployments.",
+    url: "https://mcp.railway.com",
+    connectionMode: "oauth",
+    docsUrl: "https://docs.railway.com/ai/mcp-server",
+    connected: false,
+  },
+  {
+    slug: "posthog",
+    displayName: "PostHog",
+    description: "Explore product analytics, errors, flags, and experiments.",
+    url: "https://mcp.posthog.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://posthog.com/docs/model-context-protocol",
     connected: false,
   },
   {
     slug: "sumble",
     displayName: "Sumble",
-    description: "Look up company tech stacks and firmographics — via MCP.",
-    url: "https://sumble.com/mcp",
-    keyOptional: false,
-    docsUrl: "https://sumble.com",
+    description: "Research accounts, people, technologies, and buying signals.",
+    url: "https://mcp.sumble.com/",
+    connectionMode: "oauth",
+    docsUrl: "https://sumble.com/guides/account-research",
     connected: false,
   },
 ];
@@ -180,7 +216,7 @@ function stubFetch(
 }
 
 describe("Plugins section", () => {
-  test("shows tool connectors, never inference-provider connectors", async () => {
+  test("shows verified one-click tool connectors, never providers or API-key catalog entries", async () => {
     stubFetch();
     const el = mount(baseProps());
     await settle();
@@ -192,8 +228,8 @@ describe("Plugins section", () => {
     expect(names).toContain("Granola");
     expect(names).toContain("Exa");
     expect(names).toContain("Linear");
-    expect(names).toContain("GitHub");
-    expect(names).toContain("ScrapeCreators");
+    expect(names).not.toContain("GitHub");
+    expect(names).not.toContain("ScrapeCreators");
     expect(names).not.toContain("Anthropic");
     expect(names).not.toContain("OpenAI");
     expect(names).not.toContain("Groq");
@@ -214,6 +250,9 @@ describe("Plugins section", () => {
       el.querySelectorAll(".plugins-directory-connect-action"),
     );
     expect(connectButtons.length).toBeGreaterThan(0);
+    expect(
+      connectButtons.some((button) => button.textContent === "Connect"),
+    ).toBe(true);
     expect(
       connectButtons.every((button) => button.textContent === "Connect"),
     ).toBe(true);
@@ -300,7 +339,7 @@ describe("Plugins section", () => {
     ).not.toBeNull();
   });
 
-  test("roster names with no known endpoint list as suggestions and never a dead Connect button pointed at a fake success", async () => {
+  test("omits every catalog entry that lacks verified one-click authorization", async () => {
     stubFetch();
     const el = mount(baseProps());
     await settle();
@@ -308,121 +347,20 @@ describe("Plugins section", () => {
     const names = Array.from(
       el.querySelectorAll(".plugins-directory-name"),
     ).map((node) => node.textContent);
-    for (const suggestion of ["Notion", "Sentry", "Vercel", "HubSpot"]) {
-      expect(names).toContain(suggestion);
+    for (const excluded of [
+      "GitHub",
+      "ScrapeCreators",
+      "Slack",
+      "Vercel",
+      "Render",
+      "HubSpot",
+      "Zoom",
+      "Google Workspace",
+      "Browserbase",
+    ]) {
+      expect(names).not.toContain(excluded);
     }
-  });
-
-  test("Add MCP server opens a dialog with Name, URL, and Access token fields", async () => {
-    stubFetch();
-    const el = mount(baseProps());
-    await settle();
-
-    const addButton = Array.from(
-      el.querySelectorAll(".plugins-directory-add-mcp-action"),
-    )[0] as HTMLButtonElement;
-    act(() => addButton.click());
-    await settle();
-
-    const labels = Array.from(document.querySelectorAll("label")).map(
-      (label) => label.textContent,
-    );
-    expect(labels.some((text) => text?.includes("Name"))).toBe(true);
-    expect(labels.some((text) => text?.includes("URL"))).toBe(true);
-    expect(labels.some((text) => text?.includes("Access token"))).toBe(true);
-  });
-
-  test("clicking a suggestion row opens the Add MCP server dialog prefilled with its name", async () => {
-    stubFetch();
-    const el = mount(baseProps());
-    await settle();
-
-    const rows = Array.from(el.querySelectorAll(".plugins-directory-row"));
-    const notionRow = rows.find((row) => row.textContent?.includes("Notion"));
-    const connectButton = notionRow?.querySelector(
-      ".plugins-directory-connect-action",
-    ) as HTMLButtonElement | undefined;
-    expect(connectButton).toBeDefined();
-    act(() => connectButton?.click());
-    await settle();
-
-    const nameInput = document.querySelector(
-      "input[type='text'], .settings-form-field input:not([type])",
-    ) as HTMLInputElement | null;
-    const nameField = Array.from(
-      document.querySelectorAll(".settings-form-field"),
-    ).find((field) => field.textContent?.includes("Name"));
-    const input = nameField?.querySelector("input") ?? nameInput;
-    expect(input?.value).toBe("Notion");
-  });
-
-  test("connecting an MCP server that requires OAuth surfaces the honest requirement, never a fake success", async () => {
-    stubFetch({
-      onConnect: () =>
-        json(
-          {
-            error: {
-              message:
-                "This MCP server requires signing in via OAuth before it can be connected.",
-              code: "oauth_required",
-            },
-          },
-          422,
-        ),
-    });
-    const el = mount(baseProps());
-    await settle();
-
-    const addButton = Array.from(
-      el.querySelectorAll(".plugins-directory-add-mcp-action"),
-    )[0] as HTMLButtonElement;
-    act(() => addButton.click());
-    await settle();
-
-    const nameField = Array.from(
-      document.querySelectorAll(".settings-form-field"),
-    ).find((field) => field.textContent?.includes("Name"));
-    const urlField = Array.from(
-      document.querySelectorAll(".settings-form-field"),
-    ).find((field) => field.textContent?.includes("URL"));
-    const nameInput = nameField?.querySelector("input") as HTMLInputElement;
-    const urlInput = urlField?.querySelector("input") as HTMLInputElement;
-    const valueSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
-    act(() => {
-      valueSetter?.call(nameInput, "Gated Server");
-      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
-      valueSetter?.call(urlInput, "https://gated.example.com/mcp");
-      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    const originalLocation = window.location.href;
-    let assignedHref: string | undefined;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: {
-        ...window.location,
-        set href(value: string) {
-          assignedHref = value;
-        },
-        get href() {
-          return assignedHref ?? originalLocation;
-        },
-      },
-    });
-
-    const dialog = document.querySelector("[role='dialog']");
-    const connectButton = Array.from(
-      dialog?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Connect") as HTMLButtonElement;
-    await act(async () => {
-      connectButton.click();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-    expect(assignedHref).toContain("/mcp-servers/oauth/gated-server/start");
-    expect(assignedHref).toContain("url=https%3A%2F%2Fgated.example.com%2Fmcp");
+    expect(el.querySelector(".plugins-directory-add-mcp-action")).toBeNull();
+    expect(el.textContent).not.toContain("Add MCP server");
   });
 });

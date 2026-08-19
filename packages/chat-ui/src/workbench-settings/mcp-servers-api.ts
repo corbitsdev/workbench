@@ -37,8 +37,9 @@ export type McpPresetRow = {
   readonly displayName: string;
   readonly description: string;
   readonly url: string;
-  readonly keyOptional: boolean;
+  readonly connectionMode: "oauth" | "keyless";
   readonly docsUrl: string;
+  readonly icon?: { readonly path: string; readonly hex: string };
   readonly connected: boolean;
 };
 
@@ -62,8 +63,9 @@ const McpPresetSchema = type({
   displayName: "string",
   description: "string",
   url: "string",
-  keyOptional: "boolean",
+  connectionMode: "'oauth' | 'keyless'",
   docsUrl: "string",
+  "icon?": { path: "string", hex: "string" },
   connected: "boolean",
 });
 
@@ -91,8 +93,8 @@ function slugForOAuthStart(name: string): string {
 }
 
 /** The OAuth+DCR connect flow's entry point — a curated preset's fixed
- * slug, or an ad hoc `name`+`url` for a custom server the "Add MCP server"
- * dialog already probed as `requiresOAuth`. Navigating the browser here
+ * slug, or an ad hoc `name`+`url` supplied by an authorized caller.
+ * Navigating the browser here
  * (never a fetch) is deliberate: this redirects off-site to the server's
  * own authorization page. */
 export function mcpOAuthStartPath(

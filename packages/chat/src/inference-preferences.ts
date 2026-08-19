@@ -11,15 +11,18 @@
 // provider still gets an empty list, and `buildWorkbenchHostWorkflow` /
 // the deploy-time catalog resolution downstream of it still fail loud
 // on that, exactly as before.
-import { listVisibleProviders, type DB } from "@intx/db";
+import { listVisibleOfferings, listVisibleProviders, type DB } from "@intx/db";
 import type { InferencePreference } from "@intx/agent";
-import { deriveWorkbenchHostInferencePreferences } from "@workbench/hub-client";
 
 /** Reads back the provider names a tenant (or an ancestor it inherits
  * catalog rows from) actually has a usable credential for. */
 export type ConnectedProviderLister = (
   tenantId: string,
 ) => Promise<readonly string[]>;
+
+export type DefaultInferencePreferenceLister = (
+  tenantId: string,
+) => Promise<readonly InferencePreference[]>;
 
 /**
  * The `@intx/db`-backed `ConnectedProviderLister`: a provider counts as
@@ -41,6 +44,34 @@ export async function listConnectedProviders(
 }
 
 /**
+ * Reads one real default model and its compatible provider fallbacks from the
+ * tenant-visible catalog. The lowest-priority offering chooses the model;
+ * remaining offerings of that exact canonical model form the fallback chain.
+ */
+export async function listDefaultInferencePreferences(
+  db: DB["db"],
+  tenantId: string,
+): Promise<readonly InferencePreference[]> {
+  const offerings = (await listVisibleOfferings(db, tenantId))
+    .filter((entry) => entry.provider.credentialId !== null)
+    .sort(
+      (left, right) =>
+        left.offering.priority - right.offering.priority ||
+        left.model.canonicalName.localeCompare(right.model.canonicalName) ||
+        left.provider.name.localeCompare(right.provider.name) ||
+        left.offering.id.localeCompare(right.offering.id),
+    );
+  const defaultModel = offerings[0]?.model.canonicalName;
+  if (defaultModel === undefined) return [];
+  return offerings
+    .filter((entry) => entry.model.canonicalName === defaultModel)
+    .map((entry) => ({
+      provider: entry.provider.name,
+      model: entry.model.canonicalName,
+    }));
+}
+
+/**
  * Builds the per-tenant resolver `routes.ts`'s `createWorkbench` handler
  * calls on every workbench creation. Takes the provider lookup as a
  * dependency (rather than a `db` handle directly) so the ordering rule
@@ -50,8 +81,7 @@ export async function listConnectedProviders(
  * required.
  */
 export function createWorkbenchHostInferencePreferencesResolver(
-  listConnected: ConnectedProviderLister,
+  listDefaults: DefaultInferencePreferenceLister,
 ): (tenantId: string) => Promise<readonly InferencePreference[]> {
-  return async (tenantId) =>
-    deriveWorkbenchHostInferencePreferences(await listConnected(tenantId));
+  return async (tenantId) => listDefaults(tenantId);
 }

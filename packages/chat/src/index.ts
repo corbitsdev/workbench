@@ -255,9 +255,13 @@ export type {
 
 export {
   createWorkbenchHostInferencePreferencesResolver,
+  listDefaultInferencePreferences,
   listConnectedProviders,
 } from "./inference-preferences";
-export type { ConnectedProviderLister } from "./inference-preferences";
+export type {
+  ConnectedProviderLister,
+  DefaultInferencePreferenceLister,
+} from "./inference-preferences";
 
 export {
   artifactPartsForFinalizedTurn,
