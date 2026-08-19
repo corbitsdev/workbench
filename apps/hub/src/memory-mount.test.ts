@@ -8,8 +8,12 @@ import {
 } from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
-import { createNoopCredentialCipher } from "@intx/crypto";
-import { createDB, runMigrations, dropSchema } from "@intx/db";
+import {
+  createEnvKeyCredentialCipher,
+  createNoopCredentialCipher,
+} from "@intx/crypto";
+import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
+import { credentialAad } from "@intx/types";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { createLazyMemoryPlane, mountMemory } from "./memory-mount";
@@ -204,3 +208,83 @@ describeIfDb("createLazyMemoryPlane: lexical-only end-to-end", () => {
     }
   });
 });
+
+const CROSS_TENANT_SCHEMA = "hub_memory_mount_cross_tenant_test";
+
+describeIfDb(
+  "createLazyMemoryPlane: a non-operator tenant's own credential never configures the shared plane",
+  () => {
+    const target = dbTargetFromUrl(
+      databaseUrl ?? "postgres://localhost:5432/unused",
+    );
+
+    beforeAll(async () => {
+      await runMigrations(target, { schema: CROSS_TENANT_SCHEMA });
+    });
+
+    afterAll(async () => {
+      await dropSchema(target, { schema: CROSS_TENANT_SCHEMA });
+      const postgres = (await import("postgres")).default;
+      const sql = postgres(databaseUrl as string, { max: 1 });
+      try {
+        await sql.unsafe(`DROP SCHEMA IF EXISTS "memory" CASCADE`);
+      } finally {
+        await sql.end();
+      }
+    });
+
+    test("the first caller's OWN connected credential is never consulted when it isn't the operator tenant", async () => {
+      const { db, close } = createDB({
+        ...target,
+        schema: CROSS_TENANT_SCHEMA,
+      });
+      try {
+        const cipher = createEnvKeyCredentialCipher(new Uint8Array(32).fill(9));
+        const firstCallerTenantId = "tnt_memory_cross_tenant_first_caller";
+        await db.insert(schema.tenant).values({
+          id: firstCallerTenantId,
+          name: "First Caller Tenant",
+          slug: "memory-cross-tenant-first-caller",
+          domain: "memory-cross-tenant-first-caller.workbench.test",
+        });
+        await db.insert(schema.provider).values({
+          id: "prov_memory_cross_tenant_openai",
+          tenantId: firstCallerTenantId,
+          name: "openai",
+          plugin: "http",
+        });
+        const credentialId = "cred_memory_cross_tenant_openai";
+        await db.insert(schema.credential).values({
+          id: credentialId,
+          tenantId: firstCallerTenantId,
+          providerId: "prov_memory_cross_tenant_openai",
+          name: "OpenAI",
+          type: "api_key",
+          secret: await cipher.encrypt(
+            "sk-first-caller-secret",
+            credentialAad(credentialId, "secret"),
+          ),
+          status: "active",
+        });
+
+        // No `operatorTenantId` configured (matching `OPERATOR_TENANT_ID`
+        // unset): even though this tenant connected its own OpenAI
+        // credential AND is the very first (only) caller, its credential
+        // must never power the shared plane.
+        const plane = createLazyMemoryPlane({
+          env: { DATABASE_URL: databaseUrl as string },
+          db,
+          credentialCipher: cipher,
+          grantStore: createInMemoryGrantStore([]),
+          conditionRegistry: {},
+        });
+
+        const status = await plane.describeStatus(firstCallerTenantId);
+        expect(status.source).toBe("lexical-only");
+        expect(status.embeddingsConfigured).toBe(false);
+      } finally {
+        await close();
+      }
+    });
+  },
+);

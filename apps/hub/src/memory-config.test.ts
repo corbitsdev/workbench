@@ -90,11 +90,15 @@ describe("resolveConfigLexicalOnly", () => {
 // still runs the unit gates above), matching this repo's existing
 // convention for tests that talk to a real Postgres (`memory-mount.test.ts`).
 //
-// Proves precedence step (b) — a connected OpenAI credential — resolves
-// through the platform's own ownership-walk-the-ancestor-chain resolver
-// (`resolveCredentialRequirement`, never a hand-rolled query), and that
-// `resolveMemoryConfig` prefers it over the lexical-only floor when no
-// `EMBED_BASE_URL` is set, but never touches it when one is.
+// Proves precedence step (b) — the OPERATOR tenant's own connected OpenAI
+// credential — resolves through the platform's own
+// ownership-walk-the-ancestor-chain resolver (`resolveCredentialRequirement`,
+// never a hand-rolled query); that `resolveMemoryConfig` prefers it over
+// the lexical-only floor when no `EMBED_BASE_URL` is set, but never
+// touches it when one is; and — the regression this exists to guard —
+// that a credential connected on any tenant OTHER than the operator
+// tenant is never consulted, however that tenant's own request happens to
+// be the one that triggers the plane's first build.
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
@@ -114,7 +118,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
     await dropSchema(target, { schema: SCHEMA });
   });
 
-  test("undefined for a tenant with no connected openai credential", async () => {
+  test("undefined for an operator tenant with no connected openai credential", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
       await db.insert(schema.tenant).values({
@@ -127,7 +131,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
       const config = await resolveConfigFromConnectedCredential({
         env: BASE_ENV,
         db,
-        tenantId: "tnt_memory_no_credential",
+        operatorTenantId: "tnt_memory_no_credential",
         credentialCipher: CIPHER,
       });
       expect(config).toBeUndefined();
@@ -136,26 +140,26 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
     }
   });
 
-  test("decrypts the tenant's connected openai credential into an embed config", async () => {
+  test("decrypts the operator tenant's connected openai credential into an embed config", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
-      const tenantId = "tnt_memory_has_credential";
+      const operatorTenantId = "tnt_memory_has_credential";
       await db.insert(schema.tenant).values({
-        id: tenantId,
+        id: operatorTenantId,
         name: "Has Credential Tenant",
         slug: "memory-has-credential-tenant",
         domain: "memory-has-credential.workbench.test",
       });
       await db.insert(schema.provider).values({
         id: "prov_memory_openai",
-        tenantId,
+        tenantId: operatorTenantId,
         name: "openai",
         plugin: "http",
       });
       const credentialId = "cred_memory_openai";
       await db.insert(schema.credential).values({
         id: credentialId,
-        tenantId,
+        tenantId: operatorTenantId,
         providerId: "prov_memory_openai",
         name: "OpenAI",
         type: "api_key",
@@ -169,7 +173,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
       const config = await resolveConfigFromConnectedCredential({
         env: BASE_ENV,
         db,
-        tenantId,
+        operatorTenantId,
         credentialCipher: CIPHER,
       });
       expect(config?.memory.embed).toEqual({
@@ -183,7 +187,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
       const resolution = await resolveMemoryConfig({
         env: BASE_ENV,
         db,
-        tenantId,
+        operatorTenantId,
         credentialCipher: CIPHER,
       });
       expect(resolution.source).toBe("connected-credential");
@@ -192,12 +196,91 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
     }
   });
 
-  test("resolveMemoryConfig falls to lexical-only when neither env nor a credential is set", async () => {
+  test("a credential connected on a non-operator tenant never configures the plane", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
-      const tenantId = "tnt_memory_lexical_only";
+      const operatorTenantId = "tnt_memory_operator_no_credential";
+      const otherTenantId = "tnt_memory_other_tenant_has_credential";
+      await db.insert(schema.tenant).values([
+        {
+          id: operatorTenantId,
+          name: "Operator Tenant",
+          slug: "memory-operator-tenant",
+          domain: "memory-operator.workbench.test",
+        },
+        {
+          id: otherTenantId,
+          name: "Some Other Tenant",
+          slug: "memory-other-tenant",
+          domain: "memory-other-tenant.workbench.test",
+        },
+      ]);
+      // A credential connected on `otherTenantId` — a real tenant's own
+      // bench, NOT the operator tenant — must be invisible to step (b):
+      // a tenant connecting its own key never funds or configures any
+      // other tenant's embeddings.
+      await db.insert(schema.provider).values({
+        id: "prov_memory_other_openai",
+        tenantId: otherTenantId,
+        name: "openai",
+        plugin: "http",
+      });
+      const credentialId = "cred_memory_other_openai";
+      await db.insert(schema.credential).values({
+        id: credentialId,
+        tenantId: otherTenantId,
+        providerId: "prov_memory_other_openai",
+        name: "OpenAI",
+        type: "api_key",
+        secret: await CIPHER.encrypt(
+          "sk-other-tenant-secret",
+          credentialAad(credentialId, "secret"),
+        ),
+        status: "active",
+      });
+
+      const directResolution = await resolveConfigFromConnectedCredential({
+        env: BASE_ENV,
+        db,
+        operatorTenantId,
+        credentialCipher: CIPHER,
+      });
+      expect(directResolution).toBeUndefined();
+
+      const resolution = await resolveMemoryConfig({
+        env: BASE_ENV,
+        db,
+        operatorTenantId,
+        credentialCipher: CIPHER,
+      });
+      expect(resolution.source).toBe("lexical-only");
+      expect(resolution.config.memory.embed).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  test("resolveMemoryConfig falls to lexical-only when the operator tenant is unset", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const resolution = await resolveMemoryConfig({
+        env: BASE_ENV,
+        db,
+        credentialCipher: CIPHER,
+      });
+      expect(resolution.source).toBe("lexical-only");
+      expect(resolution.config.memory.embed).toBeUndefined();
+    } finally {
+      await close();
+    }
+  });
+
+  test("resolveMemoryConfig falls to lexical-only when neither env nor an operator credential is set", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const operatorTenantId = "tnt_memory_lexical_only";
       await db.insert(schema.tenant).values({
-        id: tenantId,
+        id: operatorTenantId,
         name: "Lexical Only Tenant",
         slug: "memory-lexical-only-tenant",
         domain: "memory-lexical-only.workbench.test",
@@ -206,7 +289,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
       const resolution = await resolveMemoryConfig({
         env: BASE_ENV,
         db,
-        tenantId,
+        operatorTenantId,
         credentialCipher: CIPHER,
       });
       expect(resolution.source).toBe("lexical-only");
@@ -226,7 +309,7 @@ describeIfDb("resolveConfigFromConnectedCredential", () => {
           EMBED_MODEL: "text-embedding-3-small",
         },
         db,
-        tenantId: "tnt_never_queried",
+        operatorTenantId: "tnt_never_queried",
         credentialCipher: CIPHER,
       });
       expect(resolution.source).toBe("env");

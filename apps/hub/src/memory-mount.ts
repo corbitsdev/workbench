@@ -12,14 +12,15 @@
  * Lazy, not boot-time: a credential gets connected long after boot, so a
  * boot-only build would mean "connect a key" still needs a redeploy. The
  * real `@corbits/memory` engine (DB pool, migrations, embed client) only
- * builds on a tenant's first actual call. `MemoryConfig` is one config for
- * the whole process (one embed endpoint, one Postgres) even though *which*
- * config wins can depend on which tenant asks first — env is process-wide
- * by definition; a connected credential is resolved against whichever
- * tenant's first request triggers the build; lexical-only is the floor
- * when neither applies. A single in-flight build is memoized across every
- * tenant; a rejection is never cached, so the next call re-resolves from
- * scratch rather than replaying a stuck failure forever.
+ * builds on the first actual call from any tenant. `MemoryConfig` is one
+ * config for the whole process (one embed endpoint, one Postgres),
+ * resolved tenant-INdependently — env, then the OPERATOR tenant's own
+ * connected credential (never the calling tenant's — see
+ * `memory-config.ts`'s module doc comment), then lexical-only — so the
+ * same config resolves no matter which tenant's request triggers the
+ * build. A single in-flight build is memoized across every tenant; a
+ * rejection is never cached, so the next call re-resolves from scratch
+ * rather than replaying a stuck failure forever.
  *
  * `createMemory({ app })`/`registerMemoryRoutes` register HTTP routes as a
  * side effect and are not safe to call twice — `mountMemory` is the one
@@ -67,10 +68,15 @@ export type MountMemoryOptions<E extends object = object> = {
   credentialCipher: CredentialCipher;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
+  /** `config.operatorTenantId` (`OPERATOR_TENANT_ID`) — the one tenant
+   * whose connected OpenAI credential may configure this process-wide
+   * plane. Undefined when the operator tenant isn't provisioned yet, in
+   * which case step (b) is skipped (see `memory-config.ts`). */
+  operatorTenantId?: string;
 };
 
 export type MemoryMountHandle = {
-  /** Resolves its real engine lazily per tenant call. */
+  /** Resolves its real engine lazily, tenant-independently, on first use. */
   memory: Memory;
 };
 
@@ -86,18 +92,24 @@ export type LazyMemoryPlaneDeps = {
   readonly credentialCipher: CredentialCipher;
   readonly grantStore: GrantStore;
   readonly conditionRegistry: ConditionRegistry;
+  // Not readonly: mountMemory below builds this conditionally (present
+  // only when OPERATOR_TENANT_ID is set) to satisfy
+  // exactOptionalPropertyTypes without a full literal duplicated per branch.
+  operatorTenantId?: string;
 };
 
 export type LazyMemoryPlane = {
   /** Pass to `registerMemoryRoutes(app, { memory, ... })` — exactly once.
    * Its own `capabilities` is a placeholder never read by any mounted
-   * route; the real, per-tenant-resolved answer is what `describeStatus`
-   * reports. */
+   * route; the real answer is what `describeStatus` reports. */
   readonly memory: Memory;
-  /** For the `/memory/status` route. A genuine infrastructure fault (a
-   * migration failure, an unreachable database) throws — that is a
-   * different thing than "this tenant is on lexical-only", which is a
-   * normal, fully-available status, not an error. */
+  /** For the `/memory/status` route. `tenantId` is the CALLER's tenant —
+   * used only for its own degrade snapshot, which is genuinely per-tenant;
+   * it never influences which config the process built (see
+   * `memory-config.ts`). A genuine infrastructure fault (a migration
+   * failure, an unreachable database) throws — that is a different thing
+   * than "this process is on lexical-only", which is a normal, fully-
+   * available status, not an error. */
   describeStatus(tenantId: string): Promise<MemoryPlaneStatus>;
 };
 
@@ -110,15 +122,21 @@ export function createLazyMemoryPlane(
   // failure forever.
   let pending: Promise<BuiltPlane> | undefined;
 
-  function resolveAndBuild(tenantId: string): Promise<BuiltPlane> {
+  function resolveAndBuild(): Promise<BuiltPlane> {
     if (pending !== undefined) return pending;
     const attempt = (async (): Promise<BuiltPlane> => {
-      const resolution = await resolveMemoryConfig({
-        env: deps.env,
-        db: deps.db,
-        tenantId,
-        credentialCipher: deps.credentialCipher,
-      });
+      const resolution = await (deps.operatorTenantId !== undefined
+        ? resolveMemoryConfig({
+            env: deps.env,
+            db: deps.db,
+            operatorTenantId: deps.operatorTenantId,
+            credentialCipher: deps.credentialCipher,
+          })
+        : resolveMemoryConfig({
+            env: deps.env,
+            db: deps.db,
+            credentialCipher: deps.credentialCipher,
+          }));
       await runMemoryMigrations(resolution.config.memory.databaseUrl, {
         ftsLanguage: resolution.config.memory.ftsLanguage,
       });
@@ -139,20 +157,20 @@ export function createLazyMemoryPlane(
   const memory: Memory = {
     // Never actually read by any route `registerMemoryRoutes` mounts
     // (verified against the current `@corbits/memory` source) — required
-    // only to satisfy the `Memory` shape at registration time, before any
-    // tenant's real plane has resolved.
+    // only to satisfy the `Memory` shape at registration time, before the
+    // real plane has resolved.
     capabilities: { embeddingsConfigured: true },
     async add(params) {
-      return (await resolveAndBuild(params.tenantId)).memory.add(params);
+      return (await resolveAndBuild()).memory.add(params);
     },
     async search(params) {
-      return (await resolveAndBuild(params.tenantId)).memory.search(params);
+      return (await resolveAndBuild()).memory.search(params);
     },
     async list(params) {
-      return (await resolveAndBuild(params.tenantId)).memory.list(params);
+      return (await resolveAndBuild()).memory.list(params);
     },
     async feed(params) {
-      const real = (await resolveAndBuild(params.tenantId)).memory;
+      const real = (await resolveAndBuild()).memory;
       if (real.feed === undefined) {
         throw new MemoryError(
           501,
@@ -169,7 +187,7 @@ export function createLazyMemoryPlane(
   };
 
   async function describeStatus(tenantId: string): Promise<MemoryPlaneStatus> {
-    const built = await resolveAndBuild(tenantId);
+    const built = await resolveAndBuild();
     const degrade = getDegradeMetricsSnapshot(tenantId);
     return buildMemoryPlaneStatus(
       built.source,
@@ -185,13 +203,17 @@ export function createLazyMemoryPlane(
 export function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
 ): MemoryMountHandle {
-  const plane = createLazyMemoryPlane({
+  const lazyPlaneDeps: LazyMemoryPlaneDeps = {
     env: process.env,
     db: options.db,
     credentialCipher: options.credentialCipher,
     grantStore: options.grantStore,
     conditionRegistry: options.conditionRegistry,
-  });
+  };
+  if (options.operatorTenantId !== undefined) {
+    lazyPlaneDeps.operatorTenantId = options.operatorTenantId;
+  }
+  const plane = createLazyMemoryPlane(lazyPlaneDeps);
   const grants = {
     grantStore: options.grantStore,
     conditionRegistry: options.conditionRegistry,

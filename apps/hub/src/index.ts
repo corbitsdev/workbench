@@ -980,21 +980,32 @@ export async function createHub(config: HubConfig) {
   );
   // Memory plane: firm-memory HTTP under `/api/tenants/:tenantId/memory/*`,
   // same `DATABASE_URL` as the control plane, isolated in its own `memory`
-  // schema. Builds lazily per tenant (env, then a connected OpenAI
-  // credential, then unconfigured) — see memory-mount.ts, memory-config.ts,
-  // and memory-status.ts. Captured (not discarded) here, before
+  // schema. Builds lazily, tenant-independently, on first use (env, then
+  // the OPERATOR tenant's own connected OpenAI credential, then
+  // lexical-only) — see memory-mount.ts, memory-config.ts, and
+  // memory-status.ts. Captured (not discarded) here, before
   // `chatOrchestrator`/`createArtifactDeliveryHandler` below, so the
   // in-process `Memory` handle can be threaded into both: a finalized
   // turn's persisted artifact and the bounded daily transcript digest
   // (CL-5852) both write through this same handle, never a second
   // connection or the plane's own tenant-session-gated HTTP routes.
-  const memoryHandle = mountMemory({
-    app,
-    db,
-    credentialCipher,
-    grantStore: chatGrantStore,
-    conditionRegistry: chatConditionRegistry,
-  });
+  const memoryHandle =
+    config.operatorTenantId !== undefined
+      ? mountMemory({
+          app,
+          db,
+          credentialCipher,
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+          operatorTenantId: config.operatorTenantId,
+        })
+      : mountMemory({
+          app,
+          db,
+          credentialCipher,
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+        });
   const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);

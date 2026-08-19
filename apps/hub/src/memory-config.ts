@@ -1,12 +1,21 @@
-// Resolves a `MemoryConfig` for one tenant, in the order the memory
+// Resolves a `MemoryConfig` for the whole process, in the order the memory
 // settings page reports back: environment variables first (an operator's
-// own deploy-wide embed endpoint), then a connected OpenAI credential
-// (a hosted tenant's own key, connected long after boot), then
+// own deploy-wide embed endpoint), then the OPERATOR tenant's own
+// connected OpenAI credential (never any other tenant's — see below), then
 // lexical-only (no embed endpoint at all — full-text search only, needing
 // nothing but the pgvector-capable Postgres every tenant already has).
 // Each step is a small, independently testable function; `resolveMemoryConfig`
 // only sequences them and names which one won, so the settings status
 // route never has to re-derive that decision.
+//
+// Step (b) is bound to `OPERATOR_TENANT_ID` (see `apps/hub/src/config.ts`),
+// never to whichever tenant happens to be asking: every self-served
+// personal bench is parented under the operator tenant (see
+// `@workbench/onboarding`'s `provision.ts`), so an operator-connected
+// credential is the one credential that legitimately serves every tenant
+// on this process. A credential a tenant connects for its own bench must
+// never fund or configure any other tenant's embeddings — resolution is
+// tenant-INdependent by design, not "whichever tenant asks first."
 import { type } from "arktype";
 import { credentialAad, type CredentialCipher } from "@intx/types";
 import { resolveCredentialRequirement, type DB } from "@intx/db";
@@ -153,25 +162,32 @@ export function resolveConfigFromEnv(env: Env): MemoryConfig | undefined {
 export type ConnectedCredentialArgs = {
   readonly env: Env;
   readonly db: DB["db"];
-  readonly tenantId: string;
+  /** The operator tenant (`OPERATOR_TENANT_ID`) — the ONE tenant whose
+   * connected credential may configure this process-wide plane. Never the
+   * calling tenant, and never any other tenant: see the module doc
+   * comment for why. */
+  readonly operatorTenantId: string;
   readonly credentialCipher: CredentialCipher;
 };
 
 /**
- * Step (b): a tenant-owned OpenAI credential connected through the
- * Connections surface (`packages/connections`), resolved the same
+ * Step (b): the operator tenant's own OpenAI credential, connected through
+ * the Connections surface (`packages/connections`), resolved the same
  * ownership-walk-the-ancestor-chain way a definition's model requirements
  * are (`@intx/db`'s `resolveCredentialRequirement` — never a hand-rolled
  * query). `source: "tenant"` matches a tenant-owned credential only, never
- * a principal's personal one. `undefined` means this tenant (and its
- * ancestors) never connected OpenAI — not an error, the next step decides.
+ * a principal's personal one. Only the OPERATOR tenant (and its own
+ * ancestors, if any) is ever consulted — a credential connected on any
+ * other tenant is invisible to this step by construction. `undefined`
+ * means the operator tenant never connected OpenAI — not an error, the
+ * next step decides.
  */
 export async function resolveConfigFromConnectedCredential(
   args: ConnectedCredentialArgs,
 ): Promise<MemoryConfig | undefined> {
   const resolved = await resolveCredentialRequirement(
     args.db,
-    args.tenantId,
+    args.operatorTenantId,
     { providerName: CONNECTED_CREDENTIAL_PROVIDER_NAME, source: "tenant" },
     null,
     null,
@@ -214,12 +230,23 @@ export function resolveConfigLexicalOnly(env: Env): MemoryConfig {
   return { memory: readEngineBaseFromEnv(env) };
 }
 
-export type ResolveMemoryConfigArgs = ConnectedCredentialArgs;
+export type ResolveMemoryConfigArgs = {
+  readonly env: Env;
+  readonly db: DB["db"];
+  readonly credentialCipher: CredentialCipher;
+  /** Undefined when `OPERATOR_TENANT_ID` isn't set yet (see
+   * `apps/hub/src/config.ts`) — step (b) is skipped entirely in that case
+   * rather than falling back to consulting some other tenant. */
+  readonly operatorTenantId?: string;
+};
 
 /**
  * Runs the precedence steps in order and names which one won — the exact
  * decision the status route reports back, never re-derived by the UI.
  * Always resolves to something: lexical-only is the floor, not a failure.
+ * Tenant-INdependent: the same config resolves no matter which tenant's
+ * request triggers the build, since step (b) only ever consults the
+ * operator tenant (see the module doc comment).
  */
 export async function resolveMemoryConfig(
   args: ResolveMemoryConfigArgs,
@@ -227,10 +254,19 @@ export async function resolveMemoryConfig(
   const fromEnv = resolveConfigFromEnv(args.env);
   if (fromEnv !== undefined) return { source: "env", config: fromEnv };
 
-  const fromConnectedCredential =
-    await resolveConfigFromConnectedCredential(args);
-  if (fromConnectedCredential !== undefined) {
-    return { source: "connected-credential", config: fromConnectedCredential };
+  if (args.operatorTenantId !== undefined) {
+    const fromConnectedCredential = await resolveConfigFromConnectedCredential({
+      env: args.env,
+      db: args.db,
+      operatorTenantId: args.operatorTenantId,
+      credentialCipher: args.credentialCipher,
+    });
+    if (fromConnectedCredential !== undefined) {
+      return {
+        source: "connected-credential",
+        config: fromConnectedCredential,
+      };
+    }
   }
 
   return {
