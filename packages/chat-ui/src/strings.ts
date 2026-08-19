@@ -117,7 +117,7 @@ export const CHAT_STRINGS = {
       ? "Couldn't pin that workbench — try again."
       : "Couldn't unpin that workbench — try again.",
   agentDmOpenError: (name: string) =>
-    `Couldn't open a chat with ${name} — try again.`,
+    `Couldn't open a conversation with ${name} — try again.`,
   reactionChipLabel: (emoji: string, count: number) =>
     `React with ${emoji} (${count})`,
   reactionAddAction: "Add reaction",

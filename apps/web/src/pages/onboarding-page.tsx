@@ -514,7 +514,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               {submitting
                 ? "Connecting…"
                 : isUrlProvider
-                  ? "Connect this instance"
+                  ? "Connect this address"
                   : "Connect this key"}
             </Button>
           </form>
