@@ -204,8 +204,9 @@ export function createMcpServerRoutes(
         displayName: preset.displayName,
         description: preset.description,
         url: preset.url,
-        keyOptional: preset.keyOptional,
+        connectionMode: preset.connectionMode,
         docsUrl: preset.docsUrl,
+        ...(preset.icon === undefined ? {} : { icon: preset.icon }),
         connected: credential !== undefined,
       };
     });

@@ -8,10 +8,20 @@ import {
 import { CONNECTOR_REGISTRY } from "./registry";
 
 describe("MCP_PRESETS", () => {
-  test("names Granola, Exa, Linear, ScrapeCreators, and Sumble with real Streamable HTTP URLs", () => {
+  test("lists only verified zero-configuration remote MCP servers", () => {
     const slugs = MCP_PRESETS.map((preset) => preset.slug).sort();
     expect(slugs).toEqual(
-      ["exa", "granola", "linear", "scrapecreators", "sumble"].sort(),
+      [
+        "attio",
+        "exa",
+        "granola",
+        "linear",
+        "notion",
+        "posthog",
+        "railway",
+        "sentry",
+        "sumble",
+      ].sort(),
     );
     for (const preset of MCP_PRESETS) {
       expect(() => new URL(preset.url)).not.toThrow();
@@ -19,20 +29,36 @@ describe("MCP_PRESETS", () => {
     }
   });
 
-  test("only Exa is marked key-optional", () => {
+  test("Exa is keyless and every account-backed preset uses OAuth", () => {
     const exa = mcpPresetBySlug("exa");
-    expect(exa?.keyOptional).toBe(true);
-    expect(mcpPresetBySlug("granola")?.keyOptional).toBe(false);
-    expect(mcpPresetBySlug("linear")?.keyOptional).toBe(false);
-    expect(mcpPresetBySlug("scrapecreators")?.keyOptional).toBe(false);
-    expect(mcpPresetBySlug("sumble")?.keyOptional).toBe(false);
+    expect(exa?.connectionMode).toBe("keyless");
+    for (const preset of MCP_PRESETS) {
+      if (preset.slug === "exa") continue;
+      expect(preset.connectionMode).toBe("oauth");
+    }
   });
 
-  test("ScrapeCreators and Sumble carry the owner-supplied endpoints", () => {
-    expect(mcpPresetBySlug("scrapecreators")?.url).toBe(
-      "https://api.scrapecreators.com/mcp",
-    );
-    expect(mcpPresetBySlug("sumble")?.url).toBe("https://sumble.com/mcp");
+  test("uses Sumble's OAuth MCP host, not its product-page URL", () => {
+    expect(mcpPresetBySlug("sumble")?.url).toBe("https://mcp.sumble.com/");
+    expect(mcpPresetBySlug("sumble")?.connectionMode).toBe("oauth");
+  });
+
+  test("keeps every verified endpoint exact", () => {
+    expect(
+      Object.fromEntries(
+        MCP_PRESETS.map((preset) => [preset.slug, preset.url]),
+      ),
+    ).toEqual({
+      granola: "https://mcp.granola.ai/mcp",
+      exa: "https://mcp.exa.ai/mcp",
+      linear: "https://mcp.linear.app/mcp",
+      notion: "https://mcp.notion.com/mcp",
+      sentry: "https://mcp.sentry.dev/mcp",
+      attio: "https://mcp.attio.com/mcp",
+      railway: "https://mcp.railway.com",
+      posthog: "https://mcp.posthog.com/mcp",
+      sumble: "https://mcp.sumble.com/",
+    });
   });
 
   test("every preset's nativeConnectorId names a real registry entry", () => {
@@ -44,7 +70,7 @@ describe("MCP_PRESETS", () => {
 
   test("MCP_PRESET_CONNECTOR_IDS matches the presets' native ids", () => {
     expect(new Set(MCP_PRESET_CONNECTOR_IDS)).toEqual(
-      new Set(["granola", "exa", "linear", "scrapecreators"]),
+      new Set(["granola", "exa", "linear"]),
     );
   });
 

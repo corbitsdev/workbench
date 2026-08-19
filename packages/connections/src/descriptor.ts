@@ -121,10 +121,11 @@ export interface ConnectorDescriptor {
    * provider and nothing else); present on every tool/plugin connector so
    * the directory never renders a bare name with nothing under it. */
   readonly description?: string;
-  /** This connector's brand mark, sourced from `simple-icons` (CC0 SVG
-   * brand data) where the brand has a listing there. Absent means the
-   * plugins directory falls back to a monochrome initial tile rather than
-   * going without a logo tile at all — see `registry.ts`'s own comment on
-   * which connectors this covers. */
-  readonly icon?: { readonly path: string; readonly hex: string };
+  /** This connector's brand mark, sourced from `simple-icons` or an
+   * official brand kit. Absent means the directory renders an initial. */
+  readonly icon?: {
+    readonly path: string;
+    readonly hex: string;
+    readonly viewBox?: string;
+  };
 }

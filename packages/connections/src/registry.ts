@@ -38,10 +38,11 @@ import {
 // registry actually has a listing for pulls in only those icons' data, not
 // the whole ~3000-brand package (CC0-1.0 licensed — see the package's own
 // LICENSE — so redistributing these marks needs no separate clearance).
-// Granola, Exa, and ScrapeCreators have no simple-icons listing (CL-6215's
+// Granola and ScrapeCreators have no simple-icons listing (CL-6215's
 // plugins-directory rebuild); OpenAI, xAI, Groq, and Opencode Zen have none
 // either (CL-6258's connections logos) — those descriptors carry no `icon`,
-// so a caller renders their monochrome initial tile instead. Google's mark
+// so a caller renders their monochrome initial tile instead. Exa publishes
+// its own mark in its official brand kit, used below. Google's mark
 // here is Gemini's, not the generic Google "G" — the model brand a person
 // actually recognizes from connecting an AI provider, matching
 // models.dev's own convention for this row.
@@ -85,6 +86,12 @@ const INFERENCE_PROVIDER_DOCS_URL: Readonly<
 // Ollama listens on out of the box, before anyone points it at a
 // tailscale-tunneled or otherwise remote instance.
 const OLLAMA_DEFAULT_URL = "http://localhost:11434";
+
+const EXA_ICON = {
+  path: "M150.5 14.1064C150.5 14.3356 150.421 14.5579 150.277 14.736L88.4766 91 150.277 167.264C150.421 167.442 150.5 167.664 150.5 167.894V181C150.5 181.552 150.052 182 149.5 182H1C0.44772 182 0 181.552 0 181V0.999995C0 0.44771 0.447715 0 1 0H149.5C150.052 0 150.5 0.447715 150.5 1V14.1064ZM30.4059 162.719H121.728L76.0664 106.326 30.4059 162.719ZM19.2949 100.261V145.787L56.1572 100.261H19.2949ZM19.2949 80.9801H55.5434L19.2949 36.2121V80.9801ZM76.0664 75.6731L121.728 19.281H30.4059L76.0664 75.6731Z",
+  hex: "0143D9",
+  viewBox: "0 0 151 182",
+} as const;
 
 // Every inference provider with a simple-icons listing. OpenAI, xAI, Groq,
 // and Opencode Zen have none as of simple-icons' current release; those
@@ -263,6 +270,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       feedsTools: ["@corbits/web-search-tools"],
       probe: (apiKey) => testExaCredential(apiKey),
       description: "Neural web search built for agents.",
+      icon: EXA_ICON,
     },
     scrapecreators: {
       id: "scrapecreators",

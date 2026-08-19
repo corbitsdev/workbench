@@ -66,7 +66,11 @@ test("list_connections summarizes connected and not-connected connectors from th
       },
     ],
     mcpServers: [
-      { slug: "notion", name: "Notion", url: "https://mcp.notion.example" },
+      {
+        slug: "fieldnotes",
+        name: "Fieldnotes",
+        url: "https://mcp.fieldnotes.example",
+      },
       { slug: "exa", name: "Exa", url: "https://mcp.exa.ai/mcp" },
     ],
   });
@@ -79,7 +83,7 @@ test("list_connections summarizes connected and not-connected connectors from th
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Connected: GitHub/);
     expect(result.content).toMatch(/Exa \(via MCP\)/);
-    expect(result.content).toMatch(/Notion \(MCP server\)/);
+    expect(result.content).toMatch(/Fieldnotes \(MCP server\)/);
     expect(result.content).toMatch(/Not connected: [^.]*ScrapeCreators/);
     expect(result.content).toMatch(/Granola/);
     expect(result.content).not.toMatch(/Exa,/); // Exa never listed twice
@@ -175,7 +179,7 @@ test("request_connection deep-links a curated MCP preset by name, checking for a
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Exa/);
-    expect(result.content).toMatch(/no key needed/);
+    expect(result.content).toMatch(/Search and research the live web/);
     expect(result.content).toContain("/plugins?connect=mcp:exa");
   } finally {
     globalThis.fetch = originalFetch;

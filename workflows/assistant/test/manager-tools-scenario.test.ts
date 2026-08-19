@@ -18,14 +18,11 @@
 // input (that agent becomes the routine's `definitionId`) — the exact
 // mechanical chain a model would need to walk.
 //
-// Scenario played back (owner's script), with one substitution: the
-// owner's script names Attio as one of the three connectors, but
-// `CONNECTOR_REGISTRY` (`packages/connections/src/registry.ts`) has no
-// "attio" entry today — this suite plays back against three connectors
-// that ARE registered (Exa, Granola, Linear) and separately asserts
-// that naming "attio" is honestly rejected (fail-closed against the
-// real registry, never a fabricated connector), rather than silently
-// assuming a connector that doesn't exist.
+// Scenario played back (owner's script) against three connectors that
+// are registered (Exa, Granola, Linear). A connector name that is
+// neither a fixed `CONNECTOR_REGISTRY` entry nor a curated MCP preset
+// is separately asserted to be honestly rejected (fail-closed against
+// the real registry, never a fabricated connector).
 //   1. Myra is asked to set up a GTM sales motion.
 //   2. She checks which connections exist; none of Exa/Granola/Linear
 //      are connected, so she hands over connect links for each.
@@ -250,17 +247,16 @@ async function runScenario(
   expect(String(initialList.content)).toContain("Exa");
   expect(String(initialList.content)).toContain("Connected: none.");
 
-  // A connector the owner's script names but this workbench doesn't
-  // register yet (see the file header) is neither a fixed
-  // `CONNECTOR_REGISTRY` entry nor a connected MCP server, so
-  // `request_connection` (CL-6142) falls back to the generic Add MCP
+  // A connector name that is neither a fixed `CONNECTOR_REGISTRY`
+  // entry, a curated MCP preset, nor a connected MCP server makes
+  // `request_connection` (CL-6142) fall back to the generic Add MCP
   // server deep link rather than fabricating a connector-specific one.
   const unknown = await connectionsBundle.run(
-    call("req_attio", REQUEST_CONNECTION_TOOL, { connector: "attio" }),
+    call("req_unknown", REQUEST_CONNECTION_TOOL, { connector: "acmecrm" }),
     new AbortController().signal,
   );
   expect(unknown.isError).toBe(false);
-  expect(String(unknown.content)).toContain("attio");
+  expect(String(unknown.content)).toContain("acmecrm");
   expect(String(unknown.content)).toContain("plugins?connect=mcp");
 
   // She hands over a connect link for each of the three (real) services.
@@ -285,7 +281,7 @@ async function runScenario(
     new AbortController().signal,
   );
   expect(String(afterConnect.content)).toContain(
-    "Not connected: ScrapeCreators, Sumble.",
+    "Not connected: Notion, Sentry, Attio, Railway, PostHog, Sumble.",
   );
   expect(String(afterConnect.content)).toContain(
     "Connected: Granola, Exa, Linear.",

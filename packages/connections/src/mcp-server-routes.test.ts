@@ -345,20 +345,21 @@ describe("GET / and DELETE /:slug", () => {
 });
 
 describe("GET /presets", () => {
-  test("lists Granola, Exa, and Linear, none connected yet", async () => {
+  test("lists curated presets with their direct connection mode", async () => {
     const hub = fakeHub({});
     const app = buildApp({ apiCall: hub.apiCall });
 
     const response = await app.request("/presets");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      data: { slug: string; connected: boolean; keyOptional: boolean }[];
+      data: { slug: string; connected: boolean; connectionMode: string }[];
     };
     const bySlug = new Map(body.data.map((p) => [p.slug, p]));
     expect(bySlug.get("exa")?.connected).toBe(false);
-    expect(bySlug.get("exa")?.keyOptional).toBe(true);
-    expect(bySlug.get("granola")?.keyOptional).toBe(false);
+    expect(bySlug.get("exa")?.connectionMode).toBe("keyless");
+    expect(bySlug.get("granola")?.connectionMode).toBe("oauth");
     expect(bySlug.get("linear")).toBeDefined();
+    expect(bySlug.get("notion")?.connectionMode).toBe("oauth");
   });
 
   test("flags a preset connected once its provider+credential exist", async () => {

@@ -10,8 +10,7 @@
 // Mounted tenant-scoped, alongside `createMcpServerRoutes`, at
 // `/api/tenants/:tenantId/mcp-servers/oauth` -- `/:slug/start` resolves a
 // curated preset (`./mcp-presets.ts`) by slug, or an ad hoc `?url=&name=`
-// pair for a custom server the "Add MCP server" dialog already probed as
-// `requiresOAuth`. A successful callback stores the exchanged access
+// pair supplied by an authorized client. A successful callback stores the exchanged access
 // token through the exact same `ensureProvider`/`ensureCredential` seam
 // `./mcp-server-routes.ts`'s manual connect uses, under the same
 // `mcp:<slug>` naming, so an OAuth-connected server is indistinguishable
