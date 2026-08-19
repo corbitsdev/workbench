@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { evaluateGrants } from "@intx/authz";
+import type { GrantRule } from "@intx/types/authz";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { MemoryConfig } from "@corbits/memory";
 
@@ -224,6 +226,30 @@ describe("createMemoryStatusRoutes' grant guard", () => {
 
     expect(response.status).toBe(200);
     expect(seen).toEqual([{ resource: "memory", action: "status" }]);
+  });
+
+  // Nothing plants a grant on the `memory` resource. Every tenant owner
+  // reaches this route through the wildcard grant the platform gives the owner
+  // role at tenant creation, which is why no seeded grant is needed and why an
+  // already-provisioned tenant is not locked out. If Interchange ever narrows
+  // wildcard matching, this fails here rather than as a settings section that
+  // quietly stops appearing.
+  test("a tenant owner's wildcard role grant covers the status action", async () => {
+    const ownerRoleGrant: GrantRule = {
+      id: "grant_owner_wildcard",
+      resource: "*",
+      action: "*",
+      effect: "allow",
+      origin: "system",
+      conditions: null,
+      expiresAt: null,
+      roleId: "role_owner",
+      principalId: null,
+    };
+
+    const result = await evaluateGrants([ownerRoleGrant], "memory", "status");
+
+    expect(result.effect).toBe("allow");
   });
 
   test("403s a principal who was never granted memory:status", async () => {
