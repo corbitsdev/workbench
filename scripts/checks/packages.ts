@@ -217,15 +217,18 @@ export function vendoredLedgerPaths(markdown: string): string[] {
 
 /**
  * Every vendored directory must have a VENDORED.md ledger row, and
- * every ledger row must point at a directory that still exists.
+ * every ledger row must point at a path that still exists. A ledger
+ * row may name a path outside vendor/ (a living fork such as
+ * apps/sidecar), so row existence is checked against the tree itself,
+ * not against the vendor/ listing.
  */
 export function auditVendoredLedger(
   vendoredDirs: readonly string[],
   ledgerPaths: readonly string[],
+  ledgerPathExists: (ledgerPath: string) => boolean,
 ): CheckReport {
   const report = emptyReport();
   const inLedger = new Set(ledgerPaths);
-  const onDisk = new Set(vendoredDirs);
   for (const dir of vendoredDirs) {
     if (inLedger.has(dir)) continue;
     report.violations.push(
@@ -234,7 +237,7 @@ export function auditVendoredLedger(
     );
   }
   for (const ledgerPath of ledgerPaths) {
-    if (onDisk.has(ledgerPath)) continue;
+    if (ledgerPathExists(ledgerPath)) continue;
     report.violations.push(
       `${LEDGER_PATH}: row for "${ledgerPath}" but the path no longer ` +
         `exists — retiring a vendored copy deletes the row with the files.`,
@@ -274,6 +277,7 @@ async function main(): Promise<void> {
   const ledgerReport = auditVendoredLedger(
     listVendoredPaths(root),
     ledgerPaths,
+    (ledgerPath) => existsSync(path.join(root, ledgerPath)),
   );
   report.violations.push(...ledgerReport.violations);
   reportAndExit("check:packages", report);
