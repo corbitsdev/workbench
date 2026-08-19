@@ -64,6 +64,55 @@ describe("WorkbenchTimeline", () => {
     expect(markup).toContain("hello there");
   });
 
+  // CL-6318: the timeline used to render text, event, file and block and
+  // drop `reasoning` and `tool-trace` on the floor — the agent's thinking
+  // and every tool call it made were invisible in the product.
+  test("renders a tool call, naming the tool and marking it finished", () => {
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
+    expect(markup).toContain('data-slot="tool-block"');
+    // react-ui presents the raw tool id in human phrasing.
+    expect(markup).toContain("Search");
+    expect(markup).toContain('data-status="output-available"');
+  });
+
+  test("renders reasoning as a disclosure rather than dropping it", () => {
+    const reasoning: MessageItem[] = [
+      {
+        id: "m_reason",
+        createdAt: "2026-01-01T00:03:00.000Z",
+        parts: [{ kind: "reasoning", text: "weighing the options" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={reasoning} />,
+    );
+    expect(markup).toContain("weighing the options");
+    expect(markup).toContain('data-slot="reasoning-part"');
+  });
+
+  test("a tool call still running is not shown as finished", () => {
+    const running: MessageItem[] = [
+      {
+        id: "m_running",
+        createdAt: "2026-01-01T00:04:00.000Z",
+        parts: [
+          {
+            kind: "tool-trace",
+            name: "deploy",
+            input: {},
+            status: "running",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={running} />);
+    expect(markup).toContain("Deploy");
+    expect(markup).toContain('data-status="running"');
+    expect(markup).not.toContain('data-status="output-available"');
+  });
+
   test("shows the sender's name when present", () => {
     const withSender: MessageItem[] = [
       {
@@ -401,12 +450,23 @@ describe("WorkbenchTimeline", () => {
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("renders any other part kind as a labeled fallback block, never the raw payload", () => {
-    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
-    expect(markup).toContain("[tool-trace]");
+  // Was asserted against `tool-trace` until CL-6318, which is to say it
+  // locked in the defect: a kind the wire really does define was being
+  // shown as unsupported. The fallback is for kinds this build genuinely
+  // does not know, and it must still never leak the raw payload.
+  test("renders an unknown part kind as a labeled fallback block, never the raw payload", () => {
+    const unknown = [
+      {
+        id: "m_unknown",
+        createdAt: "2026-01-01T00:05:00.000Z",
+        parts: [{ kind: "not-a-real-kind", secret: "hunter2" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ] as unknown as MessageItem[];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={unknown} />);
+    expect(markup).toContain("[not-a-real-kind]");
     expect(markup).toContain("Unsupported content");
-    expect(markup).not.toContain("search");
-    expect(markup).not.toContain('"q"');
+    expect(markup).not.toContain("hunter2");
   });
 
   test("shows the empty timeline state with no messages", () => {
@@ -768,6 +828,6 @@ describe("TypingIndicator", () => {
     expect(markup).toContain("ada is typing");
     expect(markup).toContain('role="status"');
     expect(markup).toContain("chat-typing-row");
-    expect(markup).toContain('data-own="false"');
+    expect(markup).toContain("chat-typing-indicator-dots");
   });
 });
