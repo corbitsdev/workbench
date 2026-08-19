@@ -66,10 +66,30 @@ describe("createToolGrantsForPins", () => {
       { name: "@corbits/routines-tools", version: "^1" },
       { name: "@corbits/memory-tools", version: "^1" },
     ]);
-    expect(grants.map((g) => g.resource)).toEqual([
-      "tool:@corbits/routines-tools/routines:routine_create",
-      "tool:@corbits/routines-tools/routines:routine_list",
-      "tool:@corbits/memory-tools/memory:memory_add",
+    expect(grants.map((g) => `${g.resource}/${g.action}`)).toEqual([
+      "tool:@corbits/routines-tools/routines:routine_create/invoke",
+      "tool:@corbits/routines-tools/routines:routine_list/invoke",
+      "tool:@corbits/memory-tools/memory:memory_add/invoke",
+      "memory/add",
+      "memory/search",
+    ]);
+  });
+
+  // CL-6296: pinning `@corbits/memory-tools` migrated onto
+  // `@corbits/memory`'s own `registerMemoryRoutes`, which gates every
+  // route behind `requireGrant("memory", action)` — a check the old,
+  // now-deleted `@corbits/memory-hub` surface never performed. Without
+  // these, a run's synthetic principal (which carries only the
+  // `tool:<qualifiedId>` grants above, never a tenant-owner wildcard)
+  // would 403 on every memory call the moment it reached the plane.
+  test("pinning @corbits/memory-tools also mints memory:add and memory:search", () => {
+    const toolGrantsForPins = createToolGrantsForPins(DESCRIPTIONS);
+    const grants = toolGrantsForPins([
+      { name: "@corbits/memory-tools", version: "^1" },
+    ]);
+    expect(grants.filter((g) => g.resource === "memory")).toEqual([
+      { resource: "memory", action: "add", effect: "allow" },
+      { resource: "memory", action: "search", effect: "allow" },
     ]);
   });
 

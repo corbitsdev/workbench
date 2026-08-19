@@ -1,11 +1,6 @@
 import { expect, test } from "bun:test";
 
-import {
-  addMemory,
-  listMemory,
-  MemoryUnavailableError,
-  searchMemory,
-} from "./client";
+import { addMemory, listMemory, searchMemory } from "./client";
 
 const CONFIG = {
   hubMemoryUrl: "https://hub.example.com",
@@ -13,7 +8,7 @@ const CONFIG = {
   runAddress: "run_1@workflow",
 };
 
-test("searchMemory posts to the workflow-memory search endpoint and returns items", async () => {
+test("searchMemory posts to the memory search endpoint and returns items", async () => {
   const captured: { url: string; init: RequestInit | undefined } = {
     url: "",
     init: undefined,
@@ -23,17 +18,15 @@ test("searchMemory posts to the workflow-memory search endpoint and returns item
     captured.init = init;
     return new Response(
       JSON.stringify({
-        data: {
-          items: [
-            {
-              documentId: "doc_1",
-              title: "Decision",
-              snippet: "We decided...",
-              score: 0.9,
-              kind: "decision",
-            },
-          ],
-        },
+        items: [
+          {
+            documentId: "doc_1",
+            title: "Decision",
+            snippet: "We decided...",
+            score: 0.9,
+            kind: "decision",
+          },
+        ],
       }),
       { status: 200 },
     );
@@ -54,7 +47,7 @@ test("searchMemory posts to the workflow-memory search endpoint and returns item
     },
   ]);
   expect(captured.url).toBe(
-    "https://hub.example.com/api/workflow-memory/search",
+    "https://hub.example.com/api/tenants/workflow-run/memory/search",
   );
   const headers = captured.init?.headers as Record<string, string>;
   expect(headers["authorization"]).toBe("Bearer sc-token");
@@ -75,30 +68,13 @@ test("searchMemory throws on a non-ok HTTP response", async () => {
 
 test("searchMemory throws when the response doesn't match the expected shape", async () => {
   const fetchImpl = (async () =>
-    new Response(JSON.stringify({ data: {} }), {
+    new Response(JSON.stringify({}), {
       status: 200,
     })) as unknown as typeof fetch;
 
   await expect(
     searchMemory({ ...CONFIG, fetchImpl }, { query: "q" }),
   ).rejects.toThrow(/did not match the expected shape/);
-});
-
-test("searchMemory throws MemoryUnavailableError when the hub reports the memory plane isn't mounted", async () => {
-  const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({
-        error: {
-          code: "unavailable",
-          message: "Memory plane is not configured on this hub",
-        },
-      }),
-      { status: 503 },
-    )) as unknown as typeof fetch;
-
-  await expect(
-    searchMemory({ ...CONFIG, fetchImpl }, { query: "q" }),
-  ).rejects.toBeInstanceOf(MemoryUnavailableError);
 });
 
 test("addMemory posts title/text/kind and returns the created ids", async () => {
@@ -110,8 +86,8 @@ test("addMemory posts title/text/kind and returns the created ids", async () => 
     captured.url = String(input);
     captured.init = init;
     return new Response(
-      JSON.stringify({ data: { documentId: "doc_1", versionId: "ver_1" } }),
-      { status: 201 },
+      JSON.stringify({ documentId: "doc_1", versionId: "ver_1" }),
+      { status: 200 },
     );
   }) as unknown as typeof fetch;
 
@@ -121,7 +97,9 @@ test("addMemory posts title/text/kind and returns the created ids", async () => 
   );
 
   expect(result).toEqual({ documentId: "doc_1", versionId: "ver_1" });
-  expect(captured.url).toBe("https://hub.example.com/api/workflow-memory/add");
+  expect(captured.url).toBe(
+    "https://hub.example.com/api/tenants/workflow-run/memory/add",
+  );
   expect(JSON.parse(String(captured.init?.body))).toEqual({
     title: "Note",
     text: "hello",
@@ -138,31 +116,20 @@ test("addMemory throws on a non-ok HTTP response", async () => {
   ).rejects.toThrow(/500/);
 });
 
-test("addMemory throws MemoryUnavailableError when the hub reports the memory plane isn't mounted", async () => {
-  const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({
-        error: {
-          code: "unavailable",
-          message: "Memory plane is not configured on this hub",
-        },
-      }),
-      { status: 503 },
-    )) as unknown as typeof fetch;
-
-  await expect(
-    addMemory({ ...CONFIG, fetchImpl }, { title: "Note", text: "hello" }),
-  ).rejects.toBeInstanceOf(MemoryUnavailableError);
-});
-
 test("listMemory GETs the list endpoint with the limit query param", async () => {
   const captured: { url: string } = { url: "" };
   const fetchImpl = (async (input: URL | string) => {
     captured.url = String(input);
     return new Response(
       JSON.stringify({
-        data: [
-          { at: "2026-08-13T00:00:00.000Z", title: "Note", source: "local" },
+        events: [
+          {
+            at: "2026-08-13T00:00:00.000Z",
+            title: "Note",
+            source: "local",
+            tenantId: "tnt_1",
+            principalId: "prn_1",
+          },
         ],
       }),
       { status: 200 },
@@ -175,7 +142,7 @@ test("listMemory GETs the list endpoint with the limit query param", async () =>
     { at: "2026-08-13T00:00:00.000Z", title: "Note", source: "local" },
   ]);
   expect(captured.url).toBe(
-    "https://hub.example.com/api/workflow-memory/list?limit=5",
+    "https://hub.example.com/api/tenants/workflow-run/memory/list?limit=5",
   );
 });
 
@@ -183,12 +150,14 @@ test("listMemory omits the query param when no limit is given", async () => {
   const captured: { url: string } = { url: "" };
   const fetchImpl = (async (input: URL | string) => {
     captured.url = String(input);
-    return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    return new Response(JSON.stringify({ events: [] }), { status: 200 });
   }) as unknown as typeof fetch;
 
   await listMemory({ ...CONFIG, fetchImpl });
 
-  expect(captured.url).toBe("https://hub.example.com/api/workflow-memory/list");
+  expect(captured.url).toBe(
+    "https://hub.example.com/api/tenants/workflow-run/memory/list",
+  );
 });
 
 test("listMemory throws on a non-ok HTTP response", async () => {
