@@ -301,6 +301,7 @@ function createDeps(opts: {
 }) {
   const deployCalls: unknown[] = [];
   const sendCalls: unknown[] = [];
+  const hubGrantInvokers: string[] = [];
   const store = storeOverInserts(opts.db);
   const notify = fakeNotify();
   const deps = {
@@ -308,6 +309,15 @@ function createDeps(opts: {
     store,
     foldedRuns: {
       toolGrantsForPins: () => [],
+      // Records the invoker a launch is bounded by; the plane's own
+      // resolution is exercised in `apps/hub`'s `run-hub-grants` suite.
+      runHubGrants: {
+        prepare: async (params: { invokerPrincipalId: string }) => {
+          hubGrantInvokers.push(params.invokerPrincipalId);
+          return async () => undefined;
+        },
+        revoke: async () => undefined,
+      },
       db: opts.db as never,
       sessionService: {
         async deploySingleStepAtHead(params: unknown) {
@@ -349,7 +359,7 @@ function createDeps(opts: {
     notify: notify.deps,
     isTaskableDefinition: () => opts.isTaskable ?? true,
   };
-  return { deps, store, notify, deployCalls, sendCalls };
+  return { deps, store, notify, deployCalls, sendCalls, hubGrantInvokers };
 }
 
 const DEPLOYED_DEFINITION = {
@@ -542,5 +552,18 @@ describe("launchTaskLeg", () => {
     // Nothing marked this leg as started, so the chain's own failure
     // path still finds a claimed leg it can fail honestly.
     expect(store.confirmedLegs).toEqual([]);
+  });
+  // The task path is the one launch caller whose invoker is the requester
+  // themselves, so a task agent is bounded by the person who asked for it.
+  test("launches bounded by the principal who requested the task", async () => {
+    const db = createFakeDb({
+      workflowDefinitionRow: DEPLOYED_DEFINITION,
+      tenantRow: TENANT,
+    });
+    const { deps, hubGrantInvokers } = createDeps({ db });
+
+    await launchTask(deps as never, INPUT);
+
+    expect(hubGrantInvokers).toEqual(["prn_alice"]);
   });
 });

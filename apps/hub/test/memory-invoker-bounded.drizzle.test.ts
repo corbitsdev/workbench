@@ -11,7 +11,14 @@
 // anyway, so the suite was green while the plane was broken. Nothing here
 // hand-plants a grant on the run; every row it asserts was computed at launch
 // from what the invoker holds.
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
 import { createGrantStore } from "@intx/db";
@@ -82,11 +89,17 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
   /**
    * The real hierarchy the account walk depends on: an operator tenant at
    * the top, one org (account) tenant beneath it, and a workbench tenant
-   * beneath that. `invokerHoldsMemory: false` seeds a guest — a person with
-   * a principal in the workbench and none in the org, which is how someone
-   * invited into a single workbench actually looks.
+   * beneath that.
    */
-  async function seed(options: { invokerHoldsMemory: boolean }) {
+  async function seed(options: {
+    /**
+     * The invoker's own authority in the org tenant, as
+     * `[action, origin]` pairs. An empty list seeds a guest: a person with
+     * a principal in the workbench and none in the org, which is how
+     * someone invited into a single workbench actually looks.
+     */
+    invokerGrants: readonly (readonly [string, "system" | "invoker"])[];
+  }) {
     stashEnv();
     process.env["DATABASE_URL"] = databaseUrl;
     process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
@@ -111,7 +124,9 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       });
     }
 
-    const invokerUserId = generateId("user");
+    // `user` is not a `generateId` prefix; a principal's `refId` is an opaque
+    // auth-user id, so any stable unique string stands in for one here.
+    const invokerUserId = `usr_${generateId("principal").slice(4)}`;
     const invokerWorkbenchPrincipalId = generateId("principal");
     await db.insert(schema.principal).values({
       id: invokerWorkbenchPrincipalId,
@@ -121,9 +136,8 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       status: "active",
     });
 
-    let invokerOrgPrincipalId: string | null = null;
-    if (options.invokerHoldsMemory) {
-      invokerOrgPrincipalId = generateId("principal");
+    if (options.invokerGrants.length > 0) {
+      const invokerOrgPrincipalId = generateId("principal");
       await db.insert(schema.principal).values({
         id: invokerOrgPrincipalId,
         tenantId: orgTenantId,
@@ -134,7 +148,7 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       // The invoker's own authority, in the org tenant where memory lives.
       // This is the only grant anything plants; the run's own rows are
       // computed from it.
-      for (const action of ["add", "search"]) {
+      for (const [action, origin] of options.invokerGrants) {
         await db.insert(schema.grant).values({
           id: generateId("grant"),
           tenantId: orgTenantId,
@@ -143,7 +157,7 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
           action,
           effect: "allow",
           conditions: null,
-          origin: "system",
+          origin,
           expiresAt: null,
         });
       }
@@ -232,7 +246,12 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
 
   test("launch writes the run's grants into the ORG tenant, where the routes resolve them from", async () => {
     const { db, close, orgTenantId, workbenchTenantId, runPrincipalId } =
-      await seed({ invokerHoldsMemory: true });
+      await seed({
+        invokerGrants: [
+          ["add", "system"],
+          ["search", "system"],
+        ],
+      });
     try {
       const rows = await db.query.grant.findMany({
         where: eq(schema.grant.principalId, runPrincipalId),
@@ -246,9 +265,9 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       // match nothing when a memory route asks, because the DB grant store
       // filters on `grant.tenantId`.
       expect(rows.every((row) => row.tenantId === orgTenantId)).toBe(true);
-      expect(
-        rows.some((row) => row.tenantId === workbenchTenantId),
-      ).toBe(false);
+      expect(rows.some((row) => row.tenantId === workbenchTenantId)).toBe(
+        false,
+      );
       expect(rows.every((row) => row.origin === "invoker")).toBe(true);
       // No expiry: a woken run has no invoker left to renew a delegation.
       expect(rows.every((row) => row.expiresAt === null)).toBe(true);
@@ -258,9 +277,16 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
   }, 20000);
 
   test("the run then reaches the memory plane over HTTP, with nothing hand-granted", async () => {
-    const { app, close } = await seed({ invokerHoldsMemory: true });
+    const { app, close } = await seed({
+      invokerGrants: [
+        ["add", "system"],
+        ["search", "system"],
+      ],
+    });
     try {
-      expect((await app.request("/api/tenants/x/memory/add", addRequest())).status).toBe(200);
+      expect(
+        (await app.request("/api/tenants/x/memory/add", addRequest())).status,
+      ).toBe(200);
       expect(
         (await app.request("/api/tenants/x/memory/search", searchRequest()))
           .status,
@@ -272,7 +298,7 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
 
   test("an invoker who holds no memory here mints no rows, and the run's memory calls fail closed", async () => {
     const { app, db, close, runPrincipalId } = await seed({
-      invokerHoldsMemory: false,
+      invokerGrants: [],
     });
     try {
       const rows = await db.query.grant.findMany({
@@ -283,16 +309,29 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
       // The run launched — it is addressable and its principal exists. It
       // simply cannot reach memory, which is the fail-closed outcome, not a
       // launch failure.
-      expect((await app.request("/api/tenants/x/memory/search", searchRequest())).status).toBe(403);
-      expect((await app.request("/api/tenants/x/memory/add", addRequest())).status).toBe(403);
+      expect(
+        (await app.request("/api/tenants/x/memory/search", searchRequest()))
+          .status,
+      ).toBe(403);
+      expect(
+        (await app.request("/api/tenants/x/memory/add", addRequest())).status,
+      ).toBe(403);
     } finally {
       await close();
     }
   }, 30000);
 
   test("a run never picks up the routes-only forget or purge authority its invoker holds nothing for", async () => {
+    // The invoker holds purge themselves, so the run declining it can only
+    // come from the requirement list being surface-filtered — not from the
+    // intersection happening to have nothing to take.
     const { db, close, runPrincipalId } = await seed({
-      invokerHoldsMemory: true,
+      invokerGrants: [
+        ["add", "system"],
+        ["search", "system"],
+        ["purge", "system"],
+        ["forget", "system"],
+      ],
     });
     try {
       const overreach = await db.query.grant.findMany({
@@ -302,6 +341,45 @@ describeIfDb("a run's memory authority is bounded by its invoker", () => {
         ),
       });
       expect(overreach).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 20000);
+  // The two shapes that separate an intersection from a copy of the
+  // requirement list. Every other case here seeds an invoker holding either
+  // the whole requirement set or nothing, so both would stay green if
+  // `resolveRows` stopped intersecting altogether.
+  test("takes only the requirements its invoker actually holds", async () => {
+    const { db, close, runPrincipalId } = await seed({
+      invokerGrants: [["search", "system"]],
+    });
+    try {
+      const rows = await db.query.grant.findMany({
+        where: eq(schema.grant.principalId, runPrincipalId),
+      });
+      expect(rows.map((row) => `${row.resource}:${row.action}`)).toEqual([
+        "memory:search",
+      ]);
+    } finally {
+      await close();
+    }
+  }, 20000);
+
+  // An invoker-origin grant is itself a delegation, and a delegation cannot
+  // be re-delegated — matching upstream's own `resolveGrantMaterialization`.
+  // Without this, authority would spread one hop further on every launch.
+  test("never re-delegates authority its invoker only holds by delegation", async () => {
+    const { db, close, runPrincipalId } = await seed({
+      invokerGrants: [
+        ["add", "invoker"],
+        ["search", "invoker"],
+      ],
+    });
+    try {
+      const rows = await db.query.grant.findMany({
+        where: eq(schema.grant.principalId, runPrincipalId),
+      });
+      expect(rows).toEqual([]);
     } finally {
       await close();
     }
