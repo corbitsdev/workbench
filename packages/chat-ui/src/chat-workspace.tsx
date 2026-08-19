@@ -27,7 +27,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
-  ChatApiError,
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
   describeChatError,
@@ -35,30 +34,19 @@ import {
   listWorkbenches,
   listInvitableDefinitions,
   pinMessage,
-  sendMessage,
   toggleReaction,
   unpinMessage,
   workbenchStreamUrl,
   isKnownWorkbenchKind,
 } from "./api";
-import type {
-  Workbench,
-  MessageItem,
-  MessagesResponse,
-  ParticipantRecord,
-  Part,
-} from "./api";
+import type { Workbench, ParticipantRecord, Part } from "./api";
 import { WorkbenchSettingsSurface } from "./workbench-settings";
 import type { WorkbenchSettingsSectionId } from "./workbench-settings";
-import { Composer, partsForSend } from "./composer";
-import type {
-  ComposerAttachment,
-  ComposerHandle,
-  ComposerSendPayload,
-} from "./composer";
+import { Composer } from "./composer";
+import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
-import type { BringInMember, MentionInviteIntent } from "./mentions";
+import type { BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
@@ -68,7 +56,6 @@ import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
 import type {
   CurrentUser,
-  PendingMessageStatus,
   PinActions,
   ReactionActions,
   ScrollSnapshot,
@@ -84,8 +71,14 @@ import {
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useWorkbenchStream } from "./use-workbench-stream";
-import { useWorkbenchFeed, chatMessagesQueryKey } from "./use-workbench-feed";
+import { useWorkbenchFeed } from "./use-workbench-feed";
 import { useThreadNavigation } from "./use-thread-navigation";
+import { mergePendingSends, useOptimisticSends } from "./use-optimistic-sends";
+export {
+  mergePendingSends,
+  pendingSenderAddress,
+} from "./use-optimistic-sends";
+export type { PendingSend } from "./use-optimistic-sends";
 import { useWorkbenchTimelineView } from "./workbench-timeline-view";
 export {
   chatFeedQueryKeyPrefix,
@@ -218,105 +211,6 @@ export function composerPlaceholderFor(
  * independent of any server-issued message id (which does not exist yet
  * while `status` is `"sending"`, and never will if it ends up discarded).
  */
-export type PendingSend = {
-  readonly nonce: string;
-  readonly text: string;
-  readonly attachments: readonly ComposerAttachment[];
-  readonly createdAt: string;
-  readonly status: PendingMessageStatus;
-  /** The "Bring in…" picks this submit carried — kept on the pending
-   * entry so a Retry re-runs the same pre-invite step the original
-   * submit did. */
-  readonly invite?: readonly MentionInviteIntent[];
-};
-
-let pendingSendSeq = 0;
-
-/** A fresh client-side nonce for one composer submit — exported so tests
- * can reset the counter between cases without reaching into module
- * internals. */
-export function resetPendingSendNonceForTests(): void {
-  pendingSendSeq = 0;
-}
-
-/** Random per-page-load prefix: a pending nonce doubles as the message's
- * wire `clientId` (CL-6251), which the server persists — a bare counter
- * would repeat `pending_1` on every reload, colliding with a prior
- * session's stored clientId in the same workbench (wrong-message matches
- * in `mergePendingSends`, duplicate React keys in `WorkbenchTimeline`). */
-const pendingSendSession = Math.random().toString(36).slice(2, 10);
-
-function nextPendingSendNonce(): string {
-  pendingSendSeq += 1;
-  return `pending_${pendingSendSession}_${pendingSendSeq}`;
-}
-
-/** The sender address a pending send's synthetic item renders under —
- * `senderDisplay` (`timeline.tsx`) matches its local part against
- * `currentUser.principalId` to render "You" regardless of domain, so the
- * `@pending.local` half is never load-bearing, only honest about the
- * item not being server-issued yet. Shared with `sendPending`'s own
- * synchronous insert (`chat-workspace.tsx`) so a message never changes
- * sender identity mid-flight. */
-export function pendingSenderAddress(
-  currentUserPrincipalId: string | undefined,
-): string {
-  return `${currentUserPrincipalId ?? "you"}@pending.local`;
-}
-
-/**
- * Folds this workspace's own still-in-flight sends onto the end of the
- * server's message list, oldest-first like the rest of the timeline —
- * one message list, rendered through the exact same path as any
- * confirmed message (`WorkbenchTimeline`'s `MessageParts`), never a
- * separate visually-distinct tier. `pendingStatus`/`pendingNonce` are
- * the only markers that distinguish it: a small "sending" clock glyph,
- * or (once failed) an inline retry row — see `TimelineMessageItem`.
- *
- * A pending send's `nonce` doubles as the `clientId` it sent on the wire
- * (see `sendPending`) and is carried onto the synthetic item's own
- * `clientId` too, so it keys identically to whichever confirmed message
- * later reconciles it — `WorkbenchTimeline` renders both under the same
- * React key, updating one DOM node in place rather than unmounting a
- * pending bubble and mounting an unrelated confirmed one.
- *
- * Once `items` contains a confirmed message carrying that same
- * `clientId` (from the POST response landing, or from a later `GET
- * .../messages` page — whichever arrives first), the pending entry is
- * identity-matched and dropped here rather than rendered alongside its
- * own confirmed copy. This is never a heuristic guess from
- * content/timing; a message with no `clientId` at all (sent before this
- * feature, or by a peer) never matches any pending entry.
- */
-export function mergePendingSends(
-  items: readonly MessageItem[],
-  pendingSends: readonly PendingSend[],
-  currentUserPrincipalId: string | undefined,
-): readonly TimelineMessageItem[] {
-  if (pendingSends.length === 0) return items;
-  const confirmedClientIds = new Set(
-    items
-      .map((item) => item.clientId)
-      .filter((clientId): clientId is string => clientId !== undefined),
-  );
-  const unresolvedSends = pendingSends.filter(
-    (pending) => !confirmedClientIds.has(pending.nonce),
-  );
-  if (unresolvedSends.length === 0) return items;
-  const senderAddress = pendingSenderAddress(currentUserPrincipalId);
-  const pendingItems: TimelineMessageItem[] = unresolvedSends.map(
-    (pending) => ({
-      id: pending.nonce,
-      createdAt: pending.createdAt,
-      parts: partsForSend(pending.text, pending.attachments),
-      sender: { name: null, address: senderAddress },
-      clientId: pending.nonce,
-      pendingStatus: pending.status,
-      pendingNonce: pending.nonce,
-    }),
-  );
-  return [...items, ...pendingItems];
-}
 
 /** The one client-side id `mergeStreamingReply` gives its synthetic
  * timeline item — stable across renders (React's reconciliation key) and
@@ -612,7 +506,6 @@ function ChatWorkspaceInner({
   // workbench switch drops whatever was pending in the previous workbench:
   // its composer submit targeted that workbench, not wherever the reader
   // navigated to next.
-  const [pendingSends, setPendingSends] = useState<readonly PendingSend[]>([]);
 
   const composerRef = useRef<ComposerHandle>(null);
 
@@ -660,14 +553,6 @@ function ChatWorkspaceInner({
     const first = workbenchesState.workbenches[0] ?? workbenchesState.chats[0];
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
-
-  // Switching workbenches drops whatever this composer had pending: the
-  // submit targeted that workbench, not wherever the reader went next.
-  // The feeds need no reload (each workbench has its own query key) and
-  // the thread view resets inside `useThreadNavigation`.
-  useEffect(() => {
-    setPendingSends([]);
-  }, [activeWorkbenchId]);
 
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
@@ -815,151 +700,6 @@ function ChatWorkspaceInner({
    * entry to `"failed"` in place instead — never a status line
    * disconnected from the message it describes.
    */
-  async function sendPending(
-    nonce: string,
-    text: string,
-    attachments: readonly ComposerAttachment[],
-    invite?: readonly MentionInviteIntent[],
-  ): Promise<void> {
-    if (activeWorkbenchId === null) return;
-    const parts = partsForSend(text, attachments);
-    if (parts.length === 0) return;
-    const inviteOption = invite !== undefined ? { invite } : {};
-    // The pending bubble's own nonce doubles as its wire `clientId` —
-    // no second id needed. The server echoes it back below and, once
-    // wired, records it against the message so the next `GET
-    // .../messages` page carries it too; `mergePendingSends` drops
-    // this pending entry the moment either arrival shows up with a
-    // matching `clientId`, so whichever wins this race, the other is
-    // a no-op.
-    try {
-      let sent: {
-        readonly id: string;
-        readonly createdAt: string;
-        readonly threadId?: string;
-        readonly clientId?: string;
-      };
-      if (openThreadId !== null) {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          threadId: openThreadId,
-          clientId: nonce,
-          ...inviteOption,
-        });
-      } else if (pendingParentMessageId !== null) {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          inReplyToMessageId: pendingParentMessageId,
-          clientId: nonce,
-          ...inviteOption,
-        });
-        if (sent.threadId !== undefined) {
-          openThreadById(sent.threadId);
-        }
-      } else {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          clientId: nonce,
-          ...inviteOption,
-        });
-      }
-      const confirmed: MessageItem = {
-        id: sent.id,
-        createdAt: sent.createdAt,
-        parts,
-        sender: {
-          name: null,
-          address: pendingSenderAddress(currentUser?.principalId),
-        },
-        clientId: sent.clientId ?? nonce,
-      };
-      // A refresh already in flight was issued before this send and will
-      // report a mailbox without it — letting it resolve into the cache
-      // would blink the just-sent message back out. Cancelling first is
-      // what makes the write below the last word on this key.
-      await queryClient.cancelQueries({
-        queryKey: chatMessagesQueryKey(tenantId, activeWorkbenchId),
-      });
-      // Written straight into the cache so the confirmed message replaces
-      // the pending bubble in the same render — there is never a frame
-      // where it has vanished from both while a refetch is still in
-      // flight. A refresh may have folded it in already (refresh-first
-      // interleaving); appending unconditionally would render it twice
-      // under one key.
-      queryClient.setQueryData(
-        chatMessagesQueryKey(tenantId, activeWorkbenchId),
-        (current: MessagesResponse | undefined) => {
-          if (current === undefined) return current;
-          const alreadyPresent = current.items.some(
-            (item) =>
-              item.id === confirmed.id || item.clientId === confirmed.clientId,
-          );
-          if (alreadyPresent) return current;
-          return { ...current, items: [...current.items, confirmed] };
-        },
-      );
-      setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
-      // A message just landed in a workbench with an agent in it: a reply
-      // is owed, so show the typing indicator now rather than sitting
-      // silent until the turn's first stream event arrives.
-      if (
-        (activeWorkbench?.participants ?? []).some((participant) =>
-          isAgentAddress(participant.address),
-        )
-      ) {
-        noteAwaitingReply();
-      }
-      refreshFeed();
-    } catch (cause) {
-      if (cause instanceof ChatApiError && cause.status === 403) {
-        toast(CHAT_STRINGS.mentionForbidden);
-      }
-      setPendingSends((current) =>
-        current.map((p) =>
-          p.nonce === nonce ? { ...p, status: "failed" } : p,
-        ),
-      );
-    }
-  }
-
-  async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
-    if (activeWorkbenchId === null) return false;
-    const parts = partsForSend(payload.text, payload.attachments);
-    if (parts.length === 0) return false;
-    const nonce = nextPendingSendNonce();
-    setPendingSends((current) => [
-      ...current,
-      {
-        nonce,
-        text: payload.text,
-        attachments: payload.attachments,
-        createdAt: new Date().toISOString(),
-        status: "sending",
-        ...(payload.invite !== undefined ? { invite: payload.invite } : {}),
-      },
-    ]);
-    await sendPending(nonce, payload.text, payload.attachments, payload.invite);
-    return true;
-  }
-
-  function retryPendingSend(nonce: string) {
-    const pending = pendingSends.find((p) => p.nonce === nonce);
-    if (pending === undefined) return;
-    setPendingSends((current) =>
-      current.map((p) => (p.nonce === nonce ? { ...p, status: "sending" } : p)),
-    );
-    void sendPending(nonce, pending.text, pending.attachments, pending.invite);
-  }
-
-  /** Drops the failed pending bubble and hands its text back to the
-   * composer's draft — the only door recovered text comes back through,
-   * since a submit always clears the box on the way out. */
-  function discardPendingSend(nonce: string) {
-    const pending = pendingSends.find((p) => p.nonce === nonce);
-    if (pending === undefined) return;
-    setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
-    if (pending.text.length > 0) {
-      composerRef.current?.insertText(pending.text);
-    }
-  }
-
   const activeWorkbench =
     workbenchesState.kind === "ready"
       ? [...workbenchesState.workbenches, ...workbenchesState.chats].find(
@@ -979,6 +719,24 @@ function ChatWorkspaceInner({
         isAgentAddress(participant.address),
       )
     : undefined;
+
+  const hasAgentParticipant = (activeWorkbench?.participants ?? []).some(
+    (participant) => isAgentAddress(participant.address),
+  );
+
+  const { pendingSends, handleSend, retryPendingSend, discardPendingSend } =
+    useOptimisticSends({
+      tenantId,
+      activeWorkbenchId,
+      currentUserPrincipalId: currentUser?.principalId,
+      openThreadId,
+      pendingParentMessageId,
+      openThreadById,
+      refreshFeed,
+      noteAwaitingReply,
+      hasAgentParticipant,
+      restoreDraft: (text) => composerRef.current?.insertText(text),
+    });
 
   // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
