@@ -11,7 +11,7 @@
 // and this component only reads it through the same hooks page code
 // already uses.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import * as Y from "yjs";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
@@ -32,10 +32,13 @@ import {
   useCloseCanvas,
   useToggleCanvasFocus,
 } from "./canvas-availability";
-import { CanvasColumn } from "./canvas-column";
-import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { ProviderHealthBanner } from "./provider-health-banner";
 import { Sidebar } from "./sidebar";
+import { ShellContextMenu } from "./context-menu/shell-context-menu";
+
+const CanvasColumn = lazy(async () => ({
+  default: (await import("./canvas-column")).CanvasColumn,
+}));
 
 /** True only for the one route that never renders its own `StageTopBar`
  * (see `AppRoute.hasStageTopBar`'s doc) — everything else titles its own
@@ -152,34 +155,38 @@ export function AppShell({
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar title={routeLabel(path)} />
           ) : null}
-          {children}
+          <Suspense fallback={<div className="page-fill" aria-busy="true" />}>
+            {children}
+          </Suspense>
         </div>
       </div>
-      {canvasAllowed && (
-        <CanvasColumn
-          open={canvasOpen}
-          profile={canvasProfile}
-          artifact={canvasArtifact}
-          routine={canvasRoutine}
-          focus={canvasFocus}
-          onClose={closeCanvas}
-          onToggleFocus={toggleCanvasFocus}
-          onNavigate={navigate}
-          presenceCursors={artifactPresence.members
-            .filter((member) => member.cursor !== undefined)
-            .map((member) => ({
-              principalId: member.principalId,
-              displayName: member.displayName,
-              color: member.color,
-              x: member.cursor?.x ?? 0,
-              y: member.cursor?.y ?? 0,
-            }))}
-          onCursorMove={artifactPresence.publishCursor}
-          {...(artifactDoc !== null ? { artifactDoc } : {})}
-          artifactSaveState={artifactSaveStateWithEditors}
-          onArtifactTyping={artifactPresence.publishTyping}
-        />
-      )}
+      {canvasAllowed ? (
+        <Suspense fallback={null}>
+          <CanvasColumn
+            open={canvasOpen}
+            profile={canvasProfile}
+            artifact={canvasArtifact}
+            routine={canvasRoutine}
+            focus={canvasFocus}
+            onClose={closeCanvas}
+            onToggleFocus={toggleCanvasFocus}
+            onNavigate={navigate}
+            presenceCursors={artifactPresence.members
+              .filter((member) => member.cursor !== undefined)
+              .map((member) => ({
+                principalId: member.principalId,
+                displayName: member.displayName,
+                color: member.color,
+                x: member.cursor?.x ?? 0,
+                y: member.cursor?.y ?? 0,
+              }))}
+            onCursorMove={artifactPresence.publishCursor}
+            {...(artifactDoc !== null ? { artifactDoc } : {})}
+            artifactSaveState={artifactSaveStateWithEditors}
+            onArtifactTyping={artifactPresence.publishTyping}
+          />
+        </Suspense>
+      ) : null}
       <ShellContextMenu onSignOut={onSignOut} />
     </div>
   );

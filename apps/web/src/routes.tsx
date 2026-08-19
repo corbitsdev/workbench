@@ -21,22 +21,39 @@ import {
   SlidersHorizontal,
   Workflow,
 } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
-
-import { useEffect } from "react";
+import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
-import { ChatPage } from "./pages/chat-page";
-import { HomeRoute } from "./pages/home-page";
-import { InsightsRoute } from "./pages/insights-page";
-import { LibraryRoute } from "./pages/library-page";
 import {
   LegacyAgentsRedirect,
   LegacySkillsRedirect,
 } from "./pages/legacy-settings-redirects";
-import { PluginsRoute } from "./pages/plugins-page";
-import { RoutinesRoute } from "./pages/routines-page";
-import { SettingsRoute } from "./pages/settings-page";
+
+// Each signed-in page is a dynamic import so Vite emits one chunk per
+// screen. Static imports here pulled chat-ui, artifact-ui, settings-ui,
+// plugins-ui, and insights into a single 1.2 MB SPA.
+
+const HomeRoute = lazy(async () => ({
+  default: (await import("./pages/home-page")).HomeRoute,
+}));
+const ChatPage = lazy(async () => ({
+  default: (await import("./pages/chat-page")).ChatPage,
+}));
+const RoutinesRoute = lazy(async () => ({
+  default: (await import("./pages/routines-page")).RoutinesRoute,
+}));
+const LibraryRoute = lazy(async () => ({
+  default: (await import("./pages/library-page")).LibraryRoute,
+}));
+const InsightsRoute = lazy(async () => ({
+  default: (await import("./pages/insights-page")).InsightsRoute,
+}));
+const PluginsRoute = lazy(async () => ({
+  default: (await import("./pages/plugins-page")).PluginsRoute,
+}));
+const SettingsRoute = lazy(async () => ({
+  default: (await import("./pages/settings-page")).SettingsRoute,
+}));
 
 /** Landing point for a session the first-login hook just provisioned a
  * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,

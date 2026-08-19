@@ -1,51 +1,88 @@
-// Rendering here uses react-dom/server, so effects never run and every
-// screen shows its pre-fetch state — which is exactly what these tests
-// assert: each route mounts, names itself in its stage's own `StageTopBar`,
-// and renders beside the one always-present sidebar. The one route with no
-// stage bar of its own (`/`, see `AppRoute.hasStageTopBar`) gets one from
-// `AppShell` itself, so every route ends up titled the same way — except
-// the conversation route (`/w`), whose own conversation header IS its page
-// identity (CL-6089): it renders no generic `StageTopBar` at all, static
-// or otherwise, since a workbench is never resolved in this unauthenticated
-// static render.
+// Pages load through `React.lazy`, so these tests client-render and wait
+// for the suspended route (SSR would only see the Suspense fallback). The
+// one route with no stage bar of its own (`/`, see `AppRoute.hasStageTopBar`)
+// gets one from `AppShell` itself, so every route ends up titled the same
+// way - except the conversation route (`/w`), whose own conversation header
+// IS its page identity (CL-6089): it renders no generic `StageTopBar` at
+// all.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
 
-/** Legacy routes that only redirect — `/agents` and `/skills` bounce to
+/** Legacy routes that only redirect - `/agents` and `/skills` bounce to
  * their Settings section (`pages/legacy-settings-redirects.tsx`), `/inbox`
- * bounces home (the Inbox page is gone, CL-6151) — none has a stable panel
- * title to assert via the generic SSR loop below. */
+ * bounces home (the Inbox page is gone, CL-6151) - none has a stable panel
+ * title to assert via the generic render loop below. */
 const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills", "/inbox"]);
 
 const noNavigate = () => undefined;
 const noop = () => undefined;
+const realFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
 
 const signedIn: SessionState = {
   kind: "signed-in",
   user: { id: "user_1", name: "Ada", email: "ada@example.com" },
 };
 
-function renderApp(path: string, session: SessionState = signedIn): string {
-  return renderToStaticMarkup(
-    <ThemeProvider>
-      <App
-        path={path}
-        navigate={noNavigate}
-        session={session}
-        onSignedIn={noop}
-        onSignOut={noop}
-        onRetry={noop}
-      />
-    </ThemeProvider>,
-  );
+function stubEmptyFetch(): void {
+  globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
+    Promise.resolve(
+      new Response(JSON.stringify({ data: [], nextCursor: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )) as typeof fetch;
+}
+
+async function flushLazyImports(): Promise<void> {
+  for (let count = 0; count < 5; count += 1) {
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
+async function renderApp(
+  path: string,
+  session: SessionState = signedIn,
+): Promise<string> {
+  stubEmptyFetch();
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <App
+            path={path}
+            navigate={noNavigate}
+            session={session}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />
+        </ThemeProvider>,
+      );
+    });
+    await flushLazyImports();
+    return container.innerHTML;
+  } finally {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  }
 }
 
 /** Page identity: every route titles its stage's own `StageTopBar` (the
@@ -57,7 +94,7 @@ function stagePageTitle(markup: string): string | undefined {
 /** The sidebar footer marks its own destination current: Plugins and
  * Insights are text rows with `aria-current="page"` on the lit one.
  * Settings lives in the account menu, so its route lights nothing in the
- * chrome — the stage title carries it. Returns the active row's label so
+ * chrome - the stage title carries it. Returns the active row's label so
  * tests confirm the *right* footer affordance lights, and nothing else
  * does. */
 function activeFooterLabel(markup: string): string | undefined {
@@ -139,7 +176,7 @@ describe("/inbox redirect", () => {
     container = null;
   });
 
-  test("bounces old /inbox links home — the Inbox page is gone (CL-6151)", async () => {
+  test("bounces old /inbox links home - the Inbox page is gone (CL-6151)", async () => {
     const inboxRoute = APP_ROUTES.find((route) => route.path === "/inbox");
     if (inboxRoute === undefined) throw new Error("no /inbox route entry");
     const navigated: string[] = [];
@@ -156,30 +193,18 @@ describe("/inbox redirect", () => {
 describe("routes render", () => {
   for (const route of APP_ROUTES) {
     if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
-    test(`${route.path} renders the ${route.label} screen`, () => {
-      const markup = renderApp(route.path);
-      // The one sidebar mounts on every route.
+    test(`${route.path} renders the ${route.label} screen`, async () => {
+      const markup = await renderApp(route.path);
       expect(markup).toContain('data-testid="shell-sidebar"');
-      // Myra land (`/`) titles its stage honestly for the screen it
-      // actually shows first — the first-run prompt, not Myra herself
-      // (CL-6124).
       if (route.path === "/") {
         expect(stagePageTitle(markup)).toBe("New Workbench");
         return;
       }
-      // The conversation route titles itself via its own conversation
-      // header, not a generic `StageTopBar` — asserting no stage bar
-      // renders here is the regression guard for the double-header bug
-      // CL-6089 fixed (a "Workbenches" bar over the workbench's own header).
       if (route.path === "/w") {
         expect(stagePageTitle(markup)).toBeUndefined();
         expect(markup).toContain('data-testid="shell-sidebar"');
         return;
       }
-      // Bare /settings' own redirect-to-first-section effect never runs in
-      // this static render, so the stage bar honestly shows the section
-      // it's actually resolved to (the first allowed one) rather than the
-      // bare "Settings" the post-redirect URL would carry.
       if (route.path === "/settings") {
         expect(stagePageTitle(markup)).toBe("Settings · General");
       } else {
@@ -194,16 +219,14 @@ describe("routes render", () => {
     });
   }
 
-  test("an unknown path renders the not-found screen", () => {
-    const markup = renderApp("/no-such-screen");
+  test("an unknown path renders the not-found screen", async () => {
+    const markup = await renderApp("/no-such-screen");
     expect(markup).toContain("Page not found");
     expect(activeFooterLabel(markup)).toBeUndefined();
   });
 
-  test("a /w/:workbenchId deep link waits for tenant resolution", () => {
-    // Static rendering has no selected tenant, so the deep link cannot expose
-    // workbench state before the outer workbench scope resolves.
-    const markup = renderApp("/w/ch_deep");
-    expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="false"/);
+  test("a /w/:workbenchId deep link waits for tenant resolution", async () => {
+    const markup = await renderApp("/w/ch_deep");
+    expect(markup).not.toContain('data-open="true"');
   });
 });

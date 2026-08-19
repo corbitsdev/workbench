@@ -157,6 +157,8 @@ describe("palette actions reach the real shell state (CL-5936 sibling-context re
       root.render(<Harness />);
     });
 
+    expect(container.querySelector(".shell-canvas-column")).not.toBeNull();
+
     await act(async () => {
       click("probe-open-profile");
     });
