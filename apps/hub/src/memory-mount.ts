@@ -39,9 +39,11 @@ import {
   type CallerResolver,
   type Memory,
 } from "@corbits/memory";
+import { and, eq } from "drizzle-orm";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
 import type { TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
+import { principal } from "@intx/db/schema";
 import { createRequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 import {
@@ -136,12 +138,46 @@ async function accountScopeFor(
 }
 
 /**
+ * The org tenant's own principal for the user a workbench principal stands
+ * for, found by the same `(tenantId, kind: "user", refId)` lookup
+ * `createResolveTenant` uses to seat a caller in any tenancy
+ * (`@intx/hub-api`'s `middleware/tenant.ts`). A principal is scoped to one
+ * tenancy; the user behind it is the durable identity, so a person acting
+ * in any workbench under an org is the same person in that org.
+ *
+ * `null` when they hold no principal there — a guest invited into a single
+ * workbench, whose own parent tenancy is elsewhere. `./memory-status.ts`
+ * turns that into an explained state on the Memory page.
+ */
+async function resolveOrgPrincipalId(
+  db: DB["db"],
+  orgTenantId: string,
+  userRefId: string,
+): Promise<string | null> {
+  const row = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.tenantId, orgTenantId),
+      eq(principal.kind, "user"),
+      eq(principal.refId, userRefId),
+    ),
+  });
+  return row?.id ?? null;
+}
+
+/**
  * Resolves a caller's own tenant up to its bench/account tenant, and seats
  * that as the scope `registerMemoryRoutes` sees — never the workbench
  * tenant a browser session happens to be viewing, and never a run's own
- * (usually workbench) tenant either. Only the SCOPE (which store) is
- * remapped, never who is asking: the caller's own principal id always
- * rides through unchanged.
+ * (usually workbench) tenant either.
+ *
+ * A human's principal is resolved along with the scope, not carried
+ * through it. Their grants and role assignments live in the org tenant
+ * alongside the memory itself, so authorization has to resolve where the
+ * data lives; pairing the workbench principal they happen to be calling
+ * with against the org tenant matches no grant row there and denies every
+ * member. A run's principal is the exception and does ride through
+ * unchanged — `launchFoldedRun` writes its grants directly onto it in the
+ * org tenant, bounded by whoever invoked the run.
  *
  * Two branches, workflow-run first:
  *
@@ -188,13 +224,21 @@ export function createAccountCallerResolver(
       }
     }
 
-    const principal = c.get("principal");
+    const caller = c.get("principal");
     const tenant = c.get("tenant");
-    if (!principal || !tenant) return null;
+    if (!caller || !tenant) return null;
+    if (caller.kind !== "user") return null;
 
     const scope = await accountScopeFor(db, operatorTenantId, tenant.id);
     if (scope === null) return null;
-    return { tenantId: scope.tenantId, principalId: principal.id };
+
+    const orgPrincipalId = await resolveOrgPrincipalId(
+      db,
+      scope.tenantId,
+      caller.refId,
+    );
+    if (orgPrincipalId === null) return null;
+    return { tenantId: scope.tenantId, principalId: orgPrincipalId };
   };
 }
 
