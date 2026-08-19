@@ -799,6 +799,60 @@ describe("launchFoldedRun", () => {
     expect(revoked).toEqual([{ runPrincipalId: mintedPrincipalId }]);
   });
 
+  // The deploy failure is the outcome the caller needs. A revoke that fails
+  // during the same incident must not replace it, or the launch's real cause
+  // is lost.
+  test("a failing revoke never replaces the deploy error the caller needs", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    sessionService.deploySingleStepAtHead = async () => {
+      throw new Error("sidecar unreachable");
+    };
+
+    await expect(
+      launchFoldedRun(
+        {
+          db: db as never,
+          sessionService,
+          assetService: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
+          hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
+          runHubGrants: {
+            prepare: async () => async () => undefined,
+            revoke: async () => {
+              throw new Error("grant store unreachable");
+            },
+          },
+          eventCollectors: createFakeEventCollectors(),
+        } as never,
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
+          invokerPrincipalId: "prn_invoker",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the workbench host",
+        },
+      ),
+    ).rejects.toThrow(/sidecar unreachable/);
+  });
+
   test("marks the run failed (not deleted) when the deploy leaks a running child", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,

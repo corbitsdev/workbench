@@ -26,6 +26,7 @@ import { foldedRun } from "./schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import { InferenceSource } from "@intx/types/runtime";
 import type { WireGrantRule } from "@intx/types/grant-wire";
 import {
@@ -96,6 +97,8 @@ export function parseSourcesOverride(
  * (`launchFoldedRun`) still own their own failure-path rollback of
  * those rows — this function only throws.
  */
+const log = getLogger(["folded-runs", "launch"]);
+
 const FOLDED_STEP_ID = "default";
 
 export async function deployAtHead(
@@ -631,9 +634,22 @@ export async function launchFoldedRun(
     });
 
     // The principal is deactivated rather than deleted, so its grant rows
-    // never cascade away on their own. A run that never started holds no
-    // authority, so they go here.
-    await deps.runHubGrants.revoke({ runPrincipalId: instancePrincipalId });
+    // never cascade away on their own. A launch that failed leaves nothing
+    // anyone should still be able to act as — including the leaked-agent
+    // branch above, where the child is still running and the run stays
+    // routable precisely so it can be inspected, not so it can keep its
+    // authority.
+    //
+    // Logged rather than thrown: the deploy failure is the outcome the
+    // caller needs, and letting a revoke error replace it would hide why
+    // the launch actually failed.
+    try {
+      await deps.runHubGrants.revoke({ runPrincipalId: instancePrincipalId });
+    } catch (revokeErr) {
+      log.error`folded run ${params.instanceId}: revoking hub grants failed after a failed launch: ${
+        revokeErr instanceof Error ? revokeErr.message : String(revokeErr)
+      }`;
+    }
 
     throw err;
   }
