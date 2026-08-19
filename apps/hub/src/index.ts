@@ -70,6 +70,7 @@ import {
   createWorkflowParticipantRoutes,
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
+  listDefaultInferencePreferences,
   provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
@@ -1026,7 +1027,7 @@ export async function createHub(config: HubConfig) {
   // the same tenant-catalog derivation drifting apart.
   const workbenchHostInferencePreferencesResolver =
     createWorkbenchHostInferencePreferencesResolver((tenantId) =>
-      listConnectedProviders(db, tenantId),
+      listDefaultInferencePreferences(db, tenantId),
     );
   const chatPlatform = createHubChatPlatform({
     db,
