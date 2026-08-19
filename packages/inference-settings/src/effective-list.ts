@@ -130,6 +130,66 @@ export type PriorityPatch = {
 };
 
 /**
+ * One cross-model route for the shared default: the first offering powers
+ * Myra and newly created workbenches; the remainder are tried in order when
+ * a definition does not pin a model of its own. Priority is the durable
+ * catalog value the runtime already understands. The explicit tiebreakers
+ * keep an untouched, equal-priority seed deterministic in both the UI and
+ * the server-side resolver.
+ */
+export function orderedGlobalInferenceRows(
+  rows: readonly EffectiveInferenceRow[],
+): readonly EffectiveInferenceRow[] {
+  return [...rows].sort(
+    (left, right) =>
+      left.priority - right.priority ||
+      left.canonicalName.localeCompare(right.canonicalName) ||
+      left.providerName.localeCompare(right.providerName) ||
+      left.offeringId.localeCompare(right.offeringId),
+  );
+}
+
+/**
+ * Moves one offering in the global route and rewrites its owned rows to a
+ * compact 0..n priority sequence. Rewriting the complete sequence avoids
+ * ambiguous ties, so what the UI shows is exactly what launch will try.
+ * An inherited row makes this route read-only at the current tenant; its
+ * ancestor owns the shared policy and must change it there.
+ */
+export function computeGlobalRoutePatches(
+  rows: readonly EffectiveInferenceRow[],
+  targetOfferingId: string,
+  direction: "first" | "up" | "down",
+): readonly PriorityPatch[] | null {
+  const ordered = orderedGlobalInferenceRows(rows);
+  if (ordered.some((row) => row.provenance !== "set-here")) return null;
+  if (new Set(ordered.map((row) => row.canonicalName)).size > 1) return null;
+  const currentIndex = ordered.findIndex(
+    (row) => row.offeringId === targetOfferingId,
+  );
+  if (currentIndex < 0) return null;
+  const destination =
+    direction === "first"
+      ? 0
+      : direction === "up"
+        ? currentIndex - 1
+        : currentIndex + 1;
+  if (destination < 0 || destination >= ordered.length) return [];
+
+  const next = [...ordered];
+  const [target] = next.splice(currentIndex, 1);
+  if (target === undefined) return null;
+  next.splice(destination, 0, target);
+  const basePriority = Math.min(...ordered.map((row) => row.priority));
+  return next
+    .map((row, index) => ({
+      offeringId: row.offeringId,
+      priority: basePriority + index,
+    }))
+    .filter((patch, index) => ordered[index]?.offeringId !== patch.offeringId);
+}
+
+/**
  * The two `updateOwnOffering` priority patches a "move up"/"move down"
  * reorder sends. A plain swap of the two rows' existing priorities
  * (`byPriority`'s ordering rule, `vendor/intx/db/src/model-source-resolution.ts`)

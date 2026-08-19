@@ -5,9 +5,11 @@ import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 import {
   buildEffectiveInferenceRows,
   computeMakeDefaultPatches,
+  computeGlobalRoutePatches,
   computeReorderPatches,
   defaultModelForProvider,
   providerDisplayName,
+  orderedGlobalInferenceRows,
   restrictedOfferings,
   rowsByModel,
   type EffectiveInferenceRow,
@@ -176,6 +178,43 @@ describe("rowsByModel", () => {
       "offering-a",
       "offering-b",
     ]);
+  });
+});
+
+describe("global inference route", () => {
+  test("orders every model/provider offering into one deterministic route", () => {
+    const rows: EffectiveInferenceRow[] = [
+      { ...row("openai", 2), canonicalName: "gpt-5.6-terra" },
+      { ...row("anthropic", 0), canonicalName: "claude-sonnet-5" },
+      { ...row("xai", 1), canonicalName: "grok-4.6" },
+    ];
+
+    expect(
+      orderedGlobalInferenceRows(rows).map((entry) => entry.offeringId),
+    ).toEqual(["anthropic", "xai", "openai"]);
+  });
+
+  test("moving a fallback to primary normalizes the entire route", () => {
+    const rows: EffectiveInferenceRow[] = [
+      row("anthropic", 0),
+      row("xai", 1),
+      row("openai", 2),
+    ];
+
+    expect(computeGlobalRoutePatches(rows, "openai", "first")).toEqual([
+      { offeringId: "openai", priority: 0 },
+      { offeringId: "anthropic", priority: 1 },
+      { offeringId: "xai", priority: 2 },
+    ]);
+  });
+
+  test("does not pretend an inherited route can be rewritten here", () => {
+    const rows: EffectiveInferenceRow[] = [
+      row("anthropic", 0, "inherited"),
+      row("openai", 1),
+    ];
+
+    expect(computeGlobalRoutePatches(rows, "openai", "up")).toBeNull();
   });
 });
 
