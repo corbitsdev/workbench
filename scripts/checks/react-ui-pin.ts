@@ -15,7 +15,12 @@
 // partial bump fail loudly instead of silently forking the library.
 import { Glob } from "bun";
 import path from "node:path";
-import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
+import {
+  emptyReport,
+  reportAndExit,
+  rootFromArgs,
+  type CheckReport,
+} from "./lib/repo";
 
 const REACT_UI = "@corbits/react-ui";
 

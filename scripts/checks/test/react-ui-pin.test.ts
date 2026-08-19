@@ -3,8 +3,14 @@ import { auditReactUiPins, type PinnedManifest } from "../react-ui-pin";
 
 test("one shared pin across every consumer passes, and the note names it", () => {
   const manifests: PinnedManifest[] = [
-    { relPath: "packages/chat-ui/package.json", pin: "github:corbitsdev/react-ui#aaaa111" },
-    { relPath: "apps/web/package.json", pin: "github:corbitsdev/react-ui#aaaa111" },
+    {
+      relPath: "packages/chat-ui/package.json",
+      pin: "github:corbitsdev/react-ui#aaaa111",
+    },
+    {
+      relPath: "apps/web/package.json",
+      pin: "github:corbitsdev/react-ui#aaaa111",
+    },
   ];
   const report = auditReactUiPins(manifests);
   expect(report.violations).toEqual([]);
@@ -13,9 +19,18 @@ test("one shared pin across every consumer passes, and the note names it", () =>
 
 test("two pins is a violation that names every offending manifest and pin", () => {
   const manifests: PinnedManifest[] = [
-    { relPath: "packages/chat-ui/package.json", pin: "github:corbitsdev/react-ui#aaaa111" },
-    { relPath: "packages/tasks-ui/package.json", pin: "github:corbitsdev/react-ui#bbbb222" },
-    { relPath: "apps/web/package.json", pin: "github:corbitsdev/react-ui#aaaa111" },
+    {
+      relPath: "packages/chat-ui/package.json",
+      pin: "github:corbitsdev/react-ui#aaaa111",
+    },
+    {
+      relPath: "packages/tasks-ui/package.json",
+      pin: "github:corbitsdev/react-ui#bbbb222",
+    },
+    {
+      relPath: "apps/web/package.json",
+      pin: "github:corbitsdev/react-ui#aaaa111",
+    },
   ];
   const report = auditReactUiPins(manifests);
   expect(report.violations.length).toBeGreaterThan(0);
@@ -37,7 +52,10 @@ test("a repo with no react-ui consumer at all is not a failure", () => {
 test("the same commit reached by a different specifier still counts as drift", () => {
   const manifests: PinnedManifest[] = [
     { relPath: "a/package.json", pin: "github:corbitsdev/react-ui#aaaa111" },
-    { relPath: "b/package.json", pin: "git+ssh://git@github.com/corbitsdev/react-ui#aaaa111" },
+    {
+      relPath: "b/package.json",
+      pin: "git+ssh://git@github.com/corbitsdev/react-ui#aaaa111",
+    },
   ];
   expect(auditReactUiPins(manifests).violations.length).toBeGreaterThan(0);
 });
