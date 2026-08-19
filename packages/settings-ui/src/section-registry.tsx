@@ -100,20 +100,15 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
       },
       {
-        // Read-only status + setup guidance for the assistant's memory
-        // plane (CL-6289) — reports what Connections and the hub already
-        // decided, writes nothing. Sits beside Connections since "which
-        // key is connected" is exactly what governs its own status.
+        // Read-only status + env setup guidance for the assistant's memory
+        // plane (CL-6289) — reports what this deploy's environment already
+        // decided, writes nothing. Config is env-only (an operator's own
+        // deploy setting), never a connected credential.
         id: "memory",
         title: SETTINGS_STRINGS.memorySectionTitle,
         icon: Brain,
         gate: "memory",
-        render: (ctx) => (
-          <MemorySection
-            tenantId={ctx.tenantId}
-            {...(ctx.navigate !== undefined ? { navigate: ctx.navigate } : {})}
-          />
-        ),
+        render: (ctx) => <MemorySection tenantId={ctx.tenantId} />,
       },
       {
         id: "people",

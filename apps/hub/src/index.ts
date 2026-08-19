@@ -980,9 +980,9 @@ export async function createHub(config: HubConfig) {
   );
   // Memory plane: firm-memory HTTP under `/api/tenants/:tenantId/memory/*`,
   // same `DATABASE_URL` as the control plane, isolated in its own `memory`
-  // schema. Builds lazily, tenant-independently, on first use (env, then
-  // the OPERATOR tenant's own connected OpenAI credential, then
-  // lexical-only) — see memory-mount.ts, memory-config.ts, and
+  // schema. Config is env-only and resolved at boot (env, or lexical-only);
+  // data scope is a separate axis, resolved per request up to the caller's
+  // bench/account tenant — see memory-mount.ts, memory-config.ts, and
   // memory-status.ts. Captured (not discarded) here, before
   // `chatOrchestrator`/`createArtifactDeliveryHandler` below, so the
   // in-process `Memory` handle can be threaded into both: a finalized
@@ -991,18 +991,18 @@ export async function createHub(config: HubConfig) {
   // connection or the plane's own tenant-session-gated HTTP routes.
   const memoryHandle =
     config.operatorTenantId !== undefined
-      ? mountMemory({
+      ? await mountMemory({
           app,
           db,
-          credentialCipher,
+          databaseUrl: config.databaseUrl,
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
           operatorTenantId: config.operatorTenantId,
         })
-      : mountMemory({
+      : await mountMemory({
           app,
           db,
-          credentialCipher,
+          databaseUrl: config.databaseUrl,
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
         });
@@ -2674,14 +2674,21 @@ export async function createHub(config: HubConfig) {
   // `WorkflowRunAuthenticator` (sidecar bearer token + run address)
   // against this hub's own control-plane `db`. Serves through
   // `memoryHandle.memory` — the SAME in-process plane instance
-  // `mountMemory` mounted above, never a second connection. `memory`
-  // resolves lazily per tenant, so an unconfigured tenant's calls answer
-  // a clear 503 here rather than this whole route tree being absent.
+  // `mountMemory` mounted above, never a second connection.
+  // `createWorkflowMemoryStore` resolves the run's own (workbench) tenant
+  // up to its bench/account tenant before every call, so an agent running
+  // in a workbench reads and writes the SAME memory its human teammates do
+  // there (CL-6289) — never a workbench-private store.
   app.route(
     "/api/workflow-memory",
     createWorkflowMemoryRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      store: createWorkflowMemoryStore(memoryHandle.memory),
+      store: createWorkflowMemoryStore(
+        memoryHandle.memory,
+        config.operatorTenantId !== undefined
+          ? { db, operatorTenantId: config.operatorTenantId }
+          : { db },
+      ),
     }),
   );
 

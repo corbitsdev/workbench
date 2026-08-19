@@ -39,9 +39,7 @@ export const MemorySetupOption = type({
   kind: "'set-env'",
   label: "string",
   envVars: "string[]",
-})
-  .or({ kind: "'connect-provider'", label: "string", provider: "string" })
-  .or({ kind: "'lexical-only'", label: "string", caveat: "string" });
+}).or({ kind: "'lexical-only'", label: "string", caveat: "string" });
 export type MemorySetupOption = typeof MemorySetupOption.infer;
 
 const MemoryDegradeStatus = type({
@@ -53,7 +51,7 @@ const MemoryDegradeStatus = type({
 });
 
 const MemoryPlaneStatusSchema = type({
-  source: "'env' | 'connected-credential' | 'lexical-only'",
+  source: "'env' | 'lexical-only'",
   embeddingsConfigured: "boolean",
   embed: MemoryEmbedStatus,
   rerank: MemoryRerankStatus,

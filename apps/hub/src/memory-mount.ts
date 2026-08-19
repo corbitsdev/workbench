@@ -3,56 +3,53 @@
  * domain: it already ships its own engine, its own HTTP routes
  * (`registerMemoryRoutes`), and its own capability facts
  * (`Memory.capabilities`). This module's only job is composing that
- * upstream library against this hub's own `db`, `credentialCipher`, grant
- * store, and condition registry — resolving which config a tenant gets
- * (`./memory-config`), building the real engine lazily on first use, and
- * mounting upstream's routes plus the read-only status route
- * (`./memory-status`) exactly once.
+ * upstream library against this hub's own `db`, grant store, and condition
+ * registry — resolving the one process-wide config (`./memory-config`),
+ * building the real engine at boot, and mounting upstream's routes plus
+ * the read-only status route (`./memory-status`) exactly once.
  *
- * Lazy, not boot-time: a credential gets connected long after boot, so a
- * boot-only build would mean "connect a key" still needs a redeploy. The
- * real `@corbits/memory` engine (DB pool, migrations, embed client) only
- * builds on the first actual call from any tenant. `MemoryConfig` is one
- * config for the whole process (one embed endpoint, one Postgres),
- * resolved tenant-INdependently — env, then the OPERATOR tenant's own
- * connected credential (never the calling tenant's — see
- * `memory-config.ts`'s module doc comment), then lexical-only — so the
- * same config resolves no matter which tenant's request triggers the
- * build. A single in-flight build is memoized across every tenant; a
- * rejection is never cached, so the next call re-resolves from scratch
- * rather than replaying a stuck failure forever.
+ * Boot-time, not lazy: `MemoryConfig` is env-only now (CL-6289's simpler
+ * design — see `memory-config.ts`), and env is known at process start, so
+ * there is no reason to defer building the engine or running its
+ * migrations to first use. This removes the migration-in-request-path and
+ * replica-race concerns the old lazy plane existed to manage.
+ *
+ * Data scope is a second, independent axis from config: `@corbits/memory`'s
+ * `CallerResolver` seam (`registerMemoryRoutes`'s `callerResolver` — see
+ * `packages/memory-hub/src/account-tenant.ts`) remaps every
+ * caller's tenant to their bench/account tenant before any route runs, so a
+ * caller in a workbench and the same caller in the bench itself always
+ * reach the same memory, and two different accounts never collide.
  *
  * `createMemory({ app })`/`registerMemoryRoutes` register HTTP routes as a
  * side effect and are not safe to call twice — `mountMemory` is the one
- * place that calls `registerMemoryRoutes`, once, at hub start, against a
- * `Memory` proxy whose real engine resolves later. Every consumer of the
- * returned handle (chat orchestrator, artifact delivery, the
- * workflow-memory store) already only calls `add`/`search`/`list`, so this
- * lazy `Memory` is a drop-in: it resolves for real on first use and answers
- * a clear 503 (via `MemoryError`) until it is configured.
+ * place that calls `registerMemoryRoutes`, once, at hub start.
  *
  * Boundary casts (`as never`) match Scout's `mountKnowledge`
  * (`packages/agent-dock/src/knowledge.ts`): `@corbits/memory` ships against
  * its own Hono/authz type copies, and Hono env + ConditionRegistry are
  * invariant across package roots — cast only at this mount boundary.
  */
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import {
   createMemory as buildMemoryPlane,
   runMemoryMigrations,
-  MemoryError,
   getDegradeMetricsSnapshot,
   registerMemoryRoutes,
+  type CallerResolver,
   type Memory,
-  type MemoryConfig,
 } from "@corbits/memory";
+import {
+  resolveAccountTenantId,
+  OperatorTenantHasNoAccountScopeError,
+} from "@corbits/memory-hub";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
-import type { CredentialCipher } from "@intx/types";
+import type { TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
 import { createRequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 
-import { resolveMemoryConfig, type MemoryConfigSource } from "./memory-config";
+import { resolveMemoryConfig } from "./memory-config";
 import {
   buildMemoryPlaneStatus,
   createMemoryStatusRoutes,
@@ -65,177 +62,127 @@ export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
   app: Hono<E>;
   db: DB["db"];
-  credentialCipher: CredentialCipher;
+  /** `HubConfig.databaseUrl` (`apps/hub/src/config.ts`) — the hub's own
+   * already-parsed `DATABASE_URL`, passed explicitly rather than re-read
+   * from `process.env` here, so a host that resolves it differently (e.g.
+   * a test harness) never diverges from what the rest of the hub uses. */
+  databaseUrl: string;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
-  /** `config.operatorTenantId` (`OPERATOR_TENANT_ID`) — the one tenant
-   * whose connected OpenAI credential may configure this process-wide
-   * plane. Undefined when the operator tenant isn't provisioned yet, in
-   * which case step (b) is skipped (see `memory-config.ts`). */
+  /** `config.operatorTenantId` (`OPERATOR_TENANT_ID`) — where the
+   * account-tenant walk must stop (see `account-tenant.ts`). Undefined
+   * when this deploy has no operator tenant, in which case every bench is
+   * already the root of its own chain. */
   operatorTenantId?: string;
 };
 
 export type MemoryMountHandle = {
-  /** Resolves its real engine lazily, tenant-independently, on first use. */
-  memory: Memory;
-};
-
-type BuiltPlane = {
-  readonly source: MemoryConfigSource;
-  readonly config: MemoryConfig;
   readonly memory: Memory;
 };
 
-export type LazyMemoryPlaneDeps = {
-  readonly env: Record<string, string | undefined>;
-  readonly db: DB["db"];
-  readonly credentialCipher: CredentialCipher;
-  readonly grantStore: GrantStore;
-  readonly conditionRegistry: ConditionRegistry;
-  // Not readonly: mountMemory below builds this conditionally (present
-  // only when OPERATOR_TENANT_ID is set) to satisfy
-  // exactOptionalPropertyTypes without a full literal duplicated per branch.
-  operatorTenantId?: string;
-};
+/**
+ * Resolves the caller's own tenant (as set by the host's tenant-session
+ * middleware) up to its bench/account tenant, and seats that as the scope
+ * `registerMemoryRoutes` sees — never the workbench tenant a browser
+ * session happens to be viewing. The caller's own principal id rides
+ * through unchanged: only the SCOPE (which store) is remapped, not who is
+ * asking.
+ *
+ * `OperatorTenantHasNoAccountScopeError` (the caller's own tenant IS the
+ * operator tenant — no account beneath it) is treated the same as "could
+ * not authenticate": `null`, which `@corbits/memory`'s `resolveCaller`
+ * turns into a 401. Any other failure (a genuine database fault) is left
+ * to propagate, same as an unexpected failure anywhere else in this route
+ * tree.
+ */
+export function createAccountCallerResolver(
+  db: DB["db"],
+  operatorTenantId: string | undefined,
+): CallerResolver {
+  return async (c: Context<TenantEnv>) => {
+    const principal = c.get("principal");
+    const tenant = c.get("tenant");
+    if (!principal || !tenant) return null;
 
-export type LazyMemoryPlane = {
-  /** Pass to `registerMemoryRoutes(app, { memory, ... })` — exactly once.
-   * Its own `capabilities` is a placeholder never read by any mounted
-   * route; the real answer is what `describeStatus` reports. */
-  readonly memory: Memory;
-  /** For the `/memory/status` route. `tenantId` is the CALLER's tenant —
-   * used only for its own degrade snapshot, which is genuinely per-tenant;
-   * it never influences which config the process built (see
-   * `memory-config.ts`). A genuine infrastructure fault (a migration
-   * failure, an unreachable database) throws — that is a different thing
-   * than "this process is on lexical-only", which is a normal, fully-
-   * available status, not an error. */
-  describeStatus(tenantId: string): Promise<MemoryPlaneStatus>;
-};
-
-export function createLazyMemoryPlane(
-  deps: LazyMemoryPlaneDeps,
-): LazyMemoryPlane {
-  // Single-flight: concurrent first callers await the same attempt rather
-  // than racing separate migration runs; a rejection clears this so the
-  // very next call starts a fresh attempt instead of replaying a cached
-  // failure forever.
-  let pending: Promise<BuiltPlane> | undefined;
-
-  function resolveAndBuild(): Promise<BuiltPlane> {
-    if (pending !== undefined) return pending;
-    const attempt = (async (): Promise<BuiltPlane> => {
-      const resolution = await (deps.operatorTenantId !== undefined
-        ? resolveMemoryConfig({
-            env: deps.env,
-            db: deps.db,
-            operatorTenantId: deps.operatorTenantId,
-            credentialCipher: deps.credentialCipher,
-          })
-        : resolveMemoryConfig({
-            env: deps.env,
-            db: deps.db,
-            credentialCipher: deps.credentialCipher,
-          }));
-      await runMemoryMigrations(resolution.config.memory.databaseUrl, {
-        ftsLanguage: resolution.config.memory.ftsLanguage,
+    try {
+      const accountTenantId = await resolveAccountTenantId({
+        db,
+        tenantId: tenant.id,
+        ...(operatorTenantId !== undefined ? { operatorTenantId } : {}),
       });
-      const memory = buildMemoryPlane({
-        config: resolution.config,
-        grantStore: deps.grantStore,
-        conditionRegistry: deps.conditionRegistry,
-      });
-      return { source: resolution.source, config: resolution.config, memory };
-    })();
-    pending = attempt;
-    attempt.catch(() => {
-      pending = undefined;
-    });
-    return attempt;
-  }
-
-  const memory: Memory = {
-    // Never actually read by any route `registerMemoryRoutes` mounts
-    // (verified against the current `@corbits/memory` source) — required
-    // only to satisfy the `Memory` shape at registration time, before the
-    // real plane has resolved.
-    capabilities: { embeddingsConfigured: true },
-    async add(params) {
-      return (await resolveAndBuild()).memory.add(params);
-    },
-    async search(params) {
-      return (await resolveAndBuild()).memory.search(params);
-    },
-    async list(params) {
-      return (await resolveAndBuild()).memory.list(params);
-    },
-    async feed(params) {
-      const real = (await resolveAndBuild()).memory;
-      if (real.feed === undefined) {
-        throw new MemoryError(
-          501,
-          "feed is not implemented by the configured memory plane",
+      return { tenantId: accountTenantId, principalId: principal.id };
+    } catch (cause) {
+      if (cause instanceof OperatorTenantHasNoAccountScopeError) {
+        log.warn(
+          `memory: ${cause.message} (tenant ${tenant.id} is the operator tenant)`,
         );
+        return null;
       }
-      return real.feed(params);
-    },
-    async close() {
-      if (pending === undefined) return;
-      const built = await pending.catch(() => undefined);
-      await built?.memory.close();
-    },
+      throw cause;
+    }
   };
-
-  async function describeStatus(tenantId: string): Promise<MemoryPlaneStatus> {
-    const built = await resolveAndBuild();
-    const degrade = getDegradeMetricsSnapshot(tenantId);
-    return buildMemoryPlaneStatus(
-      built.source,
-      built.config,
-      built.memory.capabilities,
-      degrade,
-    );
-  }
-
-  return { memory, describeStatus };
 }
 
-export function mountMemory<E extends object = object>(
+export async function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
-): MemoryMountHandle {
-  const lazyPlaneDeps: LazyMemoryPlaneDeps = {
+): Promise<MemoryMountHandle> {
+  const resolution = resolveMemoryConfig({
     env: process.env,
-    db: options.db,
-    credentialCipher: options.credentialCipher,
+    databaseUrl: options.databaseUrl,
+  });
+  await runMemoryMigrations(resolution.config.memory.databaseUrl, {
+    ftsLanguage: resolution.config.memory.ftsLanguage,
+  });
+  const memory = buildMemoryPlane({
+    config: resolution.config,
     grantStore: options.grantStore,
     conditionRegistry: options.conditionRegistry,
-  };
-  if (options.operatorTenantId !== undefined) {
-    lazyPlaneDeps.operatorTenantId = options.operatorTenantId;
-  }
-  const plane = createLazyMemoryPlane(lazyPlaneDeps);
+  });
+
   const grants = {
     grantStore: options.grantStore,
     conditionRegistry: options.conditionRegistry,
   };
   const requireGrant = createRequireGrant(grants);
+  const callerResolver = createAccountCallerResolver(
+    options.db,
+    options.operatorTenantId,
+  );
 
   registerMemoryRoutes(options.app as never, {
-    memory: plane.memory,
+    memory,
     requireGrant: requireGrant as never,
     grants: grants as never,
+    callerResolver: callerResolver as never,
   });
+
+  async function describeStatus(tenantId: string): Promise<MemoryPlaneStatus> {
+    const accountTenantId = await resolveAccountTenantId({
+      db: options.db,
+      tenantId,
+      ...(options.operatorTenantId !== undefined
+        ? { operatorTenantId: options.operatorTenantId }
+        : {}),
+    });
+    const degrade = getDegradeMetricsSnapshot(accountTenantId);
+    return buildMemoryPlaneStatus(
+      resolution.source,
+      resolution.config,
+      memory.capabilities,
+      degrade,
+    );
+  }
+
   options.app.route(
     "/api/tenants/:tenantId/memory",
     createMemoryStatusRoutes({
-      plane,
+      plane: { describeStatus },
       requireGrant: requireGrant as never,
     }) as never,
   );
 
   log.info(
-    "Memory plane mount point registered at /api/tenants/:tenantId/memory/* " +
-      "(builds lazily on first use)",
+    `Memory plane mounted at /api/tenants/:tenantId/memory/* (source: ${resolution.source})`,
   );
-  return { memory: plane.memory };
+  return { memory };
 }

@@ -1,9 +1,9 @@
 // The memory settings status contract: what the settings UI renders
 // without re-deriving any product decision itself. `source` carries the
-// precedence step that won — "env", "connected-credential", or
-// "lexical-only" (the floor: full-text search only, needs nothing beyond
-// the hub's own pgvector-capable Postgres) — so a future fourth source
-// slots in as one more value here, never a reshape.
+// precedence step that won — "env", or "lexical-only" (the floor:
+// full-text search only, needs nothing beyond the hub's own
+// pgvector-capable Postgres) — so a future third source slots in as one
+// more value here, never a reshape.
 //
 // Also mounts the tenant-scoped, read-only status route itself —
 // `GET /api/tenants/:tenantId/memory/status` — guarded on the `"memory"`
@@ -40,11 +40,6 @@ export type MemorySetupOption =
       readonly kind: "set-env";
       readonly label: string;
       readonly envVars: readonly string[];
-    }
-  | {
-      readonly kind: "connect-provider";
-      readonly label: string;
-      readonly provider: string;
     }
   | {
       readonly kind: "lexical-only";
@@ -101,11 +96,6 @@ export const MEMORY_SETUP_OPTIONS: readonly MemorySetupOption[] = [
     envVars: ["EMBED_BASE_URL", "EMBED_MODEL"],
   },
   {
-    kind: "connect-provider",
-    label: "Connect an OpenAI API key",
-    provider: "openai",
-  },
-  {
     kind: "lexical-only",
     label: "Stay on full-text search (lexical-only)",
     caveat:
@@ -157,9 +147,7 @@ export function buildMemoryPlaneStatus(
     },
     missing: embeddingsConfigured
       ? []
-      : [
-          "a dense embedding endpoint — set one for this deploy, or connect an OpenAI credential",
-        ],
+      : ["a dense embedding endpoint — set one for this deploy"],
     setupOptions: embeddingsConfigured ? [] : MEMORY_SETUP_OPTIONS,
   };
 }

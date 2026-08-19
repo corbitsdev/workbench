@@ -6,4 +6,10 @@ export {
   type CreateWorkflowMemoryRoutesDeps,
   type WorkflowMemoryEnv,
   type WorkflowMemoryRoutesStore,
+  type WorkflowMemoryStoreDeps,
 } from "./workflow-routes";
+export {
+  resolveAccountTenantId,
+  OperatorTenantHasNoAccountScopeError,
+  type ResolveAccountTenantIdArgs,
+} from "./account-tenant";

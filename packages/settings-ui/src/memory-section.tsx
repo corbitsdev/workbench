@@ -1,8 +1,12 @@
 // The "Memory" settings section: a read-only report of whether assistant
-// memory can search by meaning or only by matching words, who set that up,
-// and how to change it — over `apps/hub/src/memory-status.ts`'s
+// memory can search by meaning or only by matching words, and how to
+// change it — over `apps/hub/src/memory-status.ts`'s
 // `GET /api/tenants/:tenantId/memory/status`. This section writes nothing;
 // retention controls (forget/purge) are explicitly out of scope (CL-6289).
+//
+// Config is env-only (an operator's own deploy setting, never a connected
+// credential — CL-6289's simpler design), so there is nothing here for a
+// person to click to change it beyond setting env vars themselves.
 //
 // `source`/`embeddingsConfigured` are the two facts that matter most, so
 // they lead. Everything else — the embed model, its host, re-rank config,
@@ -49,14 +53,8 @@ function activeAlarms(
 
 export function MemorySection({
   tenantId,
-  navigate,
 }: {
   readonly tenantId: string | null;
-  /** Opens the Connections section for the "connect a key" setup option.
-   * Absent where the host wires no client-side navigation (a package test
-   * rendering this section standalone) — that option simply drops its
-   * action rather than rendering a button that goes nowhere. */
-  readonly navigate?: (to: string) => void;
 }) {
   const [query, setQuery] = useState<APIQuery<MemoryPlaneStatus>>({
     kind: "loading",
@@ -139,10 +137,7 @@ export function MemorySection({
           title={SETTINGS_STRINGS.memorySectionTitle}
           description={SETTINGS_STRINGS.memorySectionDescription}
         >
-          <MemoryStatusBody
-            data={query.data}
-            {...(navigate !== undefined ? { navigate } : {})}
-          />
+          <MemoryStatusBody data={query.data} />
         </SettingsPanel>
       );
   }
@@ -151,19 +146,10 @@ export function MemorySection({
 function sourceCaption(data: MemoryPlaneStatus): string | null {
   if (!data.embeddingsConfigured) return null;
   if (data.source === "env") return SETTINGS_STRINGS.memorySourceEnvCaption;
-  if (data.source === "connected-credential") {
-    return SETTINGS_STRINGS.memorySourceConnectedCredentialCaption;
-  }
   return null;
 }
 
-function MemoryStatusBody({
-  data,
-  navigate,
-}: {
-  readonly data: MemoryPlaneStatus;
-  readonly navigate?: (to: string) => void;
-}) {
+function MemoryStatusBody({ data }: { readonly data: MemoryPlaneStatus }) {
   const alarms = activeAlarms(data.degrade);
   const caption = sourceCaption(data);
 
@@ -204,11 +190,7 @@ function MemoryStatusBody({
           </h3>
           <div className="settings-connections-list">
             {data.setupOptions.map((option) => (
-              <SetupOptionRow
-                key={option.kind}
-                option={option}
-                {...(navigate !== undefined ? { navigate } : {})}
-              />
+              <SetupOptionRow key={option.kind} option={option} />
             ))}
           </div>
         </div>
@@ -272,13 +254,7 @@ function MemoryStatusBody({
   );
 }
 
-function SetupOptionRow({
-  option,
-  navigate,
-}: {
-  readonly option: MemorySetupOption;
-  readonly navigate?: (to: string) => void;
-}) {
+function SetupOptionRow({ option }: { readonly option: MemorySetupOption }) {
   if (option.kind === "set-env") {
     return (
       <div className="settings-connection-row settings-connection-row-muted">
@@ -291,33 +267,6 @@ function SetupOptionRow({
             {option.envVars.join(", ")}
           </p>
         </div>
-      </div>
-    );
-  }
-
-  if (option.kind === "connect-provider") {
-    return (
-      <div className="settings-connection-row">
-        <div className="settings-connection-row-text">
-          <div className="settings-connection-row-name-row">
-            <span className="settings-connection-row-name">{option.label}</span>
-          </div>
-          <p className="settings-connection-row-caption">
-            {SETTINGS_STRINGS.memorySetupConnectCaption}
-          </p>
-        </div>
-        {navigate !== undefined && (
-          <div className="settings-connection-row-action">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="settings-connection-row-connect-action"
-              onClick={() => navigate("/settings/connections")}
-            >
-              {SETTINGS_STRINGS.memorySetupConnectAction}
-            </Button>
-          </div>
-        )}
       </div>
     );
   }

@@ -29,6 +29,9 @@ import type {
   WorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
 import type { Memory, SearchResult, TimelineEvent } from "@corbits/memory";
+import type { DB } from "@intx/db";
+
+import { resolveAccountTenantId } from "./account-tenant";
 
 const DEFAULT_SEARCH_LIMIT = 8;
 const DEFAULT_LIST_LIMIT = 20;
@@ -124,20 +127,46 @@ function parseLimit(raw: string | undefined, fallback: number): number {
   return n;
 }
 
+export type WorkflowMemoryStoreDeps = {
+  readonly db: DB["db"];
+  /** `OPERATOR_TENANT_ID`, when this deploy has one — see
+   * `./account-tenant.ts`'s stopping rule. */
+  readonly operatorTenantId?: string;
+};
+
 /**
  * Production store over `@corbits/memory`'s in-process `Memory` handle
  * (`apps/hub/src/memory-mount.ts`'s `MemoryMountHandle.memory`) — the
  * SAME plane instance the mount's HTTP routes serve, never a second
  * connection.
+ *
+ * `scope.tenantId` is a workflow run's OWN tenant — a workbench tenant most
+ * of the time — never the memory scope itself: every call resolves it up
+ * to the run's bench/account tenant first (`./account-tenant.ts`), so an
+ * agent running inside a workbench reads and writes the exact same memory
+ * its human teammates do there, never a workbench-private store.
  */
 export function createWorkflowMemoryStore(
   memory: Pick<Memory, "search" | "add" | "list">,
+  deps: WorkflowMemoryStoreDeps,
 ): WorkflowMemoryRoutesStore {
+  async function accountTenantIdFor(
+    scope: ResolvedWorkflowRunScope,
+  ): Promise<string> {
+    return resolveAccountTenantId({
+      db: deps.db,
+      tenantId: scope.tenantId,
+      ...(deps.operatorTenantId !== undefined
+        ? { operatorTenantId: deps.operatorTenantId }
+        : {}),
+    });
+  }
+
   return {
     async search(scope, input) {
       const base = {
         principalId: scope.principalId,
-        tenantId: scope.tenantId,
+        tenantId: await accountTenantIdFor(scope),
         query: input.query,
       };
       const withLimit =
@@ -151,7 +180,7 @@ export function createWorkflowMemoryStore(
     async add(scope, input) {
       const base = {
         principalId: scope.principalId,
-        tenantId: scope.tenantId,
+        tenantId: await accountTenantIdFor(scope),
         content: { title: input.title, text: input.text },
       };
       const params =
@@ -162,7 +191,7 @@ export function createWorkflowMemoryStore(
     async list(scope, limit) {
       return memory.list({
         principalId: scope.principalId,
-        tenantId: scope.tenantId,
+        tenantId: await accountTenantIdFor(scope),
         limit,
       });
     },

@@ -318,14 +318,10 @@ export const SETTINGS_STRINGS = {
   memoryStatusWorking: "Working",
   memoryStatusWorkingWordSearch: "Working — word search",
   memorySourceEnvCaption: "Set up for this deploy by an operator.",
-  memorySourceConnectedCredentialCaption:
-    "Using the OpenAI key connected in Connections.",
   memorySearchIssuesTitle:
     "Some searches aren't working as well as they should",
   memorySetupHeading: "Turn on meaning-based search",
   memorySetupEnvVarsPrefix: "An operator sets: ",
-  memorySetupConnectCaption: "Opens Connections, where you can add a key.",
-  memorySetupConnectAction: "Open Connections",
   memorySetupActiveBadge: "Currently active",
   memoryDetailsHeading: "Details",
   memoryDetailsEmbedModelLabel: "Embedding model",
