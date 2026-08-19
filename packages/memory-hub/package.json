@@ -15,7 +15,6 @@
   "dependencies": {
     "@corbits/artifacts-hub": "workspace:*",
     "@corbits/memory": "github:corbitsdev/corbits-memory#7fcbd00d1c94b94ee13ea21696a4040a89c08693",
-    "@intx/db": "workspace:*",
     "arktype": "catalog:",
     "hono": "^4.11.9"
   },

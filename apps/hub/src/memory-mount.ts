@@ -16,7 +16,7 @@
  *
  * Data scope is a second, independent axis from config: `@corbits/memory`'s
  * `CallerResolver` seam (`registerMemoryRoutes`'s `callerResolver` — see
- * `packages/memory-hub/src/account-tenant.ts`) remaps every
+ * `./account-tenant.ts`) remaps every
  * caller's tenant to their bench/account tenant before any route runs, so a
  * caller in a workbench and the same caller in the bench itself always
  * reach the same memory, and two different accounts never collide.
@@ -39,16 +39,16 @@ import {
   type CallerResolver,
   type Memory,
 } from "@corbits/memory";
-import {
-  resolveAccountTenantId,
-  OperatorTenantHasNoAccountScopeError,
-} from "@corbits/memory-hub";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
 import type { TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
 import { createRequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 
+import {
+  resolveAccountTenantId,
+  OperatorTenantHasNoAccountScopeError,
+} from "./account-tenant";
 import { resolveMemoryConfig } from "./memory-config";
 import {
   buildMemoryPlaneStatus,

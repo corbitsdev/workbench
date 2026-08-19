@@ -253,6 +253,7 @@ import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
 } from "@corbits/notify";
+import { resolveAccountTenantId } from "./account-tenant";
 import { mountMemory } from "./memory-mount";
 import { mountSkills } from "./skills-mount";
 import {
@@ -2675,20 +2676,26 @@ export async function createHub(config: HubConfig) {
   // against this hub's own control-plane `db`. Serves through
   // `memoryHandle.memory` — the SAME in-process plane instance
   // `mountMemory` mounted above, never a second connection.
-  // `createWorkflowMemoryStore` resolves the run's own (workbench) tenant
-  // up to its bench/account tenant before every call, so an agent running
-  // in a workbench reads and writes the SAME memory its human teammates do
-  // there (CL-6289) — never a workbench-private store.
+  // `@corbits/memory-hub` authenticates nothing and knows nothing about
+  // tenant hierarchies — this hub, the composition root, injects its own
+  // `resolveAccountTenantId` (`./account-tenant.ts`) as the store's
+  // `resolveTenantId`, so an agent running in a workbench reads and writes
+  // the SAME memory its human teammates do there (CL-6289), never a
+  // workbench-private store.
   app.route(
     "/api/workflow-memory",
     createWorkflowMemoryRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      store: createWorkflowMemoryStore(
-        memoryHandle.memory,
-        config.operatorTenantId !== undefined
-          ? { db, operatorTenantId: config.operatorTenantId }
-          : { db },
-      ),
+      store: createWorkflowMemoryStore(memoryHandle.memory, {
+        resolveTenantId: (scope) =>
+          resolveAccountTenantId({
+            db,
+            tenantId: scope.tenantId,
+            ...(config.operatorTenantId !== undefined
+              ? { operatorTenantId: config.operatorTenantId }
+              : {}),
+          }),
+      }),
     }),
   );
 

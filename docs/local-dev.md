@@ -69,14 +69,16 @@ per-tenant and never from a connected credential:
 
 Data SCOPE is a separate axis from config, and is resolved per request,
 automatically: every caller's tenant is walked up to its bench/account
-tenant (`packages/memory-hub/src/account-tenant.ts`'s
-`resolveAccountTenantId`, via `@corbits/memory`'s `CallerResolver` seam),
-so a caller in a workbench and the same caller in the bench itself always
-reach the same memory, two different accounts never collide, and the walk
-never ascends into an operator tenant (which would merge every account's
-memory into one store). `packages/memory-hub`'s workflow-run routes apply
-the same remap, so an agent running in a workbench reads and writes the
-exact memory its human teammates do there.
+tenant (`apps/hub/src/account-tenant.ts`'s `resolveAccountTenantId`, via
+`@corbits/memory`'s `CallerResolver` seam), so a caller in a workbench and
+the same caller in the bench itself always reach the same memory, two
+different accounts never collide, and the walk never ascends into an
+operator tenant (which would merge every account's memory into one
+store). This is host logic, not something `packages/memory-hub` (or
+`@corbits/memory` itself) knows about: the hub injects its own resolver
+into `packages/memory-hub`'s workflow-run store at the composition root,
+so an agent running in a workbench reads and writes the exact memory its
+human teammates do there.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 

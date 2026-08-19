@@ -36,6 +36,7 @@ import {
 import type { ResolvedWorkflowRunScope } from "@corbits/artifacts-hub";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
+import { resolveAccountTenantId } from "./account-tenant";
 import { mountMemory } from "./memory-mount";
 
 const KEYS = [
@@ -153,7 +154,10 @@ describeIfDb(
             return null;
           },
         },
-        store: createWorkflowMemoryStore(handle.memory, { db }),
+        store: createWorkflowMemoryStore(handle.memory, {
+          resolveTenantId: (scope) =>
+            resolveAccountTenantId({ db, tenantId: scope.tenantId }),
+        }),
       });
 
       const addFor = (token: string, title: string, text: string) =>

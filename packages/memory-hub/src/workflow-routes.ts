@@ -29,9 +29,6 @@ import type {
   WorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
 import type { Memory, SearchResult, TimelineEvent } from "@corbits/memory";
-import type { DB } from "@intx/db";
-
-import { resolveAccountTenantId } from "./account-tenant";
 
 const DEFAULT_SEARCH_LIMIT = 8;
 const DEFAULT_LIST_LIMIT = 20;
@@ -127,11 +124,21 @@ function parseLimit(raw: string | undefined, fallback: number): number {
   return n;
 }
 
+/**
+ * Resolves the run's own (usually workbench) tenant up to whatever tenant
+ * memory should actually scope to for it — host logic, injected: this
+ * package authenticates nothing and knows nothing about tenant
+ * hierarchies or operator tenants (that walk is `apps/hub/src/
+ * account-tenant.ts`'s `resolveAccountTenantId`, a host concern). The hub
+ * passes its own resolver in at the composition root; a fake stands in
+ * for it in this package's own tests.
+ */
+export type ResolveWorkflowMemoryTenant = (
+  scope: ResolvedWorkflowRunScope,
+) => Promise<string>;
+
 export type WorkflowMemoryStoreDeps = {
-  readonly db: DB["db"];
-  /** `OPERATOR_TENANT_ID`, when this deploy has one — see
-   * `./account-tenant.ts`'s stopping rule. */
-  readonly operatorTenantId?: string;
+  readonly resolveTenantId: ResolveWorkflowMemoryTenant;
 };
 
 /**
@@ -141,32 +148,20 @@ export type WorkflowMemoryStoreDeps = {
  * connection.
  *
  * `scope.tenantId` is a workflow run's OWN tenant — a workbench tenant most
- * of the time — never the memory scope itself: every call resolves it up
- * to the run's bench/account tenant first (`./account-tenant.ts`), so an
- * agent running inside a workbench reads and writes the exact same memory
- * its human teammates do there, never a workbench-private store.
+ * of the time — never the memory scope itself: every call resolves it
+ * through `deps.resolveTenantId` first, so an agent running inside a
+ * workbench reads and writes the exact same memory its human teammates do
+ * there, never a workbench-private store.
  */
 export function createWorkflowMemoryStore(
   memory: Pick<Memory, "search" | "add" | "list">,
   deps: WorkflowMemoryStoreDeps,
 ): WorkflowMemoryRoutesStore {
-  async function accountTenantIdFor(
-    scope: ResolvedWorkflowRunScope,
-  ): Promise<string> {
-    return resolveAccountTenantId({
-      db: deps.db,
-      tenantId: scope.tenantId,
-      ...(deps.operatorTenantId !== undefined
-        ? { operatorTenantId: deps.operatorTenantId }
-        : {}),
-    });
-  }
-
   return {
     async search(scope, input) {
       const base = {
         principalId: scope.principalId,
-        tenantId: await accountTenantIdFor(scope),
+        tenantId: await deps.resolveTenantId(scope),
         query: input.query,
       };
       const withLimit =
@@ -180,7 +175,7 @@ export function createWorkflowMemoryStore(
     async add(scope, input) {
       const base = {
         principalId: scope.principalId,
-        tenantId: await accountTenantIdFor(scope),
+        tenantId: await deps.resolveTenantId(scope),
         content: { title: input.title, text: input.text },
       };
       const params =
@@ -191,7 +186,7 @@ export function createWorkflowMemoryStore(
     async list(scope, limit) {
       return memory.list({
         principalId: scope.principalId,
-        tenantId: await accountTenantIdFor(scope),
+        tenantId: await deps.resolveTenantId(scope),
         limit,
       });
     },

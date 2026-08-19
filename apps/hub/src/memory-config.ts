@@ -3,7 +3,7 @@
 // per-tenant, and never from a connected credential: which embeddings
 // endpoint the engine uses is a wholly separate axis from whose memories a
 // request reaches (that second axis — data scope — is resolved per
-// request by `@corbits/memory-hub`'s `resolveAccountTenantId`, never here).
+// request by `./account-tenant.ts`'s `resolveAccountTenantId`, never here).
 // Two states only, in order:
 //
 //   1. `EMBED_BASE_URL` below, if set — one embed endpoint for the whole
