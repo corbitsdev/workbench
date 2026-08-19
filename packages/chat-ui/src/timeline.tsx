@@ -17,7 +17,16 @@ import {
   useContextMenuState,
 } from "@corbits/context-menu";
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
-import { Avatar, Button, EmptyState, toast } from "@corbits/react-ui";
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  PartsRenderer,
+  ToolBlock,
+  toast,
+  toolTraceToBlockState,
+} from "@corbits/react-ui";
+import { toReactUiReasoning, toReactUiToolTrace } from "./agent-part-adapter";
 import {
   Clock,
   Copy,
@@ -1173,6 +1182,24 @@ function MessageParts({
               {...(onOpenArtifactInLibrary !== undefined
                 ? { onOpenArtifactInLibrary }
                 : {})}
+            />
+          );
+        }
+        // The agent's own thinking and its tool calls (CL-6318). Both
+        // render through react-ui, which already owns this presentation —
+        // a reasoning disclosure and the tool-call lifecycle — so the
+        // workbench carries no second version of either.
+        if (part.kind === "reasoning") {
+          return <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />;
+        }
+        if (part.kind === "tool-trace") {
+          const trace = toReactUiToolTrace(part, key);
+          return (
+            <ToolBlock
+              key={key}
+              name={trace.name}
+              state={toolTraceToBlockState(trace)}
+              input={trace.input}
             />
           );
         }
