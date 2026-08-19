@@ -135,6 +135,12 @@ const MessageItem = type({
   // sent with one (anything from before this feature, or from a peer
   // whose own client never set it) — never a fabricated id.
   "clientId?": "string",
+  // The thread this message belongs to (CL-6313), resolved server-side
+  // against the same "root feed by default" contract the per-thread
+  // feed filters on. Carrying it here is what lets one query serve the
+  // root feed and every open thread — see `./thread-feed.ts`. Absent
+  // on a host that mounts no thread store, matching `rootThreadId: ""`.
+  "threadId?": "string",
 });
 export type MessageItem = typeof MessageItem.infer;
 
@@ -552,9 +558,23 @@ export const WorkbenchThread = type({
 });
 export type WorkbenchThread = typeof WorkbenchThread.infer;
 
+// A listed thread carries its own reply activity (CL-6313) — the
+// affordance on a parent message shows "N replies" and a last-activity
+// stamp, and computing those client-side meant a `GET
+// /threads/:id/messages` per thread on every timeline refresh. Only the
+// list response has these; `forkThread` and an open thread's own
+// `thread` field return the bare thread.
+export const WorkbenchThreadRow = WorkbenchThread.and({
+  replyCount: "number",
+  /** Null, never the thread's creation time, for a thread with no
+   * messages yet — an empty thread has had no activity. */
+  lastActivityAt: "string | null",
+});
+export type WorkbenchThreadRow = typeof WorkbenchThreadRow.infer;
+
 const ThreadsResponse = type({
   rootThreadId: "string",
-  items: WorkbenchThread.array(),
+  items: WorkbenchThreadRow.array(),
 });
 
 export function listThreads(
@@ -562,7 +582,7 @@ export function listThreads(
   workbenchId: string,
 ): Promise<{
   readonly rootThreadId: string;
-  readonly items: readonly WorkbenchThread[];
+  readonly items: readonly WorkbenchThreadRow[];
 }> {
   return request(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads`,
