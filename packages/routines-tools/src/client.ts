@@ -3,8 +3,8 @@
 // workbench's routines — the execution half of `@corbits/routines`'
 // `createWorkflowRoutineRoutes` (`packages/routines/src/workflow-routine-routes.ts`),
 // mounted at `/api/workflow-routines` alongside `/api/workflow-capabilities`
-// and `/api/workflow-memory` — authenticated the same way, via a sidecar
-// bearer token + run address, never a human browser session.
+// and `/api/workflow-artifacts` — authenticated the same way, via a
+// sidecar bearer token + run address, never a human browser session.
 //
 // This client never re-implements scheduling, cron, or launch logic —
 // every call is a thin HTTP hop into `@corbits/routines`' own service,

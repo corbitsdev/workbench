@@ -18,19 +18,23 @@ import type {
 } from "@intx/hub-sessions";
 
 /**
- * One `tool:<qualifiedId>` / `invoke` grant a pinned tool package
- * contributes to a folded run's deploy-time `config.grants`. `resource`
- * is already prefixed (`tool:<factory.id>:<definition.name>`, the exact
- * shape the workflow child's authz gate matches against — see
+ * One grant a pinned tool package contributes to a folded run's
+ * deploy-time `config.grants`. Usually a `tool:<qualifiedId>` / `invoke`
+ * pair: `resource` already prefixed (`tool:<factory.id>:<definition.name>`,
+ * the exact shape the workflow child's authz gate matches against — see
  * `vendor/intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`
- * and `vendor/intx/inference/src/authz-extension.ts`'s
- * `beforeTool`); `effect` is the tool's static approval floor
- * (`@intx/agent`'s `toolApprovalEffect`: `"ask"` for a tool declared
- * `approval: "ask"`, `"allow"` otherwise).
+ * and `vendor/intx/inference/src/authz-extension.ts`'s `beforeTool`) and
+ * `effect` the tool's static approval floor (`@intx/agent`'s
+ * `toolApprovalEffect`: `"ask"` for a tool declared `approval: "ask"`,
+ * `"allow"` otherwise). A pinned package whose HTTP surface itself gates
+ * on `requireGrant("<resource>", "<action>")` — `@corbits/memory-tools`
+ * pinning `@corbits/memory`'s `memory`/`add` and `memory`/`search`, e.g.
+ * (CL-6296) — contributes that resource/action pair directly instead,
+ * which is why `action` is a plain string rather than fixed to `"invoke"`.
  */
 export type PinnedToolGrantDeclaration = {
   readonly resource: string;
-  readonly action: "invoke";
+  readonly action: string;
   readonly effect: GrantEffect;
 };
 

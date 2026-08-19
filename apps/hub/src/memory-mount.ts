@@ -30,7 +30,7 @@
  * its own Hono/authz type copies, and Hono env + ConditionRegistry are
  * invariant across package roots — cast only at this mount boundary.
  */
-import type { Context, Hono } from "hono";
+import type { Context, Hono, MiddlewareHandler } from "hono";
 import {
   createMemory as buildMemoryPlane,
   runMemoryMigrations,
@@ -44,6 +44,15 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
 import { createRequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
+import {
+  createRunWriteRateLimiter,
+  readWorkflowRunCredentials,
+  MAX_WORKFLOW_WRITE_TEXT_CHARS,
+  MAX_WORKFLOW_WRITES_PER_RUN_PER_MINUTE,
+  type ResolvedWorkflowRunScope,
+  type RunWriteRateLimiter,
+  type WorkflowRunAuthenticator,
+} from "@corbits/artifacts-hub";
 
 import {
   resolveAccountTenantId,
@@ -57,6 +66,19 @@ import {
 import type { MemoryPlaneStatus } from "./memory-status";
 
 const log = getLogger(["hub", "memory-mount"]);
+
+/**
+ * Env `createAccountCallerResolver`'s workflow branch and
+ * `createWorkflowAddGuardMiddleware` share: the guard (mounted only on
+ * `/api/tenants/:tenantId/memory/add`) authenticates once and stashes the
+ * resolved scope here so the resolver — which every mounted memory route
+ * runs through, including `/add` — never re-authenticates the same
+ * request. Absent on every other route, where the resolver authenticates
+ * directly off the request headers.
+ */
+type WorkflowGuardEnv = {
+  Variables: { resolvedWorkflowRunScope?: ResolvedWorkflowRunScope };
+};
 
 export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
@@ -74,21 +96,69 @@ export type MountMemoryOptions<E extends object = object> = {
    * when this deploy has no operator tenant, in which case every bench is
    * already the root of its own chain. */
   operatorTenantId?: string;
+  /**
+   * Authenticates a workflow-process child's sidecar bearer token + run
+   * address (CL-6296) — `@corbits/artifacts-hub`'s
+   * `createWorkflowRunAuthenticator({ db })`. When supplied,
+   * `createAccountCallerResolver`'s workflow branch and the `/add`
+   * rate-limit/payload-cap guard both activate; when absent (e.g. a test
+   * that only exercises the browser/session path), every request is
+   * resolved as a session caller exactly as before this ticket.
+   */
+  workflowRunAuthenticator?: WorkflowRunAuthenticator;
 };
 
 export type MemoryMountHandle = {
   readonly memory: Memory;
 };
 
+async function accountScopeFor(
+  db: DB["db"],
+  operatorTenantId: string | undefined,
+  tenantId: string,
+): Promise<{ tenantId: string } | null> {
+  try {
+    const accountTenantId = await resolveAccountTenantId({
+      db,
+      tenantId,
+      ...(operatorTenantId !== undefined ? { operatorTenantId } : {}),
+    });
+    return { tenantId: accountTenantId };
+  } catch (cause) {
+    if (cause instanceof OperatorTenantHasNoAccountScopeError) {
+      log.warn(
+        `memory: ${cause.message} (tenant ${tenantId} is the operator tenant)`,
+      );
+      return null;
+    }
+    throw cause;
+  }
+}
+
 /**
- * Resolves the caller's own tenant (as set by the host's tenant-session
- * middleware) up to its bench/account tenant, and seats that as the scope
- * `registerMemoryRoutes` sees — never the workbench tenant a browser
- * session happens to be viewing. The caller's own principal id rides
- * through unchanged: only the SCOPE (which store) is remapped, not who is
- * asking.
+ * Resolves a caller's own tenant up to its bench/account tenant, and seats
+ * that as the scope `registerMemoryRoutes` sees — never the workbench
+ * tenant a browser session happens to be viewing, and never a run's own
+ * (usually workbench) tenant either. Only the SCOPE (which store) is
+ * remapped, never who is asking: the caller's own principal id always
+ * rides through unchanged.
  *
- * `OperatorTenantHasNoAccountScopeError` (the caller's own tenant IS the
+ * Two branches, workflow-run first:
+ *
+ *   1. When `workflowRunAuthenticator` is supplied AND the request carries
+ *      both a sidecar bearer token and the run-address header, identity
+ *      comes from `WorkflowRunAuthenticator` (a workflow-process child has
+ *      no browser session). A token that fails to resolve returns `null`
+ *      here — never falls through to branch 2 — so a bad token can never
+ *      silently become an anonymous browser attempt.
+ *      `createWorkflowAddGuardMiddleware` below authenticates the SAME
+ *      pair ahead of this resolver on `/add` (to apply the rate limit and
+ *      payload cap) and stashes its result on the context; when present,
+ *      this branch reuses it rather than authenticating twice.
+ *   2. Otherwise, the existing session-based resolution: the host's
+ *      tenant-session middleware's own `principal`/`tenant`.
+ *
+ * `OperatorTenantHasNoAccountScopeError` (the resolved tenant IS the
  * operator tenant — no account beneath it) is treated the same as "could
  * not authenticate": `null`, which `@corbits/memory`'s `resolveCaller`
  * turns into a 401. Any other failure (a genuine database fault) is left
@@ -98,28 +168,116 @@ export type MemoryMountHandle = {
 export function createAccountCallerResolver(
   db: DB["db"],
   operatorTenantId: string | undefined,
+  workflowRunAuthenticator?: WorkflowRunAuthenticator,
 ): CallerResolver {
-  return async (c: Context<TenantEnv>) => {
+  return async (c: Context<TenantEnv & WorkflowGuardEnv>) => {
+    if (workflowRunAuthenticator !== undefined) {
+      const stashed = c.get("resolvedWorkflowRunScope");
+      const { token, address } = readWorkflowRunCredentials(c.req.raw.headers);
+      if (stashed !== undefined || (token !== "" && address !== "")) {
+        const runScope =
+          stashed ?? (await workflowRunAuthenticator.resolve(token, address));
+        if (runScope === null) return null;
+        const scope = await accountScopeFor(
+          db,
+          operatorTenantId,
+          runScope.tenantId,
+        );
+        if (scope === null) return null;
+        return { tenantId: scope.tenantId, principalId: runScope.principalId };
+      }
+    }
+
     const principal = c.get("principal");
     const tenant = c.get("tenant");
     if (!principal || !tenant) return null;
 
-    try {
-      const accountTenantId = await resolveAccountTenantId({
-        db,
-        tenantId: tenant.id,
-        ...(operatorTenantId !== undefined ? { operatorTenantId } : {}),
-      });
-      return { tenantId: accountTenantId, principalId: principal.id };
-    } catch (cause) {
-      if (cause instanceof OperatorTenantHasNoAccountScopeError) {
-        log.warn(
-          `memory: ${cause.message} (tenant ${tenant.id} is the operator tenant)`,
-        );
-        return null;
-      }
-      throw cause;
+    const scope = await accountScopeFor(db, operatorTenantId, tenant.id);
+    if (scope === null) return null;
+    return { tenantId: scope.tenantId, principalId: principal.id };
+  };
+}
+
+/**
+ * Mounted only on `/api/tenants/:tenantId/memory/add`, ahead of
+ * `registerMemoryRoutes`, so the two protections the deleted
+ * `@corbits/memory-hub` package used to enforce — a per-run write-rate
+ * limit and a per-note character cap — apply again. Upstream's own
+ * `RouteDeps` has no seam for either (see `@corbits/memory`'s
+ * `IMPLEMENTATION.md`), so this re-homes them as host middleware exactly
+ * as its migration note instructs, sharing the same rate limiter and cap
+ * constant `@corbits/artifacts-hub`'s workflow-artifacts surface uses
+ * (`./workflow-write-limits.ts`) rather than a third hand-rolled copy.
+ *
+ * A request with no workflow bearer token / run-address pair (a browser
+ * caller) passes straight through: today's behavior for a human is
+ * preserved exactly, cap and limit included.
+ *
+ * A bad token 401s here, immediately — never falls through to
+ * `next()`, so a browser session can never pick up where a rejected
+ * workflow token left off. A good token's resolved scope is stashed on
+ * the context so `createAccountCallerResolver` (which still runs
+ * downstream, inside `registerMemoryRoutes`) reuses it instead of
+ * authenticating the same request twice.
+ */
+export function createWorkflowAddGuardMiddleware(
+  authenticator: WorkflowRunAuthenticator,
+  rateLimiter: RunWriteRateLimiter = createRunWriteRateLimiter(),
+): MiddlewareHandler<WorkflowGuardEnv> {
+  return async (c, next) => {
+    const { token, address } = readWorkflowRunCredentials(c.req.raw.headers);
+    if (token === "" || address === "") {
+      await next();
+      return;
     }
+
+    const scope = await authenticator.resolve(token, address);
+    if (scope === null) {
+      return c.json(
+        {
+          error: "Missing or unrecognized sidecar bearer token / run address",
+        },
+        401,
+      );
+    }
+
+    let body: unknown = null;
+    try {
+      body = await c.req.json();
+    } catch {
+      // Malformed JSON: let `registerMemoryRoutes`'s own validator
+      // produce the 400, rather than this middleware duplicating it.
+    }
+    const text = (body as { text?: unknown } | null)?.text;
+    if (
+      typeof text === "string" &&
+      text.length > MAX_WORKFLOW_WRITE_TEXT_CHARS
+    ) {
+      return c.json(
+        {
+          error:
+            `text is ${text.length} characters, over the ` +
+            `${MAX_WORKFLOW_WRITE_TEXT_CHARS}-character limit — shorten it ` +
+            "or split it into multiple memory entries and try again.",
+        },
+        413,
+      );
+    }
+
+    if (!rateLimiter.allow(scope.runId)) {
+      return c.json(
+        {
+          error:
+            `too many memory writes for this run in the last minute ` +
+            `(limit ${MAX_WORKFLOW_WRITES_PER_RUN_PER_MINUTE}/min) — wait ` +
+            "a moment before adding more.",
+        },
+        429,
+      );
+    }
+
+    c.set("resolvedWorkflowRunScope", scope);
+    await next();
   };
 }
 
@@ -147,7 +305,21 @@ export async function mountMemory<E extends object = object>(
   const callerResolver = createAccountCallerResolver(
     options.db,
     options.operatorTenantId,
+    options.workflowRunAuthenticator,
   );
+
+  // Mounted BEFORE `registerMemoryRoutes` below, on the exact same route
+  // pattern its own `/add` handler registers: Hono runs middleware in
+  // registration order, so this always authenticates (and, on success,
+  // caps + rate-limits) a workflow write before `callerResolver` gets a
+  // chance to re-authenticate it. A no-op for every other route and for
+  // any request without a workflow bearer token / run-address pair.
+  if (options.workflowRunAuthenticator !== undefined) {
+    (options.app as unknown as Hono<WorkflowGuardEnv>).use(
+      "/api/tenants/:tenantId/memory/add",
+      createWorkflowAddGuardMiddleware(options.workflowRunAuthenticator),
+    );
+  }
 
   registerMemoryRoutes(options.app as never, {
     memory,

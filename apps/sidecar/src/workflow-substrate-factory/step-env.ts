@@ -117,10 +117,13 @@ export interface SidecarStepBuildEnvDeps {
    * `env` via `mailboxAddress` below; these two widen the same surface.
    * The same origin is re-exposed on the step env as `hubMemoryUrl` for
    * `@corbits/memory-tools` (`requires: ["hubMemoryUrl", "sidecarToken",
-   * "address"]`), which calls the sibling workflow-memory HTTP surface
-   * (`@corbits/memory-hub`'s `createWorkflowMemoryRoutes`, CL-5852), and
-   * again as `hubSkillsUrl` for `@corbits/tools-skills`, which calls
-   * `@corbits/skills`' `createWorkflowSkillRoutes`.
+   * "address"]`), which calls the SAME `/api/tenants/:tenantId/memory/*`
+   * mount a browser caller reaches (`@corbits/memory`'s own
+   * `registerMemoryRoutes`, authenticated instead via
+   * `apps/hub/src/memory-mount.ts`'s `createAccountCallerResolver`
+   * workflow branch, CL-6296), and again as `hubSkillsUrl` for
+   * `@corbits/tools-skills`, which calls `@corbits/skills`'
+   * `createWorkflowSkillRoutes`.
    */
   hubArtifactsUrl: string;
   sidecarToken: string;

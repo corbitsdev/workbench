@@ -1,8 +1,8 @@
 {
   "name": "@corbits/memory-tools",
   "private": true,
-  "description": "Firm-memory search/add/list as an @intx/agent tool bundle for workflow definitions: calls the sanctioned workflow-memory HTTP surface (@corbits/memory-hub) with the sidecar's own bearer token and the run's own address, never a database handle or model-supplied identity",
-  "version": "0.0.4",
+  "description": "Firm-memory search/add/list as an @intx/agent tool bundle for workflow definitions: calls @corbits/memory's own tenant-session HTTP routes, authenticated instead by the sidecar's own bearer token and the run's own address, never a database handle or model-supplied identity",
+  "version": "0.0.5",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

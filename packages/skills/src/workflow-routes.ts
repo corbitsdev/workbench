@@ -1,9 +1,9 @@
 // The sanctioned path for a workflow-process child to reach the skill
-// registry, mirroring `@corbits/memory-hub`'s workflow-memory surface: a
-// workflow child has no browser session, only its own sidecar bearer
-// token and the run's address, so it authenticates through
-// `@corbits/artifacts-hub`'s `WorkflowRunAuthenticator` rather than the
-// tenant-session pipeline the routes in `./routes.ts` use.
+// registry, mirroring `/api/workflow-artifacts`: a workflow child has no
+// browser session, only its own sidecar bearer token and the run's
+// address, so it authenticates through `@corbits/artifacts-hub`'s
+// `WorkflowRunAuthenticator` rather than the tenant-session pipeline the
+// routes in `./routes.ts` use.
 //
 // Mounted OUTSIDE the tenant prefix for that reason. Identity NEVER
 // rides in a request body: the tenant and principal every read is scoped

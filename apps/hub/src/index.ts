@@ -253,13 +253,8 @@ import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
 } from "@corbits/notify";
-import { resolveAccountTenantId } from "./account-tenant";
 import { mountMemory } from "./memory-mount";
 import { mountSkills } from "./skills-mount";
-import {
-  createWorkflowMemoryRoutes,
-  createWorkflowMemoryStore,
-} from "@corbits/memory-hub";
 import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
@@ -999,6 +994,7 @@ export async function createHub(config: HubConfig) {
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
           operatorTenantId: config.operatorTenantId,
+          workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
         })
       : await mountMemory({
           app,
@@ -1006,6 +1002,7 @@ export async function createHub(config: HubConfig) {
           databaseUrl: config.databaseUrl,
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
+          workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
         });
   const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
@@ -1411,7 +1408,7 @@ export async function createHub(config: HubConfig) {
   // surfaces it serves: the tenant-session one the Skills settings
   // section calls, and the run-authenticated one a workflow child's
   // `@corbits/tools-skills` bundle calls (mounted outside the tenant
-  // prefix below, beside `/api/workflow-memory`).
+  // prefix below, beside `/api/workflow-artifacts`).
   const skills = mountSkills({
     db,
     assetService,
@@ -1508,7 +1505,7 @@ export async function createHub(config: HubConfig) {
   // just above (CL-6086): a workflow child has no browser session, only
   // its sidecar bearer token and its own run address, so it reaches
   // `POST /:definitionId/capabilities` through this surface instead,
-  // mirroring `/api/workflow-skills`/`/api/workflow-memory`. See
+  // mirroring `/api/workflow-skills`/`/api/workflow-artifacts`. See
   // `@corbits/agent-directory`'s `workflow-capability-routes.ts` for the
   // deliberate, documented authorization decision this route enforces
   // in place of a `requireGrant` check (CL-6085 tracks the durable fix).
@@ -2262,7 +2259,8 @@ export async function createHub(config: HubConfig) {
   // (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`), and
   // `/api/workflow-capabilities` (mounted below) gives it a
   // workflow-run-authenticated path to the capabilities route the same
-  // way `/api/workflow-skills` and `/api/workflow-memory` do. Both gaps
+  // way `/api/workflow-skills` and the memory plane's own
+  // `/api/tenants/:tenantId/memory/*` mount do. Both gaps
   // that used to keep it out of this lister are closed.
   const capabilityToolPackageName = "@corbits/capability-tools";
 
@@ -2668,36 +2666,17 @@ export async function createHub(config: HubConfig) {
     }),
   );
 
-  // The sanctioned path for a workflow run to reach the memory plane
-  // (CL-5852), mirroring `/api/workflow-artifacts` immediately above:
-  // mounted OUTSIDE `TENANT_PREFIX` since a workflow-process child has
-  // no browser session, every request authenticates via the same
-  // `WorkflowRunAuthenticator` (sidecar bearer token + run address)
-  // against this hub's own control-plane `db`. Serves through
-  // `memoryHandle.memory` — the SAME in-process plane instance
-  // `mountMemory` mounted above, never a second connection.
-  // `@corbits/memory-hub` authenticates nothing and knows nothing about
-  // tenant hierarchies — this hub, the composition root, injects its own
-  // `resolveAccountTenantId` (`./account-tenant.ts`) as the store's
-  // `resolveTenantId`, so an agent running in a workbench reads and writes
-  // the SAME memory its human teammates do there (CL-6289), never a
-  // workbench-private store.
-  app.route(
-    "/api/workflow-memory",
-    createWorkflowMemoryRoutes({
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      store: createWorkflowMemoryStore(memoryHandle.memory, {
-        resolveTenantId: (scope) =>
-          resolveAccountTenantId({
-            db,
-            tenantId: scope.tenantId,
-            ...(config.operatorTenantId !== undefined
-              ? { operatorTenantId: config.operatorTenantId }
-              : {}),
-          }),
-      }),
-    }),
-  );
+  // A workflow run reaches the memory plane through the SAME
+  // `/api/tenants/:tenantId/memory/*` mount browser callers use
+  // (CL-6296) — no second surface, no second mount. `mountMemory` above
+  // was handed a `workflowRunAuthenticator`, so its `callerResolver`
+  // (`createAccountCallerResolver`'s workflow branch) already
+  // authenticates a sidecar bearer token + run address pair the same
+  // way `/api/workflow-artifacts` does, remaps it to the account tenant
+  // (`./account-tenant.ts`'s `resolveAccountTenantId`, CL-6289), and the
+  // `/add` route additionally runs through a rate-limit + payload-cap
+  // guard the deleted `@corbits/memory-hub` package used to enforce
+  // (see `memory-mount.ts`'s `createWorkflowAddGuardMiddleware`).
 
   // Closed-by-default access policy: a per-tenant policy row layered
   // over native tenancy/RBAC (see `@workbench/access-policy`). Migrated

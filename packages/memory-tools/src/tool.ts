@@ -1,34 +1,30 @@
 // The `@corbits/memory-tools` bundle: `memory_search`, `memory_add`, and
 // `memory_list`, the agent-facing surface a workflow definition pins to
 // reach the tenant's firm-memory plane. Calls `./client.ts` against the
-// sanctioned workflow-memory HTTP surface (`@corbits/memory-hub`'s
-// `createWorkflowMemoryRoutes`), authenticating with the sidecar's own
-// bearer token and the run's own mailbox address — both already reach a
-// workflow-process child's tool env (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`),
-// so this bundle needs no per-user credential and never touches a
-// database handle.
+// SAME `/api/tenants/:tenantId/memory/*` HTTP surface a browser caller
+// reaches (`apps/hub/src/memory-mount.ts`, CL-6296), authenticating with
+// the sidecar's own bearer token and the run's own mailbox address — both
+// already reach a workflow-process child's tool env
+// (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`), so this
+// bundle needs no per-user credential and never touches a database
+// handle.
 //
 // Identity is never a model-supplied argument: none of the three tools'
 // input schemas below carry a tenant or principal field, and none of
 // `./client.ts`'s request bodies do either — attribution comes entirely
 // from the run's own authenticated address on the hub side
-// (`@corbits/memory-hub`'s `WorkflowRunAuthenticator`), matching
+// (`createAccountCallerResolver`'s workflow branch), matching
 // `@corbits/artifact-tools`' precedent. A transport, HTTP, or shape
 // failure comes back as a completed `ToolResult` with `isError: true` —
-// never fabricate a memory or a search result when a call fails.
+// never fabricate a memory or a search result when a call fails. There is
+// no "memory isn't set up" degraded state to special-case: config is
+// env-only and always resolves to at least a lexical-only floor (CL-6289),
+// so the memory plane is always mounted.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
-import {
-  addMemory,
-  listMemory,
-  MemoryUnavailableError,
-  searchMemory,
-} from "./client";
-
-const MEMORY_NOT_SET_UP_MESSAGE =
-  "Memory isn't set up on this server yet — proceeding without it.";
+import { addMemory, listMemory, searchMemory } from "./client";
 
 export const MEMORY_SEARCH_TOOL = "memory_search";
 export const MEMORY_ADD_TOOL = "memory_add";
@@ -76,13 +72,6 @@ async function runMemorySearch(
       content: JSON.stringify({ items }),
     };
   } catch (err) {
-    if (err instanceof MemoryUnavailableError) {
-      return {
-        callId: call.id,
-        isError: false,
-        content: JSON.stringify({ items: [], note: MEMORY_NOT_SET_UP_MESSAGE }),
-      };
-    }
     return errorResult(call.id, err);
   }
 }
@@ -107,16 +96,6 @@ async function runMemoryAdd(
     const added = await addMemory(clientConfig(env), addInput);
     return { callId: call.id, isError: false, content: JSON.stringify(added) };
   } catch (err) {
-    if (err instanceof MemoryUnavailableError) {
-      return {
-        callId: call.id,
-        isError: false,
-        content: JSON.stringify({
-          saved: false,
-          note: `${MEMORY_NOT_SET_UP_MESSAGE} This entry was not saved.`,
-        }),
-      };
-    }
     return errorResult(call.id, err);
   }
 }
@@ -138,16 +117,6 @@ async function runMemoryList(
       content: JSON.stringify({ entries }),
     };
   } catch (err) {
-    if (err instanceof MemoryUnavailableError) {
-      return {
-        callId: call.id,
-        isError: false,
-        content: JSON.stringify({
-          entries: [],
-          note: MEMORY_NOT_SET_UP_MESSAGE,
-        }),
-      };
-    }
     return errorResult(call.id, err);
   }
 }
