@@ -32,7 +32,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     ];
     const feed = selectThreadFeed(items, {
       openThreadId: null,
-      pendingParentMessageId: null,
+      parentMessageId: null,
       rootThreadId: ROOT,
     });
     expect(feed.map((m) => m.id)).toEqual(["1", "3"]);
@@ -46,7 +46,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     ];
     const feed = selectThreadFeed(items, {
       openThreadId: "thr_reply",
-      pendingParentMessageId: "1",
+      parentMessageId: "1",
       rootThreadId: ROOT,
     });
     expect(feed.map((m) => m.id)).toEqual(["1", "2", "3"]);
@@ -56,7 +56,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     const items = [message("1", "thr_reply"), message("2", "thr_reply")];
     const feed = selectThreadFeed(items, {
       openThreadId: "thr_reply",
-      pendingParentMessageId: "1",
+      parentMessageId: "1",
       rootThreadId: ROOT,
     });
     expect(feed.map((m) => m.id)).toEqual(["1", "2"]);
@@ -66,7 +66,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     const items = [message("1", ROOT), message("2", ROOT)];
     const feed = selectThreadFeed(items, {
       openThreadId: null,
-      pendingParentMessageId: "2",
+      parentMessageId: "2",
       rootThreadId: ROOT,
     });
     expect(feed.map((m) => m.id)).toEqual(["2"]);
@@ -79,7 +79,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     expect(
       selectThreadFeed(items, {
         openThreadId: null,
-        pendingParentMessageId: null,
+        parentMessageId: null,
         rootThreadId: ROOT,
       }).map((m) => m.id),
     ).toEqual(["1"]);
@@ -90,7 +90,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     expect(
       selectThreadFeed(items, {
         openThreadId: null,
-        pendingParentMessageId: null,
+        parentMessageId: null,
         rootThreadId: "",
       }).map((m) => m.id),
     ).toEqual(["1", "2"]);
@@ -101,7 +101,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     expect(
       selectThreadFeed(items, {
         openThreadId: null,
-        pendingParentMessageId: null,
+        parentMessageId: null,
         rootThreadId: ROOT,
       }).map((m) => m.id),
     ).toEqual(["1", "2", "3"]);
@@ -112,7 +112,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
     expect(
       selectThreadFeed(items, {
         openThreadId: "thr_gone",
-        pendingParentMessageId: null,
+        parentMessageId: null,
         rootThreadId: ROOT,
       }),
     ).toEqual([]);

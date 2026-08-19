@@ -22,7 +22,10 @@ export type ThreadActivityRow = {
 
 export type ThreadFeedView = {
   readonly openThreadId: string | null;
-  readonly pendingParentMessageId: string | null;
+  /** The message the open thread hangs off, or — with no `openThreadId`
+   * — the message a reply thread is about to be created from. Either
+   * way it is the context the thread is unreadable without. */
+  readonly parentMessageId: string | null;
   /** Empty until `GET /threads` resolves one, or on a host with no
    * thread store at all — either way there is no membership to filter
    * by, so the whole mailbox is the feed. */
@@ -66,10 +69,10 @@ export function selectThreadFeed(
         (item) => threadIdOf(item, view.rootThreadId) === view.openThreadId,
       ),
     );
-    return withParent(inThread, items, view.pendingParentMessageId);
+    return withParent(inThread, items, view.parentMessageId);
   }
-  if (view.pendingParentMessageId !== null) {
-    return withParent([], items, view.pendingParentMessageId);
+  if (view.parentMessageId !== null) {
+    return withParent([], items, view.parentMessageId);
   }
   if (view.rootThreadId === "") return oldestFirst(items);
   return oldestFirst(

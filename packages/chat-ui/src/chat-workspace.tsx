@@ -38,7 +38,6 @@ import {
   listInvitableDefinitions,
   listMessages,
   listPinnedMessages,
-  listThreadMessages,
   listThreads,
   pinMessage,
   putReadState,
@@ -51,7 +50,9 @@ import {
 import type {
   Workbench,
   WorkbenchThread,
+  WorkbenchThreadRow,
   MessageItem,
+  MessagesResponse,
   ParticipantRecord,
   Part,
   PinnedMessage,
@@ -80,7 +81,6 @@ import type {
   PinActions,
   ReactionActions,
   ScrollSnapshot,
-  ThreadAffordanceMeta,
   TimelineMessageItem,
 } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
@@ -93,6 +93,7 @@ import {
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useWorkbenchStream } from "./use-workbench-stream";
+import { selectThreadFeed, threadAffordanceMeta } from "./thread-feed";
 
 /**
  * The host's answer to "which bench does this account chat in": mirrors
@@ -190,39 +191,6 @@ export type MessagesState =
     }
   | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
 
-export type MessagesLoadOutcome =
-  | { readonly kind: "success"; readonly items: readonly MessageItem[] }
-  | {
-      readonly kind: "error";
-      readonly message: string;
-      readonly workbenchNotFound: boolean;
-      readonly isUnauthorized: boolean;
-    };
-
-/**
- * A background refresh (SSE/poll) never shows the loading skeleton and
- * never replaces a `ready` timeline with an error page — it only ever moves
- * `ready` state forward on success, and otherwise leaves whatever was on
- * screen untouched. A foreground load (first load or workbench switch)
- * always reflects the outcome directly.
- */
-export function nextMessagesState(
-  current: MessagesState,
-  outcome: MessagesLoadOutcome,
-  background: boolean,
-): MessagesState {
-  if (outcome.kind === "success") {
-    return { kind: "ready", items: outcome.items };
-  }
-  if (background) return current;
-  return {
-    kind: "error",
-    message: outcome.message,
-    workbenchNotFound: outcome.workbenchNotFound,
-    isUnauthorized: outcome.isUnauthorized,
-  };
-}
-
 /**
  * A chat's agent is fixed at creation — the server 409s an invite into one
  * — so the "invite agent" affordance only ever makes sense on a workbench or
@@ -260,44 +228,47 @@ export function composerPlaceholderFor(
   return CHAT_STRINGS.composerPlaceholderChat(counterpart);
 }
 
-/**
- * Which message source the timeline should load for the current view.
- *
- * - Open reply/delivery thread → that thread's membership only
- * - Brand-new reply (pending parent, no thread yet) → empty
- * - Workbench root feed → the workbench's root thread only (never full workbench
- *   mail, which mixes reply-thread messages into the root timeline)
- * - Threads API unavailable (empty rootThreadId) → full mailbox fallback
- */
-export type MessageFeedTarget =
-  | { readonly kind: "thread"; readonly threadId: string }
-  | { readonly kind: "empty" }
-  | { readonly kind: "root-thread"; readonly rootThreadId: string }
-  | { readonly kind: "workbench-mail" };
+/** How long a loaded feed counts as fresh. An agent turn emits dozens of
+ * stream events in under a second; with a stale window every one of them
+ * after the first is served from cache instead of hitting the hub. */
+const CHAT_FEED_STALE_MS = 1_000;
 
-export function resolveMessageFeedTarget(args: {
-  readonly openThreadId: string | null;
-  readonly pendingParentMessageId: string | null;
-  readonly rootThreadId: string | null;
-}): MessageFeedTarget {
-  if (args.openThreadId !== null) {
-    return { kind: "thread", threadId: args.openThreadId };
-  }
-  if (args.pendingParentMessageId !== null) {
-    return { kind: "empty" };
-  }
-  if (args.rootThreadId !== null && args.rootThreadId !== "") {
-    return { kind: "root-thread", rootThreadId: args.rootThreadId };
-  }
-  return { kind: "workbench-mail" };
+/** How long stream events are gathered before one refetch goes out. Long
+ * enough to swallow a turn's event burst, short enough that a reply still
+ * appears immediately. */
+const CHAT_FEED_COALESCE_MS = 250;
+
+/** Stable empty defaults, so a query that hasn't resolved yet doesn't
+ * hand the memos below a new array identity on every render. */
+const NO_THREADS: readonly WorkbenchThreadRow[] = [];
+const NO_MESSAGES: readonly MessageItem[] = [];
+const NO_PINNED_MESSAGES: readonly PinnedMessage[] = [];
+
+/** The three reads that make up one workbench's feed. They share a
+ * prefix so a single `invalidateQueries` refreshes all of them. */
+export function chatFeedQueryKeyPrefix(
+  tenantId: string,
+  workbenchId: string | null,
+) {
+  return ["chat", "feed", tenantId, workbenchId] as const;
 }
-
-function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
-  return [...items].sort((a, b) =>
-    a.createdAt === b.createdAt
-      ? a.id.localeCompare(b.id)
-      : a.createdAt.localeCompare(b.createdAt),
-  );
+export function chatMessagesQueryKey(
+  tenantId: string,
+  workbenchId: string | null,
+) {
+  return [
+    ...chatFeedQueryKeyPrefix(tenantId, workbenchId),
+    "messages",
+  ] as const;
+}
+export function chatThreadsQueryKey(
+  tenantId: string,
+  workbenchId: string | null,
+) {
+  return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "threads"] as const;
+}
+export function chatPinsQueryKey(tenantId: string, workbenchId: string | null) {
+  return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "pins"] as const;
 }
 
 /**
@@ -431,8 +402,8 @@ export function mergeStreamingReply(
   participants: readonly ParticipantRecord[],
 ): readonly TimelineMessageItem[] {
   // A pending reply with no tokens yet stays off the timeline — an
-  // empty bubble with no timestamp reads as broken; the typing line
-  // above the composer owns that phase until the first delta lands.
+  // empty bubble with no timestamp reads as broken; the typing line in
+  // the incoming-message slot owns that phase until the first delta lands.
   if (streamingReply === null || streamingReply.text === "") return items;
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
@@ -692,9 +663,6 @@ function ChatWorkspaceInner({
     setSelectedWorkbenchId(id);
     onWorkbenchChange?.(id);
   };
-  const [messagesState, setMessagesState] = useState<MessagesState>({
-    kind: "loading",
-  });
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   // null = workbench root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
@@ -703,328 +671,178 @@ function ChatWorkspaceInner({
   const [pendingParentMessageId, setPendingParentMessageId] = useState<
     string | null
   >(null);
-  const [threads, setThreads] = useState<readonly WorkbenchThread[]>([]);
-  // Root-thread id from listThreads — used so the root feed loads
-  // root-thread membership only, not the full workbench mailbox.
-  const [rootThreadId, setRootThreadId] = useState<string | null>(null);
-  // The workbench `rootThreadId` (state) was resolved for, mirrored in a ref.
-  // `loadMessages` must never read the plain `rootThreadId` state directly:
-  // React batches state updates, so a resolver that both writes the state
-  // and immediately (same microtask, no render in between) triggers
-  // `loadMessages` would still hand it last render's closed-over value —
-  // one render stale, but on a workbench switch "one render stale" means
-  // the *previous* workbench's thread id. A ref has no such lag; both halves
-  // of this pair are only ever written together via `applyRootThread`
-  // below, so a matching `workbenchId` guarantees a fresh `threadId`.
-  const rootThreadRef = useRef<{
-    readonly workbenchId: string;
-    readonly threadId: string | null;
-  } | null>(null);
-  const applyRootThread = useCallback(
-    (workbenchId: string, threadId: string | null) => {
-      rootThreadRef.current = { workbenchId, threadId };
-      setRootThreadId(threadId);
-    },
-    [],
-  );
-  const [threadMetaByMessageId, setThreadMetaByMessageId] = useState<
-    ReadonlyMap<string, ThreadAffordanceMeta>
-  >(new Map());
-  // Absent (not `[]`) until the first successful `listPinnedMessages` —
-  // `undefined` means "not wired or not loaded yet", so the pinned strip
-  // renders nothing rather than a fabricated empty state on workbench
-  // switch. A 404 (no `pins` store on the host) resolves to `[]` and
-  // stays there — the strip is simply never shown for that deployment.
-  const [pinnedMessages, setPinnedMessages] = useState<
-    readonly PinnedMessage[]
-  >([]);
   // This composer's own optimistic sends — see `mergePendingSends`. A
   // workbench switch drops whatever was pending in the previous workbench:
   // its composer submit targeted that workbench, not wherever the reader
   // navigated to next.
   const [pendingSends, setPendingSends] = useState<readonly PendingSend[]>([]);
 
-  const unauthorizedRef = useRef(false);
   const composerRef = useRef<ComposerHandle>(null);
-  // `loadMessages` calls overlap constantly — every SSE event fires a
-  // background refresh, and a send fires its own on top — with no
-  // guarantee the responses resolve in call order. Without a guard,
-  // "last response to resolve wins" can let a stale fetch that started
-  // before a newer one clobber it once it resolves later, flickering a
-  // just-landed message back out (or a just-cleared pending bubble back
-  // in). This ticket makes it "last request ISSUED wins" instead: each
-  // call takes the next ticket, and only the call still holding the
-  // latest ticket when it resolves is allowed to touch state.
-  const messagesRequestSeqRef = useRef(0);
-
-  const loadThreads = useCallback(
-    async (workbenchId: string) => {
-      try {
-        const page = await listThreads(tenantId, workbenchId);
-        setThreads(page.items);
-        applyRootThread(
-          workbenchId,
-          page.rootThreadId !== "" ? page.rootThreadId : null,
-        );
-        // Build affordance meta for parent messages that already have a
-        // reply thread. Reply counts load lazily when the thread is opened;
-        // until then we surface "Thread" via replyCount 0+.
-        const replyThreads = page.items.filter(
-          (t) => t.kind === "reply" && t.parentMessageId !== null,
-        );
-        const meta = new Map<string, ThreadAffordanceMeta>();
-        await Promise.all(
-          replyThreads.map(async (thread) => {
-            if (thread.parentMessageId === null) return;
-            try {
-              const detail = await listThreadMessages(
-                tenantId,
-                workbenchId,
-                thread.id,
-              );
-              const items = detail.items;
-              const addresses = [
-                ...new Set(
-                  items
-                    .map((item) => item.sender?.address)
-                    .filter((a): a is string => typeof a === "string"),
-                ),
-              ];
-              const last = items.at(-1);
-              meta.set(thread.parentMessageId, {
-                replyCount: items.length,
-                lastActivityAt: last?.createdAt ?? thread.createdAt,
-                participantAddresses: addresses,
-              });
-            } catch {
-              meta.set(thread.parentMessageId, {
-                replyCount: 0,
-                lastActivityAt: thread.createdAt,
-                participantAddresses: [],
-              });
-            }
-          }),
-        );
-        setThreadMetaByMessageId(meta);
-      } catch {
-        setThreads([]);
-        applyRootThread(workbenchId, null);
-        setThreadMetaByMessageId(new Map());
-      }
-    },
-    [tenantId, applyRootThread],
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
   );
 
-  const loadPins = useCallback(
-    async (workbenchId: string) => {
-      try {
-        setPinnedMessages(await listPinnedMessages(tenantId, workbenchId));
-      } catch {
-        // No `pins` store on this host, or a transient read failure —
-        // either way the strip just doesn't show, the same "absent
-        // store, absent surface" contract the wire's own `pinned` field
-        // follows server-side.
-        setPinnedMessages([]);
-      }
-    },
-    [tenantId],
+  // Threads and the mailbox are two queries, and every view the timeline
+  // can show is derived from them (CL-6313). Each message carries the
+  // thread it belongs to, so opening a thread filters data already
+  // loaded rather than calling a different endpoint — which is what lets
+  // a burst of stream events collapse into a single refetch instead of
+  // one request per thread per event.
+  const messagesQuery = useQuery({
+    queryKey: chatMessagesQueryKey(tenantId, activeWorkbenchId),
+    queryFn: () => listMessages(tenantId, activeWorkbenchId ?? ""),
+    enabled: activeWorkbenchId !== null,
+    staleTime: CHAT_FEED_STALE_MS,
+  });
+  const threadsQuery = useQuery({
+    queryKey: chatThreadsQueryKey(tenantId, activeWorkbenchId),
+    queryFn: () => listThreads(tenantId, activeWorkbenchId ?? ""),
+    enabled: activeWorkbenchId !== null,
+    staleTime: CHAT_FEED_STALE_MS,
+  });
+  const pinsQuery = useQuery({
+    queryKey: chatPinsQueryKey(tenantId, activeWorkbenchId),
+    // No `pins` store on this host, or a transient read failure — either
+    // way the strip just doesn't show, the same "absent store, absent
+    // surface" contract the wire's own `pinned` field follows.
+    queryFn: () =>
+      listPinnedMessages(tenantId, activeWorkbenchId ?? "").catch(
+        () => [] as readonly PinnedMessage[],
+      ),
+    enabled: activeWorkbenchId !== null,
+    staleTime: CHAT_FEED_STALE_MS,
+  });
+
+  const threads = threadsQuery.data?.items ?? NO_THREADS;
+  const rootThreadId = threadsQuery.data?.rootThreadId ?? "";
+  const pinnedMessages = pinsQuery.data ?? NO_PINNED_MESSAGES;
+  const loadedMessages = messagesQuery.data?.items ?? NO_MESSAGES;
+
+  // The parent a thread hangs off comes from the thread itself once it
+  // exists, and from the message the reader is replying to before it
+  // does — one value either way, so the feed never has to know which
+  // case it is in.
+  const threadParentMessageId =
+    threads.find((thread) => thread.id === openThreadId)?.parentMessageId ??
+    pendingParentMessageId;
+  const feedItems = useMemo(
+    () =>
+      selectThreadFeed(loadedMessages, {
+        openThreadId,
+        parentMessageId: threadParentMessageId,
+        rootThreadId,
+      }),
+    [loadedMessages, openThreadId, threadParentMessageId, rootThreadId],
+  );
+  const threadMetaByMessageId = useMemo(
+    () => threadAffordanceMeta(threads, loadedMessages),
+    [threads, loadedMessages],
   );
 
-  // `background: true` is a refresh from SSE/polling: the previous ready
-  // items stay on screen (and the composer stays mounted) until fresh data
-  // lands, and a failed background refresh is swallowed rather than
-  // replacing the timeline with an error page. Only a first load or a
-  // workbench switch (background left false) shows the loading skeleton or
-  // an error state.
-  const loadMessages = useCallback(
-    async (
-      workbenchId: string,
-      options?: { readonly background?: boolean },
-    ) => {
-      const background = options?.background ?? false;
-      const ticket = ++messagesRequestSeqRef.current;
-      if (!background) setMessagesState({ kind: "loading" });
-      try {
-        // Root feed may race with loadThreads on workbench switch: if we
-        // don't yet know the root thread id, resolve it from listThreads
-        // before loading messages so we never fall back to full mail while
-        // threads are available. Read `rootThreadRef`, never the plain
-        // `rootThreadId` state — a caller that both resolves the ref and
-        // invokes `loadMessages` in the same tick (no render in between,
-        // see `applyRootThread`'s doc) would otherwise still be handed
-        // last render's closed-over state, which on a workbench switch is
-        // the *previous* workbench's thread id.
-        let resolvedRootThreadId =
-          rootThreadRef.current?.workbenchId === workbenchId
-            ? rootThreadRef.current.threadId
-            : null;
-        if (
-          openThreadId === null &&
-          pendingParentMessageId === null &&
-          (resolvedRootThreadId === null || resolvedRootThreadId === "")
-        ) {
-          try {
-            const threadsPage = await listThreads(tenantId, workbenchId);
-            resolvedRootThreadId =
-              threadsPage.rootThreadId !== "" ? threadsPage.rootThreadId : null;
-            applyRootThread(workbenchId, resolvedRootThreadId);
-            setThreads(threadsPage.items);
-          } catch {
-            resolvedRootThreadId = null;
-          }
-        }
+  // A 401 is terminal for this session: keep refetching and the app would
+  // hammer the hub unauthenticated forever, so every refresh trigger
+  // below checks this first. A 404 means the workbench itself is gone
+  // (deleted, or a stale Recents entry that outlived it) — not a
+  // transient failure a retry could fix.
+  const messagesError = messagesQuery.error;
+  const isUnauthorized =
+    messagesError instanceof UnauthenticatedError ||
+    (messagesError instanceof ChatApiError && messagesError.status === 401);
+  const workbenchNotFound =
+    messagesError instanceof ChatApiError && messagesError.status === 404;
 
-        const target = resolveMessageFeedTarget({
-          openThreadId,
-          pendingParentMessageId,
-          rootThreadId: resolvedRootThreadId,
-        });
+  // React Query keeps the last successful data through a failed refetch,
+  // so a background failure leaves the timeline exactly as it was and
+  // only a load with nothing to show yet surfaces the error page.
+  const messagesState: MessagesState = useMemo(() => {
+    if (activeWorkbenchId === null) return { kind: "loading" };
+    if (messagesQuery.data !== undefined) {
+      return { kind: "ready", items: feedItems };
+    }
+    if (messagesError !== null) {
+      return {
+        kind: "error",
+        message: describeChatError(messagesError, "Couldn't load messages."),
+        workbenchNotFound,
+        isUnauthorized,
+      };
+    }
+    return { kind: "loading" };
+  }, [
+    activeWorkbenchId,
+    messagesQuery.data,
+    feedItems,
+    messagesError,
+    workbenchNotFound,
+    isUnauthorized,
+  ]);
 
-        // A thread hangs off a message the reader was just looking at —
-        // rendering the thread without it strands the conversation
-        // context. Prepend the parent from the workbench feed when the
-        // thread's own page doesn't carry it; a parent that can't be
-        // found (deleted, out of the fetched window) degrades to the
-        // bare thread rather than an error.
-        async function withParentContext(
-          items: MessageItem[],
-          parentMessageId: string | null,
-        ): Promise<MessageItem[]> {
-          if (
-            parentMessageId === null ||
-            items.some((m) => m.id === parentMessageId)
-          ) {
-            return items;
-          }
-          try {
-            const workbenchPage = await listMessages(tenantId, workbenchId);
-            const parent = workbenchPage.items.find(
-              (m) => m.id === parentMessageId,
-            );
-            return parent === undefined ? items : [parent, ...items];
-          } catch {
-            return items;
-          }
-        }
+  useEffect(() => {
+    if (workbenchNotFound && activeWorkbenchId !== null) {
+      onWorkbenchNotFound?.(activeWorkbenchId);
+    }
+  }, [workbenchNotFound, activeWorkbenchId, onWorkbenchNotFound]);
 
-        async function fetchTarget(
-          fetchFor: MessageFeedTarget,
-        ): Promise<MessageItem[]> {
-          switch (fetchFor.kind) {
-            case "thread": {
-              const page = await listThreadMessages(
-                tenantId,
-                workbenchId,
-                fetchFor.threadId,
-              );
-              return withParentContext(
-                sortMessagesOldestFirst(page.items),
-                page.thread.parentMessageId,
-              );
-            }
-            case "empty":
-              // Brand-new reply thread — no replies yet, but the message
-              // it is being started from is the context the composer
-              // needs on screen.
-              return withParentContext([], pendingParentMessageId);
-            case "root-thread": {
-              const page = await listThreadMessages(
-                tenantId,
-                workbenchId,
-                fetchFor.rootThreadId,
-              );
-              // Membership order is assignment order; timeline wants
-              // oldest-first with the viewport pinned to the end.
-              return sortMessagesOldestFirst(page.items);
-            }
-            case "workbench-mail": {
-              // Threads not available on this hub — full mailbox is the
-              // only feed source (and there is no reply-thread
-              // membership to mix in).
-              const page = await listMessages(tenantId, workbenchId);
-              return sortMessagesOldestFirst(page.items);
-            }
-          }
-        }
+  // A remembered thread id can outlive the run it named — across a hub
+  // restart (CL-6067) the reconnect-ownership challenge treats the run as
+  // dead and every id under it disappears. That is a stale reference, not
+  // a failure: drop it and fall back to the workbench's live feed rather
+  // than leaving the reader staring at an empty thread.
+  useEffect(() => {
+    if (openThreadId === null || threadsQuery.data === undefined) return;
+    if (!threads.some((thread) => thread.id === openThreadId)) {
+      setOpenThreadId(null);
+    }
+  }, [openThreadId, threads, threadsQuery.data]);
 
-        let items: MessageItem[];
-        try {
-          items = await fetchTarget(target);
-        } catch (cause) {
-          // A remembered thread id can outlive the server-side run it
-          // named — e.g. across a hub restart (CL-6067), where the
-          // reconnect-ownership challenge treats the run as dead and
-          // every id under it 404s from here on. That is a stale
-          // reference, not a real failure: discard it and fall back to
-          // the workbench's live feed instead of a dead-end error a "Try
-          // again" can never actually recover from.
-          const isStaleThreadRef =
-            cause instanceof ChatApiError &&
-            cause.status === 404 &&
-            (target.kind === "thread" || target.kind === "root-thread");
-          if (!isStaleThreadRef) throw cause;
-          if (target.kind === "thread") setOpenThreadId(null);
-          if (target.kind === "root-thread") applyRootThread(workbenchId, null);
-          const fallbackTarget = resolveMessageFeedTarget({
-            openThreadId: target.kind === "thread" ? null : openThreadId,
-            pendingParentMessageId,
-            rootThreadId:
-              target.kind === "root-thread" ? null : resolvedRootThreadId,
-          });
-          items = await fetchTarget(fallbackTarget);
-        }
-        // A newer `loadMessages` call has been issued since this one
-        // started — its own result (whenever it resolves) is the one
-        // that gets to land; this response is stale by definition and
-        // applying it now would only flicker the timeline backward.
-        if (ticket !== messagesRequestSeqRef.current) return;
-        setMessagesState((current) =>
-          nextMessagesState(current, { kind: "success", items }, background),
-        );
-        if (openThreadId === null && pendingParentMessageId === null) {
-          const last = items.at(-1);
-          if (last !== undefined) {
-            await putReadState(tenantId, workbenchId, {
-              lastSeenCreatedAt: last.createdAt,
-              lastSeenId: last.id,
-            }).catch(() => undefined);
-          }
-        }
-      } catch (cause) {
-        if (ticket !== messagesRequestSeqRef.current) return;
-        // A 401 is terminal for this session: keep polling and the app
-        // would hammer the hub unauthenticated forever. Halt refreshes
-        // until the user switches workbenches or signs back in.
-        const isUnauthorized =
-          cause instanceof UnauthenticatedError ||
-          (cause instanceof ChatApiError && cause.status === 401);
-        if (isUnauthorized) {
-          unauthorizedRef.current = true;
-        }
-        // A 404 here means the workbench itself is gone (deleted, or a stale
-        // id from a Recents entry that outlived it) — not a transient load
-        // failure a retry could fix. Tell the host so it can drop the dead
-        // Recents entry the same way it dropped the dead thread ref above.
-        const workbenchNotFound =
-          cause instanceof ChatApiError && cause.status === 404;
-        if (workbenchNotFound) onWorkbenchNotFound?.(workbenchId);
-        const message = describeChatError(cause, "Couldn't load messages.");
-        setMessagesState((current) =>
-          nextMessagesState(
-            current,
-            { kind: "error", message, workbenchNotFound, isUnauthorized },
-            background,
-          ),
-        );
+  // Marking read follows the root feed only: a reader inside a thread
+  // hasn't seen the main timeline, so advancing the cursor there would
+  // clear an unread badge for messages they never looked at.
+  useEffect(() => {
+    if (activeWorkbenchId === null) return;
+    if (openThreadId !== null || pendingParentMessageId !== null) return;
+    const last = feedItems.at(-1);
+    if (last === undefined) return;
+    void putReadState(tenantId, activeWorkbenchId, {
+      lastSeenCreatedAt: last.createdAt,
+      lastSeenId: last.id,
+    }).catch(() => undefined);
+  }, [
+    tenantId,
+    activeWorkbenchId,
+    openThreadId,
+    pendingParentMessageId,
+    feedItems,
+  ]);
+
+  /** Every read of this workbench's feed, refetched as one. Concurrent
+   * invalidations of a key collapse into a single request, which is what
+   * makes an agent turn's burst of stream events cost one refresh rather
+   * than one per event. */
+  const refreshFeed = useCallback(() => {
+    if (activeWorkbenchId === null || isUnauthorized) return;
+    // Trailing-edge, because `invalidateQueries` refetches whether or not
+    // the data is stale: React Query dedupes requests already in flight,
+    // but an agent turn emits stream events faster than a round-trip
+    // completes, so invalidating on each one still walks the hub once per
+    // gap between responses. Collapsing the burst into one refetch per
+    // window is the difference between ~40 requests per turn and ~2.
+    if (refreshTimerRef.current !== undefined) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = undefined;
+      void queryClient.invalidateQueries({
+        queryKey: chatFeedQueryKeyPrefix(tenantId, activeWorkbenchId),
+      });
+    }, CHAT_FEED_COALESCE_MS);
+  }, [queryClient, tenantId, activeWorkbenchId, isUnauthorized]);
+
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current !== undefined) {
+        clearTimeout(refreshTimerRef.current);
       }
     },
-    [
-      tenantId,
-      openThreadId,
-      pendingParentMessageId,
-      applyRootThread,
-      onWorkbenchNotFound,
-    ],
+    [],
   );
 
   // Picking a default workbench is this component's own fallback for "no
@@ -1036,70 +854,43 @@ function ChatWorkspaceInner({
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
 
+  // Switching workbenches resets the thread view. The feeds themselves
+  // need no reload: each workbench has its own query key, so the new
+  // one's data is either already cached or fetched on mount.
   useEffect(() => {
-    unauthorizedRef.current = false;
     setOpenThreadId(null);
     setPendingParentMessageId(null);
-    setRootThreadId(null);
     setPendingSends([]);
-    if (activeWorkbenchId !== null) {
-      void loadThreads(activeWorkbenchId);
-      void loadMessages(activeWorkbenchId);
-      void loadPins(activeWorkbenchId);
-    }
-  }, [activeWorkbenchId]); // eslint-disable-line react-hooks/exhaustive-deps -- workbench switch resets thread view
-
-  useEffect(() => {
-    if (activeWorkbenchId === null) return;
-    void loadMessages(activeWorkbenchId);
-  }, [openThreadId, pendingParentMessageId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const refreshUnlessUnauthorized = () => {
-    if (unauthorizedRef.current) return;
-    if (activeWorkbenchId !== null) {
-      void loadMessages(activeWorkbenchId, { background: true });
-      void loadThreads(activeWorkbenchId);
-    }
-  };
+  }, [activeWorkbenchId]);
 
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
       if (activeWorkbenchId === null) return;
       toggleReaction(tenantId, activeWorkbenchId, messageId, emoji)
-        .then(() => loadMessages(activeWorkbenchId, { background: true }))
+        .then(refreshFeed)
         .catch(() => toast(CHAT_STRINGS.reactionToggleError));
     },
-    [tenantId, activeWorkbenchId, loadMessages],
+    [tenantId, activeWorkbenchId, refreshFeed],
   );
 
   const handlePinMessage = useCallback(
     (messageId: string) => {
       if (activeWorkbenchId === null) return;
       pinMessage(tenantId, activeWorkbenchId, messageId)
-        .then(() =>
-          Promise.all([
-            loadMessages(activeWorkbenchId, { background: true }),
-            loadPins(activeWorkbenchId),
-          ]),
-        )
+        .then(refreshFeed)
         .catch(() => toast(CHAT_STRINGS.pinMessageError));
     },
-    [tenantId, activeWorkbenchId, loadMessages, loadPins],
+    [tenantId, activeWorkbenchId, refreshFeed],
   );
 
   const handleUnpinMessage = useCallback(
     (messageId: string) => {
       if (activeWorkbenchId === null) return;
       unpinMessage(tenantId, activeWorkbenchId, messageId)
-        .then(() =>
-          Promise.all([
-            loadMessages(activeWorkbenchId, { background: true }),
-            loadPins(activeWorkbenchId),
-          ]),
-        )
+        .then(refreshFeed)
         .catch(() => toast(CHAT_STRINGS.unpinMessageError));
     },
-    [tenantId, activeWorkbenchId, loadMessages, loadPins],
+    [tenantId, activeWorkbenchId, refreshFeed],
   );
 
   const reactionActions: ReactionActions = useMemo(
@@ -1176,12 +967,9 @@ function ChatWorkspaceInner({
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
       handleTurnActivityEvent(eventType, data);
-      if (eventType !== "chat.typing") refreshUnlessUnauthorized();
-      if (eventType === "chat.pin" && activeWorkbenchId !== null) {
-        void loadPins(activeWorkbenchId);
-      }
+      if (eventType !== "chat.typing") refreshFeed();
     },
-    refreshUnlessUnauthorized,
+    refreshFeed,
   );
 
   /** The one door into the workbench settings surface — the gear button and
@@ -1200,7 +988,7 @@ function ChatWorkspaceInner({
     // (the mention popover picks it up via the reload below) and its
     // join event lands on the timeline.
     refreshWorkbenchLists();
-    await loadMessages(activeWorkbenchId);
+    refreshFeed();
   }
 
   /**
@@ -1277,18 +1065,31 @@ function ChatWorkspaceInner({
         },
         clientId: sent.clientId ?? nonce,
       };
-      // A background refresh may have already folded the confirmed
-      // message into `items` (refresh-first interleaving) — appending
-      // unconditionally would render it twice under one key.
-      setMessagesState((current) => {
-        if (current.kind !== "ready") return current;
-        const alreadyPresent = current.items.some(
-          (item) =>
-            item.id === confirmed.id || item.clientId === confirmed.clientId,
-        );
-        if (alreadyPresent) return current;
-        return { kind: "ready", items: [...current.items, confirmed] };
+      // A refresh already in flight was issued before this send and will
+      // report a mailbox without it — letting it resolve into the cache
+      // would blink the just-sent message back out. Cancelling first is
+      // what makes the write below the last word on this key.
+      await queryClient.cancelQueries({
+        queryKey: chatMessagesQueryKey(tenantId, activeWorkbenchId),
       });
+      // Written straight into the cache so the confirmed message replaces
+      // the pending bubble in the same render — there is never a frame
+      // where it has vanished from both while a refetch is still in
+      // flight. A refresh may have folded it in already (refresh-first
+      // interleaving); appending unconditionally would render it twice
+      // under one key.
+      queryClient.setQueryData(
+        chatMessagesQueryKey(tenantId, activeWorkbenchId),
+        (current: MessagesResponse | undefined) => {
+          if (current === undefined) return current;
+          const alreadyPresent = current.items.some(
+            (item) =>
+              item.id === confirmed.id || item.clientId === confirmed.clientId,
+          );
+          if (alreadyPresent) return current;
+          return { ...current, items: [...current.items, confirmed] };
+        },
+      );
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       // A message just landed in a workbench with an agent in it: a reply
       // is owed, so show the typing indicator now rather than sitting
@@ -1300,8 +1101,7 @@ function ChatWorkspaceInner({
       ) {
         noteAwaitingReply();
       }
-      await loadThreads(activeWorkbenchId);
-      await loadMessages(activeWorkbenchId, { background: true });
+      refreshFeed();
     } catch (cause) {
       if (cause instanceof ChatApiError && cause.status === 403) {
         toast(CHAT_STRINGS.mentionForbidden);
@@ -1388,7 +1188,7 @@ function ChatWorkspaceInner({
     }
     try {
       const forked = await forkThread(tenantId, activeWorkbenchId, messageId);
-      await loadThreads(activeWorkbenchId);
+      await threadsQuery.refetch();
       setPendingParentMessageId(null);
       setOpenThreadId(forked.id);
     } catch {
@@ -1813,7 +1613,7 @@ function ChatWorkspaceInner({
                     ) : (
                       <Button
                         variant="outline"
-                        onClick={() => void loadMessages(activeWorkbenchId)}
+                        onClick={() => void messagesQuery.refetch()}
                       >
                         Try again
                       </Button>
@@ -1893,53 +1693,59 @@ function ChatWorkspaceInner({
                       ? { scrollRestore: restoredScrollSnapshot }
                       : {})}
                     onScrollSnapshot={handleScrollSnapshot}
+                    footer={
+                      typingState !== null ? (
+                        <TypingIndicator
+                          label={typingLabel(
+                            typingState.principalId,
+                            activeWorkbench?.participants ?? [],
+                          )}
+                        />
+                      ) : (
+                        <AgentTypingIndicator
+                          names={typingAgentNames(
+                            streamingReply,
+                            activeWorkbench?.participants ?? [],
+                          )}
+                        />
+                      )
+                    }
                   />
                   <TurnActivityStrip activity={turnActivity} />
-                  {typingState !== null ? (
-                    <TypingIndicator
-                      label={typingLabel(
-                        typingState.principalId,
+                  <div className="chat-composer-stack">
+                    <Composer
+                      ref={composerRef}
+                      agents={mentionCandidatesFromParticipants(
                         activeWorkbench?.participants ?? [],
                       )}
-                    />
-                  ) : (
-                    <AgentTypingIndicator
-                      names={typingAgentNames(
-                        streamingReply,
-                        activeWorkbench?.participants ?? [],
-                      )}
-                    />
-                  )}
-                  <Composer
-                    ref={composerRef}
-                    agents={mentionCandidatesFromParticipants(
-                      activeWorkbench?.participants ?? [],
-                    )}
-                    participants={activeWorkbench?.participants ?? []}
-                    members={bringInMembersQuery.data ?? []}
-                    invitableAgents={invitableAgentsQuery.data ?? []}
-                    placeholder={composerPlaceholderFor(activeWorkbench)}
-                    onSend={handleSend}
-                    onInviteAgent={() => setInviteDialogOpen(true)}
-                    onOpenAgentsSettings={() => openWorkbenchSettings("agents")}
-                    onOpenRoutines={() => {
-                      if (onOpenRoutines !== undefined) {
-                        onOpenRoutines();
-                        return;
+                      participants={activeWorkbench?.participants ?? []}
+                      members={bringInMembersQuery.data ?? []}
+                      invitableAgents={invitableAgentsQuery.data ?? []}
+                      placeholder={composerPlaceholderFor(activeWorkbench)}
+                      onSend={handleSend}
+                      onInviteAgent={() => setInviteDialogOpen(true)}
+                      onOpenAgentsSettings={() =>
+                        openWorkbenchSettings("agents")
                       }
-                      toast(CHAT_STRINGS.runRoutineUnavailable);
-                    }}
-                    onCreateRoutineInSpace={() => {
-                      if (
-                        onCreateRoutineInSpace !== undefined &&
-                        activeWorkbenchId !== null
-                      ) {
-                        onCreateRoutineInSpace(activeWorkbenchId);
-                        return;
-                      }
-                      toast(CHAT_STRINGS.runRoutineUnavailable);
-                    }}
-                  />
+                      onOpenRoutines={() => {
+                        if (onOpenRoutines !== undefined) {
+                          onOpenRoutines();
+                          return;
+                        }
+                        toast(CHAT_STRINGS.runRoutineUnavailable);
+                      }}
+                      onCreateRoutineInSpace={() => {
+                        if (
+                          onCreateRoutineInSpace !== undefined &&
+                          activeWorkbenchId !== null
+                        ) {
+                          onCreateRoutineInSpace(activeWorkbenchId);
+                          return;
+                        }
+                        toast(CHAT_STRINGS.runRoutineUnavailable);
+                      }}
+                    />
+                  </div>
                 </>
               )}
             </>

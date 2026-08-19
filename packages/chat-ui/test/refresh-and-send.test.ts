@@ -12,11 +12,9 @@ import {
   composerPlaceholderFor,
   mergePendingSends,
   mergeStreamingReply,
-  nextMessagesState,
-  resolveMessageFeedTarget,
   withScrollSnapshot,
 } from "../src/chat-workspace";
-import type { MessagesState, PendingSend } from "../src/chat-workspace";
+import type { PendingSend } from "../src/chat-workspace";
 import {
   attachmentsAfterSend,
   attachmentBytesOnComposer,
@@ -34,102 +32,6 @@ import {
 import type { ComposerAttachment } from "../src/composer";
 import { CHAT_STRINGS } from "../src/strings";
 import { backoffDelayMs, shouldConnect } from "../src/use-workbench-stream";
-
-describe("nextMessagesState (B1: background refresh keeps the composer mounted)", () => {
-  const ready: MessagesState = {
-    kind: "ready",
-    items: [
-      {
-        id: "m1",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        parts: [{ kind: "text", text: "hi" }],
-        sender: { name: null, address: "prn_fixture1@agents.example" },
-      },
-    ],
-  };
-
-  test("a foreground load reflects a fresh success directly", () => {
-    const next = nextMessagesState(
-      { kind: "loading" },
-      { kind: "success", items: [] },
-      false,
-    );
-    expect(next).toEqual({ kind: "ready", items: [] });
-  });
-
-  test("a foreground load's failure replaces the view with an error state", () => {
-    const next = nextMessagesState(
-      ready,
-      {
-        kind: "error",
-        message: "boom",
-        workbenchNotFound: false,
-        isUnauthorized: false,
-      },
-      false,
-    );
-    expect(next).toEqual({
-      kind: "error",
-      message: "boom",
-      workbenchNotFound: false,
-      isUnauthorized: false,
-    });
-  });
-
-  test("a workbench-not-found failure carries that flag through to the rendered state", () => {
-    const next = nextMessagesState(
-      ready,
-      {
-        kind: "error",
-        message: "not found",
-        workbenchNotFound: true,
-        isUnauthorized: false,
-      },
-      false,
-    );
-    expect(next).toEqual({
-      kind: "error",
-      message: "not found",
-      workbenchNotFound: true,
-      isUnauthorized: false,
-    });
-  });
-
-  test("a background refresh never re-enters the loading state on success", () => {
-    const next = nextMessagesState(ready, { kind: "success", items: [] }, true);
-    expect(next.kind).toBe("ready");
-  });
-
-  test("a background refresh's failure leaves the previous ready items on screen", () => {
-    const next = nextMessagesState(
-      ready,
-      {
-        kind: "error",
-        message: "boom",
-        workbenchNotFound: false,
-        isUnauthorized: false,
-      },
-      true,
-    );
-    expect(next).toBe(ready);
-    expect(next.kind).not.toBe("error");
-  });
-
-  test("a background refresh's failure never clobbers even a prior loading state", () => {
-    const loading: MessagesState = { kind: "loading" };
-    const next = nextMessagesState(
-      loading,
-      {
-        kind: "error",
-        message: "boom",
-        workbenchNotFound: false,
-        isUnauthorized: false,
-      },
-      true,
-    );
-    expect(next).toBe(loading);
-  });
-});
 
 describe("draftAfterSend (B2: a failed send keeps the draft)", () => {
   test("clears the draft once the send succeeds", () => {
@@ -366,68 +268,6 @@ describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not 
     expect(composerPlaceholderFor({ kind: "chat", title: "" })).toBe(
       CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedWorkbench),
     );
-  });
-});
-
-describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
-  test("open thread loads that thread's messages", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: "thr_reply",
-        pendingParentMessageId: null,
-        rootThreadId: "thr_root",
-      }),
-    ).toEqual({ kind: "thread", threadId: "thr_reply" });
-  });
-
-  test("open thread wins over a pending parent", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: "thr_reply",
-        pendingParentMessageId: "msg_parent",
-        rootThreadId: "thr_root",
-      }),
-    ).toEqual({ kind: "thread", threadId: "thr_reply" });
-  });
-
-  test("pending new reply loads an empty feed", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: null,
-        pendingParentMessageId: "msg_parent",
-        rootThreadId: "thr_root",
-      }),
-    ).toEqual({ kind: "empty" });
-  });
-
-  test("root feed uses the root thread, not full workbench mail", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: null,
-        pendingParentMessageId: null,
-        rootThreadId: "thr_root",
-      }),
-    ).toEqual({ kind: "root-thread", rootThreadId: "thr_root" });
-  });
-
-  test("empty rootThreadId falls back to workbench mail (threads unavailable)", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: null,
-        pendingParentMessageId: null,
-        rootThreadId: "",
-      }),
-    ).toEqual({ kind: "workbench-mail" });
-  });
-
-  test("null rootThreadId falls back to workbench mail until threads resolve", () => {
-    expect(
-      resolveMessageFeedTarget({
-        openThreadId: null,
-        pendingParentMessageId: null,
-        rootThreadId: null,
-      }),
-    ).toEqual({ kind: "workbench-mail" });
   });
 });
 

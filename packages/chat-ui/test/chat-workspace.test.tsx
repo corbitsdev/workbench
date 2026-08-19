@@ -342,6 +342,26 @@ const DEPTH2_THREAD = {
   createdAt: "2026-01-01T00:02:00.000Z",
 };
 
+// One mailbox, every message stamped with the thread it belongs to — the
+// shape `GET /messages` returns since CL-6313. The client filters this
+// into the root feed and each open thread; it never fetches per thread.
+const THREADED_MESSAGES = [
+  {
+    id: "msg_1",
+    createdAt: "2026-01-01T00:00:30.000Z",
+    parts: [{ kind: "text", text: "root note" }],
+    sender: { name: null, address: "prn_alice@acme.example" },
+    threadId: ROOT_THREAD.id,
+  },
+  {
+    id: "msg_2",
+    createdAt: "2026-01-01T00:01:30.000Z",
+    parts: [{ kind: "text", text: "inside the thread" }],
+    sender: { name: null, address: "prn_alice@acme.example" },
+    threadId: DEPTH1_THREAD.id,
+  },
+];
+
 function stubThreadedFetch() {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   let forked = false;
@@ -365,9 +385,18 @@ function stubThreadedFetch() {
       return json({ ...DEPTH2_THREAD, parentMessageId: body.parentMessageId });
     }
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
-      const items = forked
-        ? [ROOT_THREAD, DEPTH1_THREAD, DEPTH2_THREAD]
-        : [ROOT_THREAD, DEPTH1_THREAD];
+      const items = (
+        forked
+          ? [ROOT_THREAD, DEPTH1_THREAD, DEPTH2_THREAD]
+          : [ROOT_THREAD, DEPTH1_THREAD]
+      ).map((thread) => ({
+        ...thread,
+        replyCount: THREADED_MESSAGES.filter((m) => m.threadId === thread.id)
+          .length,
+        lastActivityAt:
+          THREADED_MESSAGES.filter((m) => m.threadId === thread.id).at(-1)
+            ?.createdAt ?? null,
+      }));
       return json({ rootThreadId: ROOT_THREAD.id, items });
     }
     if (/\/threads\/thr_root\/messages$/.test(path)) {
@@ -403,16 +432,7 @@ function stubThreadedFetch() {
       if (init?.method === "POST") {
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
-      return json({
-        items: [
-          {
-            id: "msg_1",
-            createdAt: "2026-01-01T00:00:30.000Z",
-            parts: [{ kind: "text", text: "root note" }],
-            sender: { name: null, address: "prn_alice@acme.example" },
-          },
-        ],
-      });
+      return json({ items: THREADED_MESSAGES });
     }
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -1383,11 +1403,10 @@ describe("optimistic send (CL-6103)", () => {
 // back out of the timeline. This drives two overlapping background
 // refreshes with their GET responses deliberately reordered and asserts the
 // later-issued request's result is the one that sticks.
-describe("loadMessages request ordering (CL-6251)", () => {
-  test("a slow, stale refresh resolving after a newer one never reverts the timeline", async () => {
+describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
+  test("a refresh already in flight when a send lands never reverts the timeline", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     let messagesGetCount = 0;
-    let postCount = 0;
     // Set once the two competing background refreshes are about to be
     // triggered — every GET before this index is an incidental load the
     // race doesn't care about (see the mock below).
@@ -1412,10 +1431,9 @@ describe("loadMessages request ordering (CL-6251)", () => {
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
         if (init?.method === "POST") {
-          postCount += 1;
           return json({
-            id: `msg_new_${postCount}`,
-            createdAt: "2026-01-01T00:00:00.000Z",
+            id: "msg_new_2",
+            createdAt: "2026-01-01T00:00:01.000Z",
           });
         }
         const callIndex = messagesGetCount;
@@ -1439,15 +1457,15 @@ describe("loadMessages request ordering (CL-6251)", () => {
           parts: [{ kind: "text", text: "second" }],
           sender: { name: null, address: "prn_alice@acme.example" },
         };
-        // The first call once the race starts is the stream-drop's
-        // background refresh (the older ticket, issued first) —
-        // deliberately kept slow, and reports only the first message,
-        // correct as of its own request time, before the send below had
-        // landed. Every call after that is the send's own post-send
-        // refresh (the newer ticket, issued second) — resolves fast, and
-        // reports both messages, correct as of ITS request time.
+        // The first call once the race starts is the stream-drop's own
+        // refresh, deliberately kept slow: it reports only the first
+        // message, correct as of its own request time, before the send
+        // below had landed. It is still in flight when the send lands, so
+        // resolving it into the cache afterwards would blink the sent
+        // message back out. Every call after it reports both messages,
+        // correct as of ITS request time.
         if (callIndex === raceStartIndex) {
-          await sleep(60);
+          await sleep(400);
           return json({ items: [firstMessage] });
         }
         await sleep(5);
@@ -1482,13 +1500,13 @@ describe("loadMessages request ordering (CL-6251)", () => {
     // loading skeleton before the composer mounts.
     await act(() => sleep(100));
 
-    // Drop the stream: `onerror` starts polling, which fires one
-    // immediate background refresh — the older, deliberately-slow one.
+    // Drop the stream: `onerror` starts polling, which fires the
+    // deliberately-slow refresh. Wait past the coalescing window so it is
+    // genuinely in flight before the send goes out.
     raceStartIndex = messagesGetCount;
     act(() => firstStream().fail());
+    await act(() => sleep(300));
 
-    // Right behind it, a send fires its own post-send background
-    // refresh — `ticket` #3, the newer, fast one.
     const sendButton = harness.container.querySelector<HTMLButtonElement>(
       '[aria-label^="Send"]',
     );
@@ -1496,9 +1514,9 @@ describe("loadMessages request ordering (CL-6251)", () => {
     typeInComposer(harness.container, "second");
     act(() => sendButton.click());
 
-    // Long enough for the fast (newer-ticket) refresh to land and for the
-    // slow (stale-ticket) one to resolve after it.
-    await act(() => sleep(90));
+    // Long enough for the slow refresh to resolve after the send, and for
+    // the send's own refresh to land behind it.
+    await act(() => sleep(700));
 
     expect(
       harness.container.querySelector("#chat-message-msg_new_2"),
@@ -1597,13 +1615,12 @@ describe("Workbench header polish (CL-6106)", () => {
 });
 
 describe("switching workbenches never carries a stale root-thread id across", () => {
-  // CL-6067/6069 regression: `loadMessages`'s closure over `rootThreadId`
-  // can still hold the *previous* workbench's value the instant a workbench
-  // switch fires the reset effect (the reset's own `setRootThreadId(null)`
-  // hasn't committed yet). Trusting it sends the new workbench's messages
-  // request down the old workbench's thread id, which 404s and can leave the
-  // pane stuck on the loading skeleton behind the stale-thread-ref fallback
-  // cascade instead of rendering promptly.
+  // CL-6067/6069 regression, still guarded after CL-6313 made it
+  // structurally impossible: the timeline no longer fetches by thread id
+  // at all, and each workbench's feed has its own query key, so there is
+  // no closed-over id left to carry across a switch. What must hold is
+  // the same thing it always was — the new workbench renders its own
+  // messages promptly, and no request ever names another workbench.
   const WORKBENCH_A = { ...WORKBENCH_WIRE, id: "ch_a", title: "Workbench A" };
   const WORKBENCH_B = { ...WORKBENCH_WIRE, id: "ch_b", title: "Workbench B" };
 
@@ -1632,50 +1649,38 @@ describe("switching workbenches never carries a stale root-thread id across", ()
       if (/\/chat\/workbenches\/ch_b\/threads$/.test(path)) {
         return json({ rootThreadId: "thr_b", items: [] });
       }
-      const rootThread = (id: string) => ({
-        id,
-        kind: "root" as const,
-        parentMessageId: null,
-        parentThreadId: null,
-        runRef: null,
-        title: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-      });
-      if (/\/chat\/workbenches\/ch_a\/threads\/thr_a\/messages$/.test(path)) {
+      if (/\/chat\/workbenches\/ch_a\/messages/.test(path)) {
         return json({
-          thread: rootThread("thr_a"),
           items: [
             {
               id: "msg_a",
               createdAt: "2026-01-01T00:00:00.000Z",
               sender: { name: null, address: "user@x.localhost" },
               parts: [{ kind: "text", text: "A message" }],
+              threadId: "thr_a",
             },
           ],
         });
       }
-      if (/\/chat\/workbenches\/ch_b\/threads\/thr_b\/messages$/.test(path)) {
+      if (/\/chat\/workbenches\/ch_b\/messages/.test(path)) {
         return json({
-          thread: rootThread("thr_b"),
           items: [
             {
               id: "msg_b",
               createdAt: "2026-01-01T00:00:00.000Z",
               sender: { name: null, address: "user@x.localhost" },
               parts: [{ kind: "text", text: "B message" }],
+              threadId: "thr_b",
             },
           ],
         });
       }
-      // Any cross-workbench thread id combination is the bug this test
-      // guards against — record it and 404, exactly like the real hub
-      // would for a thread id that doesn't belong to that workbench.
-      if (/\/chat\/workbenches\/[^/]+\/threads\/[^/]+\/messages$/.test(path)) {
+      // A read for any other workbench is the bug this test guards
+      // against — record it and 404, exactly like the real hub would.
+      if (/\/chat\/workbenches\/[^/]+\/(messages|threads)/.test(path)) {
         wrongRequests.push(path);
         return notFound();
       }
-      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
-        return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
