@@ -72,7 +72,9 @@ const MemoryCallerScopeSchema = type({ kind: "'scoped'" }).or({
 export type MemoryCallerScope = typeof MemoryCallerScopeSchema.infer;
 
 const MemoryStatusResponseSchema = type({
-  plane: MemoryPlaneStatusSchema,
+  // Null for a caller who holds no memory here — the page explains their
+  // scope and never reads the plane's facts in that state.
+  plane: MemoryPlaneStatusSchema.or("null"),
   caller: MemoryCallerScopeSchema,
 });
 export type MemoryStatusResponse = typeof MemoryStatusResponseSchema.infer;

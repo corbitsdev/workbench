@@ -270,9 +270,44 @@ describe("createMemoryStatusRoutes' grant guard", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      plane: READY_STATUS,
+      plane: null,
       caller: { kind: "unscoped", reason: "no-org-principal" },
     });
+  });
+
+  // The plane is described only for a caller who has one. `describeStatus`
+  // resolves the caller's account tenant and throws for the one caller whose
+  // own tenant IS the operator tenant — precisely the caller whose scope is
+  // `no-account-tenant`. Asking the plane first turned that person's
+  // explanation into a 500 and showed them the operator-fault copy.
+  test("explains an unscoped caller without ever describing the plane", async () => {
+    let describeStatusCalls = 0;
+    const app = mountAs(
+      createMemoryStatusRoutes({
+        plane: {
+          describeStatus: async () => {
+            describeStatusCalls += 1;
+            throw new Error("no account tenant beneath the operator tenant");
+          },
+        },
+        requireGrant: () => async (_c, next) => {
+          await next();
+        },
+        describeCaller: async () => ({
+          kind: "unscoped",
+          reason: "no-account-tenant",
+        }),
+      }),
+    );
+
+    const response = await app.request("/status");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      plane: null,
+      caller: { kind: "unscoped", reason: "no-account-tenant" },
+    });
+    expect(describeStatusCalls).toBe(0);
   });
 
   // Nothing plants a grant on the `memory` resource. Every tenant owner

@@ -183,7 +183,12 @@ export type MemoryCallerScope =
  * rather than one flattened shape that would make the page guess.
  */
 export type MemoryStatusResponse = {
-  readonly plane: MemoryPlaneStatus;
+  /**
+   * `null` for a caller who holds no memory here. The plane's facts are
+   * about a store this caller has no reach into, and describing it would
+   * mean resolving an account tenant they may not have.
+   */
+  readonly plane: MemoryPlaneStatus | null;
   readonly caller: MemoryCallerScope;
 };
 
@@ -240,9 +245,18 @@ export function createMemoryStatusRoutes(
     // never invented ad hoc per caller.
     deps.requireGrant("memory", "status"),
     async (c) => {
+      // The caller first, and the plane only if they have one. Describing
+      // the plane means resolving the caller's account tenant, which throws
+      // for the one caller whose own tenant IS the operator tenant — the
+      // exact caller whose scope is `no-account-tenant`. Asking the plane
+      // first turned that person's explanation into a 500 and put the
+      // operator-fault copy in front of them.
+      const caller = await deps.describeCaller(c);
+      if (caller.kind === "unscoped") {
+        return c.json({ plane: null, caller } satisfies MemoryStatusResponse);
+      }
       const tenant = c.get("tenant");
       const plane = await deps.plane.describeStatus(tenant.id);
-      const caller = await deps.describeCaller(c);
       return c.json({ plane, caller } satisfies MemoryStatusResponse);
     },
   );

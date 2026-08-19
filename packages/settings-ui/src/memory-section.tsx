@@ -135,8 +135,19 @@ export function MemorySection({
         />
       );
     case "ready":
-      if (query.data.caller.kind === "unscoped") {
-        return <UnscopedNotice reason={query.data.caller.reason} />;
+      // A caller with no memory here gets the explanation, and the plane's
+      // facts ride back as `null` for them — the server never describes a
+      // store they have no reach into.
+      if (query.data.caller.kind === "unscoped" || query.data.plane === null) {
+        return (
+          <UnscopedNotice
+            reason={
+              query.data.caller.kind === "unscoped"
+                ? query.data.caller.reason
+                : "no-org-principal"
+            }
+          />
+        );
       }
       return (
         <SettingsPanel

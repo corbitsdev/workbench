@@ -51,7 +51,7 @@ const LEXICAL_PLANE: MemoryPlaneStatus = {
 };
 
 function renderSection(
-  plane: MemoryPlaneStatus,
+  plane: MemoryPlaneStatus | null,
   caller: MemoryCallerScope = { kind: "scoped" },
 ) {
   globalThis.fetch = (async (url: string) => {
@@ -276,6 +276,27 @@ describe("MemorySection", () => {
       await settle();
 
       expect(container.textContent).toContain("No account to remember under");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+  // The server sends no plane facts to a caller who has no memory here, so
+  // the page must explain their scope rather than fall through to the
+  // operator-fault copy.
+  test("explains the scope when the server sends no plane at all", async () => {
+    const { container, root } = renderSection(null, {
+      kind: "unscoped",
+      reason: "no-account-tenant",
+    });
+    try {
+      act(() => {
+        root.render(<MemorySection tenantId="ten_1" />);
+      });
+      await settle();
+
+      expect(container.textContent).toContain("No account to remember under");
+      expect(container.textContent).not.toContain("an operator");
     } finally {
       act(() => root.unmount());
       container.remove();
