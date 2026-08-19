@@ -196,6 +196,98 @@ numbers searched — flagged as NOT FOUND rather than guessed at.
 | Tool-id binding (CL-6034)                                                                                                                         | **NOT FOUND**                              | No "CL-6034" or tool-id-binding workaround found.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Audit API (CL-6025)                                                                                                                               | **NOT FOUND**                              | No "CL-6025" or dedicated audit-log workaround found; only generic, unrelated `audit` string hits in logging/telemetry code.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
+## Open upstream gaps patched in the vendored tree
+
+Fixes carried locally in `vendor/intx/*` because no published `@intx/*` covers
+them. Each one is a candidate to drop on the next re-pin — check the upstream
+code first, then delete the local delta and its note in `VENDORED.md`.
+
+### Terminal anchors could not consume their own in-flight mail
+
+`vendor/intx/hub-sessions/src/hub-session-lookups.ts` —
+`receiveWorkflowRunPack`
+
+Upstream gated the anchor lookup on `liveWorkflowRunStatuses`
+(`deployed | running`), so once a run went terminal the hub refused every
+pack pushed from that run's own address with `path_violation`. Two writes a
+terminal run legitimately still owes both live behind that gate:
+
+- `enqueueInbox` for mail that arrived during the teardown window, and
+- `markConsumed` carrying the `workflow_run_terminal` rejection that retires
+  such mail (`workflow-host/src/supervisor/supervisor.ts:2061`).
+
+Neither can land, so the sidecar withholds the ack, the hub redelivers, and
+the pair spins forever — observed as this trio repeating every ~10s against a
+finished workbench run:
+
+```
+WRN  hub·lookups: Workflow-run pack rejected for <run>: source address has no live deployment anchor
+WRN  workflow-host·supervisor: rejecting inbound mail <id>: workflow run <run> is terminal
+ERR  workflow-host·supervisor: dispatch loop iteration failed: failed to markConsumed for run <run>
+```
+
+**Local fix:** the live-status filter is gone; ownership is the exported pure
+helper `ownsWorkflowRunRepo` — a self-anchored `workflow_run` row with a
+routable address. The `sidecar_allocation` generation/ownership fences below
+it are untouched, so who may write is unchanged; only _when_ relaxes.
+Accepting a post-terminal pack is safe because the substrate's per-commit
+walk yields no new terminal events for an already-settled run. Covered by
+`vendor/intx/hub-sessions/src/hub-session-lookups.test.ts`.
+
+**Retire when** upstream either accepts consume-only writes from a terminal
+anchor, or stops delivering mail to a terminal run instead of redelivering it.
+
+### An event-only mail killed the run it was delivered to (CL-6164)
+
+`vendor/intx/workflow-host/src/supervisor/supervisor.ts` — the dispatch loop's
+`signal.deliver` branch
+
+Attachments-only mail is legitimate on the bus: `@corbits/chat`'s `encodeParts`
+leaves `content` empty for an event-only send, so a `workbench.agent-joined`
+post is a `conversation.message` whose `text/plain` part is empty and whose
+payload is a JSON attachment. `extractConversationText` returns `""` for it,
+and upstream delivered that `""` as the resume payload. Downstream,
+`step-invoker.ts` hands it to `agent.send`, which throws
+(`createInboundMessage: content, when provided, must be a non-empty string`) —
+surfacing as `StepFailed` with `retriesExhausted`, then `RunFailed`.
+
+Workbench already knew this hazard and had closed the **turn-1** door:
+`packages/chat/src/platform-adapter.ts`'s `WORKBENCH_HOST_STEP_INPUT` pins the
+workbench-host step's input to a literal so `trigger.payload` can never carry
+an empty body into `agent.send`. The **turn-2+** door was still open, because
+the parked-resume path never consults the step's `input` selector — the
+supervisor extracts the text from the mail itself. Observed shape, a workbench
+anchor dead 676ms after start because someone joined its bench:
+
+```
+StepStarted    input: inline:"workbench-host anchor turn"
+SignalAwaited  __signal__:corr-1-...  parkKind: input
+SignalReceived payload: ""
+StepFailed     createInboundMessage: `content`, when provided, must be a non-empty string   retriesExhausted
+RunFailed      one or more steps failed
+```
+
+Every later chat message then mailed a terminal run, which is what produced the
+`path_violation` redelivery loop above — the two gaps compound.
+
+**Local fix:** mail whose extracted body has no text is dropped and consumed
+with an `empty_conversation_content` rejection, exactly as the adjacent
+malformed-mail branch already does, instead of being delivered. The gate is the
+pure helper `hasConversationText` in `workflow-host/src/conversation-text.ts`,
+covered by `conversation-text.test.ts` against a fixture built to `encodeParts`'
+real event-only shape.
+
+**Retire when** upstream drops or otherwise guards empty-body mail on the
+resume path. Two adjacent issues this surfaced, neither patched here: the same
+mail was delivered twice under one `signalId` 110ms apart (a single mail can
+resume a parked run twice), and `run-child.ts`'s turn-1 `resolveTriggerPayload`
+still has the unguarded extraction — harmless for workbench only because of the
+pinned literal above, but live for any workflow using the default selector.
+Worth reporting alongside the adjacent question this surfaced: an anchor run
+whose status flips terminal while its deployment stays mounted and its
+workbench stays the active chat surface is what generates the in-flight mail
+in the first place.
+
 **On the 7 NOT FOUND items:** the workaround may live under a name not
 guessed here, may not have landed yet, or the ticket may describe a gap with
 no code-side mitigation to retire. Recommend re-running this check against
