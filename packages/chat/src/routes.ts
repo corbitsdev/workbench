@@ -1158,7 +1158,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             .catch((err: unknown) => {
               log.error(
                 "Pre-warm deploy failed for workbench {workbenchId}'s agent " +
-                  "{agentAddress}; the next message to it retries the wake",
+                  "{agentAddress}; the next message to it retries the wake: {err}",
                 { workbenchId, agentAddress, err },
               );
             });
@@ -1394,6 +1394,31 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  // A message's thread is the one it was assigned to, or the root thread
+  // when it was never assigned at all — `workbench_thread_messages` states
+  // that default ("root feed by default"), and `POST /messages` is the only
+  // caller that records membership, so every agent-originated message
+  // arrives with none. Both thread-aware read routes resolve it the same
+  // way, from one assignments read rather than a request per thread.
+  async function resolveThreadMembership(
+    tenantId: string,
+    workbenchId: string,
+  ): Promise<
+    | { readonly rootThreadId: string; readonly threadIdOf: (id: string) => string }
+    | undefined
+  > {
+    if (deps.threads === undefined) return undefined;
+    const root = await deps.threads.ensureRootThread(tenantId, workbenchId);
+    const assignments = await deps.threads.listThreadAssignments(
+      tenantId,
+      workbenchId,
+    );
+    return {
+      rootThreadId: root.id,
+      threadIdOf: (id) => assignments.get(id) ?? root.id,
+    };
+  }
+
   app.get(
     "/workbenches/:id/threads",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
@@ -1406,19 +1431,56 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (deps.threads === undefined) {
         return c.json({ rootThreadId: "", items: [] as const });
       }
-      const root = await deps.threads.ensureRootThread(tenant.id, workbenchId);
+      const membership = await resolveThreadMembership(tenant.id, workbenchId);
+      if (membership === undefined) {
+        return c.json({ rootThreadId: "", items: [] as const });
+      }
       const items = await deps.threads.listThreads(tenant.id, workbenchId);
+
+      // Reply activity for every thread from the one mailbox read the
+      // per-thread feed would otherwise repeat once per thread (CL-6313):
+      // the client renders "N replies" and a last-activity stamp on each
+      // affordance, and fanning out to `GET /threads/:id/messages` to
+      // count them turned every timeline refresh into N full mailbox reads.
+      const listed = await deps.platform.listMail({
+        tenantId: tenant.id,
+        workbenchId,
+      });
+      const activityByThreadId = new Map<
+        string,
+        { count: number; lastActivityAt: string }
+      >();
+      for (const item of listed.items) {
+        const threadId = membership.threadIdOf(item.id);
+        const current = activityByThreadId.get(threadId);
+        activityByThreadId.set(threadId, {
+          count: (current?.count ?? 0) + 1,
+          lastActivityAt:
+            current === undefined || item.createdAt > current.lastActivityAt
+              ? item.createdAt
+              : current.lastActivityAt,
+        });
+      }
+
       return c.json({
-        rootThreadId: root.id,
-        items: items.map((t) => ({
-          id: t.id,
-          kind: t.kind,
-          parentMessageId: t.parentMessageId,
-          parentThreadId: t.parentThreadId,
-          runRef: t.runRef,
-          title: t.title,
-          createdAt: t.createdAt.toISOString(),
-        })),
+        rootThreadId: membership.rootThreadId,
+        items: items.map((t) => {
+          const activity = activityByThreadId.get(t.id);
+          return {
+            id: t.id,
+            kind: t.kind,
+            parentMessageId: t.parentMessageId,
+            parentThreadId: t.parentThreadId,
+            runRef: t.runRef,
+            title: t.title,
+            createdAt: t.createdAt.toISOString(),
+            replyCount: activity?.count ?? 0,
+            // Null, never the thread's own creation time: a thread with
+            // no messages has had no activity, and dating it by its
+            // creation would sort an empty thread among live ones.
+            lastActivityAt: activity?.lastActivityAt ?? null,
+          };
+        }),
       });
     },
   );
@@ -1497,18 +1559,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // `workbench-service`'s join and leave notices) arrives with none:
       // listing a feed by membership rows alone would silently hide all
       // of them, a fresh chat's very first agent reply included.
-      const root = await deps.threads.ensureRootThread(tenant.id, workbenchId);
-      const assignments = await deps.threads.listThreadAssignments(
-        tenant.id,
-        workbenchId,
-      );
+      const membership = await resolveThreadMembership(tenant.id, workbenchId);
+      if (membership === undefined) {
+        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+      }
       const listed = await deps.platform.listMail({
         tenantId: tenant.id,
         workbenchId,
       });
       const items = await Promise.all(
         listed.items
-          .filter((item) => (assignments.get(item.id) ?? root.id) === threadId)
+          .filter((item) => membership.threadIdOf(item.id) === threadId)
           .map(async (item) => ({
             id: item.id,
             createdAt: item.createdAt,
@@ -1609,6 +1670,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         cursor !== undefined ? { ...listMailParams, cursor } : listMailParams,
       );
 
+      // Stamping each message with its thread is what lets one client
+      // query serve the root feed, every open thread, and reply counts
+      // (CL-6313) — this route already reads the whole mailbox, so the
+      // membership resolve costs one extra read, not one per thread.
+      // Absent (not a fabricated id) on a host that mounts no thread
+      // store, matching `GET /threads`' own `rootThreadId: ""` there.
+      const membership = await resolveThreadMembership(
+        access.ownerTenantId,
+        workbenchId,
+      );
+
       const items = await Promise.all(
         listed.items.map(async (item) => {
           const sender = senderOf(item.mail);
@@ -1618,7 +1690,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             workbenchId,
             sender.address,
           );
-          return {
+          const base = {
             id: item.id,
             createdAt: item.createdAt,
             sender:
@@ -1630,6 +1702,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 deps.platform.fetchBlob(workbenchId, blobId),
             }),
           };
+          return membership === undefined
+            ? base
+            : { ...base, threadId: membership.threadIdOf(item.id) };
         }),
       );
 
