@@ -240,8 +240,8 @@ every workbench. A person's notes follow them across every workbench under
 that org, and two orgs never collide.
 
 A principal is scoped to one tenancy; the user behind it is the durable
-identity. So a browser caller is resolved to *their own principal in the org
-tenant*, by the same `(tenantId, kind: "user", refId)` lookup
+identity. So a browser caller is resolved to _their own principal in the org
+tenant_, by the same `(tenantId, kind: "user", refId)` lookup
 `createResolveTenant` uses to seat a caller anywhere
 (`apps/hub/src/org-principal.ts`). Their grants and role assignments live in
 the org tenant alongside the memory, so authorization resolves where the data
@@ -255,23 +255,32 @@ exposed to the host, the same default the Slack-Connect-style projection above
 takes. The Memory page explains this rather than reporting a fault. Opening it
 would be an explicit join setting, not a default.
 
-An agent is a principal too (`kind: "workflow"`, minted per run), and it is
-bounded by whoever invoked it — an agent that could reach further than the
-person who started it is privilege escalation wearing a tool pin. Every launch
-path names its invoker (`LaunchFoldedRunParams.invokerPrincipalId`; for a
-scheduled routine or a webhook, the routine's or trigger's creator), and the
-mint transaction writes the run's authority as real `grant` rows in the org
-tenant, computed as the intersection of what its pinned packages need with what
-the invoker holds (`apps/hub/src/run-hub-grants.ts`). An invoker holding
-nothing yields no rows: the run still launches and its memory tools fail
-closed.
+An agent is a principal too (`kind: "workflow"`, minted per run), and its
+_capability_ authority is bounded by whoever invoked it — an agent that could
+reach further than the person who started it is privilege escalation wearing a
+tool pin. Every launch path names its invoker
+(`LaunchFoldedRunParams.invokerPrincipalId`; for a scheduled routine or a
+webhook, the routine's or trigger's creator), and the mint transaction writes
+the run's authority as real `grant` rows in the org tenant, computed as the
+intersection of what its pinned packages need with what the invoker holds
+(`apps/hub/src/run-hub-grants.ts`). An invoker holding nothing yields no rows:
+the run still launches and its memory tools fail closed.
+
+Capability authority is not document visibility, and today a run has only the
+former. `@corbits/memory`'s `canAccessDocument` admits a caller to a document
+when they created it or when they hold an allow on one of its access tags
+(`memory.owner:<principalId>`), and a run's principal is minted fresh per run.
+So a run may call `memory_search`, but it sees only what that same run wrote —
+not its invoker's documents, and not a sibling run's. Nothing mints a run its
+invoker's owner tag. Sharing a person's memory with the agents they invoke is a
+deliberate privacy decision and is not made here.
 
 Two grant planes, which must not be conflated:
 
-| Plane | Consumer | Shape | Written |
-| --- | --- | --- | --- |
-| Child wire (`runs/<runId>/grants.json`) | the spawned child's authz gate | `tool:<qualifiedId>` / `invoke` | at deploy, by `deployAtHead` |
-| Hub-side `grant` rows | the hub's own `requireGrant` on HTTP routes | e.g. `memory` / `add` | at mint, in the org tenant |
+| Plane                                   | Consumer                                    | Shape                           | Written                      |
+| --------------------------------------- | ------------------------------------------- | ------------------------------- | ---------------------------- |
+| Child wire (`runs/<runId>/grants.json`) | the spawned child's authz gate              | `tool:<qualifiedId>` / `invoke` | at deploy, by `deployAtHead` |
+| Hub-side `grant` rows                   | the hub's own `requireGrant` on HTTP routes | e.g. `memory` / `add`           | at mint, in the org tenant   |
 
 The wire frame decides whether a tool may be invoked at all; the rows decide
 what the hub honours once that tool calls back in. `PinnedToolGrantDeclaration.action`
@@ -279,12 +288,22 @@ is fixed to `"invoke"` for exactly this reason — a widened action let a pinned
 package name any resource/action pair it liked in a file the hub never reads,
 which looked correct while the call went on 403-ing.
 
-The rows carry no expiry. A workbench host or invited agent is woken
-indefinitely and its invoker is gone by the first wake, so a time-boxed
-delegation would silently strip its memory with no path to renewal. A failed
-launch revokes them explicitly, because upstream deactivates a terminal run's
-principal rather than deleting it, so the `grant.principalId` cascade never
-fires.
+The rows carry no expiry, which is a deliberate trade with three known costs
+worth stating rather than discovering:
+
+- Nothing re-derives a run's authority after the mint, so a person later
+  removed from the org does not lose the reach of agents they already
+  launched. The active-status check applies at launch only.
+- A run whose recorded invoker is itself an agent — an agent can create a
+  routine, and the routine's creator is what the scheduled path passes — gets
+  no authority at all, because a delegation cannot be re-delegated. It fails
+  closed and silently; its memory tools simply never work.
+- A failed launch and a one-shot teardown revoke their rows, but a task,
+  routine, or webhook run that completes normally keeps them. Upstream
+  deactivates a terminal run's principal rather than deleting it, so the
+  `grant.principalId` cascade never fires. The rows are inert — an inactive
+  principal is refused a seat — but they accumulate per run, and a periodic
+  reaper over deactivated principals should collect them.
 
 ## Interchange gaps (upstream only)
 
