@@ -112,20 +112,35 @@ test("the prompt has Myra load the writing-system-prompts skill before authoring
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("writing-system-prompts");
 });
 
-test("the agent pins memory, capability, and the manager-tools bundles — real package names, resolved at deploy time", () => {
+test("the agent pins memory, capability, and the manager-tools bundles at the versions the workspace publishes", async () => {
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
-  expect(ASSISTANT_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/memory-tools", version: "0.0.3" },
-    { name: "@corbits/capability-tools", version: "0.0.2" },
-    { name: "@corbits/routines-tools", version: "0.0.4" },
-    { name: "@corbits/agent-directory-tools", version: "0.0.3" },
-    { name: "@corbits/task-dispatch-tools", version: "0.0.2" },
-    { name: "@corbits/connections-tools", version: "0.0.2" },
-    { name: "@corbits/skills-tools", version: "0.0.4" },
-    { name: "@corbits/mcp-tools", version: "0.0.3" },
-    { name: "@corbits/interaction-tools", version: "0.0.2" },
+  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toEqual([
+    "@corbits/memory-tools",
+    "@corbits/capability-tools",
+    "@corbits/routines-tools",
+    "@corbits/agent-directory-tools",
+    "@corbits/task-dispatch-tools",
+    "@corbits/connections-tools",
+    "@corbits/skills-tools",
+    "@corbits/mcp-tools",
+    "@corbits/interaction-tools",
   ]);
+  // A pin the registry cannot resolve fails every assistant deploy, so
+  // each one must name a version the workspace actually publishes.
+  for (const pin of ASSISTANT_TOOL_PACKAGE_PINS) {
+    const manifestPath = new URL(
+      `../../../packages/${pin.name.replace("@corbits/", "")}/package.json`,
+      import.meta.url,
+    );
+    const manifest = (await Bun.file(manifestPath).json()) as {
+      version: string;
+    };
+    expect({ name: pin.name, version: pin.version }).toEqual({
+      name: pin.name,
+      version: manifest.version,
+    });
+  }
 });
 
 test("the prompt tells Myra to discover an MCP server's tools before calling one", () => {
