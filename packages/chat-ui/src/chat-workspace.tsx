@@ -31,7 +31,6 @@ import {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
   describeChatError,
-  forkThread,
   inviteAgent,
   listWorkbenches,
   listInvitableDefinitions,
@@ -44,7 +43,6 @@ import {
 } from "./api";
 import type {
   Workbench,
-  WorkbenchThread,
   MessageItem,
   MessagesResponse,
   ParticipantRecord,
@@ -87,12 +85,14 @@ import {
 import type { ProfileSubject } from "./profile-subject";
 import { useWorkbenchStream } from "./use-workbench-stream";
 import { useWorkbenchFeed, chatMessagesQueryKey } from "./use-workbench-feed";
+import { useThreadNavigation } from "./use-thread-navigation";
+import { useWorkbenchTimelineView } from "./workbench-timeline-view";
 export {
   chatFeedQueryKeyPrefix,
   chatThreadsQueryKey,
   chatPinsQueryKey,
 } from "./use-workbench-feed";
-export type { MessagesState } from "./use-workbench-feed";
+export type { MessagesState } from "./workbench-timeline-view";
 
 /**
  * The host's answer to "which bench does this account chat in": mirrors
@@ -342,8 +342,8 @@ export function mergeStreamingReply(
   participants: readonly ParticipantRecord[],
 ): readonly TimelineMessageItem[] {
   // A pending reply with no tokens yet stays off the timeline — an
-  // empty bubble with no timestamp reads as broken; the typing line in
-  // the incoming-message slot owns that phase until the first delta lands.
+  // empty bubble with no timestamp reads as broken; the typing pulse
+  // just above the prompt owns that phase until the first delta lands.
   if (streamingReply === null || streamingReply.text === "") return items;
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
@@ -607,10 +607,7 @@ function ChatWorkspaceInner({
   // null = workbench root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
-  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
-  const [pendingParentMessageId, setPendingParentMessageId] = useState<
-    string | null
-  >(null);
+  // Thread navigation is resolved after the feed below, which it reads.
   // This composer's own optimistic sends — see `mergePendingSends`. A
   // workbench switch drops whatever was pending in the previous workbench:
   // its composer submit targeted that workbench, not wherever the reader
@@ -619,35 +616,41 @@ function ChatWorkspaceInner({
 
   const composerRef = useRef<ComposerHandle>(null);
 
-  const {
-    threads,
-    rootThreadId,
-    pinnedMessages,
-    threadMetaByMessageId,
-    messagesState,
-    threadsLoaded,
-    refreshFeed,
-    refetchMessages,
-    refetchThreads,
-  } = useWorkbenchFeed({
+  const feed = useWorkbenchFeed({
     tenantId,
     activeWorkbenchId,
-    openThreadId,
-    pendingParentMessageId,
     ...(onWorkbenchNotFound !== undefined ? { onWorkbenchNotFound } : {}),
   });
+  const { threads, rootThreadId, pinnedMessages, refreshFeed } = feed;
 
-  // A remembered thread id can outlive the run it named — across a hub
-  // restart the reconnect-ownership challenge treats the run as dead and
-  // every id under it disappears. That is a stale reference, not a
-  // failure: drop it and fall back to the workbench's live feed rather
-  // than leaving the reader staring at an empty thread.
-  useEffect(() => {
-    if (openThreadId === null || !threadsLoaded) return;
-    if (!threads.some((thread) => thread.id === openThreadId)) {
-      setOpenThreadId(null);
-    }
-  }, [openThreadId, threads, threadsLoaded]);
+  const navigation = useThreadNavigation({
+    tenantId,
+    activeWorkbenchId,
+    threads,
+    rootThreadId,
+    threadsLoaded: feed.threadsLoaded,
+    refetchThreads: feed.refetchThreads,
+  });
+  const {
+    openThreadId,
+    pendingParentMessageId,
+    inThreadView,
+    openThreadParent,
+    threadTitle,
+    depth1Threads,
+    subThreadsByParentId,
+    openThreadForMessage,
+    forkMessage,
+    openThreadById,
+    closeThread,
+  } = navigation;
+
+  const { messagesState, threadMetaByMessageId } = useWorkbenchTimelineView({
+    tenantId,
+    activeWorkbenchId,
+    feed,
+    navigation,
+  });
 
   // Picking a default workbench is this component's own fallback for "no
   // workbench named in the URL yet".
@@ -658,12 +661,11 @@ function ChatWorkspaceInner({
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
 
-  // Switching workbenches resets the thread view. The feeds themselves
-  // need no reload: each workbench has its own query key, so the new
-  // one's data is either already cached or fetched on mount.
+  // Switching workbenches drops whatever this composer had pending: the
+  // submit targeted that workbench, not wherever the reader went next.
+  // The feeds need no reload (each workbench has its own query key) and
+  // the thread view resets inside `useThreadNavigation`.
   useEffect(() => {
-    setOpenThreadId(null);
-    setPendingParentMessageId(null);
     setPendingSends([]);
   }, [activeWorkbenchId]);
 
@@ -850,8 +852,7 @@ function ChatWorkspaceInner({
           ...inviteOption,
         });
         if (sent.threadId !== undefined) {
-          setOpenThreadId(sent.threadId);
-          setPendingParentMessageId(null);
+          openThreadById(sent.threadId);
         }
       } else {
         sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
@@ -959,52 +960,6 @@ function ChatWorkspaceInner({
     }
   }
 
-  function openThreadForMessage(messageId: string) {
-    const existing = threads.find(
-      (t) => t.kind === "reply" && t.parentMessageId === messageId,
-    );
-    if (existing !== undefined) {
-      setPendingParentMessageId(null);
-      setOpenThreadId(existing.id);
-      return;
-    }
-    setOpenThreadId(null);
-    setPendingParentMessageId(messageId);
-  }
-
-  /**
-   * The fork affordance (CL-5948): any message inside an open thread can
-   * spawn a sub-thread rooted at it. Unlike the lazy root-feed reply
-   * above, a fork is created eagerly — the server resolves depth (a new
-   * depth-2 sub-thread, or a depth-cap-redirected sibling if the origin
-   * message is already inside one) so this UI never has to reason about
-   * nesting itself.
-   */
-  async function forkMessage(messageId: string) {
-    if (activeWorkbenchId === null) return;
-    const existing = threads.find(
-      (t) => t.kind === "reply" && t.parentMessageId === messageId,
-    );
-    if (existing !== undefined) {
-      setPendingParentMessageId(null);
-      setOpenThreadId(existing.id);
-      return;
-    }
-    try {
-      const forked = await forkThread(tenantId, activeWorkbenchId, messageId);
-      await refetchThreads();
-      setPendingParentMessageId(null);
-      setOpenThreadId(forked.id);
-    } catch {
-      toast(CHAT_STRINGS.forkThreadError);
-    }
-  }
-
-  function closeThread() {
-    setOpenThreadId(null);
-    setPendingParentMessageId(null);
-  }
-
   const activeWorkbench =
     workbenchesState.kind === "ready"
       ? [...workbenchesState.workbenches, ...workbenchesState.chats].find(
@@ -1068,45 +1023,6 @@ function ChatWorkspaceInner({
     onSettingsOpenChange,
   ]);
 
-  const replyThreads = useMemo(
-    () => threads.filter((t) => t.kind === "reply"),
-    [threads],
-  );
-  // Two levels, stop: a depth-1 thread hangs off the root; a depth-2
-  // sub-thread hangs off a depth-1 thread (CL-5908). Grouping threads
-  // menu items and the breadcrumb both key off this same split.
-  const depth1Threads = useMemo(
-    () => replyThreads.filter((t) => t.parentThreadId === rootThreadId),
-    [replyThreads, rootThreadId],
-  );
-  const subThreadsByParentId = useMemo(() => {
-    const map = new Map<string, WorkbenchThread[]>();
-    for (const t of replyThreads) {
-      if (t.parentThreadId === null || t.parentThreadId === rootThreadId) {
-        continue;
-      }
-      const list = map.get(t.parentThreadId) ?? [];
-      map.set(t.parentThreadId, [...list, t]);
-    }
-    return map;
-  }, [replyThreads, rootThreadId]);
-  const openThread =
-    openThreadId === null
-      ? undefined
-      : threads.find((t) => t.id === openThreadId);
-  // A sub-thread's breadcrumb parent segment — undefined for a depth-1
-  // thread (or no thread open at all), which breadcrumbs straight back to
-  // the workbench.
-  const openThreadParent =
-    openThread?.parentThreadId !== undefined &&
-    openThread.parentThreadId !== null &&
-    openThread.parentThreadId !== rootThreadId
-      ? threads.find((t) => t.id === openThread.parentThreadId)
-      : undefined;
-  const inThreadView = openThreadId !== null || pendingParentMessageId !== null;
-  const threadTitle =
-    openThread?.title ??
-    (pendingParentMessageId !== null ? "New thread" : "Thread");
   // Team stack: every active agent + live human for the top bar.
   const teamStack = buildTeamAvatarStack(
     activeWorkbench?.participants ?? [],
@@ -1223,8 +1139,7 @@ function ChatWorkspaceInner({
                           type="button"
                           className="chat-thread-breadcrumb-link"
                           onClick={() => {
-                            setPendingParentMessageId(null);
-                            setOpenThreadId(openThreadParent.id);
+                            openThreadById(openThreadParent.id);
                           }}
                         >
                           {openThreadParent.title ?? "Thread"}
@@ -1271,8 +1186,7 @@ function ChatWorkspaceInner({
                               role="menuitem"
                               className="chat-threads-menu-item"
                               onClick={() => {
-                                setPendingParentMessageId(null);
-                                setOpenThreadId(thread.id);
+                                openThreadById(thread.id);
                               }}
                             >
                               {thread.title ??
@@ -1288,8 +1202,7 @@ function ChatWorkspaceInner({
                                   role="menuitem"
                                   className="chat-threads-menu-item chat-threads-menu-item-nested"
                                   onClick={() => {
-                                    setPendingParentMessageId(null);
-                                    setOpenThreadId(subThread.id);
+                                    openThreadById(subThread.id);
                                   }}
                                 >
                                   {subThread.title ??
@@ -1417,7 +1330,7 @@ function ChatWorkspaceInner({
                     ) : (
                       <Button
                         variant="outline"
-                        onClick={() => refetchMessages()}
+                        onClick={() => feed.refetchMessages()}
                       >
                         Try again
                       </Button>
@@ -1439,8 +1352,7 @@ function ChatWorkspaceInner({
                         type="button"
                         className="chat-thread-origin-banner-link"
                         onClick={() => {
-                          setPendingParentMessageId(null);
-                          setOpenThreadId(openThreadParent.id);
+                          openThreadById(openThreadParent.id);
                         }}
                       >
                         {openThreadParent.title ?? "Thread"}
@@ -1497,26 +1409,24 @@ function ChatWorkspaceInner({
                       ? { scrollRestore: restoredScrollSnapshot }
                       : {})}
                     onScrollSnapshot={handleScrollSnapshot}
-                    footer={
-                      typingState !== null ? (
-                        <TypingIndicator
-                          label={typingLabel(
-                            typingState.principalId,
-                            activeWorkbench?.participants ?? [],
-                          )}
-                        />
-                      ) : (
-                        <AgentTypingIndicator
-                          names={typingAgentNames(
-                            streamingReply,
-                            activeWorkbench?.participants ?? [],
-                          )}
-                        />
-                      )
-                    }
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
+                    {typingState !== null ? (
+                      <TypingIndicator
+                        label={typingLabel(
+                          typingState.principalId,
+                          activeWorkbench?.participants ?? [],
+                        )}
+                      />
+                    ) : (
+                      <AgentTypingIndicator
+                        names={typingAgentNames(
+                          streamingReply,
+                          activeWorkbench?.participants ?? [],
+                        )}
+                      />
+                    )}
                     <Composer
                       ref={composerRef}
                       agents={mentionCandidatesFromParticipants(

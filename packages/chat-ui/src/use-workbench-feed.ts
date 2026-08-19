@@ -18,14 +18,13 @@ import {
   listMessages,
   listPinnedMessages,
   listThreads,
-  putReadState,
 } from "./api";
 import type { MessageItem, PinnedMessage, WorkbenchThreadRow } from "./api";
-import { selectThreadFeed, threadAffordanceMeta } from "./thread-feed";
-import type { ThreadAffordanceMeta } from "./timeline";
 
-/** What the timeline renders, as a state the view can switch on. */
-export type MessagesState =
+/** Whether this workbench's mailbox has loaded, and why not if it hasn't.
+ * The items themselves are a separate question — which slice of the
+ * mailbox the reader is looking at — so they are not carried here. */
+export type FeedStatus =
   | { readonly kind: "loading" }
   | {
       readonly kind: "error";
@@ -39,7 +38,7 @@ export type MessagesState =
        * instead of a retry that can never succeed. */
       readonly isUnauthorized: boolean;
     }
-  | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
+  | { readonly kind: "ready" };
 
 /** How long a loaded feed counts as fresh. An agent turn emits dozens of
  * stream events in under a second; with a stale window every one of them
@@ -88,8 +87,10 @@ export interface WorkbenchFeed {
   readonly threads: readonly WorkbenchThreadRow[];
   readonly rootThreadId: string;
   readonly pinnedMessages: readonly PinnedMessage[];
-  readonly threadMetaByMessageId: ReadonlyMap<string, ThreadAffordanceMeta>;
-  readonly messagesState: MessagesState;
+  /** Every message in the workbench, unfiltered. What thread a reader is
+   * looking at selects a slice of this — see `./thread-feed.ts`. */
+  readonly loadedMessages: readonly MessageItem[];
+  readonly feedStatus: FeedStatus;
   readonly threadsLoaded: boolean;
   readonly refreshFeed: () => void;
   readonly refetchMessages: () => void;
@@ -99,17 +100,9 @@ export interface WorkbenchFeed {
 export function useWorkbenchFeed(args: {
   readonly tenantId: string;
   readonly activeWorkbenchId: string | null;
-  readonly openThreadId: string | null;
-  readonly pendingParentMessageId: string | null;
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
 }): WorkbenchFeed {
-  const {
-    tenantId,
-    activeWorkbenchId,
-    openThreadId,
-    pendingParentMessageId,
-    onWorkbenchNotFound,
-  } = args;
+  const { tenantId, activeWorkbenchId, onWorkbenchNotFound } = args;
   const queryClient = useQueryClient();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -155,23 +148,6 @@ export function useWorkbenchFeed(args: {
   // exists, and from the message the reader is replying to before it
   // does — one value either way, so the feed never has to know which
   // case it is in.
-  const threadParentMessageId =
-    threads.find((thread) => thread.id === openThreadId)?.parentMessageId ??
-    pendingParentMessageId;
-  const feedItems = useMemo(
-    () =>
-      selectThreadFeed(loadedMessages, {
-        openThreadId,
-        parentMessageId: threadParentMessageId,
-        rootThreadId,
-      }),
-    [loadedMessages, openThreadId, threadParentMessageId, rootThreadId],
-  );
-  const threadMetaByMessageId = useMemo(
-    () => threadAffordanceMeta(threads, loadedMessages),
-    [threads, loadedMessages],
-  );
-
   // A 401 is terminal for this session: keep refetching and the app would
   // hammer the hub unauthenticated forever, so every refresh trigger
   // below checks this first. A 404 means the workbench itself is gone
@@ -187,11 +163,9 @@ export function useWorkbenchFeed(args: {
   // React Query keeps the last successful data through a failed refetch,
   // so a background failure leaves the timeline exactly as it was and
   // only a load with nothing to show yet surfaces the error page.
-  const messagesState: MessagesState = useMemo(() => {
+  const feedStatus: FeedStatus = useMemo(() => {
     if (activeWorkbenchId === null) return { kind: "loading" };
-    if (messagesQuery.data !== undefined) {
-      return { kind: "ready", items: feedItems };
-    }
+    if (messagesQuery.data !== undefined) return { kind: "ready" };
     if (messagesError !== null) {
       return {
         kind: "error",
@@ -204,7 +178,6 @@ export function useWorkbenchFeed(args: {
   }, [
     activeWorkbenchId,
     messagesQuery.data,
-    feedItems,
     messagesError,
     workbenchNotFound,
     isUnauthorized,
@@ -215,26 +188,6 @@ export function useWorkbenchFeed(args: {
       onWorkbenchNotFound?.(activeWorkbenchId);
     }
   }, [workbenchNotFound, activeWorkbenchId, onWorkbenchNotFound]);
-
-  // Marking read follows the root feed only: a reader inside a thread
-  // hasn't seen the main timeline, so advancing the cursor there would
-  // clear an unread badge for messages they never looked at.
-  useEffect(() => {
-    if (activeWorkbenchId === null) return;
-    if (openThreadId !== null || pendingParentMessageId !== null) return;
-    const last = feedItems.at(-1);
-    if (last === undefined) return;
-    void putReadState(tenantId, activeWorkbenchId, {
-      lastSeenCreatedAt: last.createdAt,
-      lastSeenId: last.id,
-    }).catch(() => undefined);
-  }, [
-    tenantId,
-    activeWorkbenchId,
-    openThreadId,
-    pendingParentMessageId,
-    feedItems,
-  ]);
 
   /** Every read of this workbench's feed, refetched as one. Concurrent
    * invalidations of a key collapse into a single request, which is what
@@ -269,8 +222,8 @@ export function useWorkbenchFeed(args: {
     threads,
     rootThreadId,
     pinnedMessages,
-    threadMetaByMessageId,
-    messagesState,
+    loadedMessages,
+    feedStatus,
     threadsLoaded: threadsQuery.data !== undefined,
     refreshFeed,
     refetchMessages: () => void messagesQuery.refetch(),
