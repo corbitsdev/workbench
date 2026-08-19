@@ -5,7 +5,9 @@
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
-  "sideEffects": ["**/*.css"],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css"

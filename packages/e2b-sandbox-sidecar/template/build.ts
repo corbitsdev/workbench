@@ -11,8 +11,7 @@ if (apiKey === undefined || !apiKey.startsWith("e2b_")) {
   throw new Error("E2B_API_KEY is required to build the template");
 }
 
-const templateName =
-  process.env["E2B_TEMPLATE_NAME"] ?? "interchange-sidecar";
+const templateName = process.env["E2B_TEMPLATE_NAME"] ?? "interchange-sidecar";
 const template = createSidecarTemplate();
 
 const build = await Template.build(template, templateName, {

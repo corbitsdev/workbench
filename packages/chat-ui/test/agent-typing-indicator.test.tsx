@@ -36,9 +36,9 @@ describe("AgentTypingIndicator", () => {
     expect(
       container.querySelector(".chat-typing-indicator-dots"),
     ).not.toBeNull();
-    expect(container.querySelectorAll(".chat-agent-typing-avatar")).toHaveLength(
-      0,
-    );
+    expect(
+      container.querySelectorAll(".chat-agent-typing-avatar"),
+    ).toHaveLength(0);
     expect(
       container.querySelector(".chat-typing-row")?.getAttribute("data-own"),
     ).toBe("false");

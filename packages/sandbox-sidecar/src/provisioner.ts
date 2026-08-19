@@ -212,9 +212,7 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
   return null;
 }
 
-function validateDestroyRequest(
-  request: DestroySidecarRequest,
-): string | null {
+function validateDestroyRequest(request: DestroySidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
   if (!Number.isInteger(request.generation) || request.generation <= 0) {

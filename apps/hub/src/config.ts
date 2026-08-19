@@ -250,15 +250,12 @@ export type E2BSidecarProvisionerConfig = {
 };
 
 export type SidecarProvisionerConfig =
-  | DockerSidecarProvisionerConfig
-  | E2BSidecarProvisionerConfig;
+  DockerSidecarProvisionerConfig | E2BSidecarProvisionerConfig;
 
 const SIDECAR_PROVISIONER_IDS = ["docker", "e2b"] as const;
 type SidecarProvisionerId = (typeof SIDECAR_PROVISIONER_IDS)[number];
 
-function isSidecarProvisionerId(
-  value: string,
-): value is SidecarProvisionerId {
+function isSidecarProvisionerId(value: string): value is SidecarProvisionerId {
   return (SIDECAR_PROVISIONER_IDS as readonly string[]).includes(value);
 }
 
@@ -488,7 +485,10 @@ function sidecarProvisionerConfigFor(
       return { id: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
     }
     case "e2b": {
-      if (parsed.E2B_API_KEY === undefined || parsed.E2B_TEMPLATE === undefined) {
+      if (
+        parsed.E2B_API_KEY === undefined ||
+        parsed.E2B_TEMPLATE === undefined
+      ) {
         throw new Error(
           [
             "invalid hub environment: E2B_API_KEY and E2B_TEMPLATE must both be set when SIDECAR_PROVISIONERS includes e2b",

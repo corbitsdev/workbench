@@ -47,14 +47,16 @@ describeIfDb("createRunKeyHistoryRoutes", () => {
     // with.
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
-      await db.delete(runKeyHistory).where(
-        inArray(runKeyHistory.runAddress, [
-          "run_diverged@run-key-history-routes.workbench.test",
-          "run_summary_in_sync@run-key-history-routes.workbench.test",
-          "run_summary_retired@run-key-history-routes.workbench.test",
-          "run_summary_sidecar@run-key-history-routes.workbench.test",
-        ]),
-      );
+      await db
+        .delete(runKeyHistory)
+        .where(
+          inArray(runKeyHistory.runAddress, [
+            "run_diverged@run-key-history-routes.workbench.test",
+            "run_summary_in_sync@run-key-history-routes.workbench.test",
+            "run_summary_retired@run-key-history-routes.workbench.test",
+            "run_summary_sidecar@run-key-history-routes.workbench.test",
+          ]),
+        );
     } finally {
       await close();
     }

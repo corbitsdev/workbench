@@ -9,11 +9,14 @@ import { readProvisionerConfig } from "./config";
 describe("E2B provisioner configuration", () => {
   test("reads the required boundary configuration", () => {
     expect(
-      readProvisionerConfig({
-        E2B_API_KEY: `e2b_${"a".repeat(32)}`,
-        E2B_TEMPLATE: "template-one",
-        E2B_SANDBOX_TIMEOUT_MS: "120000",
-      }, "/tmp/e2b-state"),
+      readProvisionerConfig(
+        {
+          E2B_API_KEY: `e2b_${"a".repeat(32)}`,
+          E2B_TEMPLATE: "template-one",
+          E2B_SANDBOX_TIMEOUT_MS: "120000",
+        },
+        "/tmp/e2b-state",
+      ),
     ).toEqual({
       apiKey: `e2b_${"a".repeat(32)}`,
       template: "template-one",

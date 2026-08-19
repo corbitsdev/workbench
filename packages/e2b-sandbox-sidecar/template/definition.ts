@@ -46,39 +46,41 @@ export function createSidecarTemplate(
     join(stagingDirectory, "start-sidecar.ts"),
   );
 
-  return Template({
-    fileContextPath: stagingDirectory,
-    // Defense in depth only: stageBuildContext already never reads these
-    // paths, so this list should never have anything to match.
-    fileIgnorePatterns: [
-      "**/.git/**",
-      "**/node_modules/**",
-      "**/.env",
-      "**/.env.*",
-      "**/.data/**",
-      "**/.worktrees/**",
-      "**/dist/**",
-      "**/tmp/**",
-      "**/coverage/**",
-    ],
-  })
-    .fromBunImage(BUN_IMAGE_VERSION)
-    .setUser("root")
-    .makeDir(["/repo", "/opt/interchange-e2b"], {
-      user: "root",
-      mode: 0o755,
+  return (
+    Template({
+      fileContextPath: stagingDirectory,
+      // Defense in depth only: stageBuildContext already never reads these
+      // paths, so this list should never have anything to match.
+      fileIgnorePatterns: [
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/.env",
+        "**/.env.*",
+        "**/.data/**",
+        "**/.worktrees/**",
+        "**/dist/**",
+        "**/tmp/**",
+        "**/coverage/**",
+      ],
     })
-    .copy("repo/", "/repo/", { user: "root" })
-    .copy("start-sidecar.ts", "/opt/interchange-e2b/start-sidecar.ts", {
-      user: "root",
-      mode: 0o500,
-    })
-    .setWorkdir("/repo")
-    // Scoped to the sidecar's own workspace closure. Every workspace
-    // member ships a package.json stub so the lockfile resolves, but an
-    // unfiltered install then pulls the WHOLE monorepo's dependency graph
-    // -- the web app's frontend stack included -- which OOM-killed the
-    // build container at 2GB. `--filter` installs only what the sidecar
-    // needs, which is also all the image should ever carry.
-    .runCmd(`bun install --frozen-lockfile --filter=${SIDECAR_PACKAGE_NAME}`);
+      .fromBunImage(BUN_IMAGE_VERSION)
+      .setUser("root")
+      .makeDir(["/repo", "/opt/interchange-e2b"], {
+        user: "root",
+        mode: 0o755,
+      })
+      .copy("repo/", "/repo/", { user: "root" })
+      .copy("start-sidecar.ts", "/opt/interchange-e2b/start-sidecar.ts", {
+        user: "root",
+        mode: 0o500,
+      })
+      .setWorkdir("/repo")
+      // Scoped to the sidecar's own workspace closure. Every workspace
+      // member ships a package.json stub so the lockfile resolves, but an
+      // unfiltered install then pulls the WHOLE monorepo's dependency graph
+      // -- the web app's frontend stack included -- which OOM-killed the
+      // build container at 2GB. `--filter` installs only what the sidecar
+      // needs, which is also all the image should ever carry.
+      .runCmd(`bun install --frozen-lockfile --filter=${SIDECAR_PACKAGE_NAME}`)
+  );
 }

@@ -11,7 +11,14 @@
 // and this component only reads it through the same hooks page code
 // already uses.
 
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import * as Y from "yjs";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 

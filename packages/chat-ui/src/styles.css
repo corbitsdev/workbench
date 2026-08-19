@@ -1055,7 +1055,8 @@
   padding-right: calc(0.45rem + 2.15rem + 0.65rem);
 }
 
-.chat-bubble-row[data-own="true"][data-grouped="true"] .chat-bubble-time-grouped {
+.chat-bubble-row[data-own="true"][data-grouped="true"]
+  .chat-bubble-time-grouped {
   left: auto;
   right: 0.45rem;
   text-align: left;

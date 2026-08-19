@@ -36,7 +36,10 @@ export function readProvisionerConfig(
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid E2B provisioner configuration: ${parsed.summary}`);
   }
-  if (!parsed.E2B_API_KEY.startsWith("e2b_") || parsed.E2B_API_KEY.length < 16) {
+  if (
+    !parsed.E2B_API_KEY.startsWith("e2b_") ||
+    parsed.E2B_API_KEY.length < 16
+  ) {
     throw new Error("E2B_API_KEY must be a valid E2B API key");
   }
   if (!isAbsolute(dataDir)) {

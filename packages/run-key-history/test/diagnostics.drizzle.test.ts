@@ -48,18 +48,20 @@ describeIfDb("run-key-history diagnostics", () => {
     // with.
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
-      await db.delete(runKeyHistory).where(
-        inArray(runKeyHistory.runAddress, [
-          "run_lifecycle@run-key-history.workbench.test",
-          "run_in_sync@run-key-history.workbench.test",
-          "run_diverged@run-key-history.workbench.test",
-          "run_unacked@run-key-history.workbench.test",
-          "run_failed@run-key-history.workbench.test",
-          "run_cancelled@run-key-history.workbench.test",
-          "run_count_in_sync@run-key-history.workbench.test",
-          "run_sidecar_scoped@run-key-history.workbench.test",
-        ]),
-      );
+      await db
+        .delete(runKeyHistory)
+        .where(
+          inArray(runKeyHistory.runAddress, [
+            "run_lifecycle@run-key-history.workbench.test",
+            "run_in_sync@run-key-history.workbench.test",
+            "run_diverged@run-key-history.workbench.test",
+            "run_unacked@run-key-history.workbench.test",
+            "run_failed@run-key-history.workbench.test",
+            "run_cancelled@run-key-history.workbench.test",
+            "run_count_in_sync@run-key-history.workbench.test",
+            "run_sidecar_scoped@run-key-history.workbench.test",
+          ]),
+        );
     } finally {
       await close();
     }
