@@ -29,16 +29,17 @@ import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
 import {
   buildEffectiveInferenceRows,
+  computeGlobalRoutePatches,
   computeMakeDefaultPatches,
-  defaultModelForProvider,
   getResolvedCatalog,
   listOwnOfferings,
+  orderedGlobalInferenceRows,
+  providerDisplayName,
   updateOwnOffering,
-  type DefaultProviderModel,
   type EffectiveInferenceRow,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@intx/types";
-import { ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, Cable, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -59,19 +60,11 @@ import {
   type ConnectorStatusResult,
 } from "./connections-status";
 import {
-  createCredential,
-  deleteCredential,
   listCredentials,
   listProviders,
   type Credential,
-  type CreateCredentialInput,
   type Provider,
 } from "./credentials-api";
-import {
-  CreateCredentialDialog,
-  CredentialsTable,
-} from "./credentials-section";
-import { GranolaWebhookCard } from "./granola-webhook-card";
 import { SETTINGS_STRINGS } from "./strings";
 
 // `@workbench/connections/registry` is the only subpath this browser
@@ -185,27 +178,6 @@ export function ConnectorRowList({
 
   const effectiveRows = buildEffectiveInferenceRows(models, ownOfferingIds);
 
-  function handlePickDefault(offeringId: string, providerName: string) {
-    onError?.(null);
-    const providerOfferings = effectiveRows.filter(
-      (row) => row.providerName === providerName,
-    );
-    const patches = computeMakeDefaultPatches(providerOfferings, offeringId);
-    if (patches === null) {
-      onError?.(SETTINGS_STRINGS.connectionsSetDefaultModelError);
-      return;
-    }
-    Promise.all(
-      patches.map((patch) =>
-        updateOwnOffering(tenantId, patch.offeringId, {
-          priority: patch.priority,
-        }),
-      ),
-    )
-      .then(() => onReload())
-      .catch(() => onError?.(SETTINGS_STRINGS.connectionsSetDefaultModelError));
-  }
-
   return (
     <>
       {descriptors.map((descriptor) => (
@@ -213,20 +185,12 @@ export function ConnectorRowList({
           key={descriptor.id}
           descriptor={descriptor}
           statusResult={connectorStatus(descriptor.id, credentials, providers)}
-          defaultModel={
-            descriptor.feedsTools.length === 0
-              ? defaultModelForProvider(models, descriptor.id)
-              : null
-          }
-          providerOfferings={
-            descriptor.feedsTools.length === 0
-              ? effectiveRows.filter(
-                  (row) => row.providerName === descriptor.id,
-                )
-              : []
-          }
-          onPickDefault={(offeringId) =>
-            handlePickDefault(offeringId, descriptor.id)
+          modelCount={
+            new Set(
+              effectiveRows
+                .filter((row) => row.providerName === descriptor.id)
+                .map((row) => row.canonicalName),
+            ).size
           }
           onConnect={() => {
             setDialogMode("connect");
@@ -264,9 +228,6 @@ export function ConnectionsSection({
   });
   const [reloadKey, setReloadKey] = useState(0);
   const [rowError, setRowError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   function reload() {
     setReloadKey((value) => value + 1);
@@ -344,51 +305,6 @@ export function ConnectionsSection({
       .catch(() => setRowError(SETTINGS_STRINGS.connectionsDisconnectError));
   }
 
-  // The Advanced disclosure's raw credentials table has no connector to
-  // orchestrate around — a certificate or `other`-typed row is never
-  // planted through `/complete`/`seedCatalog`, so it never has a catalog
-  // provider row to clean up first. A plain credential delete stays
-  // correct for exactly this escape hatch.
-  function handleDeleteCredential(credential: Credential) {
-    setRowError(null);
-    deleteCredential(currentTenantId, credential.id)
-      .then(() => {
-        reload();
-        toast(SETTINGS_STRINGS.credentialRevokedToast);
-      })
-      .catch(() => setRowError(SETTINGS_STRINGS.connectionsDisconnectError));
-  }
-
-  function handleCreate(input: {
-    readonly providerId: string;
-    readonly name: string;
-    readonly type: CreateCredentialInput["type"];
-    readonly secret: string;
-    readonly description: string;
-  }) {
-    setCreating(true);
-    setCreateError(null);
-    const base = {
-      providerId: input.providerId,
-      name: input.name,
-      type: input.type,
-      secret: input.secret,
-    };
-    createCredential(
-      currentTenantId,
-      input.description.trim() !== ""
-        ? { ...base, description: input.description.trim() }
-        : base,
-    )
-      .then(() => {
-        setCreateOpen(false);
-        reload();
-        toast(SETTINGS_STRINGS.credentialSavedToast);
-      })
-      .catch(() => setCreateError(SETTINGS_STRINGS.credentialsCreateError))
-      .finally(() => setCreating(false));
-  }
-
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
       {({
@@ -398,8 +314,9 @@ export function ConnectionsSection({
         models,
         ownOfferingIds,
       }) => {
-        const providerNameById = new Map(
-          providers.map((provider) => [provider.id, provider.name]),
+        const effectiveRows = buildEffectiveInferenceRows(
+          models,
+          ownOfferingIds,
         );
         return (
           <SettingsPanel
@@ -411,78 +328,212 @@ export function ConnectionsSection({
                 {rowError}
               </p>
             )}
-            <div className="settings-connections-list">
-              <ConnectorRowList
-                tenantId={currentTenantId}
-                credentials={credentials}
-                providers={providers}
-                models={models}
-                ownOfferingIds={ownOfferingIds}
-                onReload={reload}
-                onError={setRowError}
-              />
-              {OAUTH_CARDS.map((card) => (
-                <OAuthConnectorRow
-                  key={card.id}
-                  card={card}
-                  statusResult={connectorStatus(
-                    card.id,
-                    credentials,
-                    providers,
-                  )}
-                  defaultModel={defaultModelForProvider(models, card.id)}
-                  // Absent from the map reads as "not configured" — the
-                  // conservative default: never render a live Connect button
-                  // on data this section failed to positively confirm.
-                  configured={oauthConfigured[card.id] ?? false}
-                  onDisconnect={() => handleDisconnectConnector(card.id)}
-                />
-              ))}
-              {(() => {
-                const granolaWebhookDescriptor =
-                  CONNECTOR_REGISTRY["granola-webhook"];
-                return granolaWebhookDescriptor === undefined ? null : (
-                  <GranolaWebhookCard
-                    tenantId={currentTenantId}
-                    descriptor={granolaWebhookDescriptor}
-                  />
-                );
-              })()}
-            </div>
-            <details className="settings-advanced-disclosure">
-              <summary>
-                <ChevronRight
-                  size={14}
-                  aria-hidden
-                  className="settings-advanced-disclosure-chevron"
-                />
-                {SETTINGS_STRINGS.connectionsAdvancedSummary}
-              </summary>
-              <div className="settings-advanced-disclosure-body">
-                <div className="settings-section-toolbar">
-                  <Button variant="primary" onClick={() => setCreateOpen(true)}>
-                    {SETTINGS_STRINGS.credentialsCreateAction}
-                  </Button>
+            <ModelRoutePanel
+              tenantId={currentTenantId}
+              rows={effectiveRows}
+              onReload={reload}
+              onError={setRowError}
+            />
+            <section className="settings-provider-section">
+              <div className="settings-provider-section-heading">
+                <span className="settings-provider-section-icon" aria-hidden>
+                  <Cable />
+                </span>
+                <div>
+                  <h3>AI providers</h3>
+                  <p>Connect the services that can run your models.</p>
                 </div>
-                <CredentialsTable
-                  credentials={credentials}
-                  providerNameById={providerNameById}
-                  onDelete={handleDeleteCredential}
-                />
-                <CreateCredentialDialog
-                  open={createOpen}
-                  onOpenChange={setCreateOpen}
-                  providers={providers}
-                  onCreate={handleCreate}
-                  submitting={creating}
-                  error={createError}
-                />
               </div>
-            </details>
+              <div className="settings-connections-list">
+                <ConnectorRowList
+                  tenantId={currentTenantId}
+                  credentials={credentials}
+                  providers={providers}
+                  models={models}
+                  ownOfferingIds={ownOfferingIds}
+                  filter={(descriptor) => descriptor.feedsTools.length === 0}
+                  onReload={reload}
+                  onError={setRowError}
+                />
+                {OAUTH_CARDS.map((card) => (
+                  <OAuthConnectorRow
+                    key={card.id}
+                    card={card}
+                    statusResult={connectorStatus(
+                      card.id,
+                      credentials,
+                      providers,
+                    )}
+                    modelCount={
+                      new Set(
+                        effectiveRows
+                          .filter((row) => row.providerName === card.id)
+                          .map((row) => row.canonicalName),
+                      ).size
+                    }
+                    configured={oauthConfigured[card.id] ?? false}
+                    onDisconnect={() => handleDisconnectConnector(card.id)}
+                  />
+                ))}
+              </div>
+            </section>
           </SettingsPanel>
         );
       }}
     </QueryView>
+  );
+}
+
+function modelLabel(row: EffectiveInferenceRow): string {
+  return row.modelDisplayName ?? row.canonicalName;
+}
+
+function ModelRoutePanel({
+  tenantId,
+  rows,
+  onReload,
+  onError,
+}: {
+  readonly tenantId: string;
+  readonly rows: readonly EffectiveInferenceRow[];
+  readonly onReload: () => void;
+  readonly onError: (message: string | null) => void;
+}) {
+  const ordered = orderedGlobalInferenceRows(rows);
+  const currentModel = ordered[0]?.canonicalName ?? "";
+  const models = ordered.filter(
+    (row, index, all) =>
+      all.findIndex(
+        (candidate) => candidate.canonicalName === row.canonicalName,
+      ) === index,
+  );
+  const route = ordered.filter((row) => row.canonicalName === currentModel);
+
+  function applyPatches(
+    patches:
+      | readonly { readonly offeringId: string; readonly priority: number }[]
+      | null,
+  ) {
+    if (patches === null) {
+      onError(SETTINGS_STRINGS.connectionsSetDefaultModelError);
+      return;
+    }
+    onError(null);
+    Promise.all(
+      patches.map((patch) =>
+        updateOwnOffering(tenantId, patch.offeringId, {
+          priority: patch.priority,
+        }),
+      ),
+    )
+      .then(onReload)
+      .catch(() => onError(SETTINGS_STRINGS.connectionsSetDefaultModelError));
+  }
+
+  function chooseModel(canonicalName: string) {
+    const target = ordered.find((row) => row.canonicalName === canonicalName);
+    applyPatches(
+      target === undefined
+        ? null
+        : computeMakeDefaultPatches(rows, target.offeringId),
+    );
+  }
+
+  return (
+    <section
+      className="settings-model-route"
+      aria-labelledby="model-route-title"
+    >
+      <div className="settings-model-route-heading">
+        <span className="settings-model-route-icon" aria-hidden>
+          <Sparkles />
+        </span>
+        <div>
+          <h3 id="model-route-title">Default model & fallbacks</h3>
+          <p>
+            Used by Myra and new workbenches unless an agent chooses its own
+            model.
+          </p>
+        </div>
+      </div>
+      {ordered.length === 0 ? (
+        <div className="settings-model-route-empty">
+          <Bot aria-hidden />
+          <span>Connect an AI provider to choose a default model.</span>
+        </div>
+      ) : (
+        <>
+          <label className="settings-model-default-field">
+            <span>Default model</span>
+            <select
+              aria-label="Default model"
+              value={currentModel}
+              onChange={(event) => chooseModel(event.target.value)}
+            >
+              {models.map((row) => (
+                <option key={row.canonicalName} value={row.canonicalName}>
+                  {modelLabel(row)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div
+            className="settings-model-route-list"
+            aria-label="Fallback order"
+          >
+            <p className="settings-model-route-list-label">Fallback order</p>
+            {route.map((row, index) => (
+              <div className="settings-model-route-row" key={row.offeringId}>
+                <span className="settings-model-route-position">
+                  {index === 0 ? "Primary" : `Fallback ${index}`}
+                </span>
+                <span className="settings-model-route-provider">
+                  {providerDisplayName(row.providerName)}
+                </span>
+                <span className="settings-model-route-provenance">
+                  {row.provenance === "set-here" ? "Set here" : "Inherited"}
+                </span>
+                <div className="settings-model-route-actions">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Move ${providerDisplayName(row.providerName)} up`}
+                    disabled={index === 0 || row.provenance === "inherited"}
+                    onClick={() =>
+                      applyPatches(
+                        computeGlobalRoutePatches(route, row.offeringId, "up"),
+                      )
+                    }
+                  >
+                    <ArrowUp />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Move ${providerDisplayName(row.providerName)} down`}
+                    disabled={
+                      index === route.length - 1 ||
+                      row.provenance === "inherited"
+                    }
+                    onClick={() =>
+                      applyPatches(
+                        computeGlobalRoutePatches(
+                          route,
+                          row.offeringId,
+                          "down",
+                        ),
+                      )
+                    }
+                  >
+                    <ArrowDown />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -534,12 +585,21 @@ function ConnectorLogo({
   icon,
 }: {
   readonly displayName: string;
-  readonly icon?: { readonly path: string; readonly hex: string };
+  readonly icon?: {
+    readonly path: string;
+    readonly hex: string;
+    readonly viewBox?: string;
+  };
 }) {
   if (icon !== undefined) {
     return (
       <span className="settings-connection-row-logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill={`#${icon.hex}`}>
+        <svg
+          viewBox={icon.viewBox ?? "0 0 24 24"}
+          width="16"
+          height="16"
+          fill={`#${icon.hex}`}
+        >
           <path d={icon.path} />
         </svg>
       </span>
@@ -555,83 +615,17 @@ function ConnectorLogo({
   );
 }
 
-function defaultModelCaption(defaultModel: DefaultProviderModel | null) {
-  if (defaultModel === null) return null;
-  const label = defaultModel.displayName ?? defaultModel.canonicalName;
-  return SETTINGS_STRINGS.connectionsDefaultModelLine(label);
-}
-
-/** The offering `defaultModelForProvider` would pick for this same row
- * set — lowest priority wins, first occurrence breaks a tie — so the
- * select's initial value always names the offering actually in effect,
- * never a second, independently-computed notion of "current." */
-function winningOffering(
-  rows: readonly EffectiveInferenceRow[],
-): EffectiveInferenceRow | null {
-  let best: EffectiveInferenceRow | null = null;
-  for (const row of rows) {
-    if (best === null || row.priority < best.priority) best = row;
-  }
-  return best;
-}
-
-/**
- * The default-model caption, made pickable (CL-6258 follow-up: "set
- * default models"). Renders a quiet, unstyled-as-a-button `<select>` —
- * matching the row's other captions, never button chrome — listing this
- * provider's own resolved offerings; `null` when the provider has none
- * to choose between (nothing resolved yet, same case
- * `defaultModelCaption` already returns `null` for).
- */
-function DefaultModelPicker({
-  providerOfferings,
-  onPick,
-}: {
-  readonly providerOfferings: readonly EffectiveInferenceRow[];
-  readonly onPick: (offeringId: string) => void;
-}) {
-  if (providerOfferings.length === 0) return null;
-  const current = winningOffering(providerOfferings);
-  return (
-    <p className="settings-connection-row-caption">
-      {SETTINGS_STRINGS.connectionsDefaultModelLabel}{" "}
-      <select
-        className="settings-connection-row-default-model-select"
-        value={current?.offeringId ?? ""}
-        onChange={(event) => onPick(event.target.value)}
-      >
-        {providerOfferings.map((row) => (
-          <option key={row.offeringId} value={row.offeringId}>
-            {row.modelDisplayName ?? row.canonicalName}
-          </option>
-        ))}
-      </select>
-    </p>
-  );
-}
-
 function ConnectorRow({
   descriptor,
   statusResult,
-  defaultModel,
-  providerOfferings,
-  onPickDefault,
+  modelCount,
   onConnect,
   onReconnect,
   onDisconnect,
 }: {
   readonly descriptor: ConnectorDescriptor;
   readonly statusResult: ConnectorStatusResult;
-  /** This provider's one resolved default model — see
-   * `defaultModelForProvider`'s own header. `null` for a tool/plugin
-   * connector (`feedsTools.length > 0`, which shows "Used by workflows"
-   * instead) or an inference provider that resolves nothing yet. */
-  readonly defaultModel: DefaultProviderModel | null;
-  /** This provider's own resolved offerings — the pick list
-   * `DefaultModelPicker` renders. Empty for a tool/plugin connector, same
-   * case `defaultModel` is `null` for. */
-  readonly providerOfferings: readonly EffectiveInferenceRow[];
-  readonly onPickDefault: (offeringId: string) => void;
+  readonly modelCount: number;
   readonly onConnect: () => void;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
@@ -649,13 +643,11 @@ function ConnectorRow({
           </span>
           <StatusCaption statusResult={statusResult} />
         </div>
-        {statusResult.status === "connected" &&
-          defaultModelCaption(defaultModel) !== null && (
-            <DefaultModelPicker
-              providerOfferings={providerOfferings}
-              onPick={onPickDefault}
-            />
-          )}
+        {statusResult.status === "connected" && modelCount > 0 ? (
+          <p className="settings-connection-row-caption">
+            {modelCount} model{modelCount === 1 ? "" : "s"} available
+          </p>
+        ) : null}
         {descriptor.feedsTools.length > 0 && (
           <span className="settings-connection-row-pinned-row">
             <span className="settings-connection-row-caption">
@@ -710,13 +702,13 @@ function ConnectorRow({
 function OAuthConnectorRow({
   card,
   statusResult,
-  defaultModel,
+  modelCount,
   configured,
   onDisconnect,
 }: {
   readonly card: OAuthConnectorCard;
   readonly statusResult: ConnectorStatusResult;
-  readonly defaultModel: DefaultProviderModel | null;
+  readonly modelCount: number;
   /** Whether an operator has registered this connector's OAuth app
    * (a client id present server-side) — distinct from `statusResult`,
    * which is about whether *this tenant* has connected, not whether
@@ -767,12 +759,11 @@ function OAuthConnectorRow({
           </span>
           <StatusCaption statusResult={statusResult} />
         </div>
-        {statusResult.status === "connected" &&
-          defaultModelCaption(defaultModel) !== null && (
-            <p className="settings-connection-row-caption">
-              {defaultModelCaption(defaultModel)}
-            </p>
-          )}
+        {statusResult.status === "connected" && modelCount > 0 ? (
+          <p className="settings-connection-row-caption">
+            {modelCount} model{modelCount === 1 ? "" : "s"} available
+          </p>
+        ) : null}
       </div>
       <div className="settings-connection-row-action">
         {statusResult.status === "connected" ? (

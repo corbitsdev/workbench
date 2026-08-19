@@ -1,6 +1,5 @@
-// MCP-first services are omitted from the static connector list. GitHub is
-// the remaining tool connector there and is available to every workflow, so
-// its row must not imply a pinned-workflow restriction or show a caveat.
+// AI Providers is inference-only. Tool-bearing connectors belong in Plugins,
+// including GitHub, so the settings route must never render one here.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -53,8 +52,8 @@ function mockFetch() {
   }) as unknown as typeof fetch;
 }
 
-describe("Connections pinned-by rendering", () => {
-  test("a connector with feedsTools but no pinned workflows shows the line with no tooltip trigger", async () => {
+describe("AI provider scope", () => {
+  test("never renders tool-bearing third-party connectors", async () => {
     mockFetch();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -65,17 +64,11 @@ describe("Connections pinned-by rendering", () => {
       });
       await settle();
 
-      // github has feedsTools but an empty pinned-workflows list in the
-      // fixture data — "Available to any workflow", no approximation to
-      // caveat, so no tooltip trigger should render for that card.
       const cards = [...container.querySelectorAll(".settings-connection-row")];
       const githubCard = cards.find((card) =>
         card.textContent?.includes("GitHub"),
       );
-      expect(githubCard).not.toBeUndefined();
-      expect(
-        githubCard?.querySelector(".settings-connection-row-pinned-row button"),
-      ).toBeNull();
+      expect(githubCard).toBeUndefined();
     } finally {
       act(() => root.unmount());
       container.remove();

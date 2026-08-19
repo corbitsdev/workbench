@@ -125,8 +125,8 @@ function renderSection() {
   return { container, root };
 }
 
-describe("Connections default model pick", () => {
-  test("picking a provider's model PATCHes it to the top priority and re-renders the new default", async () => {
+describe("Global model route", () => {
+  test("making a fallback primary PATCHes the shared route and re-renders it first", async () => {
     const calls: { url: string; method: string; body?: string }[] = [];
     let patched = false;
 
@@ -168,20 +168,20 @@ describe("Connections default model pick", () => {
     try {
       await settle();
 
-      expect(container.textContent).toContain("Default model: Claude Sonnet 5");
+      expect(container.textContent).toContain("Default model");
+      expect(container.textContent).toContain("Fallback order");
 
-      const select = container.querySelector(
-        "select.settings-connection-row-default-model-select",
+      const defaultModel = container.querySelector(
+        'select[aria-label="Default model"]',
       ) as HTMLSelectElement | null;
-      expect(select).not.toBeNull();
-      expect(select?.value).toBe("offering_sonnet");
+      expect(defaultModel?.value).toBe("claude-sonnet-5");
 
       // Selecting the other model re-fetches the resolved catalog, whose
       // mock now reflects the PATCH having landed (haiku wins).
       act(() => {
-        if (select !== null) {
-          select.value = "offering_haiku";
-          select.dispatchEvent(new Event("change", { bubbles: true }));
+        if (defaultModel !== null) {
+          defaultModel.value = "claude-haiku-5";
+          defaultModel.dispatchEvent(new Event("change", { bubbles: true }));
         }
       });
       await settle();
@@ -193,10 +193,10 @@ describe("Connections default model pick", () => {
       expect(patchCall?.method).toBe("PATCH");
       expect(JSON.parse(patchCall?.body ?? "{}")).toEqual({ priority: -1 });
 
-      const updatedSelect = container.querySelector(
-        "select.settings-connection-row-default-model-select",
+      const updatedDefault = container.querySelector(
+        'select[aria-label="Default model"]',
       ) as HTMLSelectElement | null;
-      expect(updatedSelect?.value).toBe("offering_haiku");
+      expect(updatedDefault?.value).toBe("claude-haiku-5");
     } finally {
       act(() => root.unmount());
       container.remove();

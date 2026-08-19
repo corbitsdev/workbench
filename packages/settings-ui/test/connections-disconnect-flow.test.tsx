@@ -124,7 +124,10 @@ describe("Connections disconnect", () => {
     try {
       await settle();
 
-      expect(container.textContent).toContain("Default model: Claude Sonnet 5");
+      const defaultModel = container.querySelector(
+        'select[aria-label="Default model"]',
+      ) as HTMLSelectElement | null;
+      expect(defaultModel?.value).toBe("claude-sonnet-5");
 
       const rows = [...container.querySelectorAll(".settings-connection-row")];
       const anthropicRow = rows.find((row) =>

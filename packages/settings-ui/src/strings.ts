@@ -243,9 +243,9 @@ export const SETTINGS_STRINGS = {
   credentialSavedToast: "Credential saved · value hidden",
   credentialRevokedToast: "Credential revoked",
 
-  connectionsSectionTitle: "Connections",
+  connectionsSectionTitle: "AI providers",
   connectionsSectionDescription:
-    "Keys added here work in every workbench, for everyone.",
+    "Choose the model route Myra and new workbenches use, then connect the providers behind it.",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",
