@@ -23,6 +23,7 @@ const denied: TenancyAccess = {
   roles: "denied",
   grants: "denied",
   credentials: "denied",
+  memory: "denied",
 };
 
 const allowed: TenancyAccess = {
@@ -30,6 +31,7 @@ const allowed: TenancyAccess = {
   roles: "allowed",
   grants: "allowed",
   credentials: "allowed",
+  memory: "allowed",
 };
 
 function ids(groups: ReturnType<typeof resolveSettingsSectionGroups>) {
@@ -52,7 +54,14 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account", "chat"] },
       {
         id: "everyone",
-        sections: ["connections", "people", "roles", "grants", "audit"],
+        sections: [
+          "connections",
+          "memory",
+          "people",
+          "roles",
+          "grants",
+          "audit",
+        ],
       },
     ]);
   });
@@ -63,6 +72,7 @@ describe("resolveSettingsSectionGroups", () => {
       roles: "denied",
       grants: "allowed",
       credentials: "denied",
+      memory: "denied",
     };
     expect(ids(resolveSettingsSectionGroups(loading))).toEqual([
       { id: "account", sections: ["account", "chat"] },
@@ -70,7 +80,7 @@ describe("resolveSettingsSectionGroups", () => {
     ]);
   });
 
-  test("Roles, Grants, and Audit are tucked under Advanced; Connections and People are not", () => {
+  test("Roles, Grants, and Audit are tucked under Advanced; Connections, Memory, and People are not", () => {
     const sections = resolveSettingsSectionGroups(allowed).find(
       (group) => group.id === "everyone",
     )?.sections;
@@ -79,7 +89,21 @@ describe("resolveSettingsSectionGroups", () => {
     ).toEqual(["roles", "grants", "audit"]);
     expect(
       sections?.filter((section) => section.advanced !== true).map((s) => s.id),
-    ).toEqual(["connections", "people"]);
+    ).toEqual(["connections", "memory", "people"]);
+  });
+
+  test("Memory is gated on its own probe, independent of the other Everyone sections", () => {
+    const onlyMemory: TenancyAccess = {
+      people: "denied",
+      roles: "denied",
+      grants: "denied",
+      credentials: "denied",
+      memory: "allowed",
+    };
+    expect(ids(resolveSettingsSectionGroups(onlyMemory))).toEqual([
+      { id: "account", sections: ["account", "chat"] },
+      { id: "everyone", sections: ["memory", "audit"] },
+    ]);
   });
 
   test("never registers the personal agent section — no preference store exists to back it yet", () => {

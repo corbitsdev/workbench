@@ -34,6 +34,7 @@ const deniedAccess = {
   roles: "denied",
   grants: "denied",
   credentials: "denied",
+  memory: "denied",
 } as const;
 
 /** A client pre-seeded so both the bench and the settings-access probe are
