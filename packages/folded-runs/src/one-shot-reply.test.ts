@@ -175,9 +175,24 @@ function createFakeLifecycle() {
   };
 }
 
+// Records every hub-grant revocation a teardown performs. Wired into the
+// fixture rather than omitted: `runOneShotFoldedPrompt` reaches
+// `deps.foldedRuns.runHubGrants` on every settle path, and the whole deps
+// object is cast `as never` at each call site, so an absent plane is
+// invisible to the typechecker and its `TypeError` is swallowed by
+// teardown's own catch — leaving the suite green while the call never ran.
+const revokedRunPrincipals: string[] = [];
+
 function createBaseDeps() {
+  revokedRunPrincipals.length = 0;
   return {
     foldedRuns: {
+      runHubGrants: {
+        prepare: async () => async () => undefined,
+        revoke: async ({ runPrincipalId }: { runPrincipalId: string }) => {
+          revokedRunPrincipals.push(runPrincipalId);
+        },
+      },
       db: {
         query: {
           workflowDefinition: { findFirst: async () => DEFINITION_ROW },
@@ -321,6 +336,38 @@ describe("runOneShotFoldedPrompt", () => {
     await expect(runOneShotFoldedPrompt(deps, INPUT)).rejects.toBeInstanceOf(
       OneShotDefinitionNotFoundError,
     );
+  });
+  // A one-shot run is genuinely finished at teardown — unlike a chat host it
+  // is never woken again — so its hub-side authority goes with it. Nothing
+  // else would remove the rows: the platform deactivates a terminal run's
+  // principal rather than deleting it, so the grant cascade never fires.
+  test("teardown revokes the run's hub-side authority", async () => {
+    const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const { undeploy } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
+      undeploy,
+    } as never;
+
+    const promise = runOneShotFoldedPrompt(deps, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    const triggerAddress = firstCall(launchCalls).triggerAddress;
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "connector.reply", data: { content: "done" } },
+    });
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+    await promise;
+
+    expect(revokedRunPrincipals).toEqual(["prn_run"]);
   });
 });
 

@@ -223,6 +223,20 @@ export async function runOneShotFoldedPrompt(
           err instanceof Error ? err.message : String(err)
         }`;
       }
+      // A one-shot run is genuinely finished here — unlike a chat host, it
+      // is never woken again — so its hub-side authority goes with it.
+      // Nothing else would: the platform deactivates a terminal run's
+      // principal rather than deleting it, so the grant cascade never
+      // fires and the rows would accumulate for every run ever planned.
+      try {
+        await deps.foldedRuns.runHubGrants.revoke({
+          runPrincipalId: launched.instancePrincipalId,
+        });
+      } catch (err) {
+        log.error`one-shot run ${triggerAddress}: revoking hub grants failed during teardown (${reason}): ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
       deps.lifecycle?.untrack(triggerAddress);
       finish();
     }
