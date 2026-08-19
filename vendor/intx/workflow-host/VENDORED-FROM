@@ -1,4 +1,4 @@
 Source: https://github.com/faremeter/interchange (packages/workflow-host)
 Commit: 59f5e7b9d94e7bcccfc180e7d9d11434e2e18eec
 License: LGPL-2.1-only (see vendor/intx/LICENSE)
-Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed.
+Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. CL-6164: the supervisor's signal.deliver branch drops mail whose extracted conversation body is empty (the new hasConversationText gate in conversation-text.ts), recording an empty_conversation_content rejection, instead of delivering "" -- which throws in agent.send and kills the run with StepFailed/retriesExhausted. Attachments-only conversation.message mail (e.g. @corbits/chat's workbench.agent-joined event send) is exactly that shape.

@@ -98,7 +98,10 @@ import {
 import { commitCancelRequested } from "./cancel-signing";
 import { buildChildSpawnEnv } from "./spawn-env";
 import { compactRunEvents } from "./run-event-compaction";
-import { extractConversationText } from "../conversation-text";
+import {
+  extractConversationText,
+  hasConversationText,
+} from "../conversation-text";
 import {
   createDrainTimeoutAccumulator,
   DEFAULT_DRAIN_TIMEOUT_MS,
@@ -2188,6 +2191,22 @@ export function createWorkflowSupervisor(
               const message =
                 cause instanceof Error ? cause.message : String(cause);
               logger.error`signal.deliver for run ${runId}: dropping malformed inbound mail ${envelope.messageId}: ${message}`;
+              break;
+            }
+            if (!hasConversationText(inputText)) {
+              // Attachments-only mail (a structured event send whose text part
+              // is empty) has no turn to resume the parked agent with. DROP it
+              // for the same reason the malformed branch above does, and record
+              // a rejection so the consumed envelope says why. Delivering the
+              // empty string instead would throw inside `agent.send`, surface as
+              // a `StepFailed` with `retriesExhausted`, and kill a run whose
+              // only fault was being told that someone joined its bench
+              // (workbench-local, CL-6164).
+              rejection = {
+                code: "empty_conversation_content",
+                message: `Inbound mail ${envelope.messageId} carries no conversation text to resume run ${runId}`,
+              };
+              logger.warn`signal.deliver for run ${runId}: dropping inbound mail ${envelope.messageId} with no conversation text`;
               break;
             }
             // Mint the terminal watcher only now, after the payload resolved, so
