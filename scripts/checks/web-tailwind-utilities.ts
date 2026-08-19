@@ -20,11 +20,16 @@ const REQUIRED_UTILITIES = [
   "sm\\:px-7",
   "w-fit",
   "min-h-",
-  "bg-\\[var\\(--chart-1\\)\\]",
-  "bg-\\[var\\(--chart-2\\)\\]",
-  "bg-\\[var\\(--chart-3\\)\\]",
-  "bg-\\[var\\(--chart-4\\)\\]",
-  "bg-\\[var\\(--chart-5\\)\\]",
+  // The chart series is styled through theme tokens (app.css and
+  // chat-ui's agent accent), not arbitrary-value utilities — the
+  // removed artifactKindColor was the last bg-[var(--chart-N)] author.
+  // The tokens themselves must still survive into the built CSS.
+  "--chart-1:",
+  "--chart-2:",
+  "--chart-3:",
+  "--chart-4:",
+  "--chart-5:",
+  "var(--chart-1)",
   "bg-muted",
 ] as const;
 
@@ -58,12 +63,16 @@ function newestMtime(dir: string, extensions: readonly string[]): number {
   return newest;
 }
 
-function findBuiltCss(distAssets: string): string | null {
+/** Every emitted stylesheet: code splitting emits one CSS file per
+ * chunk, so a required utility may land in any of them. */
+function findBuiltCss(distAssets: string): string[] {
   try {
-    const file = readdirSync(distAssets).find((name) => name.endsWith(".css"));
-    return file === undefined ? null : path.join(distAssets, file);
+    return readdirSync(distAssets)
+      .filter((name) => name.endsWith(".css"))
+      .sort()
+      .map((name) => path.join(distAssets, name));
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -73,25 +82,24 @@ async function ensureWebBuild(
 ): Promise<void> {
   const webDir = path.join(root, "apps/web");
   const distAssets = path.join(webDir, "dist/assets");
-  const cssPath = findBuiltCss(distAssets);
+  const cssPaths = findBuiltCss(distAssets);
   const sourceNewest = Math.max(
     newestMtime(path.join(webDir, "src"), [".tsx", ".ts", ".css"]),
     newestMtime(path.join(root, "packages/artifact-ui/src"), [".tsx", ".ts"]),
   );
-  const cssMtime =
-    cssPath === null
-      ? 0
-      : (() => {
-          try {
-            return statSync(cssPath).mtimeMs;
-          } catch {
-            return 0;
-          }
-        })();
+  const cssMtime = cssPaths.reduce((oldest, cssPath) => {
+    try {
+      return Math.min(oldest, statSync(cssPath).mtimeMs);
+    } catch {
+      return 0;
+    }
+  }, Number.POSITIVE_INFINITY);
 
-  if (cssPath !== null && cssMtime >= sourceNewest) {
+  if (cssPaths.length > 0 && cssMtime >= sourceNewest) {
     report.notes.push(
-      `reusing existing build at ${path.relative(root, cssPath)}`,
+      `reusing existing build (${cssPaths
+        .map((cssPath) => path.relative(root, cssPath))
+        .join(", ")})`,
     );
     return;
   }
@@ -120,25 +128,28 @@ async function main(): Promise<void> {
     reportAndExit("check:web-utilities", report);
   }
 
-  const cssPath = findBuiltCss(path.join(root, "apps/web/dist/assets"));
-  if (cssPath === null) {
+  const cssPaths = findBuiltCss(path.join(root, "apps/web/dist/assets"));
+  if (cssPaths.length === 0) {
     report.violations.push(
       "no CSS asset under apps/web/dist/assets after build",
     );
     reportAndExit("check:web-utilities", report);
   }
 
-  const css = readFileSync(cssPath, "utf8");
+  const cssFiles = cssPaths.map((cssPath) => path.relative(root, cssPath));
+  const css = cssPaths
+    .map((cssPath) => readFileSync(cssPath, "utf8"))
+    .join("\n");
   for (const utility of REQUIRED_UTILITIES) {
     if (!css.includes(utility)) {
       report.violations.push(
-        `built CSS missing utility substring ${JSON.stringify(utility)} (file ${path.relative(root, cssPath)})`,
+        `built CSS missing utility substring ${JSON.stringify(utility)} (files ${cssFiles.join(", ")})`,
       );
     }
   }
   if (report.violations.length === 0) {
     report.notes.push(
-      `all ${REQUIRED_UTILITIES.length} required utilities present in ${path.relative(root, cssPath)}`,
+      `all ${REQUIRED_UTILITIES.length} required utilities present across ${cssFiles.join(", ")}`,
     );
   }
   reportAndExit("check:web-utilities", report);
