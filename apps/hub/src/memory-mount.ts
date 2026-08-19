@@ -1,109 +1,85 @@
 /**
- * Hub-side memory plane mount — host analog of Scout dock's `mountKnowledge`
- * (`packages/agent-dock/src/knowledge.ts`). `@corbits/memory` (git pin) owns
- * the firm-memory plane + HTTP under `/api/tenants/:tenantId/memory/*`,
- * isolated in its own `memory` Postgres schema (drizzle `pgSchema`) — the
- * same idiom `@corbits/mailbox` uses for `mailbox` and `@corbits/artifacts`
- * for `artifacts`. There is exactly one Postgres URL for this hub:
- * `DATABASE_URL`, and `@corbits/memory`'s own `loadMemoryConfig()` reads it
- * directly, so this module just calls it.
+ * Hub-side memory plane mount — composition root only. Every product
+ * decision (how a tenant's config resolves, how the plane builds lazily,
+ * what the status route reports) lives in `@corbits/memory-plane`; this
+ * module wires this hub's own `db`, `credentialCipher`, grant store, and
+ * condition registry into it and nothing else.
  *
- * Degrades cleanly when unconfigured: missing `EMBED_BASE_URL` means "no
- * memory plane", logged once at boot, never thrown — same optional-engine
- * contract as the artifacts mount. When `EMBED_BASE_URL` is present, boot
- * fails loudly if migrate/create throws so a half-wired deploy is never
- * silent.
+ * Always mounts: the actual `@corbits/memory` engine (DB pool,
+ * migrations, embed client) only builds on the first real call, per
+ * tenant precedence (env, then a connected OpenAI credential, then
+ * unconfigured — see `@corbits/memory-plane`'s `resolveMemoryConfig`), so
+ * a credential connected long after boot takes effect with no restart.
+ * Every consumer of the returned handle (chat orchestrator, artifact
+ * delivery, the workflow-memory store) already only calls `add`/`search`/
+ * `list`, so the lazy `Memory` this hands them is a drop-in: it resolves
+ * for real on first use and answers a clear 503 until it is configured.
  *
- * This module lands the mount + factory only. Capture/ingestion glue is a
- * later ticket; agents that want firm memory ask the returned handle.
- *
- * Boundary casts (`as never`) match Scout: `@corbits/memory` ships against its
- * own Hono/authz type copies, and Hono env + ConditionRegistry are invariant
- * across package roots — cast only at the mount boundary.
+ * Boundary casts (`as never`) match Scout's `mountKnowledge`
+ * (`packages/agent-dock/src/knowledge.ts`): `@corbits/memory` ships
+ * against its own Hono/authz type copies, and Hono env + ConditionRegistry
+ * are invariant across package roots — cast only at this mount boundary.
  */
 import type { Hono } from "hono";
-import { type } from "arktype";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
-import { getLogger } from "@intx/log";
+import type { CredentialCipher } from "@intx/types";
+import type { DB } from "@intx/db";
+import { createRequireGrant } from "@intx/hub-api";
+import { registerMemoryRoutes, type Memory } from "@corbits/memory";
 import {
-  createMemory,
-  loadMemoryConfig,
-  runMemoryMigrations,
-  type Memory,
-} from "@corbits/memory";
+  createLazyMemoryPlane,
+  createMemoryStatusRoutes,
+} from "@corbits/memory-plane";
+import { getLogger } from "@intx/log";
 
 const log = getLogger(["hub", "memory-mount"]);
-
-// The one boundary this module parses: whether the memory plane is
-// configured at all. `"string > 0"` rejects a blank `EMBED_BASE_URL=`
-// the same as an absent one — both mean "no memory plane" — while
-// catching a non-string env value at the arktype boundary rather than
-// letting a falsy check quietly wave through something unexpected.
-const MemoryMountEnv = type({
-  "EMBED_BASE_URL?": "string > 0",
-});
-
-function embedBaseUrlFrom(
-  env: Record<string, string | undefined>,
-): string | undefined {
-  // Build the input object with the key OMITTED rather than present with
-  // an `undefined` value: arktype's optional-key check is keyed off
-  // property presence, and `process.env` (and this suite's env stashing)
-  // both sometimes leave an unset variable as a present-but-`undefined`
-  // own property rather than an absent one.
-  const rawValue = env["EMBED_BASE_URL"];
-  const input = rawValue === undefined ? {} : { EMBED_BASE_URL: rawValue };
-  const parsed = MemoryMountEnv(input);
-  if (parsed instanceof type.errors) {
-    throw new Error(`invalid memory-plane environment: ${parsed.summary}`);
-  }
-  return parsed.EMBED_BASE_URL;
-}
 
 export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
   app: Hono<E>;
+  db: DB["db"];
+  credentialCipher: CredentialCipher;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
-  /**
-   * When true (default), skip mount if `EMBED_BASE_URL` is unset. Tests can
-   * force a mount attempt by setting env + `optional: false`.
-   */
-  optional?: boolean;
 };
 
 export type MemoryMountHandle = {
+  /** Resolves its real engine lazily per tenant call. */
   memory: Memory;
 };
 
-/**
- * Returns a memory handle when the plane is configured and mounted;
- * `undefined` when optional and `EMBED_BASE_URL` is absent.
- */
-export async function mountMemory<E extends object = object>(
+export function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
-): Promise<MemoryMountHandle | undefined> {
-  const optional = options.optional !== false;
-  const embedBaseUrl = embedBaseUrlFrom(process.env);
-  if (embedBaseUrl === undefined) {
-    if (optional) {
-      log.info("EMBED_BASE_URL not set — memory plane will not be mounted");
-      return undefined;
-    }
-    throw new Error("EMBED_BASE_URL is required to mount memory");
-  }
-
-  const config = loadMemoryConfig();
-  await runMemoryMigrations(config.memory.databaseUrl, {
-    ftsLanguage: config.memory.ftsLanguage,
+): MemoryMountHandle {
+  const plane = createLazyMemoryPlane({
+    env: process.env,
+    db: options.db,
+    credentialCipher: options.credentialCipher,
+    grantStore: options.grantStore,
+    conditionRegistry: options.conditionRegistry,
   });
-  const memory = createMemory({
-    app: options.app as never,
-    config,
-    grantStore: options.grantStore as never,
-    conditionRegistry: options.conditionRegistry as never,
-  });
+  const grants = {
+    grantStore: options.grantStore,
+    conditionRegistry: options.conditionRegistry,
+  };
+  const requireGrant = createRequireGrant(grants);
 
-  log.info("Memory plane mounted at /api/tenants/:tenantId/memory/*");
-  return { memory };
+  registerMemoryRoutes(options.app as never, {
+    memory: plane.memory,
+    requireGrant: requireGrant as never,
+    grants: grants as never,
+  });
+  options.app.route(
+    "/api/tenants/:tenantId/memory",
+    createMemoryStatusRoutes({
+      plane,
+      requireGrant: requireGrant as never,
+    }) as never,
+  );
+
+  log.info(
+    "Memory plane mount point registered at /api/tenants/:tenantId/memory/* " +
+      "(builds lazily on first use)",
+  );
+  return { memory: plane.memory };
 }

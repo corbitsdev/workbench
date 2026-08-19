@@ -8,20 +8,20 @@
 // `DATABASE_URL` is unreachable).
 //
 // "No EMBED_BASE_URL" per CL-5852's test brief means no WORKING
-// embedding backend, not a literally-unset env var: `@corbits/memory`'s
-// own `loadMemoryConfig()` requires the var to be set at all (a vendored
-// contract this repo cannot change), and the hub's own optional-mount
-// gate (`memory-mount.ts`) treats a genuinely unset var as "don't mount
-// at all" — not a degraded-but-present plane. `EMBED_BASE_URL` here
-// points at `localhost:9` (the "discard" port, always closed), the exact
-// trick `memory-mount.test.ts` already uses: every embed call fails,
-// forcing the plane's real runtime degrade
-// (`services/search.ts`'s `degraded: ["dense_unavailable"]`) rather than
-// a fake standing in for it — zero real keys, and the ONLY inference this
-// test performs is the plane's own lexical (Postgres FTS) fallback.
+// embedding backend, not a literally-unset env var — a genuinely unset
+// one is now the legitimate lexical-only floor (see
+// `@corbits/memory-plane`'s `resolveConfigLexicalOnly`), not a degraded
+// state. `EMBED_BASE_URL` here instead points at `localhost:9` (the
+// "discard" port, always closed), the exact trick `memory-mount.test.ts`
+// already uses: every embed call fails, forcing the plane's real runtime
+// degrade (`services/search.ts`'s `degraded: ["dense_unavailable"]`)
+// rather than a fake standing in for it — zero real keys, and the ONLY
+// inference this test performs is the plane's own lexical (Postgres FTS)
+// fallback.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
+import { createNoopCredentialCipher } from "@intx/crypto";
 import {
   createWorkflowMemoryRoutes,
   createWorkflowMemoryStore,
@@ -97,13 +97,13 @@ describeIfDb(
       process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
       process.env["EMBED_MODEL"] = "test-embedding-model";
 
-      const handle = await mountMemory({
+      const handle = mountMemory({
         app: new Hono(),
+        db: undefined as never, // never touched: EMBED_BASE_URL is set, so the env step wins without a credential lookup
+        credentialCipher: createNoopCredentialCipher(),
         grantStore: createInMemoryGrantStore([]),
         conditionRegistry: {},
       });
-      expect(handle).toBeDefined();
-      if (handle === undefined) throw new Error("expected a mounted plane");
 
       const app = createWorkflowMemoryRoutes({
         authenticator: {

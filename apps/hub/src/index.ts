@@ -256,7 +256,6 @@ import {
 import { mountMemory } from "./memory-mount";
 import { mountSkills } from "./skills-mount";
 import {
-  createUnavailableWorkflowMemoryRoutes,
   createWorkflowMemoryRoutes,
   createWorkflowMemoryStore,
 } from "@corbits/memory-hub";
@@ -979,17 +978,20 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
-  // Memory plane (optional): firm-memory HTTP under
-  // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
-  // plane, isolated in its own `memory` schema. Degrades when EMBED_* is
-  // unset — see memory-mount.ts. Captured (not discarded) here, before
+  // Memory plane: firm-memory HTTP under `/api/tenants/:tenantId/memory/*`,
+  // same `DATABASE_URL` as the control plane, isolated in its own `memory`
+  // schema. Builds lazily per tenant (env, then a connected OpenAI
+  // credential, then unconfigured) — see memory-mount.ts and
+  // `@corbits/memory-plane`. Captured (not discarded) here, before
   // `chatOrchestrator`/`createArtifactDeliveryHandler` below, so the
   // in-process `Memory` handle can be threaded into both: a finalized
   // turn's persisted artifact and the bounded daily transcript digest
   // (CL-5852) both write through this same handle, never a second
   // connection or the plane's own tenant-session-gated HTTP routes.
-  const memoryHandle = await mountMemory({
+  const memoryHandle = mountMemory({
     app,
+    db,
+    credentialCipher,
     grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
   });
@@ -1077,15 +1079,15 @@ export async function createHub(config: HubConfig) {
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
+    memory: memoryHandle.memory,
   };
-  if (memoryHandle !== undefined) {
-    chatOrchestratorDeps.memory = memoryHandle.memory;
-  }
   const chatOrchestrator = createChatOrchestrator(chatOrchestratorDeps);
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
-  // `memory` (absent when the plane isn't mounted) lets this handler
-  // also record a memory entry for each persisted artifact (CL-5852).
+  // `memory` lets this handler also record a memory entry for each
+  // persisted artifact (CL-5852); it resolves lazily per tenant (see
+  // `memory-mount.ts`), answering a clear 503 until a tenant's plane is
+  // actually configured rather than being absent outright.
   const artifactDeliveryHandlerDeps: Parameters<
     typeof createArtifactDeliveryHandler
   >[0] = {
@@ -1097,10 +1099,8 @@ export async function createHub(config: HubConfig) {
     claims: writeClaims,
     providerHealth: createProviderHealthPort(providerHealthStore),
     listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
+    memory: memoryHandle.memory,
   };
-  if (memoryHandle !== undefined) {
-    artifactDeliveryHandlerDeps.memory = memoryHandle.memory;
-  }
   artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(
     artifactDeliveryHandlerDeps,
   );
@@ -2305,13 +2305,15 @@ export async function createHub(config: HubConfig) {
         });
       }
     }
-    if (memoryHandle !== undefined) {
-      entries.push({
-        name: memoryToolPackageName,
-        connectorId: "memory",
-        credentialBinding: null,
-      });
-    }
+    // Offered unconditionally, like `capability`/`interaction` below: memory
+    // resolves lazily per tenant now (see `memory-mount.ts`), so "mounted"
+    // is no longer the same fact as "configured" — an unconfigured tenant's
+    // call fails with a clear 503 rather than the tool never being offered.
+    entries.push({
+      name: memoryToolPackageName,
+      connectorId: "memory",
+      credentialBinding: null,
+    });
     entries.push({
       name: capabilityToolPackageName,
       connectorId: "capability",
@@ -2360,7 +2362,9 @@ export async function createHub(config: HubConfig) {
     listConversationalAgents: listMyraConversationalAgents,
     listUsableToolPackages: listMyraUsableToolPackages,
     listSkills: (caller) => skills.registry.list(caller),
-    memoryAvailable: memoryHandle !== undefined,
+    // Mounted unconditionally now (see `memoryToolPackageName` above) —
+    // memory resolves lazily per tenant, not at boot.
+    memoryAvailable: true,
     listModels: listMyraModels,
   };
 
@@ -2659,18 +2663,16 @@ export async function createHub(config: HubConfig) {
   // `WorkflowRunAuthenticator` (sidecar bearer token + run address)
   // against this hub's own control-plane `db`. Serves through
   // `memoryHandle.memory` — the SAME in-process plane instance
-  // `mountMemory` mounted above, never a second connection.
-  if (memoryHandle !== undefined) {
-    app.route(
-      "/api/workflow-memory",
-      createWorkflowMemoryRoutes({
-        authenticator: createWorkflowRunAuthenticator({ db }),
-        store: createWorkflowMemoryStore(memoryHandle.memory),
-      }),
-    );
-  } else {
-    app.route("/api/workflow-memory", createUnavailableWorkflowMemoryRoutes());
-  }
+  // `mountMemory` mounted above, never a second connection. `memory`
+  // resolves lazily per tenant, so an unconfigured tenant's calls answer
+  // a clear 503 here rather than this whole route tree being absent.
+  app.route(
+    "/api/workflow-memory",
+    createWorkflowMemoryRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      store: createWorkflowMemoryStore(memoryHandle.memory),
+    }),
+  );
 
   // Closed-by-default access policy: a per-tenant policy row layered
   // over native tenancy/RBAC (see `@workbench/access-policy`). Migrated

@@ -1,0 +1,137 @@
+// The memory settings status contract: what the settings UI renders
+// without re-deriving any product decision itself. `source` carries the
+// precedence step that won — "env", "connected-credential", or
+// "lexical-only" (the floor: full-text search only, needs nothing beyond
+// the hub's own pgvector-capable Postgres) — so a future fourth source
+// slots in as one more value here, never a reshape.
+import type {
+  DegradeMetricsSnapshot,
+  MemoryCapabilities,
+  MemoryConfig,
+} from "@corbits/memory";
+
+import type { MemoryConfigSource } from "./config-resolution";
+
+export type MemoryEmbedStatus = {
+  readonly model: string;
+  /** Host only — e.g. "api.openai.com". Never a full URL (which could carry
+   * a query-string credential) and never the API key itself. */
+  readonly host: string;
+};
+
+export type MemoryRerankStatus =
+  | { readonly configured: true; readonly model: string; readonly host: string }
+  | { readonly configured: false };
+
+export type MemorySetupOption =
+  | {
+      readonly kind: "set-env";
+      readonly label: string;
+      readonly envVars: readonly string[];
+    }
+  | {
+      readonly kind: "connect-provider";
+      readonly label: string;
+      readonly provider: string;
+    };
+
+export type MemoryDegradeStatus = {
+  readonly totalSearches: number;
+  readonly since: string;
+  readonly windowSize: number;
+  readonly windowedDegradeRate: Record<string, number>;
+  readonly escalated: Record<string, boolean>;
+};
+
+/**
+ * The memory plane is always available once it builds (lexical-only is a
+ * legitimate, fully-capable mode, not a degraded one) — `embeddingsConfigured`
+ * is the plane's own construction-time answer (`Memory.capabilities`,
+ * `@corbits/memory`'s CL-6287 addition), never re-derived from config here.
+ * `missing`/`setupOptions` describe how to move from lexical-only up to
+ * dense retrieval; both are empty once it's already active.
+ */
+export type MemoryPlaneStatus = {
+  readonly source: MemoryConfigSource;
+  readonly embeddingsConfigured: boolean;
+  readonly embed: MemoryEmbedStatus | null;
+  readonly rerank: MemoryRerankStatus;
+  readonly degrade: MemoryDegradeStatus;
+  readonly missing: readonly string[];
+  readonly setupOptions: readonly MemorySetupOption[];
+};
+
+/** Host only (e.g. "api.openai.com") — never the full URL, which could
+ * carry a query-string credential, and never the key itself. Falls back to
+ * the raw string for a value that isn't a real URL rather than throwing —
+ * status reporting must never fail because of what it's reporting on. */
+export function hostOnly(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+export const MEMORY_SETUP_OPTIONS: readonly MemorySetupOption[] = [
+  {
+    kind: "set-env",
+    label: "Set an embedding endpoint for this deploy",
+    envVars: ["EMBED_BASE_URL", "EMBED_MODEL"],
+  },
+  {
+    kind: "connect-provider",
+    label: "Connect an OpenAI API key",
+    provider: "openai",
+  },
+];
+
+function rerankStatusFrom(config: MemoryConfig): MemoryRerankStatus {
+  const { rerank } = config.memory;
+  if (rerank.baseUrl === undefined || rerank.model === undefined) {
+    return { configured: false };
+  }
+  return {
+    configured: true,
+    model: rerank.model,
+    host: hostOnly(rerank.baseUrl),
+  };
+}
+
+/** Builds the full contract from a resolved config, the real built plane's
+ * own capabilities, and this tenant's degrade snapshot. Pure — no I/O — so
+ * the lazy-plane module (the only caller with a real `Memory` and a real
+ * snapshot function) stays the one place that decides when to call it. */
+export function buildMemoryPlaneStatus(
+  source: MemoryConfigSource,
+  config: MemoryConfig,
+  capabilities: MemoryCapabilities,
+  degrade: DegradeMetricsSnapshot,
+): MemoryPlaneStatus {
+  const { embeddingsConfigured } = capabilities;
+  return {
+    source,
+    embeddingsConfigured,
+    embed:
+      embeddingsConfigured && config.memory.embed !== undefined
+        ? {
+            model: config.memory.embed.model,
+            host: hostOnly(config.memory.embed.baseUrl),
+          }
+        : null,
+    rerank: rerankStatusFrom(config),
+    degrade: {
+      totalSearches: degrade.totalSearches,
+      since: degrade.since.toISOString(),
+      windowSize: degrade.windowSize,
+      windowedDegradeRate: degrade.windowedDegradeRate,
+      escalated: degrade.escalated,
+    },
+    missing: embeddingsConfigured
+      ? []
+      : [
+          "a dense embedding endpoint — set one for this deploy, or connect an OpenAI credential",
+        ],
+    setupOptions: embeddingsConfigured ? [] : MEMORY_SETUP_OPTIONS,
+  };
+}

@@ -51,9 +51,30 @@ exactly this reason.
 
 ## Memory plane
 
-The memory plane (embeddings-backed recall) needs `EMBED_BASE_URL` set;
-without it, `apps/hub/src/memory-mount.ts` skips mounting the memory plane
-and logs that it did, rather than failing hub startup.
+The memory plane (`@corbits/memory`, wired through `@corbits/memory-plane`
+and mounted at `apps/hub/src/memory-mount.ts`) always mounts, but its real
+engine (DB pool, migrations, embed client) builds lazily — on a tenant's
+first actual memory call, not at hub boot. `GET
+/api/tenants/:tenantId/memory/status` reports what a tenant currently has
+and how to change it.
+
+Per tenant, in order:
+
+1. `EMBED_BASE_URL`/`EMBED_MODEL` (see `.env.example`) — one embed
+   endpoint for the whole deploy.
+2. Otherwise, a tenant's own OpenAI credential connected through
+   Settings → Connections. Resolved the same ownership-walk-the-
+   ancestor-chain way a definition's model requirements are — no env
+   needed, and it takes effect immediately, no hub restart.
+3. Otherwise, lexical-only: full-text search only, no embed endpoint.
+   This needs nothing beyond a pgvector-capable Postgres and is a fully-
+   supported mode, not a degraded one — a tenant always has at least
+   lexical search.
+
+Because step 2 depends on a tenant's connected credentials, the plane
+cannot resolve its config at boot; `@corbits/memory-plane`'s
+`resolveMemoryConfig`/`createLazyMemoryPlane` is what defers that
+resolution to first use, memoized per process once it succeeds.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 

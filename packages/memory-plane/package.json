@@ -1,0 +1,32 @@
+{
+  "name": "@corbits/memory-plane",
+  "private": true,
+  "description": "Resolves and lazily mounts the hub's @corbits/memory plane against a tenant's actual configuration (env, or a connected OpenAI-compatible provider credential), and reports its status for the memory settings surface",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/memory": "github:corbitsdev/corbits-memory#7fcbd00d1c94b94ee13ea21696a4040a89c08693",
+    "@intx/authz": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
+    "arktype": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@intx/crypto": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
