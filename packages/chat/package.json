@@ -25,7 +25,7 @@
     "@corbits/approvals": "workspace:*",
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+    "@corbits/memory": "github:corbitsdev/corbits-memory#7fcbd00d1c94b94ee13ea21696a4040a89c08693",
     "@corbits/turn-artifacts": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/authz": "workspace:*",
