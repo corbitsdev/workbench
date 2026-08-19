@@ -14,8 +14,17 @@
 // and mutations through `PluginSkillDetailPanel`, never forking
 // `SkillsSettingsSection` itself.
 
-import { Button, PageShell, RichEmptyState } from "@corbits/react-ui";
-import { PluginsGallery, PluginConnectPanel } from "@corbits/plugins-ui";
+import {
+  Button,
+  LibrarySearchInput,
+  PageShell,
+  RichEmptyState,
+} from "@corbits/react-ui";
+import {
+  PluginsGallery,
+  PluginConnectPanel,
+  type PluginsGalleryTab,
+} from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
 import { Blocks, Plus, TriangleAlert } from "lucide-react";
@@ -48,6 +57,10 @@ function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+function canOpenPluginPanel(plugin: ResolvedPlugin): boolean {
+  return plugin.status !== "not_connected";
+}
+
 export function PluginsRoute({
   path: _path,
 }: {
@@ -64,6 +77,8 @@ export function PluginsRoute({
   const [openPlugin, setOpenPlugin] = useState<ResolvedPlugin | null>(null);
   const [openSkillName, setOpenSkillName] = useState<string | null>(null);
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<PluginsGalleryTab>("plugins");
+  const [galleryQuery, setGalleryQuery] = useState("");
   // Set when the shell banner's "Fix it" deep link named a provider this
   // gallery has no matching card for (CL-6092) — rather than the deep
   // link silently no-oping, this renders a notice pointing back at the
@@ -71,18 +86,6 @@ export function PluginsRoute({
   const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
   const pendingConnectProvider = usePendingConnectProvider();
   const clearPendingConnectProvider = useClearPendingConnectProvider();
-  // `/plugins?connect=mcp` (CL-6142): the deep link
-  // `@workbench/connections-tools`' `request_connection` tool hands a
-  // human when an agent asks for an MCP server that isn't connected yet.
-  // Read once off the initial URL, same `window.location.search` pattern
-  // `onboarding-page.tsx` uses for its own connect-return query params —
-  // this is the one special `connect=` value handled outside the
-  // `pendingConnectProvider` context, since "mcp" never names a
-  // `CONNECTOR_REGISTRY` entry `PluginConnectPanel` could open.
-  const [autoOpenMcpAdd] = useState(
-    () => new URLSearchParams(window.location.search).get("connect") === "mcp",
-  );
-
   const openPluginPanel = useCallback((plugin: ResolvedPlugin) => {
     setOpenPlugin(plugin);
     setConnectDeepLinkNotFound(false);
@@ -126,7 +129,7 @@ export function PluginsRoute({
     const match = pluginsState.plugins.find(
       (plugin) => plugin.descriptor.id === pendingConnectProvider,
     );
-    if (match !== undefined) {
+    if (match !== undefined && canOpenPluginPanel(match)) {
       openPluginPanel(match);
     } else {
       setConnectDeepLinkNotFound(true);
@@ -205,11 +208,21 @@ export function PluginsRoute({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         title="Plugins"
-        subtitle={`${pluginsState.plugins.length} plugins · ${skillsState.skills.length} skills`}
         actions={
-          <Button size="sm" onClick={() => setCreateSkillOpen(true)}>
-            <Plus /> New skill
-          </Button>
+          <>
+            <LibrarySearchInput
+              label={
+                activeTab === "plugins" ? "Search plugins" : "Search skills"
+              }
+              value={galleryQuery}
+              onChange={setGalleryQuery}
+            />
+            {activeTab === "skills" ? (
+              <Button size="sm" onClick={() => setCreateSkillOpen(true)}>
+                <Plus /> New skill
+              </Button>
+            ) : null}
+          </>
         }
       />
       <PageShell width="full" className="page-fill">
@@ -230,7 +243,9 @@ export function PluginsRoute({
           skills={skillCards}
           onOpenPlugin={openPluginPanel}
           onOpenSkill={(skill) => setOpenSkillName(skill.name)}
-          autoOpenMcpAdd={autoOpenMcpAdd}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          query={galleryQuery}
         />
       </PageShell>
       <PluginConnectPanel

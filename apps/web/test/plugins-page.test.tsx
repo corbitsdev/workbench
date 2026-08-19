@@ -191,6 +191,11 @@ describe("PluginsRoute", () => {
     stubFetch();
     const el = await mount();
 
+    expect(
+      el.querySelector('input[aria-label="Search plugins"]'),
+    ).not.toBeNull();
+    expect(el.textContent).not.toContain("New skill");
+
     const skillsTab = [...el.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Skills") === true,
     );
@@ -199,6 +204,10 @@ describe("PluginsRoute", () => {
       skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    expect(
+      el.querySelector('input[aria-label="Search skills"]'),
+    ).not.toBeNull();
+    expect(el.textContent).toContain("New skill");
     expect(el.textContent).toContain("weekly-digest");
     expect(el.textContent).toContain("Shared with everyone");
   });

@@ -30,7 +30,7 @@ export function SkillCard({
 }) {
   return (
     <div
-      className="flex h-10 cursor-pointer items-center gap-3 border-b border-border px-2 last:border-b-0"
+      className="flex min-h-16 cursor-pointer items-center gap-3 border-b border-border px-2 py-3 hover:bg-muted/40"
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -43,17 +43,17 @@ export function SkillCard({
     >
       <span
         aria-hidden="true"
-        className="flex size-5 shrink-0 items-center justify-center text-muted-foreground"
+        className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
       >
         <Sparkles className="size-4" />
       </span>
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="shrink-0 text-sm font-medium">{skill.name}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">{skill.name}</span>
         <span className="truncate text-xs text-muted-foreground">
           {skill.description}
         </span>
       </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
+      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
         {SCOPE_LABEL[skill.scope]}
       </span>
       <Button type="button" size="sm" variant="ghost" onClick={onOpen}>

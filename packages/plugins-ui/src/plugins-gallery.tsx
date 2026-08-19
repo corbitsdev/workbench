@@ -1,17 +1,20 @@
-// The Plugins gallery (CL-6090): Plugins | Skills tabs over one search box,
-// an installed strip, and a Featured-then-category card grid. Presentational
+// The Plugins gallery (CL-6090): Plugins | Skills tabs over compact,
+// categorized directory grids. Search is controlled by the composing page so
+// it can live in the shared top bar. Presentational
 // — every list arrives already loaded; the composing page (`apps/web`'s
 // `plugins-page.tsx`) owns fetching `listPluginsForTenant` and the skill
 // registry, the same split every other package in this repo draws between
 // "owns the domain" and "stays generic."
 
-import { EmptyState, LibrarySearchInput, Tabs } from "@corbits/react-ui";
+import { EmptyState, Tabs } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
-import { PackageSearch, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  MCP_PRESETS,
+  MCP_PRESET_CONNECTOR_IDS,
+} from "@workbench/connections/mcp-presets";
+import { Sparkles } from "lucide-react";
+import { useMemo } from "react";
 
-import { InstalledStrip } from "./installed-strip";
 import { McpServersSection } from "./mcp-servers-section";
 import { McpPresetCardsSection } from "./mcp-preset-cards";
 import {
@@ -30,6 +33,10 @@ function matchesQuery(haystacks: readonly string[], query: string): boolean {
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
+function isConnectedLegacyPlugin(plugin: ResolvedPlugin): boolean {
+  return plugin.status !== "not_connected";
+}
+
 function PluginGrid({
   plugins,
   onOpen,
@@ -38,7 +45,7 @@ function PluginGrid({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
       {plugins.map((plugin) => (
         <PluginCard
           key={plugin.descriptor.id}
@@ -60,7 +67,9 @@ function PluginsTabPanel({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   const nonPreset = plugins.filter(
-    (plugin) => !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
+    (plugin) =>
+      !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
+      isConnectedLegacyPlugin(plugin),
   );
   const filtered = nonPreset.filter((plugin) =>
     matchesQuery(
@@ -69,25 +78,7 @@ function PluginsTabPanel({
     ),
   );
 
-  if (plugins.length === 0) {
-    return (
-      <EmptyState
-        icon={<PackageSearch />}
-        title="No plugins registered"
-        description="Nothing is available to connect yet."
-      />
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <EmptyState
-        icon={<PackageSearch />}
-        title="Nothing matches"
-        description={`No plugin matches "${query.trim()}".`}
-      />
-    );
-  }
+  if (filtered.length === 0) return null;
 
   const showFeatured = query.trim() === "";
   const featured = showFeatured
@@ -163,14 +154,34 @@ function SkillsTabPanel({
     );
   }
 
+  const groups = [
+    {
+      label: "Shared with everyone",
+      skills: filtered.filter((skill) => skill.scope === "tenant"),
+    },
+    {
+      label: "Just you",
+      skills: filtered.filter((skill) => skill.scope === "private"),
+    },
+  ].filter((group) => group.skills.length > 0);
+
   return (
-    <div className="flex flex-col">
-      {filtered.map((skill) => (
-        <SkillCard
-          key={skill.assetId}
-          skill={skill}
-          onOpen={() => onOpen(skill)}
-        />
+    <div className="flex flex-col gap-6">
+      {groups.map((group) => (
+        <section key={group.label} className="flex flex-col gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {group.label}
+          </h3>
+          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+            {group.skills.map((skill) => (
+              <SkillCard
+                key={skill.assetId}
+                skill={skill}
+                onOpen={() => onOpen(skill)}
+              />
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );
@@ -182,18 +193,19 @@ export function PluginsGallery({
   skills,
   onOpenPlugin,
   onOpenSkill,
-  autoOpenMcpAdd = false,
+  activeTab,
+  onTabChange,
+  query,
 }: {
   readonly tenantId: string;
   readonly plugins: readonly ResolvedPlugin[];
   readonly skills: readonly SkillCardData[];
   readonly onOpenPlugin: (plugin: ResolvedPlugin) => void;
   readonly onOpenSkill: (skill: SkillCardData) => void;
-  readonly autoOpenMcpAdd?: boolean;
+  readonly activeTab: PluginsGalleryTab;
+  readonly onTabChange: (tab: PluginsGalleryTab) => void;
+  readonly query: string;
 }) {
-  const [tab, setTab] = useState<PluginsGalleryTab>("plugins");
-  const [query, setQuery] = useState("");
-
   // An inference-provider connector names no tool package it feeds
   // (`feedsTools: []`) — providers live only in Shared Settings'
   // Connections section, never in this directory (CL-6272.2).
@@ -207,7 +219,12 @@ export function PluginsGallery({
       {
         id: "plugins" as const,
         label: "Plugins",
-        count: installablePlugins.length,
+        count:
+          installablePlugins.filter(
+            (plugin) =>
+              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
+              isConnectedLegacyPlugin(plugin),
+          ).length + MCP_PRESETS.length,
       },
       { id: "skills" as const, label: "Skills", count: skills.length },
     ],
@@ -215,35 +232,19 @@ export function PluginsGallery({
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
       <Tabs
         tabs={tabs}
-        active={tab}
-        onChange={setTab}
+        active={activeTab}
+        onChange={onTabChange}
         label="Plugins gallery sections"
       >
         {(active) => (
           <div className="flex flex-col gap-4 pt-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <LibrarySearchInput
-                label={
-                  active === "plugins" ? "Search plugins" : "Search skills"
-                }
-                value={query}
-                onChange={setQuery}
-              />
-            </div>
             {active === "plugins" ? (
               <>
-                <InstalledStrip
-                  plugins={installablePlugins}
-                  onOpen={onOpenPlugin}
-                />
-                <McpPresetCardsSection tenantId={tenantId} />
-                <McpServersSection
-                  tenantId={tenantId}
-                  autoOpenAdd={autoOpenMcpAdd}
-                />
+                <McpPresetCardsSection tenantId={tenantId} query={query} />
+                <McpServersSection tenantId={tenantId} />
                 <PluginsTabPanel
                   plugins={installablePlugins}
                   query={query}

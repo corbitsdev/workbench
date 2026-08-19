@@ -27,34 +27,44 @@ export function InstalledStrip({
   if (installed.length === 0) return null;
 
   return (
-    <div
-      className="flex flex-wrap items-center gap-2"
-      role="group"
-      aria-label="Installed plugins"
-    >
-      {installed.map((plugin) => {
-        const Icon = pluginIcon(plugin.descriptor.id);
-        return (
-          <Button
-            key={plugin.descriptor.id}
-            type="button"
-            variant="outline"
-            size="icon"
-            title={`${plugin.descriptor.displayName} — ${
-              plugin.status === "connected" ? "connected" : "needs attention"
-            }`}
-            onClick={() => onOpen(plugin)}
-            className="relative text-muted-foreground hover:text-foreground"
-          >
-            <Icon className="size-4" />
-            <span
-              aria-hidden="true"
-              data-state={plugin.status}
-              className="absolute -bottom-0.5 -right-0.5 size-2 border border-background data-[state=connected]:bg-success data-[state=needs_attention]:bg-destructive"
-            />
-          </Button>
-        );
-      })}
-    </div>
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Connected
+        </h3>
+        <span className="text-xs text-muted-foreground">
+          {installed.length} active
+        </span>
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="Installed plugins"
+      >
+        {installed.map((plugin) => {
+          const Icon = pluginIcon(plugin.descriptor.id);
+          return (
+            <Button
+              key={plugin.descriptor.id}
+              type="button"
+              variant="outline"
+              size="icon"
+              title={`${plugin.descriptor.displayName} — ${
+                plugin.status === "connected" ? "connected" : "needs attention"
+              }`}
+              onClick={() => onOpen(plugin)}
+              className="relative text-muted-foreground hover:text-foreground"
+            >
+              <Icon className="size-4" />
+              <span
+                aria-hidden="true"
+                data-state={plugin.status}
+                className="absolute -bottom-0.5 -right-0.5 size-2 border border-background data-[state=connected]:bg-success data-[state=needs_attention]:bg-destructive"
+              />
+            </Button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

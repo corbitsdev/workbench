@@ -16,31 +16,39 @@ import {
 } from "lucide-react";
 
 export type PluginCategory =
-  "Inference" | "Productivity" | "Data & research" | "Dev tools";
+  | "Communication"
+  | "Productivity"
+  | "Sales & customer"
+  | "Engineering"
+  | "Research & data";
 
 export const PLUGIN_CATEGORY_ORDER: readonly PluginCategory[] = [
+  "Communication",
   "Productivity",
-  "Dev tools",
-  "Data & research",
-  "Inference",
+  "Sales & customer",
+  "Engineering",
+  "Research & data",
 ];
 
 const CATEGORY_BY_ID: Readonly<Record<string, PluginCategory>> = {
-  anthropic: "Inference",
-  openai: "Inference",
-  "google-genai": "Inference",
-  xai: "Inference",
-  "opencode-zen": "Inference",
-  groq: "Inference",
-  deepseek: "Inference",
-  mistral: "Inference",
-  openrouter: "Inference",
-  huggingface: "Inference",
   granola: "Productivity",
-  exa: "Data & research",
-  scrapecreators: "Data & research",
-  linear: "Dev tools",
-  github: "Dev tools",
+  notion: "Productivity",
+  zoom: "Communication",
+  slack: "Communication",
+  google: "Productivity",
+  attio: "Sales & customer",
+  hubspot: "Sales & customer",
+  exa: "Research & data",
+  scrapecreators: "Research & data",
+  sumble: "Research & data",
+  linear: "Engineering",
+  github: "Engineering",
+  sentry: "Engineering",
+  vercel: "Engineering",
+  render: "Engineering",
+  railway: "Engineering",
+  posthog: "Engineering",
+  browserbase: "Engineering",
 };
 
 /** One honest sentence: what connecting this plugin actually lets an agent
@@ -89,7 +97,7 @@ export const FEATURED_CONNECTOR_IDS: readonly string[] = [
 ];
 
 export function pluginCategory(connectorId: string): PluginCategory {
-  return CATEGORY_BY_ID[connectorId] ?? "Inference";
+  return CATEGORY_BY_ID[connectorId] ?? "Productivity";
 }
 
 export function pluginOutcome(

@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { act } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
@@ -13,19 +14,6 @@ import type { ResolvedPlugin } from "@workbench/connections/plugins";
 
 import { PluginsGallery } from "../src/plugins-gallery";
 import type { SkillCardData } from "../src/skill-card";
-
-const nativeSetter = Object.getOwnPropertyDescriptor(
-  window.HTMLInputElement.prototype,
-  "value",
-)?.set;
-if (nativeSetter === undefined) {
-  throw new Error("HTMLInputElement.prototype.value has no native setter");
-}
-
-function typeInto(input: HTMLInputElement, value: string) {
-  nativeSetter?.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
 
 function descriptor(
   id: string,
@@ -114,34 +102,58 @@ const SKILLS: readonly SkillCardData[] = [
 // this suite (which only exercises the plugin/skill grid) never issues a
 // real request, and resolve within an `act()` flush so the state update
 // isn't reported unwrapped.
-globalThis.fetch = (async () =>
-  new Response(JSON.stringify({ data: [] }))) as unknown as typeof fetch;
+globalThis.fetch = (async (input: string | URL | Request) => {
+  const url = String(input);
+  if (url.includes("/webhook-triggers") || url.includes("/routines")) {
+    return new Response(JSON.stringify({ items: [] }));
+  }
+  return new Response(JSON.stringify({ data: [], nextCursor: null }));
+}) as unknown as typeof fetch;
 
-function renderGallery(plugins: readonly ResolvedPlugin[] = PLUGINS) {
+function GalleryHarness({
+  plugins,
+  initialQuery,
+}: {
+  readonly plugins: readonly ResolvedPlugin[];
+  readonly initialQuery: string;
+}) {
+  const [activeTab, setActiveTab] = useState<"plugins" | "skills">("plugins");
+  return (
+    <PluginsGallery
+      tenantId="tenant_test"
+      plugins={plugins}
+      skills={SKILLS}
+      onOpenPlugin={() => {}}
+      onOpenSkill={() => {}}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      query={initialQuery}
+    />
+  );
+}
+
+function renderGallery(
+  plugins: readonly ResolvedPlugin[] = PLUGINS,
+  initialQuery = "",
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
   act(() => {
     root.render(
-      <PluginsGallery
-        tenantId="tenant_test"
-        plugins={plugins}
-        skills={SKILLS}
-        onOpenPlugin={() => {}}
-        onOpenSkill={() => {}}
-      />,
+      <GalleryHarness plugins={plugins} initialQuery={initialQuery} />,
     );
   });
   return { container, root };
 }
 
 describe("PluginsGallery", () => {
-  test("renders a card per resolved plugin with its outcome sentence", () => {
+  test("renders connected legacy plugins but omits unconnected key-based entries", () => {
     const { container } = renderGallery();
 
     expect(container.textContent).toContain("GitHub");
     expect(container.textContent).toContain("Notion");
-    expect(container.textContent).toContain("Hugging Face");
+    expect(container.textContent).not.toContain("Hugging Face");
     expect(container.textContent).toContain(
       "Lets agents read and open pull requests in your GitHub repos.",
     );
@@ -155,13 +167,11 @@ describe("PluginsGallery", () => {
     );
   });
 
-  test("the installed strip only carries connected/needs-attention plugins", () => {
+  test("does not duplicate connected plugins in an icon-only strip", () => {
     const { container } = renderGallery();
 
     const strip = container.querySelector('[aria-label="Installed plugins"]');
-    expect(strip).not.toBeNull();
-    const chips = strip?.querySelectorAll("button") ?? [];
-    expect(chips.length).toBe(2);
+    expect(strip).toBeNull();
   });
 
   test("provenance reads as plain words on a plugin card", () => {
@@ -172,15 +182,7 @@ describe("PluginsGallery", () => {
   });
 
   test("search narrows the plugin grid to matches only", () => {
-    const { container } = renderGallery();
-    const input = container.querySelector(
-      'input[aria-label="Search plugins"]',
-    ) as HTMLInputElement;
-    expect(input).not.toBeNull();
-
-    act(() => {
-      typeInto(input, "git");
-    });
+    const { container } = renderGallery(PLUGINS, "git");
 
     expect(container.textContent).toContain("GitHub");
     expect(container.textContent).not.toContain("Hugging Face");
@@ -210,5 +212,23 @@ describe("PluginsGallery", () => {
 
     expect(container.textContent).toContain("GitHub");
     expect(container.textContent).not.toContain("Anthropic");
+  });
+
+  test("omits unverified MCP suggestions and API-key-only registry entries", () => {
+    const { container } = renderGallery();
+
+    for (const excluded of [
+      "Slack",
+      "Vercel",
+      "Render",
+      "HubSpot",
+      "Zoom",
+      "Google Workspace",
+      "Browserbase",
+      "ScrapeCreators",
+    ]) {
+      expect(container.textContent).not.toContain(excluded);
+    }
+    expect(container.textContent).not.toContain("Add MCP server");
   });
 });

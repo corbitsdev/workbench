@@ -10,6 +10,7 @@ import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { Plus } from "lucide-react";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
+import { PluginLogo } from "./plugin-logo";
 
 const STATUS_CAPTION: Record<ResolvedPlugin["status"], string> = {
   connected: "Connected",
@@ -38,22 +39,23 @@ export function PluginCard({
       : STATUS_CAPTION[plugin.status];
 
   return (
-    <div className="flex h-10 items-center gap-3 border-b border-border px-2 last:border-b-0">
-      <span
-        aria-hidden="true"
-        className="flex size-5 shrink-0 items-center justify-center text-muted-foreground"
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="shrink-0 text-sm font-medium">
+    <div className="flex min-h-16 items-center gap-3 border-b border-border px-2 py-3">
+      <PluginLogo
+        name={plugin.descriptor.displayName}
+        icon={plugin.descriptor.icon}
+        fallbackIcon={Icon}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">
           {plugin.descriptor.displayName}
         </span>
         <span className="truncate text-xs text-muted-foreground">
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>
       </div>
-      <span className="shrink-0 text-xs text-muted-foreground">{caption}</span>
+      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
+        {caption}
+      </span>
       {plugin.status === "not_connected" ? (
         <Button
           type="button"

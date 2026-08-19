@@ -38,7 +38,7 @@ const PRESETS = [
     displayName: "Granola",
     description: "Pull your Granola meeting notes and transcripts — via MCP.",
     url: "https://mcp.granola.ai/mcp",
-    keyOptional: false,
+    connectionMode: "oauth",
     docsUrl: "https://www.granola.ai",
     connected: false,
   },
@@ -47,14 +47,14 @@ const PRESETS = [
     displayName: "Exa",
     description: "Search the web (Exa) — no key needed.",
     url: "https://mcp.exa.ai/mcp",
-    keyOptional: true,
+    connectionMode: "keyless",
     docsUrl: "https://exa.ai",
     connected: false,
   },
 ];
 
 describe("McpPresetCardsSection", () => {
-  test("renders one card per preset with its outcome sentence and the MCP hint", async () => {
+  test("renders one compact row per preset with its outcome sentence", async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({ data: PRESETS }),
@@ -68,8 +68,13 @@ describe("McpPresetCardsSection", () => {
     expect(container.textContent).toContain(
       "Search the web (Exa) — no key needed.",
     );
-    expect(container.textContent).toContain("via MCP");
     expect(container.textContent).toContain("Not connected");
+    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(2);
+    expect(
+      container
+        .querySelector('[data-plugin-slug="exa"] svg')
+        ?.getAttribute("viewBox"),
+    ).toBe("0 0 151 182");
   });
 
   test("connect calls the preset connect route with the preset's slug", async () => {
@@ -100,8 +105,8 @@ describe("McpPresetCardsSection", () => {
     const container = mountSection();
     await settle();
 
-    const exaCard = [...container.querySelectorAll(".p-4")].find((el) =>
-      el.textContent?.includes("Exa"),
+    const exaCard = container.querySelector(
+      '[data-plugin-slug="exa"]',
     ) as HTMLElement;
     const connectButton = [...exaCard.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Connect"),
@@ -142,8 +147,8 @@ describe("McpPresetCardsSection", () => {
     const container = mountSection();
     await settle();
 
-    const exaCard = [...container.querySelectorAll(".p-4")].find((el) =>
-      el.textContent?.includes("Exa"),
+    const exaCard = container.querySelector(
+      '[data-plugin-slug="exa"]',
     ) as HTMLElement;
     const disconnectButton = [...exaCard.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Disconnect"),

@@ -1,32 +1,20 @@
-// Curated MCP preset cards (CL-6152): Granola/Exa/Linear each get a
-// one-click card here instead of the generic "Add MCP server" form —
-// connecting still goes through the exact same connect route as a
-// hand-typed server (`mcp-servers-api.ts`'s `connectMcpPreset`), just with
-// the preset's slug instead of a pasted name/url. Self-contained fetch/
-// connect/disconnect loop, same shape as `mcp-servers-section.tsx`'s
-// `McpServersSection`.
+// Curated MCP preset rows (CL-6152): verified OAuth/DCR and keyless services
+// get the catalog's one-click installation path. Presets and previously
+// connected custom servers share the same server-side store.
 
-import {
-  Badge,
-  Button,
-  Card,
-  CardDescription,
-  CardTitle,
-  ConfirmButton,
-  Input,
-  toast,
-} from "@corbits/react-ui";
-import { Plug } from "lucide-react";
+import { Button, ConfirmButton, toast } from "@corbits/react-ui";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 import { useEffect, useState } from "react";
 
 import {
-  McpServersApiError,
   connectMcpPreset,
   disconnectMcpServer,
   listMcpPresets,
   mcpOAuthStartPath,
   type McpPreset,
 } from "./mcp-servers-api";
+import { PluginLogo } from "./plugin-logo";
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -43,34 +31,24 @@ function McpPresetCard({
   readonly toolCount: number | undefined;
   readonly onChanged: (toolCount?: number) => void;
 }) {
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleConnect() {
+    if (preset.connectionMode === "oauth") {
+      window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
+      return;
+    }
     setBusy(true);
     setError(null);
-    connectMcpPreset(
-      tenantId,
-      preset.slug,
-      token.trim() === "" ? undefined : token.trim(),
-    )
+    connectMcpPreset(tenantId, preset.slug, undefined)
       .then((result) => {
         toast(
           `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
         );
         onChanged(result.toolCount);
       })
-      .catch((cause: unknown) => {
-        if (
-          cause instanceof McpServersApiError &&
-          cause.code === "oauth_required"
-        ) {
-          window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
-          return;
-        }
-        setError(messageOf(cause));
-      })
+      .catch((cause: unknown) => setError(messageOf(cause)))
       .finally(() => setBusy(false));
   }
 
@@ -86,79 +64,75 @@ function McpPresetCard({
       .finally(() => setBusy(false));
   }
 
+  const presetDefinition = MCP_PRESETS.find(
+    (definition) => definition.slug === preset.slug,
+  );
+  const connector =
+    presetDefinition?.nativeConnectorId === undefined
+      ? undefined
+      : CONNECTOR_REGISTRY[presetDefinition.nativeConnectorId];
+  const status = preset.connected
+    ? toolCount === undefined
+      ? "Connected"
+      : `${toolCount} tool${toolCount === 1 ? "" : "s"}`
+    : "Not connected";
+
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <span
-          aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
-        >
-          <Plug className="size-4" />
+    <div
+      className="flex min-h-16 min-w-0 items-center gap-3 border-b border-border px-2 py-2.5"
+      data-plugin-slug={preset.slug}
+    >
+      <PluginLogo
+        name={preset.displayName}
+        icon={preset.icon ?? connector?.icon}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">
+          {preset.displayName}
         </span>
-        {preset.connected ? (
-          <ConfirmButton
-            variant="destructive"
-            size="sm"
-            confirmLabel="Disconnect"
-            disabled={busy}
-            onConfirm={handleDisconnect}
-          >
-            {busy ? "Disconnecting…" : "Disconnect"}
-          </ConfirmButton>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            variant="primary"
-            disabled={busy}
-            onClick={handleConnect}
-          >
-            {busy ? "Connecting…" : "Connect"}
-          </Button>
-        )}
-      </div>
-      <div className="flex flex-col gap-1">
-        <CardTitle>{preset.displayName}</CardTitle>
-        <CardDescription>{preset.description}</CardDescription>
-      </div>
-      {!preset.connected && preset.keyOptional ? (
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
-          API key (optional)
-          <Input
-            type="password"
-            autoComplete="off"
-            value={token}
-            onChange={(event) => {
-              setToken(event.target.value);
-              setError(null);
-            }}
-          />
-        </label>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={preset.connected ? "success" : "neutral"}>
-          {preset.connected ? "Connected" : "Not connected"}
-        </Badge>
-        <span className="text-xs text-muted-foreground">via MCP</span>
-        {preset.connected && toolCount !== undefined ? (
-          <span className="text-xs text-muted-foreground">
-            {toolCount} tool{toolCount === 1 ? "" : "s"}
+        <span className="truncate text-xs text-muted-foreground">
+          {preset.description}
+        </span>
+        {error !== null ? (
+          <span className="truncate text-xs text-destructive" role="alert">
+            {error}
           </span>
         ) : null}
       </div>
-      {error !== null ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </Card>
+      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
+        {status}
+      </span>
+      {preset.connected ? (
+        <ConfirmButton
+          variant="destructive"
+          size="sm"
+          confirmLabel="Disconnect"
+          disabled={busy}
+          onConfirm={handleDisconnect}
+        >
+          {busy ? "Disconnecting…" : "Disconnect"}
+        </ConfirmButton>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={handleConnect}
+        >
+          {busy ? "Connecting…" : "Connect"}
+        </Button>
+      )}
+    </div>
   );
 }
 
 export function McpPresetCardsSection({
   tenantId,
+  query = "",
 }: {
   readonly tenantId: string;
+  readonly query?: string;
 }) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
@@ -177,23 +151,31 @@ export function McpPresetCardsSection({
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  if (presets.length === 0 && loadError === null) return null;
+  const needle = query.trim().toLowerCase();
+  const visiblePresets = presets.filter(
+    (preset) =>
+      needle === "" ||
+      `${preset.displayName} ${preset.description}`
+        .toLowerCase()
+        .includes(needle),
+  );
+
+  if (visiblePresets.length === 0 && loadError === null) return null;
 
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Featured MCP servers
+        Connect apps
       </h3>
       {loadError !== null ? (
         <p className="text-sm text-destructive" role="alert">
           {loadError}
         </p>
       ) : null}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-        {presets.map((preset) => (
+      <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+        {visiblePresets.map((preset) => (
           <McpPresetCard
             key={preset.slug}
             tenantId={tenantId}
