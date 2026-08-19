@@ -5,7 +5,8 @@ bundle (CL-5852): the agent-facing surface a workflow definition pins to
 reach the tenant's firm-memory plane (`@corbits/memory`, mounted by
 `apps/hub/src/memory-mount.ts`). Also exports the HTTP client
 (`searchMemory`, `addMemory`, `listMemory`) the sanctioned
-workflow-memory path is built on.
+workflow-memory path is built on, calling `@corbits/memory`'s own routes
+directly rather than a bespoke parallel surface (CL-6296).
 
 ## Tools
 
@@ -18,49 +19,43 @@ None of the three tools' input schemas accept a tenant or principal
 argument. Attribution always comes from the run's own authenticated
 identity on the hub side, never from a model-supplied value.
 
-## The sanctioned workflow-memory path (CL-5852)
+## The sanctioned workflow-memory path (CL-6296)
 
 `@corbits/memory`'s own HTTP routes (`registerMemoryRoutes`, mounted at
-`/api/tenants/:tenantId/memory/*`) authenticate via
-`c.get("principal")`, set by the platform's tenant-session middleware —
-a caller with a browser/API session. A workflow-process child has
-neither a database handle nor a browser session, only the sidecar's own
-bearer token and the run's own mailbox address (the same pair
-`@corbits/artifact-tools` already established this precedent for). This
-package's tools instead call `@corbits/memory-hub`'s
-`createWorkflowMemoryRoutes` (mounted at `/api/workflow-memory`, outside
-the tenant-session prefix), which authenticates that pair via
-`@corbits/artifacts-hub`'s `WorkflowRunAuthenticator` and resolves it to
-the run's own tenant + principal before touching the plane.
+`/api/tenants/:tenantId/memory/*`; the `:tenantId` segment is never read)
+authenticate via a host-supplied `CallerResolver`. For a browser/API
+caller that resolver reads `c.get("principal")`, set by the platform's
+tenant-session middleware. A workflow-process child has neither a
+database handle nor a browser session, only the sidecar's own bearer
+token and the run's own mailbox address (the same pair
+`@corbits/artifact-tools` already established this precedent for), so
+`apps/hub/src/memory-mount.ts`'s `createAccountCallerResolver` tries that
+pair first (via `@corbits/artifacts-hub`'s `WorkflowRunAuthenticator`)
+and falls back to the session path only when it's absent — never the
+other way around. Either branch resolves to the run's own tenant +
+principal, remapped up to the ACCOUNT tenant, before touching the plane.
+This package's client calls that SAME mount, never a second surface.
 
 A transport, HTTP, or shape failure comes back as a completed result
 with `isError: true` — never fabricate a memory or a search result.
 
-## When the memory plane isn't configured (CL-6168)
+## Rate limit and payload cap (CL-5852, re-homed by CL-6296)
 
-`apps/hub/src/memory-mount.ts` decides whether the memory plane is
-mounted at hub boot, from its own `EMBED_BASE_URL` config parse — never
-by making a call and seeing what happens. An unmounted plane is reflected
-two ways, both driven by that one boot-time decision:
+`@corbits/memory`'s own routes enforce no per-run write limit or payload
+cap — those are host concerns. `apps/hub/src/memory-mount.ts` re-homes
+both as middleware mounted ahead of the `/add` route, active only for a
+workflow-run write (never a browser caller): 30 writes/run/minute and a
+64k-character cap on `add`'s `text`, sharing
+`@corbits/artifacts-hub`'s `workflow-write-limits.ts` with the
+workflow-artifacts surface rather than a third hand-rolled copy. A write
+over either bound comes back as a `429`/`413`, which `memory_add`
+surfaces as `isError: true` like any other HTTP failure.
 
-- The hub's tool inventory (`listMyraUsableToolPackages` in
-  `apps/hub/src/index.ts`) simply never offers `@corbits/memory-tools` to
-  an agent, the same way `@corbits/mcp-tools` is only offered when an MCP
-  server connection exists — so an unconfigured hub never tempts Myra
-  into believing memory works.
-- If a tool call reaches `/api/workflow-memory` anyway,
-  `createUnavailableWorkflowMemoryRoutes` answers a `503` with
-  `error.code: "unavailable"`, which `memory_search`/`memory_add`/
-  `memory_list` each translate into a plain-language, `isError: false`
-  result ("Memory isn't set up on this server yet — proceeding without
-  it.") instead of surfacing HTTP noise. Any OTHER failure (a real
-  network error, an unexpected shape, an actual 5xx) still comes back as
-  `isError: true` — the distinction is the hub's own honest signal, not a
-  transport error being swallowed.
-
-See the root `.env.example`'s `EMBED_BASE_URL` section for the local-dev
-option (a local Ollama instance, no API key needed) alongside the
-managed-provider one.
+There is no "memory isn't set up" degraded state to handle: config is
+env-only and always resolves to at least a lexical-only floor (CL-6289),
+so the memory plane is always mounted. See the root `.env.example`'s
+`EMBED_BASE_URL` section for the local-dev option (a local Ollama
+instance, no API key needed) alongside the managed-provider one.
 
 ## Usage
 

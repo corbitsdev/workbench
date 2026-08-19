@@ -74,11 +74,13 @@ tenant (`apps/hub/src/account-tenant.ts`'s `resolveAccountTenantId`, via
 the same caller in the bench itself always reach the same memory, two
 different accounts never collide, and the walk never ascends into an
 operator tenant (which would merge every account's memory into one
-store). This is host logic, not something `packages/memory-hub` (or
-`@corbits/memory` itself) knows about: the hub injects its own resolver
-into `packages/memory-hub`'s workflow-run store at the composition root,
-so an agent running in a workbench reads and writes the exact memory its
-human teammates do there.
+store). This is host logic, not something `@corbits/memory` itself knows
+about: `apps/hub/src/memory-mount.ts`'s `createAccountCallerResolver` is
+the one seam every caller's identity flows through — a browser session
+and a workflow run (authenticated instead by its sidecar bearer token and
+run address) both resolve through it to the same account scope — so an
+agent running in a workbench reads and writes the exact memory its human
+teammates do there.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 

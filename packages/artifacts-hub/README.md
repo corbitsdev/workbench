@@ -24,9 +24,11 @@ artifacts without a database handle or a browser session.
   store is injected (`ArtifactRoutesStore` / `WorkflowArtifactRoutesStore`)
   so tests exercise happy/empty/cross-tenant paths without a live
   Postgres.
-- `@corbits/artifact-tools`' `artifact_list_recent` and
-  `@corbits/memory-hub` (workflow-memory's sibling surface) both follow
-  the same authenticator pattern this package established.
+- `@corbits/artifact-tools`' `artifact_list_recent` and the hub's own
+  workflow-memory mount (`apps/hub/src/memory-mount.ts`, CL-6296) both
+  follow the same authenticator pattern this package established, and
+  share this package's `workflow-write-limits.ts` (rate limit + payload
+  cap) rather than each keeping its own copy.
 
 ## Key modules
 
@@ -37,6 +39,11 @@ artifacts without a database handle or a browser session.
 - `workflow-routes.ts` — `createWorkflowArtifactRoutes`: `POST /` (create,
   rate-limited to 30/run/minute, 64k-char content cap) and `GET /recent`,
   both scoped to the authenticated run.
+- `workflow-write-limits.ts` — `createRunWriteRateLimiter` and
+  `MAX_WORKFLOW_WRITE_TEXT_CHARS`/`MAX_WORKFLOW_WRITES_PER_RUN_PER_MINUTE`:
+  the shared per-run rate limit and per-payload character cap every
+  workflow-run write surface in this codebase reuses, so no consumer
+  hand-rolls its own copy.
 - `createUnavailableArtifactRoutes` / `createUnavailableWorkflowArtifactRoutes`
   — honest 503 surfaces when the artifacts plane isn't mounted, so the
   Library UI can distinguish "not configured" from "empty bench".
