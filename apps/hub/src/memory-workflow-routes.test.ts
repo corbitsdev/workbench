@@ -1,4 +1,4 @@
-// DB-gated integration test for CL-6296's real seam: a workflow run
+// DB-gated integration test for the real seam: a workflow run
 // reaching the memory plane through `@corbits/memory`'s OWN
 // `registerMemoryRoutes`, via `createAccountCallerResolver`'s workflow
 // branch and `createWorkflowAddGuardMiddleware` — never the deleted
@@ -23,9 +23,14 @@ import {
   test,
 } from "bun:test";
 import { Hono } from "hono";
-import { createInMemoryGrantStore } from "@intx/authz";
 import { generateId } from "@intx/hub-common";
-import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
+import {
+  createDB,
+  createGrantStore,
+  runMigrations,
+  dropSchema,
+  schema,
+} from "@intx/db";
 import type { ResolvedWorkflowRunScope } from "@corbits/artifacts-hub";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
@@ -66,7 +71,6 @@ afterEach(() => {
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
-const RUN_PRINCIPAL_ID = "prn_run_agent";
 const RUN_ID = "run_a";
 const VALID_TOKEN = "valid-sidecar-token";
 const RUN_ADDRESS = "irrelevant-for-this-fake-authenticator";
@@ -122,41 +126,49 @@ describeIfDb(
         parentId: benchTenantId,
       });
 
+      // A real principal row: the grant rows below carry an FK to it, so a
+      // misplaced grant cannot be written at all.
+      const runPrincipalId = generateId("principal");
+      await db.insert(schema.principal).values({
+        id: runPrincipalId,
+        tenantId: workbenchTenantId,
+        kind: "workflow",
+        refId: RUN_ID,
+        status: "active",
+      });
+
       const runScope: ResolvedWorkflowRunScope = {
         tenantId: workbenchTenantId,
-        principalId: RUN_PRINCIPAL_ID,
+        principalId: runPrincipalId,
         runId: RUN_ID,
       };
+
+      // Real rows in the ACCOUNT tenant, against the real DB-backed store —
+      // the shape `launchFoldedRun` mints for a run (see
+      // `apps/hub/test/memory-invoker-bounded.drizzle.test.ts`, which drives
+      // the whole path end to end). `createInMemoryGrantStore` stood here
+      // before and ignores `tenantId` outright, so these tests could not tell
+      // a correctly scoped grant from a misplaced one.
+      for (const action of ["add", "search"]) {
+        await db.insert(schema.grant).values({
+          id: generateId("grant"),
+          tenantId: benchTenantId,
+          principalId: runPrincipalId,
+          resource: "memory",
+          action,
+          effect: "allow",
+          conditions: null,
+          origin: "invoker",
+          expiresAt: null,
+        });
+      }
 
       const app = new Hono();
       const handle = await mountMemory({
         app,
         db,
         databaseUrl: databaseUrl as string,
-        grantStore: createInMemoryGrantStore([
-          {
-            id: generateId("grant"),
-            resource: "memory",
-            action: "add",
-            effect: "allow",
-            origin: "system",
-            conditions: null,
-            expiresAt: null,
-            roleId: null,
-            principalId: RUN_PRINCIPAL_ID,
-          },
-          {
-            id: generateId("grant"),
-            resource: "memory",
-            action: "search",
-            effect: "allow",
-            origin: "system",
-            conditions: null,
-            expiresAt: null,
-            roleId: null,
-            principalId: RUN_PRINCIPAL_ID,
-          },
-        ]),
+        grantStore: createGrantStore(db),
         conditionRegistry: {},
         workflowRunAuthenticator: {
           async resolve(token) {
@@ -165,7 +177,15 @@ describeIfDb(
         },
       });
 
-      return { app, db, close, benchTenantId, workbenchTenantId, handle };
+      return {
+        app,
+        db,
+        close,
+        benchTenantId,
+        workbenchTenantId,
+        handle,
+        runPrincipalId,
+      };
     }
 
     const addRequest = (token: string, title: string, text: string) => ({
@@ -179,7 +199,7 @@ describeIfDb(
     });
 
     test("a valid run token writes into the ACCOUNT tenant's scope, not the run's own workbench tenant", async () => {
-      const { app, close, benchTenantId, workbenchTenantId, handle } =
+      const { app, close, benchTenantId, workbenchTenantId, handle, runPrincipalId } =
         await buildApp();
       try {
         const res = await app.request(
@@ -190,13 +210,13 @@ describeIfDb(
 
         const inAccountTenant = await handle.memory.list({
           tenantId: benchTenantId,
-          principalId: RUN_PRINCIPAL_ID,
+          principalId: runPrincipalId,
         });
         expect(inAccountTenant.map((e) => e.title)).toEqual(["Decision"]);
 
         const inWorkbenchTenant = await handle.memory.list({
           tenantId: workbenchTenantId,
-          principalId: RUN_PRINCIPAL_ID,
+          principalId: runPrincipalId,
         });
         expect(inWorkbenchTenant).toEqual([]);
       } finally {
