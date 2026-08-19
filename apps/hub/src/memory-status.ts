@@ -4,13 +4,22 @@
 // "lexical-only" (the floor: full-text search only, needs nothing beyond
 // the hub's own pgvector-capable Postgres) — so a future fourth source
 // slots in as one more value here, never a reshape.
+//
+// Also mounts the tenant-scoped, read-only status route itself —
+// `GET /api/tenants/:tenantId/memory/status` — guarded the same way the
+// rest of the settings-facing surface is (`packages/connections`'
+// `requireGrant("credential:*", "read")` sibling: here it's the memory
+// plane's own `"memory"` resource, matching `@corbits/memory`'s own route
+// guards). This ticket ships no config-write route.
+import { Hono } from "hono";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type {
   DegradeMetricsSnapshot,
   MemoryCapabilities,
   MemoryConfig,
 } from "@corbits/memory";
 
-import type { MemoryConfigSource } from "./config-resolution";
+import type { MemoryConfigSource } from "./memory-config";
 
 export type MemoryEmbedStatus = {
   readonly model: string;
@@ -33,6 +42,15 @@ export type MemorySetupOption =
       readonly kind: "connect-provider";
       readonly label: string;
       readonly provider: string;
+    }
+  | {
+      readonly kind: "lexical-only";
+      readonly label: string;
+      /** e.g. "No embeddings account needed — this deploy's Postgres already
+       * has pgvector, which full-text search still relies on." Framed as a
+       * real, honest option (not "no setup needed"): pgvector remains a
+       * requirement, dense embeddings are simply not one. */
+      readonly caveat: string;
     };
 
 export type MemoryDegradeStatus = {
@@ -84,6 +102,13 @@ export const MEMORY_SETUP_OPTIONS: readonly MemorySetupOption[] = [
     label: "Connect an OpenAI API key",
     provider: "openai",
   },
+  {
+    kind: "lexical-only",
+    label: "Stay on full-text search (lexical-only)",
+    caveat:
+      "No embeddings account needed — this deploy's Postgres already has " +
+      "the pgvector-capable database full-text search relies on.",
+  },
 ];
 
 function rerankStatusFrom(config: MemoryConfig): MemoryRerankStatus {
@@ -134,4 +159,49 @@ export function buildMemoryPlaneStatus(
         ],
     setupOptions: embeddingsConfigured ? [] : MEMORY_SETUP_OPTIONS,
   };
+}
+
+export type MemoryStatusPlane = {
+  describeStatus(tenantId: string): Promise<MemoryPlaneStatus>;
+};
+
+export type MemoryStatusRouteDeps = {
+  readonly plane: MemoryStatusPlane;
+  readonly requireGrant: RequireGrant;
+};
+
+export function createMemoryStatusRoutes(
+  deps: MemoryStatusRouteDeps,
+): Hono<TenantEnv> {
+  const app = new Hono<TenantEnv>();
+  app.get(
+    "/status",
+    // A fail-closed safety net for a mis-mounted host or a unit test that
+    // never ran the host's own tenant middleware — `requireGrant` reads
+    // `principal.id` with no guard of its own, matching
+    // `@corbits/memory`'s own `requirePrincipal` convention.
+    async (c, next) => {
+      if (!c.get("principal") || !c.get("tenant")) {
+        return c.json(
+          {
+            error: {
+              code: "principal_required",
+              message:
+                "No principal on the request context. Mount memory under " +
+                "the host's tenant-session middleware.",
+            },
+          },
+          401,
+        );
+      }
+      await next();
+    },
+    deps.requireGrant("memory", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const status = await deps.plane.describeStatus(tenant.id);
+      return c.json(status);
+    },
+  );
+  return app;
 }

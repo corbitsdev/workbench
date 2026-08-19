@@ -981,8 +981,8 @@ export async function createHub(config: HubConfig) {
   // Memory plane: firm-memory HTTP under `/api/tenants/:tenantId/memory/*`,
   // same `DATABASE_URL` as the control plane, isolated in its own `memory`
   // schema. Builds lazily per tenant (env, then a connected OpenAI
-  // credential, then unconfigured) — see memory-mount.ts and
-  // `@corbits/memory-plane`. Captured (not discarded) here, before
+  // credential, then unconfigured) — see memory-mount.ts, memory-config.ts,
+  // and memory-status.ts. Captured (not discarded) here, before
   // `chatOrchestrator`/`createArtifactDeliveryHandler` below, so the
   // in-process `Memory` handle can be threaded into both: a finalized
   // turn's persisted artifact and the bounded daily transcript digest

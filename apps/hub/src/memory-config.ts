@@ -90,7 +90,7 @@ function readEngineBaseFromEnv(
     ]),
   );
   if (parsed instanceof type.errors) {
-    throw new Error(`invalid memory-plane environment: ${parsed.summary}`);
+    throw new Error(`invalid memory environment: ${parsed.summary}`);
   }
   const databaseUrl = env["DATABASE_URL"];
   if (databaseUrl === undefined || databaseUrl === "") {
@@ -133,7 +133,7 @@ export function resolveConfigFromEnv(env: Env): MemoryConfig | undefined {
     ]),
   );
   if (parsed instanceof type.errors) {
-    throw new Error(`invalid memory-plane environment: ${parsed.summary}`);
+    throw new Error(`invalid memory environment: ${parsed.summary}`);
   }
 
   return {

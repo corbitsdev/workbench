@@ -31,7 +31,6 @@
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
     "@corbits/memory": "github:corbitsdev/corbits-memory#7fcbd00d1c94b94ee13ea21696a4040a89c08693",
     "@corbits/memory-hub": "workspace:*",
-    "@corbits/memory-plane": "workspace:*",
     "@corbits/notify": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",

@@ -10,7 +10,7 @@
 // "No EMBED_BASE_URL" per CL-5852's test brief means no WORKING
 // embedding backend, not a literally-unset env var — a genuinely unset
 // one is now the legitimate lexical-only floor (see
-// `@corbits/memory-plane`'s `resolveConfigLexicalOnly`), not a degraded
+// `memory-config.ts`'s `resolveConfigLexicalOnly`), not a degraded
 // state. `EMBED_BASE_URL` here instead points at `localhost:9` (the
 // "discard" port, always closed), the exact trick `memory-mount.test.ts`
 // already uses: every embed call fails, forcing the plane's real runtime
