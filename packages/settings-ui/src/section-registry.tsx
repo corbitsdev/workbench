@@ -18,13 +18,23 @@
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
 
-import { Bell, KeyRound, List, Shield, Star, User, Users } from "lucide-react";
+import {
+  Bell,
+  Brain,
+  KeyRound,
+  List,
+  Shield,
+  Star,
+  User,
+  Users,
+} from "lucide-react";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
 import { AuditSection } from "./audit-section";
 import { ConnectionsSection } from "./connections-section";
 import { GrantsSection } from "./grants-section";
+import { MemorySection } from "./memory-section";
 import { NotificationsSection } from "./notifications-section";
 import { PeopleSection } from "./people-section";
 import { RolesSection } from "./roles-section";
@@ -88,6 +98,22 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         icon: KeyRound,
         gate: "credentials",
         render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
+      },
+      {
+        // Read-only status + setup guidance for the assistant's memory
+        // plane (CL-6289) — reports what Connections and the hub already
+        // decided, writes nothing. Sits beside Connections since "which
+        // key is connected" is exactly what governs its own status.
+        id: "memory",
+        title: SETTINGS_STRINGS.memorySectionTitle,
+        icon: Brain,
+        gate: "memory",
+        render: (ctx) => (
+          <MemorySection
+            tenantId={ctx.tenantId}
+            {...(ctx.navigate !== undefined ? { navigate: ctx.navigate } : {})}
+          />
+        ),
       },
       {
         id: "people",

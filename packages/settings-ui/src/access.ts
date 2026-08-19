@@ -16,6 +16,7 @@ export type TenancyAccess = {
   readonly roles: SectionAccess;
   readonly grants: SectionAccess;
   readonly credentials: SectionAccess;
+  readonly memory: SectionAccess;
 };
 
 function useResourceAccess(
@@ -60,5 +61,6 @@ export function useTenancyAccess(
     roles: useResourceAccess(tenantId, principalId, "role"),
     grants: useResourceAccess(tenantId, principalId, "grant"),
     credentials: useResourceAccess(tenantId, principalId, "credential"),
+    memory: useResourceAccess(tenantId, principalId, "memory"),
   };
 }

@@ -303,6 +303,43 @@ export const SETTINGS_STRINGS = {
   connectionsWebhookHiddenSecretNote:
     "Hidden — shown only once, right after creation or a rotate. Rotate to issue (and reveal) a new one; the old secret stops verifying immediately.",
 
+  memorySectionTitle: "Memory",
+  memorySectionDescription:
+    "What the assistant remembers, and how well it can find it. Read-only — this screen reports status, it doesn't change it.",
+  memoryLoadingLine: "Checking how memory is set up…",
+  memoryErrorTitle: "Memory can't run on this deploy",
+  memoryErrorDescription:
+    "This depends on the database it runs on, not on anything this screen controls. If it doesn't clear up, an operator needs to check the server's setup.",
+  memoryCheckAgainAction: "Check again",
+  memoryHeadlineSemantic:
+    "The assistant can find memories by meaning, not just matching words.",
+  memoryHeadlineLexical:
+    "The assistant can find memories that share words — not yet by meaning.",
+  memoryStatusWorking: "Working",
+  memoryStatusWorkingWordSearch: "Working — word search",
+  memorySourceEnvCaption: "Set up for this deploy by an operator.",
+  memorySourceConnectedCredentialCaption:
+    "Using the OpenAI key connected in Connections.",
+  memorySearchIssuesTitle:
+    "Some searches aren't working as well as they should",
+  memorySetupHeading: "Turn on meaning-based search",
+  memorySetupEnvVarsPrefix: "An operator sets: ",
+  memorySetupConnectCaption: "Opens Connections, where you can add a key.",
+  memorySetupConnectAction: "Open Connections",
+  memorySetupActiveBadge: "Currently active",
+  memoryDetailsHeading: "Details",
+  memoryDetailsEmbedModelLabel: "Embedding model",
+  memoryDetailsHostLabel: "Host",
+  memoryDetailsRerankModelLabel: "Re-ranking model",
+  memoryDetailsRerankNotSetUp: "Not set up",
+  memoryDetailsMissingLabel: "Missing",
+  memoryDetailsSearchStatsHeading: "Search stats",
+  memoryDetailsTotalSearches: (count: number, since: string) =>
+    `${count} ${count === 1 ? "search" : "searches"} recorded since ${since}`,
+  memoryDetailsWindowSize: (n: number) => `Last ${n} searches`,
+  memoryDetailsRateLine: (label: string, percent: string) =>
+    `${label}: ${percent}`,
+
   auditSectionTitle: "Audit",
   auditSectionDescription: "Who changed what, when — orientation only.",
   auditWhen: "When",

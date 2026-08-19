@@ -1,6 +1,6 @@
 // Settings section-nav gating, deduplicated: col2's nav band and the
-// settings stage both mount independently and both need the same four
-// tenancy probes (People/Roles/Grants/Credentials). Riding the app's shared
+// settings stage both mount independently and both need the same five
+// tenancy probes (People/Roles/Grants/Credentials/Memory). Riding the app's shared
 // QueryClient — instead of each mount calling `@corbits/settings-ui`'s bare
 // `useTenancyAccess`, which fetches on every mount with no cache — means
 // two mounted consumers share one in-flight request and one cached result.
@@ -31,6 +31,7 @@ const LOADING_ACCESS: TenancyAccess = {
   roles: "loading",
   grants: "loading",
   credentials: "loading",
+  memory: "loading",
 };
 
 /** One shared probe per (tenant, principal), not one per mounted consumer.
@@ -48,13 +49,14 @@ export function useSettingsAccess(
         : tenantKeys.settingsAccess("none", "none"),
     queryFn: async (): Promise<TenancyAccess> => {
       if (tenantId === null || principalId === null) return LOADING_ACCESS;
-      const [people, roles, grants, credentials] = await Promise.all([
+      const [people, roles, grants, credentials, memory] = await Promise.all([
         probe(tenantId, principalId, "principal"),
         probe(tenantId, principalId, "role"),
         probe(tenantId, principalId, "grant"),
         probe(tenantId, principalId, "credential"),
+        probe(tenantId, principalId, "memory"),
       ]);
-      return { people, roles, grants, credentials };
+      return { people, roles, grants, credentials, memory };
     },
     enabled,
   });

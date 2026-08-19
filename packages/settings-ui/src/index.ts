@@ -50,6 +50,7 @@ export {
   ConnectorCredentialDialog,
   oauthStartHref,
 } from "./connections-section";
+export { MemorySection } from "./memory-section";
 
 export { GranolaWebhookCard } from "./granola-webhook-card";
 
@@ -129,6 +130,13 @@ export type {
 } from "./connections-status";
 
 export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
+
+export { MemoryApiError, fetchMemoryStatus } from "./memory-api";
+export type { MemoryPlaneStatus, MemorySetupOption } from "./memory-api";
+export {
+  MEMORY_ALARM_DEGRADE_FLAGS,
+  MEMORY_DEGRADE_FLAG_LABEL,
+} from "./memory-degrade-vocabulary";
 
 export { SETTINGS_STRINGS } from "./strings";
 
