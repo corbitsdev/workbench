@@ -141,4 +141,18 @@ describe("createHubGrantRequirementsForPins", () => {
       requirementsForPins([{ name: "@corbits/routines-tools", version: "^1" }]),
     ).toEqual([]);
   });
+  // A body listing the same package twice must not double the rows the run
+  // is asked to hold, and must not skew the "took N of M" launch log.
+  test("a package pinned twice still declares each requirement once", () => {
+    const requirementsForPins = createHubGrantRequirementsForPins();
+    expect(
+      requirementsForPins([
+        { name: "@corbits/memory-tools", version: "^1" },
+        { name: "@corbits/memory-tools", version: "^2" },
+      ]),
+    ).toEqual([
+      { resource: "memory", action: "add", effect: "allow" },
+      { resource: "memory", action: "search", effect: "allow" },
+    ]);
+  });
 });

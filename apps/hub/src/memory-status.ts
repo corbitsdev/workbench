@@ -170,9 +170,7 @@ export function buildMemoryPlaneStatus(
  *     through this browser surface.
  */
 export type MemoryUnscopedReason =
-  | "no-org-principal"
-  | "no-account-tenant"
-  | "not-a-person";
+  "no-org-principal" | "no-account-tenant" | "not-a-person";
 
 export type MemoryCallerScope =
   | { readonly kind: "scoped" }

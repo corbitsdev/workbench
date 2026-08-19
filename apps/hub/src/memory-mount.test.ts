@@ -349,6 +349,48 @@ describeIfDb("createAccountCallerResolver", () => {
     }
   });
 
+  // Matching `createResolveTenant`, which 403s a non-active principal
+  // rather than seating it. Otherwise a person removed from the org but
+  // still seated in a child workbench keeps org-wide memory.
+  test("resolves a suspended org principal to null — removal from the org takes memory with it", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
+    });
+    try {
+      const { orgTenantId, workbenchTenantId } = await seedOrgAndWorkbench(
+        db,
+        "suspended",
+      );
+      await db.insert(schema.principal).values([
+        {
+          id: "prn_suspended_org",
+          tenantId: orgTenantId,
+          kind: "user",
+          refId: "usr_suspended",
+          status: "suspended",
+        },
+        {
+          id: "prn_suspended_workbench",
+          tenantId: workbenchTenantId,
+          kind: "user",
+          refId: "usr_suspended",
+          status: "active",
+        },
+      ]);
+
+      const app = appWithResolver(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_suspended_workbench",
+        refId: "usr_suspended",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
   test("resolves a guest with no principal in the host org to null — the host's memory is never exposed to them", async () => {
     const { db, close } = createDB({
       ...target,

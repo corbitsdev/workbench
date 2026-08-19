@@ -101,20 +101,28 @@ export type McpCredentialBindingsFor = (
  *
  * The rows are the intersection of what the run's pinned packages need with
  * what its invoker actually holds, so a run reaches exactly as far as the
- * person who started it and never further. `mint` runs inside the mint
- * transaction — chat mints without deploying and deploys later at wake, by
- * which point the invoker is gone, so launch is the only moment this can be
- * computed. `revoke` runs on the launch-failure path, where the rows would
- * otherwise outlive a run that never started.
+ * person who started it and never further. It is computed at launch because
+ * chat mints without deploying and deploys later at wake, by which point the
+ * invoker is gone. `revoke` runs where the rows would otherwise outlive the
+ * run: a failed launch, and a one-shot run's teardown.
  */
 export type RunHubGrantPlane = {
-  mint(params: {
+  /**
+   * Resolves what the run may hold — the tenant walk, the invoker's own
+   * identity, and their collected grants. Reads only, and deliberately
+   * called BEFORE the mint transaction opens: doing these round trips
+   * inside it would hold a write transaction open across four pooled
+   * reads, which under a bounded pool is a self-deadlock shape.
+   *
+   * Returns the writer that puts the resolved rows in, so no row shape
+   * crosses into this package.
+   */
+  prepare(params: {
     readonly runTenantId: string;
     readonly runPrincipalId: string;
     readonly invokerPrincipalId: string;
     readonly toolPackagePins: readonly ToolPackagePin[];
-    readonly tx: DBExecutor;
-  }): Promise<void>;
+  }): Promise<(tx: DBExecutor) => Promise<void>>;
   revoke(params: { readonly runPrincipalId: string }): Promise<void>;
 };
 

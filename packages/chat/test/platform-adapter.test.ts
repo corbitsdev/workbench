@@ -50,10 +50,9 @@ import {
 // The hub-grant plane is exercised on its own (`apps/hub`'s
 // `run-hub-grants` suite); these doubles only care about launch mechanics.
 const noopRunHubGrants = {
-  mint: async () => undefined,
+  prepare: async () => async () => undefined,
   revoke: async () => undefined,
 };
-
 
 const actualHubApi = await import("@intx/hub-api");
 const actualDrizzleOrm = await import("drizzle-orm");

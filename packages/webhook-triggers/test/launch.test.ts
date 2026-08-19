@@ -40,10 +40,9 @@ const { launchWebhookTrigger } = await import("../src/launch");
 // The hub-grant plane is exercised on its own (`run-hub-grants` and the
 // real-DB suite); these doubles only care about launch mechanics.
 const noopRunHubGrants = {
-  mint: async () => undefined,
+  prepare: async () => async () => undefined,
   revoke: async () => undefined,
 };
-
 
 const DEFINITION_ROW = {
   id: "wfd_1",

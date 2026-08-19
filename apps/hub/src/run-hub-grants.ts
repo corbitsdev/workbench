@@ -21,6 +21,8 @@ import { authorizeAction } from "@intx/authz";
 import type { GrantStore } from "@intx/authz";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
+import type { GrantEffect } from "@intx/types";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import { grant } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
@@ -69,92 +71,126 @@ async function orgTenantIdFor(
   }
 }
 
+type PreparedGrantRow = {
+  id: string;
+  tenantId: string;
+  principalId: string;
+  resource: string;
+  action: string;
+  effect: GrantEffect;
+  conditions: null;
+  origin: "invoker";
+  expiresAt: null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+async function resolveRows(
+  deps: RunHubGrantPlaneDeps,
+  params: {
+    readonly runTenantId: string;
+    readonly runPrincipalId: string;
+    readonly invokerPrincipalId: string;
+    readonly toolPackagePins: readonly ToolPackagePin[];
+  },
+): Promise<readonly PreparedGrantRow[]> {
+  const { runTenantId, runPrincipalId, invokerPrincipalId, toolPackagePins } =
+    params;
+  const requirements = deps.requirementsForPins(toolPackagePins);
+  if (requirements.length === 0) return [];
+
+  const orgTenantId = await orgTenantIdFor(deps, runTenantId);
+  if (orgTenantId === null) return [];
+
+  // The invoker's principal is scoped to whatever tenancy they launched
+  // from; their authority lives on their principal in the org tenant.
+  const invokerUserRefId = await resolveUserRefIdForPrincipal(
+    deps.db,
+    invokerPrincipalId,
+  );
+  if (invokerUserRefId === null) {
+    log.warn(
+      `run grants: invoker ${invokerPrincipalId} is not an active person's principal — run ${runPrincipalId} gets no hub-side authority`,
+    );
+    return [];
+  }
+
+  const invokerOrgPrincipalId = await resolveOrgPrincipalId(
+    deps.db,
+    orgTenantId,
+    invokerUserRefId,
+  );
+  if (invokerOrgPrincipalId === null) {
+    log.info(
+      `run grants: invoker holds no active principal in org tenant ${orgTenantId} — run ${runPrincipalId} launches with no hub-side authority and its tools fail closed`,
+    );
+    return [];
+  }
+
+  const invokerGrants = await deps.grantStore.collectGrantsInChain(
+    invokerOrgPrincipalId,
+    orgTenantId,
+  );
+  // Invoker-sourced grants cannot be transitively re-delegated, matching
+  // upstream's own `resolveGrantMaterialization`.
+  const delegatable = invokerGrants.filter((g) => g.origin !== "invoker");
+
+  const now = new Date();
+  const rows: PreparedGrantRow[] = [];
+  for (const requirement of requirements) {
+    const decision = await authorizeAction(
+      delegatable,
+      requirement.resource,
+      requirement.action,
+    );
+    if (!decision.ok) continue;
+    rows.push({
+      id: generateId("grant"),
+      tenantId: orgTenantId,
+      principalId: runPrincipalId,
+      resource: requirement.resource,
+      action: requirement.action,
+      effect: requirement.effect,
+      conditions: null,
+      origin: "invoker",
+      // No expiry, and this is a deliberate trade with two known costs.
+      // A workbench host or invited agent is woken indefinitely and its
+      // invoker is gone by the first wake, so a time-boxed row would
+      // silently strip its memory with no path to renewal — and nothing
+      // re-derives authority at wake, so an invoker later removed from the
+      // org does not lose the reach of agents they already launched.
+      //
+      // Rows are revoked on a failed launch and on a one-shot run's
+      // teardown. A task, routine, or webhook run that completes normally
+      // keeps its rows: the platform deactivates a terminal run's
+      // principal rather than deleting it, so the FK cascade never fires.
+      // Those rows are inert — an inactive principal is refused a seat —
+      // but they do accumulate per run, which a periodic reaper over
+      // deactivated principals should collect.
+      expiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  if (rows.length < requirements.length) {
+    log.info(
+      `run grants: run ${runPrincipalId} takes ${rows.length} of ${requirements.length} requested grants — the rest exceed what its invoker holds`,
+    );
+  }
+  return rows;
+}
+
 export function createRunHubGrantPlane(
   deps: RunHubGrantPlaneDeps,
 ): RunHubGrantPlane {
   return {
-    async mint(params) {
-      const {
-        runTenantId,
-        runPrincipalId,
-        invokerPrincipalId,
-        toolPackagePins,
-        tx,
-      } = params;
-      const requirements = deps.requirementsForPins(toolPackagePins);
-      if (requirements.length === 0) return;
-
-      const orgTenantId = await orgTenantIdFor(deps, runTenantId);
-      if (orgTenantId === null) return;
-
-      // The invoker's principal is scoped to whatever tenancy they launched
-      // from; their authority lives on their principal in the org tenant.
-      const invokerUserRefId = await resolveUserRefIdForPrincipal(
-        deps.db,
-        invokerPrincipalId,
-      );
-      if (invokerUserRefId === null) {
-        log.warn(
-          `run grants: invoker ${invokerPrincipalId} is not a person's principal — run ${runPrincipalId} gets no hub-side authority`,
-        );
-        return;
-      }
-
-      const invokerOrgPrincipalId = await resolveOrgPrincipalId(
-        deps.db,
-        orgTenantId,
-        invokerUserRefId,
-      );
-      if (invokerOrgPrincipalId === null) {
-        log.info(
-          `run grants: invoker holds no principal in org tenant ${orgTenantId} — run ${runPrincipalId} launches with no hub-side authority and its tools fail closed`,
-        );
-        return;
-      }
-
-      const invokerGrants = await deps.grantStore.collectGrantsInChain(
-        invokerOrgPrincipalId,
-        orgTenantId,
-      );
-      // Invoker-sourced grants cannot be transitively re-delegated, matching
-      // upstream's own `resolveGrantMaterialization`.
-      const delegatable = invokerGrants.filter((g) => g.origin !== "invoker");
-
-      const now = new Date();
-      const rows = [];
-      for (const requirement of requirements) {
-        const decision = await authorizeAction(
-          delegatable,
-          requirement.resource,
-          requirement.action,
-        );
-        if (!decision.ok) continue;
-        rows.push({
-          id: generateId("grant"),
-          tenantId: orgTenantId,
-          principalId: runPrincipalId,
-          resource: requirement.resource,
-          action: requirement.action,
-          effect: requirement.effect,
-          conditions: null,
-          origin: "invoker" as const,
-          // No expiry. A workbench host or invited agent is woken
-          // indefinitely and its invoker is gone by the first wake, so a
-          // time-boxed row would silently strip its memory with no path to
-          // renewal. Revoked explicitly on a failed launch instead.
-          expiresAt: null,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      if (rows.length < requirements.length) {
-        log.info(
-          `run grants: run ${runPrincipalId} takes ${rows.length} of ${requirements.length} requested grants — the rest exceed what its invoker holds`,
-        );
-      }
-      if (rows.length === 0) return;
-      await tx.insert(grant).values(rows);
+    async prepare(params) {
+      const rows = await resolveRows(deps, params);
+      return async (tx) => {
+        if (rows.length === 0) return;
+        await tx.insert(grant).values([...rows]);
+      };
     },
 
     async revoke(params) {
@@ -162,7 +198,10 @@ export function createRunHubGrantPlane(
       await deps.db
         .delete(grant)
         .where(
-          and(eq(grant.principalId, runPrincipalId), eq(grant.origin, "invoker")),
+          and(
+            eq(grant.principalId, runPrincipalId),
+            eq(grant.origin, "invoker"),
+          ),
         );
     },
   };

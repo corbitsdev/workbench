@@ -86,11 +86,20 @@ const HUB_REQUIREMENTS_BY_PACKAGE_NAME: ReadonlyMap<
 
 export function createHubGrantRequirementsForPins(): HubGrantRequirementsForPins {
   return (pins) => {
+    // Deduped by resource/action: a body may legitimately list the same
+    // package more than once, and each duplicate would otherwise ask the
+    // launch for another copy of the same grant row.
+    const seen = new Set<string>();
     const requirements: HubGrantRequirement[] = [];
     for (const pin of pins) {
       const declared = HUB_REQUIREMENTS_BY_PACKAGE_NAME.get(pin.name);
       if (declared === undefined) continue;
-      requirements.push(...declared);
+      for (const requirement of declared) {
+        const key = `${requirement.resource}:${requirement.action}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        requirements.push(requirement);
+      }
     }
     return requirements;
   };

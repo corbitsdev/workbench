@@ -199,8 +199,14 @@ describeIfDb(
     });
 
     test("a valid run token writes into the ACCOUNT tenant's scope, not the run's own workbench tenant", async () => {
-      const { app, close, benchTenantId, workbenchTenantId, handle, runPrincipalId } =
-        await buildApp();
+      const {
+        app,
+        close,
+        benchTenantId,
+        workbenchTenantId,
+        handle,
+        runPrincipalId,
+      } = await buildApp();
       try {
         const res = await app.request(
           "/api/tenants/whatever/memory/add",

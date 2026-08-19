@@ -27,10 +27,9 @@ import { createHubChatPlatform } from "../src/platform-adapter";
 // The hub-grant plane is exercised on its own (`apps/hub`'s
 // `run-hub-grants` suite); these doubles only care about launch mechanics.
 const noopRunHubGrants = {
-  mint: async () => undefined,
+  prepare: async () => async () => undefined,
   revoke: async () => undefined,
 };
-
 
 type Row = Record<string, unknown>;
 

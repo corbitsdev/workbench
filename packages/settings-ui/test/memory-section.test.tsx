@@ -14,10 +14,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { MemorySection } from "../src/memory-section";
-import type {
-  MemoryCallerScope,
-  MemoryPlaneStatus,
-} from "../src/memory-api";
+import type { MemoryCallerScope, MemoryPlaneStatus } from "../src/memory-api";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {

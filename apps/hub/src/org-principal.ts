@@ -14,9 +14,15 @@ import type { DB } from "@intx/db";
 import { principal } from "@intx/db/schema";
 
 /**
- * The org tenant's own principal id for a user, or `null` when they hold
- * none there — a guest invited into a single workbench whose own parent
- * tenancy is elsewhere.
+ * The org tenant's own principal id for a user, or `null` when they hold no
+ * ACTIVE one there — a guest invited into a single workbench whose own
+ * parent tenancy is elsewhere, or someone since removed from the org.
+ *
+ * Status is part of the lookup, matching `createResolveTenant`, which 403s
+ * a non-active principal rather than seating it. Without it, a person
+ * suspended from the org but still seated in a child workbench would keep
+ * org-wide memory, and a run they invoke would be bounded by that stale
+ * identity.
  */
 export async function resolveOrgPrincipalId(
   db: DB["db"],
@@ -28,15 +34,17 @@ export async function resolveOrgPrincipalId(
       eq(principal.tenantId, orgTenantId),
       eq(principal.kind, "user"),
       eq(principal.refId, userRefId),
+      eq(principal.status, "active"),
     ),
   });
   return row?.id ?? null;
 }
 
 /**
- * The user a principal stands for, or `null` when that principal is not a
- * person's. A run's own principal is `kind: "workflow"` and stands for no
- * user, which is precisely why a run needs an invoker to be bounded by.
+ * The user a principal stands for, or `null` when that principal is not an
+ * active person's. A run's own principal is `kind: "workflow"` and stands
+ * for no user, which is precisely why a run needs an invoker to be bounded
+ * by; a deactivated one no longer stands for anyone who could delegate.
  */
 export async function resolveUserRefIdForPrincipal(
   db: DB["db"],
@@ -45,6 +53,8 @@ export async function resolveUserRefIdForPrincipal(
   const row = await db.query.principal.findFirst({
     where: eq(principal.id, principalId),
   });
-  if (row === undefined || row.kind !== "user") return null;
+  if (row === undefined || row.kind !== "user" || row.status !== "active") {
+    return null;
+  }
   return row.refId;
 }

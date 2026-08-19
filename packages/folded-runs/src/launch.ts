@@ -362,16 +362,20 @@ export type LaunchFoldedRunParams = {
   triggerAddress: string;
   definitionId: string;
   /**
-   * The principal who started this run — always a person's, never the
-   * run's own. A run is bounded by whoever invoked it: it resolves the
-   * same `source: "invoker"` credentials that person holds, and its
-   * hub-side authority is the intersection of what its pinned tools need
-   * with what that person actually has. Required at every call site, with
-   * no null case, because a run that could reach further than the person
-   * who started it is privilege escalation wearing a tool pin.
+   * The principal who started this run, never the run's own. A run is
+   * bounded by its invoker: its hub-side authority is the intersection of
+   * what its pinned tools need with what that invoker actually holds.
+   * Required at every call site, with no null case, because a run that
+   * could reach further than whoever started it is privilege escalation
+   * wearing a tool pin.
    *
    * For a scheduled routine or a webhook there is nobody in the loop, so
-   * the invoker is whoever created the routine or the trigger.
+   * the invoker is whoever created the routine or the trigger. That
+   * creator is usually a person but need not be — an agent can create a
+   * routine, in which case the recorded creator is a workflow principal.
+   * Such a run gets no hub-side authority at all, because a delegation
+   * cannot be re-delegated; it fails closed rather than inheriting the
+   * agent's own reach.
    */
   invokerPrincipalId: string;
   foldedBody: FoldedBody;
@@ -437,6 +441,16 @@ export async function mintFoldedRun(
   const instancePrincipalId = generateId("principal");
   const sessionId = generateId("session");
   const now = new Date();
+
+  // Resolved before the transaction opens, never inside it: this reads the
+  // tenant chain and the invoker's own grants, and holding a write
+  // transaction open across those pooled reads is a self-deadlock shape.
+  const writeHubGrants = await deps.runHubGrants.prepare({
+    runTenantId: params.tenantId,
+    runPrincipalId: instancePrincipalId,
+    invokerPrincipalId: params.invokerPrincipalId,
+    toolPackagePins: params.toolPackagePins,
+  });
 
   await deps.db.transaction(async (tx) => {
     // A folded run's principal is `workflow`-kind, converging on the
@@ -514,16 +528,10 @@ export async function mintFoldedRun(
       createdAt: now,
     });
 
-    // The run's hub-side authority, bounded by its invoker's. Written
-    // here rather than at deploy because a mint-only caller deploys later,
-    // at wake, with no invoker left to compute an intersection against.
-    await deps.runHubGrants.mint({
-      runTenantId: params.tenantId,
-      runPrincipalId: instancePrincipalId,
-      invokerPrincipalId: params.invokerPrincipalId,
-      toolPackagePins: params.toolPackagePins,
-      tx,
-    });
+    // The run's hub-side authority, bounded by its invoker's. Committed
+    // with the rows that make the run addressable, so a run is never
+    // reachable while holding authority nobody granted it.
+    await writeHubGrants(tx);
 
     if (params.persistExtra !== undefined) {
       await params.persistExtra(tx);

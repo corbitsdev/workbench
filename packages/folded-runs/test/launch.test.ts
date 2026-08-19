@@ -83,10 +83,9 @@ const { sessionAsset } = await import("@intx/db/schema");
 // The hub-grant plane is exercised on its own (`run-hub-grants` and the
 // real-DB suite); these doubles only care about launch mechanics.
 const noopRunHubGrants = {
-  mint: async () => undefined,
+  prepare: async () => async () => undefined,
   revoke: async () => undefined,
 };
-
 
 type InsertChain = {
   values(values: unknown): Promise<void>;
@@ -286,21 +285,24 @@ describe("mintFoldedRun", () => {
   // addressable while holding authority nobody granted it.
   test("mints the run's hub-side authority from its invoker, inside the mint transaction", async () => {
     const db = createFakeDb();
-    const mintCalls: {
+    const prepareCalls: {
       runTenantId: string;
       runPrincipalId: string;
       invokerPrincipalId: string;
       toolPackagePins: readonly { name: string }[];
-      tx: unknown;
     }[] = [];
+    const writtenWith: unknown[] = [];
     const pins = [{ name: "@corbits/memory-tools", version: "^1" }];
 
     const result = await mintFoldedRun(
       {
         db: db as never,
         runHubGrants: {
-          mint: async (params) => {
-            mintCalls.push(params as never);
+          prepare: async (params) => {
+            prepareCalls.push(params as never);
+            return async (tx) => {
+              writtenWith.push(tx);
+            };
           },
           revoke: async () => undefined,
         },
@@ -315,13 +317,15 @@ describe("mintFoldedRun", () => {
       },
     );
 
-    expect(mintCalls).toHaveLength(1);
-    const minted = mintCalls[0];
-    expect(minted?.runTenantId).toBe("ten_1");
-    expect(minted?.runPrincipalId).toBe(result.instancePrincipalId);
-    expect(minted?.invokerPrincipalId).toBe("prn_alice");
-    expect(minted?.toolPackagePins).toEqual(pins);
-    expect(minted?.tx).toBeDefined();
+    expect(prepareCalls).toHaveLength(1);
+    const prepared = prepareCalls[0];
+    expect(prepared?.runTenantId).toBe("ten_1");
+    expect(prepared?.runPrincipalId).toBe(result.instancePrincipalId);
+    expect(prepared?.invokerPrincipalId).toBe("prn_alice");
+    expect(prepared?.toolPackagePins).toEqual(pins);
+    // Resolved outside the transaction, written inside it.
+    expect(writtenWith).toHaveLength(1);
+    expect(writtenWith[0]).toBeDefined();
   });
 });
 
@@ -770,10 +774,11 @@ describe("launchFoldedRun", () => {
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           runHubGrants: {
-            mint: async ({ runPrincipalId }) => {
-              mintedPrincipalId = runPrincipalId;
+            prepare: async (params: { runPrincipalId: string }) => {
+              mintedPrincipalId = params.runPrincipalId;
+              return async () => undefined;
             },
-            revoke: async (params) => {
+            revoke: async (params: { runPrincipalId: string }) => {
               revoked.push(params);
             },
           },

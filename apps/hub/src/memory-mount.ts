@@ -141,7 +141,11 @@ async function accountScopeFor(
 }
 
 type SessionScope =
-  | { readonly ok: true; readonly tenantId: string; readonly principalId: string }
+  | {
+      readonly ok: true;
+      readonly tenantId: string;
+      readonly principalId: string;
+    }
   | { readonly ok: false; readonly reason: MemoryUnscopedReason };
 
 /**
@@ -194,7 +198,9 @@ export function createMemoryCallerScopeDescriber(
       caller,
       tenant.id,
     );
-    return scope.ok ? { kind: "scoped" } : { kind: "unscoped", reason: scope.reason };
+    return scope.ok
+      ? { kind: "scoped" }
+      : { kind: "unscoped", reason: scope.reason };
   };
 }
 
