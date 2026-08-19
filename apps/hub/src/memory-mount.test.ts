@@ -136,10 +136,17 @@ describeIfDb("mountMemory", () => {
 
 const CALLER_RESOLVER_SCHEMA = "hub_memory_caller_resolver_test";
 
+type Seat = {
+  tenantId: string;
+  principalId: string;
+  refId: string;
+  kind?: "user" | "agent" | "workflow";
+};
+
 function appWithResolver(
   db: Parameters<typeof createAccountCallerResolver>[0],
   operatorTenantId: string | undefined,
-  seat: { tenantId: string; principalId: string },
+  seat: Seat,
 ) {
   const resolver = createAccountCallerResolver(db, operatorTenantId);
   const app = new Hono<TenantEnv>();
@@ -157,8 +164,8 @@ function appWithResolver(
     c.set("principal", {
       id: seat.principalId,
       tenantId: seat.tenantId,
-      kind: "user",
-      refId: seat.principalId,
+      kind: seat.kind ?? "user",
+      refId: seat.refId,
       status: "active",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -175,9 +182,10 @@ function appWithResolver(
 // `createAccountCallerResolver` is `registerMemoryRoutes`'s `CallerResolver`
 // — the seam every memory route's identity actually flows through (see
 // `memory-mount.ts`'s module doc comment). Exercised here as an isolated
-// unit against a real tenant hierarchy: this is where CL-6289's security
-// property — same scope in a workbench and its bench, never across
-// accounts, never into the operator tenant — actually gets wired to HTTP.
+// unit against a real tenant hierarchy: this is where the security property
+// — a person's memory follows their org principal across every workbench
+// under that org, a guest reaches nothing, and nobody reaches into the
+// operator tenant — actually gets wired to HTTP.
 describeIfDb("createAccountCallerResolver", () => {
   const target = dbTargetFromUrl(
     databaseUrl ?? "postgres://localhost:5432/unused",
@@ -191,37 +199,191 @@ describeIfDb("createAccountCallerResolver", () => {
     await dropSchema(target, { schema: CALLER_RESOLVER_SCHEMA });
   });
 
-  test("remaps a workbench caller's tenant to the bench tenant, keeping the caller's own principal id", async () => {
+  async function seedOrgAndWorkbench(
+    db: ReturnType<typeof createDB>["db"],
+    slug: string,
+  ): Promise<{ orgTenantId: string; workbenchTenantId: string }> {
+    const orgTenantId = `tnt_${slug}_org`;
+    const workbenchTenantId = `tnt_${slug}_workbench`;
+    await db.insert(schema.tenant).values({
+      id: orgTenantId,
+      name: "Org",
+      slug: `${slug}-org`,
+      domain: `${slug}-org.workbench.test`,
+    });
+    await db.insert(schema.tenant).values({
+      id: workbenchTenantId,
+      name: "Workbench",
+      slug: `${slug}-workbench`,
+      domain: `${slug}-workbench.workbench.test`,
+      parentId: orgTenantId,
+    });
+    return { orgTenantId, workbenchTenantId };
+  }
+
+  test("resolves a member to their OWN principal in the org tenant, not the workbench principal they are calling with", async () => {
     const { db, close } = createDB({
       ...target,
       schema: CALLER_RESOLVER_SCHEMA,
     });
     try {
-      const benchTenantId = "tnt_resolver_bench";
-      const workbenchTenantId = "tnt_resolver_workbench";
-      await db.insert(schema.tenant).values({
-        id: benchTenantId,
-        name: "Bench",
-        slug: "resolver-bench",
-        domain: "resolver-bench.workbench.test",
+      const { orgTenantId, workbenchTenantId } = await seedOrgAndWorkbench(
+        db,
+        "member",
+      );
+      // The same user, twice: one principal per tenancy. Memory lives in the
+      // org tenant, so the org row is the one whose grants must be consulted.
+      await db.insert(schema.principal).values([
+        {
+          id: "prn_member_workbench",
+          tenantId: workbenchTenantId,
+          kind: "user",
+          refId: "usr_member",
+          status: "active",
+        },
+        {
+          id: "prn_member_org",
+          tenantId: orgTenantId,
+          kind: "user",
+          refId: "usr_member",
+          status: "active",
+        },
+      ]);
+
+      const app = appWithResolver(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_member_workbench",
+        refId: "usr_member",
       });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toEqual({
+        tenantId: orgTenantId,
+        principalId: "prn_member_org",
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("resolves the same user to the same org principal from two different workbenches under one org", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
+    });
+    try {
+      const { orgTenantId, workbenchTenantId } = await seedOrgAndWorkbench(
+        db,
+        "shared",
+      );
+      const secondWorkbenchTenantId = "tnt_shared_workbench_two";
       await db.insert(schema.tenant).values({
-        id: workbenchTenantId,
-        name: "Workbench",
-        slug: "resolver-workbench",
-        domain: "resolver-workbench.workbench.test",
-        parentId: benchTenantId,
+        id: secondWorkbenchTenantId,
+        name: "Second workbench",
+        slug: "shared-workbench-two",
+        domain: "shared-workbench-two.workbench.test",
+        parentId: orgTenantId,
+      });
+      await db.insert(schema.principal).values([
+        {
+          id: "prn_shared_org",
+          tenantId: orgTenantId,
+          kind: "user",
+          refId: "usr_shared",
+          status: "active",
+        },
+        {
+          id: "prn_shared_wb_one",
+          tenantId: workbenchTenantId,
+          kind: "user",
+          refId: "usr_shared",
+          status: "active",
+        },
+        {
+          id: "prn_shared_wb_two",
+          tenantId: secondWorkbenchTenantId,
+          kind: "user",
+          refId: "usr_shared",
+          status: "active",
+        },
+      ]);
+
+      const expected = {
+        tenantId: orgTenantId,
+        principalId: "prn_shared_org",
+      };
+      for (const seat of [
+        { tenantId: workbenchTenantId, principalId: "prn_shared_wb_one" },
+        { tenantId: secondWorkbenchTenantId, principalId: "prn_shared_wb_two" },
+      ]) {
+        const app = appWithResolver(db, undefined, {
+          ...seat,
+          refId: "usr_shared",
+        });
+        const res = await app.request("/resolve");
+        expect(await res.json()).toEqual(expected);
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  test("resolves a guest with no principal in the host org to null — the host's memory is never exposed to them", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
+    });
+    try {
+      const { workbenchTenantId } = await seedOrgAndWorkbench(db, "guest");
+      // The guest is a member of the workbench they were invited into and
+      // nothing else: their own parent tenancy is elsewhere entirely.
+      await db.insert(schema.principal).values({
+        id: "prn_guest_workbench",
+        tenantId: workbenchTenantId,
+        kind: "user",
+        refId: "usr_guest",
+        status: "active",
       });
 
       const app = appWithResolver(db, undefined, {
         tenantId: workbenchTenantId,
-        principalId: "prn_alice",
+        principalId: "prn_guest_workbench",
+        refId: "usr_guest",
       });
       const res = await app.request("/resolve");
-      expect(await res.json()).toEqual({
-        tenantId: benchTenantId,
-        principalId: "prn_alice",
+      expect(await res.json()).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  test("resolves a non-user principal kind to null — only a person proxies through their org principal", async () => {
+    const { db, close } = createDB({
+      ...target,
+      schema: CALLER_RESOLVER_SCHEMA,
+    });
+    try {
+      const { orgTenantId, workbenchTenantId } = await seedOrgAndWorkbench(
+        db,
+        "kind",
+      );
+      // A same-refId user row in the org exists on purpose: the denial must
+      // come from the caller's kind, never from a missing lookup target.
+      await db.insert(schema.principal).values({
+        id: "prn_kind_org",
+        tenantId: orgTenantId,
+        kind: "user",
+        refId: "wfr_run",
+        status: "active",
       });
+
+      const app = appWithResolver(db, undefined, {
+        tenantId: workbenchTenantId,
+        principalId: "prn_kind_run",
+        refId: "wfr_run",
+        kind: "workflow",
+      });
+      const res = await app.request("/resolve");
+      expect(await res.json()).toBeNull();
     } finally {
       await close();
     }
@@ -244,6 +406,7 @@ describeIfDb("createAccountCallerResolver", () => {
       const app = appWithResolver(db, operatorTenantId, {
         tenantId: operatorTenantId,
         principalId: "prn_operator_admin",
+        refId: "usr_operator_admin",
       });
       const res = await app.request("/resolve");
       expect(await res.json()).toBeNull();
