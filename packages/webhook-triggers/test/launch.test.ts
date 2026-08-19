@@ -122,4 +122,20 @@ describe("launchWebhookTrigger", () => {
     expect(params.content).toBe("deployed: ok");
     expect(params.sessionId).toBe("ses_run1");
   });
+
+  // Nobody is in the loop for a webhook, so the run is bounded by whoever
+  // created the trigger — otherwise it would be bounded by nothing at all.
+  test("launches bounded by the trigger's creator", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+
+    await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
+
+    const [, launchParams] = launchFoldedRunCalls[0] as [
+      unknown,
+      { invokerPrincipalId: string },
+    ];
+    expect(launchParams.invokerPrincipalId).toBe(TRIGGER.createdBy);
+  });
 });

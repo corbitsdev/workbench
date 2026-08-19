@@ -81,16 +81,25 @@ function createFakeEmitter() {
  * emit fake sidecar events for that exact address without needing to
  * predict the real (randomly generated) instance id. */
 function createFakeLaunch() {
-  const calls: { triggerAddress: string; instanceId: string }[] = [];
+  const calls: {
+    triggerAddress: string;
+    instanceId: string;
+    invokerPrincipalId: string;
+  }[] = [];
   return {
     calls,
     launchFoldedRun: async (
       _foldedRuns: unknown,
-      params: { triggerAddress: string; instanceId: string },
+      params: {
+        triggerAddress: string;
+        instanceId: string;
+        invokerPrincipalId: string;
+      },
     ) => {
       calls.push({
         triggerAddress: params.triggerAddress,
         instanceId: params.instanceId,
+        invokerPrincipalId: params.invokerPrincipalId,
       });
       return { instancePrincipalId: "prn_run", sessionId: "sess_1" };
     },
@@ -382,5 +391,24 @@ describe("timeout tears the launched run down", () => {
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-timed-out" },
     ]);
+  });
+  // A planning run acts for the person who asked for the plan, so it must
+  // be bounded by them and not by its own freshly minted principal.
+  test("launches bounded by the principal who asked for the plan", async () => {
+    const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
+    } as never;
+
+    const promise = runOneShotFoldedPrompt(deps, INPUT).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(firstCall(launchCalls).invokerPrincipalId).toBe(INPUT.principalId);
+    await promise;
   });
 });

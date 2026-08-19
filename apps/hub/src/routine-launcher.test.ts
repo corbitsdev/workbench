@@ -390,4 +390,19 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     ).rejects.toThrow(/prompt/);
     expect(dispatchTaskCalls).toHaveLength(0);
   });
+  // A scheduled routine has no human in the loop, so the routine's own
+  // caller — its creator on the scheduled path — is the invoker the run is
+  // bounded by. Without it a routine run would carry no relationship to
+  // anyone and could reach further than whoever set it up.
+  test("launches bounded by the principal who asked for the run", async () => {
+    launchFoldedRunCalls = [];
+
+    await buildLauncher().launchRoutineRun(baseInput({}));
+
+    const [, params] = launchFoldedRunCalls[0] as [
+      unknown,
+      { invokerPrincipalId: string },
+    ];
+    expect(params.invokerPrincipalId).toBe("usr_1");
+  });
 });
