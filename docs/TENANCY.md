@@ -233,6 +233,59 @@ underneath, and stays distinguishable only by adding a case to
 `classifyBenchMembership`, never by inventing a parallel field on the
 native tenant row.
 
+### Memory scope and a run's authority
+
+Memory belongs to the **org tenant** — the account tenant, one level above
+every workbench. A person's notes follow them across every workbench under
+that org, and two orgs never collide.
+
+A principal is scoped to one tenancy; the user behind it is the durable
+identity. So a browser caller is resolved to *their own principal in the org
+tenant*, by the same `(tenantId, kind: "user", refId)` lookup
+`createResolveTenant` uses to seat a caller anywhere
+(`apps/hub/src/org-principal.ts`). Their grants and role assignments live in
+the org tenant alongside the memory, so authorization resolves where the data
+lives. Carrying the workbench principal through instead matches no grant row
+there and denies every member.
+
+A guest — someone invited into a single workbench whose own parent tenancy is
+elsewhere — holds no principal in the host org and so reaches nothing, in
+either direction. The host's memory is not exposed to them and theirs is not
+exposed to the host, the same default the Slack-Connect-style projection above
+takes. The Memory page explains this rather than reporting a fault. Opening it
+would be an explicit join setting, not a default.
+
+An agent is a principal too (`kind: "workflow"`, minted per run), and it is
+bounded by whoever invoked it — an agent that could reach further than the
+person who started it is privilege escalation wearing a tool pin. Every launch
+path names its invoker (`LaunchFoldedRunParams.invokerPrincipalId`; for a
+scheduled routine or a webhook, the routine's or trigger's creator), and the
+mint transaction writes the run's authority as real `grant` rows in the org
+tenant, computed as the intersection of what its pinned packages need with what
+the invoker holds (`apps/hub/src/run-hub-grants.ts`). An invoker holding
+nothing yields no rows: the run still launches and its memory tools fail
+closed.
+
+Two grant planes, which must not be conflated:
+
+| Plane | Consumer | Shape | Written |
+| --- | --- | --- | --- |
+| Child wire (`runs/<runId>/grants.json`) | the spawned child's authz gate | `tool:<qualifiedId>` / `invoke` | at deploy, by `deployAtHead` |
+| Hub-side `grant` rows | the hub's own `requireGrant` on HTTP routes | e.g. `memory` / `add` | at mint, in the org tenant |
+
+The wire frame decides whether a tool may be invoked at all; the rows decide
+what the hub honours once that tool calls back in. `PinnedToolGrantDeclaration.action`
+is fixed to `"invoke"` for exactly this reason — a widened action let a pinned
+package name any resource/action pair it liked in a file the hub never reads,
+which looked correct while the call went on 403-ing.
+
+The rows carry no expiry. A workbench host or invited agent is woken
+indefinitely and its invoker is gone by the first wake, so a time-boxed
+delegation would silently strip its memory with no path to renewal. A failed
+launch revokes them explicitly, because upstream deactivates a terminal run's
+principal rather than deleting it, so the `grant.principalId` cascade never
+fires.
+
 ## Interchange gaps (upstream only)
 
 These are real platform holes. File them against Interchange; do not
