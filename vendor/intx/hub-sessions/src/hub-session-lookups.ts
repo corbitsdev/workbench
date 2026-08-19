@@ -38,6 +38,32 @@ import { readCommittedWorkflowRunLifecycle } from "./workflow-run-kind";
 
 const logger = getLogger(["hub", "lookups"]);
 
+/**
+ * Ownership gate for a workflow-run pack: the pushing address must resolve to
+ * a self-anchored `workflow_run` row that owns the repository it is writing.
+ *
+ * Deliberately NOT gated on a live run status (workbench-local; see VENDORED.md).
+ * A terminal anchor still has bookkeeping to durably write about its own
+ * death -- the inbox enqueue for mail that arrived in the teardown window and
+ * the `markConsumed` rejection record that retires it. Gating those writes on
+ * a live status wedged the pair into an unbreakable loop: the hub rejected the
+ * pack with `path_violation`, the sidecar withheld the ack, the hub redelivered,
+ * forever. Accepting the pack is safe because the substrate walk yields no new
+ * terminal events for an already-settled run, and the allocation fences below
+ * still decide who may write.
+ */
+export function ownsWorkflowRunRepo(
+  anchor:
+    | { id: string; address: string | null; anchorRunId: string | null }
+    | undefined,
+): anchor is { id: string; address: string; anchorRunId: string } {
+  return (
+    anchor !== undefined &&
+    anchor.address !== null &&
+    anchor.anchorRunId === anchor.id
+  );
+}
+
 export type HubSessionLookupsDeps = {
   db: DB["db"];
   agentRepoStore: AgentRepoStore;
@@ -362,19 +388,10 @@ export function createHubSessionLookups(
           anchorRunId: workflowRun.anchorRunId,
         })
         .from(workflowRun)
-        .where(
-          and(
-            eq(workflowRun.address, source.agentAddress),
-            inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
-          ),
-        )
+        .where(eq(workflowRun.address, source.agentAddress))
         .limit(1);
-      if (
-        anchor === undefined ||
-        anchor.anchorRunId !== anchor.id ||
-        anchor.address === null
-      ) {
-        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no live deployment anchor`;
+      if (!ownsWorkflowRunRepo(anchor)) {
+        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no deployment anchor it owns`;
         return { accepted: false, reason: "path_violation" as const };
       }
       const anchorAddress = anchor.address;
