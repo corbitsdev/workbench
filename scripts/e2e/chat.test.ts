@@ -423,6 +423,38 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     ) as unknown as ListedMessage[];
   }
 
+  /** Flattens a workbench's timeline to its text-part bodies. */
+  function textsOf(items: readonly ListedMessage[]): string[] {
+    return items.flatMap((item) =>
+      item.parts
+        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
+        .map((p) => p.text),
+    );
+  }
+
+  /**
+   * A fan-out copy lands on the recipient run's timeline only after the
+   * mail round-trips through the sidecar, so poll (bounded) until a
+   * text matching `predicate` appears, then re-list once after a short
+   * settle so a redelivered duplicate would still be visible to an
+   * exactly-once assertion.
+   */
+  async function pollForDeliveredTexts(
+    cookies: string[],
+    workbench: string,
+    predicate: (text: string) => boolean,
+  ): Promise<string[]> {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const texts = textsOf(await listMessages(cookies, workbench));
+      if (texts.some(predicate)) break;
+      if (Date.now() > deadline) return texts;
+      await Bun.sleep(1000);
+    }
+    await Bun.sleep(3_000);
+    return textsOf(await listMessages(cookies, workbench));
+  }
+
   test("workbench creation launches the anchor", async () => {
     const res = await createWorkbench({ kind: "workbench", name: "demo" });
     expectStatus("create workbench", res, 201);
@@ -546,11 +578,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const mentionText = `hey @${secondWorkbenchId} take a look ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const mentionedItems = await listMessages(user1.cookies, secondWorkbenchId);
-    const mentionedTexts = mentionedItems.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const mentionedTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      secondWorkbenchId,
+      (text) => text.endsWith(mentionText),
     );
     // The delivered copy carries the workbench-context block merged ahead
     // of the message in one text part, so the mention text is a suffix
@@ -652,11 +683,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const mentionText = `hey @${invitedParticipant.handle} welcome ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const invitedMailbox = await listMessages(user1.cookies, invitedLocalPart);
-    const invitedTexts = invitedMailbox.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const invitedTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      invitedLocalPart,
+      (text) => text.endsWith(mentionText),
     );
     // Exactly once, not merely "at least once": before CL-6043's
     // self-anchor fix, an invited agent's own run wrote
@@ -720,15 +750,16 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       throw new Error(`malformed chat agent address: ${chatAgent.address}`);
     }
 
-    // Inviting into a chat is rejected — a chat's agent is fixed at
-    // creation.
+    // Inviting into a chat now grows its participants like any other
+    // workbench (the single-concept collapse: a workbench IS an agent
+    // conversation) — only participant removal still refuses a chat.
     const secondInvite = await api(
       "POST",
       `/api/tenants/${tenantId}/chat/workbenches/${chatId}/invite`,
       { definitionId: await echoDefinitionId() },
       user1.cookies,
     );
-    expectStatus("invite into a chat is rejected", secondInvite, 409);
+    expectStatus("invite into a chat launches a second run", secondInvite, 201);
 
     // No @mention is needed: a chat delivers every message to its one
     // agent unconditionally. The agent's own inference source is a
@@ -738,11 +769,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, chatId, unmentionedText);
 
-    const agentMailbox = await listMessages(user1.cookies, chatAgentLocalPart);
-    const agentTexts = agentMailbox.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const agentTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      chatAgentLocalPart,
+      (text) => text === unmentionedText,
     );
     // Exactly once — see the same note on the invited-agent mention
     // assertion above: a redelivered duplicate here would mean this
@@ -754,14 +784,16 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   }, 90_000);
 
   // Runs after the echo chat above so its own create call — same
-  // tenant, same agent — proves the find-or-create path (CL-6070): a
-  // chat with an agent already talked to reopens that chat rather than
-  // forking a duplicate, so this asserts 200 and the same id back,
+  // tenant, same agent — proves the deliberate reuse path (CL-6089):
+  // "+ New Workbench" always creates, so reuse is opt-in via
+  // `reuseExisting: true` (the land-hop `ensureMyraWorkbench` uses),
+  // which reopens the existing chat with 200 and the same id back,
   // never a fresh 201.
   test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
     const reopened = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
+      reuseExisting: true,
     });
     expectStatus("re-create existing agent chat", reopened, 200);
     expect(

@@ -150,15 +150,32 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
 
       const messageText = `smoke message ${crypto.randomUUID()}`;
       await hop("post a message", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
-          { parts: [{ kind: "text", text: messageText }] },
-          cookies,
-        );
-        expectStatus("post message", res, 201);
-        stringField(res.data, "id", "post message");
+        // Workbench creation no longer waits for the sidecar's dial-in
+        // (the hub defers the launch), so this first post is the first
+        // call that needs a routable sidecar — retry through the 500
+        // the wake path answers until the dial-in lands.
+        const deadline = Date.now() + 60_000;
+        for (;;) {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
+            { parts: [{ kind: "text", text: messageText }] },
+            cookies,
+          );
+          if (res.status !== 500) {
+            expectStatus("post message", res, 201);
+            stringField(res.data, "id", "post message");
+            return;
+          }
+          if (Date.now() > deadline) {
+            throw new Error(
+              `post message kept answering 500: ${JSON.stringify(res.data)}` +
+                `\nsidecar output:\n${sidecar.output()}`,
+            );
+          }
+          await Bun.sleep(1000);
+        }
       });
 
       await hop("the message persists with its original content", async () => {

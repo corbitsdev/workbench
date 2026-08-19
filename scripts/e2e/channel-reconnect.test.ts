@@ -217,7 +217,16 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
 
   test("a message before the restart reaches the timeline", async () => {
     const before = `before restart ${crypto.randomUUID()}`;
-    const posted = await postMessage(before);
+    // Workbench creation no longer waits for the sidecar's dial-in (the
+    // hub defers the launch), so this first post is the first call that
+    // needs a routable sidecar — retry through the 500 the wake path
+    // answers until the dial-in lands.
+    let posted = await postMessage(before);
+    const deadline = Date.now() + 60_000;
+    while (posted.status === 500 && Date.now() < deadline) {
+      await Bun.sleep(1000);
+      posted = await postMessage(before);
+    }
     expectStatus("post message before restart", posted, 201);
 
     const items = await listMessages();

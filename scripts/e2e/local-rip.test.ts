@@ -95,11 +95,12 @@
 //     packages/tasks-ui/src/myra-agent-selection-strategy.tsx) fails
 //     closed against the same stub credential: Myra's own one-shot run
 //     draws the identical real 401 the task leg's opening turn does,
-//     which `runPlanner` can only ever read as an unparseable reply, so
-//     `@corbits/task-planner`'s route (packages/task-planner/src/
-//     routes.ts) answers the honest `planning_failed` 422 it's built
-//     for — never a task row, an agent definition, or an Inbox
-//     delivery. A real key instead yields a valid `TaskSpec` and a real
+//     which `runPlanner` recognizes as an inference-failure report and,
+//     after its one retry, surfaces as
+//     `PlannerInferenceUnavailableError`, so `@corbits/task-planner`'s
+//     route (packages/task-planner/src/routes.ts) answers the honest
+//     `inference_unavailable` 503 it's built for — never a task row, an
+//     agent definition, or an Inbox delivery. A real key instead yields a valid `TaskSpec` and a real
 //     dispatch, mirroring this suite's phase-A/B stub-key honesty
 //     convention throughout.
 
@@ -525,17 +526,19 @@ describe.skipIf(databaseUrl === undefined)(
             res.data,
             "credentials response",
           ).data;
-          // `inferenceCredentialName("anthropic")` per
-          // `@workbench/hub-client`'s `seed.ts` — the same name
-          // `seedCatalog`'s `ensureCredential` call plants, and the same
-          // one `connectorStatus` (`@workbench/settings-ui`) cross-
-          // references a connector card's provider row against.
+          // The self-served connect flow names the credential by the
+          // connector's display name ("Anthropic") — see
+          // `credentialDisplayName` in `@workbench/onboarding`'s
+          // `complete-credential.ts`: the Plugins gallery resolver looks
+          // a credential up by that exact name, so seeding under the
+          // old `inferenceCredentialName` convention would leave it
+          // invisible to the gallery.
           const planted = credentials.find(
-            (credential) => credential.name === "anthropic-default",
+            (credential) => credential.name === "Anthropic",
           );
           if (planted === undefined) {
             throw new Error(
-              `no "anthropic-default" credential on the tenant's Connections surface: ${JSON.stringify(credentials)}`,
+              `no "Anthropic" credential on the tenant's Connections surface: ${JSON.stringify(credentials)}`,
             );
           }
           expect(planted.status).toBe("active");
@@ -865,7 +868,7 @@ describe.skipIf(databaseUrl === undefined)(
       // against the same stub credential. ---
 
       await hop(
-        "Myra's planner route fails closed with the stub credential — a 422 planning_failed envelope, no task created, no agent definition deployed, no inbox delivery",
+        "Myra's planner route fails closed with the stub credential — a 503 inference_unavailable envelope, no task created, no agent definition deployed, no inbox delivery",
         async () => {
           // `createPlannerRoutes`' one route, `POST /`, mounted at
           // `${TENANT_PREFIX}/planner` in apps/hub/src/index.ts — the
@@ -889,20 +892,17 @@ describe.skipIf(databaseUrl === undefined)(
           // `credential_failure` and folded into a *completed* turn
           // carrying a self-describing credential-error report as its
           // reply content (not a failed run bracket; see the task leg's
-          // own comment for why). `runPlanner` (planner-run.ts) then
-          // hands that content straight to `parseTaskSpec`
-          // (task-spec.ts), which can only ever produce a `TaskSpec` or
-          // throw `PlannerReplyUnparseableError` — a credential-error
-          // report is neither valid JSON nor either `TaskSpec` shape, so
-          // it throws. `PlannerReplyUnparseableError` is one of
-          // `isPlanningFailure`'s named cases (routes.ts), so the route
-          // never reaches `spawnFromTaskSpec` at all: it answers the
-          // same honest `{error: {code: "planning_failed", message:
-          // "Myra couldn't turn that into a task. Try rephrasing, or
-          // pick an agent yourself."}}` envelope, 422, that a genuinely
-          // unparseable reply from a real key would also produce —
-          // proven empirically against this exact stub key, not
-          // assumed.
+          // own comment for why). `runPlanner` (planner-run.ts)
+          // recognizes that inference-failure report
+          // (`isInferenceFailureReply`), retries once, and — with the
+          // stub key failing again — throws
+          // `PlannerInferenceUnavailableError`, which `routes.ts` maps
+          // to its own honest `{error: {code: "inference_unavailable",
+          // message: "The model couldn't be reached — try again in a
+          // moment"}}` envelope, 503, never the misleading
+          // `planning_failed` 422 a genuinely unparseable plan gets. The
+          // route never reaches `spawnFromTaskSpec` at all — proven
+          // empirically against this exact stub key, not assumed.
           const tasksBefore = await api(
             hub.baseUrl,
             "GET",
@@ -948,9 +948,9 @@ describe.skipIf(databaseUrl === undefined)(
             { outcome: `local-rip planner leg ${crypto.randomUUID()}` },
             user.cookies,
           );
-          expectStatus("planner dispatch with stub credential", planRes, 422);
+          expectStatus("planner dispatch with stub credential", planRes, 503);
           const body = planRes.data as { error: { code: string } };
-          expect(body.error.code).toBe("planning_failed");
+          expect(body.error.code).toBe("inference_unavailable");
 
           const tasksAfter = await api(
             hub.baseUrl,
