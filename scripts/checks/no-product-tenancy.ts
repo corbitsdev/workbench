@@ -80,9 +80,20 @@ const ALLOWLIST: readonly {
     tables: ["notify_dispatch"],
   },
   {
+    // `turn_latency` (CL-6257) records per-message-run latency stages —
+    // product observability the platform's own tables never capture.
     relPath: "packages/insights/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["usage_turn", "model_price"],
+    maxOccurrences: 3,
+    tables: ["usage_turn", "model_price", "turn_latency"],
+  },
+  {
+    // Append-only record of every public key a workflow run has been
+    // deployed under, in its own `run_key_history` Postgres schema —
+    // identity diagnostics the platform's `workflow_run.public_key`
+    // (a single mutable column) cannot answer.
+    relPath: "packages/run-key-history/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["run_key_history"],
   },
   {
     relPath: "packages/bench/src/schema.ts",
