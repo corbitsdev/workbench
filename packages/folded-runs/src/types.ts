@@ -3,7 +3,7 @@
 // session service, the sidecar router, the event-collector
 // registry — arrives as an injected port; this package never imports
 // a hub or a host-specific package such as `@corbits/chat`.
-import type { DB } from "@intx/db";
+import type { DB, DBExecutor } from "@intx/db";
 import type {
   CredentialBinding,
   CredentialCipher,
@@ -26,15 +26,19 @@ import type {
  * and `vendor/intx/inference/src/authz-extension.ts`'s `beforeTool`) and
  * `effect` the tool's static approval floor (`@intx/agent`'s
  * `toolApprovalEffect`: `"ask"` for a tool declared `approval: "ask"`,
- * `"allow"` otherwise). A pinned package whose HTTP surface itself gates
- * on `requireGrant("<resource>", "<action>")` — `@corbits/memory-tools`
- * pinning `@corbits/memory`'s `memory`/`add` and `memory`/`search`, e.g.
- * (CL-6296) — contributes that resource/action pair directly instead,
- * which is why `action` is a plain string rather than fixed to `"invoke"`.
+ * `"allow"` otherwise).
+ *
+ * `action` is fixed to `"invoke"`, and this is the whole point of the type.
+ * These declarations reach the child's `grants.json` verbatim, so a widened
+ * `action` would let a pinned package name any resource/action pair it
+ * liked — while the hub, which reads none of this file, went on refusing
+ * the call. What a package needs from the hub's own routes belongs to a
+ * different plane entirely: `RunHubGrantPlane` below, resolved against the
+ * invoker's authority and written as real `grant` rows.
  */
 export type PinnedToolGrantDeclaration = {
   readonly resource: string;
-  readonly action: string;
+  readonly action: "invoke";
   readonly effect: GrantEffect;
 };
 
@@ -83,6 +87,37 @@ export type McpCredentialBindingsFor = (
   tenantId: string,
 ) => Promise<readonly CredentialBinding[]>;
 
+/**
+ * Writes and revokes the hub-side authority a folded run holds against the
+ * hub's own guarded HTTP routes — real `grant` rows on the run's principal,
+ * in the org tenant those routes authorize against.
+ *
+ * A different plane from `ToolGrantsForPins` above, and the two must not be
+ * conflated. That one produces the wire frame the spawned child reads to
+ * decide whether a tool may be invoked at all; this one decides what the
+ * hub will honour once a tool calls back in. Collapsing them is what let a
+ * pinned package mint an arbitrary resource/action pair into a file the hub
+ * never reads.
+ *
+ * The rows are the intersection of what the run's pinned packages need with
+ * what its invoker actually holds, so a run reaches exactly as far as the
+ * person who started it and never further. `mint` runs inside the mint
+ * transaction — chat mints without deploying and deploys later at wake, by
+ * which point the invoker is gone, so launch is the only moment this can be
+ * computed. `revoke` runs on the launch-failure path, where the rows would
+ * otherwise outlive a run that never started.
+ */
+export type RunHubGrantPlane = {
+  mint(params: {
+    readonly runTenantId: string;
+    readonly runPrincipalId: string;
+    readonly invokerPrincipalId: string;
+    readonly toolPackagePins: readonly ToolPackagePin[];
+    readonly tx: DBExecutor;
+  }): Promise<void>;
+  revoke(params: { readonly runPrincipalId: string }): Promise<void>;
+};
+
 export type FoldedRunsDeps = {
   db: DB["db"];
   sessionService: SessionService;
@@ -110,6 +145,13 @@ export type FoldedRunsDeps = {
   hubPublicKey: string;
   /** See `ToolGrantsForPins`'s own doc. */
   toolGrantsForPins: ToolGrantsForPins;
+  /**
+   * See `RunHubGrantPlane`'s own doc. Required, with no absent case: a
+   * host that could forget to wire it would launch runs whose authority is
+   * bounded by nothing, which is exactly the failure this plane exists to
+   * prevent.
+   */
+  runHubGrants: RunHubGrantPlane;
   /**
    * See `McpCredentialBindingsFor`'s own doc. Optional: a caller that never
    * pins `@corbits/mcp-tools` (every launcher besides the hub's real chat

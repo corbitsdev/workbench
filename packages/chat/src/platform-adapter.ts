@@ -78,6 +78,8 @@ export type CreateHubChatPlatformDeps = {
   hubPublicKey: string;
   /** See `FoldedRunsDeps.toolGrantsForPins`. */
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
+  /** See `FoldedRunsDeps.runHubGrants`. */
+  runHubGrants: FoldedRunsDeps["runHubGrants"];
   /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
   mcpCredentialBindingsFor?: FoldedRunsDeps["mcpCredentialBindingsFor"];
   /**
@@ -248,6 +250,7 @@ export function createHubChatPlatform(
     eventCollectors: deps.eventCollectors,
     hubPublicKey: deps.hubPublicKey,
     toolGrantsForPins: deps.toolGrantsForPins,
+    runHubGrants: deps.runHubGrants,
     ...(deps.credentialCipher !== undefined
       ? { credentialCipher: deps.credentialCipher }
       : {}),
@@ -465,6 +468,7 @@ export function createHubChatPlatform(
         triggerAddress: input.triggerAddress,
         definitionId,
         invokerPrincipalId: input.creatorPrincipalId,
+        toolPackagePins: foldedBody.toolPackagePins ?? [],
         // The launch body is persisted with the mint itself, in the
         // same transaction, so a wake can rebuild the deploy config
         // without reaching for the definition's asset — a workbench
@@ -547,6 +551,7 @@ export function createHubChatPlatform(
         triggerAddress,
         definitionId: input.definitionId,
         invokerPrincipalId: input.creatorPrincipalId,
+        toolPackagePins: foldedBody.toolPackagePins ?? [],
         persistExtra: async (tx) => {
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,

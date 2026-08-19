@@ -2,6 +2,7 @@ export type {
   FoldedRunsDeps,
   McpCredentialBindingsFor,
   PinnedToolGrantDeclaration,
+  RunHubGrantPlane,
   ToolGrantsForPins,
   SentFoldedMail,
   ListedFoldedMail,

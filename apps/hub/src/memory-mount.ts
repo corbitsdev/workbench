@@ -39,11 +39,9 @@ import {
   type CallerResolver,
   type Memory,
 } from "@corbits/memory";
-import { and, eq } from "drizzle-orm";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
 import type { TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
-import { principal } from "@intx/db/schema";
 import { createRequireGrant } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 import {
@@ -61,6 +59,7 @@ import {
   OperatorTenantHasNoAccountScopeError,
 } from "./account-tenant";
 import { resolveMemoryConfig } from "./memory-config";
+import { resolveOrgPrincipalId } from "./org-principal";
 import {
   buildMemoryPlaneStatus,
   createMemoryStatusRoutes,
@@ -139,33 +138,6 @@ async function accountScopeFor(
     }
     throw cause;
   }
-}
-
-/**
- * The org tenant's own principal for the user a workbench principal stands
- * for, found by the same `(tenantId, kind: "user", refId)` lookup
- * `createResolveTenant` uses to seat a caller in any tenancy
- * (`@intx/hub-api`'s `middleware/tenant.ts`). A principal is scoped to one
- * tenancy; the user behind it is the durable identity, so a person acting
- * in any workbench under an org is the same person in that org.
- *
- * `null` when they hold no principal there — a guest invited into a single
- * workbench, whose own parent tenancy is elsewhere. `./memory-status.ts`
- * turns that into an explained state on the Memory page.
- */
-async function resolveOrgPrincipalId(
-  db: DB["db"],
-  orgTenantId: string,
-  userRefId: string,
-): Promise<string | null> {
-  const row = await db.query.principal.findFirst({
-    where: and(
-      eq(principal.tenantId, orgTenantId),
-      eq(principal.kind, "user"),
-      eq(principal.refId, userRefId),
-    ),
-  });
-  return row?.id ?? null;
 }
 
 type SessionScope =

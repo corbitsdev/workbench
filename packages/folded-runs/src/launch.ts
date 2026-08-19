@@ -14,6 +14,7 @@
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import { buildCredentialDelivery } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
 import {
@@ -409,7 +410,15 @@ export type MintFoldedRunParams = Pick<
   | "definitionId"
   | "invokerPrincipalId"
   | "persistExtra"
->;
+> & {
+  /**
+   * `foldedBody.toolPackagePins` — passed on its own because a mint-only
+   * caller (chat) never hands the whole body to this function. The run's
+   * hub-side authority is computed from these against the invoker's, in
+   * the mint transaction.
+   */
+  toolPackagePins: readonly ToolPackagePin[];
+};
 
 /**
  * The mint half of a folded-run launch: one transaction writing the
@@ -422,7 +431,7 @@ export type MintFoldedRunParams = Pick<
  * call returns (tasks, routines) stays on `launchFoldedRun` below.
  */
 export async function mintFoldedRun(
-  deps: Pick<FoldedRunsDeps, "db">,
+  deps: Pick<FoldedRunsDeps, "db" | "runHubGrants">,
   params: MintFoldedRunParams,
 ): Promise<LaunchedFoldedRun> {
   const instancePrincipalId = generateId("principal");
@@ -505,6 +514,17 @@ export async function mintFoldedRun(
       createdAt: now,
     });
 
+    // The run's hub-side authority, bounded by its invoker's. Written
+    // here rather than at deploy because a mint-only caller deploys later,
+    // at wake, with no invoker left to compute an intersection against.
+    await deps.runHubGrants.mint({
+      runTenantId: params.tenantId,
+      runPrincipalId: instancePrincipalId,
+      invokerPrincipalId: params.invokerPrincipalId,
+      toolPackagePins: params.toolPackagePins,
+      tx,
+    });
+
     if (params.persistExtra !== undefined) {
       await params.persistExtra(tx);
     }
@@ -533,6 +553,7 @@ export async function launchFoldedRun(
     triggerAddress: params.triggerAddress,
     definitionId: params.definitionId,
     invokerPrincipalId: params.invokerPrincipalId,
+    toolPackagePins: params.foldedBody.toolPackagePins ?? [],
     ...(params.persistExtra !== undefined
       ? { persistExtra: params.persistExtra }
       : {}),
@@ -600,6 +621,11 @@ export async function launchFoldedRun(
         .set({ status: "deactivated", updatedAt: failedAt })
         .where(eq(principalTable.id, instancePrincipalId));
     });
+
+    // The principal is deactivated rather than deleted, so its grant rows
+    // never cascade away on their own. A run that never started holds no
+    // authority, so they go here.
+    await deps.runHubGrants.revoke({ runPrincipalId: instancePrincipalId });
 
     throw err;
   }

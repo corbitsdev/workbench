@@ -283,7 +283,11 @@ import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
-import { createToolGrantsForPins } from "./tool-grants";
+import {
+  createHubGrantRequirementsForPins,
+  createToolGrantsForPins,
+} from "./tool-grants";
+import { createRunHubGrantPlane } from "./run-hub-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 
 // Host policy constants, not configuration.
@@ -958,6 +962,19 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  // The other grant plane: what the hub itself honours when a run's tools
+  // call back into its own guarded routes, as opposed to the `tool:` wire
+  // frame `toolGrantsForPins` above writes into the child's `grants.json`.
+  // Every `FoldedRunsDeps` below is built with it, so no launch path can
+  // mint a run whose authority is bounded by nobody.
+  const runHubGrants = createRunHubGrantPlane({
+    db,
+    grantStore: chatGrantStore,
+    requirementsForPins: createHubGrantRequirementsForPins(),
+    ...(config.operatorTenantId !== undefined
+      ? { operatorTenantId: config.operatorTenantId }
+      : {}),
+  });
   // Mounted here (not up with the registry construction above) because
   // its `/update` route's grant gate needs `chatGrantStore`/
   // `chatConditionRegistry`, which don't exist yet up there — the same
@@ -1049,6 +1066,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     hubPublicKey,
     toolGrantsForPins,
+    runHubGrants,
     mcpCredentialBindingsFor,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     // Chat residents are undeployed on idle again (see the comment above
@@ -1605,6 +1623,7 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             hubPublicKey,
             toolGrantsForPins,
+            runHubGrants,
             mcpCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
           },
@@ -1759,6 +1778,7 @@ export async function createHub(config: HubConfig) {
       credentialCipher,
       hubPublicKey,
       toolGrantsForPins,
+      runHubGrants,
       mcpCredentialBindingsFor,
     },
     cryptoProviders: createCryptoProviderCache(),
@@ -2013,6 +2033,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     hubPublicKey,
     toolGrantsForPins,
+    runHubGrants,
     mcpCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),

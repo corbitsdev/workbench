@@ -8,27 +8,23 @@
 // in the hub's own `describeCorbitsToolPackages()` read and mint one
 // `tool:<qualifiedId>` / `invoke` declaration per tool, floored at `ask`
 // for a tool the package itself marks `approval: "ask"`.
+//
+// Two planes live here, and the distinction is load-bearing. Those
+// declarations are the wire frame the spawned child reads to decide whether
+// a tool may be invoked at all. `createHubGrantRequirementsForPins` below is
+// the other plane: what the HUB will honour once a tool calls back into one
+// of its own guarded routes. Hub requirements never travel on the wire —
+// they are resolved against the invoker's own authority and written as real
+// `grant` rows at launch (`./run-hub-grants.ts`), so a pinned package can
+// never mint itself an arbitrary resource/action pair.
+import { MEMORY_GRANT_REQUIREMENTS } from "@corbits/memory";
+import type { GrantEffect } from "@intx/types";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type {
   PinnedToolGrantDeclaration,
   ToolGrantsForPins,
 } from "@corbits/folded-runs";
 import type { CorbitsToolPackageDescription } from "@corbits/tool-registry-publish";
-
-// CL-6296: pinning `@corbits/memory-tools` reaches `@corbits/memory`'s
-// own `registerMemoryRoutes` now (see `./memory-mount.ts`), which gates
-// every route behind `requireGrant("memory", action)` — a check the old
-// `@corbits/memory-hub` surface never performed, so nothing has ever
-// minted these before. A run's synthetic principal otherwise carries only
-// the `tool:<qualifiedId>` grants above, never a tenant-owner's wildcard,
-// so without this every workflow memory call would 403 the instant it
-// reached the plane. `memory_list` reads through the plane's own `search`
-// action (see `@corbits/memory`'s `mountListRoute`), so no separate
-// `memory:list` grant exists to mint.
-const MEMORY_TOOLS_PACKAGE_NAME = "@corbits/memory-tools";
-const MEMORY_RESOURCE_GRANTS: readonly PinnedToolGrantDeclaration[] = [
-  { resource: "memory", action: "add", effect: "allow" },
-  { resource: "memory", action: "search", effect: "allow" },
-];
 
 export function createToolGrantsForPins(
   descriptions: readonly CorbitsToolPackageDescription[],
@@ -48,10 +44,54 @@ export function createToolGrantsForPins(
           effect: tool.approval === "ask" ? "ask" : "allow",
         });
       }
-      if (pin.name === MEMORY_TOOLS_PACKAGE_NAME) {
-        grants.push(...MEMORY_RESOURCE_GRANTS);
-      }
     }
     return grants;
+  };
+}
+
+/** One authority a pinned package needs against the hub's own routes. */
+export type HubGrantRequirement = {
+  readonly resource: string;
+  readonly action: string;
+  readonly effect: GrantEffect;
+};
+
+export type HubGrantRequirementsForPins = (
+  pins: readonly ToolPackagePin[],
+) => readonly HubGrantRequirement[];
+
+// `@corbits/memory-tools` reaches `@corbits/memory`'s own
+// `registerMemoryRoutes` (see `./memory-mount.ts`), which gates every route
+// behind `requireGrant("memory", action)` — a check the deleted
+// `@corbits/memory-hub` surface never performed. The actions come from
+// upstream's own declaration filtered to the `tools` surface, so a run never
+// picks up the routes-only `forget`/`purge` authority just because it pinned
+// the tools, and this list cannot drift from what the routes check.
+// `memory_list` reads through the plane's own `search` action, so there is
+// no separate `memory:list` requirement to declare.
+const MEMORY_TOOLS_PACKAGE_NAME = "@corbits/memory-tools";
+const MEMORY_TOOL_REQUIREMENTS: readonly HubGrantRequirement[] =
+  MEMORY_GRANT_REQUIREMENTS.filter((requirement) =>
+    (requirement.surfaces as readonly string[]).includes("tools"),
+  ).map((requirement) => ({
+    resource: requirement.resource,
+    action: requirement.action,
+    effect: "allow" as GrantEffect,
+  }));
+
+const HUB_REQUIREMENTS_BY_PACKAGE_NAME: ReadonlyMap<
+  string,
+  readonly HubGrantRequirement[]
+> = new Map([[MEMORY_TOOLS_PACKAGE_NAME, MEMORY_TOOL_REQUIREMENTS]]);
+
+export function createHubGrantRequirementsForPins(): HubGrantRequirementsForPins {
+  return (pins) => {
+    const requirements: HubGrantRequirement[] = [];
+    for (const pin of pins) {
+      const declared = HUB_REQUIREMENTS_BY_PACKAGE_NAME.get(pin.name);
+      if (declared === undefined) continue;
+      requirements.push(...declared);
+    }
+    return requirements;
   };
 }
