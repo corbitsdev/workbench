@@ -24,6 +24,14 @@ import type {
 } from "@intx/hub-sessions";
 import { createHubChatPlatform } from "../src/platform-adapter";
 
+// The hub-grant plane is exercised on its own (`apps/hub`'s
+// `run-hub-grants` suite); these doubles only care about launch mechanics.
+const noopRunHubGrants = {
+  mint: async () => undefined,
+  revoke: async () => undefined,
+};
+
+
 type Row = Record<string, unknown>;
 
 /**
@@ -75,6 +83,7 @@ function buildPlatform(plan: Parameters<typeof fakeDb>[0]) {
   return createHubChatPlatform({
     hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
+    runHubGrants: noopRunHubGrants,
     db: fakeDb(plan) as never,
     noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
     sessionService: {} as unknown as SessionService,

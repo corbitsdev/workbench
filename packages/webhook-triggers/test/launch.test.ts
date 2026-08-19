@@ -37,6 +37,14 @@ mock.module("@corbits/folded-runs", () => ({
 
 const { launchWebhookTrigger } = await import("../src/launch");
 
+// The hub-grant plane is exercised on its own (`run-hub-grants` and the
+// real-DB suite); these doubles only care about launch mechanics.
+const noopRunHubGrants = {
+  mint: async () => undefined,
+  revoke: async () => undefined,
+};
+
+
 const DEFINITION_ROW = {
   id: "wfd_1",
   tenantId: "ten_1",
@@ -79,6 +87,7 @@ function baseDeps() {
     sidecarRouter: {} as never,
     hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
+    runHubGrants: noopRunHubGrants,
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
   };

@@ -129,6 +129,7 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: { mint: async () => undefined, revoke: async () => undefined },
         db,
         sessionService: {} as unknown as SessionService,
         assetService: {} as unknown as AssetService,

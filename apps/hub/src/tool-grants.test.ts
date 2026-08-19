@@ -4,7 +4,10 @@
 // `@corbits/folded-runs`' `deployAtHead`, which mints these into
 // `config.grants`.
 import { describe, expect, test } from "bun:test";
-import { createToolGrantsForPins } from "./tool-grants";
+import {
+  createHubGrantRequirementsForPins,
+  createToolGrantsForPins,
+} from "./tool-grants";
 
 const DESCRIPTIONS = [
   {
@@ -70,27 +73,24 @@ describe("createToolGrantsForPins", () => {
       "tool:@corbits/routines-tools/routines:routine_create/invoke",
       "tool:@corbits/routines-tools/routines:routine_list/invoke",
       "tool:@corbits/memory-tools/memory:memory_add/invoke",
-      "memory/add",
-      "memory/search",
     ]);
   });
 
-  // CL-6296: pinning `@corbits/memory-tools` migrated onto
-  // `@corbits/memory`'s own `registerMemoryRoutes`, which gates every
-  // route behind `requireGrant("memory", action)` — a check the old,
-  // now-deleted `@corbits/memory-hub` surface never performed. Without
-  // these, a run's synthetic principal (which carries only the
-  // `tool:<qualifiedId>` grants above, never a tenant-owner wildcard)
-  // would 403 on every memory call the moment it reached the plane.
-  test("pinning @corbits/memory-tools also mints memory:add and memory:search", () => {
+  // The wire plane carries `tool:<id>` / `invoke` and nothing else, for
+  // every pin — `@corbits/memory-tools` included. What that package needs
+  // from the hub's own memory routes is a different plane entirely
+  // (`createHubGrantRequirementsForPins` below), resolved against the
+  // invoker's authority and written as real grant rows at launch. Minting a
+  // `memory`/`add` pair into the child's `grants.json` only ever looked
+  // correct: the hub never reads that file, so the call still 403'd.
+  test("pinning @corbits/memory-tools mints tool grants only — never a hub resource pair", () => {
     const toolGrantsForPins = createToolGrantsForPins(DESCRIPTIONS);
     const grants = toolGrantsForPins([
       { name: "@corbits/memory-tools", version: "^1" },
     ]);
-    expect(grants.filter((g) => g.resource === "memory")).toEqual([
-      { resource: "memory", action: "add", effect: "allow" },
-      { resource: "memory", action: "search", effect: "allow" },
-    ]);
+    expect(grants.filter((g) => g.resource === "memory")).toEqual([]);
+    expect(grants.every((g) => g.action === "invoke")).toBe(true);
+    expect(grants.length).toBeGreaterThan(0);
   });
 
   test("a pin naming a package the hub does not describe yields no grants, never throws", () => {
@@ -104,5 +104,41 @@ describe("createToolGrantsForPins", () => {
   test("no pins yields no grants", () => {
     const toolGrantsForPins = createToolGrantsForPins(DESCRIPTIONS);
     expect(toolGrantsForPins([])).toEqual([]);
+  });
+});
+
+// The other plane: what the hub honours once a pinned package's tool calls
+// back into one of its own guarded routes. These never travel on the wire —
+// `./run-hub-grants.ts` resolves each against the invoker's own authority
+// and writes what survives as real `grant` rows.
+describe("createHubGrantRequirementsForPins", () => {
+  test("derives memory-tools' requirements from @corbits/memory's own declaration, so they cannot drift from what the routes check", () => {
+    const requirementsForPins = createHubGrantRequirementsForPins();
+    const requirements = requirementsForPins([
+      { name: "@corbits/memory-tools", version: "^1" },
+    ]);
+    expect(requirements).toEqual([
+      { resource: "memory", action: "add", effect: "allow" },
+      { resource: "memory", action: "search", effect: "allow" },
+    ]);
+  });
+
+  // `forget` and `purge` are declared for the `routes` surface only. A run
+  // that pinned the tools must not pick up irreversible deletion just by
+  // being in the same requirement list.
+  test("never hands a tools pin the routes-only forget and purge authority", () => {
+    const requirementsForPins = createHubGrantRequirementsForPins();
+    const actions = requirementsForPins([
+      { name: "@corbits/memory-tools", version: "^1" },
+    ]).map((requirement) => requirement.action);
+    expect(actions).not.toContain("forget");
+    expect(actions).not.toContain("purge");
+  });
+
+  test("a pin that needs nothing from the hub's own routes declares nothing", () => {
+    const requirementsForPins = createHubGrantRequirementsForPins();
+    expect(
+      requirementsForPins([{ name: "@corbits/routines-tools", version: "^1" }]),
+    ).toEqual([]);
   });
 });

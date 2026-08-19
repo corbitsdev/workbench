@@ -80,6 +80,14 @@ const {
 const { wakeFoldedRun } = await import("../src/wake");
 const { sessionAsset } = await import("@intx/db/schema");
 
+// The hub-grant plane is exercised on its own (`run-hub-grants` and the
+// real-DB suite); these doubles only care about launch mechanics.
+const noopRunHubGrants = {
+  mint: async () => undefined,
+  revoke: async () => undefined,
+};
+
+
 type InsertChain = {
   values(values: unknown): Promise<void>;
 };
@@ -240,13 +248,14 @@ describe("mintFoldedRun", () => {
     const persistExtraCalls: unknown[] = [];
 
     const result = await mintFoldedRun(
-      { db: db as never },
+      { db: db as never, runHubGrants: noopRunHubGrants },
       {
         tenantId: "ten_1",
         instanceId: "ins_workbench1",
         triggerAddress: "ins_workbench1@ten1.workbench.test",
         definitionId: "wfd_workbench1",
         invokerPrincipalId: "prn_invoker",
+        toolPackagePins: [],
         persistExtra: async (tx) => {
           persistExtraCalls.push(tx);
         },
@@ -269,6 +278,50 @@ describe("mintFoldedRun", () => {
     // traffic and no collector — the first mail wakes it instead.
     expect(sessionService.deployInstanceAtHeadCalls).toEqual([]);
     expect(eventCollectors.createCalls).toEqual([]);
+  });
+
+  // Mint is the only moment a run's hub-side authority can be computed: a
+  // mint-only caller deploys later, at wake, and the invoker is gone by
+  // then. It runs inside the same transaction, so a run can never be
+  // addressable while holding authority nobody granted it.
+  test("mints the run's hub-side authority from its invoker, inside the mint transaction", async () => {
+    const db = createFakeDb();
+    const mintCalls: {
+      runTenantId: string;
+      runPrincipalId: string;
+      invokerPrincipalId: string;
+      toolPackagePins: readonly { name: string }[];
+      tx: unknown;
+    }[] = [];
+    const pins = [{ name: "@corbits/memory-tools", version: "^1" }];
+
+    const result = await mintFoldedRun(
+      {
+        db: db as never,
+        runHubGrants: {
+          mint: async (params) => {
+            mintCalls.push(params as never);
+          },
+          revoke: async () => undefined,
+        },
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
+        invokerPrincipalId: "prn_alice",
+        toolPackagePins: pins,
+      },
+    );
+
+    expect(mintCalls).toHaveLength(1);
+    const minted = mintCalls[0];
+    expect(minted?.runTenantId).toBe("ten_1");
+    expect(minted?.runPrincipalId).toBe(result.instancePrincipalId);
+    expect(minted?.invokerPrincipalId).toBe("prn_alice");
+    expect(minted?.toolPackagePins).toEqual(pins);
+    expect(minted?.tx).toBeDefined();
   });
 });
 
@@ -302,6 +355,7 @@ describe("launchFoldedRun", () => {
         sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         eventCollectors,
       },
       {
@@ -434,6 +488,7 @@ describe("launchFoldedRun", () => {
         sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         eventCollectors: createFakeEventCollectors(),
       },
       {
@@ -496,6 +551,7 @@ describe("launchFoldedRun", () => {
         assetService: {} as never,
         sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
+        runHubGrants: noopRunHubGrants,
         toolGrantsForPins: (pins) => {
           toolGrantsForPinsCalls.push(pins);
           return [
@@ -593,6 +649,7 @@ describe("launchFoldedRun", () => {
         sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         eventCollectors,
         credentialCipher,
       },
@@ -646,6 +703,7 @@ describe("launchFoldedRun", () => {
           sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           eventCollectors,
         },
         {
@@ -674,6 +732,66 @@ describe("launchFoldedRun", () => {
 
     const principalUpdate = db.updated.find((row) => row.table === principal);
     expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });
+  });
+
+  // The principal is deactivated rather than deleted, so its grant rows
+  // never cascade away on their own. A run that never started holds no
+  // authority, so the rollback revokes it explicitly.
+  test("revokes the run's hub-side authority when the deploy fails", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    sessionService.deploySingleStepAtHead = async () => {
+      throw new Error("sidecar unreachable");
+    };
+    const revoked: { runPrincipalId: string }[] = [];
+    let mintedPrincipalId = "";
+
+    await expect(
+      launchFoldedRun(
+        {
+          db: db as never,
+          sessionService,
+          assetService: {} as never,
+          sidecarRouter: createFakeSidecarRouter(),
+          hubPublicKey: "hub-key",
+          toolGrantsForPins: () => [],
+          runHubGrants: {
+            mint: async ({ runPrincipalId }) => {
+              mintedPrincipalId = runPrincipalId;
+            },
+            revoke: async (params) => {
+              revoked.push(params);
+            },
+          },
+          eventCollectors: createFakeEventCollectors(),
+        } as never,
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
+          invokerPrincipalId: "prn_invoker",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the workbench host",
+        },
+      ),
+    ).rejects.toThrow(/sidecar unreachable/);
+
+    expect(revoked).toEqual([{ runPrincipalId: mintedPrincipalId }]);
   });
 
   test("marks the run failed (not deleted) when the deploy leaks a running child", async () => {
@@ -707,6 +825,7 @@ describe("launchFoldedRun", () => {
           sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           eventCollectors,
         },
         {
@@ -747,6 +866,7 @@ describe("launchFoldedRun", () => {
           sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           eventCollectors: createFakeEventCollectors(),
         },
         {
@@ -807,6 +927,7 @@ describe("launchFoldedRun", () => {
         sidecarRouter: createFakeSidecarRouter(),
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         eventCollectors,
       },
       {
@@ -845,6 +966,7 @@ describe("launchFoldedRun", () => {
           sidecarRouter: createFakeSidecarRouter(),
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           eventCollectors,
         },
         {
@@ -895,6 +1017,7 @@ describe("wakeFoldedRun", () => {
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
       } as never,
       {
         tenantId: "ten_1",
@@ -1121,6 +1244,7 @@ describe("deployAtHead — run.grants production", () => {
           effect: "allow" as const,
         },
       ],
+      runHubGrants: noopRunHubGrants,
     };
   }
 

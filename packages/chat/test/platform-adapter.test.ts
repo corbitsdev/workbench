@@ -47,6 +47,14 @@ import {
   serializeWorkbenchHostWorkflow,
 } from "../src/workbench-workflow";
 
+// The hub-grant plane is exercised on its own (`apps/hub`'s
+// `run-hub-grants` suite); these doubles only care about launch mechanics.
+const noopRunHubGrants = {
+  mint: async () => undefined,
+  revoke: async () => undefined,
+};
+
+
 const actualHubApi = await import("@intx/hub-api");
 const actualDrizzleOrm = await import("drizzle-orm");
 
@@ -595,6 +603,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       // Fake db, not a real drizzle instance.
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
@@ -759,6 +768,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -826,6 +836,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -901,6 +912,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -983,6 +995,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1093,6 +1106,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1136,6 +1150,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1168,6 +1183,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1214,6 +1230,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1285,6 +1302,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1341,6 +1359,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1402,6 +1421,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
@@ -1438,6 +1458,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
@@ -1479,6 +1500,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -1547,6 +1569,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -1674,6 +1697,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -1773,6 +1797,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -1854,6 +1879,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -1942,6 +1968,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2009,6 +2036,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2078,6 +2106,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2124,6 +2153,7 @@ describe("createHubChatPlatform", () => {
         createHubChatPlatform({
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
@@ -2160,6 +2190,7 @@ describe("createHubChatPlatform", () => {
         createHubChatPlatform({
           hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
+          runHubGrants: noopRunHubGrants,
           db: db as never,
           noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
@@ -2195,6 +2226,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -2247,6 +2279,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -2298,6 +2331,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
@@ -2324,6 +2358,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2407,6 +2442,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
@@ -2456,6 +2492,7 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
+        runHubGrants: noopRunHubGrants,
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,

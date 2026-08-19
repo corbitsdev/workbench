@@ -50,6 +50,14 @@ mock.module("@corbits/folded-runs", () => ({
 
 const { createHubRoutineLauncher } = await import("./routine-launcher");
 
+// The hub-grant plane is exercised on its own (`run-hub-grants` and the
+// real-DB suite); these doubles only care about launch mechanics.
+const noopRunHubGrants = {
+  mint: async () => undefined,
+  revoke: async () => undefined,
+};
+
+
 const DEFINITION_ROW = {
   id: "wfd_1",
   tenantId: "ten_1",
@@ -116,6 +124,7 @@ function buildLauncher(overrides: { definition?: unknown } = {}) {
     sidecarRouter: {} as never,
     hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
+    runHubGrants: noopRunHubGrants,
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
     dispatchTask: dispatchTask as never,
@@ -234,6 +243,7 @@ describe("createHubRoutineLauncher — delivery workbench", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
@@ -261,6 +271,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
@@ -299,6 +310,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
@@ -326,6 +338,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
@@ -358,6 +371,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
@@ -380,6 +394,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sidecarRouter: {} as never,
       hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
+      runHubGrants: noopRunHubGrants,
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
       dispatchTask: dispatchTask as never,
