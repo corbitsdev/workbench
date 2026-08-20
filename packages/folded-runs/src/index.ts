@@ -28,11 +28,13 @@ export {
 } from "./runs";
 export {
   deployAtHead,
+  foldedRunSourceRef,
   launchFoldedRun,
   mintFoldedRun,
   parseSourcesOverride,
   SourcesOverride,
   InferenceResolutionError,
+  type FoldedRunMode,
   type LaunchFoldedRunParams,
   type MintFoldedRunParams,
   type LaunchedFoldedRun,
