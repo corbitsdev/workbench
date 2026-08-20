@@ -28,7 +28,7 @@ import { generateId } from "@intx/hub-common";
 import { InferenceSource } from "@intx/types/runtime";
 import type { WireGrantRule } from "@intx/types/grant-wire";
 import {
-  wrapHarnessAsSingleStepWorkflow,
+  buildSingleStepAgentDefinition,
   type FoldedBody,
 } from "@intx/workflow-deploy";
 import { defineWorkflow, step, type Selector } from "@intx/workflow";
@@ -279,15 +279,23 @@ export async function deployAtHead(
   };
   const deployContent = { systemPrompt: params.foldedBody.systemPrompt };
   // A folded run is a conversation: its one step must service every
-  // inbound mail as another turn, never complete after the first. The
-  // platform's `deployInstanceAtHead` wraps the agent as a step with the
-  // default trigger budget of 1 (batch), which is exactly what made every
-  // chat go silent after its first real reply — so the folded launch
-  // builds the same single-step workflow itself, with the budget
-  // declared, and deploys it through the same head deploy.
+  // inbound mail as another turn, never complete after the first. A wrap
+  // with the platform's default trigger budget of 1 (batch) is exactly what
+  // made every chat go silent after its first real reply — so the folded
+  // launch builds the single-step agent itself, with the budget declared,
+  // and deploys it through the same head deploy. The launch pins its tools
+  // as packages rather than factories, so the step agent carries none.
   const foldedSteps = {
     [FOLDED_STEP_ID]: step({
-      agent: wrapHarnessAsSingleStepWorkflow({ config, deployContent }),
+      agent: buildSingleStepAgentDefinition({
+        id: config.agentId,
+        systemPrompt: deployContent.systemPrompt,
+        inferencePreferences: config.sources.map((source) => ({
+          provider: source.provider,
+          model: source.model,
+        })),
+        toolFactories: [],
+      }),
       triggers: "unbounded",
       ...(params.stepInput !== undefined ? { input: params.stepInput } : {}),
     }),
