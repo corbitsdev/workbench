@@ -1,13 +1,10 @@
 {
   "name": "@corbits/agent-runtime",
   "private": true,
-  "description": "The single versioned workflow source package every workbench agent run deploys from; its entry module builds the definition from deploy-time config",
+  "description": "The versioned definition builder every workbench agent run deploys, plus the renderer that pins it into a per-run code-sourced workflow package",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
-  "interchange": {
-    "workflow": "./src/workflow.ts"
-  },
   "exports": {
     ".": "./src/index.ts"
   },
