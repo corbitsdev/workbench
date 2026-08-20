@@ -26,7 +26,17 @@ export {
   type WorkbenchTemplateInstantiationPorts,
   type WorkbenchTemplateInstantiationResult,
 } from "./instantiate";
-export { TemplateSettingsPatch, templateSettingsPatch } from "./settings";
+export {
+  TemplateReposSettingsPatch,
+  TemplateSettingsPatch,
+  templateReposSettingsPatch,
+  templateSettingsPatch,
+} from "./settings";
+export {
+  startReviewingRepos,
+  type ConnectGithubSetupPorts,
+  type StartReviewingReposResult,
+} from "./connect-github-setup";
 
 /**
  * One named field a mail trigger reads by name — the create-time UI's only
