@@ -1,21 +1,32 @@
 /**
  * Live smoke harness for the code-review MVP (CL-6340): fetches a real
  * pull request's diff via @corbits/github-tools, runs the three
- * @corbits/code-review reviewer lenses against a real Anthropic model
- * call, aggregates the passes, and posts the review to GitHub for real.
+ * @corbits/code-review reviewer lenses against a real model call,
+ * aggregates the passes, and posts the review to GitHub for real.
  *
  * This is a smoke harness, not product plumbing: `runReviewerTurn` here
- * is a direct Anthropic Messages API call (the same minimal seam
+ * is a direct model call (the same minimal seam
  * packages/evals/src/model-call.ts already uses for eval-side model
  * calls), because the MVP report flagged that no production inference
  * binding exists yet for `runReviewerTurn` — the review-run package
  * only defines the seam (packages/code-review/src/review-run.ts), it
  * does not wire one.
  *
+ * Two inference paths, chosen by what credential is present — an
+ * ANTHROPIC_API_KEY when there is one, a local Ollama chat completion
+ * (localhost:11434) when there is not. The Ollama path is HARNESS-ONLY:
+ * it exists so this smoke run can prove the loop mechanics (diff fetch
+ * → three passes → aggregate → post) for real without a paid credential
+ * in the sandbox, not as a second production inference binding. The
+ * production seam remains the known gap the MVP report flagged; nothing
+ * here narrows it. Expect modest finding quality from a small local
+ * model — that is not what this harness is proving.
+ *
  * Run: bun run scripts/repro/live-smoke-code-review.ts <owner>/<repo>#<pr-number>
  * Env: GITHUB_TOKEN (falls back to `gh auth token` if unset)
- *      ANTHROPIC_API_KEY (required — no fallback; this script never
- *      reads a credential store on its own)
+ *      ANTHROPIC_API_KEY (preferred when set)
+ *      OLLAMA_BASE_URL (default http://localhost:11434), OLLAMA_MODEL
+ *      (default qwen2.5vl:7b) — used only when ANTHROPIC_API_KEY is unset
  */
 import { spawnSync } from "node:child_process";
 
@@ -26,7 +37,9 @@ import {
 } from "@corbits/code-review";
 import type { PullRequestRef } from "@corbits/github-tools";
 
-const MODEL = "claude-sonnet-4-5-20250929";
+const ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929";
+const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+const DEFAULT_OLLAMA_MODEL = "qwen2.5vl:7b";
 
 function parseTarget(arg: string): PullRequestRef {
   const match = /^([^/\s]+)\/([^/\s]+)#(\d+)$/.exec(arg);
@@ -64,7 +77,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: MODEL,
+      model: ANTHROPIC_MODEL,
       max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
@@ -85,6 +98,41 @@ async function callAnthropic(
   return text;
 }
 
+/** HARNESS-ONLY fallback: a local Ollama chat completion. Not a second
+ * production inference binding — see the module comment. */
+async function callOllama(
+  systemPrompt: string,
+  userPrompt: string,
+  baseUrl: string,
+  model: string,
+): Promise<string> {
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Ollama chat call failed: ${String(res.status)} ${res.statusText} — ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as {
+    message?: { content?: string };
+  };
+  const text = data.message?.content;
+  if (text === undefined || text.length === 0) {
+    throw new Error("Ollama reply carried no content");
+  }
+  return text;
+}
+
 async function main(): Promise<void> {
   const targetArg = process.argv[2];
   if (targetArg === undefined) {
@@ -95,21 +143,38 @@ async function main(): Promise<void> {
   const ref = parseTarget(targetArg);
 
   const anthropicKey = process.env["ANTHROPIC_API_KEY"];
-  if (anthropicKey === undefined || anthropicKey.length === 0) {
-    throw new Error(
-      "ANTHROPIC_API_KEY is not set — this harness makes a real inference " +
-        "call and does not fall back to anything",
-    );
-  }
+  const ollamaBaseUrl =
+    process.env["OLLAMA_BASE_URL"] ?? DEFAULT_OLLAMA_BASE_URL;
+  const ollamaModel = process.env["OLLAMA_MODEL"] ?? DEFAULT_OLLAMA_MODEL;
+  const inferenceMode =
+    anthropicKey !== undefined && anthropicKey.length > 0
+      ? "anthropic"
+      : "ollama";
+  console.log(
+    inferenceMode === "anthropic"
+      ? `Inference: Anthropic (${ANTHROPIC_MODEL})`
+      : `Inference: Ollama fallback, HARNESS-ONLY (${ollamaModel} @ ${ollamaBaseUrl})`,
+  );
 
   const github = createGitHubReviewClient({ apiKey: ghToken() });
 
   const timings: Record<string, number> = {};
-  const t0 = performance.now();
+  const runStart = performance.now();
+  let diffDoneAt = runStart;
+  let lastPassDoneAt = runStart;
+  const timedGithub = {
+    ...github,
+    fetchDiff: async (fetchRef: PullRequestRef) => {
+      const diff = await github.fetchDiff(fetchRef);
+      diffDoneAt = performance.now();
+      timings["diff-fetch"] = diffDoneAt - runStart;
+      return diff;
+    },
+  };
 
   const result = await runPullRequestReview(
     {
-      github,
+      github: timedGithub,
       runReviewerTurn: async ({
         reviewer,
         prompt,
@@ -118,19 +183,31 @@ async function main(): Promise<void> {
         prompt: string;
       }) => {
         const passStart = performance.now();
-        const reply = await callAnthropic(
-          reviewer.systemPrompt,
-          prompt,
-          anthropicKey,
-        );
-        timings[`pass:${reviewer.id}`] = performance.now() - passStart;
+        const reply =
+          inferenceMode === "anthropic"
+            ? await callAnthropic(
+                reviewer.systemPrompt,
+                prompt,
+                anthropicKey as string,
+              )
+            : await callOllama(
+                reviewer.systemPrompt,
+                prompt,
+                ollamaBaseUrl,
+                ollamaModel,
+              );
+        const passDoneAt = performance.now();
+        timings[`pass:${reviewer.id}`] = passDoneAt - passStart;
+        lastPassDoneAt = Math.max(lastPassDoneAt, passDoneAt);
         return reply;
       },
     },
     ref,
   );
 
-  timings["total"] = performance.now() - t0;
+  const runEnd = performance.now();
+  timings["aggregate+post"] = runEnd - lastPassDoneAt;
+  timings["total"] = runEnd - runStart;
 
   console.log(`Posted review: ${result.posted.url}`);
   console.log("");
