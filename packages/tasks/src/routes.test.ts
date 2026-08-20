@@ -250,7 +250,7 @@ describe("GET / and GET /:id", () => {
     expect(missing.status).toBe(404);
   });
 
-  test("GET /by-run/:runId resolves the owning task and 404s otherwise", async () => {
+  test("GET /by-run/:runId resolves the owning task and answers {item: null} otherwise", async () => {
     const store = createMemoryTaskStore();
     await store.createTask({
       id: "task_1",
@@ -273,9 +273,13 @@ describe("GET / and GET /:id", () => {
     expect(body.item.id).toBe("task_1");
 
     const asBob = mountAs(createTaskRoutes(buildDeps({ store })), "prn_bob");
-    expect((await asBob.request("/by-run/run_1")).status).toBe(404);
+    const hidden = await asBob.request("/by-run/run_1");
+    expect(hidden.status).toBe(200);
+    expect(((await hidden.json()) as { item: unknown }).item).toBeNull();
 
-    expect((await asAlice.request("/by-run/run_missing")).status).toBe(404);
+    const missing = await asAlice.request("/by-run/run_missing");
+    expect(missing.status).toBe(200);
+    expect(((await missing.json()) as { item: unknown }).item).toBeNull();
   });
 
   test("lists and fetches a tenant's own tasks only", async () => {

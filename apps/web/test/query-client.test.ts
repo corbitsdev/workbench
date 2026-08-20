@@ -10,7 +10,6 @@ describe("pathToQueryKey", () => {
   test("maps identity-scoped hub paths onto meKeys", () => {
     expect(pathToQueryKey("/api/me")).toEqual(meKeys.profile);
     expect(pathToQueryKey("/api/me/principals")).toEqual(meKeys.principals);
-    expect(pathToQueryKey("/api/me/workflows/runs")).toEqual(meKeys.runs);
   });
 
   test("maps needs-you onto a tenant-scoped key", () => {

@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import {
   WORKBENCH_TEMPLATE_ARTIFACT_KIND,
   createTemplateLibraryRoutes,
+  createUnavailableTemplateLibraryRoutes,
   seedTemplateLibrary,
   type TemplateLibraryEngine,
   type TemplateLibraryStore,
@@ -210,5 +211,28 @@ describe("template library routes", () => {
       "/library/templates/standup",
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("createUnavailableTemplateLibraryRoutes", () => {
+  test("both routes answer 503 instead of the mount silently not existing", async () => {
+    const app = new Hono<TestEnv>();
+    app.use("*", async (c, next) => {
+      c.set("tenant", TENANT);
+      c.set("principal", { id: SCOPE.principalId });
+      await next();
+    });
+    app.route(
+      "/library/templates",
+      createUnavailableTemplateLibraryRoutes(allowAll),
+    );
+
+    const list = await app.request("/library/templates");
+    expect(list.status).toBe(503);
+    const listBody = (await list.json()) as { error: { code: string } };
+    expect(listBody.error.code).toBe("unavailable");
+
+    const one = await app.request("/library/templates/starter");
+    expect(one.status).toBe(503);
   });
 });

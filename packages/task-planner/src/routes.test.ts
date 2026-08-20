@@ -275,7 +275,7 @@ const DRAFT: AgentDefinitionDraft = {
 };
 
 describe("POST /agent-definitions/draft", () => {
-  test("is absent (404) when the host hasn't wired draftAgentDefinition", async () => {
+  test("answers 503 when the host hasn't wired draftAgentDefinition", async () => {
     const app = mountAs(createPlannerRoutes(buildDeps()), "prn_alice");
 
     const response = await app.request("/agent-definitions/draft", {
@@ -284,7 +284,9 @@ describe("POST /agent-definitions/draft", () => {
       body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
     });
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("unavailable");
   });
 
   test("drafts an agent definition and returns 201 with the draft", async () => {
