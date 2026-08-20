@@ -7,6 +7,7 @@
 // yet", because attaching nothing because the read failed and attaching
 // nothing because there is nothing are very different outcomes.
 
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useEffect, useState } from "react";
 
 import { listSkills, type SkillSummary } from "../skills-api";
@@ -59,7 +60,7 @@ export function AgentSkillsPicker({
   }
 
   if (state.status === "loading") {
-    return <p className="text-sm text-muted-foreground">Loading skills…</p>;
+    return <WorkbenchLoadingState title="Loading skills…" />;
   }
 
   if (state.status === "error") {

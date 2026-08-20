@@ -373,7 +373,14 @@ export function WorkbenchList({
   const [query, setQuery] = useState("");
 
   if (activity.kind === "loading") {
-    return <Skeleton className="shell-activity-skeleton" />;
+    return (
+      <div className="shell-activity-skeleton-rows" aria-hidden="true">
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+      </div>
+    );
   }
   if (activity.kind === "empty") {
     return (

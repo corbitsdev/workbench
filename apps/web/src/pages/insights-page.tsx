@@ -149,7 +149,7 @@ export function statusTone(
 }
 
 function tileValue(value: string | number | null, loading: boolean): string {
-  if (loading) return "…";
+  if (loading) return "";
   if (value === null) return "—";
   return String(value);
 }
@@ -254,13 +254,21 @@ function InsightsStat({
   readonly onClick?: () => void;
   readonly loading?: boolean;
 }) {
+  if (loading === true) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
+        <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground">
+          {label}
+        </span>
+        <Skeleton className="h-[26px] w-16" />
+      </div>
+    );
+  }
   return (
     <StatGridItem
       label={label}
-      value={loading === true ? "…" : value}
-      {...(detail === undefined
-        ? {}
-        : { sub: loading === true ? " " : detail })}
+      value={value}
+      {...(detail === undefined ? {} : { sub: detail })}
       {...(onClick === undefined ? {} : { onClick })}
     />
   );

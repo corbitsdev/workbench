@@ -38,7 +38,7 @@ describe("WorkbenchTimeline — setup loader", () => {
   test("shows one honest headline, never a system-stage name", () => {
     const el = mount();
 
-    expect(el.textContent).toContain("Loading your workbench…");
+    expect(el.textContent).toContain("Getting your workbench ready…");
     expect(el.textContent).not.toContain("runtime");
     expect(el.textContent).not.toContain("joining");
   });

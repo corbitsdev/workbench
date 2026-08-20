@@ -14,6 +14,7 @@ import {
   Button,
   PageShell,
   RichEmptyState,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -125,7 +126,9 @@ function AgentDetailPanel({
         <div className="flex items-center justify-between gap-2">
           <dt className="text-muted-foreground">Model</dt>
           <dd>
-            {capabilities.status === "loading" ? "Loading…" : null}
+            {capabilities.status === "loading" ? (
+              <Skeleton className="h-4 w-16" />
+            ) : null}
             {capabilities.status === "error" ? (
               <span className="text-danger-foreground">
                 {capabilities.message}

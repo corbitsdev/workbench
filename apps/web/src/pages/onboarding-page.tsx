@@ -29,6 +29,7 @@
 
 import { Button, EmptyState, Input, ProviderMark } from "@corbits/react-ui";
 import { Key, WarningCircle } from "@corbits/icons";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test";
@@ -367,7 +368,10 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           <h1 className="onboarding-title">Setting up your workbench</h1>
           <p className="onboarding-subtitle">One moment.</p>
           <div className="onboarding-content">
-            <div className="onboarding-spinner" aria-hidden="true" />
+            <WorkbenchLoadingState
+              delayMs={0}
+              title="Setting up your workbench…"
+            />
           </div>
         </div>
       </OnboardingLayout>
@@ -383,7 +387,10 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
             Key added — setting up your workbench.
           </p>
           <div className="onboarding-content">
-            <div className="onboarding-spinner" aria-hidden="true" />
+            <WorkbenchLoadingState
+              delayMs={0}
+              title="Setting up your workbench…"
+            />
           </div>
         </div>
       </OnboardingLayout>

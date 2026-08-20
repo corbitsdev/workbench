@@ -3,7 +3,8 @@
 // screens that talk to the hub only mount once the session is confirmed, so
 // a signed-out browser fires no authenticated request anywhere.
 
-import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
+import { Button, EmptyState } from "@corbits/react-ui";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BoldIconProvider, WarningCircle } from "@corbits/icons";
 import { useEffect, useMemo } from "react";
@@ -72,15 +73,6 @@ function OnboardingGate({
     <NavigationProvider navigate={navigate}>
       <OnboardingPage user={user} />
     </NavigationProvider>
-  );
-}
-
-function Brand() {
-  return (
-    <>
-      <CorbitsMark decorative className="app-mark" />
-      <span className="app-wordmark">Workbench</span>
-    </>
   );
 }
 
@@ -176,7 +168,7 @@ export function App({
       case "loading":
         return (
           <div className="app-boot-frame">
-            <BootScreen message="Loading workbench" brand={<Brand />} />
+            <WorkbenchLoadingState delayMs={0} />
           </div>
         );
       case "signed-out":

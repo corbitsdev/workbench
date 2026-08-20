@@ -8,11 +8,11 @@
 // dashboard does not earn its keep — `/` only exists as this hop onto
 // `/w/:workbenchId`. Deep links to other pages are unchanged.
 
-import { BootScreen, Button, EmptyState, PageShell } from "@corbits/react-ui";
+import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
-import { listAllWorkbenches } from "@corbits/chat-ui";
+import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
 
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
@@ -72,7 +72,11 @@ export function HomeRoute() {
   }, [selectedTenantId, navigate, retryCount]);
 
   if (memberships.kind === "loading") {
-    return <BootScreen message="Opening Myra" />;
+    return (
+      <div className="page-fill shell-route-loading">
+        <WorkbenchLoadingState />
+      </div>
+    );
   }
 
   if (memberships.kind === "error") {
@@ -124,5 +128,9 @@ export function HomeRoute() {
     );
   }
 
-  return <BootScreen message="Opening Myra" />;
+  return (
+    <div className="page-fill shell-route-loading">
+      <WorkbenchLoadingState />
+    </div>
+  );
 }
