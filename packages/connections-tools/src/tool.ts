@@ -18,14 +18,15 @@
 //
 // Approval: `list_connections` reads only, so it declares no `approval`
 // key (matching a read-style tool, e.g. `@corbits/memory-tools`' search
-// tool). `request_connection` performs no state-mutating HTTP call
-// either — it reads the registry and the MCP-server listing and
-// returns a deep-link string — so it also declares no `approval` key.
-// Neither tool is architecturally required to gate behind a human:
-// nothing here writes a credential, calls a third party, or exposes a
-// secret. (Contrast `@corbits/capability-tools`' `request_capability`,
-// which mutates a workflow definition and so genuinely needs
-// `approval: "ask"`.)
+// tool). `request_connection` posts a `connect-service` card into the
+// caller's own room — the same post-into-my-own-channel surface
+// `@corbits/interaction-tools`' `ask_user` uses without approval — and
+// nothing more. Neither tool is architecturally required to gate behind
+// a human: nothing here writes a credential, calls a third party, or
+// exposes a secret; connecting itself still happens only in the
+// browser, through the card. (Contrast `@corbits/capability-tools`'
+// `request_capability`, which mutates a workflow definition and so
+// genuinely needs `approval: "ask"`.)
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -36,7 +37,12 @@ import {
 } from "@workbench/connections/mcp-presets";
 import { type } from "arktype";
 
-import { listConnections, listMcpServerConnections } from "./client";
+import {
+  listConnections,
+  listMcpServerConnections,
+  NoOwnRoomError,
+  postConnectServiceBlock,
+} from "./client";
 
 export const LIST_CONNECTIONS_TOOL = "list_connections";
 export const REQUEST_CONNECTION_TOOL = "request_connection";
@@ -54,6 +60,7 @@ export interface WorkflowConnectionEnv extends BaseEnv {
 
 const RequestConnectionInput = type({
   connector: "string > 0",
+  "reason?": "string > 0",
 });
 type RequestConnectionInput = typeof RequestConnectionInput.infer;
 
@@ -184,6 +191,43 @@ async function runListConnections(
   }
 }
 
+function cardPostedResult(callId: string, displayName: string): ToolResult {
+  return {
+    callId,
+    isError: false,
+    content:
+      `A Connect ${displayName} card is now in the room. Keep helping in ` +
+      `the meantime: do everything you can without it right away (draft ` +
+      `the work now, offer to finish once connected), and point at the ` +
+      `card rather than any settings page. The room gets a message once ` +
+      `${displayName} is connected — pick the task back up then.`,
+  };
+}
+
+async function postCardOrLink(
+  env: WorkflowConnectionEnv,
+  call: ToolCall,
+  card: { connectorId: string; displayName: string; reason: string },
+  deepLink: string,
+): Promise<ToolResult> {
+  try {
+    await postConnectServiceBlock(clientConfig(env), card);
+  } catch (err) {
+    if (err instanceof NoOwnRoomError) {
+      return {
+        callId: call.id,
+        isError: false,
+        content:
+          `To connect ${card.displayName}, ask the human to open ` +
+          `${deepLink} and let you know once it's connected. Connecting ` +
+          `still happens in the browser, never automatically.`,
+      };
+    }
+    return errorResult(call.id, err);
+  }
+  return cardPostedResult(call.id, card.displayName);
+}
+
 async function runRequestConnection(
   env: WorkflowConnectionEnv,
   call: ToolCall,
@@ -209,28 +253,49 @@ async function runRequestConnection(
     } catch (err) {
       return errorResult(call.id, err);
     }
-    return {
-      callId: call.id,
-      isError: false,
-      content:
-        `To connect ${preset.displayName} (${preset.description}), ask ` +
-        `the human to open ${presetDeepLink(preset.slug)} and let you ` +
-        `know once it's connected. This only hands over a link — ` +
-        `connecting still happens in the browser, never automatically.`,
-    };
+    return postCardOrLink(
+      env,
+      call,
+      {
+        connectorId: preset.slug,
+        displayName: preset.displayName,
+        reason:
+          parsed.reason ??
+          `Connect ${preset.displayName} — ${preset.description}.`,
+      },
+      presetDeepLink(preset.slug),
+    );
   }
 
   const descriptor = CONNECTOR_REGISTRY[parsed.connector];
   if (descriptor !== undefined) {
-    return {
-      callId: call.id,
-      isError: false,
-      content:
-        `To connect ${descriptor.displayName}, ask the human to open ` +
-        `${connectDeepLink(descriptor.id)} and let you know once it's ` +
-        `connected. This only hands over a link — connecting still ` +
-        `happens in the browser, never automatically.`,
-    };
+    try {
+      const connections = await listConnections(clientConfig(env));
+      const entry = connections.find(
+        (candidate) => candidate.id === descriptor.id,
+      );
+      if (entry !== undefined && entry.connected) {
+        return {
+          callId: call.id,
+          isError: false,
+          content: `${descriptor.displayName} is already connected.`,
+        };
+      }
+    } catch (err) {
+      return errorResult(call.id, err);
+    }
+    return postCardOrLink(
+      env,
+      call,
+      {
+        connectorId: descriptor.id,
+        displayName: descriptor.displayName,
+        reason:
+          parsed.reason ??
+          `Connect ${descriptor.displayName} so I can pick this up for you.`,
+      },
+      connectDeepLink(descriptor.id),
+    );
   }
 
   // Not a fixed registry connector — check whether it is already a
@@ -256,10 +321,12 @@ async function runRequestConnection(
     callId: call.id,
     isError: false,
     content:
-      `"${parsed.connector}" isn't a fixed connector this workbench ` +
-      `knows about, and no MCP server by that name is connected yet. ` +
-      `If it's an MCP server, ask the human to open ` +
-      `${ADD_MCP_SERVER_DEEP_LINK} and add it by name and URL there.`,
+      `This workspace can't connect "${parsed.connector}" yet. Tell the ` +
+      `human plainly what you can still do without it, and keep helping ` +
+      `with that now — never ask them to go set up servers or report ` +
+      `back. A custom MCP server can be added from ` +
+      `${ADD_MCP_SERVER_DEEP_LINK} if they ever want to wire one up ` +
+      `themselves.`,
   };
 }
 
@@ -289,10 +356,12 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
       {
         name: REQUEST_CONNECTION_TOOL,
         description:
-          "get a link to hand the human so they can connect a specific " +
-          "third-party connector. This tool cannot connect anything " +
-          "itself — it only returns the link; the human finishes the " +
-          "connection in the browser.",
+          "put a one-click connect card for a third-party connector in " +
+          "the room, so the human can connect it right there. This tool " +
+          "cannot connect anything itself — the human finishes the " +
+          "connection in the browser. Call it the moment a request " +
+          "needs a service that isn't connected, then keep helping " +
+          "with everything you can do without it.",
         inputSchema: {
           type: "object",
           properties: {
@@ -303,6 +372,14 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
                 'workbench\'s connector registry (e.g. "granola", ' +
                 '"exa") — never invented. Call list_connections first ' +
                 "if unsure of the exact id.",
+            },
+            reason: {
+              type: "string",
+              description:
+                "One plain sentence, in the human's own terms, saying " +
+                'what connecting unlocks right now — e.g. "Connect ' +
+                'Gmail so I can send this for you." Always speak to ' +
+                "their request, never to the system.",
             },
           },
           required: ["connector"],

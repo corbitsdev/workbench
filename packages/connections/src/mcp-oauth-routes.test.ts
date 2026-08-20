@@ -595,3 +595,41 @@ describe("MCP OAuth connect flow", () => {
     );
   });
 });
+
+describe("onConnected hook", () => {
+  test("a completed MCP OAuth connect fires onConnected with the stored slug", async () => {
+    const as = startStubAuthorizationServer();
+    try {
+      const hub = fakeHub();
+      const events: unknown[] = [];
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 3,
+        }),
+        onConnected: async (info) => {
+          events.push(info);
+        },
+      });
+      const app = mountAs(routes);
+
+      const callbackResponse = await runConnectFlow(app, as);
+
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "outcome=connected",
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        tenantId: TENANT.id,
+        principalId: PRINCIPAL.id,
+      });
+    } finally {
+      as.stop();
+    }
+  });
+});

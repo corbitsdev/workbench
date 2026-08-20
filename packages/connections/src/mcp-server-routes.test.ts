@@ -166,6 +166,7 @@ function buildApp(opts: {
   apiCall: ApiCall;
   probe?: (url: string, token: string | undefined) => Promise<McpProbeResult>;
   requireGrant?: RequireGrant;
+  onConnected?: Parameters<typeof createMcpServerRoutes>[0]["onConnected"];
 }) {
   const routes = createMcpServerRoutes({
     hubUrl: "http://hub.test",
@@ -173,6 +174,9 @@ function buildApp(opts: {
     log: () => {},
     apiCall: opts.apiCall,
     probe: opts.probe ?? (async () => ({ ok: true, toolCount: 3 })),
+    ...(opts.onConnected !== undefined
+      ? { onConnected: opts.onConnected }
+      : {}),
   });
   return mountAs(routes);
 }
@@ -484,5 +488,31 @@ describe("POST / with presetSlug", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+});
+
+describe("onConnected hook", () => {
+  test("a connected MCP server fires onConnected with its slug and display name", async () => {
+    const hub = fakeHub({});
+    const events: unknown[] = [];
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      onConnected: async (info) => {
+        events.push(info);
+      },
+    });
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "exa" }),
+    });
+    expect(response.status).toBe(200);
+    expect(events).toEqual([
+      {
+        tenantId: TENANT.id,
+        principalId: PRINCIPAL.id,
+        connectorId: "exa",
+        displayName: "Exa",
+      },
+    ]);
   });
 });

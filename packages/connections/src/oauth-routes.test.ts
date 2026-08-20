@@ -109,6 +109,8 @@ function connectRoutes(
       })),
   };
   if (overrides.oauthEnv !== undefined) deps.oauthEnv = overrides.oauthEnv;
+  if (overrides.onConnected !== undefined)
+    deps.onConnected = overrides.onConnected;
   if (overrides.recentlyConnected !== undefined)
     deps.recentlyConnected = overrides.recentlyConnected;
   if (overrides.afterConnected !== undefined)
@@ -758,5 +760,52 @@ describe("GET /:connectorId/callback", () => {
         expect(parsed.searchParams.get("outcome")).toBe("connected");
       });
     }
+  });
+});
+
+describe("onConnected hook", () => {
+  test("callback fires onConnected once the credential is durably stored", async () => {
+    const events: unknown[] = [];
+    const app = connectRoutes({
+      onConnected: async (info) => {
+        events.push(info);
+      },
+    });
+    const { response: started } = await startConnect(app);
+    const cookie = allCookies(started);
+    const response = await app.request(
+      "/api/connections/oauth/widget/callback?code=abc123",
+      { headers: { cookie } },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location") ?? "").toContain(
+      "outcome=connected",
+    );
+    expect(events).toEqual([
+      {
+        tenantId: "ten_1",
+        principalId: "prn_1",
+        connectorId: "widget",
+        displayName: "Widget",
+      },
+    ]);
+  });
+
+  test("a throwing onConnected never breaks the connected redirect", async () => {
+    const app = connectRoutes({
+      onConnected: async () => {
+        throw new Error("settle failed");
+      },
+    });
+    const { response: started } = await startConnect(app);
+    const cookie = allCookies(started);
+    const response = await app.request(
+      "/api/connections/oauth/widget/callback?code=abc123",
+      { headers: { cookie } },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location") ?? "").toContain(
+      "outcome=connected",
+    );
   });
 });

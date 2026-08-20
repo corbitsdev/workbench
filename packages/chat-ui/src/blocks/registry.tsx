@@ -14,6 +14,8 @@ import type { ApprovalActions } from "./approval-actions";
 import type { BlockResponseActions } from "./block-responses";
 import { ConnectGithubBlockContainer } from "./connect-github-block-container";
 import type { ConnectGithubActions } from "./connect-github-actions";
+import { ConnectServiceBlockContainer } from "./connect-service-block-container";
+import type { ConnectServiceActions } from "./connect-service-actions";
 import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
 import { PollBlockView } from "./poll-block";
@@ -27,6 +29,7 @@ function renderKnownBlock(
   approvalActions: ApprovalActions | undefined,
   blockResponses: BlockResponseActions | undefined,
   connectGithubActions: ConnectGithubActions | undefined,
+  connectServiceActions: ConnectServiceActions | undefined,
 ): ReactElement {
   switch (block.type) {
     case "approve":
@@ -78,6 +81,15 @@ function renderKnownBlock(
             : {})}
         />
       );
+    case "connect-service":
+      return (
+        <ConnectServiceBlockContainer
+          data={block.data}
+          {...(connectServiceActions !== undefined
+            ? { actions: connectServiceActions }
+            : {})}
+        />
+      );
   }
 }
 
@@ -100,6 +112,7 @@ export function BlockPartView({
   approvalActions,
   blockResponses,
   connectGithubActions,
+  connectServiceActions,
 }: {
   readonly block: BlockPart["block"];
   /** The message this block part lives in -- polls and forms scope every
@@ -116,6 +129,9 @@ export function BlockPartView({
    * "connect-github" block reads it. Absent means the pre-round-trip
    * disconnected framing. */
   readonly connectGithubActions?: ConnectGithubActions;
+  /** Host-supplied generic connect round-trip; only the "connect-service"
+   * block reads it. Absent means the pre-round-trip disconnected framing. */
+  readonly connectServiceActions?: ConnectServiceActions;
 }) {
   const result = parseBlock(block);
   if (!result.ok) {
@@ -127,5 +143,6 @@ export function BlockPartView({
     approvalActions,
     blockResponses,
     connectGithubActions,
+    connectServiceActions,
   );
 }

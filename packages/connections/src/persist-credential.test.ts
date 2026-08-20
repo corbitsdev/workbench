@@ -168,3 +168,23 @@ describe("isInferenceProvider", () => {
     expect(isInferenceProvider("linear")).toBe(false);
   });
 });
+
+test("a refresh secret rides into the credential row alongside oauth_token typing", async () => {
+  const { credentials, fns } = recordingFns();
+  await persistConnectorCredential({
+    api: noApi as never,
+    cookies: [],
+    tenantId: "tnt_1",
+    descriptor: descriptorOrThrow("gmail"),
+    secret: "ya29.token",
+    credentialMetadata: { expiresAt: "2026-09-01T00:00:00Z" },
+    refreshSecret: "1//refresh",
+    log: () => undefined,
+    ...fns,
+  });
+
+  expect(credentials[0]).toMatchObject({
+    type: "oauth_token",
+    refreshSecret: "1//refresh",
+  });
+});

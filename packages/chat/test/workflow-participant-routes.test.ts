@@ -231,4 +231,113 @@ describe("POST /participants/messages", () => {
       platform.sentMail.every((mail) => mail.workbenchId !== "chan_1"),
     ).toBe(true);
   });
+
+  test("posting a connect-service block records the pending connection on the workbench and publishes chat.settings", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+      },
+      updatedBy: "prn_1",
+    });
+    const published: { workbenchId: string; event: unknown }[] = [];
+    const publish = (workbenchId: string, event: unknown) => {
+      published.push({ workbenchId, event });
+    };
+
+    const app = buildApp({ store, publish });
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({
+        parts: [
+          {
+            kind: "block",
+            block: {
+              type: "connect-service",
+              data: {
+                connectorId: "gmail",
+                displayName: "Gmail",
+                reason: "Connect Gmail so I can send this for you.",
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const updated = await store.getWorkbenchSettings(TENANT.id, "chan_1");
+    expect(updated?.settings["connections/pending"]).toEqual(["gmail"]);
+    const settingsEvents = published.filter(
+      (entry) =>
+        (entry.event as { type?: string }).type === "chat.settings" &&
+        entry.workbenchId === "chan_1",
+    );
+    expect(settingsEvents.length).toBeGreaterThan(0);
+  });
+
+  test("a repeated connect-service block never duplicates the pending entry", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+        "connections/pending": ["gmail"],
+      },
+      updatedBy: "prn_1",
+    });
+    const app = buildApp({ store });
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({
+        parts: [
+          {
+            kind: "block",
+            block: {
+              type: "connect-service",
+              data: {
+                connectorId: "gmail",
+                displayName: "Gmail",
+                reason: "Connect Gmail so I can send this for you.",
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const updated = await store.getWorkbenchSettings(TENANT.id, "chan_1");
+    expect(updated?.settings["connections/pending"]).toEqual(["gmail"]);
+  });
+
+  test("a plain text message leaves the pending connections untouched", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+      },
+      updatedBy: "prn_1",
+    });
+    const app = buildApp({ store });
+    const response = await app.request("/participants/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi" }] }),
+    });
+
+    expect(response.status).toBe(201);
+    const updated = await store.getWorkbenchSettings(TENANT.id, "chan_1");
+    expect(updated?.settings["connections/pending"]).toBeUndefined();
+  });
 });

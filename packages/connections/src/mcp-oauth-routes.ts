@@ -32,6 +32,7 @@ import { createHubAPI } from "@workbench/hub-client";
 import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createMcpOAuthProvider, type McpOAuthSession } from "./mcp-oauth";
 import { createConnectStateStore, randomToken } from "./pkce";
+import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { mcpPresetBySlug } from "./mcp-presets";
 import { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 import {
@@ -92,6 +93,11 @@ export type CreateMcpOAuthRoutesDeps = {
   probe?: typeof probeMcpServer;
   defaultReturnPath?: string;
   returnPathAllowlist?: readonly string[];
+  /** Fires once for every durably stored connection, whatever the
+   * connector — the composition's connect-settling seam (flip in-room
+   * connect cards, resume waiting agents). Failures are logged and
+   * never surface into the redirect. */
+  onConnected?: ServiceConnectedHook;
 };
 
 function resolveTarget(
@@ -445,6 +451,12 @@ export function createMcpOAuthRoutes(
           },
           deps.log,
         );
+        await fireConnectedHook(deps.onConnected, deps.log, {
+          tenantId: tenant.id,
+          principalId: principal.id,
+          connectorId: slug,
+          displayName: payload.name,
+        });
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: slug,

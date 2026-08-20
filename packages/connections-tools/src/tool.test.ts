@@ -38,9 +38,24 @@ test("requires the sanctioned workflow-connection env keys", () => {
 function stubFetch(opts: {
   connections?: unknown[];
   mcpServers?: unknown[];
+  posted?: unknown[];
+  postStatus?: number;
 }): typeof fetch {
-  return (async (input: string | URL | Request) => {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/participants/messages")) {
+      opts.posted?.push(JSON.parse(String(init?.body)));
+      if (opts.postStatus !== undefined && opts.postStatus !== 201) {
+        return new Response(
+          JSON.stringify({ error: { message: "no channel" } }),
+          { status: opts.postStatus },
+        );
+      }
+      return new Response(
+        JSON.stringify({ id: "msg_1", createdAt: "2026-08-20T00:00:00Z" }),
+        { status: 201 },
+      );
+    }
     if (url.endsWith("/mcp-servers")) {
       return new Response(JSON.stringify({ data: opts.mcpServers ?? [] }));
     }
@@ -110,17 +125,19 @@ test("list_connections returns an honest error on an unreachable hub, never fabr
   }
 });
 
-test("request_connection falls back to the Add MCP server deep link for a name that is neither a fixed connector nor a connected MCP server", async () => {
+test("request_connection tells the agent to keep helping for a name this workspace can't connect, never sending the human off to add servers", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetch({ mcpServers: [] });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
-      callFor(REQUEST_CONNECTION_TOOL, { connector: "attio" }),
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "carrier-pigeon" }),
       new AbortController().signal,
     );
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/plugins\?connect=mcp/);
+    expect(result.content).toMatch(/can't connect/i);
+    expect(result.content).toMatch(/keep helping/i);
+    expect(result.content).not.toMatch(/name and URL/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -146,31 +163,80 @@ test("request_connection reports an already-connected MCP server rather than re-
   }
 });
 
-test("request_connection returns the connector's deep link for a known registry-only connector, performing no HTTP call", async () => {
+test("request_connection posts a connect-service card into the room for a registry connector", async () => {
   const originalFetch = globalThis.fetch;
-  let called = false;
-  globalThis.fetch = (async () => {
-    called = true;
-    throw new Error("request_connection must never call fetch");
-  }) as unknown as typeof fetch;
+  const posted: unknown[] = [];
+  globalThis.fetch = stubFetch({
+    connections: [
+      {
+        id: "github",
+        displayName: "GitHub",
+        docsUrl: "https://github.com/settings/tokens",
+        connected: false,
+      },
+    ],
+    posted,
+  });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, {
+        connector: "github",
+        reason: "Connect GitHub so I can review this for you.",
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/card/i);
+    expect(result.content).toMatch(/keep helping/i);
+    expect(posted).toHaveLength(1);
+    const body = posted[0] as {
+      parts: { kind: string; block: { type: string; data: unknown } }[];
+    };
+    expect(body.parts[0]?.kind).toBe("block");
+    expect(body.parts[0]?.block.type).toBe("connect-service");
+    expect(body.parts[0]?.block.data).toEqual({
+      connectorId: "github",
+      displayName: "GitHub",
+      reason: "Connect GitHub so I can review this for you.",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("request_connection reports an already-connected registry connector rather than posting a card", async () => {
+  const originalFetch = globalThis.fetch;
+  const posted: unknown[] = [];
+  globalThis.fetch = stubFetch({
+    connections: [
+      {
+        id: "github",
+        displayName: "GitHub",
+        docsUrl: "https://github.com/settings/tokens",
+        connected: true,
+      },
+    ],
+    posted,
+  });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
       callFor(REQUEST_CONNECTION_TOOL, { connector: "github" }),
       new AbortController().signal,
     );
-    expect(called).toBe(false);
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/GitHub/);
-    expect(result.content).toContain("/plugins?connect=github");
+    expect(result.content).toMatch(/already connected/);
+    expect(posted).toHaveLength(0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("request_connection deep-links a curated MCP preset by name, checking for an existing MCP connection first", async () => {
+test("request_connection posts a connect-service card for a curated MCP preset, defaulting the reason from the preset", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({ mcpServers: [] });
+  const posted: unknown[] = [];
+  globalThis.fetch = stubFetch({ mcpServers: [], posted });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -178,8 +244,34 @@ test("request_connection deep-links a curated MCP preset by name, checking for a
       new AbortController().signal,
     );
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Exa/);
-    expect(result.content).toMatch(/Search and research the live web/);
+    expect(result.content).toMatch(/card/i);
+    expect(posted).toHaveLength(1);
+    const body = posted[0] as {
+      parts: { kind: string; block: { type: string; data: unknown } }[];
+    };
+    const data = body.parts[0]?.block.data as {
+      connectorId: string;
+      displayName: string;
+      reason: string;
+    };
+    expect(data.connectorId).toBe("exa");
+    expect(data.displayName).toBe("Exa");
+    expect(data.reason.length).toBeGreaterThan(0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("request_connection hands over a plain link when the run has no room to post into", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubFetch({ mcpServers: [], postStatus: 404 });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "exa" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
     expect(result.content).toContain("/plugins?connect=mcp:exa");
   } finally {
     globalThis.fetch = originalFetch;

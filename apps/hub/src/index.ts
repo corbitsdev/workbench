@@ -90,6 +90,7 @@ import {
   provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
+  settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
@@ -282,6 +283,7 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
 } from "@workbench/connections";
+import type { ServiceConnectedHook } from "@workbench/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   createProviderHealthPort,
@@ -1834,6 +1836,30 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
+  // CL-6393: a connection completing through ANY door below — OAuth
+  // callback, pasted key, MCP OAuth, keyless MCP preset — settles every
+  // room waiting on that connector: the room's `connections/pending`
+  // entry clears (flipping the in-room connect card via
+  // `chat.settings`), and a message posts under the connecting person's
+  // address so the room's agent resumes the parked task.
+  const settleServiceConnection: ServiceConnectedHook = (info) =>
+    settleConnectedService(
+      {
+        store: chatStore,
+        platform: chatPlatform,
+        roomMessages,
+        publish: workbenchSubscribers.publish,
+        turnQueue,
+        agentTurns,
+        senderAddressFor,
+      },
+      {
+        tenantId: info.tenantId,
+        principalId: info.principalId,
+        connectorId: info.connectorId,
+        displayName: info.displayName,
+      },
+    );
   // Connections: the settings surface's tenant-scoped credential
   // test-and-store, mounted under the same tenant prefix and reusing
   // the same grant store/condition registry every other credential-
@@ -1854,6 +1880,8 @@ export async function createHub(config: HubConfig) {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
         githubAppClientId: config.githubAppClientId,
         githubAppClientSecret: config.githubAppClientSecret,
+        gmailClientId: config.gmailClientId,
+        gmailClientSecret: config.gmailClientSecret,
       },
       providerHealth: providerHealthStore,
       listConnectedProviders: (tenantId) =>
@@ -1867,6 +1895,7 @@ export async function createHub(config: HubConfig) {
         config.githubApiBaseUrl !== undefined
           ? { github: config.githubApiBaseUrl }
           : {},
+      onConnected: settleServiceConnection,
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
@@ -1889,14 +1918,23 @@ export async function createHub(config: HubConfig) {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
         githubAppClientId: config.githubAppClientId,
         githubAppClientSecret: config.githubAppClientSecret,
+        gmailClientId: config.gmailClientId,
+        gmailClientSecret: config.gmailClientSecret,
       },
       connectCredential: createTenantConnectCredential({
         hubUrl: config.baseUrl,
         log: (line) => log.info`${line}`,
         providerHealth: providerHealthStore,
       }),
+      onConnected: settleServiceConnection,
       defaultReturnPath: "/settings/connections",
-      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins"],
+      // `/w/` is the workbench room prefix: the in-room connect card
+      // (CL-6393) starts OAuth from a room and must land back in it.
+      returnPathAllowlist: [
+        ...DEFAULT_RETURN_PATH_ALLOWLIST,
+        "/plugins",
+        "/w/",
+      ],
     }),
   );
   // GitHub connect card (CL-6344): the code-review template's inline
@@ -2113,6 +2151,7 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
+      onConnected: settleServiceConnection,
     }),
   );
   // MCP servers' OAuth connect flow (CL-6152): discovers and drives a
@@ -2129,6 +2168,13 @@ export async function createHub(config: HubConfig) {
       }),
       log: (line) => log.info`${line}`,
       credentialCipher,
+      onConnected: settleServiceConnection,
+      // `/w/` for the same reason as the connections/oauth mount above.
+      returnPathAllowlist: [
+        ...DEFAULT_RETURN_PATH_ALLOWLIST,
+        "/plugins",
+        "/w/",
+      ],
     }),
   );
   // Myra's own connections-visibility surface

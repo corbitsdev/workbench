@@ -424,3 +424,73 @@ describe("parseBlock connect-github", () => {
     ).toBeUndefined();
   });
 });
+
+describe("parseBlock connect-service", () => {
+  test("parses a registry connector's framing", () => {
+    const result = parseBlock({
+      type: "connect-service",
+      data: {
+        connectorId: "gmail",
+        displayName: "Gmail",
+        reason: "Connect Gmail so I can send this for you.",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "connect-service") throw new Error("wrong type");
+    expect(result.block.data.connectorId).toBe("gmail");
+    expect(result.block.data.displayName).toBe("Gmail");
+  });
+
+  test("parses an MCP preset's framing", () => {
+    const result = parseBlock({
+      type: "connect-service",
+      data: {
+        connectorId: "mcp:notion",
+        displayName: "Notion",
+        reason: "Connect Notion so I can pull your notes in.",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "connect-service") throw new Error("wrong type");
+    expect(result.block.data.connectorId).toBe("mcp:notion");
+  });
+
+  test("rejects an empty connectorId", () => {
+    const result = parseBlock({
+      type: "connect-service",
+      data: {
+        connectorId: "",
+        displayName: "Gmail",
+        reason: "Connect Gmail so I can send this for you.",
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects a missing reason", () => {
+    const result = parseBlock({
+      type: "connect-service",
+      data: { connectorId: "gmail", displayName: "Gmail" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("strips undeclared keys — an agent can't plant a connected verdict", () => {
+    const result = parseBlock({
+      type: "connect-service",
+      data: {
+        connectorId: "gmail",
+        displayName: "Gmail",
+        reason: "Connect Gmail so I can send this for you.",
+        state: "connected",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    expect(
+      (result.block.data as Record<string, unknown>)["state"],
+    ).toBeUndefined();
+  });
+});

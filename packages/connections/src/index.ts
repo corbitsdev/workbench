@@ -69,6 +69,11 @@ export {
   type WorkflowRunAuthenticator as WorkflowConnectionRunAuthenticator,
 } from "./workflow-connection-routes";
 export {
+  fireConnectedHook,
+  type ServiceConnectedHook,
+  type ServiceConnectedInfo,
+} from "./connected-hook";
+export {
   createOAuthConnectRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
   sanitizeReturnPath,

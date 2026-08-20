@@ -69,6 +69,10 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
    * presence is also what types the row `oauth_token` instead of
    * `api_key`. */
   readonly credentialMetadata?: Record<string, unknown>;
+  /** A provider-issued refresh token — stored on the credential row's
+   * own `refreshSecret` field (a secret, never metadata). Only ever set
+   * alongside `credentialMetadata`'s `expiresAt`. */
+  readonly refreshSecret?: string;
   /** The instance origin a url-kind connector actually points at —
    * stored as the provider row's `apiBaseUrl` and threaded into
    * `seedCatalog`'s own base-URL seam. */
@@ -123,6 +127,9 @@ export async function persistConnectorCredential(
           type: credentialType,
           verified: true,
           metadata: args.credentialMetadata,
+          ...(args.refreshSecret !== undefined
+            ? { refreshSecret: args.refreshSecret }
+            : {}),
         }
       : {
           tenantId: args.tenantId,

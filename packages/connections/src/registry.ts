@@ -33,6 +33,11 @@ import {
   HUGGINGFACE_AUTHORIZE_URL,
   HUGGINGFACE_SCOPE,
 } from "./huggingface-connect";
+import {
+  exchangeCodeForGoogleToken,
+  GMAIL_SCOPE,
+  GOOGLE_AUTHORIZE_URL,
+} from "./gmail-connect";
 // simple-icons ships one brand per named export, tree-shaken by any bundler
 // that respects its `sideEffects: false` — importing only the brands this
 // registry actually has a listing for pulls in only those icons' data, not
@@ -50,6 +55,7 @@ import {
   siAnthropic,
   siDeepseek,
   siGithub,
+  siGmail,
   siGooglegemini,
   siHuggingface,
   siLinear,
@@ -297,6 +303,77 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       probe: (apiKey) => testLinearCredential(apiKey),
       description: "Read and write issues, projects, and comments.",
       icon: { path: siLinear.path, hex: siLinear.hex },
+    },
+    gmail: {
+      id: "gmail",
+      displayName: "Gmail",
+      // Pure hosted-app OAuth — there is no Gmail equivalent of a PAT
+      // to paste, so unlike `github` below this connector has no
+      // api-key arm: unconfigured (`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`
+      // unset) means the card renders "not configured", never a dead
+      // paste form. The exchanged access token expires in about an
+      // hour; the refresh token rides `OAuthExchangeResult.refreshToken`
+      // into the credential row's `refreshSecret` so a refresh sweep
+      // can keep the connection alive.
+      authKind: "oauth-code",
+      credentialPlugin: "http",
+      docsUrl: "https://developers.google.com/gmail/api",
+      feedsTools: [],
+      description: "Read, draft, and send email — sending waits for your ok.",
+      icon: { path: siGmail.path, hex: siGmail.hex },
+      oauth: {
+        authorizeUrl: GOOGLE_AUTHORIZE_URL,
+        usesPKCE: true,
+        echoesState: true,
+        deploysDefaultWorkflows: false,
+        clientId: (env) => env["gmailClientId"],
+        clientSecret: (env) => env["gmailClientSecret"],
+        buildAuthorizeUrl: ({
+          callbackUrl,
+          state,
+          codeChallenge,
+          clientId,
+        }) => {
+          const url = new URL(GOOGLE_AUTHORIZE_URL);
+          if (clientId !== undefined)
+            url.searchParams.set("client_id", clientId);
+          url.searchParams.set("redirect_uri", callbackUrl);
+          url.searchParams.set("response_type", "code");
+          url.searchParams.set("scope", GMAIL_SCOPE);
+          url.searchParams.set("state", state);
+          // `offline` + forced consent is what makes Google issue a
+          // refresh token at all — without both, a re-connect silently
+          // returns only another one-hour access token.
+          url.searchParams.set("access_type", "offline");
+          url.searchParams.set("prompt", "consent");
+          if (codeChallenge !== undefined) {
+            url.searchParams.set("code_challenge", codeChallenge);
+            url.searchParams.set("code_challenge_method", "S256");
+          }
+          return url;
+        },
+        exchange: async ({
+          code,
+          codeVerifier,
+          redirectUri,
+          clientId,
+          clientSecret,
+        }) => {
+          if (clientId === undefined || clientSecret === undefined) {
+            return {
+              ok: false,
+              message: "gmail connect is not configured",
+            };
+          }
+          return exchangeCodeForGoogleToken({
+            code,
+            ...(codeVerifier !== undefined ? { codeVerifier } : {}),
+            redirectUri,
+            clientId,
+            clientSecret,
+          });
+        },
+      },
     },
     github: {
       id: "github",
