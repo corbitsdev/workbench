@@ -17,12 +17,9 @@ import { describe, expect, mock, test } from "bun:test";
 import { agentSession, principal, workflowRun } from "@intx/db/schema";
 import { foldedRun } from "../src/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
-import type {
-  EventCollectorRegistry,
-  SessionService,
-  SidecarRouter,
-} from "@intx/hub-sessions";
+import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
+import type { FoldedRunsDeps } from "../src/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 
 const actualHubApi = await import("@intx/hub-api");
@@ -84,7 +81,7 @@ type InsertChain = {
   values(values: unknown): Promise<void>;
 };
 
-function createFakeDb() {
+function createFakeDb(assetId: string | null = "ast_definition1") {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
   const deleted: { table: unknown }[] = [];
@@ -98,6 +95,19 @@ function createFakeDb() {
   }
 
   return {
+    // The one read `deployAtHead` does: the run's definition asset, the
+    // asset its per-run source tree is committed into.
+    select() {
+      return {
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              limit: async () => (assetId === null ? [] : [{ assetId }]),
+            }),
+          }),
+        }),
+      };
+    },
     insert(table: unknown) {
       return insertOn(table);
     },
@@ -165,34 +175,95 @@ function createFakeEventCollectors(): EventCollectorRegistry & {
   };
 }
 
-function createFakeSessionService(): SessionService & {
-  deployInstanceAtHeadCalls: unknown[];
-} {
-  const deployInstanceAtHeadCalls: unknown[] = [];
+type FakeSessionService = FoldedRunsDeps["sessionService"] & {
+  adoptedDeployCalls: AdoptedDeployCall[];
+};
+
+type AdoptedDeployCall = {
+  tenantId: string;
+  anchorRunId: string;
+  deploymentDomain: string;
+  agentAddress: string;
+  entry: string;
+  definitionAssetId: string;
+  source: {
+    kind: string;
+    assetId: string;
+    package: { format: string; commitSha: string };
+  };
+  config: {
+    sources: unknown[];
+    defaultSource: string;
+    tenantId: string;
+    principalId: string;
+    grants: Record<string, unknown>[];
+  };
+  credentialCipher?: unknown;
+};
+
+function createFakeSessionService(): FakeSessionService {
+  const adoptedDeployCalls: AdoptedDeployCall[] = [];
   return {
-    deployInstanceAtHeadCalls,
+    adoptedDeployCalls,
     async stageWorkflowStep() {},
     async deployInstanceAtHead() {
       throw new Error(
         "deployInstanceAtHead must not be called: a folded run deploys " +
-          "an explicit unbounded single-step workflow via deploySingleStepAtHead",
+          "its own rendered workflow source package",
       );
     },
-    async deploySingleStepAtHead(params: unknown) {
-      deployInstanceAtHeadCalls.push(params);
-      return { publicKey: "test-public-key" };
+    async deployWorkflowFromSource() {
+      throw new Error(
+        "deployWorkflowFromSource must not be called: it INSERTs an anchor " +
+          "row a folded run already owns",
+      );
+    },
+    async deployAdoptedWorkflowFromSource(params: AdoptedDeployCall) {
+      adoptedDeployCalls.push(params);
+      return {
+        anchorRunId: params.anchorRunId,
+        deploymentAddress: params.agentAddress,
+        publicKey: "test-public-key",
+      };
     },
     async deployWorkflowDefinition() {
       throw new Error(
         "deployWorkflowDefinition must not be called: launchFoldedRun " +
-          "launches a folded instance via deployInstanceAtHead",
+          "launches a folded run through the adopting code-sourced front",
       );
     },
     async sendUserMessage() {
       return new TextEncoder().encode("raw-mime-bytes");
     },
     async endSession() {},
-  } as unknown as SessionService & { deployInstanceAtHeadCalls: unknown[] };
+  } as unknown as FakeSessionService;
+}
+
+type PopulateAssetCall = {
+  assetId: string;
+  ref: string;
+  tree: { files: Record<string, string>; message: string };
+};
+
+function createFakeAssetService(): FoldedRunsDeps["assetService"] & {
+  populateAssetCalls: PopulateAssetCall[];
+} {
+  const populateAssetCalls: PopulateAssetCall[] = [];
+  return {
+    populateAssetCalls,
+    async createAsset() {
+      throw new Error(
+        "createAsset must not be called: a folded run commits its per-run " +
+          "tree into the definition asset its host already minted",
+      );
+    },
+    async populateAsset(params: PopulateAssetCall) {
+      populateAssetCalls.push(params);
+      return { commitSha: "commit-sha-1" };
+    },
+  } as unknown as FoldedRunsDeps["assetService"] & {
+    populateAssetCalls: PopulateAssetCall[];
+  };
 }
 
 type RunGrantsCall = {
@@ -222,6 +293,28 @@ function createFakeSidecarRouter(routable = true): SidecarRouter & {
       return routable;
     },
   } as unknown as SidecarRouter & { runGrantsCalls: RunGrantsCall[] };
+}
+
+/**
+ * The `AgentRuntimeConfig` literal a rendered entry module carries. The
+ * config IS the deployed bytes under the workflow.json retirement, so a
+ * test that wants to know what was deployed reads it back out of them.
+ */
+function onlyCall<T>(calls: readonly T[]): T {
+  const [call] = calls;
+  if (call === undefined) {
+    throw new Error("expected exactly one recorded call");
+  }
+  return call;
+}
+
+function entryConfigJSON(entry: string): string {
+  const open = entry.indexOf("buildAgentRuntimeWorkflow(");
+  const close = entry.lastIndexOf(");");
+  if (open === -1 || close === -1) {
+    throw new Error(`rendered entry module has no config literal: ${entry}`);
+  }
+  return entry.slice(open + "buildAgentRuntimeWorkflow(".length, close);
 }
 
 const FOLDED_BODY: FoldedBody = {
@@ -266,7 +359,7 @@ describe("mintFoldedRun", () => {
 
     // The whole point of a mint: an addressable run with no sidecar
     // traffic and no collector — the first mail wakes it instead.
-    expect(sessionService.deployInstanceAtHeadCalls).toEqual([]);
+    expect(sessionService.adoptedDeployCalls).toEqual([]);
     expect(eventCollectors.createCalls).toEqual([]);
   });
 });
@@ -297,9 +390,8 @@ describe("launchFoldedRun", () => {
       {
         db: db as never,
         sessionService,
-        assetService: {} as never,
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
       },
@@ -339,24 +431,17 @@ describe("launchFoldedRun", () => {
       fallbackModel: "claude-sonnet-5",
     });
 
-    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
-    // The folded step must be unbounded: a conversation services every
-    // mail as another turn; the platform default (1) ends the run after
-    // the first reply and every later message is rejected as terminal.
-    const deployedDefinition = sessionService.deployInstanceAtHeadCalls[0] as {
-      definition: { steps: Record<string, { triggers?: unknown }> };
-      hubPublicKey: string;
-    };
-    expect(
-      Object.values(deployedDefinition.definition.steps)[0]?.triggers,
-    ).toBe("unbounded");
-    expect(deployedDefinition.hubPublicKey).toBe("hub-key");
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
-      agentAddress: string;
-      agentId: string;
-      instanceId: string;
-      config: { sources: unknown[]; defaultSource: string; tenantId: string };
-    };
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+    // The deploy adopts the anchor row `mintFoldedRun` already wrote,
+    // and pins the commit the run's own source tree was committed at.
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
+    expect(deployed.anchorRunId).toBe("ins_workbench1");
+    expect(deployed.deploymentDomain).toBe("ten1.workbench.test");
+    expect(deployed.source).toEqual({
+      kind: "asset",
+      assetId: "ast_definition1",
+      package: { format: "source", commitSha: "commit-sha-1" },
+    });
     expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
     expect(deployed.config.defaultSource).toBe("off_1");
     expect(deployed.config.tenantId).toBe("ten_1");
@@ -406,7 +491,9 @@ describe("launchFoldedRun", () => {
   // attachments-only mail. A caller that knows its run never reads its
   // input (the workbench host) must be able to pin a literal instead, so
   // an attachments-only first mail cannot crash the run before it opens.
-  test("stepInput overrides the step's default trigger.payload selector", async () => {
+  // The literal now travels in the rendered config, so it must show up
+  // in the committed bytes, not in a caller-supplied definition.
+  test("the caller's literal input reaches the deployed bytes", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
@@ -423,14 +510,14 @@ describe("launchFoldedRun", () => {
     };
 
     const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
 
     await launchFoldedRun(
       {
         db: createFakeDb() as never,
         sessionService,
-        assetService: {} as never,
+        assetService,
         sidecarRouter: createFakeSidecarRouter(),
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors: createFakeEventCollectors(),
       },
@@ -441,16 +528,13 @@ describe("launchFoldedRun", () => {
         definitionId: "wfd_workbench1",
         foldedBody: FOLDED_BODY,
         launchLabel: "the workbench host",
-        stepInput: { literal: "workbench-host anchor turn" },
+        mode: { kind: "step", literalInput: "workbench-host anchor turn" },
       },
     );
 
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
-      definition: { steps: Record<string, { input?: unknown }> };
-    };
-    expect(Object.values(deployed.definition.steps)[0]?.input).toEqual({
-      literal: "workbench-host anchor turn",
-    });
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(entry).toContain('"literalInput": "workbench-host anchor turn"');
   });
 
   // CL-6149: a pinned tool package's calls failed every call with
@@ -490,9 +574,8 @@ describe("launchFoldedRun", () => {
       {
         db: db as never,
         sessionService,
-        assetService: {} as never,
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
-        hubPublicKey: "hub-key",
         toolGrantsForPins: (pins) => {
           toolGrantsForPinsCalls.push(pins);
           return [
@@ -522,9 +605,7 @@ describe("launchFoldedRun", () => {
 
     expect(toolGrantsForPinsCalls).toEqual([pinnedFoldedBody.toolPackagePins]);
 
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
-      config: { grants: unknown[]; principalId: string };
-    };
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
     expect(deployed.config.principalId).toBe(result.instancePrincipalId);
     expect(deployed.config.grants).toEqual([
       {
@@ -585,9 +666,8 @@ describe("launchFoldedRun", () => {
       {
         db: db as never,
         sessionService,
-        assetService: {} as never,
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
         credentialCipher,
@@ -627,7 +707,7 @@ describe("launchFoldedRun", () => {
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
     const deployError = new Error("sidecar unreachable");
-    sessionService.deploySingleStepAtHead = async () => {
+    sessionService.deployAdoptedWorkflowFromSource = async () => {
       throw deployError;
     };
     const eventCollectors = createFakeEventCollectors();
@@ -637,9 +717,8 @@ describe("launchFoldedRun", () => {
         {
           db: db as never,
           sessionService,
-          assetService: {} as never,
+          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
-          hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
         },
@@ -687,7 +766,7 @@ describe("launchFoldedRun", () => {
 
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
-    sessionService.deploySingleStepAtHead = async () => {
+    sessionService.deployAdoptedWorkflowFromSource = async () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
     const eventCollectors = createFakeEventCollectors();
@@ -697,9 +776,8 @@ describe("launchFoldedRun", () => {
         {
           db: db as never,
           sessionService,
-          assetService: {} as never,
+          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
-          hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
         },
@@ -736,9 +814,8 @@ describe("launchFoldedRun", () => {
         {
           db: db as never,
           sessionService: createFakeSessionService(),
-          assetService: {} as never,
+          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
-          hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors: createFakeEventCollectors(),
         },
@@ -795,9 +872,8 @@ describe("launchFoldedRun", () => {
       {
         db: db as never,
         sessionService,
-        assetService: {} as never,
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         eventCollectors,
       },
@@ -814,8 +890,8 @@ describe("launchFoldedRun", () => {
 
     expect(result.sessionId).toBeTruthy();
     expect(resolveDefinitionSourcesCalls).toHaveLength(0);
-    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+    const deployed = sessionService.adoptedDeployCalls[0] as {
       config: { sources: unknown[]; defaultSource: string };
     };
     expect(deployed.config.sources).toEqual(override.sources);
@@ -832,9 +908,8 @@ describe("launchFoldedRun", () => {
         {
           db: db as never,
           sessionService,
-          assetService: {} as never,
+          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
-          hubPublicKey: "hub-key",
           toolGrantsForPins: () => [],
           eventCollectors,
         },
@@ -854,7 +929,7 @@ describe("launchFoldedRun", () => {
       ),
     ).rejects.toThrow(/invalid inference sources override/);
 
-    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
   });
 });
 
@@ -865,9 +940,16 @@ describe("wakeFoldedRun", () => {
     // with no conflict handling, so the previous occurrence's rows must
     // go first or the redeploy dies on the primary key.
     const db = createFakeDb();
+    // Two reads share `select`: the session lookup (`.where().orderBy()`)
+    // and `deployAtHead`'s definition-asset join (`.innerJoin()`).
     const dbWithSelect = Object.assign(db, {
       select: () => ({
         from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              limit: () => Promise.resolve([{ assetId: "ast_definition1" }]),
+            }),
+          }),
           where: () => ({
             orderBy: () => ({
               limit: () => Promise.resolve([{ id: "ses_1" }]),
@@ -881,6 +963,7 @@ describe("wakeFoldedRun", () => {
       {
         db: dbWithSelect as never,
         sessionService,
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
@@ -907,14 +990,14 @@ describe("wakeFoldedRun", () => {
       },
     );
     expect(db.deleted.map((d) => d.table)).toContain(sessionAsset);
-    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
   });
 });
 
 describe("deployAtHead — mcp credential bindings", () => {
   const MCP_BINDING = {
     package: "@corbits/mcp-tools",
-    handle: "mcp:exa",
+    handle: "mcp.exa",
     provider: "mcp:exa",
     locator: "tenant" as const,
   };
@@ -964,6 +1047,7 @@ describe("deployAtHead — mcp credential bindings", () => {
 
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
     const eventCollectors = createFakeEventCollectors();
     const mcpCredentialBindingsForCalls: string[] = [];
 
@@ -971,10 +1055,10 @@ describe("deployAtHead — mcp credential bindings", () => {
       {
         db: db as never,
         sidecarRouter: createFakeSidecarRouter(),
+        assetService,
         sessionService,
         eventCollectors,
         credentialCipher: {} as never,
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         mcpCredentialBindingsFor: async (tenantId: string) => {
           mcpCredentialBindingsForCalls.push(tenantId);
@@ -1002,14 +1086,11 @@ describe("deployAtHead — mcp credential bindings", () => {
       bindings: [MCP_BINDING],
     });
 
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
-      credentials: unknown;
-      config: { grants: { resource: string; action: string }[] };
-      definition: { credentialBindings?: readonly unknown[] };
-    };
-    expect(deployed.credentials).toEqual(
-      buildCredentialDeliveryResult.delivery,
-    );
+    // The deploy front resolves the credential MATERIAL itself from the
+    // deployed definition's own bindings, so the cipher — not a
+    // pre-built delivery — is what crosses the boundary.
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
+    expect(deployed.credentialCipher).toBeDefined();
     expect(deployed.config.grants).toContainEqual(
       expect.objectContaining({
         resource: "credential:cred_1",
@@ -1017,7 +1098,15 @@ describe("deployAtHead — mcp credential bindings", () => {
         conditions: { tool: "tool:@corbits/mcp-tools" },
       }),
     );
-    expect(deployed.definition.credentialBindings).toEqual([MCP_BINDING]);
+    // The workflow host derives its per-step consumer bindings from the
+    // DEFINITION's own `credentialBindings`, and the definition is now
+    // whatever the deployed bytes evaluate to — so the folded-in MCP
+    // binding has to be inside the committed tree.
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(JSON.parse(entryConfigJSON(entry)).credentialBindings).toEqual([
+      MCP_BINDING,
+    ]);
   });
 
   test("never calls mcpCredentialBindingsFor when @corbits/mcp-tools is not pinned", async () => {
@@ -1045,10 +1134,10 @@ describe("deployAtHead — mcp credential bindings", () => {
       {
         db: db as never,
         sidecarRouter: createFakeSidecarRouter(),
+        assetService: createFakeAssetService(),
         sessionService,
         eventCollectors,
         credentialCipher: {} as never,
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         mcpCredentialBindingsFor: async () => {
           mcpCredentialBindingsForCallCount += 1;
@@ -1068,7 +1157,7 @@ describe("deployAtHead — mcp credential bindings", () => {
 
     expect(mcpCredentialBindingsForCallCount).toBe(0);
     expect(buildCredentialDeliveryCalls).toHaveLength(0);
-    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+    const deployed = sessionService.adoptedDeployCalls[0] as {
       credentials?: unknown;
     };
     expect(deployed.credentials).toBeUndefined();
@@ -1101,9 +1190,9 @@ describe("deployAtHead — run.grants production", () => {
     return {
       db: createFakeDb() as never,
       sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [
         {
           resource: "tool:@corbits/mcp-tools:search",
@@ -1152,9 +1241,7 @@ describe("deployAtHead — run.grants production", () => {
 
     await deployAtHead(deps, PARAMS);
 
-    const deployed = deps.sessionService.deployInstanceAtHeadCalls[0] as {
-      config: { grants: unknown[] };
-    };
+    const deployed = onlyCall(deps.sessionService.adoptedDeployCalls);
     expect(sidecarRouter.runGrantsCalls[0]?.stepGrants).toEqual(
       deployed.config.grants,
     );
@@ -1167,5 +1254,224 @@ describe("deployAtHead — run.grants production", () => {
     await expect(deployAtHead(makeDeps(sidecarRouter), PARAMS)).rejects.toThrow(
       /is not routable for run run_grants1/,
     );
+  });
+});
+
+// The whole conversion in one test: under the workflow.json retirement a
+// folded run's definition is no longer synthesized in memory and handed
+// to the hub — it is RENDERED into a per-run source package, COMMITTED
+// into the run's own definition asset, and DEPLOYED by pinning that
+// commit onto the anchor row the run already owns.
+describe("deployAtHead — the code-sourced round trip", () => {
+  const SOURCES: DefinitionSourceResolution = {
+    ok: true,
+    sources: [
+      {
+        id: "off_1",
+        provider: "anthropic",
+        baseURL: "https://inference.invalid",
+        apiKey: "placeholder",
+        model: "claude-sonnet-5",
+      },
+    ],
+    defaultSource: "off_1",
+  };
+
+  const PARAMS = {
+    tenantId: "ten_1",
+    instanceId: "run_rt1",
+    triggerAddress: "run_rt1@ten1.workbench.test",
+    principalId: "prn_1",
+    sessionId: "ses_1",
+    foldedBody: {
+      ...FOLDED_BODY,
+      systemPrompt: "you answer questions",
+      toolPackagePins: [{ name: "@corbits/mcp-tools", version: "*" }],
+    },
+    launchLabel: "the invited agent",
+  };
+
+  function makeDeps() {
+    return {
+      db: createFakeDb() as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+      toolGrantsForPins: () => [],
+    };
+  }
+
+  test("commits the rendered tree into the run's own definition asset", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const deps = makeDeps();
+
+    await deployAtHead(deps, PARAMS);
+
+    expect(deps.assetService.populateAssetCalls).toHaveLength(1);
+    const commit = onlyCall(deps.assetService.populateAssetCalls);
+    // Reuse, not a second asset: the tree lands in the asset the run's
+    // definition already points at, on a ref of its own so one asset can
+    // back many runs without their bytes colliding.
+    expect(commit.assetId).toBe("ast_definition1");
+    expect(commit.ref).toBe("refs/heads/runs/run_rt1");
+    expect(Object.keys(commit.tree.files).sort()).toEqual([
+      "package.json",
+      "workflow.js",
+    ]);
+  });
+
+  test("renders the run's whole config into the deployed bytes", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const deps = makeDeps();
+
+    await deployAtHead(deps, PARAMS);
+
+    const files = onlyCall(deps.assetService.populateAssetCalls).tree.files;
+    const config = JSON.parse(entryConfigJSON(files["workflow.js"] ?? ""));
+    // Every field the approved wire hash covers has to be inside the
+    // bytes: a config delivered out of band diverges between the
+    // approval probe's evaluation and the run child's and fails closed.
+    expect(config).toMatchObject({
+      workflowId: "wf_run_rt1",
+      agentId: "run_rt1",
+      triggerAddress: "run_rt1@ten1.workbench.test",
+      systemPrompt: "you answer questions",
+      inferencePreferences: [
+        { provider: "anthropic", model: "claude-sonnet-5" },
+      ],
+      toolPackagePins: [{ name: "@corbits/mcp-tools", version: "*" }],
+      mode: { kind: "step" },
+    });
+    expect(files["package.json"]).toContain('"@corbits/agent-runtime"');
+  });
+
+  test("deploys the committed pin through the adopting front", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const deps = makeDeps();
+
+    await deployAtHead(deps, PARAMS);
+
+    expect(deps.sessionService.adoptedDeployCalls).toHaveLength(1);
+    const deployed = onlyCall(deps.sessionService.adoptedDeployCalls);
+    expect(deployed).toMatchObject({
+      tenantId: "ten_1",
+      anchorRunId: "run_rt1",
+      deploymentDomain: "ten1.workbench.test",
+      agentAddress: "run_rt1@ten1.workbench.test",
+      entry: "./workflow.js",
+      definitionAssetId: "ast_definition1",
+      source: {
+        kind: "asset",
+        assetId: "ast_definition1",
+        package: { format: "source", commitSha: "commit-sha-1" },
+      },
+    });
+  });
+
+  test("carries the caller's section mode into the bytes untouched", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const deps = makeDeps();
+
+    await deployAtHead(deps, {
+      ...PARAMS,
+      mode: { kind: "section", turnTimeoutMs: 45_000 },
+    });
+
+    const config = JSON.parse(
+      entryConfigJSON(
+        onlyCall(deps.assetService.populateAssetCalls).tree.files[
+          "workflow.js"
+        ] ?? "",
+      ),
+    );
+    // The mode is config data, so nothing about the deploy call itself
+    // differs between the two shapes.
+    expect(config.mode).toEqual({ kind: "section", turnTimeoutMs: 45_000 });
+    expect(deps.sessionService.adoptedDeployCalls).toHaveLength(1);
+  });
+
+  test("refuses a run whose definition has no workflow-kind asset", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const deps = { ...makeDeps(), db: createFakeDb(null) as never };
+
+    await expect(deployAtHead(deps, PARAMS)).rejects.toThrow(
+      /no workflow-kind definition asset/,
+    );
+    expect(deps.sessionService.adoptedDeployCalls).toEqual([]);
+  });
+});
+
+describe("wakeFoldedRun — the same code-sourced path", () => {
+  test("re-renders and re-commits the run's source tree, then adopts its anchor", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+    const db = Object.assign(createFakeDb(), {
+      select: () => ({
+        from: () => ({
+          innerJoin: () => ({
+            where: () => ({
+              limit: () => Promise.resolve([{ assetId: "ast_definition1" }]),
+            }),
+          }),
+          where: () => ({
+            orderBy: () => ({
+              limit: () => Promise.resolve([{ id: "ses_1" }]),
+            }),
+          }),
+        }),
+      }),
+    });
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
+
+    await wakeFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService,
+        sidecarRouter: createFakeSidecarRouter(),
+        eventCollectors: createFakeEventCollectors(),
+        toolGrantsForPins: () => [],
+      } as never,
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_woken1",
+        triggerAddress: "ins_woken1@ten1.workbench.test",
+        principalId: "prn_1",
+        foldedBody: FOLDED_BODY,
+        // A wake must repin whatever the launch pinned; the literal
+        // input is a property of what the run IS.
+        mode: { kind: "step", literalInput: "workbench-host anchor turn" },
+      },
+    );
+
+    expect(assetService.populateAssetCalls[0]?.ref).toBe(
+      "refs/heads/runs/ins_woken1",
+    );
+    const config = JSON.parse(
+      entryConfigJSON(
+        assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "",
+      ),
+    );
+    expect(config.mode).toEqual({
+      kind: "step",
+      literalInput: "workbench-host anchor turn",
+    });
+    expect(sessionService.adoptedDeployCalls[0]).toMatchObject({
+      anchorRunId: "ins_woken1",
+      source: { package: { format: "source", commitSha: "commit-sha-1" } },
+    });
   });
 });

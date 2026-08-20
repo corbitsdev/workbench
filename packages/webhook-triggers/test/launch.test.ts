@@ -77,7 +77,6 @@ function baseDeps() {
     sessionService: {} as never,
     assetService: {} as never,
     sidecarRouter: {} as never,
-    hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },

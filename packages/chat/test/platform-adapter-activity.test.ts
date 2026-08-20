@@ -19,10 +19,10 @@ import { agentSession, sessionMail, workflowRun } from "@intx/db/schema";
 import type {
   AssetService,
   EventCollectorRegistry,
-  SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
 import { createHubChatPlatform } from "../src/platform-adapter";
+import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 
 type Row = Record<string, unknown>;
 
@@ -73,11 +73,11 @@ function fakeDb(plan: {
 
 function buildPlatform(plan: Parameters<typeof fakeDb>[0]) {
   return createHubChatPlatform({
-    hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
     db: fakeDb(plan) as never,
     noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-    sessionService: {} as unknown as SessionService,
+    sessionService:
+      {} as unknown as CreateHubChatPlatformDeps["sessionService"],
     assetService: {} as unknown as AssetService,
     sidecarRouter: {} as unknown as SidecarRouter,
     eventCollectors: {} as unknown as EventCollectorRegistry,

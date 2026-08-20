@@ -21,7 +21,6 @@ import { schema } from "@intx/db";
 import type {
   AssetService,
   EventCollectorRegistry,
-  SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
 import type { TenantEnv } from "@intx/hub-api";
@@ -30,6 +29,7 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createChatRoutes } from "../src/routes";
 import { createHubChatPlatform } from "../src/platform-adapter";
+import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryReactionStore } from "../src/reactions";
@@ -127,10 +127,10 @@ describeIfDb("reaction toggle: message lookup past the first mail page", () => {
       targetMessageId = target55Back.id;
 
       const platform = createHubChatPlatform({
-        hubPublicKey: "hub-key",
         toolGrantsForPins: () => [],
         db,
-        sessionService: {} as unknown as SessionService,
+        sessionService:
+          {} as unknown as CreateHubChatPlatformDeps["sessionService"],
         assetService: {} as unknown as AssetService,
         sidecarRouter: {} as unknown as SidecarRouter,
         eventCollectors: {} as unknown as EventCollectorRegistry,
