@@ -191,6 +191,35 @@ test("runEval plays a persona step's sub-turns in order and scores the final one
   });
 });
 
+test("runEval throws rather than record a corrupted step if a persona sub-loop yields no turns", async () => {
+  // Bypasses defineEval's maxTurns validation to prove runEval itself
+  // guards against a malformed EvalDefinition, not just well-formed ones.
+  const evalDef = {
+    name: "malformed",
+    description: "test",
+    steps: [
+      {
+        kind: "persona" as const,
+        opening: "set up my digest",
+        persona: { name: "Dana", goal: "get a digest", knownFacts: {} },
+        maxTurns: 0,
+        expect: [],
+      },
+    ],
+  };
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn(human) {
+      return { human, replyText: "unreachable", toolCalls: [] };
+    },
+    async close() {},
+  };
+
+  await expect(runEval(evalDef, target)).rejects.toThrow(
+    "runEval: step 0 produced no turns",
+  );
+});
+
 test("runMatrix still closes the target when a run throws", async () => {
   const evalDef = defineEval({
     name: "boom",
