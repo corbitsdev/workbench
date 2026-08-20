@@ -101,6 +101,7 @@
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
+        "@corbits/workflow-host-actions": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/authz": "0.3.0",
         "@intx/crypto": "0.3.0",
@@ -1365,6 +1366,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workflow-host-actions": {
+      "name": "@corbits/workflow-host-actions",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/types": "0.3.0",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/crypto": "0.3.0",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workflow-source": {
       "name": "@corbits/workflow-source",
       "version": "0.0.1",
@@ -1483,6 +1499,7 @@
       "name": "@intx/workflow-host",
       "version": "0.3.0",
       "dependencies": {
+        "@corbits/workflow-host-actions": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/crypto": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
@@ -1989,6 +2006,8 @@
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
+
+    "@corbits/workflow-host-actions": ["@corbits/workflow-host-actions@workspace:packages/workflow-host-actions"],
 
     "@corbits/workflow-source": ["@corbits/workflow-source@workspace:packages/workflow-source"],
 
