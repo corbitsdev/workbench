@@ -206,6 +206,13 @@ export function createInsightsRoutes(
    * link each bar to `/insights/workbench/:tenantId` instead of only
    * seeing the scope's sum. Calling it for a leaf workbench (no
    * descendants) returns that one workbench's own row.
+   *
+   * A `parentId === null` requested tenant is never itself a workbench —
+   * it is the account root, the container real workbenches (each its own
+   * child tenant, CL-6089) live under. Its own row would just be a
+   * zero-usage rollup-of-itself duplicate of the "All workbenches"
+   * landing this chart already sits on, so it is dropped rather than
+   * listed alongside its children (CL-6368).
    */
   app.get(
     "/workbenches",
@@ -219,7 +226,9 @@ export function createInsightsRoutes(
         summarizeUsageByTenant(deps.store, scope, range),
         tenantNames(deps.db, tenant.id, tenant.name, scope),
       ]);
+      const isTeamSpace = tenant.parentId === null;
       const items = rows
+        .filter((row) => !isTeamSpace || row.tenantId !== tenant.id)
         .map((row) => ({
           tenantId: row.tenantId,
           name: names.get(row.tenantId) ?? row.tenantId,
