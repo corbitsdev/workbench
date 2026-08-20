@@ -1,8 +1,8 @@
-// The workbench header's live who's-here stack (CL-5958): a plain-data
-// `presenceMembers` prop, distinct from the static participants list —
-// omitted entirely, nothing renders; supplied, one avatar per member,
-// colored per its server-assigned color. Mirrors chat-workspace.test.tsx's
-// stub-fetch/mount harness.
+// The workbench header's live who's-here stack (CL-5958), now driven off
+// the workbench's own `/stream` connection (CL-6328) rather than a plain
+// `presenceMembers` prop: nothing rendered until a `chat.presence.snapshot`
+// arrives, one avatar per member from there, colored deterministically per
+// principal. Mirrors chat-workspace.test.tsx's stub-fetch/mount harness.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -17,11 +17,26 @@ class StubEventSource {
   static instances: StubEventSource[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  readyState = 0;
+  readyState = 1;
+  listeners = new Map<string, (message: MessageEvent) => void>();
+
   constructor(readonly url: string) {
     StubEventSource.instances.push(this);
   }
-  addEventListener() {}
+
+  addEventListener(
+    eventType: string,
+    listener: (message: MessageEvent) => void,
+  ) {
+    this.listeners.set(eventType, listener);
+  }
+
+  emit(eventType: string, data: unknown) {
+    this.listeners.get(eventType)?.({
+      data: JSON.stringify(data),
+    } as MessageEvent);
+  }
+
   close() {
     this.readyState = 2;
   }
@@ -94,8 +109,14 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
+function firstStream(): StubEventSource {
+  const instance = StubEventSource.instances[0];
+  if (instance === undefined) throw new Error("no stream connected");
+  return instance;
+}
+
 describe("workbench header presence stack", () => {
-  test("renders nothing when presenceMembers is omitted", async () => {
+  test("renders nothing before a presence snapshot arrives", async () => {
     stubFetch();
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -107,30 +128,60 @@ describe("workbench header presence stack", () => {
     harness.unmount();
   });
 
-  test("renders one colored avatar per live member", async () => {
+  test("renders one colored avatar per member in the stream's presence snapshot", async () => {
     stubFetch();
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      presenceMembers: [
-        {
-          principalId: "prn_alice",
-          displayName: "Alice",
-          color: "hsl(10 65% 45%)",
-        },
-        {
-          principalId: "prn_bob",
-          displayName: "Bob",
-          color: "hsl(200 65% 45%)",
-        },
-      ],
+    });
+    await harness.settle();
+
+    act(() => {
+      firstStream().emit("chat.presence.snapshot", {
+        members: [
+          { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
+          { principalId: "prn_bob", lastActiveAt: "2026-01-01T00:00:00Z" },
+        ],
+      });
     });
     await harness.settle();
 
     const avatars = harness.container.querySelectorAll(".chat-presence-avatar");
     expect(avatars).toHaveLength(2);
-    expect((avatars[0] as HTMLElement).title).toBe("Alice");
-    expect((avatars[1] as HTMLElement).title).toBe("Bob");
+    harness.unmount();
+  });
+
+  test("chat.presence deltas add and remove members without a snapshot", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+
+    act(() => {
+      firstStream().emit("chat.presence", {
+        principalId: "prn_alice",
+        state: "online",
+        lastActiveAt: "2026-01-01T00:00:00Z",
+      });
+    });
+    await harness.settle();
+    expect(
+      harness.container.querySelectorAll(".chat-presence-avatar"),
+    ).toHaveLength(1);
+
+    act(() => {
+      firstStream().emit("chat.presence", {
+        principalId: "prn_alice",
+        state: "offline",
+        lastActiveAt: "2026-01-01T00:01:00Z",
+      });
+    });
+    await harness.settle();
+    expect(
+      harness.container.querySelectorAll(".chat-presence-avatar"),
+    ).toHaveLength(0);
     harness.unmount();
   });
 });
