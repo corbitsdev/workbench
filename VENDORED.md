@@ -190,7 +190,17 @@ null `publicKey` (the reconnect challenge keeps failing closed until the
 ack), the acked supervisor key is stamped afterwards, and a failed frame
 emit deletes the pre-inserted row. The prepared and adopted fronts
 already had their anchor row pre-frame; the shared front now matches
-them. `vendor/intx/inference-catalog`'s own local
+them. `vendor/intx/hub-sessions` (CL-6395) narrows that failed-emit
+deletion: CL-6388 deleted the pre-inserted anchor on ANY
+`emitSourceRefDeployFrame` rejection, but an ack-timeout or socket-drop
+rejection fires strictly after the `agent.deploy` frame already reached
+the sidecar, so deleting the row could permanently orphan an
+already-spawned child on the missing-anchor `path_violation` path.
+`ws/sidecar-handler.ts` now exports `DeployFrameNotSentError`, thrown only
+where a guard clause or the `conn.send()` call itself fails before the
+frame could have reached the wire; `deployCodeSourcedWorkflow` deletes the
+row only on that error and otherwise keeps the row and logs a
+reconciliation line. `vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
 Each package's `VENDORED-FROM` file restates its own delta.
