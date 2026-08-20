@@ -72,6 +72,9 @@ export function createTenantConnectCredential(
         ...(args.credentialMetadata !== undefined
           ? { credentialMetadata: args.credentialMetadata }
           : {}),
+        ...(args.refreshToken !== undefined
+          ? { refreshSecret: args.refreshToken }
+          : {}),
         ...(deps.ensureProviderFn !== undefined
           ? { ensureProviderFn: deps.ensureProviderFn }
           : {}),

@@ -1880,6 +1880,8 @@ export async function createHub(config: HubConfig) {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
         githubAppClientId: config.githubAppClientId,
         githubAppClientSecret: config.githubAppClientSecret,
+        gmailClientId: config.gmailClientId,
+        gmailClientSecret: config.gmailClientSecret,
       },
       providerHealth: providerHealthStore,
       listConnectedProviders: (tenantId) =>
@@ -1916,6 +1918,8 @@ export async function createHub(config: HubConfig) {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
         githubAppClientId: config.githubAppClientId,
         githubAppClientSecret: config.githubAppClientSecret,
+        gmailClientId: config.gmailClientId,
+        gmailClientSecret: config.gmailClientSecret,
       },
       connectCredential: createTenantConnectCredential({
         hubUrl: config.baseUrl,

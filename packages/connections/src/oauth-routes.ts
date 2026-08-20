@@ -179,6 +179,7 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
     cookies: string[];
     apiKey: string;
     credentialMetadata?: Record<string, unknown>;
+    refreshToken?: string;
   }) => Promise<OAuthStoreOutcome>;
   /** Best-effort duplicate-callback recovery — see this module's header.
    * Absent means a double-fired callback is always reported as
@@ -570,6 +571,8 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
         connectCredentialArgs.credentialMetadata = {
           expiresAt: exchanged.expiresAt,
         };
+      if (exchanged.refreshToken !== undefined)
+        connectCredentialArgs.refreshToken = exchanged.refreshToken;
       const result = await deps.connectCredential(connectCredentialArgs);
       if (result.kind === "invalid-credential") {
         deps.log(

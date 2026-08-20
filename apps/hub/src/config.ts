@@ -148,6 +148,12 @@ const HubEnv = type({
   "GITHUB_APP_CLIENT_SECRET?": type("string > 0").describe(
     "GitHub OAuth App client secret; set together with GITHUB_APP_CLIENT_ID to enable the hosted GitHub connect",
   ),
+  "GMAIL_CLIENT_ID?": type("string > 0").describe(
+    "Google OAuth client id for the `gmail` connector's hosted connect (console.cloud.google.com — a separate OAuth client from GOOGLE_CLIENT_ID's sign-in app); set together with GMAIL_CLIENT_SECRET, or the Gmail connect card renders not-configured",
+  ),
+  "GMAIL_CLIENT_SECRET?": type("string > 0").describe(
+    "Google OAuth client secret; set together with GMAIL_CLIENT_ID to enable the hosted Gmail connect",
+  ),
   "GITHUB_API_BASE_URL?": type(/^https?:\/\/.+$/).describe(
     "override for the GitHub REST API origin the `github` connector's PAT probe and credential delivery target, e.g. a fake server recorded for tests/evals; unset (default) targets https://api.github.com — never set this for a real deployment",
   ),
@@ -298,6 +304,8 @@ export type HubConfig = {
   readonly huggingfaceOAuthClientId?: string;
   readonly githubAppClientId?: string;
   readonly githubAppClientSecret?: string;
+  readonly gmailClientId?: string;
+  readonly gmailClientSecret?: string;
   /** Override for the GitHub REST API origin the `github` connector's PAT
    * probe and credential delivery target. Unset (default) targets
    * https://api.github.com; a fake server substitutes cleanly in
@@ -614,6 +622,10 @@ export function readHubConfig(
     hubConfig.githubAppClientId = parsed.GITHUB_APP_CLIENT_ID;
   if (parsed.GITHUB_APP_CLIENT_SECRET !== undefined)
     hubConfig.githubAppClientSecret = parsed.GITHUB_APP_CLIENT_SECRET;
+  if (parsed.GMAIL_CLIENT_ID !== undefined)
+    hubConfig.gmailClientId = parsed.GMAIL_CLIENT_ID;
+  if (parsed.GMAIL_CLIENT_SECRET !== undefined)
+    hubConfig.gmailClientSecret = parsed.GMAIL_CLIENT_SECRET;
   if (parsed.GITHUB_API_BASE_URL !== undefined)
     hubConfig.githubApiBaseUrl = parsed.GITHUB_API_BASE_URL;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)

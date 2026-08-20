@@ -14,7 +14,15 @@ export type ConnectorAuthKind =
  * (Hugging Face). `expiresAt` is an ISO instant, absent for a durable
  * credential. */
 export type OAuthExchangeResult =
-  | { readonly ok: true; readonly apiKey: string; readonly expiresAt?: string }
+  | {
+      readonly ok: true;
+      readonly apiKey: string;
+      readonly expiresAt?: string;
+      /** Set when the provider issues a refresh token alongside an
+       * expiring access token (Google) — stored as the credential row's
+       * `refreshSecret`, never in metadata. */
+      readonly refreshToken?: string;
+    }
   | { readonly ok: false; readonly message: string };
 
 /** Everything `oauth-pkce`/`oauth-code` connect-flow mechanics
