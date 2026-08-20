@@ -1040,23 +1040,87 @@ a folded run parked between messages is a run beyond waking, and
 `wakeByAddress` relaunches it instead of redeploying an address whose
 log already says terminal.
 
-### What is still open
+### Closing it: the sweep, the notice, and the old attachments
 
-- **The relaunch is send-triggered.** It fires on the next `sendMail`
-  through the wake choke point. Nothing sweeps for terminal runs at
-  boot, so a room whose agent died stays silently dead until somebody
-  writes into it. Proof 4's "the turn the kill interrupted surfaces
-  visibly" hop asserts a notice with no new message sent, and that hop
-  needs the boot-time sweep, not this.
-- **No relaunch notice is posted.** The turn-drop notice in
-  `chat-orchestrator.ts` fires on `message.run.ended`, which a killed
-  sidecar never sends. A relaunch should announce itself in the room in
-  the agent's own voice; the seam for it is a notice port on
-  `createHubChatPlatform`, wired in the hub beside `roomMessages`.
-- **Pre-relaunch attachments.** `fetchBlob` reads through the LIVE
-  run's session, so mail attachments written under a previous run's
-  session are not reachable after a relaunch. Room messages themselves
-  are unaffected (they are `chat.workbench_messages` rows, not mail).
-- **The e2e proof has not been re-run on this branch.** Proof 4's
-  deterministic red is unchanged; the green half is asserted only by
-  the unit suites so far.
+Three things stood between the relaunch and a reader actually
+experiencing it.
+
+**The sweep.** The relaunch was send-triggered — it fired on the next
+`sendMail` through the wake choke point — so a room whose agent died in
+a crash stayed silently dead until somebody wrote into it, which is
+precisely what nobody does when the room looks broken.
+`createHubChatPlatform.sweepTerminalRuns` scans `workbench_launch`
+(bounded at 100 rows), keeps the participants `isBeyondWake` says are
+terminal-and-not-merely-parked, and relaunches each through the same
+path a send would; every relaunch and every failure is logged under
+`chat·wake`, and one failure never aborts the pass.
+
+The hub runs it at boot and re-arms it on `sidecar.disconnect`, as a
+short bounded series of passes rather than a single one. That is not
+belt-and-braces: "this run is dead" is not knowable at the instant the
+execution plane comes back. The dying sidecar commits the terminal event
+to the run's own durable log, and `workflow_run.status` only follows once
+the RESTARTED sidecar has packed that log back to the hub — seconds
+after the reconnect. A single pass at boot would look at a run still
+marked `running` and find nothing.
+
+**The notice.** `chat-orchestrator.ts`'s turn-drop notice hangs off
+`message.run.ended`, which a killed sidecar never sends — so the
+interrupted turn had no way to surface at all. `relaunch-notice.ts` is
+the other half: `createHubChatPlatform` takes a notice port (a ref, since
+the adapter is built before the room-message store it posts through), the
+hub arms it beside `roomMessages`, and every relaunch — swept or
+send-triggered — posts into each room the replaced participant belongs
+to, under the STABLE address the room has always known it by, so the
+notice reads as the same teammate rather than a stranger. The wording is
+cause-aware (crashed / stopped / ended) and stays in the reader's
+language: the turn didn't finish, it's back now, say it again.
+
+**Pre-relaunch attachments.** `fetchBlob` read through the live run's
+session, and a folded run's mail session is resolved from its PRINCIPAL
+— a fresh run has a fresh principal, so every attachment sent before the
+crash became unreachable. `workbench_launch.prior_run_ids` records each
+run as it is retired (capped at 20), and `fetchBlob` walks those
+sessions newest-first after the live one. Room messages were never
+affected: they are `chat.workbench_messages` rows, not mail.
+
+**The audit assertion.** Proof 4 now ends by reading the replaced run's
+events back through the ordinary run routes AFTER its replacement is
+already answering. That is the fresh-run ruling's whole justification,
+and it is now a hop rather than an argument.
+
+### And what re-running proof 4 found: the detection signal does not fire
+
+Proof 4 was re-run on a real stack (scratch database, real signup, real
+Ollama, both shapes). Proofs 1, 2, 2b and 3 are green; proof 4's restart
+and boot restore are green at 9.2s. Hop 3 — "the turn the kill
+interrupted surfaces visibly" — is still red, and the sweep is not why.
+Nothing in the sweep's log fired at all, because it found nothing to
+sweep:
+
+```
+run_10dd09d1…  failed    <- the SECTION deployment
+run_4de07624…  running   <- the folded CHAT run, after the mid-turn kill
+```
+
+The claim recorded above — that both top-level runs end up
+`workflow_run.status = 'failed'` — holds for the section deployment
+only. The folded chat run's terminal event goes to its durable log
+(which is why its supervisor rejects the next message) while its
+`workflow_run` row stays `running` forever. `isBeyondWake` reads that
+row, so for the shape hop 3 measures it answers "still alive" and
+neither the sweep nor the send-triggered relaunch ever fires. The room
+keeps the reader's message with nothing after it — the exact silent
+drop the hop asserts against.
+
+So the remaining gap is the DETECTION signal, not the relaunch: the hub
+needs to learn a folded run's lifecycle from the same durable log the
+supervisor reads (`readWorkflowRunLifecycle`) rather than from
+`workflow_run.status`, either by reconciling the row when a restarted
+sidecar packs a terminal log back, or by having `isBeyondWake` consult
+the log directly. Everything downstream of that signal — sweep, notice,
+repoint, attachment history, audit read — is built and unit-proven.
+
+The section shape stays red for its own separate reason: a plain
+workflow deployment has no room, so nothing maps a stable id onto a
+fresh run for it. That is out of CL-6365's scope, which is the room.
