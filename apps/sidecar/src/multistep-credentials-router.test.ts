@@ -9,7 +9,7 @@ function makeFrame(agentAddress: string) {
     delivery: {
       bindings: [
         {
-          handle: "mcp:exa",
+          handle: "mcp.exa",
           credentialId: "cred_1",
           consumer: "tool:@corbits/mcp-tools",
         },

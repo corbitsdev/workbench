@@ -103,12 +103,12 @@ test("createSidecarWorkflowSupervisor omits onSuspensionRegister when the caller
 // `credentialDelivery` binding to the child on the pre-trigger barrier —
 // but before this fix `createSidecarWorkflowSupervisor` never accepted the
 // field, so the child's materialRef stayed null and every
-// `credentials.resolve("mcp:<slug>")` failed "no credential is bound".
+// `credentials.resolve("mcp.<slug>")` failed "no credential is bound".
 test("createSidecarWorkflowSupervisor forwards credentialDelivery to the workflow-host supervisor", () => {
   const delivery = {
     bindings: [
       {
-        handle: "mcp:exa",
+        handle: "mcp.exa",
         credentialId: "cred_1",
         consumer: "tool:@corbits/mcp-tools",
       },

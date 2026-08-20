@@ -2,7 +2,7 @@
 // `PackageJSON` manifest schema (`vendor/intx/types/src/package-json.ts`)
 // and, unlike `@corbits/web-search-tools`, declares no static
 // `interchange.credentials` entries — see `tool.ts`'s header comment for
-// why an MCP server's `mcp:<slug>` handle can't be pre-declared.
+// why an MCP server's `mcp.<slug>` handle can't be pre-declared.
 import { expect, test } from "bun:test";
 import { type } from "arktype";
 import { PackageJSON } from "@intx/types/package-json";

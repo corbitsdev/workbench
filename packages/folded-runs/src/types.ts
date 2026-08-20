@@ -61,11 +61,11 @@ export type ToolGrantsForPins = (
 /**
  * Derives the extra `@corbits/mcp-tools` credential bindings a folded run's
  * launch needs for its tenant's connected MCP servers. `mcp-tools`' handles
- * are dynamic (one `mcp:<slug>` per tenant-connected server, unknown at
+ * are dynamic (one `mcp.<slug>` per tenant-connected server, unknown at
  * package-publish time), so its `package.json` declares no static
  * `interchange.credentials` entry the deploy-time capability walk
  * (`vendor/intx/workflow-deploy/src/capability-walk.ts`) could turn into a
- * binding — without this port, `env.credentials.resolve("mcp:<slug>")`
+ * binding — without this port, `env.credentials.resolve("mcp.<slug>")`
  * always throws "not connected" even when the tenant's credential exists.
  * `deployAtHead` calls this whenever `@corbits/mcp-tools` is among a
  * launch's `toolPackagePins`, mirroring `ToolGrantsForPins`'s reason for
