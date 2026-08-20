@@ -159,6 +159,8 @@ export type WorkflowPusher = (args: {
   remoteUrl: string;
   tokenSecret: string;
   workflowJson: string;
+  /** Name the rendered source package declares; never leaves the asset. */
+  packageName: string;
 }) => Promise<PushOutcome>;
 
 export type DefaultWorkflow = {
@@ -822,11 +824,12 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
       workflowJson: workflow.buildJson(tenant.domain, workflowModel),
+      packageName: `@workbench-seed/${workflow.assetName}`,
     });
     log(
       outcome === "pushed"
-        ? `pushed workflow.json for ${workflow.assetName}`
-        : `workflow.json for ${workflow.assetName} already current (skipped)`,
+        ? `pushed the workflow source package for ${workflow.assetName}`
+        : `workflow source for ${workflow.assetName} already current (skipped)`,
     );
 
     const deploymentId = await ensureDeployment(
