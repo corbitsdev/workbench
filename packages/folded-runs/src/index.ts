@@ -10,7 +10,10 @@ export type {
 export {
   readDefinitionJSON,
   readFoldedBody,
+  resolveNewestReadableDefinitionJSON,
+  DefinitionAssetUnresolvableError,
   FoldedBodySchema,
+  type DefinitionAssetCandidate,
 } from "./definition";
 export {
   createCryptoProviderCache,

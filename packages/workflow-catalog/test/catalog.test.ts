@@ -9,6 +9,7 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   RECURRING_TASK_ASSET_NAME,
+  validateTriggerFieldsAtCreate,
   validateTriggerFieldsInput,
   workflowDisplayName,
   workflowCatalogEntry,
@@ -383,6 +384,56 @@ describe("workflow catalog", () => {
       expect(validateTriggerFieldsInput([], { anything: "goes" })).toEqual({
         ok: true,
       });
+    });
+  });
+
+  // CL-6358: inputs bind at USE, never at creation — a routine (or a
+  // seed preset) must be creatable with a required trigger field left
+  // entirely unbound. `validateTriggerFieldsAtCreate` is the boundary
+  // check `@corbits/routines`' create route actually applies now:
+  // absence of a required field is never rejected, only a value the
+  // caller explicitly provided but left malformed is.
+  describe("validateTriggerFieldsAtCreate", () => {
+    const fields = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME)
+      ?.triggerFields as readonly WorkflowTriggerField[];
+
+    test("a required field left entirely unbound passes at create time", () => {
+      expect(
+        validateTriggerFieldsAtCreate(fields, { prompt: "Do it" }),
+      ).toEqual({ ok: true });
+    });
+
+    test("last-30-days-research seeds with Topic unbound", () => {
+      const researchFields = workflowCatalogEntry("last-30-days-research")
+        ?.triggerFields as readonly WorkflowTriggerField[];
+      expect(validateTriggerFieldsAtCreate(researchFields, {})).toEqual({
+        ok: true,
+      });
+    });
+
+    test("a provided-but-blank required field still fails: a caller who sets it must set it honestly", () => {
+      const result = validateTriggerFieldsAtCreate(fields, {
+        agent: "   ",
+        prompt: "Do it",
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    test("a provided non-string value for a required field still fails", () => {
+      const result = validateTriggerFieldsAtCreate(fields, {
+        agent: 12345,
+        prompt: "Do it",
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    test("a fully valid input still passes", () => {
+      expect(
+        validateTriggerFieldsAtCreate(fields, {
+          agent: "wfd_1",
+          prompt: "Do it",
+        }),
+      ).toEqual({ ok: true });
     });
   });
 });

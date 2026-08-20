@@ -99,7 +99,10 @@ import {
   resolveAtCommand,
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import {
+  InferenceResolutionError,
+  DefinitionAssetUnresolvableError,
+} from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
@@ -1213,6 +1216,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           );
         } catch (err) {
           await compensateMint(err, "agent mint");
+          // CL-6357: a definition whose every asset candidate has gone
+          // unresolvable (DB/blob drift) is a named, consumer-facing
+          // 4xx — never an unhandled 500 — with the same compensation
+          // every other agent-mint failure already ran above.
+          if (err instanceof DefinitionAssetUnresolvableError) {
+            return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
+          }
           throw err;
         }
 
@@ -1989,6 +1999,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   409,
                 );
               }
+              if (err instanceof DefinitionAssetUnresolvableError) {
+                return c.json(
+                  ErrorEnvelope("not_launchable", err.guidance),
+                  409,
+                );
+              }
               throw err;
             }
             continue;
@@ -2725,6 +2741,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ErrorEnvelope("not_launchable", err.resolutionMessage),
             409,
           );
+        }
+        if (err instanceof DefinitionAssetUnresolvableError) {
+          return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
         }
         throw err;
       }

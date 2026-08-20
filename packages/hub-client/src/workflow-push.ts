@@ -101,8 +101,24 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           args: ["commit", "-m", "Deploy the default workflow definition"],
         },
         {
+          // Forced deliberately: this asset repo is seed-owned (this
+          // pusher is its only writer), so `main` always carries
+          // exactly the canonical `workflow.json` this run computed.
+          // A plain push 409s as "non-fast-forward" the moment the
+          // remote's `main` shares no ancestry with this run's fresh
+          // clone — an existing asset whose repo was seeded through a
+          // different path, in particular — which would otherwise
+          // fail the entire seed on a re-run rather than repointing
+          // the ref it owns.
           label: "push",
-          args: ["-c", "credential.helper=", "push", authRemote, "HEAD:main"],
+          args: [
+            "-c",
+            "credential.helper=",
+            "push",
+            "--force",
+            authRemote,
+            "HEAD:main",
+          ],
         },
       ];
       for (const step of steps) {

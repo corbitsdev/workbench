@@ -32,6 +32,65 @@ export async function readDefinitionJSON(
 }
 
 /**
+ * Thrown by `resolveNewestReadableDefinitionJSON` when every candidate
+ * asset for a definition's name is unresolvable (DB/blob drift — a
+ * long-lived DB whose asset rows outlive the git repos they point at,
+ * or an asset row that predates a `.data` reset). Carries consumer
+ * language so an HTTP boundary can answer with a named 4xx instead of
+ * an unhandled 500, mirroring `InferenceResolutionError`'s split
+ * between the human `message` and the `guidance` a caller surfaces
+ * verbatim.
+ */
+export class DefinitionAssetUnresolvableError extends Error {
+  readonly definitionName: string;
+  readonly guidance: string;
+  constructor(definitionName: string) {
+    const guidance =
+      "This agent's definition needs re-publishing — run seed / republish.";
+    super(
+      `No resolvable asset for definition "${definitionName}" ` +
+        `(${String(guidance)})`,
+    );
+    this.name = "DefinitionAssetUnresolvableError";
+    this.definitionName = definitionName;
+    this.guidance = guidance;
+  }
+}
+
+/** One asset candidate for a definition's name, ordered newest-first
+ * by the caller (typically `createdAt desc`). */
+export type DefinitionAssetCandidate = {
+  readonly assetId: string;
+  readonly definitionName: string;
+};
+
+/**
+ * Resolves a definition's launch body by trying its asset candidates
+ * newest-first and returning the first one whose ref actually reads —
+ * a stale unresolvable asset never wins over a healthy newer one
+ * (CL-6357). Raises `DefinitionAssetUnresolvableError` only once every
+ * candidate has failed to resolve.
+ */
+export async function resolveNewestReadableDefinitionJSON(
+  assetService: AssetService,
+  candidates: readonly DefinitionAssetCandidate[],
+): Promise<{ assetId: string; definitionJSON: unknown }> {
+  for (const candidate of candidates) {
+    try {
+      const definitionJSON = await readDefinitionJSON(
+        assetService,
+        candidate.assetId,
+      );
+      return { assetId: candidate.assetId, definitionJSON };
+    } catch {
+      continue;
+    }
+  }
+  const definitionName = candidates[0]?.definitionName ?? "unknown";
+  throw new DefinitionAssetUnresolvableError(definitionName);
+}
+
+/**
  * The launch-relevant subset of a folded `WorkflowDefinition`'s single
  * `step` primitive: `AgentDefinition` itself is not JSON-portable (its
  * `toolFactories` are functions), so `@intx/workflow`'s real

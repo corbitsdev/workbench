@@ -18,6 +18,7 @@ import {
   readDefinitionJSON,
   readFoldedBody,
   resolveFoldedRunSessionId,
+  resolveNewestReadableDefinitionJSON,
   sendFoldedMail,
   wakeFoldedRun,
   FoldedBodySchema,
@@ -510,11 +511,50 @@ export function createHubChatPlatform(
         throw new Error(`No tenant "${input.tenantId}"`);
       }
 
-      const definitionJSON = await readDefinitionJSON(
-        deps.assetService,
-        definitionRow.assetId,
+      // CL-6357: a long-lived DB can carry a definition row whose asset
+      // repo has gone unresolvable (DB/blob drift — a `.data` reset
+      // that never touched Postgres) while a newer, healthy sibling
+      // under the same name already exists (a re-seed, typically).
+      // Resolution tries every deployed sibling under this name
+      // newest-first and uses the first one that actually reads — the
+      // specifically requested (possibly stale) row never wins over a
+      // healthy newer one. `resolveNewestReadableDefinitionJSON`
+      // raises the named `DefinitionAssetUnresolvableError` — mapped
+      // to a 4xx at the route boundary, never an unhandled 500 — only
+      // once every sibling has failed to resolve.
+      const siblingRows = await deps.db.query.workflowDefinition.findMany({
+        where: and(
+          eq(workflowDefinition.tenantId, input.tenantId),
+          eq(workflowDefinition.name, definitionRow.name),
+          eq(workflowDefinition.status, "deployed"),
+        ),
+        orderBy: desc(workflowDefinition.createdAt),
+      });
+      const candidateRows = siblingRows.filter(
+        (row): row is typeof row & { assetId: string } => row.assetId !== null,
       );
-      const foldedBody = readFoldedBody(definitionJSON);
+      const candidates =
+        candidateRows.length > 0
+          ? candidateRows.map((row) => ({
+              assetId: row.assetId,
+              definitionName: row.name,
+            }))
+          : [
+              {
+                assetId: definitionRow.assetId,
+                definitionName: definitionRow.name,
+              },
+            ];
+
+      const resolved = await resolveNewestReadableDefinitionJSON(
+        deps.assetService,
+        candidates,
+      );
+      const resolvedDefinitionRow =
+        candidateRows.find((row) => row.assetId === resolved.assetId) ??
+        definitionRow;
+
+      const foldedBody = readFoldedBody(resolved.definitionJSON);
       if (foldedBody.systemPrompt === "") {
         throw new Error(
           `Definition "${input.definitionId}" cannot be launched without ` +
@@ -537,7 +577,10 @@ export function createHubChatPlatform(
         tenantId: input.tenantId,
         instanceId,
         triggerAddress,
-        definitionId: input.definitionId,
+        // The resolved row, not necessarily `input.definitionId`: a
+        // later wake reads the asset back through this id, so it must
+        // always name a row whose asset actually resolves.
+        definitionId: resolvedDefinitionRow.id,
         persistExtra: async (tx) => {
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,

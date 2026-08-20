@@ -533,15 +533,15 @@ export type TriggerFieldsValidation =
 
 /**
  * The shape half of a workflow's declared `triggerFields` contract: every
- * required field must be present as a non-empty string. This is
- * definition-agnostic (a `kind: "agent"` field's value additionally has to
- * *resolve* to a real taskable definition, which needs a tenant DB lookup
- * only a host can do — see `apps/hub/src/index.ts`'s own
- * `validateRoutineInput`, which runs this check first and its own
- * resolution check second). Called at the routine-create boundary
- * (`@corbits/routines`' `deps.validateRoutineInput` port); the workflow's
- * own fire-time validation (`launchTask`'s definition checks) is the
- * second, authoritative line — this is the earlier, friendlier rejection.
+ * required field must be present as a non-empty string. NOT called at the
+ * routine-create boundary (CL-6358: inputs bind at USE, never at
+ * creation — see `validateTriggerFieldsAtCreate` below for that
+ * boundary's actual, more permissive check). This stricter form is for
+ * a context where "required" really does mean present right now: Myra's
+ * routine-drafting flow (`@corbits/routines`' `myra-drafting.ts`) checks
+ * the AI's own drafted trigger input against it, since a draft that left
+ * a required field blank is a drafting failure worth surfacing
+ * immediately, not an open input a person will fill in later.
  */
 export function validateTriggerFieldsInput(
   fields: readonly WorkflowTriggerField[],
@@ -554,6 +554,39 @@ export function validateTriggerFieldsInput(
       return {
         ok: false,
         message: `"${field.label}" is required`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * The create-time boundary check for a routine's stored `input`
+ * (CL-6358): inputs bind at USE, never at creation, so a required
+ * field with no value at all in `input` is never a create-time
+ * rejection — the seeded last-30-days-research preset's whole reason
+ * for existing is a required "Topic" left open until someone actually
+ * runs it. Only a value the caller explicitly provided gets checked,
+ * and only for basic shape (a non-empty string) — a key present but
+ * blank is a caller bug, not an open input, and still rejected.
+ * `kind: "agent"` resolution (does a provided value name a real
+ * taskable definition) is a separate, still-eager check a host layers
+ * on top (`apps/hub/src/index.ts`'s `routineInputValid`) since it
+ * needs a tenant DB lookup this function can't do. Fire-time
+ * validation (`launchTask`'s own definition checks) remains the
+ * authoritative required-field gate.
+ */
+export function validateTriggerFieldsAtCreate(
+  fields: readonly WorkflowTriggerField[],
+  input: Record<string, unknown>,
+): TriggerFieldsValidation {
+  for (const field of fields) {
+    if (!(field.key in input)) continue;
+    const value = input[field.key];
+    if (typeof value !== "string" || value.trim() === "") {
+      return {
+        ok: false,
+        message: `"${field.label}" must not be blank`,
       };
     }
   }

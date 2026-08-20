@@ -141,7 +141,7 @@ import {
 import {
   deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
-  validateTriggerFieldsInput,
+  validateTriggerFieldsAtCreate,
   workflowCatalogEntry,
   workflowDisplayName,
 } from "@corbits/workflow-catalog";
@@ -1967,13 +1967,16 @@ export async function createHub(config: HubConfig) {
     return deliveryWorkbenchRequiredForWorkflowName(row.name);
   }
   // Create-time boundary check for a routine's stored `input` against
-  // its own definition's declared trigger fields (shape, then — for an
-  // `"agent"`-kind field — that the value resolves to a real taskable
-  // definition). An unknown definitionId or asset name passes here
-  // (its 404 comes from `definitionInTenant` instead); a definition
-  // with no declared trigger fields accepts any input, same as today.
-  // This is the friendly early rejection only — `launchTask`'s own
-  // definition checks at fire time remain authoritative.
+  // its own definition's declared trigger fields. CL-6358: inputs bind
+  // at USE, never at creation — a required field with no value at all
+  // is never rejected here (`validateTriggerFieldsAtCreate` only
+  // checks a value the caller actually provided), only resolved
+  // further for an `"agent"`-kind field — that a provided value names
+  // a real taskable definition. An unknown definitionId or asset name
+  // passes here (its 404 comes from `definitionInTenant` instead); a
+  // definition with no declared trigger fields accepts any input, same
+  // as today. `launchTask`'s own definition checks at fire time remain
+  // the authoritative required-field gate.
   async function routineInputValid(
     tenantId: string,
     definitionId: string,
@@ -1990,7 +1993,10 @@ export async function createHub(config: HubConfig) {
     const entry = workflowCatalogEntry(row.name);
     if (entry?.triggerFields === undefined) return { ok: true };
 
-    const shapeResult = validateTriggerFieldsInput(entry.triggerFields, input);
+    const shapeResult = validateTriggerFieldsAtCreate(
+      entry.triggerFields,
+      input,
+    );
     if (!shapeResult.ok) return shapeResult;
 
     for (const field of entry.triggerFields) {

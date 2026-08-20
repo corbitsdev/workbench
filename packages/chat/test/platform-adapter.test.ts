@@ -33,7 +33,10 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { workbenchLaunch } from "../src/schema";
-import { foldedRun } from "@corbits/folded-runs";
+import {
+  foldedRun,
+  DefinitionAssetUnresolvableError,
+} from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
@@ -154,6 +157,7 @@ function createFakeDb(opts: {
         status: string;
         name: string;
         description?: string;
+        assetId?: string | null;
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
@@ -365,7 +369,19 @@ function createFakeSessionService(): SessionService & {
   };
 }
 
-function createFakeAssetService(opts: { assetBlob?: Uint8Array } = {}) {
+function createFakeAssetService(
+  opts: {
+    assetBlob?: Uint8Array;
+    /**
+     * Per-asset overrides for `readAssetBlob`: an unresolvable ref
+     * (CL-6357) is a fake `Error`, a resolvable one a real blob. Falls
+     * back to `assetBlob` (or an empty blob) for any assetId not
+     * listed here, matching every pre-existing test's single-asset
+     * shape.
+     */
+    blobsByAssetId?: Record<string, Uint8Array | "unresolvable">;
+  } = {},
+) {
   const createAssetCalls: unknown[] = [];
   const readAssetBlobCalls: unknown[] = [];
   return {
@@ -387,9 +403,15 @@ function createFakeAssetService(opts: { assetBlob?: Uint8Array } = {}) {
     async populateAsset() {
       return { commitSha: "unused" };
     },
-    async readAssetBlob(params: unknown) {
+    async readAssetBlob(params: { assetId: string; path: string }) {
       readAssetBlobCalls.push(params);
-      return opts.assetBlob ?? new Uint8Array();
+      const override = opts.blobsByAssetId?.[params.assetId];
+      if (override === "unresolvable") {
+        throw new Error(
+          `readAssetBlob: asset ${params.assetId} refs/heads/main not resolvable`,
+        );
+      }
+      return override ?? opts.assetBlob ?? new Uint8Array();
     },
     async listAssetBlobs() {
       return [];
@@ -1070,6 +1092,131 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_echo",
       }),
     ).rejects.toThrow(/not in a launchable state/);
+  });
+
+  // CL-6357: a long-lived dev DB can carry a definition row whose asset
+  // repo has gone unresolvable (DB/blob drift) alongside a fresher,
+  // healthy sibling under the same name — a re-seed, say. Resolution
+  // must prefer that newest-healthy sibling rather than dying on the
+  // specific (possibly stale) row the caller asked for.
+  test("launchInvite resolves the newest healthy sibling asset over the requested definition's own stale one", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowDefinitionRow: {
+        id: "wfd_stale",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_stale",
+      },
+      workflowDefinitionRows: [
+        // Newest first, matching `orderBy: desc(createdAt)`.
+        {
+          id: "wfd_fresh",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "assistant",
+          assetId: "asst_fresh",
+        },
+        {
+          id: "wfd_stale",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "assistant",
+          assetId: "asst_stale",
+        },
+      ],
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const assetService = createFakeAssetService({
+      blobsByAssetId: {
+        asst_stale: "unresolvable",
+        asst_fresh: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
+      },
+    });
+
+    const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
+      toolGrantsForPins: () => [],
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService: createFakeSessionService(),
+      assetService,
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    const launched = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_stale",
+    });
+
+    expect(launched.instanceId).toMatch(/^run_/);
+    // The minted run's definitionId is the resolved healthy sibling,
+    // not the stale requested id — every later wake reads the asset
+    // through this row, so it must be one that actually resolves.
+    const runInsert = db.inserted.find((row) => row.table === workflowRun);
+    expect(runInsert?.values).toMatchObject({ definitionId: "wfd_fresh" });
+  });
+
+  // A dev DB whose asset rows have all drifted from `.data` (every
+  // sibling under the name unresolvable) must answer a named error a
+  // caller can map to a 4xx, never let the raw `readAssetBlob` failure
+  // escape as an unhandled 500.
+  test("launchInvite raises DefinitionAssetUnresolvableError, not a raw 500, when no sibling asset resolves", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowDefinitionRow: {
+        id: "wfd_dead",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_dead",
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_dead",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "assistant",
+          assetId: "asst_dead",
+        },
+      ],
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const assetService = createFakeAssetService({
+      blobsByAssetId: { asst_dead: "unresolvable" },
+    });
+
+    const platform = createHubChatPlatform({
+      hubPublicKey: "hub-key",
+      toolGrantsForPins: () => [],
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService: createFakeSessionService(),
+      assetService,
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_dead",
+      }),
+    ).rejects.toThrow(DefinitionAssetUnresolvableError);
   });
 
   test("launchInvite fails loud when no such definition exists for the tenant", async () => {
