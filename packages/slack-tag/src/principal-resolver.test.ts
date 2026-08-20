@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
+import { UNRESOLVED_MESSAGE } from "corbits-tag/interchange";
 import type { UnresolvedReason } from "corbits-tag/interchange";
 
 // createAutoProvisionPrincipalResolver's whole job is a policy decision on
@@ -37,7 +38,13 @@ let provisionCalls: ProvisionCall[];
 let provisionShouldThrow: boolean;
 let tenantLookupResult: { id: string; slug: string } | undefined;
 
+// bun's mock.module replaces the module for EVERY later importer in the
+// same test-run process, across files — so this mock must carry every
+// export a sibling module under test reads (dispatch.ts imports
+// UNRESOLVED_MESSAGE), not only the two these tests stub. The real value
+// is captured by the import above before the mock takes effect.
 mock.module("corbits-tag/interchange", () => ({
+  UNRESOLVED_MESSAGE,
   createPrincipalResolver: () => async () => nextResolution,
   provisionPrincipal: async (_db: unknown, input: ProvisionCall) => {
     provisionCalls.push(input);

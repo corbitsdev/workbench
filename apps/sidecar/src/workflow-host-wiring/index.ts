@@ -1150,25 +1150,32 @@ export function createSidecarDeployRouter(deps: {
       }
     }
 
-    // Reject a re-deploy of an address already live OR mid-deploy in this
-    // process BEFORE touching any durable state. The durable writes below (the
-    // restore record, workflow.json, step grants) are destructive overwrites of
-    // state owned by whatever deployment currently holds the address;
-    // overwriting is only legal when this deploy owns the address.
-    // `activeSupervisors` catches an address whose deploy has completed;
-    // `reservingDeployAddresses` catches one whose deploy is still in flight.
-    // The map is populated only after `spawn` succeeds, so the has-check alone
-    // leaves a window in which two frames both pass and the loser's catch below
-    // deletes the winner's live record; the reservation set closes it. A
-    // re-deploy after `undeploy` passes: `undeploy` drops the
-    // `activeSupervisors` entry, and a failed or completed deploy has already
-    // cleared its reservation.
-    if (
-      activeSupervisors.has(frame.agentAddress) ||
-      reservingDeployAddresses.has(frame.agentAddress)
-    ) {
+    // A re-deploy of an address with a live supervisor acks idempotently,
+    // BEFORE touching any durable state: the resident deployment already
+    // owns the address, its persisted key is what reconnect challenges
+    // sign with, and nothing below may overwrite its repo state. Acking
+    // (rather than rejecting) matters because the hub's deploy-reject
+    // handler unroutes the address — a wake racing a hub-restart
+    // reconnect would otherwise tear down the just-verified route and
+    // every later wake would re-trip this same guard, a permanent
+    // wake/reject loop against a run the sidecar never stopped.
+    if (activeSupervisors.has(frame.agentAddress)) {
+      const { keyPair } = await deps.keyStore.loadOrGenerateKey(
+        frame.agentAddress,
+      );
+      return { publicKey: hexEncode(keyPair.publicKey) };
+    }
+    // A deploy still in flight for the address stays a hard reject: two
+    // concurrent frames racing the same address must have one loser, or
+    // the loser's cleanup deletes the winner's live record. The
+    // reservation set closes the window `activeSupervisors` alone leaves
+    // (it is populated only after `spawn` succeeds). A re-deploy after
+    // `undeploy` passes: `undeploy` drops the `activeSupervisors` entry,
+    // and a failed or completed deploy has already cleared its
+    // reservation.
+    if (reservingDeployAddresses.has(frame.agentAddress)) {
       throw new Error(
-        `sidecar deploy router: ${frame.agentAddress} is already deployed; undeploy it before redeploying`,
+        `sidecar deploy router: a deploy is already in flight for ${frame.agentAddress}`,
       );
     }
 
