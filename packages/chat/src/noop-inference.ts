@@ -1,13 +1,9 @@
 // A hub-served stand-in for a real Anthropic endpoint, spoken by
-// workbench-host anchors that never reply. A workbench anchor's mailbox is
-// the workbench's own timeline and its system prompt forbids replying
-// (see `workbench-workflow.ts`) — every message it receives still
-// triggers a real inference turn under the ordinary launch path,
-// which burns a live model call whose output is always discarded.
-// `platform-adapter.ts` pins a workbench host's `InferenceSource` at
-// this endpoint instead of a catalog-resolved one, so the turn
-// completes instantly against a constant reply rather than reaching a
-// real provider.
+// agents that must never produce text: `workflows/heartbeat` and
+// `workflows/workbench-digest` pin their `ModelSource` here (see
+// `@corbits/hub-client`'s `seed.ts`) so their scheduled turns complete
+// instantly against a constant empty reply instead of burning a live
+// model call whose output would be discarded.
 //
 // The wire shape matches exactly what `vendor/intx/inference/src/providers/anthropic.ts`'s
 // `parseResponse` accepts (see that file's `AnthropicSSEEvent` union,
@@ -18,15 +14,10 @@
 // number), then `message_stop`. `@intx/inference`'s `parseSSE` (see
 // that file) needs no `[DONE]` sentinel — the stream simply ends.
 //
-// The delta's text is deliberately empty, not merely short: a workbench
-// anchor's `connector.reply` handling (`chat-orchestrator.ts`'s
-// `connectorReplyContent`) treats any *non-empty* turn output as a
-// real reply to post back into a workbench's mailbox — exactly the
-// posture a real model obeying "never reply" earns by producing no
-// text. A short-but-nonempty placeholder (e.g. ".") would satisfy the
-// wire schema just as well but would make every anchor "reply" with
-// that placeholder on every message, corrupting the very timeline
-// this endpoint exists to stop burning inference over.
+// The delta's text is deliberately empty, not merely short: an empty
+// reply is exactly the posture a real model obeying "never reply"
+// would earn by producing no text, so nothing downstream mistakes the
+// constant for a real answer.
 import { Hono } from "hono";
 
 const NOOP_REPLY_TEXT = "";

@@ -1149,11 +1149,10 @@ export async function createHub(config: HubConfig) {
   const writeClaims = createDrizzleWriteClaimStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
-  // same way it reaches a real provider's API. `config.baseUrl` (not
-  // `localhost`) is what makes the URL usable: the sidecar that
-  // deploys a workbench host's instance is a separate process (often a
-  // separate machine) from this hub, so only the hub's own public
-  // origin resolves for it.
+  // same way it reaches a real provider's API. Pinned by the heartbeat
+  // and workbench-digest workflows' seeds (`@corbits/hub-client`), whose
+  // agents never produce text. `config.baseUrl` (not `localhost`) is
+  // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
   const chatTenancy = createDrizzleWorkbenchTenancyStore(db, {
     conditionRegistry: chatConditionRegistry,
@@ -1165,10 +1164,8 @@ export async function createHub(config: HubConfig) {
     "/api/workbench-tenancies",
     createWorkbenchTenancyRoutes({ tenancy: chatTenancy }),
   );
-  // Shared by the chat platform's invite-launch fallback below and
-  // `chatDeps.workbenchHostInferencePreferences` further down — one
-  // resolver, derived once, rather than two independent instances of
-  // the same tenant-catalog derivation drifting apart.
+  // The chat platform's invite-launch fallback: a definition with no
+  // model requirements of its own resolves the tenant-catalog default.
   const workbenchHostInferencePreferencesResolver =
     createWorkbenchHostInferencePreferencesResolver((tenantId) =>
       listDefaultInferencePreferences(db, tenantId),
@@ -1188,7 +1185,6 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
-    noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is a genuinely
@@ -1430,13 +1426,6 @@ export async function createHub(config: HubConfig) {
     }),
     isInvitableDefinition: isPickerListableDefinition,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-    // Derived per tenant, per workbench creation, from that tenant's own
-    // connected catalog providers (see `@corbits/chat`'s
-    // `createWorkbenchHostInferencePreferencesResolver`) — never a fixed
-    // provider/model pair, so a bench whose only credential is, say,
-    // OpenRouter still gets a workbench host that can resolve a source.
-    workbenchHostInferencePreferences:
-      workbenchHostInferencePreferencesResolver,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
@@ -1497,9 +1486,6 @@ export async function createHub(config: HubConfig) {
     chatTenancy,
     workbenchSubscribers,
     turnQueue,
-    workbenchHostInferencePreferences:
-      chatDeps.workbenchHostInferencePreferences,
-    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
   });
   // Tells the routine trigger popover whether a Slack-bound webhook
   // trigger is honestly offerable in this deployment — no session or
@@ -2542,14 +2528,7 @@ export async function createHub(config: HubConfig) {
       deliverySpace: {
         createDeliverySpace: (input) =>
           provisionSpaceWorkbench(
-            {
-              tenancy: chatTenancy,
-              platform: chatPlatform,
-              store: chatStore,
-              workbenchHostInferencePreferences:
-                chatDeps.workbenchHostInferencePreferences,
-              turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-            },
+            { tenancy: chatTenancy, store: chatStore },
             input,
           ),
       },
@@ -2633,14 +2612,7 @@ export async function createHub(config: HubConfig) {
       deliverySpace: {
         createDeliverySpace: (input) =>
           provisionSpaceWorkbench(
-            {
-              tenancy: chatTenancy,
-              platform: chatPlatform,
-              store: chatStore,
-              workbenchHostInferencePreferences:
-                chatDeps.workbenchHostInferencePreferences,
-              turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-            },
+            { tenancy: chatTenancy, store: chatStore },
             input,
           ),
       },
@@ -2676,7 +2648,7 @@ export async function createHub(config: HubConfig) {
   // task plan via `@corbits/task-planner`, dispatched exactly like a
   // manually-launched task. Every inventory lister below generalizes a
   // pattern that already lives elsewhere in this composition root
-  // (`isConversationalAgentDefinition`, `chatDeps.workbenchHostInferencePreferences`'s
+  // (`isConversationalAgentDefinition`, `workbenchHostInferencePreferencesResolver`'s
   // per-tenant connected-provider derivation) — this package owns the
   // inventory's shape, never the listing logic.
   const memoryToolPackageName = "@corbits/memory-tools";

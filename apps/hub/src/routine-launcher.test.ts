@@ -203,7 +203,6 @@ describe("createHubRoutineLauncher", () => {
       instanceId: result.runId,
       currentRunId: result.runId,
       foldedBody: FOLDED_BODY,
-      noopInference: false,
     });
   });
 

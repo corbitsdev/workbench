@@ -53,9 +53,6 @@ describe("workbenchLaunchPersistExtra", () => {
       // `currentRunId` while the stable id never moves.
       currentRunId: "wfr_standalone1",
       foldedBody: FOLDED_BODY,
-      // Never a workbench host: a standalone launch's replies are real,
-      // so every wake/relaunch resolves the tenant catalog.
-      noopInference: false,
     });
   });
 });

@@ -30,10 +30,6 @@ import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
  * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
  * records a failed occurrence and leaves the section subscribed, so one
  * bad turn kills neither the agent nor the conversation.
- *
- * The workbench HOST alone keeps the folded step mode (see
- * `./platform-adapter.ts`'s `WORKBENCH_HOST_MODE`): it holds a mailbox
- * and never takes a turn, so it has no occurrences to name.
  */
 export const AGENT_SECTION_MODE: FoldedRunMode = {
   kind: "section",
@@ -60,7 +56,6 @@ export function workbenchLaunchPersistExtra(input: {
       currentRunId: input.instanceId,
       foldedBody: input.foldedBody,
       createdAt: new Date(),
-      noopInference: false,
     });
   };
 }

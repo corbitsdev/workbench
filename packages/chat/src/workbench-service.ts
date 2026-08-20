@@ -6,8 +6,6 @@
 // caller (like a routine) that names no existing destination. Each
 // depends only on the platform/store seams it actually calls, not the
 // full `ChatPlatform`/`ChatStore`.
-import { formatRunAddress } from "@intx/types";
-import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { InferenceResolutionError } from "@corbits/folded-runs";
@@ -33,10 +31,6 @@ import {
   participantsOf,
   resolveContextWindow,
 } from "./workbench-settings";
-import {
-  buildWorkbenchHostWorkflow,
-  serializeWorkbenchHostWorkflow,
-} from "./workbench-workflow";
 import { presetForKind } from "./kinds";
 import type {
   WorkbenchLauncher,
@@ -60,11 +54,7 @@ export type ProvisionSpaceWorkbenchDeps = {
     WorkbenchTenancyStore,
     "createWorkbenchTenant" | "compensateWorkbenchTenant"
   >;
-  readonly platform: WorkbenchLauncher;
   readonly store: Pick<ChatStore, "createWorkbenchSettings">;
-  readonly workbenchHostInferencePreferences?:
-    ((tenantId: string) => Promise<readonly InferencePreference[]>) | undefined;
-  readonly turnTimeoutMs: number;
 };
 
 export type ProvisionSpaceWorkbenchInput = {
@@ -82,14 +72,11 @@ export type ProvisionSpaceWorkbenchResult = {
 
 /**
  * Provisions a brand-new `kind: "workbench"` space (mint the child
- * tenant, launch its workbench host, write its base settings), the same
- * three steps `POST /workbenches` runs for a named space — used by a
- * caller (a routine's create route, chiefly) that needs to hand a
- * fresh destination to something else in the same request rather than
- * collecting one from a picker first. Mirrors `POST /workbenches`'s own
- * mint-then-compensate shape: the tenant mint is one transaction, the
- * host launch is a separate step, and a launch failure is compensated
- * (the orphaned tenant deleted) before the error propagates.
+ * tenant, write its base settings), the same steps `POST /workbenches`
+ * runs for a named space — used by a caller (a routine's create route,
+ * chiefly) that needs to hand a fresh destination to something else in
+ * the same request rather than collecting one from a picker first. A
+ * workbench is data: nothing launches or deploys here.
  *
  * Returns a `compensate` callback rather than compensating on every
  * failure itself: the caller may still fail its own next step (e.g.
@@ -101,16 +88,6 @@ export async function provisionSpaceWorkbench(
   input: ProvisionSpaceWorkbenchInput,
 ): Promise<ProvisionSpaceWorkbenchResult> {
   const workbenchId = generateId("workflowRun");
-  const triggerAddress = formatRunAddress(workbenchId, input.tenantDomain);
-  const inferencePreferences =
-    (await deps.workbenchHostInferencePreferences?.(input.tenantId)) ?? [];
-  const definition = serializeWorkbenchHostWorkflow(
-    buildWorkbenchHostWorkflow({
-      triggerAddress,
-      inferencePreferences,
-      turnTimeoutMs: deps.turnTimeoutMs,
-    }),
-  );
 
   const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
     parentTenantId: input.tenantId,
@@ -119,17 +96,22 @@ export async function provisionSpaceWorkbench(
     creatorUserId: input.creatorUserId,
   });
 
+  const preset = presetForKind("workbench");
   try {
-    await deps.platform.launchWorkbench({
+    await deps.store.createWorkbenchSettings({
       tenantId: input.tenantId,
-      creatorPrincipalId: input.creatorPrincipalId,
       workbenchId,
-      triggerAddress,
-      definition,
+      settings: {
+        "chat/kind": "workbench",
+        "chat/pinned": preset.pinned,
+        "chat/participants": [],
+        "chat/name": input.name,
+      },
+      updatedBy: input.creatorPrincipalId,
     });
   } catch (err) {
     provisionLog.error(
-      "Workbench host launch failed for {workbenchId} after minting " +
+      "Workbench settings write failed for {workbenchId} after minting " +
         "{tenantId}; compensating the orphaned tenant",
       { workbenchId, tenantId: workbenchTenant.tenantId, err },
     );
@@ -138,27 +120,14 @@ export async function provisionSpaceWorkbench(
     } catch (compensationErr) {
       provisionLog.error(
         "Compensation failed for orphaned tenant {tenantId} after " +
-          "workbench {workbenchId}'s launch failure; this tenant is now a " +
-          "privileged orphan with no workbench pointing at it and " +
+          "workbench {workbenchId}'s settings failure; this tenant is now " +
+          "a privileged orphan with no workbench pointing at it and " +
           "requires manual cleanup",
         { workbenchId, tenantId: workbenchTenant.tenantId, compensationErr },
       );
     }
     throw err;
   }
-
-  const preset = presetForKind("workbench");
-  await deps.store.createWorkbenchSettings({
-    tenantId: input.tenantId,
-    workbenchId,
-    settings: {
-      "chat/kind": "workbench",
-      "chat/pinned": preset.pinned,
-      "chat/participants": [],
-      "chat/name": input.name,
-    },
-    updatedBy: input.creatorPrincipalId,
-  });
 
   return {
     workbenchId,

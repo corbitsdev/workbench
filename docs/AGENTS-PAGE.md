@@ -25,9 +25,10 @@ against the tenant's own definitions listing is marked **Unlinked
 definition** rather than hidden — the page never silently drops a row it
 cannot fully explain.
 
-Every list excludes the chat surface's workbench-host machinery
-(`@corbits/chat/workbench-host-naming`'s `isWorkbenchHostDefinitionName`): a
-workbench's anchor run is internal plumbing, not an agent a person created.
+Every list excludes legacy workbench-host definitions
+(`@corbits/chat/workbench-host-naming`'s `isWorkbenchHostDefinitionName`):
+pre-CL-6330 databases may still carry those rows, and they were internal
+plumbing, not agents a person created.
 
 ## Creating an agent
 
