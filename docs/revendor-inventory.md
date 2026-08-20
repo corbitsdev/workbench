@@ -311,3 +311,72 @@ still applies to all 20 rows), but it does close the gap to the run-first /
 self-anchored-run model the workbench-side workarounds were built against,
 which is where the eventual retirement payoff sits once the STILL-OPEN items
 above get their own passes.
+
+## CL-6324 re-pin: `59f5e7b9` → `4ed8baf4` (the workflow.json retirement)
+
+The vendored trees are re-copied at upstream `main` tip `4ed8baf4`
+(2026-08-19, 45 commits on). `VENDORED.md` is the pin of record. This
+section is the map of what the bump costs on the workbench side, because
+the app-side conversion does **not** land with it.
+
+### What landed cleanly
+
+- All 21 `vendor/intx/*` rows re-copied. Only nine trees actually changed
+  (`hub-sessions`, `workflow-host`, `workflow`, `workflow-deploy`, `types`,
+  `hub-api`, `db`, `agent`, `hub-agent`); the other twelve are byte-identical
+  at both commits and were re-pinned so the ledger records one commit rather
+  than a mix (this also collapses `inference-catalog`'s separate `5d2aa94a`
+  pin).
+- Every workbench-local delta re-applied unchanged — upstream subsumed none
+  of them, and none of the five files they touch was modified upstream in the
+  45 commits: the `inference.usage` forward, `ownsWorkflowRunRepo`,
+  `hasConversationText`, and the `needs-you` approval-route carve-out. Their
+  tests pass.
+- `packages/folded-runs`' `wrapHarnessAsSingleStepWorkflow` call moved onto
+  `buildSingleStepAgentDefinition`, which survives the deletion.
+
+### What the bump breaks, and why it is one migration
+
+Upstream retired the on-disk `workflow.json`. A deployed workflow's
+definition is no longer serialized into the deploy tree and re-read by the
+sidecar; it is evaluated from the deployment's own **source closure** and
+re-verified in-child against the approved wire hash. Source-ref is now the
+only deploy lineage, and the live-authored and instance chains are deleted:
+`createWorkflowDeployOrchestrator`, `SessionService.deploySingleStepAtHead`,
+`SessionService.deployInstanceAtHead`, `wrapHarnessAsSingleStepWorkflow`,
+`createWorkflowSpawnChild`, `createWorkflowSpawnSuspendableChild`,
+`loadVerifiedWorkflowDefinition`, and the `definition` field on the deploy
+frame. `SpawnTimeEnv` drops `referencedDefinitionHashes` and gains
+`closurePackageDir`; `RunWorkflowChildBindings` drops
+`workflowDefinitionRepoId`.
+
+Workbench has no code-sourced deploy front. Every run it launches — chat,
+tasks, routines, agent lifecycle — goes through `packages/folded-runs`'
+`deployAtHead`, which synthesizes a single-step definition in memory from a
+system prompt plus tool-package pins and hands it to `deploySingleStepAtHead`.
+The new front (`deployWorkflowFromSource` / `installAndApproveWorkflowSource`
+/ `deployPreparedCodeSourcedWorkflow`) takes a registry `name@range` pin or
+an asset tarball and resolves a dependency closure from it. Converting means
+giving a folded run a real source package, not renaming a call.
+
+That is why the remaining breakage cannot be split by tree:
+`hub-sessions` (deploy front), `workflow-deploy` (orchestrator), `types`
+(deploy frame), `workflow-host` (child definition load), `db` (frozen
+approval bundle, migrations 0082/0083) and `hub-api` (run trigger) all move
+together, and `apps/sidecar` reads the frame both sides write. Leaving any
+one on the old pin leaves the frame contract split down the middle.
+
+Open conversion sites, all blocked on that one decision:
+
+| Site                                                                                    | What it needs                                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`                        | A code-sourced deploy for the folded single-step run — the root blocker.                          |
+| `apps/sidecar/src/workflow-host-wiring/index.ts`, `asset-materialization.ts`            | Stop writing `workflow.json` and stop reading `projection.definition`; stage the closure instead. |
+| `apps/sidecar/src/workflow-substrate-factory/index.ts`, `child-runtime.ts`, `config.ts` | Drop `WORKFLOW_DEFINITION_REPO_ID`/`_REF`; in-memory child spawn; `closurePackageDir` plumbing.   |
+| `apps/sidecar/src/workflow-deployment-record.ts`                                        | Drop `referencedDefinitionHashes`; carry the grant-walk snapshot.                                 |
+
+Upstream's own diff over the same span is the reference implementation:
+`apps/sidecar/src/workflow-substrate-factory.ts` and
+`workflow-host-wiring.ts` at `4ed8baf4` show every one of these conversions
+against the same contracts, and `apps/sidecar`'s `VENDORED.md` row stays at
+`59f5e7b9` until workbench's fork is reconciled with them.
