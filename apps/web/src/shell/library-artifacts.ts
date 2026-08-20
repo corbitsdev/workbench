@@ -10,6 +10,8 @@
 import type { ArtifactSummary } from "@corbits/artifact-ui";
 import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 
+import { FILES_PATH_PREFIX } from "../path-ids";
+
 /** List row from the hub artifacts surface (content omitted). */
 export type ArtifactListRow = {
   readonly id: string;
@@ -109,4 +111,36 @@ export function artifactUploadToast(names: readonly string[]): string {
   return only !== undefined && names.length === 1
     ? `Uploaded · ${only}`
     : `Uploaded ${names.length} files`;
+}
+
+/**
+ * The bulk/context-menu operation set this file adopts from the shared
+ * selection system (CL-6423) — deliberately just the one real, already-
+ * shippable operation: every other candidate (delete, move, rename,
+ * download) has no backend route or store method behind it yet (see
+ * `packages/artifacts-hub/src/routes.ts` and `@corbits/artifacts`'
+ * `ArtifactStore`), so wiring a button for any of them would be exactly the
+ * dead/no-op control this adoption is required to avoid. `BulkActionBar`
+ * and the shell context menu's `artifact` target both read this same
+ * constant, which is what the parity test asserts against.
+ */
+export const LIBRARY_BULK_OPERATION_IDS = ["copy-link"] as const;
+
+/** `/files/a/:id` (CL-6015) — the one canonical deep link a file has. */
+export function libraryArtifactDeepLink(id: string): string {
+  return `${FILES_PATH_PREFIX}/a/${encodeURIComponent(id)}`;
+}
+
+/** Copies one or more files' canonical links, newline-joined, to the
+ * clipboard — the same `copyLink` idiom already used for workbenches,
+ * routines, and insight runs, extended to a whole selection. */
+export async function copyArtifactLinks(ids: readonly string[]): Promise<void> {
+  const urls = ids.map(
+    (id) => `${window.location.origin}${libraryArtifactDeepLink(id)}`,
+  );
+  await navigator.clipboard.writeText(urls.join("\n"));
+}
+
+export function copyArtifactLinksToastLabel(count: number): string {
+  return count === 1 ? "Link copied" : `${count} links copied`;
 }
