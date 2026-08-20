@@ -1,0 +1,235 @@
+// Screen 1 of the approved mock (CL-6342): a one-column row list — no card
+// grid, no second "or start blank" branch. Every assertion here pins the
+// mock's own spec note: a row is always selected on entry so "Create
+// workbench" starts enabled, the disabled row is a row (not a ghost
+// card), and picking "Code review" tags the minted workbench rather than
+// leaving it blank.
+
+import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+
+import { BenchProvider } from "../src/bench-context";
+import { NavigationProvider } from "../src/navigation";
+import { NewWorkbenchPickerRoute } from "../src/pages/new-workbench-picker";
+import { TestQueryProvider } from "./test-query-provider";
+
+const realFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const MEMBERSHIP = {
+  data: [
+    {
+      principalId: "prn_1",
+      tenantId: "tnt_1",
+      tenantName: "Corbits Bench",
+      tenantSlug: "corbits-bench",
+      kind: "user",
+      status: "active",
+      roles: [],
+    },
+  ],
+  nextCursor: null,
+};
+
+type RecordedCall = { readonly path: string; readonly init?: RequestInit };
+
+function stubFetch(
+  extra: (path: string, init?: RequestInit) => Response | undefined,
+): RecordedCall[] {
+  const calls: RecordedCall[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = typeof input === "string" ? input : String(input);
+    calls.push(init === undefined ? { path } : { path, init });
+    if (path.includes("/api/me/principals")) {
+      return Promise.resolve(json(MEMBERSHIP));
+    }
+    const response = extra(path, init);
+    if (response !== undefined) return Promise.resolve(response);
+    throw new Error(`unexpected fetch: ${path}`);
+  }) as typeof fetch;
+  return calls;
+}
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+afterEach(() => {
+  if (root !== null) {
+    act(() => root?.unmount());
+    root = null;
+  }
+  if (container !== null) {
+    container.remove();
+    container = null;
+  }
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const settle = () => act(() => sleep(10));
+
+async function renderPicker(
+  navigate: (to: string) => void = () => undefined,
+): Promise<void> {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <TestQueryProvider>
+        <NavigationProvider navigate={navigate}>
+          <BenchProvider>
+            <NewWorkbenchPickerRoute />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+  });
+  for (let i = 0; i < 20; i++) {
+    await settle();
+    if (container.querySelector('[role="radiogroup"]') !== null) break;
+  }
+}
+
+describe("NewWorkbenchPickerRoute", () => {
+  test("is the row list the mock specs: three rows, no card grid", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    const group = container?.querySelector('[role="radiogroup"]');
+    expect(group).not.toBeNull();
+    expect(group?.getAttribute("aria-label")).toBe("Workbench kind");
+
+    const radios = container?.querySelectorAll('[role="radio"]');
+    expect(radios?.length).toBe(2);
+    expect(container?.textContent).toContain("Code review");
+    expect(container?.textContent).toContain("Just start talking");
+    expect(container?.textContent).toContain("More kinds soon");
+  });
+
+  test("Code review is selected on entry, so Create workbench starts enabled", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    const rows = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [],
+    );
+    const codeReview = rows.find((row) =>
+      row.textContent?.includes("Code review"),
+    );
+    expect(codeReview?.getAttribute("aria-checked")).toBe("true");
+    expect(codeReview?.textContent).toContain("Selected");
+
+    const createButton = Array.from(
+      container?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Create workbench");
+    expect(createButton?.disabled).toBe(false);
+  });
+
+  test("the third row is disabled, not selectable, and carries no radio role", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    const disabledRow = Array.from(
+      container?.querySelectorAll('[aria-disabled="true"]') ?? [],
+    ).find((row) => row.textContent?.includes("More kinds soon"));
+    expect(disabledRow).not.toBeUndefined();
+    expect(disabledRow?.getAttribute("role")).not.toBe("radio");
+    expect(container?.querySelectorAll('[role="radio"]').length).toBe(2);
+  });
+
+  test("clicking a row switches the selection", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    const rows = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [],
+    );
+    const justTalk = rows.find((row) =>
+      row.textContent?.includes("Just start talking"),
+    );
+    await act(async () => {
+      justTalk?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(justTalk?.getAttribute("aria-checked")).toBe("true");
+    const codeReview = rows.find((row) =>
+      row.textContent?.includes("Code review"),
+    );
+    expect(codeReview?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("creating with Code review selected mints a workbench and tags it, then navigates in", async () => {
+    const calls = stubFetch((path, init) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({
+          data: [
+            {
+              id: "wfd_assistant",
+              tenantId: "tnt_1",
+              name: "assistant",
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        });
+      }
+      if (path.endsWith("/chat/workbenches") && init?.method === "POST") {
+        return json({
+          id: "chan_new",
+          title: "New Workbench",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan_new/settings")) {
+        return json({
+          id: "chan_new",
+          title: "New Workbench",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+          settings: { "chat/purpose": "Code review" },
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      return undefined;
+    });
+
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
+
+    const createButton = Array.from(
+      container?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Create workbench");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(navigated).toEqual(["/w/chan_new"]);
+    const settingsPatch = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches/chan_new/settings"),
+    );
+    expect(JSON.parse(String(settingsPatch?.init?.body))).toEqual({
+      "chat/purpose": "Code review",
+    });
+  });
+});

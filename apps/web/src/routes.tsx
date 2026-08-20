@@ -36,6 +36,10 @@ import {
 const HomeRoute = lazy(async () => ({
   default: (await import("./pages/home-page")).HomeRoute,
 }));
+const NewWorkbenchPickerRoute = lazy(async () => ({
+  default: (await import("./pages/new-workbench-picker"))
+    .NewWorkbenchPickerRoute,
+}));
 const ChatPage = lazy(async () => ({
   default: (await import("./pages/chat-page")).ChatPage,
 }));
@@ -62,6 +66,12 @@ export const ONBOARDING_PATH = "/onboarding";
 
 /** Settings path — sidebar footer + settings page. */
 export const SETTINGS_PATH = "/settings";
+
+/** The template picker (CL-6342) — every "+ New workbench" affordance
+ * (sidebar, command palette) hops here first; picking a row is what
+ * actually mints the workbench. Not in `NAV_ROUTES`: it has no sidebar
+ * row of its own, only the "+" control and the palette reach it. */
+export const NEW_WORKBENCH_PATH = "/new";
 
 export type AppRoute = {
   readonly path: string;
@@ -122,6 +132,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     icon: <MessageSquare />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
+  },
+  {
+    path: NEW_WORKBENCH_PATH,
+    label: "New workbench",
+    icon: <MessageSquare />,
+    render: () => <NewWorkbenchPickerRoute />,
   },
   {
     path: WORKBENCH_PATH_PREFIX,
