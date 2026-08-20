@@ -41,14 +41,12 @@ export type CanvasArtifactContent = {
  * shared workbenches from a `ProfileSubject`'s address rather than being
  * handed pre-resolved content. */
 export type RoutinePanelSubject = {
-  /** Opens straight to the panel's default list view — the workbench's
-   * active routines, with a "New routine" row at the top — instead of a
-   * specific routine's editor. The header's Routines affordance and the
-   * `/run` composer command both open this; `routineId` is ignored when
-   * present. Omitted (or a `routineId` given instead) opens the editor
-   * directly, the same way every pre-existing caller (routines-page's own
-   * "New routine"/"Edit" actions, "Make this a routine") already does. */
-  readonly view?: "list" | "runs";
+  /** Always opens the editor: a specific routine (`routineId` set) or a
+   * brand-new one (`routineId` omitted or `null`) — routines-page's own
+   * "New routine"/"Edit" actions, "Make this a routine", the composer's
+   * `/routine` command, and "New routine in this space" (CL-6362:
+   * browsing/running existing routines moved to the global `/routines`
+   * page, so this pane no longer has a list mode). */
   readonly routineId?: string | null;
   /** Seeds the Name/Instruction fields the instant a brand-new panel opens
    * (`routineId: null` only) — "Make this a routine" (a completed task

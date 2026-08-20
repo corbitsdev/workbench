@@ -14,11 +14,9 @@
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import {
-  ChartColumn,
   ChevronDown,
   CircleAlert,
   MessageSquare,
-  Repeat,
   SlidersHorizontal,
   UserPlus,
 } from "lucide-react";
@@ -393,10 +391,8 @@ function ChatWorkspaceInner({
   connectGithubActions,
   headerLeading,
   registerComposerInsert,
-  onOpenRoutines,
   listMembers,
   onCreateRoutineInSpace,
-  onOpenInsights,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -453,10 +449,6 @@ function ChatWorkspaceInner({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
-  /** The composer's `/run` command: routine create/run lives on its own
-   * route the host owns, so opening it is a host-supplied hop the same way
-   * `onOpenArtifact` is. */
-  readonly onOpenRoutines?: () => void;
   /** Workspace members the mention popover's "Bring in…" group can
    * offer — the same reduced listing the shell already fetches for its
    * People views. Absent, the group only offers invitable agents. */
@@ -465,25 +457,17 @@ function ChatWorkspaceInner({
   ) => Promise<readonly BringInMember[]>;
 
   /**
-   * "New routine in this space" — the header button and the composer's
-   * `/routine` command: opens the New Routine panel with the active
-   * workbench pre-bound as its destination. Host-supplied so the panel's
-   * own route (and its prefill store) stays owned by the host, the same
-   * way `onOpenRoutines` is; the active workbench id is closed over here
-   * rather than passed as an argument, since only this component knows
-   * it. Omitted, the button and command are hidden — the same
-   * "no dead promise" contract `onOpenRoutines` follows.
+   * The composer's `/routine` command: opens the New Routine panel with
+   * the active workbench pre-bound as its destination. Host-supplied so
+   * the panel's own route (and its prefill store) stays owned by the
+   * host; the active workbench id is closed over here rather than passed
+   * as an argument, since only this component knows it. Omitted, the
+   * command is hidden — the "no dead promise" contract every optional
+   * header/composer action here follows. Routines and Insights (CL-6362,
+   * CL-6099) are global-only pages now — reached from the shell rail, not
+   * a per-workbench header button or composer command.
    */
   readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
-  /**
-   * "Insights for this workbench" — the header button that deep-links to
-   * this tenant's own Insights scope (CL-6099). Host-supplied so the
-   * Insights route (and its tenant-scope resolution) stays owned by the
-   * host, the same way `onOpenRoutines` is. Omitted, the button is
-   * hidden — the same "no dead promise" contract as the other optional
-   * header actions here.
-   */
-  readonly onOpenInsights?: () => void;
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -1123,27 +1107,6 @@ function ChatWorkspaceInner({
                       {CHAT_STRINGS.inviteAgentAction}
                     </Button>
                   ) : null}
-                  {onOpenRoutines !== undefined ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={CHAT_STRINGS.routinesAction}
-                      title={CHAT_STRINGS.routinesAction}
-                      onClick={() => onOpenRoutines()}
-                    >
-                      <Repeat />
-                    </Button>
-                  ) : null}
-                  {onOpenInsights !== undefined ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onOpenInsights()}
-                    >
-                      <ChartColumn />
-                      {CHAT_STRINGS.insightsAction}
-                    </Button>
-                  ) : null}
                   <div className="chat-workbench-settings-slot">
                     <Button
                       variant="ghost"
@@ -1307,13 +1270,6 @@ function ChatWorkspaceInner({
                       onOpenAgentsSettings={() =>
                         openWorkbenchSettings("agents")
                       }
-                      onOpenRoutines={() => {
-                        if (onOpenRoutines !== undefined) {
-                          onOpenRoutines();
-                          return;
-                        }
-                        toast(CHAT_STRINGS.runRoutineUnavailable);
-                      }}
                       onCreateRoutineInSpace={() => {
                         if (
                           onCreateRoutineInSpace !== undefined &&
@@ -1369,10 +1325,8 @@ export function ChatWorkspace({
   connectGithubActions,
   headerLeading,
   registerComposerInsert,
-  onOpenRoutines,
   listMembers,
   onCreateRoutineInSpace,
-  onOpenInsights,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -1440,23 +1394,12 @@ export function ChatWorkspace({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
-  /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
-  readonly onOpenRoutines?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly listMembers?: (
     tenantId: string,
   ) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
   readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
-  /**
-   * "Insights for this workbench" — the header button that deep-links to
-   * this tenant's own Insights scope (CL-6099). Host-supplied so the
-   * Insights route (and its tenant-scope resolution) stays owned by the
-   * host, the same way `onOpenRoutines` is. Omitted, the button is
-   * hidden — the same "no dead promise" contract as the other optional
-   * header actions here.
-   */
-  readonly onOpenInsights?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
@@ -1501,12 +1444,10 @@ export function ChatWorkspace({
           {...(registerComposerInsert !== undefined
             ? { registerComposerInsert }
             : {})}
-          {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
           {...(onCreateRoutineInSpace !== undefined
             ? { onCreateRoutineInSpace }
             : {})}
-          {...(onOpenInsights !== undefined ? { onOpenInsights } : {})}
           {...(onWorkbenchNotFound !== undefined
             ? { onWorkbenchNotFound }
             : {})}

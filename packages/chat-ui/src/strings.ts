@@ -70,7 +70,7 @@ export const CHAT_STRINGS = {
   composerHelpTitle: "Slash commands",
   composerHelpNote: "Not sent as a message",
   composerHelpClose: "Close",
-  runRoutineUnavailable: "Open Routines to run one",
+  runRoutineUnavailable: "Open Routines to create one",
   unnamedWorkbench: "Untitled conversation",
   newWorkbenchTitle: "New workbench",
   unnamedRun: "Untitled agent",
@@ -90,8 +90,6 @@ export const CHAT_STRINGS = {
   eventBlockResponseForm: "A form was submitted",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
   inviteAgentAction: "Invite agent",
-  routinesAction: "Routines",
-  insightsAction: "Insights",
   workbenchMembersLabel: "Members",
   teamStackOverflow: (count: number) =>
     `${count} more ${count === 1 ? "member" : "members"}`,

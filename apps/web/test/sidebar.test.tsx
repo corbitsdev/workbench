@@ -120,9 +120,10 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("footer is Files, Skills, Agents, Plugins, Insights, then the account row — no Inbox", () => {
+  test("footer is Routines, Files, Skills, Agents, Plugins, Insights, then the account row — no Inbox", () => {
     const markup = renderSidebar("/w");
     expect(markup).toContain("shell-sidebar-footer-row");
+    expect(markup).toContain(">Routines<");
     expect(markup).toContain(">Files<");
     expect(markup).toContain(">Skills<");
     expect(markup).toContain(">Agents<");
@@ -133,6 +134,20 @@ describe("Sidebar", () => {
     expect(markup).not.toContain('aria-label="Notifications"');
     // Settings stays in the account menu, not a standalone footer icon.
     expect(markup).not.toContain('aria-label="Settings"');
+    // Routines is first — CL-6362 gives it the same top-level rail slot
+    // as every other global surface.
+    expect(markup.indexOf(">Routines<")).toBeLessThan(
+      markup.indexOf(">Files<"),
+    );
+  });
+
+  test("marks the Routines row current for its own route only", () => {
+    const onRoutines = renderSidebar("/routines");
+    expect(onRoutines).toMatch(
+      /shell-sidebar-footer-row"[^>]*data-active="true"[^>]*>[\s\S]*?>Routines</,
+    );
+    const elsewhere = renderSidebar("/w");
+    expect(elsewhere).not.toMatch(/>Routines<[\s\S]{0,80}aria-current="page"/);
   });
 
   test("marks the Plugins row current for its own route only", () => {

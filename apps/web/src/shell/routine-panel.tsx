@@ -1,17 +1,11 @@
-// The routine panel (CL-6125, reworked CL-6139): a two-view master-detail
-// pane in the canvas column, beside the conversation — never a route hop.
-// `RoutinePanel` branches on the subject's `view`:
-//
-//   - list (the default, and the header's Routines affordance / `/run`):
-//     this workbench's active routines, name · cadence · Active toggle,
-//     with a "New routine" row at the top. `RoutineListPanel`.
-//   - editor (a specific routine, or a brand-new one): the same fields
-//     this pane has always had. `RoutineEditorPanel`.
-//
-// Back from the editor returns to the list; back from the list closes the
-// canvas — one back-chevron affordance the whole way down, the same
-// master-detail shape `ProfileCanvasPane`/`ArtifactCanvasPane` establish
-// elsewhere in this column.
+// The routine panel (CL-6125, reworked CL-6139, trimmed to editor-only by
+// CL-6362): a create/edit pane in the canvas column, beside the
+// conversation — never a route hop. Browsing and running existing
+// routines lives on the global `/routines` page now (the shell rail's
+// Routines row) — this pane only ever opens straight to
+// `RoutineEditorPanel`, for a specific routine (`routineId`) or a
+// brand-new one. Back closes the canvas — there is no list view to step
+// back to anymore.
 //
 // There is no Save button — every field autosaves on blur/select, and
 // every write (create or update) is serialized through one queue
@@ -37,73 +31,45 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Badge,
   Button,
   ConfirmButton,
   EmptyState,
-  formatRelativeTime,
   Input,
   Menu,
   MenuContent,
   MenuItem,
   MenuTrigger,
-  RichEmptyState,
   RunNowButton,
-  StatusDot,
   Switch,
   toast,
-  TraceWaterfall,
 } from "@corbits/react-ui";
-import type { BadgeTone, StatusDotTone } from "@corbits/react-ui";
-import { listWorkbenchAgents, WorkbenchLoadingState } from "@corbits/chat-ui";
-import { listTasks } from "@corbits/tasks-ui";
-import type { Task, TaskStatus } from "@corbits/tasks-ui";
-import { Clock, Plus, X } from "lucide-react";
+import { listWorkbenchAgents } from "@corbits/chat-ui";
+import { Clock, X } from "lucide-react";
 
-import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { ensureMyraWorkbench } from "../myra-workbench";
-import { cadenceLabel, cadenceSummary } from "../routine-trigger";
+import { cadenceLabel } from "../routine-trigger";
 import { ScheduleEditor } from "../routine-schedule";
 import {
   createRoutine,
   deleteRoutine,
   getRoutine,
   listRoutineRuns,
-  listRoutines,
   routineCreatedToast,
   routineRunStartedToast,
   runRoutineNow,
   updateRoutine,
-  useTenantQuery,
 } from "../routines-api";
 import type { Routine, RoutineRun, RoutineTrigger } from "../routines-api";
-import {
-  insightsRunTracePath,
-  insightsTopLevelRunsPath,
-  RunTraceSchema,
-  TopLevelRunsSchema,
-} from "../insights-api";
-import type { InsightsRun } from "../insights-api";
 import { RunsTable } from "../pages/routines-page";
-import {
-  formatWhen,
-  runDurationLabel,
-  statusTone,
-  toTraceSpans,
-} from "../pages/insights-page";
 import {
   createWebhookTrigger,
   DEFAULT_WEBHOOK_INPUT_TEMPLATE,
 } from "../webhook-triggers-api";
 import { useDeploymentCapabilities } from "../deployment-capabilities-api";
 import { tenantKeys } from "../query-client";
-import {
-  useCanvasColumnRoutine,
-  useCloseCanvas,
-  useOpenRoutineInCanvas,
-} from "./canvas-availability";
+import { useCanvasColumnRoutine, useCloseCanvas } from "./canvas-availability";
 import type { RoutinePanelSubject } from "./canvas-availability";
 import { CanvasPaneHeader } from "./canvas-column";
 
@@ -161,621 +127,20 @@ function AddTriggerMenu({
   );
 }
 
+/** Opens straight to the routine editor — create (no `routineId`) or edit
+ * an existing one. Routines' list/browse surface (name, cadence, enabled,
+ * recent runs) is the global `/routines` page now (CL-6362); this pane is
+ * only ever reached from a creation entry point (the composer's
+ * `/routine` command, "New routine in this space", "Make this a
+ * routine") or an "Edit" action already carrying a `routineId`. */
 export function RoutinePanel() {
   const subject = useCanvasColumnRoutine();
   const close = useCloseCanvas();
-  const openRoutine = useOpenRoutineInCanvas();
 
-  if (subject === null || subject.view === "list") {
-    return (
-      <RoutineListPanel
-        workbenchId={subject?.workbenchId}
-        onClose={close}
-        onSelect={(routineId) =>
-          openRoutine({
-            routineId,
-            ...(subject?.workbenchId !== undefined
-              ? { workbenchId: subject.workbenchId }
-              : {}),
-          })
-        }
-        onNew={() =>
-          openRoutine({
-            routineId: null,
-            ...(subject?.workbenchId !== undefined
-              ? { workbenchId: subject.workbenchId }
-              : {}),
-          })
-        }
-        onOpenRuns={() =>
-          openRoutine({
-            view: "runs",
-            ...(subject?.workbenchId !== undefined
-              ? { workbenchId: subject.workbenchId }
-              : {}),
-          })
-        }
-      />
-    );
-  }
-
-  if (subject.view === "runs") {
-    return (
-      <RunsCanvasPanel
-        onBack={() =>
-          openRoutine({
-            view: "list",
-            ...(subject.workbenchId !== undefined
-              ? { workbenchId: subject.workbenchId }
-              : {}),
-          })
-        }
-      />
-    );
-  }
+  if (subject === null) return null;
 
   return (
-    <RoutineEditorPanel
-      subject={subject}
-      onBack={() =>
-        openRoutine({
-          view: "list",
-          ...(subject.workbenchId !== undefined
-            ? { workbenchId: subject.workbenchId }
-            : {}),
-        })
-      }
-      onClose={close}
-    />
-  );
-}
-
-/** The panel's default view: this workbench's active routines, a "New
- * routine" row at the top, name · cadence · Active toggle per row. */
-/** A run's own embedded status field — `RoutineRun.run` is an opaque
- * `Record<string, unknown>` (whatever the launched workflow run reports),
- * `"status"` is the one key `RunsTable` already reads from it. */
-function embeddedRunStatus(run: RoutineRun): string | undefined {
-  const status = run.run?.["status"];
-  return typeof status === "string" ? status : undefined;
-}
-
-function runFailed(run: RoutineRun): boolean {
-  return (
-    (run.error !== undefined && run.error !== null) ||
-    embeddedRunStatus(run) === "failed"
-  );
-}
-
-/** Best-effort one-line outcome for a finished run: the run's own error
- * when it has one, else the first plausible reply/summary field the
- * embedded run record carries, else an honest "Completed." — never a
- * fabricated excerpt when the data has none. */
-function runOutcomeExcerpt(run: RoutineRun): string {
-  if (run.error !== undefined && run.error !== null) return run.error;
-  const record = run.run;
-  if (record !== undefined) {
-    for (const key of ["reply", "summary", "output", "result"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.trim() !== "") {
-        return value.length > 140 ? `${value.slice(0, 140)}…` : value;
-      }
-    }
-  }
-  return "Completed.";
-}
-
-type StatusChip = {
-  readonly label: string;
-  readonly tone: StatusDotTone;
-  readonly live: boolean;
-};
-
-/** `StatusDot` marks liveness only — its own doc comment is explicit that
- * a `Badge` is what names the state visibly. `StatusDotTone` and
- * `BadgeTone` are two different enums (`"emphasis"` vs. `"accent"`);
- * every other tone name is shared. */
-function badgeToneFor(tone: StatusDotTone): BadgeTone {
-  return tone === "emphasis" ? "accent" : tone;
-}
-
-/** The chip both components together render: a live/pulsing dot plus the
- * visible, colour-matched label naming the state. */
-function StatusChipView({ chip }: { readonly chip: StatusChip }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <StatusDot label={chip.label} tone={chip.tone} live={chip.live} />
-      <Badge tone={badgeToneFor(chip.tone)}>{chip.label}</Badge>
-    </span>
-  );
-}
-
-/** "Idle · Running now (elapsed) · Last run OK Xm ago · Last run failed" —
- * the routine row's live state, computed from its own run history (no
- * separate live-run correlation needed: each `RoutineRun` already embeds
- * the launched run's own status). `runningOverride` is the optimistic
- * "I just clicked Run now" flip — true the instant the click lands, before
- * the server has even accepted the request, let alone reported back. */
-function routineStatusChip(
-  runs: readonly RoutineRun[],
-  runningOverride: boolean,
-  now: number,
-): StatusChip {
-  if (runningOverride)
-    return { label: "Running now", tone: "neutral", live: true };
-  const latest = runs[0];
-  if (latest === undefined)
-    return { label: "Idle", tone: "neutral", live: false };
-  if (embeddedRunStatus(latest) === "running") {
-    return {
-      label: `Running now · ${formatRelativeTime(latest.createdAt, now)}`,
-      tone: "neutral",
-      live: true,
-    };
-  }
-  if (runFailed(latest)) {
-    return { label: "Last run failed", tone: "danger", live: false };
-  }
-  return {
-    label: `Last run OK ${formatRelativeTime(latest.createdAt, now)}`,
-    tone: "success",
-    live: false,
-  };
-}
-
-/** Polls run history for this routine until the newest run leaves
- * "running", or gives up after `attempts` — the honest "when the run
- * ends" signal a Run now click needs, since the create/run response
- * itself only confirms the launch was accepted, not that it finished. */
-async function pollForOutcome(
-  tenantId: string,
-  routineId: string,
-  attempts = 6,
-  delayMs = 300,
-): Promise<RoutineRun | null> {
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const runs = await listRoutineRuns(tenantId, routineId);
-    const latest = runs[0];
-    if (latest !== undefined && embeddedRunStatus(latest) !== "running") {
-      return latest;
-    }
-    if (attempt < attempts - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-  const runs = await listRoutineRuns(tenantId, routineId);
-  return runs[0] ?? null;
-}
-
-function RoutineListPanel({
-  workbenchId,
-  onClose,
-  onSelect,
-  onNew,
-  onOpenRuns,
-}: {
-  /** The workbench this panel was opened beside. The pop-out is
-   * strictly workbench-scoped (owner decision, CL-6200): only routines
-   * delivering here and tasks dispatched from here are listed. */
-  readonly workbenchId?: string | undefined;
-  readonly onClose: () => void;
-  readonly onSelect: (routineId: string) => void;
-  readonly onNew: () => void;
-  readonly onOpenRuns: () => void;
-}) {
-  const navigate = useNavigate();
-  const { selectedTenantId: tenantId } = useBench();
-  const queryClient = useQueryClient();
-  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
-  const [runningIds, setRunningIds] = useState<ReadonlySet<string>>(new Set());
-  const [outcomes, setOutcomes] = useState<ReadonlyMap<string, RoutineRun>>(
-    new Map(),
-  );
-
-  const routinesQuery = useTenantQuery(
-    tenantKeys.routines(tenantId ?? ""),
-    tenantId !== null,
-    () => listRoutines(tenantId as string),
-  );
-  const allRoutines = routinesQuery.kind === "ready" ? routinesQuery.data : [];
-  const routines =
-    workbenchId === undefined
-      ? allRoutines
-      : allRoutines.filter((r) => r.deliveryWorkbenchId === workbenchId);
-  const routineIds = routines.map((r) => r.id);
-  const runHistoriesQuery = useTenantQuery<
-    ReadonlyMap<string, readonly RoutineRun[]>
-  >(
-    tenantId === null
-      ? (["tenant", "none", "routine-run-histories-panel"] as const)
-      : [
-          ...tenantKeys.routineRunHistories(tenantId),
-          "panel",
-          routineIds.join(","),
-        ],
-    tenantId !== null && routineIds.length > 0,
-    async () => {
-      const entries = await Promise.all(
-        routineIds.map(
-          async (id) =>
-            [id, await listRoutineRuns(tenantId as string, id)] as const,
-        ),
-      );
-      return new Map(entries);
-    },
-  );
-  const runHistories =
-    runHistoriesQuery.kind === "ready" ? runHistoriesQuery.data : new Map();
-
-  function toggle(routine: Routine, enabled: boolean) {
-    if (tenantId === null) return;
-    setPendingToggleId(routine.id);
-    void updateRoutine(tenantId, routine.id, { enabled })
-      .then(() => {
-        void queryClient.invalidateQueries({
-          queryKey: tenantKeys.routines(tenantId),
-        });
-      })
-      .finally(() => setPendingToggleId(null));
-  }
-
-  function runNow(routine: Routine): Promise<void> {
-    if (tenantId === null) return Promise.resolve();
-    setRunningIds((prev) => new Set(prev).add(routine.id));
-    setOutcomes((prev) => {
-      const next = new Map(prev);
-      next.delete(routine.id);
-      return next;
-    });
-    return runRoutineNow(tenantId, routine.id)
-      .then(() => pollForOutcome(tenantId, routine.id))
-      .then((outcome) => {
-        if (outcome !== null) {
-          setOutcomes((prev) => new Map(prev).set(routine.id, outcome));
-        }
-      })
-      .finally(() => {
-        setRunningIds((prev) => {
-          const next = new Set(prev);
-          next.delete(routine.id);
-          return next;
-        });
-        void queryClient.invalidateQueries({
-          queryKey: tenantKeys.routineRunHistories(tenantId),
-        });
-      });
-  }
-
-  return (
-    <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-      <CanvasPaneHeader
-        className="px-3 pt-2"
-        title="Routines"
-        onBack={onClose}
-        trailing={
-          <Button variant="ghost" size="sm" onClick={onOpenRuns}>
-            Runs
-          </Button>
-        }
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <button
-          type="button"
-          className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm font-medium"
-          onClick={onNew}
-        >
-          <Plus className="size-4" />
-          New routine
-        </button>
-        {routinesQuery.kind === "loading" ? (
-          <WorkbenchLoadingState title="Loading routines…" />
-        ) : routinesQuery.kind === "ready" ? (
-          routines.length === 0 ? (
-            <EmptyState
-              icon={<Clock />}
-              title="No routines yet"
-              description="Create one to automate this workbench."
-            />
-          ) : (
-            routines.map((routine) => {
-              const runs = runHistories.get(routine.id) ?? [];
-              const chip = routineStatusChip(
-                runs,
-                runningIds.has(routine.id),
-                Date.now(),
-              );
-              const outcome = outcomes.get(routine.id);
-              return (
-                <div
-                  key={routine.id}
-                  className="border-b border-[var(--ui-border)]"
-                >
-                  <div className="flex items-center gap-2 px-3 py-2">
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
-                      onClick={() => onSelect(routine.id)}
-                    >
-                      <span className="truncate text-sm font-medium">
-                        {routine.name}
-                      </span>
-                      <span className="truncate text-xs text-[var(--ui-fg-muted)]">
-                        {cadenceSummary(routine.trigger)}
-                      </span>
-                    </button>
-                    <StatusChipView chip={chip} />
-                    <RunNowButton
-                      variant="ghost"
-                      size="sm"
-                      disabled={runningIds.has(routine.id)}
-                      onRun={() => runNow(routine)}
-                    />
-                    <Switch
-                      checked={routine.enabled}
-                      disabled={pendingToggleId === routine.id}
-                      label={`${routine.enabled ? "Pause" : "Resume"} ${routine.name}`}
-                      onCheckedChange={(enabled) => toggle(routine, enabled)}
-                    />
-                  </div>
-                  {outcome !== undefined ? (
-                    <div className="flex items-center justify-between gap-2 bg-[var(--ui-bg-subtle)] px-3 py-1.5 text-xs">
-                      <span
-                        className={
-                          runFailed(outcome)
-                            ? "text-[var(--ui-danger)]"
-                            : "text-[var(--ui-fg-muted)]"
-                        }
-                      >
-                        {runOutcomeExcerpt(outcome)}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate("/insights/runs")}
-                      >
-                        Open trace →
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-          )
-        ) : (
-          <EmptyState
-            icon={<Clock />}
-            title="Couldn't load routines"
-            description="Try again in a moment."
-          />
-        )}
-        {tenantId !== null ? (
-          <TasksSection
-            tenantId={tenantId}
-            workbenchId={workbenchId}
-            navigate={navigate}
-          />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function runStatusDotTone(status: string): StatusDotTone {
-  const tone = statusTone(status);
-  if (tone === "danger") return "danger";
-  if (tone === "success" || tone === "info") return "emphasis";
-  return "neutral";
-}
-
-/** This workbench's own runs — its agent runs and its routines' runs
- * (`insightsTopLevelRunsPath` is already tenant-scoped, so a workbench's
- * runs are exactly this bench's top-level feed) — each row opening the
- * same `TraceWaterfall` insights renders, inline in this pane: no route
- * hop out of `/w/:id`. Selection is local state, not canvas subject state
- * — a click into a trace and back never touches the shell's own history. */
-function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
-  const { selectedTenantId: tenantId } = useBench();
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-
-  const runsQuery = useAPIQuery(
-    tenantId === null ? "" : insightsTopLevelRunsPath(tenantId),
-    TopLevelRunsSchema,
-  );
-  const runs: readonly InsightsRun[] =
-    runsQuery.kind === "ready" ? runsQuery.data.data : [];
-  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
-
-  const traceQuery = useAPIQuery(
-    tenantId === null || selectedRunId === null
-      ? ""
-      : insightsRunTracePath(tenantId, selectedRunId),
-    RunTraceSchema,
-  );
-
-  if (selectedRunId !== null) {
-    const spans =
-      traceQuery.kind === "ready" ? toTraceSpans(traceQuery.data) : [];
-    return (
-      <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-        <CanvasPaneHeader
-          className="px-3 pt-2"
-          title={selectedRun?.definitionName ?? selectedRunId}
-          onBack={() => setSelectedRunId(null)}
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {traceQuery.kind === "loading" ? (
-            <WorkbenchLoadingState title="Loading trace…" />
-          ) : null}
-          {traceQuery.kind === "ready" && spans.length > 0 ? (
-            <TraceWaterfall
-              title="Run trace"
-              spans={spans}
-              description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
-            />
-          ) : null}
-          {traceQuery.kind === "ready" && spans.length === 0 ? (
-            <RichEmptyState
-              title="Empty trace"
-              description="The run exists but has no recorded spans yet."
-            />
-          ) : null}
-          {traceQuery.kind === "error" ? (
-            <RichEmptyState
-              title="Trace not available"
-              description={traceQuery.message}
-            />
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="shell-routine-pane flex h-full min-h-0 flex-col">
-      <CanvasPaneHeader className="px-3 pt-2" title="Runs" onBack={onBack} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {runsQuery.kind === "loading" ? (
-          <WorkbenchLoadingState title="Loading runs…" />
-        ) : runsQuery.kind === "ready" && runs.length === 0 ? (
-          <EmptyState
-            icon={<Clock />}
-            title="No runs yet."
-            description="This workbench's agent and routine runs will show up here."
-          />
-        ) : runsQuery.kind === "ready" ? (
-          runs.map((run) => (
-            <button
-              key={run.id}
-              type="button"
-              className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2 text-left"
-              onClick={() => setSelectedRunId(run.id)}
-            >
-              <StatusDot
-                label={run.status}
-                tone={runStatusDotTone(run.status)}
-              />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                {run.definitionName}
-              </span>
-              <span className="shrink-0 text-xs text-[var(--ui-fg-muted)]">
-                {formatWhen(run.createdAt)}
-              </span>
-              <span className="shrink-0 text-xs text-[var(--ui-fg-muted)]">
-                {runDurationLabel(run)}
-              </span>
-            </button>
-          ))
-        ) : (
-          <EmptyState
-            icon={<Clock />}
-            title="Couldn't load runs"
-            description="Try again in a moment."
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** "Tasks" section: this workbench's in-flight and recent tasks
- * (`@corbits/tasks-ui`'s own row/status vocabulary), the same
- * verify-by-running story the routines list above tells — a task's
- * outcome shows inline the moment it lands, not just in Insights. */
-function TasksSection({
-  tenantId,
-  workbenchId,
-  navigate,
-}: {
-  readonly tenantId: string;
-  readonly workbenchId?: string | undefined;
-  readonly navigate: (path: string) => void;
-}) {
-  const tasksQuery = useTenantQuery(tenantKeys.tasks(tenantId), true, () =>
-    listTasks(tenantId),
-  );
-  const tasks =
-    tasksQuery.kind === "ready"
-      ? [...tasksQuery.data]
-          .filter(
-            (task) =>
-              workbenchId === undefined || task.workbenchId === workbenchId,
-          )
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-          .slice(0, 10)
-      : [];
-
-  return (
-    <div className="mt-2 border-t border-[var(--ui-border)]">
-      <div className="px-3 py-2">
-        <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-          Tasks
-        </h3>
-      </div>
-      {tasksQuery.kind === "loading" ? (
-        <WorkbenchLoadingState title="Loading tasks…" />
-      ) : tasks.length === 0 ? (
-        <div className="px-3 pb-3">
-          <EmptyState
-            icon={<Clock />}
-            title="No tasks yet"
-            description="Run one now to see it here."
-          />
-        </div>
-      ) : (
-        tasks.map((task) => (
-          <TaskRow key={task.id} task={task} navigate={navigate} />
-        ))
-      )}
-    </div>
-  );
-}
-
-const TASK_STATUS_CHIP: Record<TaskStatus, StatusChip> = {
-  queued: { label: "Queued", tone: "neutral", live: false },
-  running: { label: "Running now", tone: "neutral", live: true },
-  "needs-you": { label: "Needs you", tone: "emphasis", live: true },
-  done: { label: "Last run OK", tone: "success", live: false },
-  failed: { label: "Last run failed", tone: "danger", live: false },
-};
-
-function TaskRow({
-  task,
-  navigate,
-}: {
-  readonly task: Task;
-  readonly navigate: (path: string) => void;
-}) {
-  const chip = TASK_STATUS_CHIP[task.status];
-  const terminal = task.status === "done" || task.status === "failed";
-  return (
-    <div className="flex flex-col gap-1 border-b border-[var(--ui-border)] px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium">{task.agentName}</span>
-        <StatusChipView chip={chip} />
-      </div>
-      {terminal ? (
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <span
-            className={
-              task.status === "failed"
-                ? "text-[var(--ui-danger)]"
-                : "text-[var(--ui-fg-muted)]"
-            }
-          >
-            {task.status === "failed" ? "Failed." : "Done."}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("/insights/runs")}
-          >
-            Open trace →
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    <RoutineEditorPanel subject={subject} onBack={close} onClose={close} />
   );
 }
 

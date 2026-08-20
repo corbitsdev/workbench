@@ -113,6 +113,7 @@ function activeFooterLabel(markup: string): string | undefined {
 }
 
 const FOOTER_LABELS: Record<string, string> = {
+  "/routines": "Routines",
   "/files": "Files",
   "/skills": "Skills",
   "/agents": "Agents",

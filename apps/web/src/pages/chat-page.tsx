@@ -31,7 +31,6 @@ import {
   isWorkbenchSettingsPath,
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
-import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -227,27 +226,11 @@ export function ChatPage({
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
       listMembers={listMembers}
-      // The header's Routines affordance and `/run`: the panel's default
-      // list view, beside this conversation — never a `/routines` hop
-      // (CL-6139). Bound to this workbench so the list's own "New routine"
-      // row still targets this conversation's agent/workbench.
-      onOpenRoutines={() =>
-        openRoutine({
-          view: "list",
-          ...(workbenchId !== null ? { workbenchId } : {}),
-        })
-      }
-      // The header's Insights affordance: this conversation's own scoped
-      // timeline, never the global landing. Passes the workbench id as-is —
-      // the route itself resolves the workbench's workbench tenant (see
-      // `insights-workbench-scope.ts`), since a workbench id is never a
-      // tenant id.
-      onOpenInsights={() => {
-        if (workbenchId === null) return;
-        navigate(workbenchInsightsPath(workbenchId));
-      }}
       // `/routine`: opens the editor directly on a brand-new routine
-      // bound to this workbench.
+      // bound to this workbench. Routines and Insights (CL-6362, CL-6099)
+      // are global-only pages now, reached from the shell rail — no
+      // per-workbench header button or `/run` command opens a scoped view
+      // of either here.
       onCreateRoutineInSpace={(inSpaceWorkbenchId) =>
         openRoutine({ routineId: null, workbenchId: inSpaceWorkbenchId })
       }
