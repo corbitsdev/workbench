@@ -58,7 +58,13 @@ export interface UploadGoogleGenAIFileOpts {
   // accepts arbitrary strings here; callers typically pass the
   // local file's basename.
   displayName: string;
-  bytes: Uint8Array;
+  // Backed by a plain `ArrayBuffer`, not the wider `ArrayBufferLike`
+  // that also admits `SharedArrayBuffer`: the bytes go straight out as
+  // a `RequestInit.body`, and the DOM's `BodyInit` accepts only the
+  // former. Under a Node-only `lib` the wider type slips through
+  // undici's laxer `BodyInit`, so this narrowing is what lets the file
+  // type-check identically in both.
+  bytes: Uint8Array<ArrayBuffer>;
   // Optional override for the upload endpoint. Defaults to
   // Google's public Files API full URL (path included). A
   // self-hosted or regional endpoint can be substituted by
