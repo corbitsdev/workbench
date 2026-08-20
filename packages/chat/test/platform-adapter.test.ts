@@ -36,7 +36,7 @@ import {
 import { workbenchLaunch } from "../src/schema";
 import {
   foldedRun,
-  DefinitionAssetUnresolvableError,
+  DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import { SessionLaunchError } from "@intx/hub-sessions";
@@ -145,7 +145,14 @@ function createFakeDb(opts: {
   foldedRunMarker?: boolean;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
   workflowDefinitionRow?:
-    | { id: string; tenantId: string; status: string; assetId: string | null }
+    | {
+        id: string;
+        tenantId: string;
+        status: string;
+        assetId: string | null;
+        name?: string;
+        grantRequirements?: unknown;
+      }
     | undefined;
   workflowDefinitionRows?:
     | {
@@ -155,6 +162,7 @@ function createFakeDb(opts: {
         name: string;
         description?: string;
         assetId?: string | null;
+        grantRequirements?: unknown;
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
@@ -166,10 +174,37 @@ function createFakeDb(opts: {
         noopInference?: boolean;
       }
     | undefined;
+  /**
+   * The frozen inert wire projection `loadFrozenWireProjection` (read
+   * via `select().from(workflowDefinitionVersion)`) returns for each
+   * definition id, keyed by id. An id with no entry (or an explicit
+   * `null`) mirrors a pre-cutover row that carries no stored
+   * projection. Call order mirrors the real resolution order:
+   * `launchInvite`'s candidates (siblings newest-first, or the single
+   * requested row when no siblings are configured) in order, then
+   * `refreshAgentInstanceFromDefinition`'s single lookup on the run's
+   * own definition row.
+   */
+  wireProjectionsByDefinitionId?: Record<string, unknown | null> | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
   const deleted: { table: unknown }[] = [];
+
+  // Mirrors the real resolution order for `loadFrozenWireProjection`
+  // calls: `launchInvite`'s candidates (siblings newest-first, falling
+  // back to the single requested row) or, absent any siblings/requested
+  // row config, `refreshAgentInstanceFromDefinition`'s single lookup
+  // against the run's own definition row.
+  const wireProjectionCandidateIds = (
+    opts.workflowDefinitionRows && opts.workflowDefinitionRows.length > 0
+      ? opts.workflowDefinitionRows
+      : opts.workflowDefinitionRow !== undefined
+        ? [opts.workflowDefinitionRow]
+        : []
+  ).map((row) => row.id);
+  let wireProjectionCallIndex = 0;
+  const wireProjectionCalls: string[] = [];
 
   function updateOn(table: unknown): UpdateChain {
     return {
@@ -236,6 +271,16 @@ function createFakeDb(opts: {
             };
           }
           if (table === asset) return selectChain([opts.assetRow]);
+          if (table === workflowDefinitionVersion) {
+            const definitionId =
+              wireProjectionCandidateIds[wireProjectionCallIndex];
+            wireProjectionCallIndex += 1;
+            if (definitionId === undefined) return selectChain([]);
+            wireProjectionCalls.push(definitionId);
+            const projection =
+              opts.wireProjectionsByDefinitionId?.[definitionId] ?? null;
+            return selectChain([{ wireProjection: projection }]);
+          }
           if (table === workbenchLaunch) {
             const insertedLaunch = inserted.findLast(
               (row) => row.table === workbenchLaunch,
@@ -301,6 +346,7 @@ function createFakeDb(opts: {
     inserted,
     updated,
     deleted,
+    wireProjectionCalls,
   };
   return fake;
 }
@@ -517,6 +563,49 @@ const WORKBENCH_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
     turnTimeoutMs: 60_000,
   }),
 );
+
+/**
+ * The frozen inert wire projection shape `loadFrozenWireProjection`
+ * hands back — `agent.modelSources`, not the live `agent.inference.sources`
+ * a serialized in-process definition carries. This is `launchInvite`'s
+ * and `refreshAgentInstanceFromDefinition`'s launch-body source under
+ * the `workflow.json` retirement; `WORKBENCH_WORKFLOW_JSON` above stays
+ * reserved for `launchWorkbench`'s unchanged in-process live path.
+ */
+function inertProjection(
+  overrides: {
+    id?: string;
+    systemPrompt?: string;
+    model?: string | null;
+    toolPackagePins?: unknown[];
+    credentialBindings?: unknown[];
+  } = {},
+) {
+  const {
+    id = "wfd_echo",
+    systemPrompt = "You are Echo, an invitable demo agent.",
+    model = "claude-sonnet-5",
+    toolPackagePins = [],
+    credentialBindings = [],
+  } = overrides;
+  return {
+    id,
+    triggers: [],
+    stepOrder: ["agent"],
+    steps: {
+      agent: {
+        kind: "step",
+        agent: {
+          systemPrompt,
+          toolPackagePins,
+          modelSources:
+            model === null ? [] : [{ provider: "anthropic", model }],
+        },
+      },
+    },
+    credentialBindings,
+  };
+}
 
 describe("createHubChatPlatform", () => {
   test("launchWorkbench mints immediately and ensureAwake deploys with the noop source", async () => {
@@ -919,11 +1008,12 @@ describe("createHubChatPlatform", () => {
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_echo: inertProjection({ id: "wfd_echo" }),
+      },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService({
-      assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-    });
+    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
@@ -946,9 +1036,9 @@ describe("createHubChatPlatform", () => {
     expect(launched.instanceId).toMatch(/^run_/);
     expect(launched.address).toBe(`${launched.instanceId}@ten1.workbench.test`);
 
-    expect(assetService.readAssetBlobCalls).toEqual([
-      { assetId: "asst_echo", path: "workflow.json" },
-    ]);
+    // The launch body came from the definition's own frozen projection,
+    // not any asset blob read.
+    expect(db.wireProjectionCalls).toEqual(["wfd_echo"]);
 
     expect(sessionService.adoptedDeployCalls).toHaveLength(0);
     expect(resolveDefinitionSourcesCalls).toHaveLength(0);
@@ -1021,11 +1111,12 @@ describe("createHubChatPlatform", () => {
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_echo: inertProjection({ id: "wfd_echo" }),
+      },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService({
-      assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-    });
+    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
     const credentialCipher = {
@@ -1094,12 +1185,12 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(/not in a launchable state/);
   });
 
-  // CL-6357: a long-lived dev DB can carry a definition row whose asset
-  // repo has gone unresolvable (DB/blob drift) alongside a fresher,
-  // healthy sibling under the same name — a re-seed, say. Resolution
-  // must prefer that newest-healthy sibling rather than dying on the
-  // specific (possibly stale) row the caller asked for.
-  test("launchInvite resolves the newest healthy sibling asset over the requested definition's own stale one", async () => {
+  // CL-6357: a long-lived dev DB can carry a definition row with no
+  // frozen wire projection stored on it (a pre-cutover row) alongside a
+  // fresher, healthy sibling under the same name — a re-seed, say.
+  // Resolution must prefer that newest-healthy sibling rather than
+  // dying on the specific (possibly stale) row the caller asked for.
+  test("launchInvite resolves the newest healthy sibling definition over the requested definition's own stale one", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -1132,11 +1223,10 @@ describe("createHubChatPlatform", () => {
         },
       ],
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
-    });
-    const assetService = createFakeAssetService({
-      blobsByAssetId: {
-        asst_stale: "unresolvable",
-        asst_fresh: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
+      // The stale sibling carries no stored projection at all; the
+      // fresh one does — the newer definition must win.
+      wireProjectionsByDefinitionId: {
+        wfd_fresh: inertProjection({ id: "wfd_fresh" }),
       },
     });
 
@@ -1145,7 +1235,7 @@ describe("createHubChatPlatform", () => {
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
-      assetService,
+      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1158,17 +1248,22 @@ describe("createHubChatPlatform", () => {
 
     expect(launched.instanceId).toMatch(/^run_/);
     // The minted run's definitionId is the resolved healthy sibling,
-    // not the stale requested id — every later wake reads the asset
-    // through this row, so it must be one that actually resolves.
+    // not the stale requested id — every later wake reads the
+    // definition's projection through this row, so it must be one that
+    // actually resolves.
     const runInsert = db.inserted.find((row) => row.table === workflowRun);
     expect(runInsert?.values).toMatchObject({ definitionId: "wfd_fresh" });
+    // Resolution walked every deployed sibling under the name
+    // newest-first and used the fresh one — never fell back to
+    // re-reading the specifically requested (stale) row.
+    expect(db.wireProjectionCalls).toEqual(["wfd_fresh"]);
   });
 
-  // A dev DB whose asset rows have all drifted from `.data` (every
-  // sibling under the name unresolvable) must answer a named error a
-  // caller can map to a 4xx, never let the raw `readAssetBlob` failure
-  // escape as an unhandled 500.
-  test("launchInvite raises DefinitionAssetUnresolvableError, not a raw 500, when no sibling asset resolves", async () => {
+  // A dev DB whose definition rows have all drifted (no sibling under
+  // the name carries a stored projection) must answer a named error a
+  // caller can map to a 4xx, never let the raw lookup failure escape as
+  // an unhandled 500.
+  test("launchInvite raises DefinitionProjectionMissingError, not a raw 500, when no sibling definition resolves", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -1193,9 +1288,8 @@ describe("createHubChatPlatform", () => {
         },
       ],
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
-    });
-    const assetService = createFakeAssetService({
-      blobsByAssetId: { asst_dead: "unresolvable" },
+      // No entry for "wfd_dead" — mirrors a definition with no stored
+      // projection, and there is no other sibling to fall back to.
     });
 
     const platform = createHubChatPlatform({
@@ -1203,7 +1297,7 @@ describe("createHubChatPlatform", () => {
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
-      assetService,
+      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1214,7 +1308,7 @@ describe("createHubChatPlatform", () => {
         creatorPrincipalId: "prin_creator",
         definitionId: "wfd_dead",
       }),
-    ).rejects.toThrow(DefinitionAssetUnresolvableError);
+    ).rejects.toThrow(DefinitionProjectionMissingError);
   });
 
   test("launchInvite fails loud when no such definition exists for the tenant", async () => {
@@ -1273,15 +1367,16 @@ describe("createHubChatPlatform", () => {
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_echo: inertProjection({ id: "wfd_echo" }),
+      },
     });
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      }),
+      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1298,19 +1393,16 @@ describe("createHubChatPlatform", () => {
 
   // A `create_agent`-minted definition with no `model` of its own
   // (`@corbits/agent-directory`'s `createAgentDefinitionCore`, absent
-  // a `tenantDefaultModel` dep) serializes with an empty
-  // `inference.sources` list — `foldedBody.model` reads back `null`.
-  // Without `workbenchHostInferencePreferences`, that used to 409 as
+  // a `tenantDefaultModel` dep) projects with an empty `modelSources`
+  // list — `foldedBody.model` reads back `null`. Without
+  // `workbenchHostInferencePreferences`, that used to 409 as
   // `not_launchable`; this proves the fallback resolves and launches
   // instead, exactly mirroring the model a fresh workbench host would
   // get for this tenant.
-  const NO_MODEL_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
-    buildWorkbenchHostWorkflow({
-      triggerAddress: "ins_workbench1@ten1.workbench.test",
-      inferencePreferences: [],
-      turnTimeoutMs: 60_000,
-    }),
-  );
+  const NO_MODEL_PROJECTION = inertProjection({
+    id: "wfd_echo",
+    model: null,
+  });
 
   test("launchInvite falls back to the workbench-host inference preferences when the definition declares no model requirements", async () => {
     resolveDefinitionSourcesCalls.length = 0;
@@ -1343,15 +1435,14 @@ describe("createHubChatPlatform", () => {
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: { wfd_echo: NO_MODEL_PROJECTION },
     });
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService({
-        assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
-      }),
+      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
       workbenchHostInferencePreferences: async (tenantId) =>
@@ -1398,15 +1489,14 @@ describe("createHubChatPlatform", () => {
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: { wfd_echo: NO_MODEL_PROJECTION },
     });
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService({
-        assetBlob: new TextEncoder().encode(NO_MODEL_WORKFLOW_JSON),
-      }),
+      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
       workbenchHostInferencePreferences: async () => [],
@@ -2254,21 +2344,10 @@ describe("createHubChatPlatform", () => {
   // recomputes that row from the definition's current asset content —
   // this is that something.
   describe("refreshAgentInstanceFromDefinition", () => {
-    const NEW_WORKFLOW_JSON = JSON.stringify({
-      id: "wf_agent1",
-      stepOrder: ["agent"],
-      steps: {
-        agent: {
-          kind: "step",
-          agent: {
-            systemPrompt: "You are now a blunt, no-nonsense assistant.",
-            toolPackagePins: [],
-            inference: { sources: [{ model: "claude-sonnet-5" }] },
-          },
-        },
-      },
-      grantRequirements: [],
-      credentialBindings: [],
+    const NEW_PROJECTION = inertProjection({
+      id: "wfd_agent1",
+      systemPrompt: "You are now a blunt, no-nonsense assistant.",
+      model: "claude-sonnet-5",
     });
 
     function buildRefreshableDb() {
@@ -2307,19 +2386,18 @@ describe("createHubChatPlatform", () => {
             credentialBindings: [],
           },
         },
+        wireProjectionsByDefinitionId: { wfd_agent1: NEW_PROJECTION },
       });
     }
 
-    test("recomputes and persists the folded body from the definition's current asset", async () => {
+    test("recomputes and persists the folded body from the definition's current projection", async () => {
       const db = buildRefreshableDb();
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService({
-          assetBlob: new TextEncoder().encode(NEW_WORKFLOW_JSON),
-        }),
+        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2365,9 +2443,7 @@ describe("createHubChatPlatform", () => {
         db: db as never,
         noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
-        assetService: createFakeAssetService({
-          assetBlob: new TextEncoder().encode(NEW_WORKFLOW_JSON),
-        }),
+        assetService: createFakeAssetService(),
         // Not in the sidecar's routable set: the instance is asleep, so
         // the next send must wake it — reading whatever
         // `workbench_launch` holds at that moment.

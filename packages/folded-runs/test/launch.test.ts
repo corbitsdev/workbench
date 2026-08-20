@@ -295,11 +295,6 @@ function createFakeSidecarRouter(routable = true): SidecarRouter & {
   } as unknown as SidecarRouter & { runGrantsCalls: RunGrantsCall[] };
 }
 
-/**
- * The `AgentRuntimeConfig` literal a rendered entry module carries. The
- * config IS the deployed bytes under the workflow.json retirement, so a
- * test that wants to know what was deployed reads it back out of them.
- */
 function onlyCall<T>(calls: readonly T[]): T {
   const [call] = calls;
   if (call === undefined) {
@@ -308,13 +303,47 @@ function onlyCall<T>(calls: readonly T[]): T {
   return call;
 }
 
-function entryConfigJSON(entry: string): string {
-  const open = entry.indexOf("buildAgentRuntimeWorkflow(");
-  const close = entry.lastIndexOf(");");
+/**
+ * The definition a rendered entry module default-exports. The run's
+ * evaluated definition IS the deployed bytes under the workflow.json
+ * retirement — the tree carries no dependency and no build call, because
+ * an asset tree is a standalone codebase with no workspace to resolve
+ * one against — so a test that wants to know what was deployed reads the
+ * definition back out of them.
+ */
+function entryDefinition(entry: string): Record<string, unknown> {
+  const open = entry.indexOf("export default ");
+  const close = entry.lastIndexOf(";");
   if (open === -1 || close === -1) {
-    throw new Error(`rendered entry module has no config literal: ${entry}`);
+    throw new Error(
+      `rendered entry module has no definition literal: ${entry}`,
+    );
   }
-  return entry.slice(open + "buildAgentRuntimeWorkflow(".length, close);
+  return JSON.parse(entry.slice(open + "export default ".length, close));
+}
+
+/** Walk a parsed definition literal by key path. The real
+ * `WorkflowDefinition` is function-bearing, so parsed JSON never
+ * satisfies it; this reads the plain data back without asserting it
+ * into a type it cannot honestly have. */
+function at(value: unknown, ...path: readonly string[]): unknown {
+  let cursor = value;
+  for (const key of path) {
+    if (typeof cursor !== "object" || cursor === null) {
+      throw new Error(`definition has nothing at ${path.join(".")}`);
+    }
+    cursor = (cursor as Record<string, unknown>)[key];
+  }
+  return cursor;
+}
+
+/** The lone step primitive a run's definition carries. */
+function foldedStep(definition: Record<string, unknown>): unknown {
+  const stepOrder = at(definition, "stepOrder");
+  if (!Array.isArray(stepOrder) || typeof stepOrder[0] !== "string") {
+    throw new Error("definition carries no single-step stepOrder");
+  }
+  return at(definition, "steps", stepOrder[0]);
 }
 
 const FOLDED_BODY: FoldedBody = {
@@ -532,9 +561,12 @@ describe("launchFoldedRun", () => {
       },
     );
 
-    const entry =
-      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
-    expect(entry).toContain('"literalInput": "workbench-host anchor turn"');
+    const definition = entryDefinition(
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "",
+    );
+    expect(at(foldedStep(definition), "input")).toEqual({
+      literal: "workbench-host anchor turn",
+    });
   });
 
   // CL-6149: a pinned tool package's calls failed every call with
@@ -1104,9 +1136,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     // binding has to be inside the committed tree.
     const entry =
       assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
-    expect(JSON.parse(entryConfigJSON(entry)).credentialBindings).toEqual([
-      MCP_BINDING,
-    ]);
+    expect(entryDefinition(entry)["credentialBindings"]).toEqual([MCP_BINDING]);
   });
 
   test("never calls mcpCredentialBindingsFor when @corbits/mcp-tools is not pinned", async () => {
@@ -1328,22 +1358,31 @@ describe("deployAtHead — the code-sourced round trip", () => {
     await deployAtHead(deps, PARAMS);
 
     const files = onlyCall(deps.assetService.populateAssetCalls).tree.files;
-    const config = JSON.parse(entryConfigJSON(files["workflow.js"] ?? ""));
+    const definition = entryDefinition(files["workflow.js"] ?? "");
     // Every field the approved wire hash covers has to be inside the
-    // bytes: a config delivered out of band diverges between the
+    // bytes: anything delivered out of band diverges between the
     // approval probe's evaluation and the run child's and fails closed.
-    expect(config).toMatchObject({
-      workflowId: "wf_run_rt1",
-      agentId: "run_rt1",
-      triggerAddress: "run_rt1@ten1.workbench.test",
-      systemPrompt: "you answer questions",
-      inferencePreferences: [
-        { provider: "anthropic", model: "claude-sonnet-5" },
-      ],
-      toolPackagePins: [{ name: "@corbits/mcp-tools", version: "*" }],
-      mode: { kind: "step" },
+    expect(definition).toMatchObject({
+      id: "wf_run_rt1",
+      triggers: [{ type: "mail", to: "run_rt1@ten1.workbench.test" }],
+      stepOrder: ["default"],
     });
-    expect(files["package.json"]).toContain('"@corbits/agent-runtime"');
+    expect(foldedStep(definition)).toMatchObject({
+      kind: "step",
+      agent: {
+        systemPrompt: "you answer questions",
+        inference: {
+          sources: [{ provider: "anthropic", model: "claude-sonnet-5" }],
+        },
+        toolPackagePins: [{ name: "@corbits/mcp-tools", version: "*" }],
+      },
+    });
+    // Dependency-free on purpose: an asset tree is a standalone
+    // codebase, so anything the closure would have to resolve against a
+    // workspace cannot resolve at all.
+    expect(JSON.parse(files["package.json"] ?? "")).not.toHaveProperty(
+      "dependencies",
+    );
   });
 
   test("deploys the committed pin through the adopting front", async () => {
@@ -1378,16 +1417,19 @@ describe("deployAtHead — the code-sourced round trip", () => {
       mode: { kind: "section", turnTimeoutMs: 45_000 },
     });
 
-    const config = JSON.parse(
-      entryConfigJSON(
-        onlyCall(deps.assetService.populateAssetCalls).tree.files[
-          "workflow.js"
-        ] ?? "",
-      ),
+    const definition = entryDefinition(
+      onlyCall(deps.assetService.populateAssetCalls).tree.files[
+        "workflow.js"
+      ] ?? "",
     );
-    // The mode is config data, so nothing about the deploy call itself
-    // differs between the two shapes.
-    expect(config.mode).toEqual({ kind: "section", turnTimeoutMs: 45_000 });
+    // The mode selects the shape at render time, so nothing about the
+    // deploy call itself differs between the two: section mode is one
+    // `onTrigger` section whose body step carries the caller's timeout.
+    expect(definition["stepOrder"]).toEqual(["turn"]);
+    expect(at(foldedStep(definition), "kind")).toBe("onTrigger");
+    expect(
+      at(foldedStep(definition), "body", "inline", "steps", "reply", "timeout"),
+    ).toBe(45_000);
     expect(deps.sessionService.adoptedDeployCalls).toHaveLength(1);
   });
 
@@ -1460,14 +1502,11 @@ describe("wakeFoldedRun — the same code-sourced path", () => {
     expect(assetService.populateAssetCalls[0]?.ref).toBe(
       "refs/heads/runs/ins_woken1",
     );
-    const config = JSON.parse(
-      entryConfigJSON(
-        assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "",
-      ),
+    const definition = entryDefinition(
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "",
     );
-    expect(config.mode).toEqual({
-      kind: "step",
-      literalInput: "workbench-host anchor turn",
+    expect(at(foldedStep(definition), "input")).toEqual({
+      literal: "workbench-host anchor turn",
     });
     expect(sessionService.adoptedDeployCalls[0]).toMatchObject({
       anchorRunId: "ins_woken1",

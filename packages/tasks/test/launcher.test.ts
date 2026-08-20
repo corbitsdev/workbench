@@ -54,18 +54,33 @@ const {
   TaskDefinitionNotTaskableError,
 } = await import("../src/launcher");
 
-const AGENT_WORKFLOW_JSON = {
+// The inert wire projection the deploy freeze persists onto the
+// definition's version row — the launch body's only hub-side source
+// under the `workflow.json` retirement.
+const AGENT_WIRE_PROJECTION = {
   id: "wfd_agent",
+  triggers: [],
   stepOrder: ["agent"],
   steps: {
     agent: {
       kind: "step",
       agent: {
         systemPrompt: "You summarize incidents.",
-        inference: { sources: [{ model: "declared-default-model" }] },
+        modelSources: [
+          { provider: "anthropic", model: "declared-default-model" },
+        ],
       },
     },
   },
+};
+
+const selectChain = {
+  from: () => selectChain,
+  innerJoin: () => selectChain,
+  where: () => selectChain,
+  limit: async () => [
+    { wireProjection: AGENT_WIRE_PROJECTION, assetId: "ast_agent" },
+  ],
 };
 
 type InsertChain = {
@@ -112,6 +127,12 @@ function createFakeDb(opts: {
       },
       tenant: { findFirst: async () => opts.tenantRow },
     },
+    // The drizzle SELECT chains the launch path runs: the definition
+    // version row's stored projection (`loadFrozenWireProjection`) and
+    // the run's definition asset id (`resolveRunDefinitionAssetId`).
+    // One chainable stub answers both; each caller reads only its own
+    // column off the single row.
+    select: () => selectChain,
     insert(table: unknown) {
       return { values: (values: unknown) => insertOn(table, values) };
     },
@@ -310,10 +331,6 @@ function createDeps(opts: {
       toolGrantsForPins: () => [],
       db: opts.db as never,
       sessionService: {
-        async deploySingleStepAtHead(params: unknown) {
-          deployCalls.push(params);
-          return { publicKey: "test-public-key" };
-        },
         async sendUserMessage(params: unknown) {
           if (opts.sendUserMessageFails === true) {
             throw new Error("sidecar unreachable");
@@ -322,10 +339,20 @@ function createDeps(opts: {
           return new TextEncoder().encode("raw-mime-bytes");
         },
         async endSession() {},
+        // The step deploy tree the sidecar's tool loader reads a run's
+        // pinned tool-package closure from; source-ref deploys stage it
+        // explicitly (see `deployAtHead`).
+        async stageWorkflowStep() {},
+        // The adopting code-sourced front `deployAtHead` uses: a folded
+        // run's anchor row is minted before any deployment attaches.
+        async deployAdoptedWorkflowFromSource(params: unknown) {
+          deployCalls.push(params);
+          return { publicKey: "test-public-key" };
+        },
       } as never,
       assetService: {
-        async readAssetBlob() {
-          return new TextEncoder().encode(JSON.stringify(AGENT_WORKFLOW_JSON));
+        async populateAsset() {
+          return { commitSha: "sha_deploy" };
         },
       } as never,
       sidecarRouter: {

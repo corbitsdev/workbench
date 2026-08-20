@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { AgentRuntimeConfig } from "./config";
-import { AGENT_RUNTIME_PACKAGE_NAME } from "./pin";
+import { buildAgentRuntimeWorkflow } from "./definition";
 import {
   AGENT_RUNTIME_ENTRY_PATH,
   renderAgentRuntimeSourceTree,
@@ -21,7 +21,6 @@ const config: AgentRuntimeConfig = {
 function render(overrides: Partial<AgentRuntimeConfig> = {}) {
   return renderAgentRuntimeSourceTree({
     packageName: "run-a-workflow",
-    runtimeVersion: "0.0.1",
     config: { ...config, ...overrides },
   });
 }
@@ -34,17 +33,16 @@ describe("renderAgentRuntimeSourceTree", () => {
     expect(Object.keys(render())).toContain("workflow.js");
   });
 
-  test("pins the versioned runtime package as the tree's one dependency", () => {
+  test("declares no dependencies — an asset tree is a standalone codebase with no workspace to resolve against", () => {
     const pkg = JSON.parse(render()["package.json"] ?? "");
 
-    expect(pkg.dependencies).toEqual({ [AGENT_RUNTIME_PACKAGE_NAME]: "0.0.1" });
+    expect(pkg.dependencies).toBeUndefined();
   });
 
-  test("renders the config into the entry module's own bytes", () => {
+  test("renders the evaluated definition into the entry module's own bytes", () => {
     const entry = render()["workflow.js"] ?? "";
 
-    expect(entry).toContain(`from "${AGENT_RUNTIME_PACKAGE_NAME}"`);
-    expect(entry).toContain("buildAgentRuntimeWorkflow(");
+    expect(entry.startsWith("export default {")).toBe(true);
     expect(entry).toContain('"run_a@bench.example"');
     expect(entry).toContain('"You are helpful."');
   });
@@ -60,15 +58,16 @@ describe("renderAgentRuntimeSourceTree", () => {
     expect(render()).toEqual(render());
   });
 
-  test("the rendered entry's config round-trips back to the config it was given", () => {
+  test("the rendered entry parses back to the definition the builder produced", () => {
     const entry = render()["workflow.js"] ?? "";
     const literal = entry.slice(
-      entry.indexOf("buildAgentRuntimeWorkflow(") +
-        "buildAgentRuntimeWorkflow(".length,
-      entry.lastIndexOf(");"),
+      "export default ".length,
+      entry.lastIndexOf(";"),
     );
 
-    expect(JSON.parse(literal)).toEqual(config);
+    expect(JSON.parse(literal)).toEqual(
+      JSON.parse(JSON.stringify(buildAgentRuntimeWorkflow(config))),
+    );
   });
 
   test("renders the section mode's turn timeout into the bytes too", () => {
@@ -77,8 +76,8 @@ describe("renderAgentRuntimeSourceTree", () => {
         "workflow.js"
       ] ?? "";
 
-    expect(entry).toContain('"kind": "section"');
-    expect(entry).toContain('"turnTimeoutMs": 45000');
+    expect(entry).toContain('"kind": "onTrigger"');
+    expect(entry).toContain("45000");
   });
 
   test("refuses to render a config the run child would reject", () => {

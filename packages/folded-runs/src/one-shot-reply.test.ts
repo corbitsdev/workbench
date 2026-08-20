@@ -26,15 +26,21 @@ function firstCall<T>(calls: readonly T[]): T {
   return call;
 }
 
-const AGENT_WORKFLOW_JSON = {
+// The inert projection the deploy freeze persists onto the definition's
+// version row — the launch body's only hub-side source under the
+// `workflow.json` retirement.
+const AGENT_WIRE_PROJECTION = {
   id: "wfd_planner",
+  triggers: [],
   stepOrder: ["agent"],
   steps: {
     agent: {
       kind: "step",
       agent: {
         systemPrompt: "You are Myra.",
-        inference: { sources: [{ model: "declared-default-model" }] },
+        modelSources: [
+          { provider: "anthropic", model: "declared-default-model" },
+        ],
       },
     },
   },
@@ -48,6 +54,25 @@ const DEFINITION_ROW = {
   name: "assistant",
 };
 const TENANT_ROW = { id: "tnt_1", domain: "acme.example" };
+
+/** A `db` double covering both the row reads and the drizzle
+ * `select().from().where().limit()` chain `loadFrozenWireProjection`
+ * runs for the version row's stored projection. */
+function fakeDb() {
+  return {
+    query: {
+      workflowDefinition: { findFirst: async () => DEFINITION_ROW },
+      tenant: { findFirst: async () => TENANT_ROW },
+    },
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{ wireProjection: AGENT_WIRE_PROJECTION }],
+        }),
+      }),
+    }),
+  };
+}
 
 /** A tiny fake `SidecarEventEmitter` — a `Map` of listener sets plus an
  * `.emit()` test helper mimicking the real emitter's `on`/`emit` shape. */
@@ -169,17 +194,8 @@ function createFakeLifecycle() {
 function createBaseDeps() {
   return {
     foldedRuns: {
-      db: {
-        query: {
-          workflowDefinition: { findFirst: async () => DEFINITION_ROW },
-          tenant: { findFirst: async () => TENANT_ROW },
-        },
-      },
-      assetService: {
-        async readAssetBlob() {
-          return new TextEncoder().encode(JSON.stringify(AGENT_WORKFLOW_JSON));
-        },
-      },
+      db: fakeDb(),
+      assetService: {},
       sessionService: {},
       sidecarRouter: {},
       eventCollectors: {},
