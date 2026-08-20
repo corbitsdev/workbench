@@ -101,6 +101,18 @@ const proofModelSource = {
 
 const TURN_TIMEOUT_MS = 300_000;
 
+/**
+ * Proof 4's mid-turn workload. Deliberately far longer than any model
+ * can finish inside `MID_TURN_KILL_DELAY_MS`, so the kill lands while
+ * inference is genuinely running rather than in the quiet gap after a
+ * short turn already completed — the distinction between proving
+ * crash-recovery and proving a clean restart.
+ */
+const MID_TURN_PROMPT =
+  "Count slowly from one to four hundred, one number per line. " +
+  "Write every number out; do not stop early and do not summarise.";
+const MID_TURN_KILL_DELAY_MS = 3000;
+
 const tracked: SpawnedApp[] = [];
 const tempDir = (prefix: string) => mkdtemp(pathJoin(tmpdir(), prefix));
 const track = (app: SpawnedApp) => {
@@ -1079,7 +1091,7 @@ async function main(): Promise<void> {
         parts: [
           {
             kind: "text",
-            text: "Count slowly from one to twenty, one number per line.",
+            text: MID_TURN_PROMPT,
           },
         ],
       },
@@ -1093,13 +1105,27 @@ async function main(): Promise<void> {
       hub.baseUrl,
       "POST",
       `/api/tenants/${tenant.tenantId}/workflows/${sectionDeploymentId}/mail`,
-      { content: "Count slowly from one to twenty, one number per line." },
+      { content: MID_TURN_PROMPT },
       user.cookies,
     );
     expectStatus("send the mid-turn section message", sectionSent, 202);
     // Long enough that the turn is genuinely in flight — the child has
     // the mail and inference is running — but well short of a reply.
-    await Bun.sleep(3000);
+    await Bun.sleep(MID_TURN_KILL_DELAY_MS);
+    // "Mid-turn" is asserted, not assumed: the prompt above cannot be
+    // answered in the kill window on any model, so an answer already
+    // sitting in the room would mean the kill landed BETWEEN turns and
+    // the proof would be testing the easy case.
+    const answeredEarly = (await listAgentMessages()).filter(
+      (m) => !seenIds.has(m.id),
+    );
+    if (answeredEarly.length > 0) {
+      throw new Error(
+        `the mid-turn kill was not mid-turn: the agent already answered ` +
+          `within ${String(MID_TURN_KILL_DELAY_MS)}ms — ` +
+          `${JSON.stringify(answeredEarly.map((m) => m.text))}`,
+      );
+    }
     await sidecar.stop();
   });
 
@@ -1156,9 +1182,6 @@ async function main(): Promise<void> {
     ),
   );
 
-  // Whatever the killed turn produced (a partial reply, or nothing) is
-  // not the proof; the proof is that the NEXT message is answered.
-  for (const m of await listAgentMessages()) seenIds.add(m.id);
   // Same rule for the section: the occurrence that died in the kill may
   // already have committed its `RunStarted`, so it is not evidence that
   // the section still answers. Only an occurrence started AFTER the
@@ -1191,6 +1214,39 @@ async function main(): Promise<void> {
     ),
   );
 
+  // Whatever the killed turn produced is not the proof that the agent
+  // still works — that is the NEXT message's job. But it must not have
+  // produced NOTHING: a turn that died with the sidecar has to reach
+  // the reader as a partial answer or as the product's own visible
+  // notice ("I didn't get that one — send it again"), never as a
+  // message that was accepted and then silently swallowed.
+  await hop(
+    "PROOF 4 — the turn the kill interrupted surfaces visibly",
+    async () => {
+      const deadline = Date.now() + 120_000;
+      for (;;) {
+        const fresh = (await listAgentMessages()).filter(
+          (m) => !seenIds.has(m.id),
+        );
+        if (fresh.length > 0) {
+          console.log(
+            `  TRANSCRIPT — the interrupted turn surfaced as: ` +
+              JSON.stringify(fresh.map((m) => m.text)),
+          );
+          for (const m of fresh) seenIds.add(m.id);
+          return;
+        }
+        if (Date.now() > deadline) {
+          throw new Error(
+            "the turn the sidecar kill interrupted left NOTHING in the " +
+              "room: no partial answer and no undelivered notice, so the " +
+              "reader's message was accepted and silently dropped",
+          );
+        }
+        await Bun.sleep(2000);
+      }
+    },
+  );
   await hop("PROOF 4 — the next message is answered after the restart", () =>
     sendAndAwaitReply("Are you still there? One sentence.", "proof 4", 2),
   );
