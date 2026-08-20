@@ -298,6 +298,18 @@ export function createOAuthConnectRoutes(
         302,
       );
     }
+    if (
+      descriptor.oauth.clientSecret !== undefined &&
+      descriptor.oauth.clientSecret(oauthEnv) === undefined
+    ) {
+      return c.redirect(
+        redirectPath(returnPath, connectorId, {
+          outcome: "error",
+          code: "not_configured",
+        }),
+        302,
+      );
+    }
 
     const rateLimitKey = `${connectorId}:${user.id}`;
     const now = Date.now();
@@ -407,6 +419,19 @@ export function createOAuthConnectRoutes(
         302,
       );
     }
+    const clientSecret = descriptor.oauth.clientSecret?.(oauthEnv);
+    if (
+      descriptor.oauth.clientSecret !== undefined &&
+      clientSecret === undefined
+    ) {
+      return c.redirect(
+        redirectPath(returnPath, connectorId, {
+          outcome: "error",
+          code: "not_configured",
+        }),
+        302,
+      );
+    }
 
     const cookieState = getCookie(c, stateCookieName(connectorId));
     deleteCookie(c, stateCookieName(connectorId), { path: "/" });
@@ -473,6 +498,7 @@ export function createOAuthConnectRoutes(
       redirectUri: callbackUrl,
       ...(descriptor.oauth.usesPKCE ? { codeVerifier } : {}),
       ...(clientId !== undefined ? { clientId } : {}),
+      ...(clientSecret !== undefined ? { clientSecret } : {}),
     };
     const exchanged = await descriptor.oauth.exchange(exchangeArgs);
     if (!exchanged.ok) {

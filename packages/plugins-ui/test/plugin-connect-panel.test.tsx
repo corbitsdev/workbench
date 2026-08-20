@@ -4,7 +4,7 @@
 // specifically — both the api-key form and `GranolaWebhookCard` stacked
 // in the same panel, never a second dialog.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -16,6 +16,18 @@ import { PluginConnectPanel } from "../src/plugin-connect-panel";
 
 const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
+// The panel fetches `/connections/oauth-configured` on open (CL-6386) —
+// every test that doesn't care about that response gets this quiet
+// default rather than a real network attempt; a test exercising a
+// different fetch behavior overrides `globalThis.fetch` itself before
+// rendering.
+beforeEach(() => {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
+});
 afterEach(() => {
   globalThis.fetch = realFetch;
   for (const root of mountedRoots) act(() => root.unmount());
@@ -158,6 +170,52 @@ describe("PluginConnectPanel", () => {
     await settle();
 
     expect(container.textContent).toContain("Couldn't disconnect");
+  });
+
+  function githubDescriptor(): ConnectorDescriptor {
+    return {
+      ...descriptor("github", "GitHub", "api-key"),
+      docsUrl: "https://github.com/settings/tokens",
+      oauth: {
+        authorizeUrl: "https://github.com/login/oauth/authorize",
+        usesPKCE: false,
+        echoesState: true,
+        deploysDefaultWorkflows: false,
+        buildAuthorizeUrl: ({ callbackUrl }) => new URL(callbackUrl),
+        exchange: async () => ({ ok: false, message: "unused in this test" }),
+      },
+    };
+  }
+
+  test("GitHub with the hosted app configured shows one Connect button, no token field", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ github: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    const container = render(notConnected(githubDescriptor()));
+    await settle();
+
+    const link = container.querySelector("a");
+    expect(link?.textContent).toContain("Connect with GitHub");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  test("GitHub without the hosted app configured falls back to a token paste with honest copy", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ github: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    const container = render(notConnected(githubDescriptor()));
+    await settle();
+
+    expect(container.textContent).toContain(
+      "This workbench isn't set up with the one-click GitHub app",
+    );
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
   });
 
   test("nothing renders when no plugin is selected", () => {

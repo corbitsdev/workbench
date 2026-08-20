@@ -18,7 +18,14 @@
 // chosen.
 
 import { getLogger } from "@corbits/client-log";
-import { createWorkbench, patchWorkbenchSettings } from "@corbits/chat-ui";
+import {
+  createWorkbench,
+  getConnectGithubState,
+  patchWorkbenchSettings,
+  startReviewingGithubRepos,
+  type ConnectGithubRepo,
+} from "@corbits/chat-ui";
+import { listPluginsForTenant } from "@workbench/connections/plugins";
 import {
   instantiateWorkbenchTemplate,
   templateSettingsPatch,
@@ -34,6 +41,19 @@ const log = getLogger("web.instant-agent-create");
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
 export const NEW_WORKBENCH_TITLE = "New Workbench";
+
+/**
+ * Presents the connected org's repo list for the person to pick from once
+ * the workbench exists — the create flow's own "select" half of CL-6386
+ * ("connect in Plugins; select on new-workbench"). Resolving `null` means
+ * "skip" (the person closed the picker without choosing); an empty array
+ * is a legitimate "review nothing yet" choice, distinct from skipping.
+ */
+export type PickGithubRepos = (args: {
+  readonly orgName: string;
+  readonly repos: readonly ConnectGithubRepo[];
+  readonly selectedRepoIds: readonly string[];
+}) => Promise<readonly string[] | null>;
 
 /**
  * Finds the account's default setup template (the seeded `assistant`
@@ -66,12 +86,16 @@ export async function createAgentAndLaunch(
  * and does not do yet (inviting the reviewers into the room, and the
  * GitHub connect card itself, are the next slice). A template id with
  * no manifest yet (`blank`, "Just start talking") mints a plain
- * untagged chat, exactly like before templates existed.
+ * untagged chat, exactly like before templates existed. When
+ * `pickGithubRepos` is supplied and GitHub is already connected for this
+ * tenant, this also drives CL-6386's "select on new-workbench" step —
+ * see `PickGithubRepos`'s own doc.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
   templateId: WorkbenchTemplateId,
   navigate: (to: string) => void,
+  pickGithubRepos?: PickGithubRepos,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
@@ -79,15 +103,45 @@ export async function createWorkbenchFromTemplate(
     throw new Error("No default setup agent found for this workbench.");
   }
   const manifest = workbenchTemplate(templateId);
+  const requiresGithub =
+    manifest?.requiredConnections.includes("github") ?? false;
+
+  // GitHub already connected (established from the Plugins page, CL-6386)
+  // means this create flow can skip the in-room connect card entirely and
+  // go straight to repo selection once the workbench exists. Not yet
+  // connected keeps today's exact behaviour: the in-room card stays the
+  // just-in-time fallback.
+  const githubAlreadyConnected =
+    requiresGithub && pickGithubRepos !== undefined
+      ? (await listPluginsForTenant(tenantId)).some(
+          (plugin) =>
+            plugin.descriptor.id === "github" && plugin.status === "connected",
+        )
+      : false;
+
   const workbench = await createWorkbench(tenantId, {
     kind: "chat",
     definitionId: setupTemplate.id,
     name: NEW_WORKBENCH_TITLE,
     ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
-    ...(manifest?.requiredConnections.includes("github")
-      ? { connectGithubRequiredFor: manifest.title }
+    ...(requiresGithub && !githubAlreadyConnected
+      ? { connectGithubRequiredFor: manifest?.title ?? "" }
       : {}),
   });
+
+  if (githubAlreadyConnected && pickGithubRepos !== undefined) {
+    const state = await getConnectGithubState(tenantId, workbench.id);
+    if (state.kind === "connected" && state.repos.length > 0) {
+      const repoIds = await pickGithubRepos({
+        orgName: state.orgName,
+        repos: state.repos,
+        selectedRepoIds: state.selectedRepoIds,
+      });
+      if (repoIds !== null && repoIds.length > 0) {
+        await startReviewingGithubRepos(tenantId, workbench.id, repoIds);
+      }
+    }
+  }
 
   if (manifest !== undefined) {
     const result = await instantiateWorkbenchTemplate(manifest, {
