@@ -38,6 +38,7 @@ import type {
 } from "../types.ts";
 import type { McpFakeRecording } from "../fakes/recording.ts";
 import { startMcpFake } from "../fakes/mcp-fake-server.ts";
+import { fireRoutineNow } from "./fire-routine.ts";
 import {
   newToolCallsSince,
   readAllToolCalls,
@@ -629,9 +630,24 @@ export async function bootMyraTarget(
       return startedFakes.flatMap((fake) => fake.receipts());
     }
 
+    async function fireRoutine(routineId: string): Promise<Turn> {
+      return fireRoutineNow(
+        {
+          api,
+          hubUrl: hub.baseUrl,
+          tenantId: seeded.tenantId,
+          cookies,
+          sql: sqlClient,
+        },
+        routineId,
+        routineId,
+      );
+    }
+
     return {
       configName: config.name,
       sendTurn,
+      fireRoutine,
       close: closeAll,
       ...(infra.captureWorldSnapshot === undefined
         ? {}

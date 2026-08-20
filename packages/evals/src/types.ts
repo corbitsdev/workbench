@@ -167,15 +167,18 @@ export interface RunConfig {
 /** A target is anything that can play one scripted human turn and
  * report what happened — a real Myra deployment (targets/real-stack.ts)
  * or a fake for unit-testing the runner itself (runner.test.ts).
- * `snapshotWorld` is an optional capability: not every target can read
- * the tenant's own tables (a scripted-only fake `Target` has nothing to
- * read), so `runEval` guards the call and falls back to an empty
- * `WorldSnapshot` rather than requiring every `Target` to implement
- * it. */
+ * `snapshotWorld` and `fireRoutine` are optional capabilities: not
+ * every target can read the tenant's own tables or fire a routine
+ * occurrence (a scripted-only fake `Target` can do neither), so
+ * `runEval` guards `snapshotWorld` and falls back to an empty
+ * `WorldSnapshot`, and a case that calls `fireRoutine` against a
+ * `Target` missing it gets a loud, named error at the call site —
+ * never a silent no-op. */
 export interface Target {
   readonly configName: string;
   sendTurn(human: string): Promise<Turn>;
   snapshotWorld?(): Promise<WorldSnapshot>;
+  fireRoutine?(routineId: string): Promise<Turn>;
   close(): Promise<void>;
 }
 
