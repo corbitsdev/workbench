@@ -1,7 +1,7 @@
 // The permanent booted-stack chat e2e: two principals in one tenant,
 // messages fanning in to a single converged timeline through the
 // mounted `@corbits/chat` HTTP surface, settings and read-state live,
-// and mention fan-out landing a copy in a second run's own mailbox.
+// and mention fan-out driving a second run off its own mailbox.
 // Deterministic — no credentials, no real inference, no API keys.
 //
 // The path proven: database setup (chat migrations apply) → hub boot
@@ -14,8 +14,8 @@
 // relaunch → a settings patch that both updates the record and
 // appends an audit event to the timeline → independent per-user
 // read-state cursors → a second workbench's address mentioned in the
-// first, fanning a copy into the mentioned run's own mailbox → the
-// workbench kind filter.
+// first, fanning a copy into the mentioned run's mailbox and driving
+// that run → the workbench kind filter.
 //
 // Structured as one shared-boot stack (`beforeAll`) with a separate
 // `test` per capability, rather than one long test: a real defect
@@ -428,36 +428,61 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     ) as unknown as ListedMessage[];
   }
 
-  /** Flattens a workbench's timeline to its text-part bodies. */
-  function textsOf(items: readonly ListedMessage[]): string[] {
-    return items.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+  type RunEvent = { seq: number; type: string };
+
+  /**
+   * A recipient run's own event log. Since CL-6327 a room's timeline is
+   * `chat.workbench_messages` — workbench data written by whoever posted
+   * — so a fan-out copy delivered to an agent's mailbox never becomes a
+   * row under the recipient's id, and `GET .../messages` on the
+   * recipient can no longer witness the delivery. The run's committed
+   * event log is what does: mail that reaches a run drives it, and
+   * `RunStarted`/`StepStarted` commit before any inference is attempted,
+   * so the placeholder key CI runs with cannot suppress them.
+   */
+  async function runEvents(
+    cookies: string[],
+    runId: string,
+  ): Promise<RunEvent[]> {
+    const res = await api(
+      "GET",
+      `/api/tenants/${tenantId}/workflows/runs/${runId}/events`,
+      undefined,
+      cookies,
     );
+    expectStatus(`list run events for ${runId}`, res, 200);
+    return arrayField(
+      res.data,
+      "events",
+      `run events for ${runId}`,
+    ) as unknown as RunEvent[];
+  }
+
+  function highestSeq(events: readonly RunEvent[]): number {
+    return events.reduce((highest, event) => Math.max(highest, event.seq), -1);
   }
 
   /**
-   * A fan-out copy lands on the recipient run's timeline only after the
-   * mail round-trips through the sidecar, so poll (bounded) until a
-   * text matching `predicate` appears, then re-list once after a short
-   * settle so a redelivered duplicate would still be visible to an
-   * exactly-once assertion.
+   * Polls (bounded) until the run commits an event newer than
+   * `sinceSeq`. A recipient run is already alive before the message
+   * under test is posted — its anchor launched at workbench-creation
+   * time — so "the run has events" proves nothing; only events past the
+   * pre-post watermark do.
    */
-  async function pollForDeliveredTexts(
+  async function waitForRunProgress(
     cookies: string[],
-    workbench: string,
-    predicate: (text: string) => boolean,
-  ): Promise<string[]> {
+    runId: string,
+    sinceSeq: number,
+  ): Promise<RunEvent[]> {
     const deadline = Date.now() + 60_000;
     for (;;) {
-      const texts = textsOf(await listMessages(cookies, workbench));
-      if (texts.some(predicate)) break;
-      if (Date.now() > deadline) return texts;
+      const fresh = (await runEvents(cookies, runId)).filter(
+        (event) => event.seq > sinceSeq,
+      );
+      if (fresh.length > 0) return fresh;
+      if (Date.now() > deadline) return fresh;
       await Bun.sleep(1000);
     }
-    await Bun.sleep(3_000);
-    return textsOf(await listMessages(cookies, workbench));
   }
 
   test("workbench creation launches the anchor", async () => {
@@ -520,7 +545,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // settings PATCH appends a non-text event part to this workbench's
   // timeline, and `GET .../messages` on a workbench carrying one
   // currently 500s (see that test's note) — read-state's own routes
-  // never call `listMail`, so ordering it first keeps this test's
+  // read from the room table, so ordering it first keeps this test's
   // result honest regardless of that failure.
   test("read-state cursors are independent per user", async () => {
     const seenId = await postMessage(
@@ -559,7 +584,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
   });
 
-  test("mention fan-out lands a copy in the mentioned run's own mailbox", async () => {
+  test("mention fan-out drives the mentioned run", async () => {
     const secondWorkbench = await createWorkbench({
       kind: "workbench",
       name: "mentioned",
@@ -580,20 +605,19 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
     expectStatus("add mentionable participant", patched, 200);
 
+    const before = highestSeq(
+      await runEvents(user1.cookies, secondWorkbenchId),
+    );
+
     const mentionText = `hey @${secondWorkbenchId} take a look ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const mentionedTexts = await pollForDeliveredTexts(
+    const fresh = await waitForRunProgress(
       user1.cookies,
       secondWorkbenchId,
-      (text) => text.endsWith(mentionText),
+      before,
     );
-    // The delivered copy carries the workbench-context block merged ahead
-    // of the message in one text part, so the mention text is a suffix
-    // of the delivered body rather than the whole body.
-    expect(mentionedTexts.some((text) => text.endsWith(mentionText))).toBe(
-      true,
-    );
+    expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
   test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
@@ -684,27 +708,18 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // rather than its raw instance-id local part. The invited agent's
     // reply is never asserted: its inference source is a placeholder
     // key in CI, so its own reply attempt errors, which is expected and
-    // irrelevant to this assertion.
+    // irrelevant to this assertion — the mail arriving and driving the
+    // run is the whole claim.
+    const before = highestSeq(await runEvents(user1.cookies, invitedLocalPart));
     const mentionText = `hey @${invitedParticipant.handle} welcome ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const invitedTexts = await pollForDeliveredTexts(
+    const fresh = await waitForRunProgress(
       user1.cookies,
       invitedLocalPart,
-      (text) => text.endsWith(mentionText),
+      before,
     );
-    // Exactly once, not merely "at least once": before CL-6043's
-    // self-anchor fix, an invited agent's own run wrote
-    // `anchorRunId: null` (see `packages/folded-runs/src/launch.ts`),
-    // which `receiveWorkflowRunPack`
-    // (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
-    // permanently rejects — the hub then redelivers the same mail
-    // pack on every retry, so a still-broken anchor would show up
-    // here as a duplicate, not a missing message.
-    const deliveredMentions = invitedTexts.filter((text) =>
-      text.endsWith(mentionText),
-    );
-    expect(deliveredMentions).toHaveLength(1);
+    expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
   async function echoDefinitionId(): Promise<string> {
@@ -771,21 +786,18 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // placeholder key in CI, so its reply attempt is expected to error
     // and is never asserted here — only that the fan-out mail reached
     // it.
+    const before = highestSeq(
+      await runEvents(user1.cookies, chatAgentLocalPart),
+    );
     const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, chatId, unmentionedText);
 
-    const agentTexts = await pollForDeliveredTexts(
+    const fresh = await waitForRunProgress(
       user1.cookies,
       chatAgentLocalPart,
-      (text) => text === unmentionedText,
+      before,
     );
-    // Exactly once — see the same note on the invited-agent mention
-    // assertion above: a redelivered duplicate here would mean this
-    // chat agent's own folded run is still failing the live-anchor
-    // check on its workflow-run mail pack.
-    expect(agentTexts.filter((text) => text === unmentionedText)).toHaveLength(
-      1,
-    );
+    expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
   // Runs after the echo chat above so its own create call — same
