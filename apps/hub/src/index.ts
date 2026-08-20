@@ -76,6 +76,7 @@ import {
   createDrizzleWriteClaimStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  createRelaunchNoticePoster,
   findExistingAgentChat,
   createWorkflowParticipantRoutes,
   isWorkbenchHostDefinitionName,
@@ -85,6 +86,7 @@ import {
   startWorkflowCommand,
   sendWorkbenchMessage,
 } from "@corbits/chat";
+import type { RelaunchNoticePort } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import {
   createCryptoProviderCache,
@@ -1042,6 +1044,12 @@ export async function createHub(config: HubConfig) {
     createWorkbenchHostInferencePreferencesResolver((tenantId) =>
       listDefaultInferencePreferences(db, tenantId),
     );
+  // Where a relaunch announces itself in the room (see `@corbits/chat`'s
+  // `relaunch-notice.ts`). Armed further down, once the room-message
+  // store the poster writes through exists — the platform that fires
+  // notices has to be constructed first, since the sweep that triggers
+  // most of them hangs off it.
+  const relaunchNoticeRef: RelaunchNoticePort = {};
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
@@ -1067,6 +1075,7 @@ export async function createHub(config: HubConfig) {
     // tenant-catalog default, instead of 409ing `not_launchable`.
     workbenchHostInferencePreferences:
       workbenchHostInferencePreferencesResolver,
+    relaunchNotice: relaunchNoticeRef,
   });
   wireMailRedelivery({ sidecarRouter, chatPlatform });
   // The one SSE subscriber registry for this process's workbench events
@@ -1093,6 +1102,11 @@ export async function createHub(config: HubConfig) {
   // The room timeline store (CL-6327): a workbench's own messages, held
   // as workbench data rather than platform mail.
   const roomMessages = createDrizzleRoomMessageStore(db);
+  relaunchNoticeRef.current = createRelaunchNoticePoster({
+    store: chatStore,
+    roomMessages,
+    publish: workbenchSubscribers.publish,
+  });
   // Built once, beside the platform, for the process's lifetime: turns
   // an invited agent's `connector.reply` events into workbench messages,
   // and a gate-blocked run's approval park into an in-chat approve
@@ -1120,6 +1134,53 @@ export async function createHub(config: HubConfig) {
     chatOrchestratorDeps.memory = memoryHandle.memory;
   }
   const chatOrchestrator = createChatOrchestrator(chatOrchestratorDeps);
+  // A room participant that died with its sidecar is otherwise silently
+  // dead until somebody writes into it, and the turn the crash
+  // interrupted never surfaces at all — the run that died never sends
+  // the `message.run.ended` the orchestrator's turn-drop notice hangs
+  // off. The sweep finds those runs and relaunches each one, posting
+  // its notice.
+  //
+  // A series of passes rather than one, because "this run is dead" is
+  // not knowable at the instant the execution plane comes back: the
+  // terminal event is committed to the run's durable log by the dying
+  // sidecar and reaches `workflow_run.status` only once the restarted
+  // sidecar has packed it back to the hub, seconds later. The series is
+  // bounded and re-armed by a sidecar disconnect, which is the one
+  // event that can newly orphan a room.
+  const relaunchSweepLog = getLogger(["chat", "relaunch-sweep"]);
+  const RELAUNCH_SWEEP_DELAYS_MS = [0, 2_000, 5_000, 15_000, 45_000];
+  // Bumped by every reschedule so a pass still in flight from the
+  // previous series retires instead of continuing beside the new one.
+  let relaunchSweepSeries = 0;
+  let relaunchSweepTimer: ReturnType<typeof setTimeout> | undefined;
+  function runNextRelaunchSweepPass(series: number, pass: number): void {
+    const delay = RELAUNCH_SWEEP_DELAYS_MS[pass];
+    if (delay === undefined || series !== relaunchSweepSeries) return;
+    const timer = setTimeout(() => {
+      void chatPlatform
+        .sweepTerminalRuns()
+        .catch((cause: unknown) => {
+          relaunchSweepLog.error`relaunch sweep pass failed: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`;
+        })
+        .finally(() => {
+          runNextRelaunchSweepPass(series, pass + 1);
+        });
+    }, delay);
+    timer.unref?.();
+    relaunchSweepTimer = timer;
+  }
+  function scheduleRelaunchSweep(): void {
+    clearTimeout(relaunchSweepTimer);
+    relaunchSweepSeries += 1;
+    runNextRelaunchSweepPass(relaunchSweepSeries, 0);
+  }
+  scheduleRelaunchSweep();
+  sidecarRouter.events.on("sidecar.disconnect", () => {
+    scheduleRelaunchSweep();
+  });
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
   // `memory` (absent when the plane isn't mounted) lets this handler

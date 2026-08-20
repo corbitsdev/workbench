@@ -361,6 +361,13 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "chat"."workbench_launch" ("current_run_id");
     `,
   },
+  {
+    name: "0021_workbench_launch_prior_runs",
+    sql: `
+      ALTER TABLE "chat"."workbench_launch"
+        ADD COLUMN IF NOT EXISTS "prior_run_ids" jsonb NOT NULL DEFAULT '[]'::jsonb;
+    `,
+  },
 ];
 
 /**

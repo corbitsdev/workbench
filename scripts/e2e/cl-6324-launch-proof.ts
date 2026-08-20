@@ -1251,6 +1251,26 @@ async function main(): Promise<void> {
     sendAndAwaitReply("Are you still there? One sentence.", "proof 4", 2),
   );
 
+  // The audit trail is the whole reason a relaunch mints a fresh run
+  // instead of reclaiming the dead one's address: the run that died
+  // mid-turn keeps its own durable log, under its own address, readable
+  // through the ordinary run routes — after the run that replaced it is
+  // already answering (the hop above).
+  await hop("PROOF 4 — the replaced run's log is still readable", async () => {
+    const events = await readRunEvents();
+    if (events.length === 0) {
+      throw new Error(
+        `the replaced run ${agentRunId}'s durable event log is unreadable ` +
+          `after its replacement went live: the relaunch reclaimed the ` +
+          `audit trail it exists to preserve`,
+      );
+    }
+    console.log(
+      `  TRANSCRIPT — replaced run ${agentRunId} still readable: ` +
+        `${String(events.length)} events, last ${events.at(-1)?.type ?? "?"}`,
+    );
+  });
+
   console.log("\n=== TIMINGS ===");
   for (const t of timings) {
     console.log(`  ${t.label}: ${(t.ms / 1000).toFixed(1)}s`);

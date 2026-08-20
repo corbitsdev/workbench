@@ -29,13 +29,16 @@ import {
 } from "@corbits/folded-runs";
 import {
   isBeyondWake,
+  listLaunchesBeyondWake,
   readBindingByAddress,
+  readPriorRuns,
   repointBinding,
   resolveLiveAgent,
   resolveLiveByStableId,
   type AgentBinding,
   type LiveAgent,
 } from "./agent-binding";
+import type { RelaunchNoticePort } from "./relaunch-notice";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
@@ -145,6 +148,13 @@ export type CreateHubChatPlatformDeps = {
   workbenchHostInferencePreferences?: (
     tenantId: string,
   ) => Promise<readonly InferencePreference[]>;
+  /**
+   * Where a relaunch announces itself in the room — see
+   * `./relaunch-notice.ts` for why this is a ref the host arms later
+   * rather than a callback passed in here. Absent (or never armed), a
+   * relaunch happens silently.
+   */
+  relaunchNotice?: RelaunchNoticePort;
 };
 
 // Workbench-host asset naming lives in `./workbench-host-naming` — a
@@ -160,6 +170,15 @@ export type CreateHubChatPlatformDeps = {
 // `inferencePreferences` — empty when the hub has seeded none).
 const NOOP_INFERENCE_SOURCE_ID = "noop";
 const NOOP_INFERENCE_MODEL_FALLBACK = "noop";
+
+/**
+ * How many launch rows one relaunch sweep will look at. A sweep is a
+ * best-effort recovery pass, and every relaunch it performs is a real
+ * sidecar deploy — an unbounded one would turn a boot after a bad night
+ * into a deploy storm. Rooms past the bound still recover the moment
+ * somebody writes into them, through the same send-triggered path.
+ */
+const RELAUNCH_SWEEP_LIMIT = 100;
 
 /**
  * The `SourcesOverride` every workbench-HOST launch and wake pins
@@ -231,6 +250,14 @@ export type HubChatPlatform = ChatPlatform & {
    * "not mine to wake", not a bug.
    */
   ensureAwake(address: string): Promise<void>;
+  /**
+   * Relaunches every room participant whose run is beyond waking, and
+   * posts each one's notice. The host runs this at boot and again
+   * whenever the execution plane has come back, since a run that died
+   * with its sidecar is only discoverable once the hub has ingested
+   * that run's terminal event.
+   */
+  sweepTerminalRuns(): Promise<{ scanned: number; relaunched: number }>;
 };
 
 /**
@@ -397,10 +424,55 @@ export function createHubChatPlatform(
     // outlived a failed launch would leave the room addressing a run
     // `launchFoldedRun` had already rolled back, and the next message
     // would resolve nothing at all.
-    await repointBinding(deps.db, binding.stableId, newRunId);
+    await repointBinding(deps.db, binding, newRunId);
     lifecycle?.untrack(binding.liveAddress);
     lifecycle?.track(newAddress);
+
+    // The turn that died with the old run never sent
+    // `message.run.ended`, so the orchestrator's turn-drop notice can
+    // never fire for it. This is the only thing that tells the reader
+    // their message was not silently swallowed.
+    deps.relaunchNotice?.current?.({
+      tenantId: binding.tenantId,
+      roomAddress: binding.roomAddress,
+      deadRunId: run.id,
+      deadRunStatus: run.status,
+      newRunId,
+    });
     return newAddress;
+  }
+
+  /**
+   * Replaces every participant whose run died while nothing was
+   * watching. A send-triggered relaunch only fires when somebody writes
+   * into the room; a room whose agent died in a crash would otherwise
+   * stay silently dead until then, with the interrupted turn never
+   * surfacing at all.
+   *
+   * Best-effort and bounded: one failed relaunch is logged and the
+   * sweep moves on, because a boot that aborts on the first
+   * unrelaunchable room leaves every room after it dead too.
+   */
+  async function sweepTerminalRuns(): Promise<{
+    scanned: number;
+    relaunched: number;
+  }> {
+    const dead = await listLaunchesBeyondWake(deps.db, RELAUNCH_SWEEP_LIMIT);
+    let relaunched = 0;
+    for (const live of dead) {
+      try {
+        await relaunchTerminalRun(live);
+        relaunched += 1;
+      } catch (cause: unknown) {
+        wakeLogger.error`relaunch sweep: could not relaunch ${live.binding.roomAddress} (run ${live.run.id} is ${live.run.status}): ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      }
+    }
+    if (dead.length > 0) {
+      wakeLogger.info`relaunch sweep: ${String(relaunched)} of ${String(dead.length)} dead room participants relaunched`;
+    }
+    return { scanned: dead.length, relaunched };
   }
 
   /**
@@ -464,6 +536,25 @@ export function createHubChatPlatform(
       throw new Error(`No live workbench run for "${stableId}"`);
     }
     return live;
+  }
+
+  /**
+   * The mail sessions this participant used to hold, newest first. A
+   * retired run whose principal never got a session (a launch that
+   * rolled back before one existed) has nothing to contribute and is
+   * skipped — that is history with no mail in it, not a failure to
+   * read the blob the caller asked for.
+   */
+  async function retiredSessionIds(binding: AgentBinding): Promise<string[]> {
+    const sessionIds: string[] = [];
+    for (const run of await readPriorRuns(deps.db, binding)) {
+      try {
+        sessionIds.push(await resolveFoldedRunSessionId(deps.db, run));
+      } catch {
+        continue;
+      }
+    }
+    return sessionIds;
   }
 
   /**
@@ -828,12 +919,6 @@ export function createHubChatPlatform(
     },
 
     async fetchBlob(workbenchId, blobId): Promise<string | Uint8Array> {
-      // Blobs are only readable when the mail row lives on this workbench's
-      // session. Looking up by mail id alone let any authenticated caller
-      // read another tenant's attachment by guessing a blob id.
-      const { run } = await requireLive(workbenchId);
-      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
-
       const match = /^blob_(.+?)_(\d[\d.]*)$/.exec(blobId);
       if (match === null) {
         throw new Error(`Invalid blob id "${blobId}"`);
@@ -842,16 +927,33 @@ export function createHubChatPlatform(
       if (mailId === undefined || partPath === undefined) {
         throw new Error(`Invalid blob id "${blobId}"`);
       }
-      const mailRow = await deps.db.query.sessionMail.findFirst({
-        where: and(
-          eq(sessionMail.id, mailId),
-          eq(sessionMail.sessionId, sessionId),
-        ),
-      });
-      if (mailRow === undefined) {
-        throw new Error(`No mail "${mailId}" for blob "${blobId}"`);
+
+      // Blobs are only readable when the mail row lives on a session
+      // this participant has actually held. Looking up by mail id alone
+      // let any authenticated caller read another tenant's attachment
+      // by guessing a blob id.
+      //
+      // "Held", not "holds": a relaunch mints a fresh run with a fresh
+      // principal, and a folded run's mail session hangs off its
+      // principal — so an attachment sent before the crash lives on a
+      // session the live run has never seen. Walking the retired runs
+      // newest-first is what keeps yesterday's attachment downloadable
+      // after today's relaunch.
+      const { binding, run } = await requireLive(workbenchId);
+      const liveSessionId = await resolveFoldedRunSessionId(deps.db, run);
+      const priorSessionIds = await retiredSessionIds(binding);
+      for (const sessionId of [liveSessionId, ...priorSessionIds]) {
+        const mailRow = await deps.db.query.sessionMail.findFirst({
+          where: and(
+            eq(sessionMail.id, mailId),
+            eq(sessionMail.sessionId, sessionId),
+          ),
+        });
+        if (mailRow !== undefined) {
+          return extractPartByPath(mailRow.raw, partPath);
+        }
       }
-      return extractPartByPath(mailRow.raw, partPath);
+      throw new Error(`No mail "${mailId}" for blob "${blobId}"`);
     },
 
     subscribeToWorkbench(
@@ -904,5 +1006,6 @@ export function createHubChatPlatform(
 
   return Object.assign(platform, {
     recordActivity: (address: string) => lifecycle?.recordActivity(address),
+    sweepTerminalRuns,
   });
 }

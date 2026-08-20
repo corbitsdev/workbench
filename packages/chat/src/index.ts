@@ -262,6 +262,12 @@ export type {
 } from "./platform-adapter";
 
 export {
+  createRelaunchNoticePoster,
+  relaunchNoticeText,
+} from "./relaunch-notice";
+export type { RelaunchNotice, RelaunchNoticePort } from "./relaunch-notice";
+
+export {
   createDrizzleRoomMessageStore,
   createInMemoryRoomMessageStore,
   postRoomMessage,

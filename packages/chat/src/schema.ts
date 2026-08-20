@@ -107,6 +107,15 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
    * Unique: one run backs at most one room participant.
    */
   currentRunId: text("current_run_id").notNull().unique(),
+  /**
+   * Every run that used to be `currentRunId`, oldest first. A relaunch
+   * mints a fresh run with its own principal, and a folded run's mail
+   * session is resolved from its principal — so an attachment a reader
+   * uploaded before the crash lives on a session the live run cannot
+   * see. This is the trail `fetchBlob` walks back through so a blob
+   * posted to the room yesterday is still downloadable today.
+   */
+  priorRunIds: jsonb("prior_run_ids").notNull().default([]),
   foldedBody: jsonb("folded_body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
