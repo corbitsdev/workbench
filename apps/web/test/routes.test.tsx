@@ -242,6 +242,28 @@ describe("route table", () => {
     expect(routeFor("/routines/weekly-digest")).toBe(ROUTINE_DETAIL_PATH);
     expect(routeFor("/agents/wfd_1")).toBe("/agents");
     expect(routeFor("/skills/skill_1")).toBe("/skills");
+    expect(routeFor("/routines/wfr_1")).toBe("/routines");
+  });
+
+  test("the Plugins roster owns its bare path and slug details, nothing else", () => {
+    const routeFor = (path: string) =>
+      APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
+    expect(routeFor("/plugins")).toBe("/plugins");
+    expect(routeFor("/plugins/linear")).toBe(PLUGIN_DETAIL_PATH);
+    expect(routeFor("/plugins/Linear")).toBeUndefined();
+    expect(routeFor("/plugins/linear/settings")).toBeUndefined();
+  });
+
+  test("a malformed percent-escape resolves without throwing", () => {
+    const routeFor = (path: string) =>
+      APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
+    expect(routeFor("/plugins/%")).toBeUndefined();
+    expect(routeFor("/routines/%E0%A4%A")).toBe("/routines");
+    expect(matchesRoute(PLUGIN_DETAIL_PATH, "/plugins/%")).toBe(false);
+    expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(
+      false,
+    );
   });
 
   test("a detail path keeps its roster's sidebar row lit", () => {
@@ -340,6 +362,19 @@ describe("routes render", () => {
   test("a slug-shaped path under no known entity renders the not-found screen", async () => {
     const markup = await renderApp("/agent/triage-bot");
     expect(markup).toContain("Page not found");
+  });
+
+  test("an unconsumable path under Plugins renders not-found, never the roster", async () => {
+    const markup = await renderApp("/plugins/Not-A-Slug");
+    expect(markup).toContain("Page not found");
+    expect(activeFooterLabel(markup)).toBeUndefined();
+  });
+
+  test("a malformed percent-escape renders a screen instead of crashing", async () => {
+    expect(await renderApp("/plugins/%")).toContain("Page not found");
+    expect(await renderApp("/routines/%E0%A4%A")).toContain(
+      'data-testid="shell-sidebar"',
+    );
   });
 
   test("an unknown path renders the not-found screen", async () => {
