@@ -142,6 +142,40 @@ describe("runSetup", () => {
     expect((caught as CliError).fix).toContain("HUB_ADMIN_PASSWORD");
   });
 
+  test("an unverified-email signup rejection names the ALLOW_UNVERIFIED_EMAILS fix", async () => {
+    const { log } = collector();
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return {
+          status: 403,
+          data: {
+            error: {
+              code: "signup_not_allowed",
+              message:
+                "This account's email address isn't verified, and this hub requires verified emails before provisioning.",
+            },
+          },
+        };
+      if (method === "GET" && path === "/api/me/principals")
+        return { status: 200, data: { data: [], nextCursor: null } };
+      return undefined;
+    });
+
+    let caught: unknown;
+    try {
+      await runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    expect((caught as CliError).message).toContain("isn't verified");
+    expect((caught as CliError).fix).toContain("ALLOW_UNVERIFIED_EMAILS=1");
+  });
+
   test("an unresolvable tenant conflict fails with the failing status", async () => {
     const { log } = collector();
     const api = fakeAPI((method, path) => {
