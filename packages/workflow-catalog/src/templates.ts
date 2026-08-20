@@ -310,6 +310,19 @@ export function templateBlockAssetNames(
 }
 
 /** The exact string a hub seeds into the bench library for one template. */
+/** The shipped templates as bench-library seed entries — the ONE
+ * serialization every seeder uses (`apps/hub`'s boot seed and the eval
+ * harness's scratch-hub seed), so the two can never drift. */
+export function workbenchTemplateLibraryEntries(): readonly {
+  readonly id: string;
+  readonly content: string;
+}[] {
+  return WORKBENCH_TEMPLATES.map((template) => ({
+    id: template.id,
+    content: serializeWorkbenchTemplateManifest(template),
+  }));
+}
+
 export function serializeWorkbenchTemplateManifest(
   template: WorkbenchTemplateManifest,
 ): string {
