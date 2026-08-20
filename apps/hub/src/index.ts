@@ -13,9 +13,11 @@ import {
   createGrantStore,
   createSidecarAllocationStore,
   createWorkflowRunDispatchStore,
+  listVisibleOfferings,
 } from "@intx/db";
 import {
   model,
+  modelPricing,
   tenant as tenantTable,
   workflowDefinition,
 } from "@intx/db/schema";
@@ -106,6 +108,12 @@ import {
   createBenchRoutes,
   createPostgresBenchSettingsStore,
 } from "@corbits/bench";
+import {
+  applyInferenceCatalogMigrations,
+  createBenchModelPolicyRoutes,
+  createPostgresBenchModelPolicyStore,
+  createWorkflowCatalogRoutes,
+} from "@corbits/inference-catalog";
 import {
   createDrizzleSidecarPlacementStore,
   createSidecarPlacementRoutes,
@@ -1319,6 +1327,24 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // Bench model policy: what a bench will and will not spend inference on.
+  // Package-owned table, migrated at hub start like insights and
+  // preferences. A bench with no row is unconstrained, so a freshly
+  // connected bench needs no configuration to get an answer.
+  await applyInferenceCatalogMigrations(config.databaseUrl);
+  const benchModelPolicy = createPostgresBenchModelPolicyStore(
+    config.databaseUrl,
+  );
+  app.route(
+    `${TENANT_PREFIX}/bench-model-policy`,
+    createBenchModelPolicyRoutes({
+      store: benchModelPolicy.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   // Bench purpose/type: benches are Interchange tenants, so this is a
   // package-owned side-table keyed by tenant id, migrated at hub start
   // like insights and preferences.
@@ -1645,6 +1671,26 @@ export async function createHub(config: HubConfig) {
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
+    }),
+  );
+  // How a running agent asks what this bench can reach for a kind of work
+  // (`@corbits/catalog-tools`' `list_model_concepts` / `pick_models` /
+  // `estimate_run_cost`): the workflow-run-authenticated counterpart to
+  // the tenant-session bench-model-policy mount above. Read-only, and it
+  // takes ports rather than a db handle, so the package never learns the
+  // catalog schema.
+  app.route(
+    "/api/workflow-inference-catalog",
+    createWorkflowCatalogRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      listOfferings: (tenantId) => listVisibleOfferings(db, tenantId),
+      listPricing: async (_tenantId, offeringIds) =>
+        offeringIds.length === 0
+          ? []
+          : await db.query.modelPricing.findMany({
+              where: inArray(modelPricing.offeringId, [...offeringIds]),
+            }),
+      getPolicy: (tenantId) => benchModelPolicy.store.getPolicy(tenantId),
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
