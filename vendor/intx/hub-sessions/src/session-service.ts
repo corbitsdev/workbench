@@ -860,9 +860,10 @@ async function emitSourceRefDeployFrame(
 
 /**
  * The single public composition entrypoint for a SHARED code-sourced (npm)
- * deploy: emit the source-ref frame, then INSERT the deployment's anchor
- * `workflow_run` row -- the deployment's first-class record that owns its
- * routing address and public key. Run-grant materialization keys off this row
+ * deploy: INSERT the deployment's anchor `workflow_run` row, then emit the
+ * source-ref frame, then stamp the acked supervisor key onto the row. The
+ * anchor row is the deployment's first-class record that owns its routing
+ * address and public key. Run-grant materialization keys off this row
  * (address + live status), so WITHOUT it no per-run grants (tool, capability, OR
  * credential) ever materialize for a source-ref deployment. Born "deployed"
  * (live but pre-trigger): the first trigger's materialization flips it to
@@ -879,18 +880,51 @@ async function emitSourceRefDeployFrame(
 export async function deployCodeSourcedWorkflow(
   args: DeployCodeSourcedWorkflowArgs,
 ): Promise<{ publicKey: string }> {
-  const { publicKey, definitionId } = await emitSourceRefDeployFrame(args);
+  const { approval } = args.approved;
+  if (!approval.ok) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: refusing to deploy an unapproved workflow (gate reason: ${approval.reason})`,
+    );
+  }
 
+  // CL-6388 (workbench-local; see VENDORED.md): the anchor row must exist
+  // BEFORE the deploy frame goes out. The frame spawns the deployment's
+  // child, whose first `refs/heads/events` pack push races the deploy ack
+  // back to the hub -- and `receiveWorkflowRunPack` fails closed
+  // (`path_violation`) on a missing anchor row, so an insert-after-ack
+  // ordering rejected every fresh deployment's first events pack. The
+  // prepared and adopted fronts already have their anchor row pre-frame;
+  // this front now matches them. The supervisor key is only known from the
+  // ack, so the row is born with a null `publicKey` (which keeps the
+  // reconnect challenge failing closed until the ack) and the key is
+  // stamped afterwards. A failed frame emit removes the pre-inserted row so
+  // the deploy leaves no anchored-but-undeployed record and a retry does
+  // not collide on the primary key.
   await args.db.insert(workflowRunTable).values({
     id: args.anchorRunId,
     tenantId: args.tenantId,
     anchorRunId: args.anchorRunId,
-    definitionId,
+    definitionId: approval.definitionId,
     address: args.agentAddress,
-    publicKey,
+    publicKey: null,
     status: "deployed",
     createdAt: new Date(),
   });
+
+  let publicKey: string;
+  try {
+    ({ publicKey } = await emitSourceRefDeployFrame(args));
+  } catch (error) {
+    await args.db
+      .delete(workflowRunTable)
+      .where(eq(workflowRunTable.id, args.anchorRunId));
+    throw error;
+  }
+
+  await args.db
+    .update(workflowRunTable)
+    .set({ publicKey })
+    .where(eq(workflowRunTable.id, args.anchorRunId));
 
   return { publicKey };
 }
