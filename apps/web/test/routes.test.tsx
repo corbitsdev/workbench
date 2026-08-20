@@ -12,8 +12,27 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { App } from "../src/app";
-import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
+import {
+  AGENT_DETAIL_PATH,
+  APP_ROUTES,
+  matchesRoute,
+  NAV_ROUTES,
+  PLUGIN_DETAIL_PATH,
+  ROUTINE_DETAIL_PATH,
+  SKILL_DETAIL_PATH,
+} from "../src/routes";
 import type { SessionState } from "../src/session";
+
+/** Slug-addressed detail routes (CL-6412). The generic render loop below
+ * renders each `route.path` verbatim, which for these is the pattern
+ * (`/agents/:slug`) rather than a real path - they get their own render
+ * tests instead. */
+const DETAIL_ROUTE_PATHS = new Set([
+  ROUTINE_DETAIL_PATH,
+  AGENT_DETAIL_PATH,
+  SKILL_DETAIL_PATH,
+  PLUGIN_DETAIL_PATH,
+]);
 
 /** Legacy routes that only redirect - `/library` bounces to `/files`
  * (CL-6353), `/settings/agents` and `/settings/skills` bounce to `/agents`
@@ -128,14 +147,18 @@ describe("route table", () => {
       "/new",
       "/w",
       "/inbox",
+      "/routines/:slug",
       "/routines",
       "/files",
       "/library",
+      "/agents/:slug",
       "/agents",
       "/settings/agents",
+      "/skills/:slug",
       "/skills",
       "/settings/skills",
       "/insights",
+      "/plugins/:slug",
       "/plugins",
       "/settings",
     ]);
@@ -191,6 +214,49 @@ describe("route table", () => {
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/library");
   });
 
+  test("a slug segment resolves to the entity's own detail route (CL-6412)", () => {
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot")).toBe(true);
+    expect(matchesRoute(SKILL_DETAIL_PATH, "/skills/pr-review")).toBe(true);
+    expect(matchesRoute(PLUGIN_DETAIL_PATH, "/plugins/linear")).toBe(true);
+    expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/weekly-digest")).toBe(
+      true,
+    );
+  });
+
+  test("detail routes match only a single, slug-shaped segment", () => {
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents")).toBe(false);
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/wfd_1")).toBe(false);
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/Triage-Bot")).toBe(false);
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot/runs")).toBe(
+      false,
+    );
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/skills/triage-bot")).toBe(false);
+  });
+
+  test("a detail route is found before its roster, and id deep links still are not", () => {
+    const routeFor = (path: string) =>
+      APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
+    expect(routeFor("/agents/triage-bot")).toBe(AGENT_DETAIL_PATH);
+    expect(routeFor("/skills/pr-review")).toBe(SKILL_DETAIL_PATH);
+    expect(routeFor("/plugins/linear")).toBe(PLUGIN_DETAIL_PATH);
+    expect(routeFor("/routines/weekly-digest")).toBe(ROUTINE_DETAIL_PATH);
+    expect(routeFor("/agents/wfd_1")).toBe("/agents");
+    expect(routeFor("/skills/skill_1")).toBe("/skills");
+  });
+
+  test("a detail path keeps its roster's sidebar row lit", () => {
+    expect(matchesRoute("/agents", "/agents/triage-bot")).toBe(true);
+    expect(matchesRoute("/skills", "/skills/pr-review")).toBe(true);
+    expect(matchesRoute("/plugins", "/plugins/linear")).toBe(true);
+    expect(matchesRoute("/routines", "/routines/weekly-digest")).toBe(true);
+  });
+
+  test("detail routes are off the palette pages - they need a slug to be reachable", () => {
+    for (const detailPath of DETAIL_ROUTE_PATHS) {
+      expect(NAV_ROUTES.map((route) => route.path)).not.toContain(detailPath);
+    }
+  });
+
   test("/inbox stays routable (redirect-only) but is off the palette pages", () => {
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/inbox");
   });
@@ -228,6 +294,7 @@ describe("/inbox redirect", () => {
 describe("routes render", () => {
   for (const route of APP_ROUTES) {
     if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
+    if (DETAIL_ROUTE_PATHS.has(route.path)) continue;
     test(`${route.path} renders the ${route.label} screen`, async () => {
       const markup = await renderApp(route.path);
       expect(markup).toContain('data-testid="shell-sidebar"');
@@ -253,6 +320,27 @@ describe("routes render", () => {
       }
     });
   }
+
+  test.each([
+    ["/agents/triage-bot", "Agent", "Agents"],
+    ["/skills/pr-review", "Skill", "Skills"],
+    ["/plugins/linear", "Plugin", "Plugins"],
+    ["/routines/weekly-digest", "Routine", "Routines"],
+  ])(
+    "%s renders the %s detail placeholder with its roster row lit",
+    async (path, title, footerLabel) => {
+      const markup = await renderApp(path);
+      expect(stagePageTitle(markup)).toBe(title);
+      expect(markup).toContain(path.split("/")[2] ?? "");
+      expect(markup).toContain(`Back to ${footerLabel}`);
+      expect(activeFooterLabel(markup)).toBe(footerLabel);
+    },
+  );
+
+  test("a slug-shaped path under no known entity renders the not-found screen", async () => {
+    const markup = await renderApp("/agent/triage-bot");
+    expect(markup).toContain("Page not found");
+  });
 
   test("an unknown path renders the not-found screen", async () => {
     const markup = await renderApp("/no-such-screen");
