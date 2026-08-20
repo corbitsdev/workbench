@@ -461,7 +461,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               className="onboarding-connect-card"
               aria-label="Connect with OpenRouter"
             >
-              <div>
+              <ProviderMark provider="openrouter" size="sm" />
+              <div className="onboarding-connect-card-text">
                 <h2>OpenRouter</h2>
                 <p>One click, ~50 models, pay-as-you-go.</p>
               </div>
@@ -473,7 +474,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               className="onboarding-connect-card"
               aria-label="Sign in with Hugging Face"
             >
-              <div>
+              <ProviderMark provider="huggingface" size="sm" />
+              <div className="onboarding-connect-card-text">
                 <h2>Hugging Face</h2>
                 <p>Groq, Together, Fireworks &amp; more, one sign-in.</p>
               </div>

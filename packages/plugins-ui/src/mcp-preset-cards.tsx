@@ -174,7 +174,7 @@ export function McpPresetCardsSection({
           {loadError}
         </p>
       ) : null}
-      <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="border border-border [&>*:last-child]:border-b-0">
         {visiblePresets.map((preset) => (
           <McpPresetCard
             key={preset.slug}

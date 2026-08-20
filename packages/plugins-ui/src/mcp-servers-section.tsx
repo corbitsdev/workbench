@@ -48,7 +48,7 @@ function ConnectedMcpServerRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 border border-border p-3">
+    <div className="flex items-center justify-between gap-3 border-b border-border px-2 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <span
           aria-hidden="true"
@@ -58,9 +58,6 @@ function ConnectedMcpServerRow({
         </span>
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium">{server.name}</span>
-          <span className="truncate text-sm text-muted-foreground">
-            {server.url}
-          </span>
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
@@ -117,14 +114,16 @@ export function McpServersSection({ tenantId }: { readonly tenantId: string }) {
           {loadError}
         </p>
       ) : null}
-      {customServers.map((server) => (
-        <ConnectedMcpServerRow
-          key={server.slug}
-          tenantId={tenantId}
-          server={server}
-          onChanged={reload}
-        />
-      ))}
+      <div className="border border-border [&>*:last-child]:border-b-0">
+        {customServers.map((server) => (
+          <ConnectedMcpServerRow
+            key={server.slug}
+            tenantId={tenantId}
+            server={server}
+            onChanged={reload}
+          />
+        ))}
+      </div>
     </section>
   );
 }
