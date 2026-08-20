@@ -168,13 +168,25 @@ describe("createSidecarRunChild", () => {
   });
 
   test("a parent abort mid-run cancels the child and resolves cancelled", async () => {
-    const runChild = await makeRunChild("run-child-abort-", parkForever);
+    let announceStepEntered!: () => void;
+    const stepEntered = new Promise<void>((resolve) => {
+      announceStepEntered = resolve;
+    });
+    const parkAndAnnounce: StepInvoker = async (...args) => {
+      announceStepEntered();
+      return parkForever(...args);
+    };
+
+    const runChild = await makeRunChild("run-child-abort-", parkAndAnnounce);
     const abort = new AbortController();
     const pending = runChild(childInput("abort", abort.signal));
 
-    // Let the child reach its park before the abort fires so the cancel
-    // demonstrably interrupts a run in flight rather than one still
-    // starting up.
+    // Wait on the step actually being entered, not on a fixed delay: the
+    // cancel has to interrupt a run in flight, and a machine slow enough
+    // to still be starting the child when a timer fires would abort a run
+    // that has nothing to cancel — which then never reaches a terminal.
+    // The short settle after it covers the park's own commit.
+    await stepEntered;
     await Bun.sleep(50);
     abort.abort();
 
