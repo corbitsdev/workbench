@@ -366,11 +366,11 @@ approval bundle, migrations 0082/0083) and `hub-api` (run trigger) all move
 together, and `apps/sidecar` reads the frame both sides write. Leaving any
 one on the old pin leaves the frame contract split down the middle.
 
-Open conversion sites, all blocked on that one decision:
+Open conversion sites:
 
 | Site                                                                                    | What it needs                                                                                     |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`                        | A code-sourced deploy for the folded single-step run — the root blocker.                          |
+| ~~`packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`~~                    | **Done** — see "Conversion step 2" below.                                                         |
 | `apps/sidecar/src/workflow-host-wiring/index.ts`, `asset-materialization.ts`            | Stop writing `workflow.json` and stop reading `projection.definition`; stage the closure instead. |
 | `apps/sidecar/src/workflow-substrate-factory/index.ts`, `child-runtime.ts`, `config.ts` | Drop `WORKFLOW_DEFINITION_REPO_ID`/`_REF`; in-memory child spawn; `closurePackageDir` plumbing.   |
 | `apps/sidecar/src/workflow-deployment-record.ts`                                        | Drop `referencedDefinitionHashes`; carry the grant-walk snapshot.                                 |
@@ -432,28 +432,49 @@ on the conversion table above: nothing produces `CLOSURE_PACKAGE_DIR`, and
 no `WorkflowProbeExecutor` is wired on the sidecar, so every probe
 currently answers `workflow.probe.error`. Both are conversion step 2.
 
-#### What still blocks `deployAtHead`
+#### Conversion step 2: `deployAtHead` is on the seam
 
-A folded run pre-mints its own anchor `workflow_run` row (`mintFoldedRun`,
-carrying the `principalId` its `agent_session` join needs) and it commonly
-carries credential bindings (every `@corbits/mcp-tools` launch). Neither
-code-sourced deploy front accepts that combination:
+`deployAtHead` no longer synthesizes a definition. It renders the run's
+config into a per-run `@corbits/agent-runtime` package, commits that tree
+into the run's OWN `workflow`-kind definition asset on
+`refs/heads/runs/<runId>`, and deploys the resulting `commitSha` through
+`deployAdoptedWorkflowFromSource` — the adopting shared-capacity front,
+the only one that accepts a pre-minted anchor row and threads a
+`credentialCipher`. `wake.ts` takes the same path. The old
+synthesize-in-memory branch is deleted, not gated.
 
-| Front                               | Anchor row | Credential cipher | Capacity                                              |
-| ----------------------------------- | ---------- | ----------------- | ----------------------------------------------------- |
-| `deployWorkflowFromSource`          | INSERTs    | not threaded      | shared                                                |
-| `deployPreparedCodeSourcedWorkflow` | UPDATEs    | threaded          | exclusive allocation only (`requireAllocationRouter`) |
+Reuse, not a second asset: one definition asset can back many runs (a
+chat's workbench host, an invited agent's every launch), so each run gets
+its own ref inside that asset rather than its own asset per deploy. The
+pin is the `commitSha`, so the ref is bookkeeping.
 
-`deployWorkflowFromSource` collides on the primary key of the row the
-folded run already owns, and its `commonDeploy` passes no
-`credentialCipher`, so a definition with bindings throws inside
-`deployCodeSourcedWorkflow`. The prepared front does both correctly but
-hard-requires an `allocationTarget`, and exclusive placement is dormant
-in-tree. Composing the halves is not open either: `emitSourceRefDeployFrame`
-and `buildInertProjectionStepSources` are module-private in `hub-sessions`.
+The step's input selector became the config's `mode`: `step` (with the
+workbench host's optional `literalInput`, the CL-6164 pin) or `section`
+with a per-turn timeout. The Phase 1.3 swap changes a caller's argument,
+never a branch inside `deployAtHead`. Section mode authors
+`onBodyFailure: "continue"`, which the vendored surface now carries
+through the live→inert projection.
 
-[Intx gap] The missing capability is a SHARED-capacity code-sourced deploy
-that ADOPTS a pre-existing anchor run and threads a `credentialCipher` —
-`deployPreparedCodeSourcedWorkflow` minus the allocation lock. Until it
-exists upstream, `deployAtHead` cannot cut over without either forking the
-front or dismantling the folded run's own anchor-row ownership.
+##### What still blocks EXECUTION
+
+Deploying works at the type and call level; nothing has run it end to
+end, because the two sidecar prerequisites are untouched: nothing
+produces `CLOSURE_PACKAGE_DIR`, and no `WorkflowProbeExecutor` is wired,
+so every probe still answers `workflow.probe.error`. The remaining
+in-tree typecheck failures are exactly the sidecar rows in the table
+above — `projection.definition` reads, `createWorkflowSpawnChild` /
+`createWorkflowSpawnSuspendableChild`, `SpawnTimeEnv.referencedDefinitionHashes`,
+and `RunWorkflowChildBindings.workflowDefinitionRepoId`.
+
+##### Defect surfaced by the conversion
+
+`renderAgentRuntimeSourceTree` parses the config before writing it, which
+is the first time a folded run's credential bindings are validated
+against the platform's `CredentialBinding` schema. `apps/hub`'s
+`mcp-credential-bindings.ts` mints `handle: "mcp:<slug>"`, and
+`ToolCredentialHandle` is `/^[a-z0-9][a-z0-9._-]*$/` — the colon is not
+in it, so every MCP-pinned launch would now fail closed at render time.
+Nothing caught this before because the in-memory definition was never
+parsed. Either the handle shape changes here (and with it the
+`env.credentials.resolve("mcp:<slug>")` key `@corbits/mcp-tools` uses) or
+upstream widens the handle grammar; it is not fixed in this change.
