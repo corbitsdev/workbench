@@ -14,6 +14,7 @@ import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
 import { createChatConnectGithubActions } from "../connect-github-actions";
+import { createChatConnectServiceActions } from "../connect-service-actions";
 import { useBench } from "../bench-context";
 import { useSignOut } from "../navigation";
 import {
@@ -101,6 +102,13 @@ export function ChatPage({
         ? undefined
         : createChatConnectGithubActions(tenantId, workbenchId),
     [tenantId, workbenchId],
+  );
+  const connectServiceActions = useMemo(
+    () =>
+      tenantId === null
+        ? undefined
+        : createChatConnectServiceActions(tenantId, path),
+    [tenantId, path],
   );
 
   // The in-chat "Fix this connection" affordance's deep link (CL-6092) —
@@ -234,6 +242,9 @@ export function ChatPage({
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
+      {...(connectServiceActions !== undefined
+        ? { connectServiceActions }
+        : {})}
       listMembers={listMembers}
       // `/routine`: opens the editor directly on a brand-new routine
       // bound to this workbench. Routines and Insights (CL-6362, CL-6099)

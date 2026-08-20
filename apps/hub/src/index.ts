@@ -1928,7 +1928,9 @@ export async function createHub(config: HubConfig) {
       }),
       onConnected: settleServiceConnection,
       defaultReturnPath: "/settings/connections",
-      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins"],
+      // `/w/` is the workbench room prefix: the in-room connect card
+      // (CL-6393) starts OAuth from a room and must land back in it.
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
     }),
   );
   // GitHub connect card (CL-6344): the code-review template's inline
@@ -2163,6 +2165,8 @@ export async function createHub(config: HubConfig) {
       log: (line) => log.info`${line}`,
       credentialCipher,
       onConnected: settleServiceConnection,
+      // `/w/` for the same reason as the connections/oauth mount above.
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
     }),
   );
   // Myra's own connections-visibility surface
