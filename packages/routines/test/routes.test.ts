@@ -830,17 +830,75 @@ describe("createRoutineRoutes", () => {
       expect(rows.length).toBe(1);
     });
 
-    test("only the genuine first creation posts the 'Created routine' notice", async () => {
+    test("a preset create is born disabled and posts no notice", async () => {
       const workbenchNotice = fakeWorkbenchNotice();
       const deps = buildDeps({ workbenchNotice });
       const app = mountAs(createRoutineRoutes(deps), "user_1");
       const body = { ...VALID_BODY, presetKey: "workbench-digest" };
 
-      await createRoutine(app, body);
+      const first = await createRoutine(app, body);
       await createRoutine(app, body);
       await createRoutine(app, body);
 
-      expect(workbenchNotice.calls.length).toBe(1);
+      expect(first.response.status).toBe(201);
+      expect(first.body["enabled"]).toBe(false);
+      expect(workbenchNotice.calls.length).toBe(0);
+    });
+
+    test("the view carries the presetKey a create named", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+
+      const preset = await createRoutine(app, {
+        ...VALID_BODY,
+        presetKey: "workbench-digest",
+      });
+      expect(preset.body["presetKey"]).toBe("workbench-digest");
+
+      const plain = await createRoutine(app, VALID_BODY);
+      expect(plain.body["presetKey"]).toBeNull();
+    });
+
+    test("a member-deleted preset routine is respected: re-create returns 204 and no row", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const body = { ...VALID_BODY, presetKey: "workbench-digest" };
+
+      const first = await createRoutine(app, body);
+      const deleted = await app.request(`/routines/${first.body["id"]}`, {
+        method: "DELETE",
+      });
+      expect(deleted.status).toBe(204);
+
+      const again = await app.request("/routines", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(again.status).toBe(204);
+      expect(await deps.store.listRoutines(TENANT.id)).toHaveLength(0);
+    });
+
+    test("a member-deleted preset re-create compensates the space it provisioned", async () => {
+      const deliverySpace = fakeDeliverySpaceMinting();
+      const deps = buildDeps({ deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
+      const body = { ...withoutWorkbench, presetKey: "workbench-digest" };
+
+      const first = await createRoutine(app, body);
+      const deleted = await app.request(`/routines/${first.body["id"]}`, {
+        method: "DELETE",
+      });
+      expect(deleted.status).toBe(204);
+
+      const again = await app.request("/routines", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(again.status).toBe(204);
+      expect(deliverySpace.compensatedWorkbenchIds).toEqual(["ch_minted_2"]);
     });
 
     test("a losing create-if-absent request compensates (deletes) the space it just provisioned", async () => {

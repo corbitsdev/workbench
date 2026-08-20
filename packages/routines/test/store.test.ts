@@ -272,3 +272,44 @@ describe("markFailedFire / clearFireFailures", () => {
     expect(recovered.nextFireAt).not.toBeNull();
   });
 });
+
+describe("createRoutineIfAbsent", () => {
+  const presetInput = {
+    tenantId: "t1",
+    name: "Daily digest",
+    definitionId: "def_1",
+    trigger: CRON,
+    scope: "bench" as const,
+    input: {},
+    createdBy: "user_1",
+    enabled: false,
+    presetKey: "workbench-digest",
+  };
+
+  test("creates the row with the requested enabled state", async () => {
+    const store = createInMemoryRoutineStore();
+    const result = await store.createRoutineIfAbsent(presetInput);
+    expect(result.outcome).toBe("created");
+    if (result.outcome !== "created") throw new Error("expected created");
+    expect(result.row.enabled).toBe(false);
+    expect(result.row.presetKey).toBe("workbench-digest");
+  });
+
+  test("a second call reports existing and leaves exactly one row", async () => {
+    const store = createInMemoryRoutineStore();
+    await store.createRoutineIfAbsent(presetInput);
+    const second = await store.createRoutineIfAbsent(presetInput);
+    expect(second.outcome).toBe("existing");
+    expect(await store.listRoutines("t1")).toHaveLength(1);
+  });
+
+  test("a deleted preset routine is tombstoned, never re-created", async () => {
+    const store = createInMemoryRoutineStore();
+    const created = await store.createRoutineIfAbsent(presetInput);
+    if (created.outcome !== "created") throw new Error("expected created");
+    expect(await store.deleteRoutine("t1", created.row.id)).toBe(true);
+    const again = await store.createRoutineIfAbsent(presetInput);
+    expect(again.outcome).toBe("tombstoned");
+    expect(await store.listRoutines("t1")).toHaveLength(0);
+  });
+});
