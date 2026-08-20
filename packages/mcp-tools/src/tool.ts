@@ -10,9 +10,10 @@
 //                        for one tool's full schema.
 //   mcp_call({server, tool, arguments}) -- invoke one of those tools.
 //
-// Credentials: each connected server is a `mcp:<slug>` credential
-// handle (`@workbench/connections`'s MCP connector; see that package's
-// registry for the provider/credential shape). The slug is dynamic
+// Credentials: each connected server is a `mcp.<slug>` credential
+// handle (`@workbench/connections`'s MCP connector, stored under a
+// `mcp:<slug>` provider row name -- see that package's registry for the
+// provider/credential shape). The slug is dynamic
 // tenant data, unknown at package-publish time, so this package's
 // `package.json` declares no static `interchange.credentials` entry
 // the way `@corbits/web-search-tools` declares `exa` — a declaration is
@@ -59,10 +60,14 @@ export const MCP_LIST_TOOLS_TOOL = "mcp_list_tools";
 export const MCP_READ_TOOL = "mcp_read";
 export const MCP_CALL_TOOL = "mcp_call";
 
-/** `mcp:<slug>` -- the credential handle convention every connected
- * MCP server binds to (see this file's header comment). */
+/** `mcp.<slug>` -- the credential handle convention every connected
+ * MCP server binds to (see this file's header comment). Dots, not a
+ * colon, so the handle conforms to `@intx/types`' `ToolCredentialHandle`
+ * grammar (`/^[a-z0-9][a-z0-9._-]*$/`) -- distinct from the `mcp:<slug>`
+ * PROVIDER row naming `@workbench/connections` stores, which has no such
+ * constraint. */
 export function mcpCredentialHandle(slug: string): string {
-  return `mcp:${slug}`;
+  return `mcp.${slug}`;
 }
 
 /** Env this bundle needs beyond `BaseEnv`: the mediated-credential

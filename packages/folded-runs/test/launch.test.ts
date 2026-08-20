@@ -914,7 +914,7 @@ describe("wakeFoldedRun", () => {
 describe("deployAtHead — mcp credential bindings", () => {
   const MCP_BINDING = {
     package: "@corbits/mcp-tools",
-    handle: "mcp:exa",
+    handle: "mcp.exa",
     provider: "mcp:exa",
     locator: "tenant" as const,
   };
@@ -940,7 +940,7 @@ describe("deployAtHead — mcp credential bindings", () => {
       delivery: {
         bindings: [
           {
-            handle: "mcp:exa",
+            handle: "mcp.exa",
             credentialId: "cred_1",
             consumer: "tool:@corbits/mcp-tools",
           },

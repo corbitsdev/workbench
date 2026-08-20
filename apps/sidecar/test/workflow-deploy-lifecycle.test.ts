@@ -324,7 +324,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     const delivery = {
       bindings: [
         {
-          handle: "mcp:exa",
+          handle: "mcp.exa",
           credentialId: "cred_1",
           consumer: "tool:@corbits/mcp-tools",
         },

@@ -37,7 +37,7 @@ afterEach(() => {
 
 /** A fake `credentials` capability shaping the same origin-pinned http
  * handle the real `http` credential provider would, for the single
- * `mcp:notion` handle this scenario connects. */
+ * `mcp.notion` handle this scenario connects. */
 function fakeCredentials(): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {

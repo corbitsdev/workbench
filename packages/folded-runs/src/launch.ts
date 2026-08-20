@@ -208,12 +208,12 @@ export async function deployAtHead(
     }));
 
   // `@corbits/mcp-tools` declares no static `interchange.credentials` (its
-  // handles are one `mcp:<slug>` per tenant-connected server, unknown at
+  // handles are one `mcp.<slug>` per tenant-connected server, unknown at
   // package-publish time), so the deploy-time capability walk never binds
   // them. Mirror `ToolGrantsForPins`'s pinned-package carve-out: when the
   // launch pins the package, fetch the tenant's real MCP credential
   // bindings and fold them in alongside whatever the definition itself
-  // declares, so `env.credentials.resolve("mcp:<slug>")` has something to
+  // declares, so `env.credentials.resolve("mcp.<slug>")` has something to
   // find instead of failing every call closed with "not connected".
   const isMcpToolsPin = params.foldedBody.toolPackagePins.some(
     (pin) => pin.name === "@corbits/mcp-tools",
@@ -301,7 +301,7 @@ export async function deployAtHead(
   // run's synthesized definition carries the same combined bindings
   // (the definition's own plus the pinned-package MCP bindings folded in
   // above) the delivered material was resolved against; without this the
-  // sidecar's `consumerBindings` finds nothing for `mcp:<slug>` and every
+  // sidecar's `consumerBindings` finds nothing for `mcp.<slug>` and every
   // resolve() fails "not connected" even though the material was
   // delivered.
   const definition =
