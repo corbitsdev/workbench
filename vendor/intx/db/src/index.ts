@@ -60,6 +60,7 @@ export {
 export {
   createWorkflowDefinitionStore,
   loadFrozenGrantSnapshot,
+  loadFrozenWireProjection,
   resolveDefinitionIdForAsset,
   type WorkflowDefinitionRollbackResult,
   type WorkflowDefinitionSelector,

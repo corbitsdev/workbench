@@ -15,10 +15,11 @@ import {
   findFoldedRunByAddress,
   findFoldedRunById,
   mintFoldedRun,
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
+  readLiveFoldedBody,
   resolveFoldedRunSessionId,
-  resolveNewestReadableDefinitionJSON,
+  resolveNewestProjectedDefinition,
   sendFoldedMail,
   wakeFoldedRun,
   FoldedBodySchema,
@@ -439,7 +440,7 @@ export function createHubChatPlatform(
         wireHash,
       });
 
-      const foldedBody = readFoldedBody(definitionJSON);
+      const foldedBody = readLiveFoldedBody(definitionJSON);
 
       // Mint only — DB rows, no sidecar, no deploy. The host deploys
       // through `wakeByAddress` on its first traffic (the join event or
@@ -515,8 +516,8 @@ export function createHubChatPlatform(
       // Resolution tries every deployed sibling under this name
       // newest-first and uses the first one that actually reads — the
       // specifically requested (possibly stale) row never wins over a
-      // healthy newer one. `resolveNewestReadableDefinitionJSON`
-      // raises the named `DefinitionAssetUnresolvableError` — mapped
+      // healthy newer one. `resolveNewestProjectedDefinition`
+      // raises the named `DefinitionProjectionMissingError` — mapped
       // to a 4xx at the route boundary, never an unhandled 500 — only
       // once every sibling has failed to resolve.
       const siblingRows = await deps.db.query.workflowDefinition.findMany({
@@ -527,31 +528,20 @@ export function createHubChatPlatform(
         ),
         orderBy: desc(workflowDefinition.createdAt),
       });
-      const candidateRows = siblingRows.filter(
-        (row): row is typeof row & { assetId: string } => row.assetId !== null,
-      );
-      const candidates =
-        candidateRows.length > 0
-          ? candidateRows.map((row) => ({
-              assetId: row.assetId,
-              definitionName: row.name,
-            }))
-          : [
-              {
-                assetId: definitionRow.assetId,
-                definitionName: definitionRow.name,
-              },
-            ];
+      const candidates = siblingRows.length > 0 ? siblingRows : [definitionRow];
 
-      const resolved = await resolveNewestReadableDefinitionJSON(
-        deps.assetService,
+      const resolved = await resolveNewestProjectedDefinition(
+        deps.db,
         candidates,
       );
       const resolvedDefinitionRow =
-        candidateRows.find((row) => row.assetId === resolved.assetId) ??
+        candidates.find((row) => row.id === resolved.definitionId) ??
         definitionRow;
 
-      const foldedBody = readFoldedBody(resolved.definitionJSON);
+      const foldedBody = readFoldedBody(
+        resolved.projection,
+        resolvedDefinitionRow.grantRequirements,
+      );
       if (foldedBody.systemPrompt === "") {
         throw new Error(
           `Definition "${input.definitionId}" cannot be launched without ` +
@@ -635,11 +625,11 @@ export function createHubChatPlatform(
         return;
       }
 
-      const definitionJSON = await readDefinitionJSON(
-        deps.assetService,
-        definitionRow.assetId,
+      const projection = await readDefinitionProjection(deps.db, definitionRow);
+      const foldedBody = readFoldedBody(
+        projection,
+        definitionRow.grantRequirements,
       );
-      const foldedBody = readFoldedBody(definitionJSON);
 
       await deps.db
         .update(workbenchLaunch)

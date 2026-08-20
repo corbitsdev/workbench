@@ -21,7 +21,7 @@ import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 
 import { connectorReplyContent, messageRunEnded } from "./agent-events";
 import type { CryptoProviderCache } from "./crypto-cache";
-import { readDefinitionJSON, readFoldedBody } from "./definition";
+import { readDefinitionProjection, readFoldedBody } from "./definition";
 import { launchFoldedRun as launchFoldedRunDefault } from "./launch";
 import { sendFoldedMailWithRetry as sendFoldedMailWithRetryDefault } from "./mail";
 import type { FoldedRunsDeps } from "./types";
@@ -142,11 +142,14 @@ export async function runOneShotFoldedPrompt(
     throw new Error(`No tenant "${input.tenantId}"`);
   }
 
-  const definitionJSON = await readDefinitionJSON(
-    deps.foldedRuns.assetService,
-    definitionRow.assetId,
+  const projection = await readDefinitionProjection(
+    deps.foldedRuns.db,
+    definitionRow,
   );
-  const definitionBody = readFoldedBody(definitionJSON);
+  const definitionBody = readFoldedBody(
+    projection,
+    definitionRow.grantRequirements,
+  );
   const foldedBody: FoldedBody = {
     systemPrompt: definitionBody.systemPrompt,
     toolPackagePins: definitionBody.toolPackagePins,

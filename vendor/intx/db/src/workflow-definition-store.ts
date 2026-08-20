@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { GrantWalkSnapshot } from "@intx/types";
+import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 
 import type { DB, DBExecutor } from "./client";
 import {
@@ -80,6 +81,34 @@ export async function loadFrozenGrantSnapshot(
     .then((rows) => rows[0]);
   if (row === undefined || row.grantSnapshot === null) return null;
   return GrantWalkSnapshot.assert(row.grantSnapshot);
+}
+
+/**
+ * WORKBENCH DELTA (see VENDORED.md): read the inert wire projection frozen onto
+ * a definition's version row, validated at this boundary. Mirrors
+ * `loadFrozenGrantSnapshot` exactly — same version row, same null-means-not-yet-
+ * approved contract — because it is written by the same freeze transaction.
+ * Returns `null` when the version row is absent or its `wireProjection` column
+ * is still `null`; the caller fails closed with a named error, never a fallback
+ * read of a retired `workflow.json` envelope.
+ */
+export async function loadFrozenWireProjection(
+  db: DBExecutor,
+  definitionId: string,
+): Promise<WorkflowProjectionDefinition | null> {
+  const row = await db
+    .select({ wireProjection: workflowDefinitionVersion.wireProjection })
+    .from(workflowDefinitionVersion)
+    .where(
+      and(
+        eq(workflowDefinitionVersion.definitionId, definitionId),
+        eq(workflowDefinitionVersion.version, FROZEN_VERSION),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (row === undefined || row.wireProjection === null) return null;
+  return WorkflowProjectionDefinition.assert(row.wireProjection);
 }
 
 export type WorkflowDefinitionRollbackResult =

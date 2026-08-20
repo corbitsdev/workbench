@@ -8,12 +8,13 @@ export type {
   ListedFoldedMailItem,
 } from "./types";
 export {
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
-  resolveNewestReadableDefinitionJSON,
-  DefinitionAssetUnresolvableError,
+  readLiveFoldedBody,
+  resolveNewestProjectedDefinition,
+  DefinitionProjectionMissingError,
   FoldedBodySchema,
-  type DefinitionAssetCandidate,
+  type DefinitionCandidate,
 } from "./definition";
 export {
   createCryptoProviderCache,
