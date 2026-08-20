@@ -90,11 +90,13 @@ async function runLinearListRecentIssues(
 
 /**
  * The `@corbits/linear-tools` bundle factory: one tool, one mediated
- * credential. Pin this package's `linear` bundle on any agent that
- * needs the caller's recently updated Linear issues.
+ * credential. Pin this package's `li` bundle on any agent that needs
+ * the caller's recently updated Linear issues. The bundle id's local
+ * segment is kept short so `<id>:<tool name>` fits the 64-char OpenAI
+ * function-name cap once wire-encoded (see `tool-name-limits.test.ts`).
  */
 export const linearTools = defineTool<LinearEnv>({
-  id: "@corbits/linear-tools/linear",
+  id: "@corbits/linear-tools/li",
   requires: ["credentials"],
   definitions: [{ name: LINEAR_LIST_RECENT_ISSUES_TOOL }],
   factory: (env) => ({

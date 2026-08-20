@@ -98,7 +98,7 @@ export const CODE_REVIEW_SYSTEM_PROMPT =
   "a finding to fill a section, and never repeat the whole diff back.\n" +
   "\n" +
   "## Posting it\n" +
-  "Call `github_post_pull_request_review` exactly once, with the pull " +
+  "Call `github_post_pr_review` exactly once, with the pull " +
   "request's URL, the head commit sha the diff reported, the combined " +
   "review as the body, and inline comments only for findings anchored " +
   "to a line that diff reported for that file — every other finding " +

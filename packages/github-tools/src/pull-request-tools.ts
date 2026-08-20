@@ -21,8 +21,7 @@ import {
 } from "./pull-requests";
 
 export const GITHUB_PULL_REQUEST_DIFF_TOOL = "github_pull_request_diff";
-export const GITHUB_POST_PULL_REQUEST_REVIEW_TOOL =
-  "github_post_pull_request_review";
+export const GITHUB_POST_PULL_REQUEST_REVIEW_TOOL = "github_post_pr_review";
 
 const GITHUB_CREDENTIAL_HANDLE = "github";
 
@@ -124,7 +123,7 @@ async function runPostReview(
  * review. Pin this package on any agent that reviews pull requests.
  */
 export const githubPullRequestTools = defineTool<GitHubPullRequestEnv>({
-  id: "@corbits/github-tools/pull-requests",
+  id: "@corbits/github-tools/prs",
   requires: ["credentials"],
   definitions: [
     { name: GITHUB_PULL_REQUEST_DIFF_TOOL },

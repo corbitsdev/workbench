@@ -57,9 +57,7 @@ test("every reviewer lens reaches the prompt from the shared roster", () => {
 
 test("the prompt commits to reading the diff, posting once, and never merging", () => {
   expect(CODE_REVIEW_SYSTEM_PROMPT).toContain("github_pull_request_diff");
-  expect(CODE_REVIEW_SYSTEM_PROMPT).toContain(
-    "github_post_pull_request_review",
-  );
+  expect(CODE_REVIEW_SYSTEM_PROMPT).toContain("github_post_pr_review");
   expect(CODE_REVIEW_SYSTEM_PROMPT).toContain(
     "never approve, request changes, or merge",
   );

@@ -122,12 +122,15 @@ async function runGranolaGetNote(
 
 /**
  * The `@corbits/granola-tools` bundle factory: two tools sharing one
- * mediated credential. Pin this package's `granola` bundle on any agent
+ * mediated credential. Pin this package's `gr` bundle on any agent
  * that needs a user's recent Granola call notes, or the full transcript
- * of one note by id.
+ * of one note by id. The bundle id's local segment is kept short — the
+ * wire encoding of `<id>:<tool name>` must fit the 64-char OpenAI
+ * function-name cap (see `tool-name-limits.test.ts`), and
+ * `granola_list_recent_notes` already eats most of that budget.
  */
 export const granolaTools = defineTool<GranolaEnv>({
-  id: "@corbits/granola-tools/granola",
+  id: "@corbits/granola-tools/gr",
   requires: ["credentials"],
   definitions: [
     { name: GRANOLA_LIST_RECENT_NOTES_TOOL },
