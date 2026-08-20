@@ -8,11 +8,11 @@ aggregation into one review, and the run that ties them together.
 
 Three reviewers, each a lens rather than a whole opinion:
 
-| Reviewer | What it judges |
-| --- | --- |
-| Correctness reviewer | Defects, with the file, the line, and the input that triggers them |
+| Reviewer              | What it judges                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| Correctness reviewer  | Defects, with the file, the line, and the input that triggers them                       |
 | Architecture reviewer | Whether the shape is sound: invariants, where a constraint is owned, what it costs later |
-| Release-risk reviewer | What blocks shipping, what ships with a note, what is filed for later |
+| Release-risk reviewer | What blocks shipping, what ships with a note, what is filed for later                    |
 
 `codeReviewAgentRequests()` returns the same three as create-agent
 requests, so the roster a review fans out to is the roster a person can

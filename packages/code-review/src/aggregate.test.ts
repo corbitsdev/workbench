@@ -24,7 +24,11 @@ const DIFF: PullRequestDiff = {
 };
 
 function pass(id: string, report: unknown): ReviewerPass {
-  return { reviewer: reviewerById(id), ok: true, reply: JSON.stringify(report) };
+  return {
+    reviewer: reviewerById(id),
+    ok: true,
+    reply: JSON.stringify(report),
+  };
 }
 
 test("a finding two reviewers raise is one entry crediting both", () => {
@@ -105,7 +109,11 @@ test("an inline comment is made only for a line the diff can anchor", () => {
 test("a reviewer that did not report is named in the review", () => {
   const review = aggregateReview(
     [
-      { reviewer: reviewerById("release-risk"), ok: false, reason: "timed out" },
+      {
+        reviewer: reviewerById("release-risk"),
+        ok: false,
+        reason: "timed out",
+      },
       { reviewer: reviewerById("correctness"), ok: true, reply: "not json" },
       pass("architecture", { summary: "shape is sound", findings: [] }),
     ],

@@ -123,8 +123,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Reads a pull request's diff, reviews it for correctness, architecture, and release risk, and posts one review back on the pull request.",
     requiredConnections: ["github"],
-    exampleOutput:
-      "One review posted: 1 blocking, 2 worth fixing, 1 for later",
+    exampleOutput: "One review posted: 1 blocking, 2 worth fixing, 1 for later",
     typicalDuration: "a minute or two",
     triggerFields: [
       {

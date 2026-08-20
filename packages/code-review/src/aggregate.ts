@@ -81,7 +81,9 @@ function collect(passes: readonly ReviewerPass[]): CollectedPasses {
         continue;
       }
       existing.who.push(name);
-      if (severityRank(finding.severity) < severityRank(existing.finding.severity)) {
+      if (
+        severityRank(finding.severity) < severityRank(existing.finding.severity)
+      ) {
         byKey.set(key, { finding, who: existing.who });
       }
     }

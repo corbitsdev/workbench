@@ -70,7 +70,7 @@ const CORRECTNESS_REVIEWER: ReviewerDefinition = {
     "and the line or symbol, what breaks, and the concrete input or " +
     "sequence that triggers it. A claim you cannot anchor that way is " +
     "not a finding yet — leave it out.\n\n" +
-    "Rank what you find: blocking, should-fix, later. \"This is " +
+    'Rank what you find: blocking, should-fix, later. "This is ' +
     'genuinely fine" is a real answer when it is true. Say plainly what ' +
     "you did not cover, so nobody reads your report as the whole " +
     "story.\n\n" +

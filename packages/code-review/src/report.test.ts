@@ -21,7 +21,9 @@ test("parses a report inside a JSON code fence", () => {
 });
 
 test("an empty findings list is a real report, not a failure", () => {
-  const parsed = parseReviewerReport('{"summary":"genuinely fine","findings":[]}');
+  const parsed = parseReviewerReport(
+    '{"summary":"genuinely fine","findings":[]}',
+  );
   expect(parsed.ok).toBe(true);
 });
 
