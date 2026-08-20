@@ -29,11 +29,12 @@ import {
   GranolaWebhookCard,
   completeConnectorCredential,
   deleteCredential,
+  fetchOAuthConfigured,
   oauthStartHref,
 } from "@corbits/settings-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { pluginOutcome } from "./plugin-meta";
 
@@ -192,6 +193,20 @@ export function PluginConnectPanel({
   readonly onChanged: () => void;
 }) {
   const open = plugin !== null;
+  const [oauthConfigured, setOauthConfigured] = useState<
+    Record<string, boolean>
+  >({});
+
+  useEffect(() => {
+    if (!open) return;
+    fetchOAuthConfigured(tenantId)
+      .then(setOauthConfigured)
+      .catch(() => setOauthConfigured({}));
+  }, [open, tenantId]);
+
+  const hostedAppAvailable =
+    plugin?.descriptor.oauth !== undefined &&
+    oauthConfigured[plugin.descriptor.id] === true;
 
   return (
     <Dialog
@@ -221,7 +236,8 @@ export function PluginConnectPanel({
                 onChanged={onChanged}
               />
             ) : plugin.descriptor.authKind === "oauth-pkce" ||
-              plugin.descriptor.authKind === "oauth-code" ? (
+              plugin.descriptor.authKind === "oauth-code" ||
+              hostedAppAvailable ? (
               <Button variant="primary" asChild>
                 <a
                   href={oauthStartHref(
@@ -232,6 +248,29 @@ export function PluginConnectPanel({
                   Connect with {plugin.descriptor.displayName}
                 </a>
               </Button>
+            ) : plugin.descriptor.oauth !== undefined ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  This workbench isn&apos;t set up with the one-click GitHub
+                  app, so connect with a token instead. Create a token with{" "}
+                  <code className="text-xs">repo</code> scope at{" "}
+                  <a
+                    className="underline"
+                    href={plugin.descriptor.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    github.com/settings/tokens
+                  </a>{" "}
+                  and paste it below.
+                </p>
+                <ApiKeyConnectForm
+                  tenantId={tenantId}
+                  connectorId={plugin.descriptor.id}
+                  displayName={plugin.descriptor.displayName}
+                  onConnected={onChanged}
+                />
+              </div>
             ) : plugin.descriptor.credentialInputKind === "url" ? (
               <ApiKeyConnectForm
                 tenantId={tenantId}

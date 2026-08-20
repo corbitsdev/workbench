@@ -1648,8 +1648,15 @@ select:disabled,
   border-radius: 0;
 }
 
-.shell-activity-skeleton {
-  height: 6rem;
+.shell-activity-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.32rem 0.42rem;
+}
+
+.shell-activity-skeleton-row {
+  height: 1.6rem;
   width: 100%;
 }
 
@@ -1976,26 +1983,27 @@ select:disabled,
    accent marking the row as the primary suggestion rather than
    button-shouting. */
 .onboarding-connect-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.625rem;
-}
-
-@media (min-width: 30rem) {
-  .onboarding-connect-row {
-    grid-template-columns: 1fr 1fr;
-  }
+  border: 1px solid var(--border);
 }
 
 .onboarding-connect-card {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.625rem;
+  align-items: center;
+  gap: 0.75rem;
   padding: 0.875rem;
-  border: 1px solid var(--border);
+  border: 0;
+  border-bottom: 1px solid var(--border);
   border-left: 3px solid var(--shell-accent);
   border-radius: 0;
+}
+
+.onboarding-connect-card:last-child {
+  border-bottom: 0;
+}
+
+.onboarding-connect-card-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .onboarding-connect-card h2 {
@@ -2382,9 +2390,18 @@ select:disabled,
 }
 
 .insights-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
-  gap: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.insights-grid > .insights-panel {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.insights-grid > .insights-panel:last-child {
+  border-bottom: 0;
 }
 
 .insights-panel {
@@ -2783,16 +2800,16 @@ tr.insights-row-clickable:hover {
 }
 
 .create-agent-suggestions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  border: 1px solid var(--border);
 }
 
 .create-agent-suggestion-card {
   display: flex;
+  width: 100%;
   flex-direction: column;
   gap: 0.2rem;
-  border: 1px solid var(--border);
+  border: 0;
+  border-bottom: 1px solid var(--border);
   background: var(--background);
   padding: 0.6rem 0.7rem;
   text-align: left;
@@ -2800,8 +2817,12 @@ tr.insights-row-clickable:hover {
   cursor: pointer;
 }
 
+.create-agent-suggestion-card:last-child {
+  border-bottom: 0;
+}
+
 .create-agent-suggestion-card:hover {
-  border-color: var(--primary);
+  background: var(--muted);
 }
 
 .create-agent-suggestion-title {

@@ -23,8 +23,11 @@
 import { headlineFor } from "@corbits/approvals";
 import {
   connectorReplyContent,
+  inferenceDoneBlocks,
   messageRunEnded,
   messageRunStarted,
+  toolDoneResult,
+  type ReplyContentBlock,
 } from "@corbits/folded-runs";
 import type { Memory } from "@corbits/memory";
 import {
@@ -47,6 +50,7 @@ import { mentionedParticipants } from "./mentions";
 import { localPartOf } from "./agent-address";
 import { readBindingByAddress, resolveLiveAgent } from "./agent-binding";
 import { parseParticipants, type ParticipantRecord } from "./participants";
+import type { Part, TextPart } from "./parts";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { AgentTurnStore } from "./agent-turns";
@@ -185,6 +189,87 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
   return typeof data.correlationId === "string"
     ? data.correlationId
     : undefined;
+}
+
+/**
+ * Turn-scoped reply assembly (CL-6378). A turn's `inference.done` events
+ * already carry the model's output pre-split into prose and tool calls
+ * (`inferenceDoneBlocks`, reading the same split
+ * `vendor/intx/hub-sessions/src/event-collector.ts`'s `handleInferenceDone`
+ * makes) — this accumulator turns that stream of blocks into the ordered
+ * `Part[]` a reply message posts as, so a tool call the model made
+ * becomes a `ToolTracePart` the UI renders as `ToolBlock`, never JSON
+ * folded into a `TextPart`'s prose. One accumulator per process, keyed by
+ * agent address (this stream carries no turnId to key on more precisely,
+ * matching `repliedAddresses`' own per-address bookkeeping above); reset
+ * the moment a turn's `connector.reply` or turn-drop notice consumes it.
+ */
+function createReplyPartsAccumulator(): {
+  onInferenceDone(agentAddress: string, blocks: ReplyContentBlock[]): void;
+  onToolDone(
+    agentAddress: string,
+    result: { callId: string; content: unknown; isError: boolean },
+  ): void;
+  /** Returns and clears the address's accumulated parts, or undefined if
+   * nothing was ever accumulated for it this turn. */
+  take(agentAddress: string): Part[] | undefined;
+} {
+  const partsByAddress = new Map<string, Part[]>();
+  const toolTraceIndexByAddress = new Map<string, Map<string, number>>();
+
+  return {
+    onInferenceDone(agentAddress, blocks) {
+      const parts = partsByAddress.get(agentAddress) ?? [];
+      const toolTraceIndex =
+        toolTraceIndexByAddress.get(agentAddress) ?? new Map<string, number>();
+      for (const block of blocks) {
+        if (block.kind === "text") {
+          parts.push({ kind: "text", text: block.text });
+        } else {
+          toolTraceIndex.set(block.callId, parts.length);
+          parts.push({
+            kind: "tool-trace",
+            name: block.name,
+            input: block.input,
+            status: "running",
+          });
+        }
+      }
+      partsByAddress.set(agentAddress, parts);
+      toolTraceIndexByAddress.set(agentAddress, toolTraceIndex);
+    },
+    onToolDone(agentAddress, result) {
+      const parts = partsByAddress.get(agentAddress);
+      const index = toolTraceIndexByAddress
+        .get(agentAddress)
+        ?.get(result.callId);
+      if (parts === undefined || index === undefined) return;
+      const existing = parts[index];
+      if (existing === undefined || existing.kind !== "tool-trace") return;
+      parts[index] = {
+        ...existing,
+        status: result.isError ? "error" : "success",
+        output: result.content,
+      };
+    },
+    take(agentAddress) {
+      const parts = partsByAddress.get(agentAddress);
+      partsByAddress.delete(agentAddress);
+      toolTraceIndexByAddress.delete(agentAddress);
+      return parts;
+    },
+  };
+}
+
+/** The visible text of a reply's parts — every `TextPart`'s text, joined —
+ * for the surfaces that only ever wanted prose (mention scanning, the
+ * daily transcript digest): a tool call's `ToolTracePart` never
+ * contributes, so neither ever sees its JSON. */
+function flattenReplyText(parts: readonly Part[]): string {
+  return parts
+    .filter((part): part is TextPart => part.kind === "text")
+    .map((part) => part.text)
+    .join("");
 }
 
 /**
@@ -331,7 +416,7 @@ async function postReply(
   deps: ChatOrchestratorDeps,
   pendingDelegationThreads: Map<string, PendingDelegationThread>,
   agentAddress: string,
-  content: string,
+  parts: readonly Part[],
   outcome: TurnOutcome,
 ): Promise<void> {
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
@@ -347,7 +432,7 @@ async function postReply(
       tenantId: resolved.tenantId,
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
-      parts: [{ kind: "text", text: content }],
+      parts: [...parts],
       ...(turn !== undefined ? { runId: turn.childRunId } : {}),
     });
     if (turn !== undefined) {
@@ -374,17 +459,14 @@ async function postReply(
     // the workbench and the mentioned specialist never wakes up.
     const participants =
       resolved.participantsByWorkbenchId.get(workbenchId) ?? [];
-    const mentioned = mentionedParticipants(
-      [{ kind: "text", text: content }],
-      participants,
-    ).filter(
+    const mentioned = mentionedParticipants(parts, participants).filter(
       (address) => localPartOf(address) !== localPartOf(resolved.roomAddress),
     );
     for (const recipient of mentioned) {
       await deps.platform.sendMail({
         tenantId: resolved.tenantId,
         workbenchId: localPartOf(recipient),
-        content: encodeParts([{ kind: "text", text: content }], {
+        content: encodeParts([...parts], {
           replyTo: workbenchId,
         }),
         fromWorkbenchId: workbenchId,
@@ -796,6 +878,9 @@ export function createChatOrchestrator(
   // See `PendingDelegationThread`'s own doc comment above `postReply`.
   const pendingDelegationThreads = new Map<string, PendingDelegationThread>();
 
+  // See `createReplyPartsAccumulator`'s own doc comment above.
+  const replyParts = createReplyPartsAccumulator();
+
   const unsubscribe = deps.events.on(
     "agent.event",
     ({ agentAddress, event }) => {
@@ -810,24 +895,53 @@ export function createChatOrchestrator(
         return;
       }
 
+      // Structured turn content, ahead of `connector.reply`'s flattened
+      // string below: every `inference.done` this turn already split the
+      // model's output into prose and tool calls, and every `tool.done`
+      // resolves one of those calls' outcome. Neither branch returns —
+      // an inference step or a tool settling is not itself a reply.
+      const blocks = inferenceDoneBlocks(event);
+      if (blocks !== undefined) {
+        replyParts.onInferenceDone(agentAddress, blocks);
+      }
+      const toolResult = toolDoneResult(event);
+      if (toolResult !== undefined) {
+        replyParts.onToolDone(agentAddress, toolResult);
+      }
+
       const content = connectorReplyContent(event);
       if (content !== undefined) {
         repliedAddresses.add(agentAddress);
         notifiedDropAddresses.delete(agentAddress);
-        void postReply(deps, pendingDelegationThreads, agentAddress, content, {
+        // Prefer this turn's accumulated [text, tool-trace, text, ...]
+        // parts over the flattened `content` string — the string is a
+        // fallback for the rare case nothing was ever accumulated (e.g.
+        // an error-path reply, which the harness never routes through
+        // `inference.done` at all; see `event-collector.ts`'s
+        // `connector.reply` case). Never wrap `content` verbatim when
+        // structured parts exist, or a leaked JSON-shaped tool call
+        // sitting in that string would still show up as prose.
+        const accumulated = replyParts.take(agentAddress);
+        const parts: Part[] =
+          accumulated !== undefined && accumulated.length > 0
+            ? accumulated
+            : [{ kind: "text", text: content }];
+        void postReply(deps, pendingDelegationThreads, agentAddress, parts, {
           status: "completed",
         }).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
         });
-        void postDailyTranscriptDigest(deps, agentAddress, content).catch(
-          (cause: unknown) => {
-            log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`;
-          },
-        );
+        void postDailyTranscriptDigest(
+          deps,
+          agentAddress,
+          flattenReplyText(parts),
+        ).catch((cause: unknown) => {
+          log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`;
+        });
         return;
       }
 
@@ -849,6 +963,10 @@ export function createChatOrchestrator(
       // replay) posts the notice once, not once per delivery.
       const ended = messageRunEnded(event);
       if (ended !== undefined) {
+        // A turn's bracket closed either way — nothing accumulated for
+        // it (if any) belongs to a future turn, not this one.
+        replyParts.take(agentAddress);
+
         const hadReply = repliedAddresses.delete(agentAddress);
         if (!hadReply) {
           const errorMessage = ended.errorMessage ?? "no error reported";
@@ -864,7 +982,7 @@ export function createChatOrchestrator(
               deps,
               pendingDelegationThreads,
               agentAddress,
-              noticeContent,
+              [{ kind: "text", text: noticeContent }],
               { status: "failed", error: errorMessage },
             ).catch((cause: unknown) => {
               log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${

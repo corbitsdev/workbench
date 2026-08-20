@@ -33,10 +33,6 @@ function matchesQuery(haystacks: readonly string[], query: string): boolean {
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
-function isConnectedLegacyPlugin(plugin: ResolvedPlugin): boolean {
-  return plugin.status !== "not_connected";
-}
-
 function PluginGrid({
   plugins,
   onOpen,
@@ -45,7 +41,7 @@ function PluginGrid({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="border border-border [&>*:last-child]:border-b-0">
       {plugins.map((plugin) => (
         <PluginCard
           key={plugin.descriptor.id}
@@ -67,9 +63,7 @@ function PluginsTabPanel({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   const nonPreset = plugins.filter(
-    (plugin) =>
-      !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
-      isConnectedLegacyPlugin(plugin),
+    (plugin) => !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
   );
   const filtered = nonPreset.filter((plugin) =>
     matchesQuery(
@@ -172,7 +166,7 @@ function SkillsTabPanel({
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {group.label}
           </h3>
-          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="border border-border [&>*:last-child]:border-b-0">
             {group.skills.map((skill) => (
               <SkillCard
                 key={skill.assetId}
@@ -222,8 +216,7 @@ export function PluginsGallery({
         count:
           installablePlugins.filter(
             (plugin) =>
-              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
-              isConnectedLegacyPlugin(plugin),
+              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
           ).length + MCP_PRESETS.length,
       },
       { id: "skills" as const, label: "Skills", count: skills.length },

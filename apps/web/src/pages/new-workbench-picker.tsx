@@ -10,10 +10,16 @@
 
 import { Button, toast } from "@corbits/react-ui";
 import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useState } from "react";
 
+import type { ConnectGithubRepo } from "@corbits/chat-ui";
+
 import { useBench } from "../bench-context";
-import { createWorkbenchFromTemplate } from "../instant-agent-create";
+import {
+  createWorkbenchFromTemplate,
+  type PickGithubRepos,
+} from "../instant-agent-create";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -21,6 +27,14 @@ import {
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
 } from "../workbench-templates";
+import { GithubRepoSelectDialog } from "./github-repo-select-dialog";
+
+type RepoPickerState = {
+  readonly orgName: string;
+  readonly repos: readonly ConnectGithubRepo[];
+  readonly selectedRepoIds: readonly string[];
+  readonly resolve: (repoIds: readonly string[] | null) => void;
+};
 
 const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
@@ -38,12 +52,27 @@ export function NewWorkbenchPickerRoute() {
     WORKBENCH_TEMPLATES[0]?.id ?? "blank",
   );
   const [creating, setCreating] = useState(false);
+  const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
+
+  const pickGithubRepos: PickGithubRepos = ({
+    orgName,
+    repos,
+    selectedRepoIds,
+  }) =>
+    new Promise((resolve) => {
+      setRepoPicker({ orgName, repos, selectedRepoIds, resolve });
+    });
 
   async function handleCreate() {
     if (selectedTenantId === null || creating) return;
     setCreating(true);
     try {
-      await createWorkbenchFromTemplate(selectedTenantId, selectedId, navigate);
+      await createWorkbenchFromTemplate(
+        selectedTenantId,
+        selectedId,
+        navigate,
+        pickGithubRepos,
+      );
     } catch {
       toast("Couldn't create the workbench — try again.");
       setCreating(false);
@@ -66,76 +95,100 @@ export function NewWorkbenchPickerRoute() {
         }
       />
       <div className="new-workbench-picker">
-        <h3>What should this workbench do?</h3>
-        <p className="new-workbench-picker-sub">
-          Pick one. You can change your mind later — nothing is locked in.
-        </p>
+        {creating ? (
+          <WorkbenchLoadingState title="Setting up your workbench…" />
+        ) : (
+          <>
+            <h3>What should this workbench do?</h3>
+            <p className="new-workbench-picker-sub">
+              Pick one. You can change your mind later — nothing is locked in.
+            </p>
 
-        <div
-          className="new-workbench-pick-list"
-          role="radiogroup"
-          aria-label="Workbench kind"
-        >
-          {WORKBENCH_TEMPLATES.map((template) => {
-            const Icon = ROW_ICON[template.id];
-            const selected = template.id === selectedId;
-            return (
-              <button
-                key={template.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                data-selected={selected ? "true" : undefined}
-                className="new-workbench-pick-row"
-                onClick={() => setSelectedId(template.id)}
-              >
+            <div
+              className="new-workbench-pick-list"
+              role="radiogroup"
+              aria-label="Workbench kind"
+            >
+              {WORKBENCH_TEMPLATES.map((template) => {
+                const Icon = ROW_ICON[template.id];
+                const selected = template.id === selectedId;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-selected={selected ? "true" : undefined}
+                    className="new-workbench-pick-row"
+                    onClick={() => setSelectedId(template.id)}
+                  >
+                    <span
+                      className="new-workbench-pick-glyph"
+                      aria-hidden="true"
+                    >
+                      <Icon size={16} strokeWidth={1.8} />
+                    </span>
+                    <span className="new-workbench-pick-text">
+                      <span className="new-workbench-pick-title">
+                        {template.title}
+                      </span>
+                      <span className="new-workbench-pick-promise">
+                        {template.promise}
+                      </span>
+                    </span>
+                    <span className="new-workbench-pick-cta">
+                      {ctaLabel(selected)}
+                    </span>
+                  </button>
+                );
+              })}
+
+              <span className="new-workbench-pick-row" aria-disabled="true">
                 <span className="new-workbench-pick-glyph" aria-hidden="true">
-                  <Icon size={16} strokeWidth={1.8} />
+                  <Plus size={16} strokeWidth={1.8} />
                 </span>
                 <span className="new-workbench-pick-text">
                   <span className="new-workbench-pick-title">
-                    {template.title}
+                    {COMING_SOON_ROW.title}
                   </span>
                   <span className="new-workbench-pick-promise">
-                    {template.promise}
+                    {COMING_SOON_ROW.promise}
                   </span>
                 </span>
-                <span className="new-workbench-pick-cta">
-                  {ctaLabel(selected)}
-                </span>
-              </button>
-            );
-          })}
-
-          <span className="new-workbench-pick-row" aria-disabled="true">
-            <span className="new-workbench-pick-glyph" aria-hidden="true">
-              <Plus size={16} strokeWidth={1.8} />
-            </span>
-            <span className="new-workbench-pick-text">
-              <span className="new-workbench-pick-title">
-                {COMING_SOON_ROW.title}
+                <span className="new-workbench-pick-cta">Coming</span>
               </span>
-              <span className="new-workbench-pick-promise">
-                {COMING_SOON_ROW.promise}
-              </span>
-            </span>
-            <span className="new-workbench-pick-cta">Coming</span>
-          </span>
-        </div>
+            </div>
 
-        <div className="new-workbench-picker-foot">
-          <Button
-            type="button"
-            onClick={() => void handleCreate()}
-            disabled={creating || selectedTenantId === null}
-          >
-            {creating ? "Creating…" : "Create workbench"}
-          </Button>
-          <span className="new-workbench-picker-foot-note">
-            Takes about ten seconds.
-          </span>
-        </div>
+            <div className="new-workbench-picker-foot">
+              <Button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={creating || selectedTenantId === null}
+              >
+                Create workbench
+              </Button>
+              <span className="new-workbench-picker-foot-note">
+                Takes about ten seconds.
+              </span>
+            </div>
+          </>
+        )}
       </div>
+      {repoPicker !== null ? (
+        <GithubRepoSelectDialog
+          orgName={repoPicker.orgName}
+          repos={repoPicker.repos}
+          initialSelectedRepoIds={repoPicker.selectedRepoIds}
+          onStartReviewing={(repoIds) => {
+            repoPicker.resolve(repoIds);
+            setRepoPicker(null);
+          }}
+          onSkip={() => {
+            repoPicker.resolve(null);
+            setRepoPicker(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

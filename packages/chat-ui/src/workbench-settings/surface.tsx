@@ -24,6 +24,7 @@ import {
   patchWorkbenchSettings,
 } from "../api";
 import type { WorkbenchSettings } from "../api";
+import { WorkbenchLoadingState } from "../loading-state";
 import { CHAT_STRINGS } from "../strings";
 import { AgentsSection } from "./agents-section";
 import { CapacitySection } from "./capacity-section";
@@ -266,7 +267,13 @@ export function WorkbenchSettingsSurface({
         ) : null}
       </div>
 
-      <QueryView query={query} label={CHAT_STRINGS.workbenchSettingsLoadError}>
+      <QueryView
+        query={query}
+        label={CHAT_STRINGS.workbenchSettingsLoadError}
+        loadingContent={
+          <WorkbenchLoadingState title="Loading workbench settings…" />
+        }
+      >
         {({ data, benchDefault }) => (
           <div className="workbench-settings-shell">
             <nav

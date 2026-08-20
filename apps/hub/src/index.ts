@@ -1740,10 +1740,14 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
-      // Same env bag `onboardingDeps.huggingfaceClientId` below feeds
-      // the OAuth connect flow itself, so `GET .../oauth-configured`
-      // reports exactly what a Connect click would decide.
-      oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
+      // Same env bag the OAuth connect flow itself reads below, so
+      // `GET .../oauth-configured` reports exactly what a Connect click
+      // would decide.
+      oauthEnv: {
+        huggingfaceClientId: config.huggingfaceOAuthClientId,
+        githubAppClientId: config.githubAppClientId,
+        githubAppClientSecret: config.githubAppClientSecret,
+      },
       providerHealth: providerHealthStore,
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),

@@ -20,24 +20,20 @@ function messageWithBlock(type: string, data: unknown): MessageItem[] {
 }
 
 describe("block rendering", () => {
-  test("approve block renders framing with fixed disabled Approve/Deny", () => {
+  test("approve block renders framing with fixed disabled Approve/Not now", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchTimeline
         items={messageWithBlock("approve", {
           approvalId: "apv_fixture1",
           title: "Deploy staging",
-          risk: "high",
-          riskNote: "touches shared infra",
           body: "Rolls out the ingest worker.",
         })}
       />,
     );
     expect(markup).toContain("Deploy staging");
-    expect(markup).toContain("High risk");
-    expect(markup).toContain("touches shared infra");
     expect(markup).toContain("Rolls out the ingest worker.");
     expect(markup).toContain("Approve");
-    expect(markup).toContain("Deny");
+    expect(markup).toContain("Not now");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("apv_fixture1");
   });

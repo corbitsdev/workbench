@@ -309,7 +309,7 @@ describe("InsightsPage run-detail stat strip", () => {
     expect(markup).not.toContain(">Bench<");
   });
 
-  test("while the trace is loading, the KPIs render an ellipsis, not a dash", () => {
+  test("while the trace is loading, the KPIs render a shimmer, not a dash", () => {
     const markup = renderToStaticMarkup(
       <InsightsRunDetail
         runId="run_1"
@@ -320,7 +320,7 @@ describe("InsightsPage run-detail stat strip", () => {
         onBack={() => undefined}
       />,
     );
-    expect(markup).toContain(">…<");
+    expect(markup).toContain('data-slot="skeleton"');
     // Owner is genuinely absent from WorkflowRunResponse today (not a
     // loading state), so it keeps its dash even while the trace loads.
     expect(markup).toContain(">—<");

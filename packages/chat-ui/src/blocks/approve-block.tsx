@@ -16,12 +16,13 @@ import type { ApproveBlockData } from "@corbits/chat/blocks";
 import { useEffect, useState } from "react";
 
 import { CHAT_STRINGS } from "../strings";
-import { BlockCard, RiskBadge } from "./block-card";
+import { BlockCard } from "./block-card";
 import type {
   ApprovalActions,
   ApprovalLiveStatus,
   ApprovalStatusQuery,
   PlatformApprovalDetail,
+  StandingConsentOffer,
 } from "./approval-actions";
 import type { DecisionInFlight } from "./approve-card-state";
 import { deriveApproveCardView } from "./approve-card-state";
@@ -73,32 +74,58 @@ function PlatformDetail({
 }
 
 function ApproveButtons({
+  actionLabel,
   deciding,
   onApprove,
   onDeny,
+  standingConsent,
+  allowingStanding,
+  onAllowStanding,
 }: {
+  readonly actionLabel: string;
   readonly deciding: DecisionInFlight;
   readonly onApprove: () => void;
   readonly onDeny: () => void;
+  readonly standingConsent: StandingConsentOffer | undefined;
+  readonly allowingStanding: boolean;
+  readonly onAllowStanding: (() => void) | null;
 }) {
   const busy = deciding !== null;
   return (
-    <div className="chat-block-actions">
-      <Button
-        type="button"
-        variant="primary"
-        disabled={busy}
-        onClick={onApprove}
-      >
-        {deciding === "approve"
-          ? CHAT_STRINGS.blockApproveApproving
-          : CHAT_STRINGS.blockApproveAction}
-      </Button>
-      <Button type="button" variant="outline" disabled={busy} onClick={onDeny}>
-        {deciding === "reject"
-          ? CHAT_STRINGS.blockApproveRejecting
-          : CHAT_STRINGS.blockDenyAction}
-      </Button>
+    <div className="chat-block-actions-group">
+      <div className="chat-block-actions">
+        <Button
+          type="button"
+          variant="primary"
+          disabled={busy}
+          onClick={onApprove}
+        >
+          {deciding === "approve"
+            ? CHAT_STRINGS.blockApproveApproving
+            : actionLabel}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={onDeny}
+        >
+          {deciding === "reject"
+            ? CHAT_STRINGS.blockApproveRejecting
+            : CHAT_STRINGS.blockDenyAction}
+        </Button>
+      </div>
+      {standingConsent !== undefined && onAllowStanding !== null && (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          disabled={busy || allowingStanding}
+          onClick={onAllowStanding}
+        >
+          {CHAT_STRINGS.blockApproveAllowStanding(standingConsent)}
+        </Button>
+      )}
     </div>
   );
 }
@@ -114,6 +141,7 @@ export function ApproveBlockView({
   const [deciding, setDeciding] = useState<DecisionInFlight>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [resolvedElsewhere, setResolvedElsewhere] = useState(false);
+  const [allowingStanding, setAllowingStanding] = useState(false);
 
   useEffect(() => {
     if (actions === undefined) return;
@@ -163,6 +191,26 @@ export function ApproveBlockView({
       .finally(() => setDeciding(null));
   }
 
+  function allowStanding() {
+    if (actions?.allowStanding === undefined) return;
+    setAllowingStanding(true);
+    actions
+      .allowStanding(data.approvalId)
+      .then((result) => {
+        if (result.kind === "resolved") {
+          toast(CHAT_STRINGS.blockApproveStatusApproved);
+        } else if (result.kind !== "conflict") {
+          setDecisionError(
+            result.kind === "forbidden"
+              ? CHAT_STRINGS.blockApproveActionForbidden
+              : CHAT_STRINGS.blockApproveActionError,
+          );
+        }
+        return actions.getStatus(data.approvalId).then(setLive);
+      })
+      .finally(() => setAllowingStanding(false));
+  }
+
   const view = deriveApproveCardView({
     wired: actions !== undefined,
     live,
@@ -180,14 +228,12 @@ export function ApproveBlockView({
 
   return (
     <BlockCard title={data.title}>
-      {data.risk !== undefined && (
-        <RiskBadge
-          level={data.risk}
-          label={CHAT_STRINGS.blockRiskLabel(data.risk)}
-          note={data.riskNote}
-        />
-      )}
       {detail !== null && <PlatformDetail detail={detail} />}
+      {detail?.consequence !== undefined && (
+        <p className="chat-block-text chat-block-consequence">
+          {detail.consequence}
+        </p>
+      )}
       {view.kind !== "undetermined" && data.body !== undefined && (
         <p className="chat-block-text chat-block-agent-note">
           {detail !== null
@@ -256,9 +302,15 @@ export function ApproveBlockView({
             </p>
           )}
           <ApproveButtons
+            actionLabel={detail?.actionVerb ?? CHAT_STRINGS.blockApproveAction}
             deciding={view.deciding}
             onApprove={() => decide("approve")}
             onDeny={() => decide("reject")}
+            standingConsent={detail?.standingConsent}
+            allowingStanding={allowingStanding}
+            onAllowStanding={
+              actions?.allowStanding !== undefined ? allowStanding : null
+            }
           />
         </>
       )}

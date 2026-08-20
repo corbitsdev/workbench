@@ -169,7 +169,7 @@ function PreviewPane({
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">
-            {detail?.title ?? (loading ? "Loading…" : "Preview")}
+            {detail?.title ?? "Preview"}
           </p>
           {detail !== null ? (
             <p className="truncate text-xs text-muted-foreground">
@@ -261,7 +261,7 @@ export function LibraryPage({
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [viewMode, setViewMode] = useState<ViewMode>("rows");
   const [localSelected, setLocalSelected] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

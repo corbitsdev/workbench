@@ -177,16 +177,14 @@ describe("approve card round-trip", () => {
     const el = await mount(fakeBackend("pending", false).actions);
 
     expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
-    expect(el.textContent).toContain(
-      "Only an approver on this workbench can act on this.",
-    );
+    expect(el.textContent).toContain("This one isn't yours to decide.");
     expect(el.textContent).toContain("Wire $50,000 to acct_9182");
   });
 
   test("the platform's own headline and arguments render, always ahead of the agent's framing", async () => {
     const el = await mount(fakeBackend("pending", true).actions);
 
-    expect(el.textContent).toContain("Payments Bot");
+    expect(el.textContent).toContain("Payments Bot is asking to");
     expect(el.textContent).toContain("Wire $50,000 to acct_9182");
     expect(el.textContent).toContain("acct_9182");
     expect(el.textContent).toContain("50000");
@@ -328,5 +326,80 @@ describe("approve card round-trip", () => {
 
     expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain("Denied");
+  });
+
+  test("the primary button carries the platform detail's own verb, and deny is generic", async () => {
+    const el = await mount(
+      fakeBackend("pending", true, {
+        ...PLATFORM_DETAIL,
+        actionVerb: "Merge it",
+      }).actions,
+    );
+
+    const buttons = el.querySelectorAll(".chat-block-actions button");
+    expect(buttons.item(0).textContent).toBe("Merge it");
+    expect(buttons.item(1).textContent).toBe("Not now");
+  });
+
+  test("with no platform-supplied verb, the primary button falls back to the generic label", async () => {
+    const el = await mount(fakeBackend("pending", true).actions);
+
+    const buttons = el.querySelectorAll(".chat-block-actions button");
+    expect(buttons.item(0).textContent).toBe("Approve");
+  });
+
+  test("the platform's consequence sentence renders in place of a risk badge", async () => {
+    const el = await mount(
+      fakeBackend("pending", true, {
+        ...PLATFORM_DETAIL,
+        consequence:
+          "Merging goes further than posting a review — it puts the change live.",
+      }).actions,
+    );
+
+    expect(el.textContent).toContain(
+      "Merging goes further than posting a review — it puts the change live.",
+    );
+    expect(el.querySelector(".chat-block-risk")).toBeNull();
+  });
+
+  test("the standing-consent link only shows when the host offers both the capability and the detail", async () => {
+    const withoutCapability = await mount(
+      fakeBackend("pending", true, {
+        ...PLATFORM_DETAIL,
+        standingConsent: { verb: "merging", resource: "acme/checkout" },
+      }).actions,
+    );
+    expect(withoutCapability.textContent).not.toContain("Allow merging for");
+
+    const backend = fakeBackend("pending", true, {
+      ...PLATFORM_DETAIL,
+      standingConsent: { verb: "merging", resource: "acme/checkout" },
+    });
+    const allowStandingCalls: string[] = [];
+    const el = await mount(
+      {
+        ...backend.actions,
+        allowStanding: async (id) => {
+          allowStandingCalls.push(id);
+          return { kind: "resolved", status: "approved" };
+        },
+      },
+      "apv_2",
+    );
+
+    expect(el.textContent).toContain("Allow merging for acme/checkout");
+    const link = Array.from(el.querySelectorAll("button")).find(
+      (button) => button.textContent === "Allow merging for acme/checkout",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      link.click();
+    });
+    expect(allowStandingCalls).toEqual(["apv_2"]);
+  });
+
+  test("no capability, no detail field: the standing-consent link never appears", async () => {
+    const el = await mount(fakeBackend("pending", true).actions);
+    expect(el.textContent).not.toContain("Allow ");
   });
 });

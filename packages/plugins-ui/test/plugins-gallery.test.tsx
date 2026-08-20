@@ -148,15 +148,24 @@ function renderGallery(
 }
 
 describe("PluginsGallery", () => {
-  test("renders connected legacy plugins but omits unconnected key-based entries", () => {
+  test("renders every tool connector regardless of connection state (CL-6386)", () => {
     const { container } = renderGallery();
 
     expect(container.textContent).toContain("GitHub");
     expect(container.textContent).toContain("Notion");
-    expect(container.textContent).not.toContain("Hugging Face");
+    expect(container.textContent).toContain("Hugging Face");
     expect(container.textContent).toContain(
       "Lets agents read and open pull requests in your GitHub repos.",
     );
+  });
+
+  test("a not-connected tool connector renders a Connect affordance", () => {
+    const { container } = renderGallery();
+
+    const connectButton = container.querySelector(
+      '[aria-label="Connect Hugging Face"]',
+    );
+    expect(connectButton).not.toBeNull();
   });
 
   test("filters out the old registry card for a connector an MCP preset now fronts", () => {

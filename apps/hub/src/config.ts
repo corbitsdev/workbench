@@ -142,6 +142,12 @@ const HubEnv = type({
   "HUGGINGFACE_OAUTH_CLIENT_ID?": type("string > 0").describe(
     "Hugging Face public OAuth app client id (huggingface.co/settings/applications, no secret — see docs/onboarding-huggingface-connect.md); optional, enables the onboarding wizard's Hugging Face connect card",
   ),
+  "GITHUB_APP_CLIENT_ID?": type("string > 0").describe(
+    "GitHub OAuth App client id for the `github` connector's hosted one-click connect (github.com/settings/developers — a separate app from GITHUB_CLIENT_ID's sign-in app); set together with GITHUB_APP_CLIENT_SECRET, or the Plugins/connect-github card falls back to a pasted personal access token",
+  ),
+  "GITHUB_APP_CLIENT_SECRET?": type("string > 0").describe(
+    "GitHub OAuth App client secret; set together with GITHUB_APP_CLIENT_ID to enable the hosted GitHub connect",
+  ),
   "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
     "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
   ),
@@ -287,6 +293,8 @@ export type HubConfig = {
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
   readonly huggingfaceOAuthClientId?: string;
+  readonly githubAppClientId?: string;
+  readonly githubAppClientSecret?: string;
   readonly credentialEncryptionKeyHex?: string;
   /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
   readonly allowPlaintextSecrets: boolean;
@@ -594,6 +602,10 @@ export function readHubConfig(
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
+  if (parsed.GITHUB_APP_CLIENT_ID !== undefined)
+    hubConfig.githubAppClientId = parsed.GITHUB_APP_CLIENT_ID;
+  if (parsed.GITHUB_APP_CLIENT_SECRET !== undefined)
+    hubConfig.githubAppClientSecret = parsed.GITHUB_APP_CLIENT_SECRET;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
   if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)

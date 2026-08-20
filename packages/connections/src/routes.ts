@@ -257,9 +257,13 @@ export function createConnectionRoutes(
       const configured: Record<string, boolean> = {};
       for (const [id, descriptor] of Object.entries(registry)) {
         if (descriptor.oauth === undefined) continue;
-        configured[id] =
+        const hasClientId =
           descriptor.oauth.clientId === undefined ||
           descriptor.oauth.clientId(oauthEnv) !== undefined;
+        const hasClientSecret =
+          descriptor.oauth.clientSecret === undefined ||
+          descriptor.oauth.clientSecret(oauthEnv) !== undefined;
+        configured[id] = hasClientId && hasClientSecret;
       }
       return c.json(configured, 200);
     },

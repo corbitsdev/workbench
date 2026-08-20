@@ -24,6 +24,97 @@ export function connectorReplyContent(event: unknown): string | undefined {
   return typeof content === "string" && content !== "" ? content : undefined;
 }
 
+/** One block of a `connector.reply`-producing turn, narrowed to the two
+ * kinds a reply's chat representation must tell apart (CL-6378): visible
+ * text, and a tool the model invoked. Every other `ContentBlock` variant
+ * (thinking, citations, safety ratings, ...) carries no chat-part
+ * equivalent yet and is left out rather than guessed at. */
+export type ReplyContentBlock =
+  | { readonly kind: "text"; readonly text: string }
+  | {
+      readonly kind: "tool-call";
+      readonly callId: string;
+      readonly name: string;
+      readonly input: Record<string, unknown>;
+    };
+
+/** The ordered content blocks of an `inference.done` turn, narrowed to
+ * `ReplyContentBlock`s, or undefined for any other event. This is the
+ * structured alternative to `connectorReplyContent`'s flattened string:
+ * reading blocks straight off `inference.done` (where the harness has
+ * already separated a model's prose from its tool calls, see
+ * `vendor/intx/hub-sessions/src/event-collector.ts`'s `handleInferenceDone`)
+ * means a chat orchestrator building message parts never has to guess
+ * which part of a reply's text was actually tool-call JSON the model
+ * emitted inline — it reads the split the harness already made instead of
+ * re-deriving it from prose. */
+export function inferenceDoneBlocks(
+  event: unknown,
+): ReplyContentBlock[] | undefined {
+  if (
+    typeof event !== "object" ||
+    event === null ||
+    (event as { type?: unknown }).type !== "inference.done"
+  ) {
+    return undefined;
+  }
+  const content = (event as { data?: { turn?: { content?: unknown } } }).data
+    ?.turn?.content;
+  if (!Array.isArray(content)) return undefined;
+
+  const blocks: ReplyContentBlock[] = [];
+  for (const block of content as unknown[]) {
+    if (typeof block !== "object" || block === null) continue;
+    const typed = block as { type?: unknown };
+    if (typed.type === "text") {
+      const text = (block as { text?: unknown }).text;
+      if (typeof text === "string" && text !== "") {
+        blocks.push({ kind: "text", text });
+      }
+    } else if (typed.type === "tool_call") {
+      const id = (block as { id?: unknown }).id;
+      const name = (block as { name?: unknown }).name;
+      const args = (block as { arguments?: unknown }).arguments;
+      if (
+        typeof id === "string" &&
+        typeof name === "string" &&
+        typeof args === "object" &&
+        args !== null
+      ) {
+        blocks.push({
+          kind: "tool-call",
+          callId: id,
+          name,
+          input: args as Record<string, unknown>,
+        });
+      }
+    }
+  }
+  return blocks;
+}
+
+/** A `tool.done` result, keyed by the `callId` it resolves — or undefined
+ * for any other event. Pairs with `inferenceDoneBlocks`' `tool-call`
+ * entries to fill in a tool-trace part's outcome once its call settles. */
+export function toolDoneResult(
+  event: unknown,
+): { callId: string; content: unknown; isError: boolean } | undefined {
+  if (
+    typeof event !== "object" ||
+    event === null ||
+    (event as { type?: unknown }).type !== "tool.done"
+  ) {
+    return undefined;
+  }
+  const result = (event as { data?: { result?: unknown } }).data?.result;
+  if (typeof result !== "object" || result === null) return undefined;
+  const callId = (result as { callId?: unknown }).callId;
+  if (typeof callId !== "string") return undefined;
+  const content = (result as { content?: unknown }).content;
+  const isError = (result as { isError?: unknown }).isError === true;
+  return { callId, content, isError };
+}
+
 export type MessageRunEnded = {
   readonly status: "completed" | "failed";
   readonly errorMessage: string | undefined;

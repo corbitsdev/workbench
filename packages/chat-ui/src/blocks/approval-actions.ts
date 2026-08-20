@@ -14,6 +14,19 @@ export type ApprovalLiveStatus =
   "pending" | "approved" | "rejected" | "timeout" | "expired";
 
 /**
+ * A standing-consent offer the platform is willing to take for this
+ * approval's tool/resource pair -- present only when the host's read can
+ * name both (see `ApproveAction.scope` and its `hub-api` handler, which
+ * today rejects `scope: "always"` with `unsupported_scope` because the
+ * suspend path doesn't yet capture tool identity). Absence of this field
+ * means "not offerable here," never "offerable but hidden."
+ */
+export type StandingConsentOffer = {
+  readonly verb: string;
+  readonly resource: string;
+};
+
+/**
  * The platform's own account of what is being asked -- who, what tool, with
  * which arguments. This is the authoritative "what am I approving" a human
  * decides against; the block's own `title`/`body` is the *agent's* framing
@@ -25,6 +38,16 @@ export type PlatformApprovalDetail = {
   readonly agentName: string;
   readonly headline: string;
   readonly arguments: Record<string, unknown>;
+  /** The action's own imperative verb for the primary button (e.g. "Merge
+   * it"). Falls back to the generic "Approve" when the host's read doesn't
+   * carry one. */
+  readonly actionVerb?: string;
+  /** One-line, platform-authored consequence of taking the action (e.g.
+   * "Merging goes further than posting a review -- it puts the change
+   * live."). Replaces a risk-level badge, which only ever repeated the
+   * agent's own framing back at the human deciding against it. */
+  readonly consequence?: string;
+  readonly standingConsent?: StandingConsentOffer;
 };
 
 /**
@@ -76,4 +99,15 @@ export type ApprovalActions = {
   readonly approve: (approvalId: string) => Promise<ApprovalDecisionResult>;
   /** Calls the same native `/reject` route Inbox calls. */
   readonly reject: (approvalId: string) => Promise<ApprovalDecisionResult>;
+  /**
+   * Turns this one decision into a standing grant for the same tool/resource
+   * pair. Optional: the native route this would call (`POST .../approve`
+   * with `scope: "always"`) is defined in `@intx/types` but `hub-api`
+   * rejects it today (`unsupported_scope` -- the suspend path doesn't yet
+   * capture tool identity). Omit this until a host can wire it to something
+   * real; the card never shows the standing-consent link without it.
+   */
+  readonly allowStanding?: (
+    approvalId: string,
+  ) => Promise<ApprovalDecisionResult>;
 };
