@@ -21,6 +21,7 @@ type LaunchRow = {
   tenantId: string;
   instanceId: string;
   currentRunId: string;
+  priorRunIds: string[];
   foldedBody: unknown;
   noopInference: boolean;
 };
@@ -69,6 +70,7 @@ const relaunched: LaunchRow = {
   tenantId: "ten_1",
   instanceId: "run_original",
   currentRunId: "run_fresh",
+  priorRunIds: ["run_original"],
   foldedBody: FOLDED_BODY,
   noopInference: false,
 };

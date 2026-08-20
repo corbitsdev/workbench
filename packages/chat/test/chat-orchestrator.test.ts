@@ -129,6 +129,7 @@ function launchRowFor(runId: string, tenantId: string) {
     tenantId,
     instanceId: runId,
     currentRunId: runId,
+    priorRunIds: [],
     foldedBody: {
       systemPrompt: "be helpful",
       toolPackagePins: [],
