@@ -9,6 +9,7 @@ import { callEvalModel } from "../model-call.ts";
 import type { ScorerContext, ScorerResult, ToolCall, Turn } from "../types.ts";
 import {
   BUILD_TOOLS,
+  GITHUB_POST_REVIEW_COMMENT_TOOL,
   MEMORY_ADD_TOOL,
   ROUTINE_CREATE_TOOL,
 } from "./tool-names.ts";
@@ -303,5 +304,245 @@ export function judge(
       });
     const { pass, reason } = await run(prompt);
     return { name: "judge", score: pass ? 1 : 0, pass, reason };
+  };
+}
+
+// --- CL-6322 §8.2 scorers -------------------------------------------
+//
+// Every scorer below grades "what Myra actually built" (plan.md §8.1
+// item 1), not what a tool call merely asked for. The first three read
+// `ctx.world` (CL-6336 shipped it on `ScorerContext`, always present —
+// see ../types.ts) for real. `reviewCommentsAttributable` and
+// `wholeRunInspectable` still skip unconditionally: `WorldSnapshot`
+// has no `reviewComments`/`runs` sections at all yet, so there is
+// nothing to read until Phase 1.3 (`onTrigger` adoption) gives each
+// fired occurrence its own child run id to attribute a comment or run
+// to. The last two read the transcript alone and are buildable today;
+// they still read red because the GitHub-write tool they check for
+// doesn't exist yet (CL-6325).
+
+/** Passes once a `github` connection in the world snapshot is live —
+ * i.e. the connection went through `@corbits/connections`, not a
+ * hand-rolled token stashed some other way. */
+export function githubConnectedViaConnectionsLayer() {
+  return function githubConnectedViaConnectionsLayerScorer(
+    ctx: ScorerContext,
+  ): ScorerResult {
+    const github = ctx.world.connections.find(
+      (connection) => connection.slug === "github",
+    );
+    const connected = github?.live === true;
+    return result(
+      "githubConnectedViaConnectionsLayer",
+      connected,
+      connected
+        ? "github connection reads live=true from the world snapshot"
+        : `github connection not live in the world snapshot (found: ${JSON.stringify(github)})`,
+    );
+  };
+}
+
+/** Passes once every named reviewer handle has a materialized agent
+ * definition carrying a GitHub-shaped tool-package pin — proof the
+ * grant actually stuck, not just that `create_agent` was asked to add
+ * it. */
+export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
+  return function agentDefinitionsHaveToolGrantsScorer(
+    ctx: ScorerContext,
+  ): ScorerResult {
+    const missing = handles.filter(
+      (handle) =>
+        !ctx.world.agentDefinitions.some(
+          (definition) =>
+            definition.name === handle &&
+            definition.toolPackagePins.some((pin) => /github/i.test(pin)),
+        ),
+    );
+    return result(
+      "agentDefinitionsHaveToolGrants",
+      missing.length === 0,
+      missing.length === 0
+        ? `all of [${handles.join(", ")}] have a materialized definition with a github-shaped tool pin`
+        : `missing a materialized github-grant definition for: ${missing.join(", ")}`,
+    );
+  };
+}
+
+function triggerWebhookId(trigger: unknown): string | undefined {
+  if (typeof trigger !== "object" || trigger === null) return undefined;
+  const record = trigger as Record<string, unknown>;
+  if (record["kind"] !== "webhook") return undefined;
+  return typeof record["webhookTriggerId"] === "string"
+    ? record["webhookTriggerId"]
+    : undefined;
+}
+
+/** Passes once a routine in the snapshot has `trigger.kind ===
+ * "webhook"` bound to a resolved `webhookTriggerId` — proof the
+ * trigger actually fires per PR event rather than on a poll. */
+export function triggerIsWebhookPerPr() {
+  return function triggerIsWebhookPerPrScorer(
+    ctx: ScorerContext,
+  ): ScorerResult {
+    const webhookRoutine = ctx.world.routines.find(
+      (routine) => triggerWebhookId(routine.trigger) !== undefined,
+    );
+    return result(
+      "triggerIsWebhookPerPr",
+      webhookRoutine !== undefined,
+      webhookRoutine !== undefined
+        ? `routine ${webhookRoutine.id} has a resolved webhook trigger (${triggerWebhookId(webhookRoutine.trigger) ?? ""})`
+        : "no routine in the snapshot has a resolved webhook trigger",
+    );
+  };
+}
+
+/** Passes once every named reviewer handle posted at least one review
+ * comment, and every posted comment carries its own `childRunId` — the
+ * per-turn/per-reviewer run tracing CL-6322 Phase 1.3 (`onTrigger`
+ * adoption) is meant to produce. `WorldSnapshot` carries no review
+ * comments at all yet, so this always skips, naming Phase 1.3 as the
+ * blocker rather than failing on a gap this eval case cannot close by
+ * itself. */
+export function reviewCommentsAttributable(handles: readonly string[]) {
+  return function reviewCommentsAttributableScorer(
+    _ctx: ScorerContext,
+  ): ScorerResult {
+    return {
+      name: "reviewCommentsAttributable",
+      score: 1,
+      pass: true,
+      skipped: true,
+      reason:
+        `skipped: WorldSnapshot carries no reviewComments for [${handles.join(", ")}] to attribute — ` +
+        "blocked on Phase 1.3 (per-turn/per-reviewer run-id tracing via onTrigger adoption, CL-6322)",
+    };
+  };
+}
+
+/** Passes once every successful `github_post_review_comment` call
+ * carries a non-empty `suggestedFix` — read purely off the tool
+ * call's own arguments, no snapshot needed. Reads red today because
+ * the tool itself doesn't exist yet (CL-6325), so no such call is ever
+ * in the transcript to check. */
+export function suggestedFixesStructurallyValid() {
+  return function suggestedFixesStructurallyValidScorer(
+    ctx: ScorerContext,
+  ): ScorerResult {
+    const calls = allToolCalls(
+      ctx.transcript.slice(0, ctx.turnIndex + 1),
+    ).filter(
+      (call) => call.name === GITHUB_POST_REVIEW_COMMENT_TOOL && !call.isError,
+    );
+    if (calls.length === 0) {
+      return result(
+        "suggestedFixesStructurallyValid",
+        false,
+        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — blocked on CL-6325 (no GitHub write tool exists)`,
+      );
+    }
+    const invalid = calls.filter((call) => {
+      const fix = call.arguments["suggestedFix"];
+      return typeof fix !== "string" || fix.trim() === "";
+    });
+    return result(
+      "suggestedFixesStructurallyValid",
+      invalid.length === 0,
+      invalid.length === 0
+        ? `all ${String(calls.length)} review comment(s) carry a non-empty suggestedFix`
+        : `${String(invalid.length)} of ${String(calls.length)} review comment(s) have no suggestedFix`,
+    );
+  };
+}
+
+/**
+ * Encodes the owner's ruling on where the approval boundary sits for
+ * an outward GitHub action: posting a review comment is FREE under a
+ * valid per-repo grant (must NOT wait on a human approval phrase), but
+ * a merge-class action (opening/landing a merge, not reviewing) DOES
+ * park behind one — the same contract `approvalGated` already proves
+ * for `routine_create`, applied here to `mergeTool`. Two assertions,
+ * one scorer, because they're the same ruling read two ways: passes
+ * once (a) every successful `github_post_review_comment` call is
+ * scoped to `repo` and carries an `authorAgentHandle` for audit
+ * attribution, with no approval-phrase requirement, and (b) any
+ * `mergeTool` call found only ever follows an approval phrase. Reads
+ * red today because neither GitHub-write tool exists yet (CL-6325) —
+ * (a) fails on "no call yet," and this eval's step 4 never calls
+ * `mergeTool` at all (Pass 1 stops at "review posted"), so (b) is
+ * vacuously satisfied until CL-6325 gives it something to check.
+ */
+export function outwardGitHubActionsRespectGrantBoundary(
+  repo: string,
+  mergeTool: string,
+) {
+  return function outwardGitHubActionsRespectGrantBoundaryScorer(
+    ctx: ScorerContext,
+  ): ScorerResult {
+    const transcript = ctx.transcript.slice(0, ctx.turnIndex + 1);
+    const postCalls = allToolCalls(transcript).filter(
+      (call) => call.name === GITHUB_POST_REVIEW_COMMENT_TOOL && !call.isError,
+    );
+    if (postCalls.length === 0) {
+      return result(
+        "outwardGitHubActionsRespectGrantBoundary",
+        false,
+        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — blocked on CL-6325 (no GitHub write tool exists, and no per-repo grant concept to post under)`,
+      );
+    }
+    const offRepo = postCalls.filter((call) => call.arguments["repo"] !== repo);
+    const unattributed = postCalls.filter((call) => {
+      const author = call.arguments["authorAgentHandle"];
+      return typeof author !== "string" || author.trim() === "";
+    });
+
+    let approvedByStep = -1;
+    for (const [index, turn] of transcript.entries()) {
+      if (turnHasApproval(turn.human)) {
+        approvedByStep = index;
+        break;
+      }
+    }
+    const mergedBeforeApproval: string[] = [];
+    for (const [index, turn] of transcript.entries()) {
+      const gated = turn.toolCalls.filter((call) => call.name === mergeTool);
+      if (
+        gated.length > 0 &&
+        (approvedByStep === -1 || index < approvedByStep)
+      ) {
+        mergedBeforeApproval.push(`step ${String(index)}`);
+      }
+    }
+
+    const pass =
+      offRepo.length === 0 &&
+      unattributed.length === 0 &&
+      mergedBeforeApproval.length === 0;
+    return result(
+      "outwardGitHubActionsRespectGrantBoundary",
+      pass,
+      pass
+        ? `all ${String(postCalls.length)} review comment(s) posted free under the ${repo} grant with audit attribution, and no ${mergeTool} call ran before approval`
+        : `${String(offRepo.length)} post(s) outside the ${repo} grant, ${String(unattributed.length)} missing authorAgentHandle, ${mergeTool} ran before approval at: ${mergedBeforeApproval.join(", ") || "none"}`,
+    );
+  };
+}
+
+/** Passes once every fired reviewer run is inspectable after the fact
+ * via its own event-log reference (plan.md §8.2 item 7). `WorldSnapshot`
+ * carries no per-run event-log references at all yet, so this always
+ * skips — the same `onTrigger`-adoption dependency
+ * `reviewCommentsAttributable` names for per-run ids. */
+export function wholeRunInspectable() {
+  return function wholeRunInspectableScorer(_ctx: ScorerContext): ScorerResult {
+    return {
+      name: "wholeRunInspectable",
+      score: 1,
+      pass: true,
+      skipped: true,
+      reason:
+        "skipped: WorldSnapshot carries no per-run eventLogRef yet — " +
+        "blocked on Phase 1.3 (per-turn/per-reviewer run-id tracing via onTrigger adoption, CL-6322)",
+    };
   };
 }

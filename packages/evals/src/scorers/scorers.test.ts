@@ -3,15 +3,22 @@ import { describe, expect, test } from "bun:test";
 import type { ScorerContext, ToolCall, Turn, WorldSnapshot } from "../types.ts";
 import {
   agentCreatedInWorkbench,
+  agentDefinitionsHaveToolGrants,
   approvalGated,
   asksQuestions,
+  githubConnectedViaConnectionsLayer,
   judge,
   memoryWritten,
   namesRequiredTools,
   noBuildBeforeAnswers,
   noToolCalls,
+  outwardGitHubActionsRespectGrantBoundary,
+  reviewCommentsAttributable,
   routineCreated,
   routineCreatedOnlyAfterOk,
+  suggestedFixesStructurallyValid,
+  triggerIsWebhookPerPr,
+  wholeRunInspectable,
 } from "./scorers.ts";
 
 function call(
@@ -46,6 +53,14 @@ const EMPTY_WORLD: WorldSnapshot = {
 
 function ctxAt(transcript: Turn[], turnIndex: number): ScorerContext {
   return { transcript, turnIndex, world: EMPTY_WORLD };
+}
+
+function ctxWithWorld(
+  transcript: Turn[],
+  turnIndex: number,
+  world: Partial<WorldSnapshot>,
+): ScorerContext {
+  return { transcript, turnIndex, world: { ...EMPTY_WORLD, ...world } };
 }
 
 describe("asksQuestions", () => {
@@ -253,6 +268,248 @@ describe("approvalGated", () => {
     ];
     const r = approvalGated(["routine_create"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
+  });
+});
+
+describe("githubConnectedViaConnectionsLayer", () => {
+  test("fails when the snapshot has no github connection", () => {
+    const r = githubConnectedViaConnectionsLayer()(
+      ctxAt([turn("connect github", "ok")], 0),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.skipped).toBeUndefined();
+  });
+
+  test("passes when the snapshot shows github live", () => {
+    const r = githubConnectedViaConnectionsLayer()(
+      ctxWithWorld([turn("connect github", "ok")], 0, {
+        connections: [
+          { slug: "github", name: "GitHub", url: "https://github.com", live: true },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(true);
+  });
+
+  test("fails when the snapshot has github but it isn't live", () => {
+    const r = githubConnectedViaConnectionsLayer()(
+      ctxWithWorld([turn("connect github", "ok")], 0, {
+        connections: [
+          { slug: "github", name: "GitHub", url: "https://github.com", live: false },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(false);
+  });
+});
+
+describe("agentDefinitionsHaveToolGrants", () => {
+  test("fails when a named handle has no materialized definition", () => {
+    const r = agentDefinitionsHaveToolGrants(["greybeard"])(
+      ctxAt([turn("go", "ok")], 0),
+    );
+    expect(r.pass).toBe(false);
+  });
+
+  test("fails when a named handle has no github-shaped tool pin", () => {
+    const r = agentDefinitionsHaveToolGrants(["greybeard"])(
+      ctxWithWorld([turn("go", "ok")], 0, {
+        agentDefinitions: [
+          {
+            id: "1",
+            name: "greybeard",
+            toolPackagePins: ["memory-tools"],
+            skills: [],
+            model: null,
+          },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(false);
+  });
+
+  test("passes once every named handle has a github-shaped tool pin", () => {
+    const r = agentDefinitionsHaveToolGrants(["greybeard"])(
+      ctxWithWorld([turn("go", "ok")], 0, {
+        agentDefinitions: [
+          {
+            id: "1",
+            name: "greybeard",
+            toolPackagePins: ["github-tools"],
+            skills: [],
+            model: null,
+          },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(true);
+  });
+});
+
+describe("triggerIsWebhookPerPr", () => {
+  test("fails when the snapshot has no routines", () => {
+    const r = triggerIsWebhookPerPr()(ctxAt([turn("wire it up", "ok")], 0));
+    expect(r.pass).toBe(false);
+  });
+
+  test("fails when no routine has a resolved webhook trigger", () => {
+    const r = triggerIsWebhookPerPr()(
+      ctxWithWorld([turn("wire it up", "ok")], 0, {
+        routines: [
+          {
+            id: "r1",
+            name: "pr-review",
+            definitionId: "d1",
+            trigger: { kind: "daily" },
+            deliveryWorkbenchId: null,
+            enabled: true,
+          },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(false);
+  });
+
+  test("passes when a routine has a resolved webhook trigger", () => {
+    const r = triggerIsWebhookPerPr()(
+      ctxWithWorld([turn("wire it up", "ok")], 0, {
+        routines: [
+          {
+            id: "r1",
+            name: "pr-review",
+            definitionId: "d1",
+            trigger: { kind: "webhook", webhookTriggerId: "w1" },
+            deliveryWorkbenchId: null,
+            enabled: true,
+          },
+        ],
+      }),
+    );
+    expect(r.pass).toBe(true);
+  });
+});
+
+describe("reviewCommentsAttributable", () => {
+  test("skips, naming Phase 1.3 — WorldSnapshot carries no reviewComments", () => {
+    const r = reviewCommentsAttributable(["greybeard"])(
+      ctxAt([turn("pr fired", "ok")], 0),
+    );
+    expect(r.skipped).toBe(true);
+    expect(r.reason).toContain("Phase 1.3");
+  });
+});
+
+describe("suggestedFixesStructurallyValid", () => {
+  test("fails (documented-red) when the posting tool never ran", () => {
+    const r = suggestedFixesStructurallyValid()(
+      ctxAt([turn("pr fired", "ok")], 0),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reason).toContain("CL-6325");
+  });
+
+  test("fails when a posted comment carries no suggestedFix", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", { body: "looks off" }),
+      ]),
+    ];
+    const r = suggestedFixesStructurallyValid()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(false);
+  });
+
+  test("passes when every posted comment carries a suggestedFix", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", {
+          body: "looks off",
+          suggestedFix: "use const instead of let",
+        }),
+      ]),
+    ];
+    const r = suggestedFixesStructurallyValid()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(true);
+  });
+});
+
+describe("outwardGitHubActionsRespectGrantBoundary", () => {
+  const scorer = () =>
+    outwardGitHubActionsRespectGrantBoundary(
+      "abklabs/workbench",
+      "github_merge_pull_request",
+    );
+
+  test("fails (documented-red) when the posting tool never ran", () => {
+    const r = scorer()(ctxAt([turn("pr fired", "ok")], 0));
+    expect(r.pass).toBe(false);
+    expect(r.reason).toContain("CL-6325");
+  });
+
+  test("passes with no approval phrase at all, scoped and attributed, no early merge", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", {
+          repo: "abklabs/workbench",
+          authorAgentHandle: "greybeard",
+          body: "looks good",
+        }),
+      ]),
+    ];
+    const r = scorer()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(true);
+  });
+
+  test("fails when a post is missing audit attribution", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", {
+          repo: "abklabs/workbench",
+          body: "looks good",
+        }),
+      ]),
+    ];
+    const r = scorer()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(false);
+  });
+
+  test("fails when the merge tool ran with no prior approval phrase", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", {
+          repo: "abklabs/workbench",
+          authorAgentHandle: "greybeard",
+          body: "looks good",
+        }),
+        call("github_merge_pull_request"),
+      ]),
+    ];
+    const r = scorer()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(false);
+  });
+
+  test("passes when the merge tool only ran after an approval phrase", () => {
+    const transcript = [
+      turn("pr fired", "ok", [
+        call("github_post_review_comment", {
+          repo: "abklabs/workbench",
+          authorAgentHandle: "greybeard",
+          body: "looks good",
+        }),
+      ]),
+      turn("yes go ahead and merge it", "merged.", [
+        call("github_merge_pull_request"),
+      ]),
+    ];
+    const r = scorer()(ctxAt(transcript, 1));
+    expect(r.pass).toBe(true);
+  });
+});
+
+describe("wholeRunInspectable", () => {
+  test("skips, naming Phase 1.3 — WorldSnapshot carries no per-run eventLogRef", () => {
+    const r = wholeRunInspectable()(ctxAt([turn("pr fired", "ok")], 0));
+    expect(r.skipped).toBe(true);
+    expect(r.reason).toContain("Phase 1.3");
   });
 });
 
