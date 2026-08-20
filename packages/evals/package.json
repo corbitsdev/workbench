@@ -13,11 +13,15 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-directory": "workspace:*",
     "@corbits/assistant-workflow": "workspace:*",
+    "@corbits/routines": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "drizzle-orm": "catalog:",

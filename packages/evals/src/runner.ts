@@ -11,7 +11,18 @@ import type {
   ScorerReport,
   Target,
   Turn,
+  WorldSnapshot,
 } from "./types.ts";
+
+function emptyWorldSnapshot(): WorldSnapshot {
+  return {
+    capturedAt: new Date().toISOString(),
+    agentDefinitions: [],
+    routines: [],
+    connections: [],
+    fakeReceipts: [],
+  };
+}
 
 export async function runEval(
   evalDef: EvalDefinition,
@@ -30,9 +41,10 @@ export async function runEval(
     const turn = await target.sendTurn(step.human);
     transcript.push(turn);
     const turnIndex = transcript.length - 1;
+    const world = (await target.snapshotWorld?.()) ?? emptyWorldSnapshot();
     const scorerReports: ScorerReport[] = [];
     for (const scorer of step.expect) {
-      const scorerResult = await scorer({ transcript, turnIndex });
+      const scorerResult = await scorer({ transcript, turnIndex, world });
       scorerReports.push({ ...scorerResult, stepIndex });
     }
     steps.push({ stepIndex, turn, scorerReports });
