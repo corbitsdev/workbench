@@ -22,7 +22,7 @@ vendor/intx/harness | sawyer | 2026-09-14 | af9b270a297ae1dc6d8684da9005ec9d3d62
 vendor/intx/hub-agent | sawyer | 2026-09-14 | 6402193dfe48dce3525c9b233bd6974e566df57ff5bc209128633af92abe8b17
 vendor/intx/hub-api | sawyer | 2026-09-14 | 7d82a625c852b9e9bb13fd59e71c6c45be792bcbb9ebb5994586e97840dc66c1
 vendor/intx/hub-common | sawyer | 2026-09-14 | 0e2d71d4754713538d7fd6451c8648c6b277390abfc888e605499fc004ce0349
-vendor/intx/hub-sessions | sawyer | 2026-09-05 | daaf9b2626e3fe66c530d025621c2067ac05716846deb9864c1a3400f6518b29
+vendor/intx/hub-sessions | sawyer | 2026-09-05 | 446cd132ccf9d0cad9c2128bd7bb28b21bcacfea5430f6302de55dabf1043115
 vendor/intx/inference | sawyer | 2026-09-14 | f91ac6a6b9621888276c5d2c90bd8a0ff8f9c6d3ce3ad67dd3ba57fdd9c01b0f
 vendor/intx/inference-catalog | sawyer | 2026-09-14 | 6e2ef3af83eafafdf1b773725afcb724cbb712604266919ecd1d67d50ff8016a
 vendor/intx/log | sawyer | 2026-09-14 | 17ba64f2ff751b640dd2db9eb034450876c435f43641b022fbc4a2e9aa9da04d
@@ -32,7 +32,7 @@ vendor/intx/pack-transport | sawyer | 2026-09-14 | 94578a75112059d31960abdc0b121
 vendor/intx/storage-isogit | sawyer | 2026-09-14 | a89b58687b8738620ce664e81a99250cba7b3bbaddbe0904661778fafef8d586
 vendor/intx/tool-packaging | sawyer | 2026-09-14 | a4f446a5712f906986ddc02b3a9fb133018d15ac661052026527263d942d0249
 vendor/intx/types | sawyer | 2026-09-14 | 21833d272f619f31371e80d752e22bdf8e1d31839169d7faec71240fb2db1139
-vendor/intx/workflow | sawyer | 2026-09-14 | 326a9e10693d5587cc35f9db0a7830b8037b2a81852b9b8bdd7bc276a5eb66fd
+vendor/intx/workflow | sawyer | 2026-09-14 | ebcacbf8668f21bf336e6d91fcaa9d2a0cf4e06478797cffb5ecdc9c88d3abfc
 vendor/intx/workflow-deploy | sawyer | 2026-09-14 | ee75c87a3f8141eaa83068ec29731f064b7f27ef108919aac81419755b9bc1e3
 vendor/intx/workflow-host | sawyer | 2026-09-14 | 6522cf5c3efcd8b482e0db418bfa3be350034c76cd63fa9fdd55d6e6718907f6
 
