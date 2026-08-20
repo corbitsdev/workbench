@@ -238,6 +238,54 @@ describe("POST /workbenches", () => {
     expect(greeting?.content.content).toMatch(/\?$/);
   });
 
+  test("creating a chat with a templatePromise greets with it, not a random opener", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      templatePromise:
+        "Three reviewers read every pull request and post what they'd change.",
+    });
+    await deliveries[0]?.();
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const greeting = platform.sentMail[1];
+    expect(greeting?.workbenchId).toBe(body.id);
+    expect(greeting?.content.content).toContain(
+      "Three reviewers read every pull request and post what they'd change.",
+    );
+  });
+
+  test("creating a chat with no templatePromise mints exactly as it always has", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    await deliveries[0]?.();
+
+    expect(response.status).toBe(201);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const greeting = platform.sentMail[1];
+    expect(greeting?.content.content).toContain("echo");
+  });
+
   test("creating a chat deploys nothing on the request path — the deploys ride the post-mint delivery", async () => {
     const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
