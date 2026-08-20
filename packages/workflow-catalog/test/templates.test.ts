@@ -180,11 +180,11 @@ test("a malformed library row fails to parse instead of half-loading", () => {
   expect(() => parseWorkbenchTemplateManifest('{"id":"code-review"}')).toThrow(
     /failed to parse/,
   );
+  const firstRoutine = GTM_TEMPLATE.routines[0];
+  if (!firstRoutine) throw new Error("GTM_TEMPLATE has no routines");
   const orphanRoutine = {
     ...GTM_TEMPLATE,
-    routines: [
-      { ...GTM_TEMPLATE.routines[0]!, blockAssetName: "not-installed" },
-    ],
+    routines: [{ ...firstRoutine, blockAssetName: "not-installed" }],
   };
   expect(() =>
     parseWorkbenchTemplateManifest(

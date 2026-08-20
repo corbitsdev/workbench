@@ -366,8 +366,7 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
   ): ScorerResult {
     const definitions = ctx.world.agentDefinitions;
     const missing = handles.filter(
-      (handle) =>
-        !definitions.some((definition) => definition.name === handle),
+      (handle) => !definitions.some((definition) => definition.name === handle),
     );
     const codeReviewPinned = definitions.some(
       (definition) =>

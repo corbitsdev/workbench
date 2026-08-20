@@ -82,9 +82,8 @@ function fakeDb(tables: FakeTables): DB["db"] {
  * lookup over the fixture's credential rows. */
 function fakeResolveCredentialByName(tables: FakeTables) {
   return (async (_db: unknown, _tenantId: string, name: string) =>
-    tables.credentials.find(
-      (credential) => credential.name === name,
-    ) ?? null) as unknown as NonNullable<
+    tables.credentials.find((credential) => credential.name === name) ??
+    null) as unknown as NonNullable<
     WorldSnapshotInfra["resolveCredentialByNameFn"]
   >;
 }

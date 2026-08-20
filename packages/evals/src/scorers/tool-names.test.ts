@@ -30,7 +30,9 @@ test("eval tool-name constants match the real manager-tools bundles", () => {
 });
 
 test("GitHub tool-name constants match the real @corbits/github-tools bundle", () => {
-  expect(GITHUB_PULL_REQUEST_DIFF_TOOL).toBe(REAL_GITHUB_PULL_REQUEST_DIFF_TOOL);
+  expect(GITHUB_PULL_REQUEST_DIFF_TOOL).toBe(
+    REAL_GITHUB_PULL_REQUEST_DIFF_TOOL,
+  );
   expect(GITHUB_POST_PR_REVIEW_TOOL).toBe(REAL_GITHUB_POST_PR_REVIEW_TOOL);
 });
 

@@ -311,7 +311,11 @@ describe("nextStreamingReplyState (CL-6432: folded-run turns end on connector.re
     // The folded run never emits reactor.done — its turn ends here.
     state = nextStreamingReplyState(
       state,
-      agentEvent({ type: "connector.reply", seq: 8, data: { content: "Hey!" } }),
+      agentEvent({
+        type: "connector.reply",
+        seq: 8,
+        data: { content: "Hey!" },
+      }),
     );
     expect(state).toBeNull();
     state = nextStreamingReplyState(

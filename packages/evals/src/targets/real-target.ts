@@ -482,7 +482,11 @@ export async function bootMyraTarget(
       { apiKey: GITHUB_REST_FAKE_PAT },
       cookies,
     );
-    expectStatus("connect the GitHub PAT against the REST fake", completeRes, 200);
+    expectStatus(
+      "connect the GitHub PAT against the REST fake",
+      completeRes,
+      200,
+    );
 
     const assistantDefinitionId = await pollUntil(
       '"assistant" becoming invitable',
