@@ -2,7 +2,38 @@
 // catalog is the shared source of truth the AI Providers UI edits: head is
 // the global default, tail is the failover chain.
 import { describe, expect, test } from "bun:test";
-import { createWorkbenchHostInferencePreferencesResolver } from "./inference-preferences";
+import type { ResolvedOffering } from "@intx/db";
+import {
+  createWorkbenchHostInferencePreferencesResolver,
+  selectDefaultInferencePreferences,
+} from "./inference-preferences";
+
+function offering(
+  overrides: Partial<{
+    offeringId: string;
+    priority: number;
+    canonicalName: string;
+    providerName: string;
+    credentialId: string | null;
+  }> = {},
+): ResolvedOffering {
+  const {
+    offeringId = "off_1",
+    priority = 0,
+    canonicalName = "claude-sonnet-5",
+    providerName = "anthropic",
+    credentialId = "cred_1",
+  } = overrides;
+  return {
+    offering: { id: offeringId, priority } as ResolvedOffering["offering"],
+    model: { canonicalName } as ResolvedOffering["model"],
+    provider: {
+      name: providerName,
+      credentialId,
+    } as ResolvedOffering["provider"],
+    origin: { tenantId: "tnt_bench", direct: true },
+  };
+}
 
 describe("createWorkbenchHostInferencePreferencesResolver", () => {
   test("returns the catalog's primary and fallbacks without reordering", async () => {
@@ -35,5 +66,53 @@ describe("createWorkbenchHostInferencePreferencesResolver", () => {
     );
     await resolve("tnt_specific");
     expect(seen).toEqual(["tnt_specific"]);
+  });
+});
+
+describe("selectDefaultInferencePreferences", () => {
+  test("excludes offerings with no resolvable credential", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({ credentialId: null }),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  test("CL-6351: a fresh Ollama connect ties every pulled model at one priority -- resolution must skip the embedding model even when its name sorts first", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_embed",
+        canonicalName: "all-minilm",
+        providerName: "ollama",
+        priority: 0,
+      }),
+      offering({
+        offeringId: "off_chat",
+        canonicalName: "qwen3:8b",
+        providerName: "ollama",
+        priority: 0,
+      }),
+    ]);
+    expect(result).toEqual([{ provider: "ollama", model: "qwen3:8b" }]);
+  });
+
+  test("returns every provider's offering of the winning model, sorted by priority", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_a",
+        canonicalName: "claude-sonnet-5",
+        providerName: "anthropic",
+        priority: 0,
+      }),
+      offering({
+        offeringId: "off_b",
+        canonicalName: "claude-sonnet-5",
+        providerName: "opencode-zen",
+        priority: 1,
+      }),
+    ]);
+    expect(result).toEqual([
+      { provider: "anthropic", model: "claude-sonnet-5" },
+      { provider: "opencode-zen", model: "claude-sonnet-5" },
+    ]);
   });
 });
