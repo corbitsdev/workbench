@@ -65,13 +65,6 @@ select:disabled,
   cursor: not-allowed;
 }
 
-.app-mark {
-  height: 1.375rem;
-  width: auto;
-  flex-shrink: 0;
-  color: var(--primary);
-}
-
 .app-boot-frame {
   position: relative;
   display: flex;
@@ -1826,13 +1819,6 @@ select:disabled,
   color: var(--foreground);
   text-decoration: underline;
   cursor: pointer;
-}
-
-.app-wordmark {
-  font-size: 0.875rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
 }
 
 /* Onboarding: full-screen guided wizard, gated above the shell entirely
