@@ -33,6 +33,7 @@ import {
   inviteAgent,
   listWorkbenches,
   listInvitableDefinitions,
+  pingWorkbenchPresence,
   pinMessage,
   toggleReaction,
   unpinMessage,
@@ -71,7 +72,20 @@ import {
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useWorkbenchStream } from "./use-workbench-stream";
-import { useWorkbenchFeed } from "./use-workbench-feed";
+import {
+  applyStreamMessage,
+  applyStreamPin,
+  applyStreamReaction,
+  useWorkbenchFeed,
+} from "./use-workbench-feed";
+import { colorForPrincipal } from "@corbits/presence";
+import { useWorkbenchPresenceRoster } from "./workbench-presence";
+import { type } from "arktype";
+import {
+  ChatMessageEventData,
+  ChatPinEventData,
+  ChatReactionEventData,
+} from "@corbits/chat/stream-events";
 import { useThreadNavigation } from "./use-thread-navigation";
 import { mergePendingSends, useOptimisticSends } from "./use-optimistic-sends";
 export {
@@ -101,12 +115,12 @@ export type TenantResolution =
   | { readonly kind: "ready"; readonly tenantId: string };
 
 /**
- * One live presence entry for the workbench's who's-here stack — deliberately
- * a plain data shape, not `@corbits/presence`'s own type: this package
- * never depends on presence, the same way it never depends on any other
- * domain package it's merely handed data from. The host composes the real
- * connection (`@corbits/presence/client`) and passes the current snapshot
- * down as `presenceMembers`.
+ * One live presence entry for the workbench's who's-here stack (CL-6328) —
+ * derived from this workbench's own `/stream` connection
+ * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
+ * heartbeat poll. `displayName`/`color` are resolved client-side against
+ * the workbench's own participants and `@corbits/presence`'s deterministic
+ * `colorForPrincipal`, since the roster itself carries only ids.
  */
 export interface PresenceMember {
   readonly principalId: string;
@@ -380,7 +394,6 @@ function ChatWorkspaceInner({
   listMembers,
   onCreateRoutineInSpace,
   onOpenInsights,
-  presenceMembers,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -467,8 +480,6 @@ function ChatWorkspaceInner({
    * header actions here.
    */
   readonly onOpenInsights?: () => void;
-  /** See `ChatWorkspace`'s prop of the same name. */
-  readonly presenceMembers?: readonly PresenceMember[];
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -554,34 +565,40 @@ function ChatWorkspaceInner({
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
 
+  // Reaction/pin toggles never refetch on completion: the same
+  // `chat.reaction`/`chat.pin` event the actor's own toggle provokes comes
+  // back over this workbench's own stream (including to the actor's own
+  // connection) and is folded into the messages/pins cache by
+  // `applyStreamReaction`/`applyStreamPin` below — a second, response-driven
+  // refresh here would be exactly the redundant refetch CL-6328 removes.
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
       if (activeWorkbenchId === null) return;
-      toggleReaction(tenantId, activeWorkbenchId, messageId, emoji)
-        .then(refreshFeed)
-        .catch(() => toast(CHAT_STRINGS.reactionToggleError));
+      toggleReaction(tenantId, activeWorkbenchId, messageId, emoji).catch(() =>
+        toast(CHAT_STRINGS.reactionToggleError),
+      );
     },
-    [tenantId, activeWorkbenchId, refreshFeed],
+    [tenantId, activeWorkbenchId],
   );
 
   const handlePinMessage = useCallback(
     (messageId: string) => {
       if (activeWorkbenchId === null) return;
-      pinMessage(tenantId, activeWorkbenchId, messageId)
-        .then(refreshFeed)
-        .catch(() => toast(CHAT_STRINGS.pinMessageError));
+      pinMessage(tenantId, activeWorkbenchId, messageId).catch(() =>
+        toast(CHAT_STRINGS.pinMessageError),
+      );
     },
-    [tenantId, activeWorkbenchId, refreshFeed],
+    [tenantId, activeWorkbenchId],
   );
 
   const handleUnpinMessage = useCallback(
     (messageId: string) => {
       if (activeWorkbenchId === null) return;
-      unpinMessage(tenantId, activeWorkbenchId, messageId)
-        .then(refreshFeed)
-        .catch(() => toast(CHAT_STRINGS.unpinMessageError));
+      unpinMessage(tenantId, activeWorkbenchId, messageId).catch(() =>
+        toast(CHAT_STRINGS.unpinMessageError),
+      );
     },
-    [tenantId, activeWorkbenchId, refreshFeed],
+    [tenantId, activeWorkbenchId],
   );
 
   const reactionActions: ReactionActions = useMemo(
@@ -624,6 +641,22 @@ function ChatWorkspaceInner({
   } = useStreamingReply(activeWorkbenchId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
     useTurnActivity(activeWorkbenchId);
+  const { roster: presenceRoster, handleStreamEvent: handlePresenceEvent } =
+    useWorkbenchPresenceRoster(activeWorkbenchId);
+
+  // "Here at all" comes for free from the open `/stream` connection itself
+  // (see `packages/chat/src/workbench-presence.ts`) — this ping only
+  // refreshes `lastActiveAt` for a tab that's been backgrounded a while,
+  // fired on the reader actually coming back rather than on an interval.
+  useEffect(() => {
+    if (activeWorkbenchId === null) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      void pingWorkbenchPresence(tenantId, activeWorkbenchId);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [tenantId, activeWorkbenchId]);
 
   // Opening Settings swaps `WorkbenchTimeline` out for `WorkbenchSettingsSurface`
   // entirely (see the early `settingsOpen` return below) — closing it
@@ -650,6 +683,13 @@ function ChatWorkspaceInner({
     [activeWorkbenchId],
   );
 
+  // Every event applies straight into the query cache it describes rather
+  // than triggering a refetch (CL-6328, §6/1.2): each payload already
+  // carries what a subscriber needs, so there is no "invalidate, then
+  // fetch" fallback left beside this. `chat.agent` needs no cache
+  // application of its own — it's fully owned by
+  // `handleStreamingReplyEvent`/`handleTurnActivityEvent`, and the real
+  // message it eventually produces arrives as its own `chat.message`.
   useWorkbenchStream(
     activeWorkbenchId !== null
       ? workbenchStreamUrl(tenantId, activeWorkbenchId)
@@ -658,7 +698,43 @@ function ChatWorkspaceInner({
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
       handleTurnActivityEvent(eventType, data);
-      if (eventType !== "chat.typing") refreshFeed();
+      handlePresenceEvent(eventType, data);
+      if (activeWorkbenchId === null) return;
+      switch (eventType) {
+        case "chat.message": {
+          const parsed = ChatMessageEventData(data);
+          if (!(parsed instanceof type.errors)) {
+            applyStreamMessage(queryClient, tenantId, activeWorkbenchId, {
+              id: parsed.id,
+              createdAt: parsed.createdAt,
+              parts: parsed.parts,
+              sender: parsed.sender,
+              ...(parsed.threadId !== null ? { threadId: parsed.threadId } : {}),
+            });
+          }
+          break;
+        }
+        case "chat.reaction": {
+          const parsed = ChatReactionEventData(data);
+          if (!(parsed instanceof type.errors)) {
+            applyStreamReaction(
+              queryClient,
+              tenantId,
+              activeWorkbenchId,
+              parsed,
+              currentUser?.principalId,
+            );
+          }
+          break;
+        }
+        case "chat.pin": {
+          const parsed = ChatPinEventData(data);
+          if (!(parsed instanceof type.errors)) {
+            applyStreamPin(queryClient, tenantId, activeWorkbenchId, parsed);
+          }
+          break;
+        }
+      }
     },
     refreshFeed,
   );
@@ -676,10 +752,10 @@ function ChatWorkspaceInner({
     if (activeWorkbenchId === null) return;
     await inviteAgent(tenantId, activeWorkbenchId, definitionId);
     // The invited agent's address lands on the workbench's participants
-    // (the mention popover picks it up via the reload below) and its
-    // join event lands on the timeline.
+    // (the mention popover picks it up via the reload below); its join
+    // notice lands on the timeline via its own `chat.message` stream event
+    // (applied straight into the messages cache), not a refetch here.
     refreshWorkbenchLists();
-    refreshFeed();
   }
 
   /**
@@ -732,7 +808,6 @@ function ChatWorkspaceInner({
       openThreadId,
       pendingParentMessageId,
       openThreadById,
-      refreshFeed,
       noteAwaitingReply,
       hasAgentParticipant,
       restoreDraft: (text) => composerRef.current?.insertText(text),
@@ -781,10 +856,29 @@ function ChatWorkspaceInner({
     onSettingsOpenChange,
   ]);
 
+  // Who's live in this workbench right now, beyond the static participants
+  // list — derived from this workbench's own `chat.presence`/
+  // `chat.presence.snapshot` stream events (CL-6328), never a second
+  // connection or an HTTP heartbeat poll. Display name and color are
+  // resolved client-side (the roster itself carries only ids) the same way
+  // `typingLabel` resolves a typing ping's principal.
+  const presenceMembers: readonly PresenceMember[] = useMemo(
+    () =>
+      presenceRoster.map((member) => ({
+        principalId: member.principalId,
+        displayName: typingLabel(
+          member.principalId,
+          activeWorkbench?.participants ?? [],
+        ),
+        color: colorForPrincipal(member.principalId),
+      })),
+    [presenceRoster, activeWorkbench?.participants],
+  );
+
   // Team stack: every active agent + live human for the top bar.
   const teamStack = buildTeamAvatarStack(
     activeWorkbench?.participants ?? [],
-    presenceMembers ?? [],
+    presenceMembers,
   );
   const visibleTeamStack = teamStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
   const teamStackOverflow = teamStack.length - visibleTeamStack.length;
@@ -1266,7 +1360,6 @@ export function ChatWorkspace({
   listMembers,
   onCreateRoutineInSpace,
   onOpenInsights,
-  presenceMembers,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -1348,13 +1441,6 @@ export function ChatWorkspace({
    * header actions here.
    */
   readonly onOpenInsights?: () => void;
-  /**
-   * Who's live in the active workbench right now, beyond the static
-   * participants list — the host's `@corbits/presence/client` connection,
-   * handed down as data. Omitted entirely, no presence stack renders (the
-   * header looks exactly as it did before presence existed).
-   */
-  readonly presenceMembers?: readonly PresenceMember[];
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
@@ -1402,7 +1488,6 @@ export function ChatWorkspace({
             ? { onCreateRoutineInSpace }
             : {})}
           {...(onOpenInsights !== undefined ? { onOpenInsights } : {})}
-          {...(presenceMembers !== undefined ? { presenceMembers } : {})}
           {...(onWorkbenchNotFound !== undefined
             ? { onWorkbenchNotFound }
             : {})}
