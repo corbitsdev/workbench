@@ -1,6 +1,6 @@
 // The message-path command intercept `routes.ts`'s
 // `dispatchWorkbenchCommand` owns: a leading "/" is always dispatched
-// (and never posted as mail itself, only its result); a leading
+// (and never posted onto the timeline itself, only its result); a leading
 // "@name" is dispatched only when `name` is not an existing agent
 // participant's handle, so an ordinary agent mention is untouched.
 import { describe, expect, test } from "bun:test";
@@ -12,6 +12,8 @@ import {
   fakePlatform,
   mountAs,
   sendText,
+  timelineOf,
+  timelineTexts,
 } from "./test-support";
 
 describe("workbench command dispatch", () => {
@@ -46,11 +48,11 @@ describe("workbench command dispatch", () => {
       text: "Unknown command: /nope",
     });
 
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const posted = platform.sentMail.find(
-      (mail) => mail.workbenchId === workbench.id,
-    );
-    expect(posted?.content.content).toBe("Unknown command: /nope");
+    // Only the result reaches the timeline; the raw "/nope some args"
+    // never does.
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "Unknown command: /nope",
+    ]);
   });
 
   test("a registered slash command runs its handler with the parsed args", async () => {
@@ -73,11 +75,9 @@ describe("workbench command dispatch", () => {
     const response = await sendText(app, workbench.id, "/greet world");
     expect(response.status).toBe(201);
     expect(seenArgs).toBe("world");
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(
-      platform.sentMail.find((mail) => mail.workbenchId === workbench.id)
-        ?.content.content,
-    ).toBe("hi world");
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "hi world",
+    ]);
   });
 
   test("an @mention of an existing agent participant keeps its ordinary fan-out, never the command path", async () => {

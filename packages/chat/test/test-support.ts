@@ -9,8 +9,12 @@ import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
+import {
+  createInMemoryRoomMessageStore,
+  type RoomMessage,
+} from "../src/room-messages";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
-import { extractTextPreview, type MailContent } from "../src/codec";
+import type { MailContent } from "../src/codec";
 
 export const TENANT = {
   id: "tnt_1",
@@ -182,45 +186,6 @@ export function fakePlatform(
       mailByWorkbench.set(input.workbenchId, list);
       return { id, createdAt };
     },
-    async listMail(input) {
-      // Matches the real platform's contract: a page is newest-first.
-      const items = mailByWorkbench.get(input.workbenchId) ?? [];
-      return { items: [...items].reverse() };
-    },
-    async getMail(input) {
-      const items = mailByWorkbench.get(input.workbenchId) ?? [];
-      return items.find((item) => item.id === input.messageId);
-    },
-    async listWorkbenchActivity(input) {
-      const result: Record<
-        string,
-        { lastActivityAt?: string; unreadCount: number; preview?: string }
-      > = {};
-      for (const workbench of input.workbenches) {
-        const items = mailByWorkbench.get(workbench.workbenchId) ?? [];
-        if (items.length === 0) {
-          result[workbench.workbenchId] = { unreadCount: 0 };
-          continue;
-        }
-        const latest = items[items.length - 1];
-        const lastActivityAt = latest?.createdAt;
-        const unreadCount = items.filter(
-          (item) =>
-            workbench.sinceCreatedAt === undefined ||
-            item.createdAt > workbench.sinceCreatedAt,
-        ).length;
-        if (lastActivityAt === undefined || latest === undefined) {
-          result[workbench.workbenchId] = { unreadCount };
-          continue;
-        }
-        const preview = extractTextPreview(latest.mail);
-        result[workbench.workbenchId] =
-          preview.length === 0
-            ? { unreadCount, lastActivityAt }
-            : { unreadCount, lastActivityAt, preview };
-      }
-      return result;
-    },
     async fetchBlob(workbenchId, blobId) {
       if (opts.fetchBlob !== undefined)
         return opts.fetchBlob(workbenchId, blobId);
@@ -258,6 +223,7 @@ export function buildDeps(
 ): CreateChatRoutesDeps {
   const deps: CreateChatRoutesDeps = {
     store: createInMemoryChatStore(),
+    roomMessages: createInMemoryRoomMessageStore(),
     platform: fakePlatform(),
     tenancy: createInMemoryWorkbenchTenancyStore(),
     requireGrant: () => async (_c, next) => {
@@ -289,6 +255,49 @@ export async function settleFanout(): Promise<void> {
   }
 }
 
+/**
+ * A workbench's own timeline — the rows CL-6327 made a message into —
+ * oldest first, which is how a test reads a conversation. `listMessages`
+ * pages newest-first for the client; every assertion here is about what
+ * the room ended up holding.
+ */
+export async function timelineOf(
+  deps: CreateChatRoutesDeps,
+  workbenchId: string,
+  tenantId: string = TENANT.id,
+): Promise<RoomMessage[]> {
+  const listed = await deps.roomMessages.listMessages({
+    tenantId,
+    workbenchId,
+  });
+  return [...listed.items].reverse();
+}
+
+/** The event parts on a timeline, by event name — join/leave notices,
+ * `block.response`, control settings: the messages a room posts about
+ * itself rather than a person's or agent's words. */
+export function timelineEvents(
+  messages: readonly RoomMessage[],
+  event: string,
+): { kind: "event"; event: string; data: unknown }[] {
+  return messages.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      part.kind === "event" && part.event === event ? [part] : [],
+    ),
+  );
+}
+
+/** The text a timeline reads as, one entry per message that carries any
+ * text at all. */
+export function timelineTexts(messages: readonly RoomMessage[]): string[] {
+  return messages.flatMap((message) => {
+    const text = message.parts
+      .flatMap((part) => (part.kind === "text" ? [part.text] : []))
+      .join(" ");
+    return text.length === 0 ? [] : [text];
+  });
+}
+
 export interface WorkbenchView {
   id: string;
   title: string;
@@ -316,11 +325,23 @@ export async function createWorkbench(
   return { response, body: (await response.json()) as WorkbenchView };
 }
 
+/**
+ * Waits until the clock reads a new millisecond. A timeline orders by
+ * `(createdAt, id)`, and messages minted inside one millisecond are
+ * simultaneous by that order — so a test that reads a conversation back
+ * as "this, then that" has to write each message in its own moment.
+ */
+export async function nextTimelineMoment(): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() === startedAt) await Bun.sleep(1);
+}
+
 export async function sendText(
   app: Hono<TenantEnv>,
   workbenchId: string,
   text: string,
 ): Promise<Response> {
+  await nextTimelineMoment();
   const response = await app.request(`/workbenches/${workbenchId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },

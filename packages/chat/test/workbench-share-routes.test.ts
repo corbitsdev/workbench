@@ -20,7 +20,6 @@ import { createInMemoryPinStore } from "../src/pins";
 import {
   buildDeps,
   createWorkbench,
-  fakePlatform,
   principal,
   sendText,
   TENANT,
@@ -259,13 +258,12 @@ describe("shared workbench projection", () => {
     expect(received).toHaveLength(2);
   });
 
-  test("posting from the projected tenant lands in the owning tenant's mailbox with the correct sender", async () => {
+  test("posting from the projected tenant lands on the owning tenant's timeline with the correct sender", async () => {
     const trust = createInMemoryFederationTrustStore();
     trust.registerTenant(TENANT.id, TENANT.name);
     trust.registerTenant(TENANT_B.id, TENANT_B.name);
     const shares = createInMemoryWorkbenchShareStore({ trust });
-    const platform = fakePlatform();
-    const deps = buildDeps({ shares, trust, platform });
+    const deps = buildDeps({ shares, trust });
     const routes = createChatRoutes(deps);
     const owner = mountAsTenant(routes, TENANT, "prn_alice");
     const memberSide = mountAsTenant(routes, TENANT_B, "prn_bob");
@@ -291,8 +289,18 @@ describe("shared workbench projection", () => {
       "hi from beta",
     );
     expect(sendResponse.status).toBe(201);
-    const sent = platform.sentMail.find((m) => m.workbenchId === workbench.id);
-    expect(sent?.principalId).toBe("prn_bob");
+    // The row is written under the OWNING tenant, never a copy
+    // materialized under the projected one.
+    const owned = await deps.roomMessages.listMessages({
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+    });
+    expect(owned.items[0]?.senderPrincipalId).toBe("prn_bob");
+    const projected = await deps.roomMessages.listMessages({
+      tenantId: TENANT_B.id,
+      workbenchId: workbench.id,
+    });
+    expect(projected.items).toEqual([]);
 
     const ownerMessages = (await (
       await owner.request(`/workbenches/${workbench.id}/messages`)

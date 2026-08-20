@@ -2,7 +2,7 @@
 // upsert-as-change-vote, poll aggregation, form privacy (never another
 // principal's raw submission), the `messageId`+`blockId` anti-hijack scope,
 // cross-tenant isolation, and the `block.response` event appended to the
-// workbench's own mail.
+// workbench's own timeline.
 import { describe, expect, test } from "bun:test";
 
 import { createChatRoutes } from "../src/routes";
@@ -15,6 +15,9 @@ import {
   fakePlatform,
   mountAs,
   TENANT,
+  timelineEvents,
+  timelineOf,
+  timelineTexts,
 } from "./test-support";
 
 function responsesUrl(workbenchId: string, messageId: string, blockId: string) {
@@ -282,12 +285,17 @@ describe("block response routes — question answers", () => {
     );
     expect(post.status).toBe(200);
 
-    // Two mail sends land: the answer-as-message, and the block.response
-    // event -- both authored by the responding principal.
-    expect(platform.sentMail).toHaveLength(2);
+    // Two messages land on the timeline: the answer-as-message, and the
+    // block.response event -- both authored by the responding principal,
+    // and neither mailed anywhere.
+    const timeline = await timelineOf(deps, workbenchId);
+    expect(timeline).toHaveLength(2);
     expect(
-      platform.sentMail.every((mail) => mail.principalId === "prn_alice"),
+      timeline.every((message) => message.senderPrincipalId === "prn_alice"),
     ).toBe(true);
+    expect(timelineTexts(timeline)).toEqual(["Production"]);
+    expect(timelineEvents(timeline, "block.response")).toHaveLength(1);
+    expect(platform.sentMail).toHaveLength(0);
 
     const get = await getResponses(app, workbenchId, "m1", "blk_question1");
     const body = (await get.json()) as { own: unknown };
@@ -318,7 +326,7 @@ describe("block response routes — question answers", () => {
 });
 
 describe("block response routes — block.response event", () => {
-  test("a response appends a machine-readable event into the workbench's own mail", async () => {
+  test("a response appends a machine-readable event onto the workbench's own timeline", async () => {
     const platform = fakePlatform();
     const deps = buildDeps({
       platform,
@@ -329,18 +337,12 @@ describe("block response routes — block.response event", () => {
 
     await vote(app, workbenchId, "m1", "blk_poll1", ["tue"]);
 
-    expect(platform.sentMail).toHaveLength(1);
-    const sent = platform.sentMail[0];
-    expect(sent?.principalId).toBe("prn_alice");
-    const decoded = JSON.parse(
-      Buffer.from(
-        (sent?.content.attachments?.[0]?.data ?? "") as string,
-        "base64",
-      ).toString("utf-8"),
-    ) as { kind: string; event: string; data: Record<string, unknown> };
-    expect(decoded.kind).toBe("event");
-    expect(decoded.event).toBe("block.response");
-    expect(decoded.data).toMatchObject({
+    expect(platform.sentMail).toHaveLength(0);
+    const timeline = await timelineOf(deps, workbenchId);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]?.senderPrincipalId).toBe("prn_alice");
+    const [event] = timelineEvents(timeline, "block.response");
+    expect(event?.data).toMatchObject({
       messageId: "m1",
       blockId: "blk_poll1",
       kind: "poll",

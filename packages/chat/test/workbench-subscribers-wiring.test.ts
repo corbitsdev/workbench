@@ -38,6 +38,7 @@ describe("workbench subscriber registry shared between chat routes and command d
             {
               store: deps.store,
               platform,
+              roomMessages: deps.roomMessages,
               publish: workbenchSubscribers.publish,
             },
             input,
@@ -63,11 +64,16 @@ describe("workbench subscriber registry shared between chat routes and command d
     const response = await sendText(app, workbench.id, "/echo hello there");
     expect(response.status).toBe(201);
 
-    // No poll: the event must already be in `received` from the
+    // No poll: the events must already be in `received` from the
     // synchronous fan-out `registry.publish` performs during the
-    // request above, not from re-fetching workbench state afterward.
-    expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({ type: "chat.settings" });
+    // request above, not from re-fetching workbench state afterward —
+    // the membership change, plus every message the command put on the
+    // timeline (the join notice and the command's own result line).
+    expect(received.map((event) => event.type).sort()).toEqual([
+      "chat.message",
+      "chat.message",
+      "chat.settings",
+    ]);
   });
 
   test("without an injected registry, createChatRoutes still works with its own default", async () => {
