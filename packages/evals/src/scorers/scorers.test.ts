@@ -55,7 +55,7 @@ function ctxAt(transcript: Turn[], turnIndex: number): ScorerContext {
   return { transcript, turnIndex, world: EMPTY_WORLD };
 }
 
-function ctxWithWorld(
+function ctxWithSnapshot(
   transcript: Turn[],
   turnIndex: number,
   world: Partial<WorldSnapshot>,
@@ -272,7 +272,7 @@ describe("approvalGated", () => {
 });
 
 describe("githubConnectedViaConnectionsLayer", () => {
-  test("fails when the snapshot has no github connection", () => {
+  test("fails when the world snapshot has no github connection", () => {
     const r = githubConnectedViaConnectionsLayer()(
       ctxAt([turn("connect github", "ok")], 0),
     );
@@ -280,31 +280,42 @@ describe("githubConnectedViaConnectionsLayer", () => {
     expect(r.skipped).toBeUndefined();
   });
 
-  test("passes when the snapshot shows github live", () => {
+  test("passes when the snapshot shows github connected", () => {
     const r = githubConnectedViaConnectionsLayer()(
-      ctxWithWorld([turn("connect github", "ok")], 0, {
+      ctxWithSnapshot([turn("connect github", "ok")], 0, {
         connections: [
-          { slug: "github", name: "GitHub", url: "https://github.com", live: true },
+          {
+            slug: "github",
+            name: "GitHub",
+            url: "https://github.com",
+            live: true,
+          },
         ],
       }),
     );
     expect(r.pass).toBe(true);
   });
 
-  test("fails when the snapshot has github but it isn't live", () => {
+  test("fails when the snapshot exists but github isn't live", () => {
     const r = githubConnectedViaConnectionsLayer()(
-      ctxWithWorld([turn("connect github", "ok")], 0, {
+      ctxWithSnapshot([turn("connect github", "ok")], 0, {
         connections: [
-          { slug: "github", name: "GitHub", url: "https://github.com", live: false },
+          {
+            slug: "github",
+            name: "GitHub",
+            url: "https://github.com",
+            live: false,
+          },
         ],
       }),
     );
     expect(r.pass).toBe(false);
+    expect(r.skipped).toBeUndefined();
   });
 });
 
 describe("agentDefinitionsHaveToolGrants", () => {
-  test("fails when a named handle has no materialized definition", () => {
+  test("fails when the world snapshot has no agent definitions", () => {
     const r = agentDefinitionsHaveToolGrants(["greybeard"])(
       ctxAt([turn("go", "ok")], 0),
     );
@@ -313,7 +324,7 @@ describe("agentDefinitionsHaveToolGrants", () => {
 
   test("fails when a named handle has no github-shaped tool pin", () => {
     const r = agentDefinitionsHaveToolGrants(["greybeard"])(
-      ctxWithWorld([turn("go", "ok")], 0, {
+      ctxWithSnapshot([turn("go", "ok")], 0, {
         agentDefinitions: [
           {
             id: "1",
@@ -330,7 +341,7 @@ describe("agentDefinitionsHaveToolGrants", () => {
 
   test("passes once every named handle has a github-shaped tool pin", () => {
     const r = agentDefinitionsHaveToolGrants(["greybeard"])(
-      ctxWithWorld([turn("go", "ok")], 0, {
+      ctxWithSnapshot([turn("go", "ok")], 0, {
         agentDefinitions: [
           {
             id: "1",
@@ -347,20 +358,20 @@ describe("agentDefinitionsHaveToolGrants", () => {
 });
 
 describe("triggerIsWebhookPerPr", () => {
-  test("fails when the snapshot has no routines", () => {
+  test("fails when the world snapshot has no routines", () => {
     const r = triggerIsWebhookPerPr()(ctxAt([turn("wire it up", "ok")], 0));
     expect(r.pass).toBe(false);
   });
 
-  test("fails when no routine has a resolved webhook trigger", () => {
+  test("fails when no routine is enabled with a resolved trigger", () => {
     const r = triggerIsWebhookPerPr()(
-      ctxWithWorld([turn("wire it up", "ok")], 0, {
+      ctxWithSnapshot([turn("wire it up", "ok")], 0, {
         routines: [
           {
             id: "r1",
-            name: "pr-review",
+            name: "daily digest",
             definitionId: "d1",
-            trigger: { kind: "daily" },
+            trigger: null,
             deliveryWorkbenchId: null,
             enabled: true,
           },
@@ -370,15 +381,15 @@ describe("triggerIsWebhookPerPr", () => {
     expect(r.pass).toBe(false);
   });
 
-  test("passes when a routine has a resolved webhook trigger", () => {
+  test("passes when a routine is enabled with a resolved trigger", () => {
     const r = triggerIsWebhookPerPr()(
-      ctxWithWorld([turn("wire it up", "ok")], 0, {
+      ctxWithSnapshot([turn("wire it up", "ok")], 0, {
         routines: [
           {
             id: "r1",
-            name: "pr-review",
+            name: "pr review",
             definitionId: "d1",
-            trigger: { kind: "webhook", webhookTriggerId: "w1" },
+            trigger: { kind: "webhook" },
             deliveryWorkbenchId: null,
             enabled: true,
           },
@@ -390,12 +401,12 @@ describe("triggerIsWebhookPerPr", () => {
 });
 
 describe("reviewCommentsAttributable", () => {
-  test("skips, naming Phase 1.3 — WorldSnapshot carries no reviewComments", () => {
+  test("skips — WorldSnapshot has no reviewComments field", () => {
     const r = reviewCommentsAttributable(["greybeard"])(
       ctxAt([turn("pr fired", "ok")], 0),
     );
     expect(r.skipped).toBe(true);
-    expect(r.reason).toContain("Phase 1.3");
+    expect(r.reason).toContain("reviewComments");
   });
 });
 
@@ -405,7 +416,7 @@ describe("suggestedFixesStructurallyValid", () => {
       ctxAt([turn("pr fired", "ok")], 0),
     );
     expect(r.pass).toBe(false);
-    expect(r.reason).toContain("CL-6325");
+    expect(r.reason).toContain("CL-6340");
   });
 
   test("fails when a posted comment carries no suggestedFix", () => {
@@ -442,7 +453,7 @@ describe("outwardGitHubActionsRespectGrantBoundary", () => {
   test("fails (documented-red) when the posting tool never ran", () => {
     const r = scorer()(ctxAt([turn("pr fired", "ok")], 0));
     expect(r.pass).toBe(false);
-    expect(r.reason).toContain("CL-6325");
+    expect(r.reason).toContain("CL-6340");
   });
 
   test("passes with no approval phrase at all, scoped and attributed, no early merge", () => {
@@ -506,10 +517,10 @@ describe("outwardGitHubActionsRespectGrantBoundary", () => {
 });
 
 describe("wholeRunInspectable", () => {
-  test("skips, naming Phase 1.3 — WorldSnapshot carries no per-run eventLogRef", () => {
+  test("skips — WorldSnapshot has no runs field", () => {
     const r = wholeRunInspectable()(ctxAt([turn("pr fired", "ok")], 0));
     expect(r.skipped).toBe(true);
-    expect(r.reason).toContain("Phase 1.3");
+    expect(r.reason).toContain("runs");
   });
 });
 
