@@ -1658,6 +1658,81 @@
   color: var(--destructive);
 }
 
+/* GitHub connect card (CL-6342 screen 2). The row's checkbox control is
+   `@corbits/react-ui`'s own `Checkbox`; only the row layout around it
+   (name left, open-PR count right) is workbench-specific. */
+.chat-block-connect-helper {
+  margin-top: 0.55rem;
+}
+
+.chat-block-connect-line {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-connect-tick {
+  color: var(--ok, #37904a);
+  flex-shrink: 0;
+}
+
+.chat-block-connect-count-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin-bottom: 0.4rem;
+}
+
+.chat-block-connect-repo-list {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--background);
+}
+
+.chat-block-connect-repo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.chat-block-connect-repo-row:last-child {
+  border-bottom: 0;
+}
+
+.chat-block-connect-repo-row:hover {
+  background: var(--muted);
+}
+
+.chat-block-connect-repo-label {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.chat-block-connect-repo-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.chat-block-connect-repo-meta {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
 .chat-block-stream {
   margin: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
