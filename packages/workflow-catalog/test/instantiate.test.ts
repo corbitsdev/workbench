@@ -9,21 +9,29 @@ import {
 
 function fakePorts(
   existingHandles: readonly string[] = [],
+  alreadyDeployedBlocks: readonly string[] = [],
 ): WorkbenchTemplateInstantiationPorts & {
   readonly created: string[];
   readonly recordedConnections: (readonly string[])[];
+  readonly deployedBlocks: string[];
 } {
   const created: string[] = [];
   const recordedConnections: (readonly string[])[] = [];
+  const deployedBlocks: string[] = [];
   return {
     created,
     recordedConnections,
+    deployedBlocks,
     async listAgentHandles() {
       return existingHandles;
     },
     async createParticipantAgent(request) {
       created.push(request.handle);
       return { id: `def-${request.handle}` };
+    },
+    async deployBlockWorkflow(block) {
+      deployedBlocks.push(block.assetName);
+      return { created: !alreadyDeployedBlocks.includes(block.assetName) };
     },
     async recordPendingConnections(pendingConnections) {
       recordedConnections.push(pendingConnections);
@@ -80,6 +88,27 @@ test("instantiating the code-review template names an honest pending note for it
   expect(result.webhookTriggerTodos).toHaveLength(1);
   expect(result.webhookTriggerTodos[0]).toContain("pull-request-opened");
   expect(result.webhookTriggerTodos[0]).toContain("connect-github-setup");
+});
+
+test("instantiating the code-review template deploys its referenced code-review block workflow", async () => {
+  const ports = fakePorts();
+  const result = await instantiateWorkbenchTemplate(
+    CODE_REVIEW_TEMPLATE,
+    ports,
+  );
+  expect(ports.deployedBlocks).toEqual(["code-review"]);
+  expect(result.deployedBlockAssetNames).toEqual(["code-review"]);
+  expect(result.skippedBlockAssetNames).toEqual([]);
+});
+
+test("a block workflow the tenant already deployed is reported as skipped, never re-deployed", async () => {
+  const ports = fakePorts([], ["code-review"]);
+  const result = await instantiateWorkbenchTemplate(
+    CODE_REVIEW_TEMPLATE,
+    ports,
+  );
+  expect(result.deployedBlockAssetNames).toEqual([]);
+  expect(result.skippedBlockAssetNames).toEqual(["code-review"]);
 });
 
 test("instantiating a manifest with a participant outside the reviewer roster throws rather than silently skipping it", () => {

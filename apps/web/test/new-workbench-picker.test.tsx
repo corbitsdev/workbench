@@ -211,6 +211,12 @@ describe("NewWorkbenchPickerRoute", () => {
           participants: [],
         });
       }
+      if (
+        path.endsWith("/template-blocks/code-review/deploy") &&
+        init?.method === "POST"
+      ) {
+        return json({ id: "wfd_code_review", created: true }, 201);
+      }
       if (path.endsWith("/agent-definitions") && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { handle: string };
         createdAgentHandles.push(body.handle);
@@ -283,6 +289,15 @@ describe("NewWorkbenchPickerRoute", () => {
       "release-risk-reviewer",
     ]);
 
+    // CL-6405: instantiation also deploys the manifest's referenced
+    // code-review block workflow, not just the reviewer roster.
+    const blockDeploy = calls.find(
+      (call) =>
+        call.path.endsWith("/template-blocks/code-review/deploy") &&
+        call.init?.method === "POST",
+    );
+    expect(blockDeploy).not.toBeUndefined();
+
     const settingsPatch = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/settings"),
     );
@@ -318,6 +333,12 @@ describe("NewWorkbenchPickerRoute", () => {
           pinned: false,
           participants: [],
         });
+      }
+      if (
+        path.endsWith("/template-blocks/code-review/deploy") &&
+        init?.method === "POST"
+      ) {
+        return json({ id: "wfd_code_review", created: true }, 201);
       }
       if (path.endsWith("/agent-definitions") && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { handle: string };

@@ -29,7 +29,15 @@ export interface Turn {
  * returns — see `targets/world-snapshot.ts`). */
 export interface WorldAgentDefinition {
   readonly id: string;
+  /** The definition's stable identifier — the agent-directory handle /
+   * workflow asset name (`workflow_definition.name`), the same string
+   * `listAgentHandles` reads at install time. Scorers matching a
+   * template's handles match this, never the friendly label. */
   readonly name: string;
+  /** The human-facing label (`workflow_definition.description`, stamped
+   * from the asset's displayName) — "Architecture reviewer" to `name`'s
+   * "architecture-reviewer". */
+  readonly displayName: string | null;
   readonly toolPackagePins: readonly string[];
   readonly skills: readonly string[];
   readonly model: string | null;

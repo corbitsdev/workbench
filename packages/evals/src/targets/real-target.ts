@@ -48,6 +48,7 @@ import type {
 } from "../types.ts";
 import type { McpFakeRecording } from "../fakes/recording.ts";
 import { startMcpFake } from "../fakes/mcp-fake-server.ts";
+import { startGithubRestFake } from "../fakes/github-rest-fake.ts";
 import { fireRoutineNow } from "./fire-routine.ts";
 import { arrayField, stringField } from "./json-fields.ts";
 import {
@@ -102,6 +103,10 @@ export interface MyraTargetInfra {
     port: number;
     sessionSecret: string;
     dataDir: string;
+    /** Extra hub config env vars — how the boot points the hub's
+     * `GITHUB_API_BASE_URL` (CL-6403's seam) at the scratch GitHub REST
+     * fake this target starts. */
+    extraEnv?: Record<string, string>;
   }): Promise<EvalHubHandle>;
   startSidecar(options: {
     hubPort: number;
@@ -151,6 +156,17 @@ export interface MyraTargetInfra {
 const log = getLogger(["evals", "real-target"]);
 
 const STUB_API_KEY = "corbits-evals-stub-key-not-real";
+
+// The scratch GitHub REST fixture (CL-6405): what the fake origin
+// answers for the connector PAT probe, the connect card's
+// authenticated login, and its repo listing. The repo matches the
+// factory case's `TARGET_REPO`, so start-reviewing's per-repo mint has
+// exactly the repo the case's fired webhook names.
+const GITHUB_REST_FAKE_PAT = "evals-fake-github-pat-not-real";
+const GITHUB_REST_FAKE_FIXTURE = {
+  login: "abklabs",
+  repos: [{ id: 101, full_name: "abklabs/workbench" }],
+} as const;
 
 interface ChatMessage {
   readonly id: string;
@@ -267,6 +283,20 @@ export async function bootMyraTarget(
     const sidecarToken = crypto.randomUUID();
     await provisionSidecar(databaseUrl, sidecarId, sidecarToken);
 
+    // The fake GitHub REST origin starts before the hub so its URL can
+    // ride into the hub's own `GITHUB_API_BASE_URL` config (CL-6403):
+    // the `github` connector PAT probe, the connect card's repo
+    // listing, and the stored provider origin all resolve here instead
+    // of `https://api.github.com`.
+    const githubRest = startGithubRestFake(freePort(), {
+      login: GITHUB_REST_FAKE_FIXTURE.login,
+      repos: GITHUB_REST_FAKE_FIXTURE.repos,
+    });
+    cleanups.push(() => {
+      githubRest.stop();
+      return Promise.resolve();
+    });
+
     const hubDataDir = await mkdtemp(path.join(tmpdir(), "evals-hub-data-"));
     const hub: EvalHubHandle = await startHub({
       databaseUrl,
@@ -275,6 +305,7 @@ export async function bootMyraTarget(
         crypto.getRandomValues(new Uint8Array(32)),
       ).toString("hex"),
       dataDir: hubDataDir,
+      extraEnv: { GITHUB_API_BASE_URL: githubRest.url },
     });
     cleanups.push(() => hub.stop());
     cleanups.push(() => rm(hubDataDir, { recursive: true, force: true }));
@@ -437,6 +468,21 @@ export async function bootMyraTarget(
         200,
       );
     }
+
+    // The Plugins-PAT half of a GitHub connect (CL-6403's seam, closed
+    // here for the scratch stack): the same `POST .../connections/github/complete`
+    // route Settings > Connections drives, whose probe now lands on the
+    // REST fake the hub's `GITHUB_API_BASE_URL` names. This is what
+    // makes `githubConnectedViaConnectionsLayer`'s connector-credential
+    // half real, and what start-reviewing's repo listing resolves.
+    const completeRes = await api(
+      hub.baseUrl,
+      "POST",
+      `/api/tenants/${seeded.tenantId}/connections/github/complete`,
+      { apiKey: GITHUB_REST_FAKE_PAT },
+      cookies,
+    );
+    expectStatus("connect the GitHub PAT against the REST fake", completeRes, 200);
 
     const assistantDefinitionId = await pollUntil(
       '"assistant" becoming invitable',
@@ -662,7 +708,10 @@ export async function bootMyraTarget(
     }
 
     function fakeReceipts(): readonly FakeReceipt[] {
-      return startedFakes.flatMap((fake) => fake.receipts());
+      return [
+        ...startedFakes.flatMap((fake) => fake.receipts()),
+        ...githubRest.receipts(),
+      ];
     }
 
     // The REAL install path (#140): the exact surfaces
@@ -741,6 +790,22 @@ export async function bootMyraTarget(
             id: stringField(res.data, "id", `created "${request.handle}"`),
           };
         },
+        async deployBlockWorkflow(block) {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${seeded.tenantId}/template-blocks/${block.assetName}/deploy`,
+            undefined,
+            cookies,
+          );
+          if (res.status !== 200 && res.status !== 201) {
+            throw new Error(
+              `deploy template block "${block.assetName}" returned ` +
+                `${String(res.status)}: ${JSON.stringify(res.data)}`,
+            );
+          }
+          return { created: res.status === 201 };
+        },
         async recordPendingConnections(pendingConnections) {
           const res = await api(
             hub.baseUrl,
@@ -753,13 +818,60 @@ export async function bootMyraTarget(
         },
       });
 
+      // The repo-selection half of the create flow (CL-6386's "select on
+      // new-workbench", the same sequence `createWorkbenchFromTemplate`
+      // drives when GitHub is already connected): read the connect
+      // card's live state, then start reviewing every listed repo —
+      // which mints the per-repo grant and `webhook_trigger` row the
+      // fire-webhook step needs.
+      let startedTriggerCount = 0;
+      if (manifest.requiredConnections.includes("github")) {
+        const stateRes = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${seeded.tenantId}/workbenches/${workbenchId}/github/state`,
+          undefined,
+          cookies,
+        );
+        expectStatus("read the connect card's GitHub state", stateRes, 200);
+        const state = stateRes.data as {
+          kind: string;
+          repos?: { id: string }[];
+        };
+        if (state.kind !== "connected") {
+          throw new Error(
+            `installTemplate("${templateId}"): expected the GitHub connect ` +
+              `card to read connected, got: ${JSON.stringify(stateRes.data)}`,
+          );
+        }
+        const repoIds = (state.repos ?? []).map((repo) => repo.id);
+        const startRes = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${seeded.tenantId}/workbenches/${workbenchId}/github/start-reviewing`,
+          { repoIds },
+          cookies,
+        );
+        expectStatus("start reviewing the listed repos", startRes, 200);
+        const started = (startRes.data as { startedTriggerCount?: unknown })
+          .startedTriggerCount;
+        if (typeof started !== "number") {
+          throw new Error(
+            `start-reviewing answered without a startedTriggerCount: ${JSON.stringify(startRes.data)}`,
+          );
+        }
+        startedTriggerCount = started;
+      }
+
       return {
         human: `(harness) install template "${templateId}"`,
         replyText:
           `template "${templateId}" installed into workbench ${workbenchId}: ` +
           `created [${result.createdHandles.join(", ")}], ` +
           `skipped [${result.skippedHandles.join(", ")}], ` +
-          `pending connections [${result.pendingConnections.join(", ")}]`,
+          `deployed blocks [${result.deployedBlockAssetNames.join(", ")}], ` +
+          `pending connections [${result.pendingConnections.join(", ")}], ` +
+          `webhook triggers started: ${String(startedTriggerCount)}`,
         toolCalls: [],
       };
     }
@@ -796,13 +908,24 @@ export async function bootMyraTarget(
           body: rawBody,
         },
       );
-      const data: unknown = await response.json();
+      // Read as text first: a failed launch surfaces as the hub's own
+      // non-JSON 500 body, which must land in the recorded turn rather
+      // than die as a JSON parse crash that hides the status. A non-202
+      // is recorded honestly (the same convention as the runner's
+      // no-trigger miss) so the step's scorers grade red with the real
+      // failure instead of the whole run crashing.
+      const rawResponse = await response.text();
       if (response.status !== 202) {
-        throw new Error(
-          `fireWebhook("${triggerId}"): ingress returned ` +
-            `${String(response.status)}: ${JSON.stringify(data)}`,
-        );
+        return {
+          human: `(harness) fire webhook trigger ${triggerId}`,
+          replyText:
+            `webhook delivery failed: ingress returned ` +
+            `${String(response.status)}: ${rawResponse.slice(0, 2_000)}\n` +
+            `hub output (tail):\n${hub.output().slice(-4_000)}`,
+          toolCalls: [],
+        };
       }
+      const data: unknown = JSON.parse(rawResponse);
       return {
         human: `(harness) fire webhook trigger ${triggerId}`,
         replyText:

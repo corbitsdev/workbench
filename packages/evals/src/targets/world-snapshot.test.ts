@@ -163,7 +163,8 @@ test("captureWorldSnapshot reads agent definitions with their capabilities", asy
   expect(world.agentDefinitions).toEqual([
     {
       id: "def-1",
-      name: "AI Daily researcher",
+      name: "ai-daily-research",
+      displayName: "AI Daily researcher",
       toolPackagePins: ["@corbits/web-search-tools"],
       skills: [],
       model: "claude-3-5-sonnet",

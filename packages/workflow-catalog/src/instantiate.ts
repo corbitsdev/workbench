@@ -21,7 +21,10 @@ import {
   type CodeReviewAgentRequest,
 } from "@corbits/code-review/agent-requests";
 
-import type { WorkbenchTemplateManifest } from "./templates";
+import type {
+  WorkbenchTemplateBlock,
+  WorkbenchTemplateManifest,
+} from "./templates";
 
 export interface WorkbenchTemplateInstantiationPorts {
   /** Every agent definition handle already deployed in the bench —
@@ -34,6 +37,16 @@ export interface WorkbenchTemplateInstantiationPorts {
   createParticipantAgent(
     request: CodeReviewAgentRequest,
   ): Promise<{ readonly id: string }>;
+  /** Deploys one of the manifest's referenced block workflows through
+   * the same source-form deploy the participant agents use
+   * (`POST /template-blocks/:assetName/deploy` — see
+   * `./template-block-routes.ts`), or a fake of it in tests. `created`
+   * is `false` when the tenant already carries a deployed definition
+   * under this asset name, so a retried instantiation never
+   * double-deploys. */
+  deployBlockWorkflow(
+    block: WorkbenchTemplateBlock,
+  ): Promise<{ readonly created: boolean }>;
   /** Persists the room's still-needed connections — the workbench
    * settings `template/pendingConnections` key today; see
    * `apps/web/src/instant-agent-create.ts`. */
@@ -45,6 +58,11 @@ export interface WorkbenchTemplateInstantiationPorts {
 export interface WorkbenchTemplateInstantiationResult {
   readonly createdHandles: readonly string[];
   readonly skippedHandles: readonly string[];
+  /** Block workflows `deployBlockWorkflow` actually deployed on this
+   * run, by asset name; a block the tenant already carried lands in
+   * `skippedBlockAssetNames` instead. */
+  readonly deployedBlockAssetNames: readonly string[];
+  readonly skippedBlockAssetNames: readonly string[];
   readonly pendingConnections: readonly string[];
   /**
    * One line per webhook trigger this template names, honestly stating
@@ -88,6 +106,20 @@ export async function instantiateWorkbenchTemplate(
     codeReviewAgentRequests().map((request) => [request.handle, request]),
   );
 
+  // The manifest's referenced block workflows deploy first: a
+  // participant is a lens over a block, and the connect card's
+  // start-reviewing step resolves the deployed block definition by
+  // name, so a bench must never end up with reviewers but no
+  // `code-review` workflow behind them.
+  const deployedBlockAssetNames: string[] = [];
+  const skippedBlockAssetNames: string[] = [];
+  for (const block of manifest.blocks) {
+    const outcome = await ports.deployBlockWorkflow(block);
+    (outcome.created ? deployedBlockAssetNames : skippedBlockAssetNames).push(
+      block.assetName,
+    );
+  }
+
   const createdHandles: string[] = [];
   const skippedHandles: string[] = [];
   for (const participant of manifest.participants) {
@@ -112,6 +144,8 @@ export async function instantiateWorkbenchTemplate(
   return {
     createdHandles,
     skippedHandles,
+    deployedBlockAssetNames,
+    skippedBlockAssetNames,
     pendingConnections: manifest.requiredConnections,
     webhookTriggerTodos: manifest.webhookTriggers.map((trigger) =>
       webhookTriggerTodo(manifest, trigger),

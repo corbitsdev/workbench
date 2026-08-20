@@ -15,6 +15,56 @@ import { ApiQueryError } from "@corbits/api-query";
 
 const TemplateLibraryEntry = type({ id: "string > 0", content: "string > 0" });
 
+const TemplateBlockDeployResponse = type({
+  id: "string > 0",
+  created: "boolean",
+});
+
+/**
+ * Deploys one of a manifest's referenced block workflows through the
+ * hub's source-form deploy (`POST /template-blocks/:assetName/deploy`,
+ * CL-6405) — `instantiateWorkbenchTemplate`'s `deployBlockWorkflow`
+ * port. `created: false` means the tenant already carried a deployed
+ * definition under this asset name (a retried or second instantiation).
+ */
+export async function deployWorkbenchTemplateBlock(
+  tenantId: string,
+  assetName: string,
+): Promise<{ readonly created: boolean }> {
+  const path = `/api/tenants/${tenantId}/template-blocks/${assetName}/deploy`;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+  } catch (cause) {
+    throw new ApiQueryError(
+      cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
+    );
+  }
+  if (!response.ok) {
+    throw new ApiQueryError(
+      `The server answered ${response.status}.`,
+      response.status,
+      path,
+    );
+  }
+  const parsed = TemplateBlockDeployResponse(
+    await response.json().catch(() => undefined),
+  );
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(
+      `Unexpected deploy response shape: ${parsed.summary}`,
+      undefined,
+      path,
+    );
+  }
+  return { created: parsed.created };
+}
+
 /**
  * The seeded manifest for `templateId`, or null when the library has no
  * such entry (a bench whose boot seed hasn't run yet — the caller
