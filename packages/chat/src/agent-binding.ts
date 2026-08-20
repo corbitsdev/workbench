@@ -40,8 +40,31 @@ export interface AgentBinding {
   readonly roomAddress: string;
   readonly currentRunId: string;
   readonly liveAddress: string;
+  /** Every run this participant used to be, oldest first. */
+  readonly priorRunIds: readonly string[];
   readonly foldedBody: FoldedBody;
   readonly noopInference: boolean;
+}
+
+/**
+ * How far back `prior_run_ids` remembers. Long enough that a room can
+ * survive a bad afternoon and still hand back an attachment from
+ * before it, short enough that the column never becomes an unbounded
+ * append log on a row read on every single message.
+ */
+const PRIOR_RUN_HISTORY_LIMIT = 20;
+
+const PriorRunIdsSchema = type("string[]");
+
+function priorRunIdsFrom(row: LaunchRow): readonly string[] {
+  const parsed = PriorRunIdsSchema(row.priorRunIds);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `workbench_launch row for "${row.instanceId}" carries an invalid ` +
+        `prior-run history: ${parsed.summary}`,
+    );
+  }
+  return parsed;
 }
 
 /** The live `workflow_run` row behind a binding, plus the binding itself. */
@@ -73,6 +96,7 @@ function bindingFrom(row: LaunchRow, domain: string): AgentBinding {
     roomAddress: formatRunAddress(row.instanceId, domain),
     currentRunId: row.currentRunId,
     liveAddress: formatRunAddress(row.currentRunId, domain),
+    priorRunIds: priorRunIdsFrom(row),
     foldedBody: parsed,
     noopInference: row.noopInference,
   };
@@ -167,6 +191,25 @@ export async function resolveLiveByStableId(
 }
 
 /**
+ * The runs this participant used to be, newest first — the order
+ * `fetchBlob` walks them in, so the most recently retired session is
+ * tried before older ones. A retired run whose row has since been
+ * deleted is skipped rather than raising: history that no longer
+ * exists is not an error, it is just history that cannot answer.
+ */
+export async function readPriorRuns(
+  db: DB["db"],
+  binding: AgentBinding,
+): Promise<LiveAgent["run"][]> {
+  const runs: LiveAgent["run"][] = [];
+  for (const runId of [...binding.priorRunIds].reverse()) {
+    const run = await readRun(db, runId);
+    if (run !== undefined) runs.push(run);
+  }
+  return runs;
+}
+
+/**
  * The statuses a `workflow_run` can hold that mean "this run will never
  * accept mail again". A folded run's own idle settle lands on
  * "completed" too (see `@corbits/folded-runs`' `isFoldedRunSettled`),
@@ -196,18 +239,45 @@ export async function isBeyondWake(
 }
 
 /**
- * Re-points a stable participant at a freshly launched run. Written
- * after the new run has actually deployed, never before: a repoint that
- * outlives a failed launch would leave the room addressing a run that
- * was rolled back.
+ * Re-points a stable participant at a freshly launched run, retiring
+ * the run it was pointing at into `priorRunIds`. Written after the new
+ * run has actually deployed, never before: a repoint that outlives a
+ * failed launch would leave the room addressing a run that was rolled
+ * back.
  */
 export async function repointBinding(
   db: DB["db"],
-  stableId: string,
+  binding: AgentBinding,
   newRunId: string,
 ): Promise<void> {
+  const history = [...binding.priorRunIds, binding.currentRunId].slice(
+    -PRIOR_RUN_HISTORY_LIMIT,
+  );
   await db
     .update(workbenchLaunch)
-    .set({ currentRunId: newRunId })
-    .where(eq(workbenchLaunch.instanceId, stableId));
+    .set({ currentRunId: newRunId, priorRunIds: history })
+    .where(eq(workbenchLaunch.instanceId, binding.stableId));
+}
+
+/**
+ * Every participant whose current run is beyond waking, for the boot
+ * sweep that relaunches them (`platform-adapter.ts`'s
+ * `sweepTerminalRuns`). Bounded by `limit` rather than streaming the
+ * whole table: a sweep is a best-effort recovery pass at start-up, not
+ * a migration, and an unbounded one on a large tenant would turn every
+ * boot into a deploy storm.
+ */
+export async function listLaunchesBeyondWake(
+  db: DB["db"],
+  limit: number,
+): Promise<LiveAgent[]> {
+  const rows = await db.select().from(workbenchLaunch).limit(limit);
+  const dead: LiveAgent[] = [];
+  for (const row of rows) {
+    const run = await readRun(db, row.currentRunId);
+    if (run === undefined || run.address === null) continue;
+    if (!(await isBeyondWake(db, run))) continue;
+    dead.push({ binding: bindingFrom(row, requireDomain(run.address)), run });
+  }
+  return dead;
 }
