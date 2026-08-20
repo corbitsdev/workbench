@@ -470,3 +470,80 @@ Upstream's own diff over the same span is the reference implementation:
 `workflow-host-wiring.ts` at `4ed8baf4` show every one of these conversions
 against the same contracts, and `apps/sidecar`'s `VENDORED.md` row stays at
 `59f5e7b9` until workbench's fork is reconciled with them.
+
+### Conversion step 1: `packages/agent-runtime`
+
+`packages/agent-runtime` holds the definition builder every workbench
+agent run deploys. `AgentRuntimeConfig` is the arktype contract for
+everything that differs per run — the mailbox it answers on, its system
+prompt, its resolved inference chain, its tool-package pins, its
+credential bindings — and the config's `mode` selects the shape:
+`buildAgentRuntimeWorkflow` returns either the folded unbounded step or
+the per-turn `onTrigger` section. Because the mode lives in the config,
+the deploy front keeps one parameter set and no call site ever branches
+on which shape it wants; `deployCodeSourcedWorkflow` already enumerates
+inert `onTrigger` bodies on every deploy, so the section shape needs
+nothing extra from the API.
+
+#### There is no out-of-band config channel — the config IS the bytes
+
+The obvious design, one static published package whose entry reads a
+per-run config from its environment, does not work at this pin and
+cannot be made to work by the sidecar.
+
+The approval probe and the run child each evaluate the entry module
+independently, and the child refuses to run a definition whose recomputed
+wire hash differs from the approved one
+(`workflow-host/src/child/verified-definition-loader.ts`). The hashed
+preimage (`workflow/src/live-inert-projector.ts`) covers the trigger
+address, the agent's system prompt, its `(provider, model)` pairs, its
+tool-package pins, and the definition's credential bindings — every field
+of the config. So a config read from anywhere outside the closure's bytes
+diverges between the two evaluations and fails closed. And there is
+nowhere to read it from anyway: `WorkflowDefinitionSource` has no overlay
+or params on any variant, `AgentDeployWorkflow` carries no config bag
+(the code-sourced route builds `HarnessConfig` with an empty
+`systemPrompt`, empty `tools`, empty `grants`), `SpawnTimeEnv` has no
+config field, and `WorkflowProbeRequestFrame` carries no env at all — so
+even a sidecar willing to inject one could not make the probe see it.
+
+`renderAgentRuntimeSourceTree` is the consequence: it renders a thin
+per-run package — a `package.json` plus a four-line entry module that
+pins `@corbits/agent-runtime` and calls `buildAgentRuntimeWorkflow` with
+the run's config as a literal. All the behaviour stays in the one
+versioned package; what varies per run is a JSON literal inside the
+hashed bytes. A host commits that tree into a `workflow`-kind asset and
+deploys `source.kind: "asset"`, `package.format: "source"`, `commitSha` —
+the only source variant whose pin is cheap enough to mint per run, since
+the registry and tarball variants each need a publish.
+
+Two in-tree prerequisites remain for any of this to execute, both already
+on the conversion table above: nothing produces `CLOSURE_PACKAGE_DIR`, and
+no `WorkflowProbeExecutor` is wired on the sidecar, so every probe
+currently answers `workflow.probe.error`. Both are conversion step 2.
+
+#### What still blocks `deployAtHead`
+
+A folded run pre-mints its own anchor `workflow_run` row (`mintFoldedRun`,
+carrying the `principalId` its `agent_session` join needs) and it commonly
+carries credential bindings (every `@corbits/mcp-tools` launch). Neither
+code-sourced deploy front accepts that combination:
+
+| Front                               | Anchor row | Credential cipher | Capacity                                              |
+| ----------------------------------- | ---------- | ----------------- | ----------------------------------------------------- |
+| `deployWorkflowFromSource`          | INSERTs    | not threaded      | shared                                                |
+| `deployPreparedCodeSourcedWorkflow` | UPDATEs    | threaded          | exclusive allocation only (`requireAllocationRouter`) |
+
+`deployWorkflowFromSource` collides on the primary key of the row the
+folded run already owns, and its `commonDeploy` passes no
+`credentialCipher`, so a definition with bindings throws inside
+`deployCodeSourcedWorkflow`. The prepared front does both correctly but
+hard-requires an `allocationTarget`, and exclusive placement is dormant
+in-tree. Composing the halves is not open either: `emitSourceRefDeployFrame`
+and `buildInertProjectionStepSources` are module-private in `hub-sessions`.
+
+[Intx gap] The missing capability is a SHARED-capacity code-sourced deploy
+that ADOPTS a pre-existing anchor run and threads a `credentialCipher` —
+`deployPreparedCodeSourcedWorkflow` minus the allocation lock. Until it
+exists upstream, `deployAtHead` cannot cut over without either forking the
+front or dismantling the folded run's own anchor-row ownership.
