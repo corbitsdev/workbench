@@ -40,6 +40,7 @@ const migrationNames = [
   "0017_message_client_ids",
   "0018_rename_channel_to_workbench",
   "0019_workbench_messages",
+  "0020_agent_turns",
 ];
 
 describeIfDb("applyChatMigrations", () => {
