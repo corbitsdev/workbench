@@ -7,9 +7,9 @@
 // bench memberships, never creator-scoped) gets its own fetch-mocked
 // integration coverage below.
 //
-// Row detail is a page now (`/routines/<slug>`), not an inline expansion:
-// the name is a link, and an old `/routines/<id>` deep link redirects to
-// that page rather than expanding a row that no longer expands.
+// Row detail is a page now (`/routines/<id>`), not an inline expansion,
+// and the row links there by id — the only address a routine has that a
+// rename cannot break.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -41,7 +41,6 @@ const routine: Routine = {
   consecutiveFailures: 0,
   deadLetteredAt: null,
   nextFireAt: "2026-01-02T09:00:00.000Z",
-  lastFireAt: "2026-01-01T09:00:00.000Z",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -171,12 +170,41 @@ describe("GlobalRoutinesList", () => {
     expect(markup).toContain("At 09:00 (UTC)");
     expect(markup).toContain("in 21h");
     expect(markup).toContain("Healthy");
-    expect(markup).toContain("completed");
+    expect(markup).toContain("Finished");
     expect(markup).toContain("Ops");
   });
 
-  test("the routine's name links to its own page", () => {
-    expect(renderList([row()])).toContain('href="/routines/morning-brief"');
+  test("the routine's name links to its own page by id, not by name", () => {
+    const markup = renderList([row()]);
+    expect(markup).toContain('href="/routines/rtn_1"');
+    expect(markup).not.toContain('href="/routines/morning-brief"');
+  });
+
+  test("a past-due next run reads as overdue, never as time already elapsed", () => {
+    const markup = renderList([
+      row({
+        routine: { ...routine, nextFireAt: "2025-12-31T00:00:00.000Z" },
+      }),
+    ]);
+    expect(markup).toContain("Overdue");
+    expect(markup).not.toContain("ago</td>");
+  });
+
+  test("statuses and causes read as words, not as column values", () => {
+    const markup = renderList([
+      row({
+        runs: [
+          {
+            runId: "run_1",
+            triggeredBy: "schedule",
+            createdAt: "2026-01-01T09:00:00.000Z",
+            run: { status: "running" },
+          },
+        ],
+      }),
+    ]);
+    expect(markup).toContain("Running now");
+    expect(markup).not.toContain(">running<");
   });
 
   test("a failing routine states its failure count in words, not only in colour", () => {
@@ -324,7 +352,6 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
       consecutiveFailures: 0,
       deadLetteredAt: null,
       nextFireAt: null,
-      lastFireAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -383,7 +410,6 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
   }
 
   async function renderRoute(
-    path: string,
     navigate: (to: string) => void,
   ): Promise<{ container: HTMLDivElement; root: Root }> {
     const { BenchProvider } = await import("../src/bench-context");
@@ -413,7 +439,7 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
                 toggleFocus={() => {}}
                 close={() => {}}
               >
-                {createElement(RoutinesRoute, { path, navigate })}
+                {createElement(RoutinesRoute, { navigate })}
               </CanvasAvailabilityProvider>
             </BenchProvider>
           </NavigationProvider>
@@ -431,7 +457,7 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
   test("lists routines from every bench the account is a member of, not just the currently selected one, and never creator-scoped", async () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = mockFetch();
-    const { container, root } = await renderRoute("/routines", () => {});
+    const { container, root } = await renderRoute(() => {});
     try {
       // Bench switcher defaults to the first bench (tnt_1) — proving the
       // second bench's routine still renders proves this page never
@@ -448,15 +474,17 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
     }
   });
 
-  test("an old /routines/<id> deep link lands on the routine's own page", async () => {
+  test("each row links to its routine by id — the address a rename cannot break", async () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = mockFetch();
-    const navigated: string[] = [];
-    const { container, root } = await renderRoute("/routines/rtn_mine", (to) =>
-      navigated.push(to),
-    );
+    const { container, root } = await renderRoute(() => {});
     try {
-      expect(navigated).toContain("/routines/my-digest");
+      const hrefs = [...container.querySelectorAll("a")].map((a) =>
+        a.getAttribute("href"),
+      );
+      expect(hrefs).toContain("/routines/rtn_mine");
+      expect(hrefs).toContain("/routines/rtn_theirs");
+      expect(hrefs).not.toContain("/routines/my-digest");
     } finally {
       act(() => root.unmount());
       container.remove();

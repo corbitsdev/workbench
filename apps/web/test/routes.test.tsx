@@ -147,7 +147,7 @@ describe("route table", () => {
       "/new",
       "/w",
       "/inbox",
-      "/routines/:slug",
+      "/routines/:routine",
       "/routines",
       "/files",
       "/library",
@@ -242,7 +242,9 @@ describe("route table", () => {
     expect(routeFor("/routines/weekly-digest")).toBe(ROUTINE_DETAIL_PATH);
     expect(routeFor("/agents/wfd_1")).toBe("/agents");
     expect(routeFor("/skills/skill_1")).toBe("/skills");
-    expect(routeFor("/routines/wfr_1")).toBe("/routines");
+    // Routines are the one roster addressed by id: the detail route
+    // claims any single segment (see ROUTINE_DETAIL_PATH).
+    expect(routeFor("/routines/rtn_1")).toBe(ROUTINE_DETAIL_PATH);
   });
 
   test("the Plugins roster owns its bare path and slug details, nothing else", () => {
@@ -258,6 +260,8 @@ describe("route table", () => {
     const routeFor = (path: string) =>
       APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
     expect(routeFor("/plugins/%")).toBeUndefined();
+    // A segment that cannot be decoded names no routine, so the detail
+    // route declines it and the roster answers instead.
     expect(routeFor("/routines/%E0%A4%A")).toBe("/routines");
     expect(matchesRoute(PLUGIN_DETAIL_PATH, "/plugins/%")).toBe(false);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
@@ -356,7 +360,6 @@ describe("routes render", () => {
   test.each([
     ["/skills/pr-review", "pr-review", "Skills"],
     ["/plugins/linear", "linear", "Plugins"],
-    ["/routines/weekly-digest", "weekly-digest", "Routines"],
   ])(
     "%s titles the detail placeholder %s with its roster row lit",
     async (path, slug, footerLabel) => {
@@ -366,6 +369,16 @@ describe("routes render", () => {
       expect(activeFooterLabel(markup)).toBe(footerLabel);
     },
   );
+
+  test("a routine segment that resolves to nothing still titles itself and lights Routines", async () => {
+    // Routines is a real page now, not a placeholder: with no routine
+    // behind the segment it says so and offers the way back, rather than
+    // rendering the roster under a URL that names nothing.
+    const markup = await renderApp("/routines/weekly-digest");
+    expect(stagePageTitle(markup)).toBe("weekly-digest");
+    expect(markup).toContain("Back to Routines");
+    expect(activeFooterLabel(markup)).toBe("Routines");
+  });
 
   test("a slug-shaped path under no known entity renders the not-found screen", async () => {
     const markup = await renderApp("/agent/triage-bot");

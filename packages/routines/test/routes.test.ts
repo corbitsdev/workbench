@@ -311,7 +311,6 @@ describe("createRoutineRoutes", () => {
     });
 
     expect(typeof body["nextFireAt"]).toBe("string");
-    expect(body["lastFireAt"]).toBeNull();
 
     // The same instant the scheduler's own claim test compares against —
     // not an independently rendered estimate.
@@ -327,7 +326,9 @@ describe("createRoutineRoutes", () => {
     const { body } = await createRoutine(app, { ...VALID_BODY, trigger: null });
 
     expect(body["nextFireAt"]).toBeNull();
-    expect(body["lastFireAt"]).toBeNull();
+    // No `lastFireAt`: the store writes it only on a scheduled claim, so
+    // "last run" is read off the fire history instead (see health.ts).
+    expect(body["lastFireAt"]).toBeUndefined();
   });
 
   test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {
@@ -447,7 +448,7 @@ describe("createRoutineRoutes", () => {
       VALID_BODY.deliveryWorkbenchId,
     );
     expect(workbenchNotice.calls[0]?.text).toBe(
-      'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      'Created routine "Morning digest" — At 09:00 (UTC). ' +
         "Manage it from Routines.",
     );
   });
@@ -477,7 +478,7 @@ describe("createRoutineRoutes", () => {
     expect(response.status).toBe(200);
     expect(workbenchNotice.calls.length).toBe(1);
     expect(workbenchNotice.calls[0]?.text).toBe(
-      'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      'Enabled routine "Morning digest" — At 09:00 (UTC). ' +
         "Manage it from Routines.",
     );
   });

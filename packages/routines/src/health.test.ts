@@ -158,6 +158,23 @@ describe("routineHealth", () => {
     expect(health.caption).toContain("2 runs in a row");
   });
 
+  test("last run is the newest history row, whatever started it — never the scheduler's own stamp", () => {
+    // A run-now-only routine never gets a `lastFireAt` (the store writes
+    // that inside the scheduled-claim path), so reading anything else
+    // here would report "never run" beside a full history table.
+    const manual = fire("r1", {
+      triggeredBy: "manual",
+      createdAt: "2026-02-01T10:00:00.000Z",
+    });
+    expect(routineHealth(healthy, [manual]).lastRunAt).toBe(
+      "2026-02-01T10:00:00.000Z",
+    );
+  });
+
+  test("no history means no last run", () => {
+    expect(routineHealth(healthy, []).lastRunAt).toBeNull();
+  });
+
   test("carries the last failure through even while healthy again", () => {
     const health = routineHealth(healthy, [
       fire("r2"),
