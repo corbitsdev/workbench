@@ -665,6 +665,7 @@
         "@corbits/assistant-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
         "@corbits/heartbeat-workflow": "workspace:*",
+        "@corbits/inference-catalog": "workspace:*",
         "@corbits/last-30-days-research-workflow": "workspace:*",
         "@corbits/recurring-task-workflow": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
@@ -694,6 +695,24 @@
         "@intx/hub-common": "workspace:*",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/inference-catalog": {
+      "name": "@corbits/inference-catalog",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/inference-catalog": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1910,6 +1929,8 @@
     "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
     "@corbits/inbox": ["@corbits/inbox@workspace:packages/inbox"],
+
+    "@corbits/inference-catalog": ["@corbits/inference-catalog@workspace:packages/inference-catalog"],
 
     "@corbits/inference-settings": ["@corbits/inference-settings@workspace:packages/inference-settings"],
 

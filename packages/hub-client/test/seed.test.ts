@@ -1152,11 +1152,22 @@ describe("seedCatalog", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        expect(body).toEqual({
-          modelId: "mdl_1",
-          providerId: "cpv_1",
-          priority: 0,
-        });
+        // Anthropic Direct's claude-sonnet-5 is a probed deployment in the
+        // pinned catalog, so the offering is created carrying what that
+        // probe observed rather than an empty capability list.
+        const offeringBody = body as {
+          modelId: string;
+          providerId: string;
+          priority: number;
+          capabilities: string[];
+        };
+        expect(offeringBody.modelId).toBe("mdl_1");
+        expect(offeringBody.providerId).toBe("cpv_1");
+        expect(offeringBody.priority).toBe(0);
+        expect(offeringBody.capabilities).toContain("plain-text");
+        expect(offeringBody.capabilities).toContain(
+          "function-calling-multi-turn",
+        );
         return {
           status: 201,
           data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),

@@ -20,6 +20,7 @@ import {
   ModelResponse,
   ProviderResponse,
   paginatedSchema,
+  type Capability,
 } from "@intx/types";
 import { type } from "arktype";
 import {
@@ -47,6 +48,7 @@ import {
   serializeRecurringTaskWorkflow,
 } from "@corbits/recurring-task-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
 import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
@@ -1214,6 +1216,7 @@ async function ensureCatalogOffering(
     modelId: string;
     providerId: string;
     priority: number;
+    capabilities: readonly Capability[];
   },
   log: (line: string) => void,
 ): Promise<void> {
@@ -1224,6 +1227,7 @@ async function ensureCatalogOffering(
       modelId: args.modelId,
       providerId: args.providerId,
       priority: args.priority,
+      capabilities: args.capabilities,
     },
     cookies,
   );
@@ -1348,16 +1352,17 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       : undefined;
   const models = dynamicModels ?? seed.models;
 
-  const modelIds: string[] = [];
+  const seededModels: { id: string; canonicalName: string }[] = [];
   for (const model of models) {
-    modelIds.push(
-      await ensureCatalogModel(
+    seededModels.push({
+      id: await ensureCatalogModel(
         api,
         cookies,
         { tenantId, canonicalName: model.canonicalName },
         log,
       ),
-    );
+      canonicalName: model.canonicalName,
+    });
   }
 
   const credentialSecret =
@@ -1419,17 +1424,36 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     0,
     Object.keys(CATALOG_SEEDS).indexOf(provider),
   );
-  for (const modelId of modelIds) {
+  // What each deployment can do, resolved from the pinned catalog's probe
+  // results. Until this, every seeded offering stored an empty capability
+  // list, so no capability filter — this repo's concept resolution or the
+  // platform's own source resolution — could answer anything. A deployment
+  // the catalog has never probed still gets an empty list: an honest "not
+  // known" beats a guess that routes real work to a model that cannot do it.
+  const unprobed: string[] = [];
+  for (const model of seededModels) {
+    const resolved = capabilitiesForDeployment({
+      plugin: seed.provider.plugin,
+      baseURL: providerBaseURL,
+      canonicalName: model.canonicalName,
+    });
+    if (resolved.provenance === "unknown") unprobed.push(model.canonicalName);
     await ensureCatalogOffering(
       api,
       cookies,
       {
         tenantId,
-        modelId,
+        modelId: model.id,
         providerId: catalogProviderId,
         priority: offeringPriority,
+        capabilities: resolved.capabilities,
       },
       log,
+    );
+  }
+  if (unprobed.length > 0) {
+    log(
+      `no capability data for ${unprobed.join(", ")} — these models are listable and launchable, but nothing that picks a model by what it can do will offer them yet`,
     );
   }
 
