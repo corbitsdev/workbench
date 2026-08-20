@@ -54,6 +54,7 @@ import type { BlockResponseActions } from "./blocks/block-responses";
 import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
+import { WorkbenchLoadingState } from "./loading-state";
 import { Markdown } from "./markdown";
 import { PrFailedTurnStrip } from "./pr-thread-view";
 import type { ProfileSubject } from "./profile-subject";
@@ -1451,31 +1452,6 @@ function ThreadAffordance({
   );
 }
 
-const WORKBENCH_LOADING_TIP_INTERVAL_MS = 4000;
-
-/** A small, honest product tip under the loading headline — rotates on a
- * timer regardless of motion preference; the fade between tips is the
- * only thing `prefers-reduced-motion` turns off (the CSS keyframe is
- * scoped to `no-preference`, so a reduced-motion reader still sees each
- * tip in turn, just without the crossfade). */
-function WorkbenchLoadingTip() {
-  const tips = CHAT_STRINGS.workbenchLoadingTips;
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setIndex((current) => (current + 1) % tips.length);
-    }, WORKBENCH_LOADING_TIP_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [tips.length]);
-
-  return (
-    <span key={index} className="chat-workbench-loading-tip" aria-live="polite">
-      {tips[index]}
-    </span>
-  );
-}
-
 /** A workbench's scroll position, captured/restored across a
  * `WorkbenchTimeline` unmount-remount (e.g. opening/closing Settings) — see
  * `WorkbenchTimeline`'s `scrollRestore`/`onScrollSnapshot`. */
@@ -1660,17 +1636,25 @@ export function WorkbenchTimeline({
     if (settingUpAgent === true) {
       return (
         <div className="chat-timeline-empty">
-          <div className="chat-workbench-loading" role="status">
-            <span className="chat-workbench-loading-mark" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
-            <span className="chat-workbench-loading-title">
-              {CHAT_STRINGS.workbenchLoadingTitle}
-            </span>
-            <WorkbenchLoadingTip />
-          </div>
+          <WorkbenchLoadingState delayMs={0} />
+        </div>
+      );
+    }
+    // Once an agent DM's agent has actually joined (see `settingUpAgent`'s
+    // caller), an empty timeline isn't a stage to wait out — it's a ready
+    // conversation with nobody in it yet. Leads with the agent's own name
+    // so the affordance is "message them", not the generic feed copy.
+    const readyAgent = participants.find((participant) =>
+      isAgentAddress(participant.address),
+    );
+    if (readyAgent !== undefined) {
+      return (
+        <div className="chat-timeline-empty">
+          <EmptyState
+            icon={<MessageSquare />}
+            title={`Say hello to ${displayNameFromHandle(readyAgent.handle)}`}
+            description={CHAT_STRINGS.emptyAgentTimelineDescription}
+          />
         </div>
       );
     }

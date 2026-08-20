@@ -22,6 +22,8 @@ import {
 import * as Y from "yjs";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
+
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { usePresenceRoom } from "../presence/use-presence-room";
@@ -162,7 +164,13 @@ export function AppShell({
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar title={routeLabel(path)} />
           ) : null}
-          <Suspense fallback={<div className="page-fill" aria-busy="true" />}>
+          <Suspense
+            fallback={
+              <div className="page-fill shell-route-loading">
+                <WorkbenchLoadingState />
+              </div>
+            }
+          >
             {children}
           </Suspense>
         </div>

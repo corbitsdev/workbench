@@ -2156,6 +2156,14 @@ select:disabled,
   min-height: 0;
 }
 
+/* Route-level Suspense fallback (CL-6370): centers the shared warm loader
+   instead of leaving a bare, un-laid-out box while a route chunk loads. */
+.shell-route-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Tables fit their page slot instead of scrolling sideways: fixed
    layout, one line per cell, ellipsis on overflow (cells that can
    truncate carry a title tooltip with the full value). */
