@@ -38,6 +38,25 @@ const SEVERITY_HEADING: Record<ReviewerFinding["severity"], string> = {
   later: "For later",
 };
 
+// A finding's `summary` and `suggestion` are model output shaped by
+// arktype, but arktype only constrains the type, not the markdown it
+// gets embedded into — and the model itself is reading attacker-supplied
+// PR content (title, description, diff). A summary with an embedded
+// newline can forge a fresh list item or heading; a suggestion with an
+// embedded ``` can break out of its code fence into free-form review
+// body. Neither is hypothetical: both are one crafted diff line away.
+function singleLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function fenceSafe(text: string): string {
+  return text.replace(/```/g, "`​``");
+}
+
+function inlineCodeSafe(text: string): string {
+  return text.replace(/`/g, "'");
+}
+
 function dedupeKey(finding: ReviewerFinding): string {
   const line = finding.line === undefined ? "" : String(finding.line);
   const summary = finding.summary.trim().toLowerCase().replace(/\s+/g, " ");
@@ -114,12 +133,13 @@ function attribution(reviewers: readonly string[]): string {
 }
 
 function bodyLine(entry: AggregatedFinding): string {
+  const path = inlineCodeSafe(entry.finding.file);
   const where =
     entry.finding.line === undefined
-      ? entry.finding.file
-      : `${entry.finding.file}:${String(entry.finding.line)}`;
+      ? path
+      : `${path}:${String(entry.finding.line)}`;
   return (
-    `- \`${where}\` — ${entry.finding.summary} ` +
+    `- \`${where}\` — ${singleLine(entry.finding.summary)} ` +
     `_(${attribution(entry.reviewers)})_`
   );
 }
@@ -127,9 +147,9 @@ function bodyLine(entry: AggregatedFinding): string {
 function commentBody(entry: AggregatedFinding): string {
   const head =
     `**${SEVERITY_HEADING[entry.finding.severity]}** — ` +
-    `${entry.finding.summary}\n\n_${attribution(entry.reviewers)}_`;
+    `${singleLine(entry.finding.summary)}\n\n_${attribution(entry.reviewers)}_`;
   if (entry.finding.suggestion === undefined) return head;
-  return `${head}\n\n\`\`\`suggestion\n${entry.finding.suggestion}\n\`\`\``;
+  return `${head}\n\n\`\`\`suggestion\n${fenceSafe(entry.finding.suggestion)}\n\`\`\``;
 }
 
 function countLine(findings: readonly AggregatedFinding[]): string {
@@ -176,7 +196,7 @@ export function aggregateReview(
     sections.push("", "### What each reviewer looked at", "");
     sections.push(
       ...collected.summaries.map(
-        (entry) => `- **${entry.name}** — ${entry.summary}`,
+        (entry) => `- **${entry.name}** — ${singleLine(entry.summary)}`,
       ),
     );
   }
