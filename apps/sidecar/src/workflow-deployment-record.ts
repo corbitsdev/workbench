@@ -24,6 +24,7 @@ import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
 import { InferenceSource } from "@intx/types/runtime";
+import { SourceRefPin } from "@intx/types/sidecar";
 import { isErrnoNotFound } from "./conversation-state";
 
 import { writeFileAtomicDurable } from "./atomic-write";
@@ -46,15 +47,16 @@ export const WorkflowDeploymentRecord = type({
   },
   "sessionId?": "string > 0",
   "hubPublicKey?": "string > 0",
-  // Hub-approved wire hash per referenced onTrigger body id, carried on the
-  // deploy frame's `referencedDefinitions[*].approvedWireHash`. Durable here
-  // (not re-derivable from the materialized body `workflow.json` alone --
-  // that file has no hash field) so a boot-time restore can rebuild the
-  // spawned child's `REFERENCED_DEFINITION_HASHES` env without a hub
-  // round-trip. Absent for a deployment with no referenced bodies.
-  "referencedDefinitionHashes?": {
-    "[string]": "string > 0",
-  },
+  // The hub-approved wire hash the restored child re-verifies its evaluated
+  // closure against, rather than a sidecar recompute of the inert projection
+  // -- the latter would collapse the out-of-band-pin property the re-verify
+  // barrier exists for.
+  approvedWireHash: "string > 0",
+  // The pin a restore re-runs the closure apply with: `source` names where the
+  // definition package comes from (no secret -- the registry token resolves
+  // from env at apply time), `closure` is the hub's frozen dependency set
+  // (concrete versions + integrity SRIs). Both rode the signed deploy frame.
+  sourceRef: SourceRefPin,
   // Written only on the state-preserving hibernate teardown
   // (`teardownDeployment({ reclaimDirs: false })`), never on deploy or
   // rotation. Its presence is the durable answer to "did the hub park this

@@ -33,7 +33,13 @@ import { createTarballCache } from "@intx/tool-packaging";
 import { hexEncode } from "@intx/types";
 
 import { readSidecarConfig } from "./config";
-import { DEFAULT_TOOL_REGISTRIES_JSON } from "./tool-materialization";
+import {
+  DEFAULT_TOOL_REGISTRIES_JSON,
+  parseToolRegistries,
+} from "./tool-materialization";
+import { createWorkflowProbeExecutor } from "./workflow-probe-handler";
+import { createWorkflowClosureMaterializer } from "./workflow-closure-materialization";
+import { MAX_INLINE_ASSET_PAYLOAD_BYTES } from "./source-asset-delivery";
 import { createDefaultHarnessBuilder } from "./default-harness";
 import { createHubLinkWatchdog } from "./hub-link-watchdog";
 import { drainWithTimeout } from "./shutdown";
@@ -181,6 +187,27 @@ if (config.tmpdir !== undefined) {
 // `canBuildSource` predicate against the one adapter registry.
 const buildHarness = createDefaultHarnessBuilder({ adapters });
 
+// Airlocked workflow-probe executor, assembled here and injected through the
+// orchestrator so the sidecar answers `workflow.probe.request` with a real
+// inert projection and its wire hash instead of the hub-link's rejecting
+// placeholder. The materializer lays a probe frame's frozen closure out under
+// a per-probe scratch dir (rooted in the sidecar data dir so it shares that
+// dir's lifecycle); the executor spawns the one-shot child that evaluates the
+// workflow entry against it. A probe delivers its source assets inline in one
+// frame, capped by the shared inline-payload bound.
+const workflowProbeExecutor = createWorkflowProbeExecutor({
+  materialize: createWorkflowClosureMaterializer({
+    cacheRoot: CACHE_ROOT,
+    cacheMaxBytes: CACHE_MAX_BYTES,
+    registryMaxTarballBytes: REGISTRY_MAX_TARBALL_BYTES,
+    maxAssetPayloadBytes: MAX_INLINE_ASSET_PAYLOAD_BYTES,
+    registries: parseToolRegistries(
+      config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON,
+    ),
+    scratchRoot: path.join(config.dataDir, "workflow-probe", "closures"),
+  }),
+});
+
 const watchdogLog = getLogger(["sidecar", "hub-link-watchdog"]);
 const watchdog = createHubLinkWatchdog({
   stallDeadlineMs: 60_000,
@@ -217,6 +244,7 @@ const orchestrator = createSidecarOrchestrator({
   // supervisor spawns, against the unwrapped substrate so the restore is
   // never echoed back to the Hub as a new sidecar-authored update.
   applyWorkflowRunPack: restoreWorkflowRunPack,
+  workflowProbeExecutor,
   // Called from every connection's open handler -- the watchdog's
   // aliveness signal -- and from the close path, which immediately
   // re-schedules a reconnect that re-arms the deadline.
