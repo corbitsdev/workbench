@@ -109,7 +109,10 @@ describe("POST /complete-setup", () => {
       "/api/onboarding",
       createOnboardingRoutes({
         hubUrl: "https://bench.example.com",
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
       }),
@@ -132,7 +135,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
@@ -182,7 +188,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
           ensureSeededFn: async () => {
@@ -227,7 +236,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
@@ -263,7 +275,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async (args) => {
@@ -347,7 +362,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -391,7 +409,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -429,7 +450,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async () => {
@@ -582,7 +606,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -637,7 +664,10 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async () => ({

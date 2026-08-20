@@ -42,7 +42,10 @@ describe("POST /provision", () => {
       // Port 0 on loopback refuses every connection immediately, so the
       // underlying fetch throws deterministically without a live hub.
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: (line) => lines.push(line),
       pendingSeedStore,
     });
@@ -83,7 +86,10 @@ describe("POST /provision", () => {
     try {
       const routes = createOnboardingRoutes({
         hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore,
       });
@@ -120,7 +126,10 @@ describe("POST /provision", () => {
     try {
       const routes = createOnboardingRoutes({
         hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore,
       });
@@ -143,7 +152,10 @@ describe("POST /provision", () => {
     // first login).
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
     });
@@ -179,7 +191,10 @@ describe("POST /provision", () => {
     try {
       const routes = createOnboardingRoutes({
         hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore,
       });
@@ -219,7 +234,10 @@ describe("POST /provision", () => {
     try {
       const routes = createOnboardingRoutes({
         hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore,
       });
@@ -251,7 +269,10 @@ describe("POST /provision", () => {
     try {
       const routes = createOnboardingRoutes({
         hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
         log: () => undefined,
         pendingSeedStore,
       });
@@ -276,7 +297,10 @@ describe("POST /provision", () => {
   test("an anonymous request is rejected before provisioning runs", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
     });
@@ -295,7 +319,10 @@ describe("POST /complete", () => {
   test("an anonymous request is rejected before anything is seeded", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
     });
@@ -319,7 +346,10 @@ describe("POST /complete", () => {
   test("a missing provider is rejected with a specific message, no network call made", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
     });
@@ -348,7 +378,10 @@ describe("POST /complete", () => {
     providerHealth.report("tnt_own", "anthropic", "credential_failure");
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
       providerHealth,
@@ -376,7 +409,10 @@ describe("POST /complete", () => {
     providerHealth.report("tnt_own", "anthropic", "credential_failure");
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
       providerHealth,
@@ -408,7 +444,10 @@ describe("POST /complete", () => {
   test("a sidecar-unavailable deploy completes onboarding with a pending-agents response and writes a retry row", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
       completeCredentialSetupFn: async () => ({
@@ -465,7 +504,10 @@ describe("POST /complete", () => {
   test("a non-sidecar failure during setup still fails loudly with the existing 500 envelope", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       pendingSeedStore,
       completeCredentialSetupFn: async () => {
@@ -495,7 +537,10 @@ describe("POST /complete", () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
       log: () => undefined,
       logError: (line) => lines.push(line),
       pendingSeedStore,
