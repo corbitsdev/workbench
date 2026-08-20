@@ -67,4 +67,5 @@ behind human approval.
 - [LICENSE.md](LICENSE.md) — GPLv2 with AI Exception
 - [SECURITY.md](SECURITY.md) — how to report vulnerabilities
 - [VENDORED.md](VENDORED.md) — the vendoring ledger and its rules
+- [DESIGN.md](DESIGN.md) — the UI design system canon
 - `docs/` — architecture and design docs, added as the system grows
