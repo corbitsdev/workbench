@@ -386,7 +386,21 @@ workflow-host` row does not really apply to this slice — treat it as
      `ToolBundle.run` directly, all still routed through `ctx.perform` for
      the capability/ledger floor.
 
-**What did NOT land (deliberately, time-boxed):** the run-child wiring
+**Follow-up landed (CL-6325, second pass):** the run-child wiring described
+below is now in place. `RunWorkflowChildBindings.resolveActionHandler` is
+awaited once per child (post re-verify, with the resolved definition and the
+live `CredentialWiring`), `loopFns` rides beside it, both default to the
+fail-closed empty registries, and `buildRuntimeEnv` binds `effects`,
+`invokeAction`, `loopFns`, and `runLoopIteration` into every run's env
+(exported for the runtime-env probe in
+`apps/sidecar/test/action-runtime-env.test.ts`). The sidecar's
+`workflow-substrate-factory` builds the registry over
+`createActionToolHandlerRegistry` with a stable per-action-step scratch root
+(`actionStepStorageRoot`) and passes it as `resolveActionHandler`. The
+re-application warning stands: a `vendor/intx` re-pin regenerates
+`run-child.ts` and drops this wiring.
+
+**What did NOT land in the first pass (deliberately, time-boxed):** the run-child wiring
 (`resolveActionHandler` bindings field, `effects`/`invokeAction` construction
 in `buildRuntimeEnv`, `loopFns`) is a separate final commit on this branch,
 explicitly marked in its message as needing re-application after the
