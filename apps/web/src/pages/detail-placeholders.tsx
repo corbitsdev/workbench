@@ -1,12 +1,11 @@
 // Placeholders for the slug-addressed detail screens (CL-6412 routes them;
 // the screens themselves are their own tickets). Each renders the slug it
 // was routed for and a way back to its roster, so the route is real and
-// testable before the page behind it exists. A path whose last segment
-// isn't a slug has no entity to show and renders the not-found screen —
-// the same one an unknown path gets.
+// testable before the page behind it exists.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { FlowArrow, Lightning, Robot, SquaresFour } from "@corbits/icons";
+import type { Slug } from "@corbits/slug";
 import type { ReactNode } from "react";
 
 import { Link } from "../navigation";
@@ -15,26 +14,22 @@ import {
   PLUGINS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
-  detailSlugFromPath,
 } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { NotFoundPage } from "./not-found-page";
 
 function DetailPlaceholder({
-  path,
-  prefix,
+  slug,
   entity,
   rosterLabel,
+  rosterPath,
   icon,
 }: {
-  readonly path: string;
-  readonly prefix: string;
+  readonly slug: Slug;
   readonly entity: string;
   readonly rosterLabel: string;
+  readonly rosterPath: string;
   readonly icon: ReactNode;
 }) {
-  const slug = detailSlugFromPath(path, prefix);
-  if (slug === null) return <NotFoundPage />;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar title={entity} subtitle={slug} />
@@ -45,7 +40,7 @@ function DetailPlaceholder({
           description={`This ${entity.toLowerCase()} page is still being built.`}
           action={
             <Button asChild variant="outline">
-              <Link to={prefix}>{`Back to ${rosterLabel}`}</Link>
+              <Link to={rosterPath}>{`Back to ${rosterLabel}`}</Link>
             </Button>
           }
         />
@@ -54,49 +49,49 @@ function DetailPlaceholder({
   );
 }
 
-export function AgentDetailPlaceholder({ path }: { readonly path: string }) {
+export function AgentDetailPlaceholder({ slug }: { readonly slug: Slug }) {
   return (
     <DetailPlaceholder
-      path={path}
-      prefix={AGENTS_PATH_PREFIX}
+      slug={slug}
       entity="Agent"
       rosterLabel="Agents"
+      rosterPath={AGENTS_PATH_PREFIX}
       icon={<Robot />}
     />
   );
 }
 
-export function SkillDetailPlaceholder({ path }: { readonly path: string }) {
+export function SkillDetailPlaceholder({ slug }: { readonly slug: Slug }) {
   return (
     <DetailPlaceholder
-      path={path}
-      prefix={SKILLS_PATH_PREFIX}
+      slug={slug}
       entity="Skill"
       rosterLabel="Skills"
+      rosterPath={SKILLS_PATH_PREFIX}
       icon={<Lightning />}
     />
   );
 }
 
-export function PluginDetailPlaceholder({ path }: { readonly path: string }) {
+export function PluginDetailPlaceholder({ slug }: { readonly slug: Slug }) {
   return (
     <DetailPlaceholder
-      path={path}
-      prefix={PLUGINS_PATH_PREFIX}
+      slug={slug}
       entity="Plugin"
       rosterLabel="Plugins"
+      rosterPath={PLUGINS_PATH_PREFIX}
       icon={<SquaresFour />}
     />
   );
 }
 
-export function RoutineDetailPlaceholder({ path }: { readonly path: string }) {
+export function RoutineDetailPlaceholder({ slug }: { readonly slug: Slug }) {
   return (
     <DetailPlaceholder
-      path={path}
-      prefix={ROUTINES_PATH_PREFIX}
+      slug={slug}
       entity="Routine"
       rosterLabel="Routines"
+      rosterPath={ROUTINES_PATH_PREFIX}
       icon={<FlowArrow />}
     />
   );

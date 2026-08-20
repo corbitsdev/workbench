@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
+import type { Slug } from "@corbits/slug";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import {
@@ -128,8 +129,18 @@ export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const PLUGIN_DETAIL_PATH = `${PLUGINS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${SLUG_SEGMENT}`;
 
-function slugForDetailRoute(routePath: string, path: string): string | null {
+function slugForDetailRoute(routePath: string, path: string): Slug | null {
   return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
+}
+
+/** A detail route only ever renders for a path `matchesRoute` already
+ * accepted, which is what makes the slug non-null here. */
+function detailRouteSlug(routePath: string, path: string): Slug {
+  const slug = slugForDetailRoute(routePath, path);
+  if (slug === null) {
+    throw new Error(`${routePath} rendered for a path with no slug: ${path}`);
+  }
+  return slug;
 }
 
 export type AppRoute = {
@@ -154,7 +165,10 @@ export type AppRoute = {
  * conversation deep links (which also match when Myra land `/` is active)
  * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
  * exact path matches. A roster prefix still matches its own nested paths,
- * so the sidebar footer row stays lit on a detail screen.
+ * so the sidebar footer row stays lit on a detail screen — except Plugins,
+ * whose roster consumes no path segment of its own: there, only the bare
+ * path and a slug detail resolve, and any other nested path is unroutable
+ * rather than quietly showing the roster.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
@@ -163,9 +177,11 @@ export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
   }
+  if (routePath === PLUGINS_PATH_PREFIX) {
+    return path === routePath || detailSlugFromPath(path, routePath) !== null;
+  }
   if (
     routePath === "/routines" ||
-    routePath === "/plugins" ||
     routePath === "/library" ||
     routePath === "/files" ||
     routePath === "/insights" ||
@@ -230,7 +246,11 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: ROUTINE_DETAIL_PATH,
     label: "Routine",
     icon: <FlowArrow />,
-    render: (path: string) => <RoutineDetailPlaceholder path={path} />,
+    render: (path: string) => (
+      <RoutineDetailPlaceholder
+        slug={detailRouteSlug(ROUTINE_DETAIL_PATH, path)}
+      />
+    ),
   },
   {
     path: "/routines",
@@ -262,7 +282,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: AGENT_DETAIL_PATH,
     label: "Agent",
     icon: <Robot />,
-    render: (path: string) => <AgentDetailPlaceholder path={path} />,
+    render: (path: string) => (
+      <AgentDetailPlaceholder slug={detailRouteSlug(AGENT_DETAIL_PATH, path)} />
+    ),
   },
   {
     path: "/agents",
@@ -286,7 +308,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: SKILL_DETAIL_PATH,
     label: "Skill",
     icon: <Lightning />,
-    render: (path: string) => <SkillDetailPlaceholder path={path} />,
+    render: (path: string) => (
+      <SkillDetailPlaceholder slug={detailRouteSlug(SKILL_DETAIL_PATH, path)} />
+    ),
   },
   {
     path: "/skills",
@@ -313,16 +337,19 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
-    // Route entry only — CL-6090 builds the page; the footer link into it
-    // is CL-6088's (the single-column shell rework), so this is
-    // deliberately absent from RAIL_PRIMARY_PATHS / RAIL_UTILITY_PATHS /
-    // NAV_ROUTES below.
     path: PLUGIN_DETAIL_PATH,
     label: "Plugin",
     icon: <SquaresFour />,
-    render: (path: string) => <PluginDetailPlaceholder path={path} />,
+    render: (path: string) => (
+      <PluginDetailPlaceholder
+        slug={detailRouteSlug(PLUGIN_DETAIL_PATH, path)}
+      />
+    ),
   },
   {
+    // Reached from the sidebar footer and by deep link, never from
+    // `NAV_ROUTES` — Plugins is deliberately absent from the palette's
+    // Pages group.
     path: "/plugins",
     label: "Plugins",
     icon: <SquaresFour />,

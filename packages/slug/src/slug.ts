@@ -19,8 +19,15 @@ export function slugify(name: string): string {
   return hyphenated.slice(0, SLUG_MAX_LENGTH).replace(/^-+|-+$/g, "");
 }
 
+declare const validated: unique symbol;
+
+/** A string that has been through `isValidSlug` — the brand makes the
+ * "validated at the boundary" fact visible in types, so a raw URL segment
+ * can never stand in for a slug by accident. */
+export type Slug = string & { readonly [validated]: true };
+
 /** True for a string that is already a slug — the shape `slugify` produces,
  * and the only shape a slug-addressed route accepts from a URL. */
-export function isValidSlug(s: string): boolean {
+export function isValidSlug(s: string): s is Slug {
   return s.length <= SLUG_MAX_LENGTH && SLUG_PATTERN.test(s);
 }

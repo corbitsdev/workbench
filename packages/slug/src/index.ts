@@ -1,1 +1,1 @@
-export { isValidSlug, slugify, SLUG_MAX_LENGTH } from "./slug";
+export { isValidSlug, slugify, SLUG_MAX_LENGTH, type Slug } from "./slug";
