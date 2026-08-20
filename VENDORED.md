@@ -177,7 +177,20 @@ pack's newly-terminal runs through the new pure `decideTerminalRunFlip`
 before the DB flip: a section occurrence's repo-local child run
 (`turn__<n>`) has no `workflow_run` row by design and is skipped quietly
 instead of being logged as a foreign-deployment violation on every turn.
-`vendor/intx/inference-catalog`'s own local
+`vendor/intx/hub-sessions` (CL-6388) reorders
+`deployCodeSourcedWorkflow`, the SHARED code-sourced deploy front, to
+persist its anchor `workflow_run` row BEFORE emitting the source-ref
+deploy frame. Upstream inserted the row only after the sidecar's deploy
+ack, but the frame spawns the deployment's child, whose first
+`refs/heads/events` pack push races that ack back to the hub —
+`receiveWorkflowRunPack` fails closed (`path_violation`) on a missing
+anchor row, so every fresh deployment's first events pack was rejected
+and the durable event log never bootstrapped. The row is born with a
+null `publicKey` (the reconnect challenge keeps failing closed until the
+ack), the acked supervisor key is stamped afterwards, and a failed frame
+emit deletes the pre-inserted row. The prepared and adopted fronts
+already had their anchor row pre-frame; the shared front now matches
+them. `vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
 Each package's `VENDORED-FROM` file restates its own delta.
