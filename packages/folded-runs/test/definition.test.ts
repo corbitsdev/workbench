@@ -46,6 +46,39 @@ function inertProjection(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function sectionProjection(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "wfd_2",
+    stepOrder: ["turn"],
+    steps: {
+      turn: {
+        kind: "onTrigger",
+        id: "turn",
+        on: { type: "mail", to: "agent@example.com" },
+        onBodyFailure: "continue",
+        body: {
+          inline: {
+            id: "wfd_2_body",
+            stepOrder: ["reply"],
+            steps: {
+              reply: {
+                kind: "step",
+                agent: {
+                  systemPrompt: "you are the invited agent",
+                  toolPackagePins: [],
+                  modelSources: [{ provider: "ollama", model: "qwen3:8b" }],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    credentialBindings: [],
+    ...overrides,
+  };
+}
+
 function liveDefinition(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "wfd_live",
@@ -112,6 +145,60 @@ describe("readFoldedBody", () => {
     expect(() => readFoldedBody(liveDefinition(), [])).toThrow(
       /is not a step primitive/,
     );
+  });
+
+  test("extracts the launch body from a section-shaped (CL-6329 onTrigger) projection", () => {
+    expect(readFoldedBody(sectionProjection(), [])).toEqual({
+      systemPrompt: "you are the invited agent",
+      toolPackagePins: [],
+      grantRequirements: [],
+      credentialBindings: [],
+      model: "qwen3:8b",
+    });
+  });
+
+  test("fails loud when a section's inline body is not single-step", () => {
+    expect(() =>
+      readFoldedBody(
+        sectionProjection({
+          steps: {
+            turn: {
+              kind: "onTrigger",
+              body: {
+                inline: {
+                  id: "wfd_2_body",
+                  stepOrder: ["reply", "second"],
+                  steps: {},
+                },
+              },
+            },
+          },
+        }),
+        [],
+      ),
+    ).toThrow(/body is not single-step/);
+  });
+
+  test("fails loud when a section's inline body step is not a step primitive", () => {
+    expect(() =>
+      readFoldedBody(
+        sectionProjection({
+          steps: {
+            turn: {
+              kind: "onTrigger",
+              body: {
+                inline: {
+                  id: "wfd_2_body",
+                  stepOrder: ["reply"],
+                  steps: { reply: { kind: "not-a-step" } },
+                },
+              },
+            },
+          },
+        }),
+        [],
+      ),
+    ).toThrow(/body step reply is not a step primitive/);
   });
 });
 
