@@ -8,6 +8,11 @@
 // carries an `href`, so the trail is deep-linkable and a plain click
 // navigates through the app's own `Link` instead of reloading the shell.
 //
+// The bar also carries the product's one search entry point (`StageSearch`,
+// DESIGN.md → Search) ahead of the page's own controls. It is shell chrome,
+// not a page action: no page passes it, and no page can opt out — that is
+// what makes "exactly one search surface" true of every route at once.
+//
 // `@corbits/react-ui`'s `TopBarBreadcrumbs` renders bare `<a href>`, which
 // would drop the SPA out from under the click, so the trail lives here
 // until react-ui takes a link-render slot.
@@ -16,6 +21,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { Link } from "../navigation";
 import { Chip, type ChipTone } from "./chip";
+import { StageSearch } from "./stage-search";
 
 export type StageCrumb = {
   readonly label: string;
@@ -55,6 +61,7 @@ export function StageTopBar({
         className="stage-top-bar-actions"
         data-testid="stage-top-bar-actions"
       >
+        <StageSearch />
         {chip !== undefined ? <Chip tone={chip.tone}>{chip.label}</Chip> : null}
         {actions}
       </div>

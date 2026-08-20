@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,
   buildStaticCommands,
+  detailPathForName,
   isBareScopeQuery,
   parsePaletteQuery,
   useEntitySearch,
@@ -31,7 +32,13 @@ import {
   runActionCommand,
   type ActionCommandId,
 } from "./command-palette-actions";
-import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
+import {
+  setCommandPaletteOpen,
+  setCommandPaletteQuery,
+  toggleCommandPalette,
+  useCommandPaletteOpen,
+  useCommandPaletteQuery,
+} from "./command-palette-open-store";
 import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
@@ -41,6 +48,12 @@ import {
   useCloseCanvas,
   useOpenRoutineInCanvas,
 } from "./shell/canvas-availability";
+import { listMcpServers } from "@corbits/plugins-ui";
+import {
+  AGENTS_PATH_PREFIX,
+  PLUGINS_PATH_PREFIX,
+  SKILLS_PATH_PREFIX,
+} from "./path-ids";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { meKeys, tenantKeys } from "./query-client";
@@ -76,8 +89,11 @@ export function CommandPaletteProvider({
 }) {
   const { memberships, selectedTenantId, selectTenant } = useBench();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  // Open state and query live in the shared store, not in this component:
+  // the top nav's magnifier morphs into this very surface and has to read
+  // the same state (`command-palette-open-store`).
+  const open = useCommandPaletteOpen();
+  const query = useCommandPaletteQuery();
   const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
   const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
@@ -239,6 +255,16 @@ export function CommandPaletteProvider({
     open && selectedTenantId !== null,
     () => listSkills(selectedTenantId ?? ""),
   );
+  // Plugins, as far as this bench has any: its connected MCP servers, each
+  // already carrying the immutable slug `/plugins/<slug>` is addressed by.
+  // The gallery's presets and catalog entries are not connected things and
+  // have no detail route of their own yet — a follow-up, not a second
+  // search.
+  const mcpServersQuery = useTenantQuery(
+    tenantKeys.mcpServers(selectedTenantId ?? ""),
+    open && selectedTenantId !== null,
+    () => listMcpServers(selectedTenantId ?? ""),
+  );
   const artifactsQuery = useAPIQuery(
     selectedTenantId === null || !open
       ? ""
@@ -280,17 +306,7 @@ export function CommandPaletteProvider({
         ]
       : undefined;
 
-  useCommandShortcut(() => setOpen((current) => !current));
-
-  useEffect(() => {
-    function onOpenRequest() {
-      setOpen(true);
-    }
-    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
-    return () => {
-      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
-    };
-  }, []);
+  useCommandShortcut(toggleCommandPalette);
 
   const pageItems = useMemo<readonly PaletteResultItem[]>(
     () =>
@@ -376,6 +392,18 @@ export function CommandPaletteProvider({
     [skillsQuery],
   );
 
+  const pluginItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      mcpServersQuery.kind === "ready"
+        ? mcpServersQuery.data.map((server) => ({
+            id: `entity:plugins:${server.slug}`,
+            title: server.name,
+            subtitle: "Connected plugin",
+          }))
+        : [],
+    [mcpServersQuery],
+  );
+
   const libraryItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       artifactsQuery.kind === "ready"
@@ -408,6 +436,7 @@ export function CommandPaletteProvider({
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
       { id: "routines", heading: "Routines", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
+      { id: "plugins", heading: "Plugins", items: pluginItems },
       { id: "library", heading: "Files", items: libraryItems },
       {
         id: "people",
@@ -422,6 +451,7 @@ export function CommandPaletteProvider({
       pageItems,
       routineItems,
       skillItems,
+      pluginItems,
       libraryItems,
       agentItems,
     ],
@@ -486,7 +516,7 @@ export function CommandPaletteProvider({
         const agentId = id.slice("entity:agents:".length);
         const title =
           agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(`/agents/${encodeURIComponent(agentId)}`);
+        navigate(detailPathForName(AGENTS_PATH_PREFIX, title));
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
@@ -498,8 +528,13 @@ export function CommandPaletteProvider({
         const skillId = id.slice("entity:skills:".length);
         const title =
           skillItems.find((item) => item.id === id)?.title ?? skillId;
-        navigate(`/skills/${encodeURIComponent(skillId)}`);
+        navigate(detailPathForName(SKILLS_PATH_PREFIX, title));
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
+      } else if (id.startsWith("entity:plugins:")) {
+        const slug = id.slice("entity:plugins:".length);
+        const title = pluginItems.find((item) => item.id === id)?.title ?? slug;
+        navigate(detailPathForName(PLUGINS_PATH_PREFIX, slug));
+        pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);
         const title =
@@ -507,7 +542,7 @@ export function CommandPaletteProvider({
         navigate(libraryArtifactPath(artifactId));
         pushRecent({ kind: "library", id, title, subtitle: "Files" });
       }
-      setOpen(false);
+      setCommandPaletteOpen(false);
     },
     [
       navigate,
@@ -521,6 +556,7 @@ export function CommandPaletteProvider({
       agentItems,
       routineItems,
       skillItems,
+      pluginItems,
       libraryItems,
       nextWorkbench,
       selectTenant,
@@ -528,8 +564,7 @@ export function CommandPaletteProvider({
   );
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) setQuery("");
+    setCommandPaletteOpen(nextOpen);
   }, []);
 
   return (
@@ -537,7 +572,7 @@ export function CommandPaletteProvider({
       open={open}
       onOpenChange={handleOpenChange}
       query={query}
-      onQueryChange={setQuery}
+      onQueryChange={setCommandPaletteQuery}
       groups={groups}
       onSelect={handleSelect}
       loading={loading}

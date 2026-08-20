@@ -43,6 +43,8 @@ export type {
   PaletteSource,
 } from "./command-groups";
 
+export { detailPathForName } from "./detail-paths";
+
 export {
   addRecentEntry,
   createRecentsStore,

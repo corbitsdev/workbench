@@ -699,6 +699,57 @@ select:disabled,
   margin-left: auto;
 }
 
+/* The one search entry point: a magnifier that morphs in place into the
+   palette's inline bar. Width is the animated property (see
+   stage-search.tsx for the motion tokens), so both states have to be the
+   same element — never a swap between two boxes. */
+.stage-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  width: 1.9rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+}
+
+.stage-search[data-expanded="true"] {
+  width: 15rem;
+  max-width: 40vw;
+  border-color: var(--border);
+  background: var(--card);
+  padding-right: 0.4rem;
+}
+
+.stage-search-button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.stage-search-button:hover {
+  color: var(--foreground);
+}
+
+.stage-search-field {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.78rem;
+  color: var(--foreground);
+}
+
+.stage-search-field::placeholder {
+  color: var(--muted-foreground);
+}
+
 /* Breadcrumb trails live in the title slot, always top-left. */
 .stage-crumbs {
   display: flex;
