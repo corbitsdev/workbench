@@ -144,6 +144,23 @@ export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(
 );
 export type ConnectGithubBlockData = typeof ConnectGithubBlockData.infer;
 
+// An agent-authored "connect this service" card (CL-6393), the
+// generalization of `connect-github` to every connector and MCP preset:
+// `request_connection` posts one of these instead of a prose deep link.
+// It carries only the framing the agent decided — which service, and the
+// consumer-language reason it would unlock — never an auth mode or a
+// connected/disconnected verdict: an agent that could author "connected"
+// (or steer OAuth vs key-paste) would be spoofing live state next to a
+// live button. The card's real state and connect affordance come from a
+// host-supplied actions port resolved against the tenant's actual
+// connections at render time.
+export const ConnectServiceBlockData = type({
+  connectorId: "string > 0",
+  displayName: "string > 0",
+  reason: "string > 0",
+}).onDeepUndeclaredKey("delete");
+export type ConnectServiceBlockData = typeof ConnectServiceBlockData.infer;
+
 export type Block =
   | { readonly type: "approve"; readonly data: ApproveBlockData }
   | { readonly type: "steps"; readonly data: StepsBlockData }
@@ -152,7 +169,11 @@ export type Block =
   | { readonly type: "form"; readonly data: FormBlockData }
   | { readonly type: "stream"; readonly data: StreamBlockData }
   | { readonly type: "question"; readonly data: QuestionBlockData }
-  | { readonly type: "connect-github"; readonly data: ConnectGithubBlockData };
+  | { readonly type: "connect-github"; readonly data: ConnectGithubBlockData }
+  | {
+      readonly type: "connect-service";
+      readonly data: ConnectServiceBlockData;
+    };
 
 export type BlockParseResult =
   | { readonly ok: true; readonly block: Block }
@@ -221,6 +242,13 @@ export function parseBlock(envelope: BlockPart["block"]): BlockParseResult {
         return { ok: false, type: envelope.type, summary: data.summary };
       }
       return { ok: true, block: { type: "connect-github", data } };
+    }
+    case "connect-service": {
+      const data = ConnectServiceBlockData(envelope.data);
+      if (data instanceof type.errors) {
+        return { ok: false, type: envelope.type, summary: data.summary };
+      }
+      return { ok: true, block: { type: "connect-service", data } };
     }
     default:
       return {

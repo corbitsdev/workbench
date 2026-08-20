@@ -18,6 +18,7 @@ export {
   FormBlockData,
   StreamBlockData,
   QuestionBlockData,
+  ConnectServiceBlockData,
   parseBlock,
 } from "./blocks";
 export type { Block, BlockParseResult } from "./blocks";
