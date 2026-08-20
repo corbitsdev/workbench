@@ -52,9 +52,12 @@ export {
 } from "./mail";
 export {
   connectorReplyContent,
+  inferenceDoneBlocks,
+  toolDoneResult,
   messageRunEnded,
   messageRunStarted,
   type MessageRunEnded,
+  type ReplyContentBlock,
 } from "./agent-events";
 export {
   runOneShotFoldedPrompt,
