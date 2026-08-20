@@ -6,46 +6,46 @@
 // (`command-palette-open-store`), so the two can never disagree.
 //
 // The palette itself is react-ui's modal `CommandPalette`, which owns the
-// editable input once open. The bar this file expands into therefore mirrors
-// the live query rather than accepting keystrokes: one editable search field
-// in the product, with the morph showing where the overlay came from. An
-// anchored, non-modal palette in react-ui would let this bar be the input
-// itself — until then, mirroring is the honest shape.
+// editable input once open. The bar this expands into therefore *shows* the
+// live query rather than pretending to accept one — a span styled as a
+// field, never a second input a click could land in and a screen reader
+// would have to explain. An anchored, non-modal palette in react-ui would
+// let this bar be the input itself; until then, showing is the honest shape.
 //
-// Motion is the shell's own width transition on react-ui's motion tokens
-// (`--duration-standard`, `--ease-spring`). Under `prefers-reduced-motion`
-// the transition is not declared at all, so the swap is instant.
+// Motion is the width transition authored on `.stage-search` in app.css
+// (react-ui's `--duration-standard` and `--ease-in-out`, the curve its
+// theme documents for something growing in place). Reduced motion needs
+// nothing here: react-ui's stylesheet already collapses every transition
+// duration under `prefers-reduced-motion`, which makes the swap instant.
 
 import { MagnifyingGlass } from "@corbits/icons";
-import { usePrefersReducedMotion } from "@corbits/react-ui";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   openCommandPalette,
-  setCommandPaletteOpen,
   useCommandPaletteOpen,
   useCommandPaletteQuery,
 } from "../command-palette-open-store";
 
-const MORPH_CLASS = "transition-[width] duration-standard ease-spring";
-
 export function StageSearch() {
   const expanded = useCommandPaletteOpen();
   const query = useCommandPaletteQuery();
-  const reducedMotion = usePrefersReducedMotion();
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const wasExpanded = useRef(false);
+
+  // Whichever way the palette closed — Escape inside its dialog, a click on
+  // its overlay, the store — focus comes back to the control the morph came
+  // out of, instead of being dropped on the document.
+  useEffect(() => {
+    if (wasExpanded.current && !expanded) buttonRef.current?.focus();
+    wasExpanded.current = expanded;
+  }, [expanded]);
 
   return (
     <div
-      className={reducedMotion ? "stage-search" : `stage-search ${MORPH_CLASS}`}
+      className="stage-search"
       data-testid="stage-search"
       data-expanded={expanded}
-      data-motion={reducedMotion ? "instant" : "morph"}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        setCommandPaletteOpen(false);
-        buttonRef.current?.focus();
-      }}
     >
       <button
         ref={buttonRef}
@@ -59,16 +59,13 @@ export function StageSearch() {
         <MagnifyingGlass aria-hidden="true" />
       </button>
       {expanded ? (
-        <input
+        <span
           className="stage-search-field"
-          data-testid="stage-search-input"
-          type="text"
-          value={query}
-          placeholder="Search or jump to…"
-          readOnly
-          tabIndex={-1}
-          aria-hidden="true"
-        />
+          data-testid="stage-search-field"
+          data-placeholder={query === ""}
+        >
+          {query === "" ? "Search or jump to…" : query}
+        </span>
       ) : null}
     </div>
   );

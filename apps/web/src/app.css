@@ -700,9 +700,14 @@ select:disabled,
 }
 
 /* The one search entry point: a magnifier that morphs in place into the
-   palette's inline bar. Width is the animated property (see
-   stage-search.tsx for the motion tokens), so both states have to be the
-   same element — never a swap between two boxes. */
+   palette's inline bar. Width is the animated property, so both states have
+   to be the same element — never a swap between two boxes. The transition is
+   authored here rather than as Tailwind utilities: react-ui ships a prebuilt
+   stylesheet, and `duration-standard`/`ease-*` compile to classes only in
+   react-ui's own build, so a utility class would be inert here. `--ease-in-out`
+   is react-ui's documented curve for something growing in place — a spring's
+   overshoot would jitter the whole top bar. Reduced motion is already handled
+   by that stylesheet's global transition-duration collapse. */
 .stage-search {
   display: flex;
   flex-shrink: 0;
@@ -710,6 +715,7 @@ select:disabled,
   width: 1.9rem;
   overflow: hidden;
   border: 1px solid transparent;
+  transition: width var(--duration-standard) var(--ease-in-out);
 }
 
 .stage-search[data-expanded="true"] {
@@ -739,14 +745,14 @@ select:disabled,
 .stage-search-field {
   min-width: 0;
   flex: 1;
-  border: 0;
-  background: transparent;
-  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.78rem;
   color: var(--foreground);
 }
 
-.stage-search-field::placeholder {
+.stage-search-field[data-placeholder="true"] {
   color: var(--muted-foreground);
 }
 

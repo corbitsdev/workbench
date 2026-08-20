@@ -5,6 +5,11 @@
 // and app.tsx's Shell mounts the first two side by side. One store, so the
 // morph and the palette can never disagree about whether search is open, and
 // so cmd+K, the magnifier, and a menu item all drive the same surface.
+//
+// Module state outlives a React remount, so search is scoped explicitly:
+// `CommandPaletteProvider` closes it on a route change (a Back out of a
+// result must not leave the overlay standing) and on a bench switch (whose
+// results and query belonged to the bench being left).
 
 import { useSyncExternalStore } from "react";
 
@@ -34,8 +39,8 @@ export function openCommandPalette(): void {
   setCommandPaletteOpen(true);
 }
 
-export function toggleCommandPalette(): void {
-  setCommandPaletteOpen(!open);
+export function closeCommandPalette(): void {
+  setCommandPaletteOpen(false);
 }
 
 export function setCommandPaletteQuery(next: string): void {

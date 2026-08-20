@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,
   buildStaticCommands,
-  detailPathForName,
+  detailPath,
   isBareScopeQuery,
   parsePaletteQuery,
   useEntitySearch,
@@ -24,7 +24,7 @@ import {
   type RecentEntry,
 } from "@corbits/command-palette";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
 import {
@@ -33,9 +33,9 @@ import {
   type ActionCommandId,
 } from "./command-palette-actions";
 import {
+  openCommandPalette,
   setCommandPaletteOpen,
   setCommandPaletteQuery,
-  toggleCommandPalette,
   useCommandPaletteOpen,
   useCommandPaletteQuery,
 } from "./command-palette-open-store";
@@ -164,9 +164,19 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId, queryClient]);
 
+  // `useEntitySearch` carries an id and a title per result and nothing else,
+  // but `/agents/<slug>` needs the definition's own minted handle — which is
+  // exactly what the fetch just read. Recorded here as the list arrives so a
+  // selection resolves the real slug instead of guessing one back out of a
+  // display title.
+  const agentHandleById = useRef(new Map<string, string>());
+
   const listAgentsForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const definitions = await listAgentDefinitions(selectedTenantId);
+    for (const definition of definitions) {
+      agentHandleById.current.set(definition.id, definition.name);
+    }
     return definitions.map((definition) => ({
       id: definition.id,
       name: definition.name,
@@ -306,7 +316,25 @@ export function CommandPaletteProvider({
         ]
       : undefined;
 
-  useCommandShortcut(toggleCommandPalette);
+  // cmd+K opens; it cannot also close, because react-ui's shortcut yields to
+  // text fields and an open palette holds focus in its own input. Escape and
+  // the overlay are the ways back out.
+  useCommandShortcut(openCommandPalette);
+
+  // Search is scoped to where it was opened from. A route change (including
+  // browser Back out of a result) closes it, so the overlay never stands over
+  // content it was not opened from; a bench switch closes it too, dropping a
+  // query whose results belonged to the bench being left. A tenant resolving
+  // for the first time (null → a real bench, at boot) is not a switch.
+  const searchScope = useRef({ path, tenantId: selectedTenantId });
+  useEffect(() => {
+    const previous = searchScope.current;
+    const routeChanged = previous.path !== path;
+    const benchSwitched =
+      previous.tenantId !== null && previous.tenantId !== selectedTenantId;
+    searchScope.current = { path, tenantId: selectedTenantId };
+    if (routeChanged || benchSwitched) setCommandPaletteOpen(false);
+  }, [path, selectedTenantId]);
 
   const pageItems = useMemo<readonly PaletteResultItem[]>(
     () =>
@@ -516,7 +544,12 @@ export function CommandPaletteProvider({
         const agentId = id.slice("entity:agents:".length);
         const title =
           agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(detailPathForName(AGENTS_PATH_PREFIX, title));
+        navigate(
+          detailPath(AGENTS_PATH_PREFIX, {
+            slug: agentHandleById.current.get(agentId) ?? "",
+            id: agentId,
+          }),
+        );
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
@@ -528,12 +561,15 @@ export function CommandPaletteProvider({
         const skillId = id.slice("entity:skills:".length);
         const title =
           skillItems.find((item) => item.id === id)?.title ?? skillId;
-        navigate(detailPathForName(SKILLS_PATH_PREFIX, title));
+        // A skill's name is its slug: the Skills API keys every route on it.
+        navigate(
+          detailPath(SKILLS_PATH_PREFIX, { slug: skillId, id: skillId }),
+        );
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:plugins:")) {
         const slug = id.slice("entity:plugins:".length);
         const title = pluginItems.find((item) => item.id === id)?.title ?? slug;
-        navigate(detailPathForName(PLUGINS_PATH_PREFIX, slug));
+        navigate(detailPath(PLUGINS_PATH_PREFIX, { slug, id: slug }));
         pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);
