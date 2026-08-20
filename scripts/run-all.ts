@@ -2,6 +2,69 @@
 // Succeeds when no package defines it, so root gates stay green while the
 // workspace is still empty.
 import { Glob } from "bun";
+import { availableParallelism } from "node:os";
+
+import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
+
+const CONCURRENCY_ENV = "WORKBENCH_CHECK_CONCURRENCY";
+
+type Job = { readonly name: string; readonly dir: string };
+
+function resolveConcurrency(script: string): number {
+  const raw = process.env[CONCURRENCY_ENV];
+  if (raw === undefined || raw === "") {
+    if (SEQUENTIAL_SCRIPTS.has(script)) return 1;
+    // Each job saturates about one core, so leave a couple free for the editor
+    // and type server a developer runs alongside the gate.
+    return Math.max(1, availableParallelism() - 2);
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(
+      `${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`,
+    );
+  }
+  return parsed;
+}
+
+async function discover(script: string): Promise<Job[]> {
+  const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
+  const jobs: Job[] = [];
+  for await (const manifestPath of glob.scan(".")) {
+    const manifest = (await Bun.file(manifestPath).json()) as {
+      name?: string;
+      scripts?: Record<string, string>;
+    };
+    if (!manifest.scripts?.[script]) continue;
+    const dir = manifestPath.slice(0, -"/package.json".length);
+    jobs.push({ name: manifest.name ?? dir, dir });
+  }
+  return jobs;
+}
+
+// Output is captured and flushed as one block per package. Streaming it would
+// interleave the lines of every concurrent job, leaving a failure with no
+// reliable way to tell which package produced it.
+async function runJob(job: Job, script: string): Promise<number> {
+  const proc = Bun.spawn(["bun", "run", script], {
+    cwd: job.dir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  const body = `${stdout}${stderr}`;
+  const trailingNewline = body.endsWith("\n") || body.length === 0 ? "" : "\n";
+  process.stdout.write(
+    `--- ${job.name}: ${script} ---\n${body}${trailingNewline}`,
+  );
+  return code;
+}
 
 const script = process.argv[2];
 if (!script) {
@@ -9,31 +72,47 @@ if (!script) {
   process.exit(1);
 }
 
-const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
-let failures = 0;
-let ran = 0;
+let concurrency: number;
+try {
+  concurrency = resolveConcurrency(script);
+} catch (cause) {
+  console.error(cause instanceof Error ? cause.message : String(cause));
+  process.exit(1);
+}
 
-for await (const manifestPath of glob.scan(".")) {
-  const manifest = (await Bun.file(manifestPath).json()) as {
-    name?: string;
-    scripts?: Record<string, string>;
-  };
-  if (!manifest.scripts?.[script]) continue;
-  ran += 1;
-  const dir = manifestPath.slice(0, -"/package.json".length);
-  const proc = Bun.spawn(["bun", "run", script], {
-    cwd: dir,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const code = await proc.exited;
-  if (code !== 0) {
-    console.error(
-      `${manifest.name ?? dir}: ${script} exited with code ${code}`,
-    );
-    failures += 1;
+const jobs = await discover(script);
+if (jobs.length === 0) {
+  console.log(`${script}: no workspace packages define it yet`);
+  process.exit(0);
+}
+
+const failures: string[] = [];
+let nextJob = 0;
+
+async function worker(): Promise<void> {
+  while (nextJob < jobs.length) {
+    const job = jobs[nextJob];
+    nextJob += 1;
+    if (job === undefined) return;
+
+    // Progress goes to stderr so stdout stays a clean sequence of per-package
+    // blocks; a ten-minute gate that prints nothing until the end reads as hung.
+    console.error(`started ${job.name}`);
+    const code = await runJob(job, script);
+    if (code !== 0) {
+      failures.push(job.name);
+      console.error(`${job.name}: ${script} exited with code ${code}`);
+    }
   }
 }
 
-if (ran === 0) console.log(`${script}: no workspace packages define it yet`);
-process.exit(failures === 0 ? 0 : 1);
+await Promise.all(
+  Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()),
+);
+
+if (failures.length > 0) {
+  console.error(
+    `${script} failed in ${failures.length} package(s): ${failures.join(", ")}`,
+  );
+  process.exit(1);
+}

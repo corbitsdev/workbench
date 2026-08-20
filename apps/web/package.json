@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "watch": "vite build --watch",
-    "test": "bun test ./src ./test"
+    "test": "bun run build && bun test ./src ./test"
   },
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",

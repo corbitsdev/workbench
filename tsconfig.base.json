@@ -18,6 +18,7 @@
     "declarationMap": true,
     "module": "ESNext",
     "noEmit": true,
+    "incremental": true,
     "lib": ["ESNext"]
   }
 }
