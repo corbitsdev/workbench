@@ -180,3 +180,32 @@ export function createTemplateLibraryRoutes(
 
   return app;
 }
+
+/**
+ * Honest degraded surface when the artifacts plane is not mounted — the
+ * template library lives in the artifacts engine's db, so it is exactly
+ * as unavailable as `createUnavailableArtifactRoutes`' routes. Every
+ * route answers 503; without this mount the paths 404 and a client
+ * cannot tell "not configured" from "template not seeded".
+ */
+export function createUnavailableTemplateLibraryRoutes(
+  requireGrant: RequireGrant,
+): Hono<TenantEnv> {
+  const app = new Hono<TenantEnv>();
+  const unavailable = (c: {
+    json: (body: unknown, status: 503) => Response | Promise<Response>;
+  }) =>
+    c.json(
+      {
+        error: {
+          code: "unavailable",
+          message: "Artifacts plane is not configured on this hub",
+        },
+      },
+      503,
+    );
+
+  app.get("/", requireGrant("asset:*", "read"), unavailable);
+  app.get("/:templateId", requireGrant("asset:*", "read"), unavailable);
+  return app;
+}

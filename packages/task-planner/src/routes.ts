@@ -224,64 +224,74 @@ export function createPlannerRoutes(
   // settles.
   const inFlightDraftingPrincipals = new Set<string>();
 
-  if (deps.draftAgentDefinition !== undefined) {
-    const draftAgentDefinition = deps.draftAgentDefinition;
-    app.post(
-      "/agent-definitions/draft",
-      deps.requireGrant("workflow-definition:*", "create"),
-      async (c) => {
-        const body = CreateAgentDefinitionDraftBody(
-          await c.req.json().catch(() => undefined),
+  // Always mounted: a host without a drafting port answers an honest 503
+  // instead of the route silently not existing (a 404 the client cannot
+  // tell apart from a renamed path).
+  app.post(
+    "/agent-definitions/draft",
+    deps.requireGrant("workflow-definition:*", "create"),
+    async (c) => {
+      const draftAgentDefinition = deps.draftAgentDefinition;
+      if (draftAgentDefinition === undefined) {
+        return c.json(
+          ErrorEnvelope(
+            "unavailable",
+            "Agent drafting is not configured on this hub.",
+          ),
+          503,
         );
-        if (body instanceof type.errors) {
+      }
+      const body = CreateAgentDefinitionDraftBody(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `This couldn't be read: ${body.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+
+      if (inFlightDraftingPrincipals.has(principal.id)) {
+        return c.json(
+          ErrorEnvelope(
+            "dispatch_in_progress",
+            "Myra is already drafting your last agent.",
+          ),
+          409,
+        );
+      }
+      inFlightDraftingPrincipals.add(principal.id);
+
+      try {
+        const draft = await draftAgentDefinition({
+          tenantId: tenant.id,
+          principalId: principal.id,
+          name: body.name,
+          ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
+        });
+        return c.json({ draft }, 201);
+      } catch (err) {
+        log.error`agent definition drafting failed for tenant ${tenant.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+        if (isDraftingFailure(err)) {
           return c.json(
-            ErrorEnvelope(
-              "bad_request",
-              `This couldn't be read: ${body.summary}`,
-            ),
-            400,
+            ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+            422,
           );
         }
-
-        const tenant = c.get("tenant");
-        const principal = c.get("principal");
-
-        if (inFlightDraftingPrincipals.has(principal.id)) {
-          return c.json(
-            ErrorEnvelope(
-              "dispatch_in_progress",
-              "Myra is already drafting your last agent.",
-            ),
-            409,
-          );
-        }
-        inFlightDraftingPrincipals.add(principal.id);
-
-        try {
-          const draft = await draftAgentDefinition({
-            tenantId: tenant.id,
-            principalId: principal.id,
-            name: body.name,
-            ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
-          });
-          return c.json({ draft }, 201);
-        } catch (err) {
-          log.error`agent definition drafting failed for tenant ${tenant.id}: ${
-            err instanceof Error ? err.message : String(err)
-          }`;
-          if (isDraftingFailure(err)) {
-            return c.json(
-              ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
-              422,
-            );
-          }
-          throw err;
-        } finally {
-          inFlightDraftingPrincipals.delete(principal.id);
-        }
-      },
-    );
-  }
+        throw err;
+      } finally {
+        inFlightDraftingPrincipals.delete(principal.id);
+      }
+    },
+  );
 
   return app;
 }

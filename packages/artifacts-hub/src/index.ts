@@ -13,6 +13,7 @@ export {
   WORKBENCH_TEMPLATE_ARTIFACT_KIND,
   createTemplateLibraryDbStore,
   createTemplateLibraryRoutes,
+  createUnavailableTemplateLibraryRoutes,
   seedTemplateLibrary,
   type CreateTemplateLibraryRoutesDeps,
   type SeedTemplateLibraryArgs,

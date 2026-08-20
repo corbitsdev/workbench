@@ -198,6 +198,11 @@ export function createTaskRoutes(deps: CreateTaskRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  // A run with no owning task is a normal state (every directly-launched
+  // run), not a missing resource — answer `{item: null}` so the chain
+  // lookup the run-detail page fires on every open never 404s. A task
+  // another principal owns answers the same null, indistinguishable from
+  // none.
   app.get("/by-run/:runId", deps.requireGrant("task:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
@@ -208,10 +213,7 @@ export function createTaskRoutes(deps: CreateTaskRoutesDeps): Hono<TenantEnv> {
       record.tenantId !== tenant.id ||
       record.principalId !== principal.id
     ) {
-      return c.json(
-        ErrorEnvelope("not_found", "That task doesn't exist."),
-        404,
-      );
+      return c.json({ item: null });
     }
     return c.json({ item: taskView(record) });
   });

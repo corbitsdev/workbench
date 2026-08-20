@@ -935,7 +935,13 @@ export function createRoutineRoutes(
     deps.requireGrant("workflow-run:*", "create"),
     async (c) => {
       if (deps.drafts === undefined) {
-        return c.json(ErrorEnvelope("not_found", "drafts not available"), 404);
+        return c.json(
+          ErrorEnvelope(
+            "unavailable",
+            "Routine drafting is not configured on this hub.",
+          ),
+          503,
+        );
       }
       const body = CreateDraftBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
@@ -1024,7 +1030,13 @@ export function createRoutineRoutes(
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       if (deps.drafts === undefined) {
-        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+        return c.json(
+          ErrorEnvelope(
+            "unavailable",
+            "Routine drafting is not configured on this hub.",
+          ),
+          503,
+        );
       }
       const tenant = c.get("tenant");
       const draft = await deps.drafts.getDraft(tenant.id, c.req.param("id"));
@@ -1040,7 +1052,13 @@ export function createRoutineRoutes(
     deps.requireGrant(idResource("workflow-run", "id"), "create"),
     async (c) => {
       if (deps.drafts === undefined) {
-        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+        return c.json(
+          ErrorEnvelope(
+            "unavailable",
+            "Routine drafting is not configured on this hub.",
+          ),
+          503,
+        );
       }
       const body = ApproveDraftBody(await c.req.json().catch(() => ({})));
       if (body instanceof type.errors) {
@@ -1145,7 +1163,13 @@ export function createRoutineRoutes(
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       if (deps.drafts === undefined) {
-        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+        return c.json(
+          ErrorEnvelope(
+            "unavailable",
+            "Routine drafting is not configured on this hub.",
+          ),
+          503,
+        );
       }
       const tenant = c.get("tenant");
       try {

@@ -254,6 +254,7 @@ import {
   createTemplateLibraryDbStore,
   createTemplateLibraryRoutes,
   createUnavailableArtifactRoutes,
+  createUnavailableTemplateLibraryRoutes,
   createUnavailableWorkflowArtifactRoutes,
   createWorkflowArtifactDbStore,
   createWorkflowArtifactRoutes,
@@ -3305,6 +3306,15 @@ export async function createHub(config: HubConfig) {
     app.route(
       `${TENANT_PREFIX}/artifacts`,
       createUnavailableArtifactRoutes(
+        createRequireGrant({
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+        }),
+      ),
+    );
+    app.route(
+      `${TENANT_PREFIX}/library/templates`,
+      createUnavailableTemplateLibraryRoutes(
         createRequireGrant({
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
