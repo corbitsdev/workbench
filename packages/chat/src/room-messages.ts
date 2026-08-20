@@ -14,6 +14,7 @@ import { and, asc, count, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { Part } from "./parts";
 import { workbenchMessages } from "./schema";
 import type { ChatDb } from "./store";
+import { ChatMessageEventData } from "./stream-events";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 
 export interface RoomMessageSender {
@@ -147,6 +148,12 @@ export function previewOf(parts: readonly Part[]): string {
  * event onto the live stream so every open client sees it without asking
  * for it again. The row is written before the publish — a client that
  * refetches on the event always finds the message it was told about.
+ *
+ * The published event carries the full rendered row — `sender` and
+ * `parts` included, not just enough to key a refetch — so a subscriber
+ * can append it straight to its timeline with zero follow-up reads.
+ * `ChatMessageEventData` is the wire contract this shape is asserted
+ * against before it ever reaches `publish`.
  */
 export async function postRoomMessage(
   deps: {
@@ -159,15 +166,15 @@ export async function postRoomMessage(
     ...input,
     id: newMessageId(),
   });
-  deps.publish(message.workbenchId, {
-    type: "chat.message",
-    data: {
-      id: message.id,
-      workbenchId: message.workbenchId,
-      createdAt: message.createdAt,
-      threadId: message.threadId,
-    },
+  const data = ChatMessageEventData.assert({
+    id: message.id,
+    workbenchId: message.workbenchId,
+    createdAt: message.createdAt,
+    threadId: message.threadId,
+    sender: message.sender,
+    parts: message.parts,
   });
+  deps.publish(message.workbenchId, { type: "chat.message", data });
   return message;
 }
 

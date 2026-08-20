@@ -40,6 +40,8 @@ describe("postRoomMessage", () => {
       workbenchId: WORKBENCH,
     });
     expect(listed.items.map((message) => message.id)).toEqual([posted.id]);
+    // The full rendered row — sender and parts included — so a
+    // subscriber can render this message with no follow-up GET.
     expect(publisher.published).toEqual([
       {
         workbenchId: WORKBENCH,
@@ -49,6 +51,8 @@ describe("postRoomMessage", () => {
           workbenchId: WORKBENCH,
           createdAt: posted.createdAt,
           threadId: null,
+          sender: { name: null, address: "prn_ada@acme.example" },
+          parts: [{ kind: "text", text: "morning" }],
         },
       },
     ]);
