@@ -7,6 +7,7 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { getLogger } from "@corbits/client-log";
+import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";
 import { triggerFirstLoginProvisioning } from "./onboarding";
@@ -120,6 +121,8 @@ const container = document.getElementById("root");
 if (container === null) throw new Error("index.html is missing #root");
 createRoot(container).render(
   <StrictMode>
-    <Root />
+    <AppErrorBoundary>
+      <Root />
+    </AppErrorBoundary>
   </StrictMode>,
 );

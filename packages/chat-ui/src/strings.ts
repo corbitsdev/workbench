@@ -50,7 +50,7 @@ export const CHAT_STRINGS = {
   // One honest headline for every waiting state \u2014 the reader never needs
   // to know which internal stage this is; that distinction stays in logs,
   // never in front of them.
-  workbenchLoadingTitle: "Loading your workbench\u2026",
+  workbenchLoadingTitle: "Getting your workbench ready\u2026",
   workbenchLoadingTips: [
     "Tip: @mention an agent to bring them into the conversation",
     "Tip: every message can become a thread",

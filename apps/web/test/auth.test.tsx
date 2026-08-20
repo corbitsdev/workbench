@@ -231,7 +231,9 @@ describe("the gate", () => {
   });
 
   test("loading and error are their own screens, not a broken shell", () => {
-    expect(renderApp({ kind: "loading" })).toContain("Loading workbench");
+    expect(renderApp({ kind: "loading" })).toContain(
+      "Getting your workbench ready",
+    );
     const markup = renderApp({ kind: "error", message: "socket hang up" });
     expect(markup).toContain("socket hang up");
     expect(markup).toContain("Try again");

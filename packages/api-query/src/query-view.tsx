@@ -74,19 +74,28 @@ export function QueryView<T>({
   query,
   label,
   skeleton = "block",
+  loadingContent,
   children,
 }: {
   readonly query: APIQuery<T>;
   /** What is being loaded, named in the failure message: "your benches". */
   readonly label: string;
   /** The loading placeholder's shape — pick the one nearest this surface's
-   * real content so it doesn't jump when data lands. */
+   * real content so it doesn't jump when data lands. Ignored when
+   * `loadingContent` is set. */
   readonly skeleton?: QuerySkeletonVariant;
+  /** Overrides the loading render entirely — a page-level wait (a whole
+   * stage or panel's primary content, not a row hint) should pass its own
+   * warm loader here rather than take the `"block"` skeleton slab, which
+   * this package can't render itself: `@corbits/chat-ui`'s
+   * `WorkbenchLoadingState` depends on this package, so `QueryView` can
+   * never import it back without a cycle. */
+  readonly loadingContent?: ReactNode;
   readonly children: (data: T) => ReactNode;
 }) {
   switch (query.kind) {
     case "loading":
-      return <QuerySkeleton variant={skeleton} />;
+      return loadingContent ?? <QuerySkeleton variant={skeleton} />;
     case "unauthenticated":
       return <SignedOutNotice />;
     case "error":

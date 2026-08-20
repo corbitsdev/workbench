@@ -20,6 +20,7 @@ import {
   PageShell,
   RichEmptyState,
 } from "@corbits/react-ui";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import {
   PluginsGallery,
   PluginConnectPanel,
@@ -192,7 +193,9 @@ export function PluginsRoute({
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar title="Plugins" />
-        <PageShell width="full" className="page-fill" />
+        <PageShell width="full" className="page-fill">
+          <WorkbenchLoadingState title="Loading plugins…" />
+        </PageShell>
       </div>
     );
   }

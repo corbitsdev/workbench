@@ -1648,8 +1648,15 @@ select:disabled,
   border-radius: 0;
 }
 
-.shell-activity-skeleton {
-  height: 6rem;
+.shell-activity-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.32rem 0.42rem;
+}
+
+.shell-activity-skeleton-row {
+  height: 1.6rem;
   width: 100%;
 }
 

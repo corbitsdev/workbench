@@ -31,6 +31,7 @@ import {
   formatRelativeTime,
 } from "@corbits/react-ui";
 import { Lightning, Plus } from "@corbits/icons";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 
 import { rowActivationProps } from "../activatable-row";
@@ -114,7 +115,7 @@ function SkillDetailView({
   }, [reload]);
 
   if (state.status === "loading") {
-    return <p className="text-sm text-muted-foreground">Loading skill…</p>;
+    return <WorkbenchLoadingState title="Loading skill…" />;
   }
   if (state.status === "error") {
     return (
@@ -346,7 +347,7 @@ export function SkillsPage({
   }
 
   if (state.status === "loading") {
-    return <p className="text-sm text-muted-foreground">Loading skills…</p>;
+    return <WorkbenchLoadingState title="Loading skills…" />;
   }
 
   if (state.status === "error") {
