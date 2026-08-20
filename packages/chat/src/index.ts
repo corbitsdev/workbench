@@ -22,6 +22,16 @@ export {
   parseBlock,
 } from "./blocks";
 export type { Block, BlockParseResult } from "./blocks";
+export {
+  CONNECTIONS_PENDING_KEY,
+  pendingConnectionsOf,
+  connectServiceConnectorIds,
+  settleConnectedService,
+} from "./connect-pending";
+export type {
+  SettleConnectedServiceDeps,
+  SettleConnectedServiceInput,
+} from "./connect-pending";
 export { encodeParts, decodeParts, decodeMail, senderOf } from "./codec";
 export type {
   MailContent,

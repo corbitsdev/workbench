@@ -51,6 +51,11 @@ import {
 } from "./workbench-service";
 import type { ChatStore } from "./store";
 import { Part, type Part as PartType } from "./parts";
+import {
+  CONNECTIONS_PENDING_KEY,
+  connectServiceConnectorIds,
+  pendingConnectionsOf,
+} from "./connect-pending";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -233,6 +238,36 @@ export function createWorkflowParticipantRoutes(
         ),
         404,
       );
+    }
+
+    // A connect-service card registers its connector on the room's own
+    // settings before the message lands, so a later connection completing
+    // in the browser can find this room and settle the card
+    // (`./connect-pending.ts`'s `settleConnectedService`).
+    const requestedConnectorIds = connectServiceConnectorIds(
+      body.parts as PartType[],
+    );
+    if (requestedConnectorIds.length > 0) {
+      const pending = pendingConnectionsOf(workbench.settings);
+      const merged = [
+        ...pending,
+        ...requestedConnectorIds.filter((id) => !pending.includes(id)),
+      ];
+      if (merged.length !== pending.length) {
+        const updated = await deps.store.updateWorkbenchSettings({
+          tenantId: scope.tenantId,
+          workbenchId: workbench.workbenchId,
+          settings: {
+            ...workbench.settings,
+            [CONNECTIONS_PENDING_KEY]: merged,
+          },
+          updatedBy: scope.principalId,
+        });
+        deps.publish(workbench.workbenchId, {
+          type: "chat.settings",
+          data: { updatedBy: scope.principalId, settings: updated.settings },
+        });
+      }
     }
 
     const sent = await sendWorkbenchMessage(
