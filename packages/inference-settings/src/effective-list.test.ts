@@ -167,7 +167,7 @@ describe("defaultModelForProvider", () => {
     });
   });
 
-  test("no capability data anywhere in the candidate set falls back to priority order", () => {
+  test("CL-6351: an uncataloged embedding-named offering never wins even at the lowest priority", () => {
     const models: ModelInfo[] = [
       model({
         id: "model-embed",
@@ -205,9 +205,49 @@ describe("defaultModelForProvider", () => {
       }),
     ];
     expect(defaultModelForProvider(models, "ollama")).toEqual({
-      canonicalName: "all-minilm",
-      displayName: "all-minilm",
+      canonicalName: "qwen3:8b",
+      displayName: "qwen3:8b",
     });
+  });
+
+  test("CL-6351: an offering set that is entirely uncataloged embedding-named models resolves to no default", () => {
+    const models: ModelInfo[] = [
+      model({
+        id: "model-embed-1",
+        canonicalName: "all-minilm",
+        displayName: "all-minilm",
+        offerings: [
+          {
+            offeringId: "offering-embed-1",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-embed-2",
+        canonicalName: "nomic-embed-text",
+        displayName: "nomic-embed-text",
+        offerings: [
+          {
+            offeringId: "offering-embed-2",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 1,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+    ];
+    expect(defaultModelForProvider(models, "ollama")).toBeNull();
   });
 });
 
