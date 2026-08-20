@@ -920,7 +920,8 @@ export async function bootMyraTarget(
           human: `(harness) fire webhook trigger ${triggerId}`,
           replyText:
             `webhook delivery failed: ingress returned ` +
-            `${String(response.status)}: ${rawResponse.slice(0, 2_000)}`,
+            `${String(response.status)}: ${rawResponse.slice(0, 2_000)}\n` +
+            `hub output (tail):\n${hub.output().slice(-4_000)}`,
           toolCalls: [],
         };
       }
