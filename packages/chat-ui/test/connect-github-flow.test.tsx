@@ -104,6 +104,10 @@ function buildHarness() {
       };
     },
     requestConnect() {
+      // Opening the card's own inline field — the actual connect happens
+      // through `submitAccessToken` below.
+    },
+    async submitAccessToken(_token) {
       // A successful PAT connect (CL-6345's real scope; the GitHub
       // App/OAuth path is CL-6343) arrives back through the same
       // subscription channel the card already holds open — never a
@@ -115,6 +119,7 @@ function buildHarness() {
         repos: REPOS,
         selectedRepoIds: [],
       });
+      return { ok: true };
     },
     async startReviewing(repoIds) {
       const result = await startReviewingRepos(repoIds, REPOS, setupPorts);
@@ -156,6 +161,15 @@ afterEach(() => {
   root = null;
 });
 
+function typeInto(element: HTMLInputElement, text: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    globalThis.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(element, text);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 async function mount(actions: ConnectGithubActions) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -188,6 +202,22 @@ describe("connect-github round trip (CL-6345)", () => {
     ) as HTMLButtonElement;
     await act(async () => {
       connectButton.click();
+    });
+
+    const tokenField = el.querySelector(
+      "#connect-github-token",
+    ) as HTMLInputElement;
+    await act(async () => {
+      typeInto(tokenField, "ghp_test123");
+    });
+    const submitTokenButton = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submitTokenButton.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
     expect(el.textContent).toContain("Connected to GitHub as octocat");

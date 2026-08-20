@@ -55,6 +55,15 @@ async function mount(props: ConnectGithubCardProps) {
   return mountElement(<ConnectGithubBlockView {...props} />);
 }
 
+function typeInto(element: HTMLInputElement, text: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    globalThis.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(element, text);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 /** A small stateful harness standing in for the next slice's real wiring --
  * selection lives in the parent, exactly as `ConnectGithubCardProps`
  * requires, so these tests exercise the real controlled-selection contract
@@ -98,7 +107,7 @@ describe("connect GitHub card — 2a disconnected", () => {
       onConnect: () => {
         connected = true;
       },
-      onUseAccessToken: () => undefined,
+      onSubmitAccessToken: () => Promise.resolve({ ok: true }),
     });
 
     expect(el.textContent).toContain(
@@ -116,14 +125,11 @@ describe("connect GitHub card — 2a disconnected", () => {
     expect(connected).toBe(true);
   });
 
-  test("the token link sits inside the trust sentence, verbatim, and fires its own callback", async () => {
-    let tokenClicked = false;
+  test("the token link sits inside the trust sentence, verbatim, and opens the inline field", async () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
-      onUseAccessToken: () => {
-        tokenClicked = true;
-      },
+      onSubmitAccessToken: () => Promise.resolve({ ok: true }),
     });
 
     expect(el.textContent).toContain(
@@ -138,7 +144,80 @@ describe("connect GitHub card — 2a disconnected", () => {
     await act(async () => {
       tokenLink?.click();
     });
-    expect(tokenClicked).toBe(true);
+
+    const field = el.querySelector("#connect-github-token");
+    expect(field).not.toBeNull();
+  });
+
+  test("submitting a token calls onSubmitAccessToken and closes the field on success", async () => {
+    const submitted: string[] = [];
+    const el = await mount({
+      kind: "disconnected",
+      onConnect: () => undefined,
+      onSubmitAccessToken: (token) => {
+        submitted.push(token);
+        return Promise.resolve({ ok: true });
+      },
+    });
+
+    const openLink = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Use an access token instead",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openLink.click();
+    });
+
+    const field = el.querySelector("#connect-github-token") as HTMLInputElement;
+    await act(async () => {
+      typeInto(field, "ghp_test123");
+    });
+
+    const submit = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submit.click();
+    });
+    // Flush the async submit handler's own state updates.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(submitted).toEqual(["ghp_test123"]);
+    expect(el.querySelector("#connect-github-token")).toBeNull();
+  });
+
+  test("a rejected token shows the error inline and keeps the field open", async () => {
+    const el = await mount({
+      kind: "disconnected",
+      onConnect: () => undefined,
+      onSubmitAccessToken: () =>
+        Promise.resolve({ ok: false, message: "Bad token." }),
+    });
+
+    const openLink = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Use an access token instead",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openLink.click();
+    });
+
+    const field = el.querySelector("#connect-github-token") as HTMLInputElement;
+    await act(async () => {
+      typeInto(field, "ghp_bad");
+    });
+    const submit = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submit.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(el.textContent).toContain("Bad token.");
+    expect(el.querySelector("#connect-github-token")).not.toBeNull();
   });
 });
 
@@ -326,7 +405,7 @@ describe("connect GitHub card — accessibility", () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
-      onUseAccessToken: () => undefined,
+      onSubmitAccessToken: () => Promise.resolve({ ok: true }),
     });
 
     const buttons = el.querySelectorAll("button");
