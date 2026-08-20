@@ -126,15 +126,25 @@ are NOT from upstream faremeter/interchange at all — upstream's own
 commit. They are copied from gtm-workbench's own `packages/workflow-host`
 workspace fork (see `docs/revendor-inventory.md` for the full provenance
 note and why no ordinary upstream-publish kill date applies to this
-sub-delta). `vendor/intx/workflow` (CL-6326) adds an
-`onBodyFailure` policy field to the `onTrigger` primitive: absent (or
-`"end"`) preserves terminal-is-final exactly as before, `"continue"` lets a
-body run that ends `failed` (never `cancelled`) leave the section
-subscribed instead of ending the whole run, so one bad turn does not kill a
-long-lived section. The gate is read live off `primitive.onBodyFailure` at
-both the steady-state drive loop and the crash-recovery resume plan in
-`runtime/run.ts`, mirroring how `awaitSignal.onTimeout` is read live rather
-than defaulted at construction. `vendor/intx/inference-catalog`'s own local
+sub-delta). `vendor/intx/workflow` (CL-6326, CL-6324) gives
+`onTrigger` an `onBodyFailure?: "end" | "continue"` policy: absent or `"end"`
+preserves terminal-is-final, while `"continue"` lets a long-lived section
+re-arm past a `failed` body occurrence instead of one bad turn permanently
+ending the section. Cancellation is unaffected — it reflects a drain/operator
+decision, not a turn-level error — and the failed occurrence stays on the
+run's durable audit log either way, so the policy makes it non-fatal, never
+silent. The live→inert projector carries the field too, so an authored policy
+survives the child→hub projection the deploy gate hashes rather than being
+dropped on the way. `vendor/intx/hub-sessions` (CL-6324) adds a third
+code-sourced deploy front, `deployAdoptedCodeSourcedWorkflow`, which deploys
+onto shared capacity while adopting an anchor `workflow_run` row the caller
+already owns. Neither upstream front can: `deployWorkflowFromSource` inserts
+its anchor row, which collides with a folded run's existing one, and threads
+no credential cipher; `deployPreparedCodeSourcedWorkflow` updates a
+pre-existing row and threads the cipher but only under the
+allocation-ownership lock, so it cannot run on shared capacity. The new front
+composes the same private halves and follows the prepared front's semantics
+minus that lock. `vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
 Each package's `VENDORED-FROM` file restates its own delta.
