@@ -28,8 +28,16 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
+import type { Slug } from "@corbits/slug";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
+import {
+  AGENTS_PATH_PREFIX,
+  PLUGINS_PATH_PREFIX,
+  ROUTINES_PATH_PREFIX,
+  SKILLS_PATH_PREFIX,
+  detailSlugFromPath,
+} from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
   LegacyLibraryRedirect,
@@ -72,6 +80,20 @@ const PluginsRoute = lazy(async () => ({
 const SettingsRoute = lazy(async () => ({
   default: (await import("./pages/settings-page")).SettingsRoute,
 }));
+const AgentDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders")).AgentDetailPlaceholder,
+}));
+const SkillDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders")).SkillDetailPlaceholder,
+}));
+const PluginDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders"))
+    .PluginDetailPlaceholder,
+}));
+const RoutineDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders"))
+    .RoutineDetailPlaceholder,
+}));
 
 /** The signed-out screen (CL-6369) — a real route, not a conditional swap:
  * any unauthenticated request for another path bounces here with `?next=`
@@ -95,6 +117,32 @@ export const SETTINGS_PATH = "/settings";
  * row of its own, only the "+" control and the palette reach it. */
 export const NEW_WORKBENCH_PATH = "/new";
 
+/** Detail routes are addressed by slug (CL-6412): one route path per
+ * entity, ending in this segment. A path matches only when its last
+ * segment is a real slug, so `/agents/wfd_1` still resolves to the Agents
+ * roster (which owns id deep links) while `/agents/triage-bot` resolves to
+ * the agent's own screen. */
+const SLUG_SEGMENT = "/:slug";
+
+export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const PLUGIN_DETAIL_PATH = `${PLUGINS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${SLUG_SEGMENT}`;
+
+function slugForDetailRoute(routePath: string, path: string): Slug | null {
+  return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
+}
+
+/** A detail route only ever renders for a path `matchesRoute` already
+ * accepted, which is what makes the slug non-null here. */
+function detailRouteSlug(routePath: string, path: string): Slug {
+  const slug = slugForDetailRoute(routePath, path);
+  if (slug === null) {
+    throw new Error(`${routePath} rendered for a path with no slug: ${path}`);
+  }
+  return slug;
+}
+
 export type AppRoute = {
   readonly path: string;
   readonly label: string;
@@ -114,12 +162,23 @@ export type AppRoute = {
 
 /**
  * Matches nested product paths (`/routines/:id`, `/insights/...`) plus
- * conversation deep links (which also match when Myra land `/` is active).
- * Other routes are exact path matches.
+ * conversation deep links (which also match when Myra land `/` is active)
+ * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
+ * exact path matches. A roster prefix still matches its own nested paths,
+ * so the sidebar footer row stays lit on a detail screen — except Plugins,
+ * whose roster consumes no path segment of its own: there, only the bare
+ * path and a slug detail resolve, and any other nested path is unroutable
+ * rather than quietly showing the roster.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
     return isWorkbenchPath(path) || path === "/";
+  }
+  if (routePath.endsWith(SLUG_SEGMENT)) {
+    return slugForDetailRoute(routePath, path) !== null;
+  }
+  if (routePath === PLUGINS_PATH_PREFIX) {
+    return path === routePath || detailSlugFromPath(path, routePath) !== null;
   }
   if (
     routePath === "/routines" ||
@@ -181,6 +240,19 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
+    // Detail routes come before their roster: the roster prefix matches
+    // everything beneath it, so the more specific slug route has to be
+    // found first.
+    path: ROUTINE_DETAIL_PATH,
+    label: "Routine",
+    icon: <FlowArrow />,
+    render: (path: string) => (
+      <RoutineDetailPlaceholder
+        slug={detailRouteSlug(ROUTINE_DETAIL_PATH, path)}
+      />
+    ),
+  },
+  {
     path: "/routines",
     label: "Routines",
     icon: <FlowArrow />,
@@ -207,6 +279,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
+    path: AGENT_DETAIL_PATH,
+    label: "Agent",
+    icon: <Robot />,
+    render: (path: string) => (
+      <AgentDetailPlaceholder slug={detailRouteSlug(AGENT_DETAIL_PATH, path)} />
+    ),
+  },
+  {
     path: "/agents",
     label: "Agents",
     icon: <Robot />,
@@ -222,6 +302,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     icon: <Robot />,
     render: (path: string, navigate: (to: string) => void) => (
       <LegacySettingsAgentsRedirect path={path} navigate={navigate} />
+    ),
+  },
+  {
+    path: SKILL_DETAIL_PATH,
+    label: "Skill",
+    icon: <Lightning />,
+    render: (path: string) => (
+      <SkillDetailPlaceholder slug={detailRouteSlug(SKILL_DETAIL_PATH, path)} />
     ),
   },
   {
@@ -249,10 +337,19 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
-    // Route entry only — CL-6090 builds the page; the footer link into it
-    // is CL-6088's (the single-column shell rework), so this is
-    // deliberately absent from RAIL_PRIMARY_PATHS / RAIL_UTILITY_PATHS /
-    // NAV_ROUTES below.
+    path: PLUGIN_DETAIL_PATH,
+    label: "Plugin",
+    icon: <SquaresFour />,
+    render: (path: string) => (
+      <PluginDetailPlaceholder
+        slug={detailRouteSlug(PLUGIN_DETAIL_PATH, path)}
+      />
+    ),
+  },
+  {
+    // Reached from the sidebar footer and by deep link, never from
+    // `NAV_ROUTES` — Plugins is deliberately absent from the palette's
+    // Pages group.
     path: "/plugins",
     label: "Plugins",
     icon: <SquaresFour />,

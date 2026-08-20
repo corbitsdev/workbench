@@ -1,52 +1,54 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  AGENTS_PATH_PREFIX,
+  agentIdFromPath,
+  detailSlugFromPath,
   settingsEntityIdFromPath,
   settingsSectionIdFromPath,
 } from "./path-ids";
 
-describe("settingsSectionIdFromPath", () => {
-  test("returns null for the bare /settings path", () => {
-    expect(settingsSectionIdFromPath("/settings")).toBeNull();
+describe("detailSlugFromPath", () => {
+  test("reads the slug a detail path carries", () => {
+    expect<string | null>(
+      detailSlugFromPath("/agents/triage-bot", AGENTS_PATH_PREFIX),
+    ).toBe("triage-bot");
   });
 
-  test("extracts the section id from /settings/:id", () => {
-    expect(settingsSectionIdFromPath("/settings/people")).toBe("people");
+  test("rejects the bare prefix, another prefix, and a nested path", () => {
+    expect(detailSlugFromPath("/agents", AGENTS_PATH_PREFIX)).toBeNull();
+    expect(detailSlugFromPath("/agents/", AGENTS_PATH_PREFIX)).toBeNull();
+    expect(
+      detailSlugFromPath("/skills/triage-bot", AGENTS_PATH_PREFIX),
+    ).toBeNull();
+    expect(
+      detailSlugFromPath("/agents/triage-bot/runs", AGENTS_PATH_PREFIX),
+    ).toBeNull();
   });
 
-  test("extracts only the first segment when a sub-id follows", () => {
-    expect(settingsSectionIdFromPath("/settings/agents/wfd_1")).toBe("agents");
+  test("rejects an id-shaped segment so id deep links stay with the roster", () => {
+    expect(detailSlugFromPath("/agents/wfd_1", AGENTS_PATH_PREFIX)).toBeNull();
   });
 
-  test("decodes an encoded section id", () => {
-    expect(settingsSectionIdFromPath("/settings/a%2Fb")).toBe("a/b");
-  });
-
-  test("returns null for an unrelated path", () => {
-    expect(settingsSectionIdFromPath("/agents/agent_1")).toBeNull();
+  test("rejects percent-escapes rather than decoding them", () => {
+    expect(detailSlugFromPath("/agents/%", AGENTS_PATH_PREFIX)).toBeNull();
+    expect(
+      detailSlugFromPath("/agents/%E0%A4%A", AGENTS_PATH_PREFIX),
+    ).toBeNull();
+    expect(
+      detailSlugFromPath("/agents/triage%2Dbot", AGENTS_PATH_PREFIX),
+    ).toBeNull();
   });
 });
 
-describe("settingsEntityIdFromPath", () => {
-  test("extracts the sub-id under a section", () => {
-    expect(settingsEntityIdFromPath("/settings/agents/wfd_1", "agents")).toBe(
-      "wfd_1",
-    );
+describe("id extraction", () => {
+  test("decodes an escaped id", () => {
+    expect(agentIdFromPath("/agents/wfd%201")).toBe("wfd 1");
   });
 
-  test("decodes an encoded sub-id", () => {
-    expect(settingsEntityIdFromPath("/settings/skills/a%2Fb", "skills")).toBe(
-      "a/b",
-    );
-  });
-
-  test("returns null when the path has no sub-id", () => {
-    expect(settingsEntityIdFromPath("/settings/agents", "agents")).toBeNull();
-  });
-
-  test("returns null for a different section", () => {
-    expect(
-      settingsEntityIdFromPath("/settings/skills/skill_1", "agents"),
-    ).toBeNull();
+  test("a malformed escape names no entity instead of throwing", () => {
+    expect(agentIdFromPath("/agents/%")).toBeNull();
+    expect(settingsSectionIdFromPath("/settings/%E0%A4%A")).toBeNull();
+    expect(settingsEntityIdFromPath("/settings/agents/%", "agents")).toBeNull();
   });
 });

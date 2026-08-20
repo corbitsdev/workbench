@@ -35,6 +35,7 @@
     "@corbits/routines": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
     "@corbits/shell-layout": "workspace:*",
+    "@corbits/slug": "workspace:*",
     "@corbits/tasks-ui": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/icons": "workspace:*",

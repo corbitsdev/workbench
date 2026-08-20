@@ -42,6 +42,7 @@ import type { APIQuery } from "@corbits/api-query";
 
 import type { Principal } from "../api";
 import { useBench } from "../bench-context";
+import { routineIdFromPath } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
 import { meKeys, tenantKeys } from "../query-client";
 import { cadenceLabel, approximateNextRun } from "../routine-trigger";
@@ -477,17 +478,6 @@ export function GlobalRoutinesList({
       </TableBody>
     </Table>
   );
-}
-
-const ROUTINES_PATH_PREFIX = "/routines";
-
-/** A deep link into one routine (the context menu's "Open routine",
- * `/routines/:id` bookmarks) still lands here and expands that row — the
- * page itself is one flat list now, never a route per routine. */
-function routineIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${ROUTINES_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(ROUTINES_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
 }
 
 export function RoutinesRoute({

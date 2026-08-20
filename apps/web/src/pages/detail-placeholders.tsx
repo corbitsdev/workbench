@@ -1,0 +1,98 @@
+// Placeholders for the slug-addressed detail screens (CL-6412 routes them;
+// the screens themselves are their own tickets). Each renders the slug it
+// was routed for and a way back to its roster, so the route is real and
+// testable before the page behind it exists.
+
+import { Button, EmptyState, PageShell } from "@corbits/react-ui";
+import { FlowArrow, Lightning, Robot, SquaresFour } from "@corbits/icons";
+import type { Slug } from "@corbits/slug";
+import type { ReactNode } from "react";
+
+import { Link } from "../navigation";
+import {
+  AGENTS_PATH_PREFIX,
+  PLUGINS_PATH_PREFIX,
+  ROUTINES_PATH_PREFIX,
+  SKILLS_PATH_PREFIX,
+} from "../path-ids";
+import { StageTopBar } from "../shell/stage-top-bar";
+
+function DetailPlaceholder({
+  slug,
+  entity,
+  rosterLabel,
+  rosterPath,
+  icon,
+}: {
+  readonly slug: Slug;
+  readonly entity: string;
+  readonly rosterLabel: string;
+  readonly rosterPath: string;
+  readonly icon: ReactNode;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar title={entity} subtitle={slug} />
+      <PageShell width="full" className="page-fill">
+        <EmptyState
+          icon={icon}
+          title={slug}
+          description={`This ${entity.toLowerCase()} page is still being built.`}
+          action={
+            <Button asChild variant="outline">
+              <Link to={rosterPath}>{`Back to ${rosterLabel}`}</Link>
+            </Button>
+          }
+        />
+      </PageShell>
+    </div>
+  );
+}
+
+export function AgentDetailPlaceholder({ slug }: { readonly slug: Slug }) {
+  return (
+    <DetailPlaceholder
+      slug={slug}
+      entity="Agent"
+      rosterLabel="Agents"
+      rosterPath={AGENTS_PATH_PREFIX}
+      icon={<Robot />}
+    />
+  );
+}
+
+export function SkillDetailPlaceholder({ slug }: { readonly slug: Slug }) {
+  return (
+    <DetailPlaceholder
+      slug={slug}
+      entity="Skill"
+      rosterLabel="Skills"
+      rosterPath={SKILLS_PATH_PREFIX}
+      icon={<Lightning />}
+    />
+  );
+}
+
+export function PluginDetailPlaceholder({ slug }: { readonly slug: Slug }) {
+  return (
+    <DetailPlaceholder
+      slug={slug}
+      entity="Plugin"
+      rosterLabel="Plugins"
+      rosterPath={PLUGINS_PATH_PREFIX}
+      icon={<SquaresFour />}
+    />
+  );
+}
+
+export function RoutineDetailPlaceholder({ slug }: { readonly slug: Slug }) {
+  return (
+    <DetailPlaceholder
+      slug={slug}
+      entity="Routine"
+      rosterLabel="Routines"
+      rosterPath={ROUTINES_PATH_PREFIX}
+      icon={<FlowArrow />}
+    />
+  );
+}

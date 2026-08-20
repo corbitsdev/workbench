@@ -146,6 +146,7 @@
         "@corbits/routines": "workspace:*",
         "@corbits/settings-ui": "workspace:*",
         "@corbits/shell-layout": "workspace:*",
+        "@corbits/slug": "workspace:*",
         "@corbits/tasks-ui": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1177,6 +1178,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/slug": {
+      "name": "@corbits/slug",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/task-dispatch-tools": {
       "name": "@corbits/task-dispatch-tools",
       "version": "0.0.2",
@@ -2154,6 +2163,8 @@
     "@corbits/skills-tools": ["@corbits/skills-tools@workspace:packages/skills-tools"],
 
     "@corbits/slack-tag": ["@corbits/slack-tag@workspace:packages/slack-tag"],
+
+    "@corbits/slug": ["@corbits/slug@workspace:packages/slug"],
 
     "@corbits/task-dispatch-tools": ["@corbits/task-dispatch-tools@workspace:packages/task-dispatch-tools"],
 
