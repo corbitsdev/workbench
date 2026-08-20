@@ -17,13 +17,13 @@ bench work with no configuration at all.
 
 Everything else is derived at read time from the platform's own catalog:
 
-| Answer | Comes from |
-| --- | --- |
-| what this bench can reach | `listVisibleOfferings` ∩ providers with a credential |
-| what a model can do | `model_offering.capabilities` |
-| what it costs | `model_pricing` → `resolveActivePrice`, normalized to USD per million tokens |
-| which models fit a concept | the offering advertises every capability the concept requires |
-| the order | cheapest first for the concept's own token mix, then catalog priority |
+| Answer                     | Comes from                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| what this bench can reach  | `listVisibleOfferings` ∩ providers with a credential                         |
+| what a model can do        | `model_offering.capabilities`                                                |
+| what it costs              | `model_pricing` → `resolveActivePrice`, normalized to USD per million tokens |
+| which models fit a concept | the offering advertises every capability the concept requires                |
+| the order                  | cheapest first for the concept's own token mix, then catalog priority        |
 
 ## The modules
 
