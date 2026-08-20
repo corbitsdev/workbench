@@ -12,6 +12,7 @@
     "./participants": "./src/participants.ts",
     "./parts": "./src/parts.ts",
     "./reaction-emoji": "./src/reaction-emoji.ts",
+    "./stream-events": "./src/stream-events.ts",
     "./blocks": "./src/blocks.ts",
     "./agent-address": "./src/agent-address.ts",
     "./workbench-host-naming": "./src/workbench-host-naming.ts"

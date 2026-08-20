@@ -132,8 +132,9 @@ export function useWorkbenchStream(
 
       // "chat.message" is every message posted into the room;
       // "chat.agent" carries the agent-run events (inference progress,
-      // turn lifecycle) that sit between them. Together they are what
-      // makes a connected stream refresh the timeline at all.
+      // turn lifecycle) that sit between them. "chat.presence"/
+      // "chat.presence.snapshot" are the who's-here roster (CL-6328), piggybacked
+      // on this same connection rather than a second stream.
       for (const eventType of [
         "chat.message",
         "chat.agent",
@@ -141,6 +142,8 @@ export function useWorkbenchStream(
         "chat.typing",
         "chat.reaction",
         "chat.pin",
+        "chat.presence",
+        "chat.presence.snapshot",
         "message",
       ]) {
         source.addEventListener(eventType, forward(eventType));

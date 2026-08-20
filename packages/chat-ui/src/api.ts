@@ -943,6 +943,26 @@ export function workbenchStreamUrl(
   return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/stream`;
 }
 
+/**
+ * `POST .../presence` (CL-6328, see `packages/chat/src/routes.ts`): keeps
+ * this principal's `lastActiveAt` fresh on the who's-here roster while its
+ * stream connection sits open — "here at all" already comes for free from
+ * the open connection itself, so this is called on real activity, never
+ * on a polling interval. Best-effort: a dropped ping just means the next
+ * one (or the eventual `"offline"` on disconnect) catches up.
+ */
+export function pingWorkbenchPresence(
+  tenantId: string,
+  workbenchId: string,
+): Promise<void> {
+  return fetch(
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/presence`,
+    { method: "POST" },
+  )
+    .then(() => undefined)
+    .catch(() => undefined);
+}
+
 // `POST`/`GET .../blocks/:blockId/responses` (see
 // `packages/chat/src/routes.ts`): the poll/form round-trip. `own` is only
 // ever this signed-in principal's own response — a poll's `tally` is the

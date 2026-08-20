@@ -43,7 +43,6 @@ import {
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
-import { usePresenceRoom } from "../presence/use-presence-room";
 
 export function ChatPage({
   path,
@@ -68,13 +67,11 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
-  // Who's live in this workbench right now, beyond the static participants
-  // list — the server derives displayName/color, so no identity data
-  // needs resolving here (see `usePresenceRoom`).
-  const { members: presenceMembers } = usePresenceRoom(
-    tenantId,
-    workbenchId === null ? null : `workbench:${workbenchId}`,
-  );
+  // Who's live in this workbench right now is derived inside `ChatWorkspace`
+  // itself now (CL-6328), off the same `/stream` connection as everything
+  // else — no separate `@corbits/presence` room/heartbeat for this surface
+  // any more (that stack still backs the artifact canvas's cursor sync,
+  // which has no chat stream of its own to piggyback on).
   const approvalActions = useMemo(
     () =>
       tenantId === null
@@ -245,7 +242,6 @@ export function ChatPage({
       onCreateRoutineInSpace={(inSpaceWorkbenchId) =>
         openRoutine({ routineId: null, workbenchId: inSpaceWorkbenchId })
       }
-      presenceMembers={presenceMembers}
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onBackToWorkbenchList={() => navigate(workbenchPath(null))}
       {...(onSignIn !== undefined ? { onSignIn } : {})}

@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChatApiError, sendMessage } from "./api";
+import { ChatApiError, pingWorkbenchPresence, sendMessage } from "./api";
 import type { MessageItem, MessagesResponse } from "./api";
 import { partsForSend } from "./composer";
 import type { ComposerAttachment, ComposerSendPayload } from "./composer";
@@ -138,7 +138,6 @@ export function useOptimisticSends(args: {
   readonly openThreadId: string | null;
   readonly pendingParentMessageId: string | null;
   readonly openThreadById: (threadId: string) => void;
-  readonly refreshFeed: () => void;
   /** Fires once a send lands in a workbench that has an agent in it: a
    * reply is owed, so the typing indicator shows now rather than sitting
    * silent until the turn's first stream event arrives. */
@@ -155,7 +154,6 @@ export function useOptimisticSends(args: {
     openThreadId,
     pendingParentMessageId,
     openThreadById,
-    refreshFeed,
     noteAwaitingReply,
     hasAgentParticipant,
     restoreDraft,
@@ -254,7 +252,12 @@ export function useOptimisticSends(args: {
       // is owed, so show the typing indicator now rather than sitting
       // silent until the turn's first stream event arrives.
       if (hasAgentParticipant) noteAwaitingReply();
-      refreshFeed();
+      // No follow-up GET (CL-6328): the confirmed row is already written
+      // above, and this workbench's own `chat.message` echo (dedup'd by
+      // `clientId`/`id` in `applyStreamMessage`) is what every *other*
+      // connection learns the send from. Sending is real activity, so it
+      // doubles as this connection's presence ping.
+      void pingWorkbenchPresence(tenantId, activeWorkbenchId);
     } catch (cause) {
       if (cause instanceof ChatApiError && cause.status === 403) {
         toast(CHAT_STRINGS.mentionForbidden);

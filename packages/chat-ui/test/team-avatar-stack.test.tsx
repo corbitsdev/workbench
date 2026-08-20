@@ -1,8 +1,9 @@
 // The workbench header's combined who's-active stack: every agent
 // participant on the workbench plus every human currently reflected in live
-// presence, overlapping with a title tooltip, collapsing anything past
-// TEAM_AVATAR_STACK_LIMIT into a "+N" chip. Mirrors
-// presence-stack.test.tsx's stub-fetch/mount harness.
+// presence (CL-6328: the workbench's own `chat.presence.snapshot` stream
+// event, not a host-supplied prop), overlapping with a title tooltip,
+// collapsing anything past TEAM_AVATAR_STACK_LIMIT into a "+N" chip.
+// Mirrors presence-stack.test.tsx's stub-fetch/mount harness.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -17,11 +18,26 @@ class StubEventSource {
   static instances: StubEventSource[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  readyState = 0;
+  readyState = 1;
+  listeners = new Map<string, (message: MessageEvent) => void>();
+
   constructor(readonly url: string) {
     StubEventSource.instances.push(this);
   }
-  addEventListener() {}
+
+  addEventListener(
+    eventType: string,
+    listener: (message: MessageEvent) => void,
+  ) {
+    this.listeners.set(eventType, listener);
+  }
+
+  emit(eventType: string, data: unknown) {
+    this.listeners.get(eventType)?.({
+      data: JSON.stringify(data),
+    } as MessageEvent);
+  }
+
   close() {
     this.readyState = 2;
   }
@@ -98,8 +114,18 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
-function presenceMember(id: string, name: string) {
-  return { principalId: id, displayName: name, color: "hsl(10 65% 45%)" };
+function firstStream(): StubEventSource {
+  const instance = StubEventSource.instances[0];
+  if (instance === undefined) throw new Error("no stream connected");
+  return instance;
+}
+
+/** A human participant whose bare address (no `@`, so `isAgentAddress`
+ * reads it as human) IS its own principal id — this is what lets the
+ * presence roster's bare `principalId` resolve back to a display name
+ * (`typingLabel`), the same lookup `chat.typing` already relies on. */
+function humanParticipant(principalId: string, handle: string) {
+  return { address: principalId, handle };
 }
 
 describe("workbench header team avatar stack", () => {
@@ -107,13 +133,20 @@ describe("workbench header team avatar stack", () => {
     stubFetch({
       participants: [
         { address: "myra@agents.example", handle: "Myra" },
-        { address: "prn_bob", handle: "Bob" },
+        humanParticipant("prn_alice", "Alice"),
       ],
     });
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      presenceMembers: [presenceMember("prn_alice", "Alice")],
+    });
+    await harness.settle();
+    act(() => {
+      firstStream().emit("chat.presence.snapshot", {
+        members: [
+          { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
+        ],
+      });
     });
     await harness.settle();
 
@@ -138,21 +171,28 @@ describe("workbench header team avatar stack", () => {
   });
 
   test("collapses anything past the limit into a +N chip", async () => {
-    const presenceMembers = [
-      "Alice",
-      "Bob",
-      "Carla",
-      "Dana",
-      "Eve",
-      "Finn",
-    ].map((name, index) => presenceMember(`prn_${index}`, name));
+    const humanNames = ["Alice", "Bob", "Carla", "Dana", "Eve", "Finn"];
+    const humanParticipants = humanNames.map((name, index) =>
+      humanParticipant(`prn_${index}`, name),
+    );
     stubFetch({
-      participants: [{ address: "myra@agents.example", handle: "Myra" }],
+      participants: [
+        { address: "myra@agents.example", handle: "Myra" },
+        ...humanParticipants,
+      ],
     });
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      presenceMembers,
+    });
+    await harness.settle();
+    act(() => {
+      firstStream().emit("chat.presence.snapshot", {
+        members: humanNames.map((_, index) => ({
+          principalId: `prn_${index}`,
+          lastActiveAt: "2026-01-01T00:00:00Z",
+        })),
+      });
     });
     await harness.settle();
 

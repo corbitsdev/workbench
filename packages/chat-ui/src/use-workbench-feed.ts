@@ -10,6 +10,7 @@
 // thread per event.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UnauthenticatedError } from "@corbits/api-query";
 import {
@@ -19,7 +20,13 @@ import {
   listPinnedMessages,
   listThreads,
 } from "./api";
-import type { MessageItem, PinnedMessage, WorkbenchThreadRow } from "./api";
+import type {
+  MessageItem,
+  MessagesResponse,
+  PinnedMessage,
+  ReactionSummary,
+  WorkbenchThreadRow,
+} from "./api";
 
 /** Whether this workbench's mailbox has loaded, and why not if it hasn't.
  * The items themselves are a separate question — which slice of the
@@ -81,6 +88,196 @@ export function chatThreadsQueryKey(
 }
 export function chatPinsQueryKey(tenantId: string, workbenchId: string | null) {
   return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "pins"] as const;
+}
+
+/**
+ * Folds a freshly published `chat.message` row straight into the messages
+ * cache (CL-6328) — the §6/1.2 bar is zero refetches triggered by a stream
+ * event, and this event already carries everything a `GET .../messages`
+ * page item would. Deduped by `id` or `clientId` so the row this reader's
+ * own optimistic send already wrote (`use-optimistic-sends.ts`) is never
+ * doubled when its own echo arrives back over the stream. A message that
+ * belongs to a thread also bumps that thread's `replyCount`/
+ * `lastActivityAt` row in the threads cache — the one piece of thread
+ * metadata `MessageItem` itself doesn't carry (see `./thread-feed.ts`).
+ */
+export function applyStreamMessage(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+  message: MessageItem,
+): void {
+  queryClient.setQueryData(
+    chatMessagesQueryKey(tenantId, workbenchId),
+    (current: MessagesResponse | undefined) => {
+      if (current === undefined) return current;
+      const alreadyPresent = current.items.some(
+        (item) =>
+          item.id === message.id ||
+          (message.clientId !== undefined &&
+            item.clientId === message.clientId),
+      );
+      if (alreadyPresent) return current;
+      return { ...current, items: [...current.items, message] };
+    },
+  );
+  if (message.threadId === undefined) return;
+  queryClient.setQueryData(
+    chatThreadsQueryKey(tenantId, workbenchId),
+    (
+      current:
+        | {
+            readonly rootThreadId: string;
+            readonly items: readonly WorkbenchThreadRow[];
+          }
+        | undefined,
+    ) => {
+      if (current === undefined) return current;
+      const items = current.items.map((row) =>
+        row.id === message.threadId
+          ? {
+              ...row,
+              replyCount: row.replyCount + 1,
+              lastActivityAt: message.createdAt,
+            }
+          : row,
+      );
+      return { ...current, items };
+    },
+  );
+}
+
+/**
+ * Folds a `chat.reaction` delta into the reacted message's own summary —
+ * the emoji, count, and this signed-in principal's own membership in the
+ * reactor set — rather than refetching the row it's about.
+ */
+export function applyStreamReaction(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+  reaction: {
+    readonly messageId: string;
+    readonly emoji: string;
+    readonly principalId: string;
+    readonly added: boolean;
+  },
+  selfPrincipalId: string | undefined,
+): void {
+  const isSelf = reaction.principalId === selfPrincipalId;
+  queryClient.setQueryData(
+    chatMessagesQueryKey(tenantId, workbenchId),
+    (current: MessagesResponse | undefined) => {
+      if (current === undefined) return current;
+      const items = current.items.map((item) => {
+        if (item.id !== reaction.messageId) return item;
+        const reactions = item.reactions ?? [];
+        const existingIndex = reactions.findIndex(
+          (entry) => entry.emoji === reaction.emoji,
+        );
+        let nextReactions: readonly ReactionSummary[];
+        if (reaction.added) {
+          nextReactions =
+            existingIndex === -1
+              ? [
+                  ...reactions,
+                  { emoji: reaction.emoji, count: 1, reactedByMe: isSelf },
+                ]
+              : reactions.map((entry, index) =>
+                  index === existingIndex
+                    ? {
+                        ...entry,
+                        count: entry.count + 1,
+                        reactedByMe: entry.reactedByMe || isSelf,
+                      }
+                    : entry,
+                );
+        } else {
+          // A removal for an emoji this cache never saw added is a
+          // no-op, not a negative count.
+          const existing = reactions[existingIndex];
+          const nextCount = existing === undefined ? 0 : existing.count - 1;
+          if (existing === undefined) {
+            nextReactions = reactions;
+          } else if (nextCount <= 0) {
+            nextReactions = reactions.filter(
+              (_, index) => index !== existingIndex,
+            );
+          } else {
+            nextReactions = reactions.map((entry, index) =>
+              index === existingIndex
+                ? {
+                    ...entry,
+                    count: nextCount,
+                    reactedByMe: isSelf ? false : entry.reactedByMe,
+                  }
+                : entry,
+            );
+          }
+        }
+        return { ...item, reactions: nextReactions };
+      });
+      return { ...current, items };
+    },
+  );
+}
+
+/**
+ * Folds a `chat.pin`/unpin delta into both the message's own `pinned` flag
+ * and the pinned strip's list — the strip's row is built from the message
+ * already sitting in the messages cache plus `pinnedBy`/`pinnedAt`, so
+ * pinning never needs a `GET /pins` round-trip.
+ */
+export function applyStreamPin(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+  pin: {
+    readonly messageId: string;
+    readonly pinned: boolean;
+    readonly pinnedBy?: string;
+    readonly pinnedAt?: string;
+  },
+): void {
+  queryClient.setQueryData(
+    chatMessagesQueryKey(tenantId, workbenchId),
+    (current: MessagesResponse | undefined) => {
+      if (current === undefined) return current;
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.id === pin.messageId ? { ...item, pinned: pin.pinned } : item,
+        ),
+      };
+    },
+  );
+  queryClient.setQueryData(
+    chatPinsQueryKey(tenantId, workbenchId),
+    (current: readonly PinnedMessage[] | undefined) => {
+      if (current === undefined) return current;
+      if (!pin.pinned) {
+        return current.filter((entry) => entry.id !== pin.messageId);
+      }
+      if (current.some((entry) => entry.id === pin.messageId)) return current;
+      if (pin.pinnedBy === undefined || pin.pinnedAt === undefined) {
+        return current;
+      }
+      const messages = queryClient.getQueryData<MessagesResponse>(
+        chatMessagesQueryKey(tenantId, workbenchId),
+      );
+      const message = messages?.items.find((item) => item.id === pin.messageId);
+      if (message === undefined) return current;
+      return [
+        ...current,
+        {
+          ...message,
+          pinned: true,
+          pinnedBy: pin.pinnedBy,
+          pinnedAt: pin.pinnedAt,
+        },
+      ];
+    },
+  );
 }
 
 export interface WorkbenchFeed {
