@@ -17,6 +17,9 @@ export {
   WorkbenchTemplateParticipant,
   WorkbenchTemplateRoutine,
   WorkbenchTemplateWebhookTrigger,
+  WorkbenchTemplateManifestSchema,
+  parseWorkbenchTemplateManifest,
+  serializeWorkbenchTemplateManifest,
   templateBlockAssetNames,
   workbenchTemplate,
 } from "./templates";
