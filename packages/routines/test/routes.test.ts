@@ -789,6 +789,94 @@ describe("createRoutineRoutes", () => {
     });
   });
 
+  // CL-6375: a template-minted routine (e.g. a seeded default preset)
+  // must never re-create itself or re-announce on a second seed call —
+  // real create-if-absent, not a check-then-insert race.
+  describe("presetKey (create-if-absent)", () => {
+    function fakeDeliverySpaceMinting() {
+      let createCalls = 0;
+      const compensatedWorkbenchIds: string[] = [];
+      return {
+        get createCalls() {
+          return createCalls;
+        },
+        compensatedWorkbenchIds,
+        async createDeliverySpace() {
+          createCalls += 1;
+          const workbenchId = `ch_minted_${createCalls}`;
+          return {
+            workbenchId,
+            compensate: async () => {
+              compensatedWorkbenchIds.push(workbenchId);
+            },
+          };
+        },
+      };
+    }
+
+    test("a second create with the same presetKey returns 200 and reuses the first row, never a second one", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const body = { ...VALID_BODY, presetKey: "workbench-digest" };
+
+      const first = await createRoutine(app, body);
+      const second = await createRoutine(app, body);
+
+      expect(first.response.status).toBe(201);
+      expect(second.response.status).toBe(200);
+      expect(second.body["id"]).toBe(first.body["id"]);
+
+      const rows = await deps.store.listRoutines(TENANT.id);
+      expect(rows.length).toBe(1);
+    });
+
+    test("only the genuine first creation posts the 'Created routine' notice", async () => {
+      const workbenchNotice = fakeWorkbenchNotice();
+      const deps = buildDeps({ workbenchNotice });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const body = { ...VALID_BODY, presetKey: "workbench-digest" };
+
+      await createRoutine(app, body);
+      await createRoutine(app, body);
+      await createRoutine(app, body);
+
+      expect(workbenchNotice.calls.length).toBe(1);
+    });
+
+    test("a losing create-if-absent request compensates (deletes) the space it just provisioned", async () => {
+      const deliverySpace = fakeDeliverySpaceMinting();
+      const deps = buildDeps({ deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryWorkbenchId: _drop, ...withoutWorkbench } = VALID_BODY;
+      const body = { ...withoutWorkbench, presetKey: "workbench-digest" };
+
+      const first = await createRoutine(app, body);
+      const second = await createRoutine(app, body);
+
+      expect(first.response.status).toBe(201);
+      expect(second.response.status).toBe(200);
+      // The winner's own space stays bound; the loser's freshly-minted
+      // space is the one compensated away.
+      expect(second.body["deliveryWorkbenchId"]).toBe(
+        first.body["deliveryWorkbenchId"],
+      );
+      expect(deliverySpace.createCalls).toBe(2);
+      expect(deliverySpace.compensatedWorkbenchIds).toEqual(["ch_minted_2"]);
+    });
+
+    test("a plain create (no presetKey) is unaffected — two same-named routines are both created", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+
+      const first = await createRoutine(app, VALID_BODY);
+      const second = await createRoutine(app, VALID_BODY);
+
+      expect(first.response.status).toBe(201);
+      expect(second.response.status).toBe(201);
+      expect(second.body["id"]).not.toBe(first.body["id"]);
+    });
+  });
+
   describe("validateRoutineInput", () => {
     test("creates without validation when no port is wired (prior behavior)", async () => {
       const deps = buildDeps();

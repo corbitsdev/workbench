@@ -223,6 +223,104 @@ describe("ensureDefaultRoutines", () => {
     );
   });
 
+  test("sends each preset's assetName as presetKey — the create-if-absent identity", async () => {
+    const { log } = collector();
+    const createCalls: { body: unknown }[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: [definitionRow("wfd_digest", "workbench-digest")],
+            nextCursor: null,
+          },
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] } };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        createCalls.push({ body });
+        return {
+          status: 201,
+          data: routineRow({ id: "rtn_1", name: "Daily digest" }),
+        };
+      }
+      if (
+        method === "PATCH" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/routines/`)
+      ) {
+        return { status: 200, data: {} };
+      }
+      return undefined;
+    };
+
+    await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
+
+    expect(createCalls[0]?.body).toMatchObject({
+      presetKey: "workbench-digest",
+    });
+  });
+
+  // CL-6375: even when the app-level "already present" check races
+  // (two overlapping seed calls both list zero existing routines, so
+  // both POST), the server's own create-if-absent guarantee means only
+  // one of the two POSTs actually mints a row. `ensureDefaultRoutines`
+  // must read a 200 as "already exists" — no duplicate disable, no
+  // treating it as a fresh seed.
+  test("a 200 create response (lost the create-if-absent race) is treated as already-seeded, not re-disabled", async () => {
+    const { lines, log } = collector();
+    const patchCalls: { id: string }[] = [];
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: [definitionRow("wfd_digest", "workbench-digest")],
+            nextCursor: null,
+          },
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        // The app-level pre-check itself raced and saw nothing yet —
+        // the server is the one that actually caught the duplicate.
+        return { status: 200, data: { items: [] } };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return {
+          status: 200,
+          data: routineRow({
+            id: "rtn_winner",
+            name: "Daily digest",
+            deliveryWorkbenchId: "ch_winner",
+            enabled: false,
+          }),
+        };
+      }
+      if (
+        method === "PATCH" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/routines/`)
+      ) {
+        patchCalls.push({ id: path.split("/").pop() ?? "" });
+        return { status: 200, data: {} };
+      }
+      return undefined;
+    };
+
+    await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
+
+    expect(patchCalls).toHaveLength(0);
+    expect(lines.join("\n")).toContain(
+      'routine "Daily digest" already exists (skipped)',
+    );
+  });
+
   test("a non-201 create response is a loud failure naming the preset", async () => {
     const { log } = collector();
     const handler: FakeHandler = (method, path) => {
