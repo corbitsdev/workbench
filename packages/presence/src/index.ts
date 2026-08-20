@@ -12,8 +12,6 @@ export {
   type PresenceDocSnapshotListener,
 } from "./room-registry";
 
-export { colorForPrincipal } from "./color";
-
 export { createPresenceRoutes, type CreatePresenceRoutesDeps } from "./routes";
 
 export {
@@ -37,3 +35,8 @@ export { encodeBase64, decodeBase64, InvalidBase64Error } from "./base64";
 // here — it lives at the `./client` subpath (see package.json) so a
 // server-side consumer of this package's "." export never pulls in
 // browser-only globals (`fetch`, `EventSource`).
+//
+// `colorForPrincipal` is likewise only at the `./color` subpath: this "."
+// export reaches `./routes`, and through it the whole `@intx/hub-api`
+// server graph, so a browser package that wants nothing but the color
+// function must not have to type-check a server through it.
