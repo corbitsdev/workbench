@@ -39,6 +39,7 @@ function respond(url: string): Response {
     JSON.stringify({
       title: "Add the review loop",
       body: null,
+      user: { login: "octocat" },
       head: { sha: "headsha" },
       base: { sha: "basesha" },
       html_url: PULL_URL,

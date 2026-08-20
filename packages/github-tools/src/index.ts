@@ -3,6 +3,7 @@ export type { GitHubActivityItem, GitHubClientConfig } from "./client";
 export {
   changedLinesOf,
   fetchPullRequestDiff,
+  fetchPullRequestReviewComments,
   parsePullRequestUrl,
   postPullRequestReview,
 } from "./pull-requests";

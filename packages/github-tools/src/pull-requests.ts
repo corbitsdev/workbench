@@ -22,6 +22,7 @@ const MAX_FILES_PER_PAGE = 100;
 const PullRequestResponse = type({
   title: "string",
   "body?": "string | null",
+  user: { login: "string" },
   head: { sha: "string" },
   base: { sha: "string" },
   html_url: "string",
@@ -65,6 +66,8 @@ export interface PullRequestDiff {
   readonly title: string;
   readonly description: string;
   readonly url: string;
+  /** The pull request's author login; a bot login skips review entirely. */
+  readonly author: string;
   /** The head commit a posted review is anchored to. */
   readonly headSha: string;
   readonly baseSha: string;
@@ -230,10 +233,35 @@ export async function fetchPullRequestDiff(
     title: pull.title,
     description: pull.body ?? "",
     url: pull.html_url,
+    author: pull.user.login,
     headSha: pull.head.sha,
     baseSha: pull.base.sha,
     files: files.map(toFileDiff),
   };
+}
+
+const ReviewCommentResponse = type({ body: "string" });
+const ReviewCommentsResponse = ReviewCommentResponse.array();
+
+/**
+ * Reads every review comment already posted on a pull request. A re-run
+ * uses this to find which findings it already posted, by the fingerprint
+ * marker embedded in each comment's body — never by re-reading the model.
+ */
+export async function fetchPullRequestReviewComments(
+  config: GitHubClientConfig,
+  ref: PullRequestRef,
+): Promise<readonly string[]> {
+  const url = new URL(`${baseOf(config)}${pullPath(ref)}/comments`);
+  url.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
+  const raw = await requestJSON(config, url, { method: "GET" });
+  const comments = ReviewCommentsResponse(raw);
+  if (comments instanceof type.errors) {
+    throw new Error(
+      `GitHub pull-request comments response did not match the expected shape: ${comments.summary}`,
+    );
+  }
+  return comments.map((comment) => comment.body);
 }
 
 /**
