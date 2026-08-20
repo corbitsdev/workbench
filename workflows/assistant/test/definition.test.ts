@@ -122,6 +122,7 @@ test("the agent pins memory, capability, and the manager-tools bundles at the ve
     "@corbits/agent-directory-tools",
     "@corbits/task-dispatch-tools",
     "@corbits/connections-tools",
+    "@corbits/catalog-tools",
     "@corbits/skills-tools",
     "@corbits/mcp-tools",
     "@corbits/interaction-tools",
