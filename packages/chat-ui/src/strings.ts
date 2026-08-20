@@ -58,6 +58,8 @@ export const CHAT_STRINGS = {
     "Tip: press / for commands",
   ],
   emptyTimelineDescription: "Say something to get the conversation going.",
+  emptyAgentTimelineDescription:
+    "They're ready — send the first message to get started.",
   mentionEmpty: "No matches",
   mentionAgentsGroupLabel: "Agents",
   mentionPeopleGroupLabel: "People",

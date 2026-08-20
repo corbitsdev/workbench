@@ -66,3 +66,23 @@ describe("WorkbenchTimeline — setup loader", () => {
     expect(second).not.toBe(first);
   });
 });
+
+describe("WorkbenchTimeline — empty agent DM", () => {
+  test("once the agent has joined, leads with its own name instead of the loader", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        <WorkbenchTimeline
+          items={[]}
+          participants={[{ address: "myra@agents.example", handle: "myra" }]}
+          settingUpAgent={false}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Say hello to Myra");
+    expect(container.querySelector(".chat-workbench-loading")).toBeNull();
+  });
+});

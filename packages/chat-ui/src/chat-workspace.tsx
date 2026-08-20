@@ -12,7 +12,7 @@
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { Button, EmptyState, toast } from "@corbits/react-ui";
 import {
   ChartColumn,
   ChevronDown,
@@ -46,6 +46,7 @@ import type { WorkbenchSettingsSectionId } from "./workbench-settings";
 import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
+import { WorkbenchLoadingState } from "./loading-state";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import type { BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
@@ -949,7 +950,7 @@ function ChatWorkspaceInner({
         <div className="chat-main">
           {bareLeadingHeader}
           {workbenchesState.kind === "loading" ? (
-            <Skeleton className="query-skeleton" />
+            <WorkbenchLoadingState />
           ) : workbenchesState.kind === "error" ? (
             <EmptyState
               icon={<CircleAlert />}
@@ -1157,7 +1158,7 @@ function ChatWorkspaceInner({
                 </div>
               </div>
               {messagesState.kind === "loading" ? (
-                <Skeleton className="query-skeleton" />
+                <WorkbenchLoadingState />
               ) : messagesState.kind === "error" &&
                 messagesState.workbenchNotFound ? (
                 <EmptyState
@@ -1219,7 +1220,10 @@ function ChatWorkspaceInner({
                   <WorkbenchTimeline
                     settingUpAgent={
                       activeWorkbench?.kind === "chat" &&
-                      typeof activeWorkbench.definitionId === "string"
+                      typeof activeWorkbench.definitionId === "string" &&
+                      !(activeWorkbench.participants ?? []).some(
+                        (participant) => isAgentAddress(participant.address),
+                      )
                     }
                     items={appendReplyTimedOutNotice(
                       mergeStreamingReply(
@@ -1545,7 +1549,7 @@ export function ChatWorkspace({
     case "loading":
       return (
         <ChatWorkspaceFrame>
-          <Skeleton className="query-skeleton" />
+          <WorkbenchLoadingState />
         </ChatWorkspaceFrame>
       );
   }

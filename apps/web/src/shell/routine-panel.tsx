@@ -49,14 +49,13 @@ import {
   MenuTrigger,
   RichEmptyState,
   RunNowButton,
-  Skeleton,
   StatusDot,
   Switch,
   toast,
   TraceWaterfall,
 } from "@corbits/react-ui";
 import type { BadgeTone, StatusDotTone } from "@corbits/react-ui";
-import { listWorkbenchAgents } from "@corbits/chat-ui";
+import { listWorkbenchAgents, WorkbenchLoadingState } from "@corbits/chat-ui";
 import { listTasks } from "@corbits/tasks-ui";
 import type { Task, TaskStatus } from "@corbits/tasks-ui";
 import { Clock, Plus, X } from "lucide-react";
@@ -469,7 +468,7 @@ function RoutineListPanel({
           New routine
         </button>
         {routinesQuery.kind === "loading" ? (
-          <Skeleton className="query-skeleton" />
+          <WorkbenchLoadingState title="Loading routines…" />
         ) : routinesQuery.kind === "ready" ? (
           routines.length === 0 ? (
             <EmptyState
@@ -606,7 +605,7 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
         />
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {traceQuery.kind === "loading" ? (
-            <Skeleton className="query-skeleton" />
+            <WorkbenchLoadingState title="Loading trace…" />
           ) : null}
           {traceQuery.kind === "ready" && spans.length > 0 ? (
             <TraceWaterfall
@@ -637,7 +636,7 @@ function RunsCanvasPanel({ onBack }: { readonly onBack: () => void }) {
       <CanvasPaneHeader className="px-3 pt-2" title="Runs" onBack={onBack} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {runsQuery.kind === "loading" ? (
-          <Skeleton className="query-skeleton" />
+          <WorkbenchLoadingState title="Loading runs…" />
         ) : runsQuery.kind === "ready" && runs.length === 0 ? (
           <EmptyState
             icon={<Clock />}
@@ -714,7 +713,7 @@ function TasksSection({
         </h3>
       </div>
       {tasksQuery.kind === "loading" ? (
-        <Skeleton className="query-skeleton" />
+        <WorkbenchLoadingState title="Loading tasks…" />
       ) : tasks.length === 0 ? (
         <div className="px-3 pb-3">
           <EmptyState
