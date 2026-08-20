@@ -417,6 +417,18 @@ src/adapters/blob-substrate.ts` already has inline (private `writeBlob`/
 `readBlob` helpers) rather than reconciling the two into one shared helper —
 left as a known follow-up per the port scope report, not a blocker.
 
+**Extraction landed (CL-6435):** the three gtm-origin adapter files (+ tests)
+left the vendor tree for the first-class package
+`packages/workflow-host-actions` (`@corbits/workflow-host-actions`), retiring
+the "no ordinary kill date applies" sub-delta above — the code is now
+workbench-owned, transportable to any Interchange instance (deps:
+`@intx/workflow`, `@intx/hub-sessions`, `@intx/types`, arktype), and the
+effect-ledger envelope read gained an arktype parse at the disk boundary.
+The vendored `run-child.ts` delta shrank to the bindings fields, the
+once-per-child registry resolution, and `buildRuntimeEnv`'s import of the
+package; the re-application warning after a `vendor/intx` re-pin still
+stands for that residual bind, but no longer covers any adapter code.
+
 ## CL-6324 re-pin: `59f5e7b9` → `4ed8baf4` (the workflow.json retirement)
 
 The vendored trees are re-copied at upstream `main` tip `4ed8baf4`
