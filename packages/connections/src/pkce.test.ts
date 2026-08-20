@@ -6,6 +6,7 @@
 // signed/encrypted token rather than a server-side map lookup — never
 // across a process restart either, as long as the cipher key is stable.
 import { describe, expect, test } from "bun:test";
+import { type } from "arktype";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
@@ -48,24 +49,79 @@ describe("generatePKCEPair", () => {
   });
 });
 
+// The verifier-only payload the fixed-registry OAuth connect flows seal
+// (`./oauth-routes.ts`); the MCP connect flow seals a richer shape
+// through the same store (see the MCP-shaped test below).
+const VerifierPayload = type({ codeVerifier: "string" });
+function parseVerifierPayload(value: unknown) {
+  const parsed = VerifierPayload(value);
+  return parsed instanceof type.errors ? undefined : parsed;
+}
+
+function verifierStore(args?: {
+  cipher?: CredentialCipher;
+  provider?: string;
+  ttlMs?: number;
+  now?: () => number;
+}) {
+  return createConnectStateStore({
+    cipher: args?.cipher ?? testCipher(),
+    provider: args?.provider ?? "openrouter",
+    parsePayload: parseVerifierPayload,
+    ...(args?.ttlMs !== undefined ? { ttlMs: args.ttlMs } : {}),
+    ...(args?.now !== undefined ? { now: args.now } : {}),
+  });
+}
+
 describe("createConnectStateStore", () => {
-  test("a state yields its verifier exactly once", async () => {
+  test("a state yields its payload exactly once", async () => {
+    const store = verifierStore();
+    const state = await store.issue({
+      userId: "user_1",
+      payload: { codeVerifier: "v1" },
+    });
+
+    expect(await store.consume({ state, userId: "user_1" })).toEqual({
+      codeVerifier: "v1",
+    });
+    expect(await store.consume({ state, userId: "user_1" })).toBeUndefined();
+  });
+
+  test("carries a caller-shaped payload round trip (the MCP connect shape)", async () => {
+    const McpPayload = type({
+      slug: "string > 0",
+      url: "string > 0",
+      returnPath: "string > 0",
+      oauthState: "string > 0",
+      "codeVerifier?": "string",
+    });
     const store = createConnectStateStore({
       cipher: testCipher(),
-      provider: "openrouter",
+      provider: "mcp-oauth",
+      parsePayload: (value) => {
+        const parsed = McpPayload(value);
+        return parsed instanceof type.errors ? undefined : parsed;
+      },
     });
-    const state = await store.issue({ userId: "user_1", codeVerifier: "v1" });
+    const payload = {
+      slug: "exa",
+      url: "https://mcp.example/mcp",
+      returnPath: "/plugins",
+      oauthState: "nonce_1",
+      codeVerifier: "v1",
+    };
+    const state = await store.issue({ userId: "user_1", payload });
 
-    expect(await store.consume({ state, userId: "user_1" })).toBe("v1");
+    expect(await store.consume({ state, userId: "user_1" })).toEqual(payload);
     expect(await store.consume({ state, userId: "user_1" })).toBeUndefined();
   });
 
   test("a state issued for one user is worthless to another", async () => {
-    const store = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
+    const store = verifierStore();
+    const state = await store.issue({
+      userId: "user_1",
+      payload: { codeVerifier: "v1" },
     });
-    const state = await store.issue({ userId: "user_1", codeVerifier: "v1" });
 
     expect(await store.consume({ state, userId: "user_2" })).toBeUndefined();
     // Consumed by the attempt: single-use means gone, not retryable —
@@ -74,10 +130,7 @@ describe("createConnectStateStore", () => {
   });
 
   test("an unknown state yields nothing", async () => {
-    const store = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
-    });
+    const store = verifierStore();
     expect(
       await store.consume({ state: "never-issued", userId: "user_1" }),
     ).toBeUndefined();
@@ -85,37 +138,31 @@ describe("createConnectStateStore", () => {
 
   test("an expired state yields nothing", async () => {
     let clock = 0;
-    const store = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
-      ttlMs: 1000,
-      now: () => clock,
+    const store = verifierStore({ ttlMs: 1000, now: () => clock });
+    const state = await store.issue({
+      userId: "user_1",
+      payload: { codeVerifier: "v1" },
     });
-    const state = await store.issue({ userId: "user_1", codeVerifier: "v1" });
 
     clock = 999;
     const fresh = await store.issue({
       userId: "user_1",
-      codeVerifier: "v2",
+      payload: { codeVerifier: "v2" },
     });
     clock = 1000;
     expect(await store.consume({ state, userId: "user_1" })).toBeUndefined();
-    expect(await store.consume({ state: fresh, userId: "user_1" })).toBe("v2");
+    expect(await store.consume({ state: fresh, userId: "user_1" })).toEqual({
+      codeVerifier: "v2",
+    });
   });
 
   test("a state minted for one provider is worthless to another's callback", async () => {
     const cipher = testCipher();
-    const openrouterStore = createConnectStateStore({
-      cipher,
-      provider: "openrouter",
-    });
-    const huggingfaceStore = createConnectStateStore({
-      cipher,
-      provider: "huggingface",
-    });
+    const openrouterStore = verifierStore({ cipher, provider: "openrouter" });
+    const huggingfaceStore = verifierStore({ cipher, provider: "huggingface" });
     const state = await openrouterStore.issue({
       userId: "user_1",
-      codeVerifier: "v1",
+      payload: { codeVerifier: "v1" },
     });
 
     expect(
@@ -124,50 +171,62 @@ describe("createConnectStateStore", () => {
     // The rightful provider can still redeem it — the cross-provider
     // attempt didn't burn it (it never decrypted under that provider's
     // AAD in the first place).
-    expect(await openrouterStore.consume({ state, userId: "user_1" })).toBe(
-      "v1",
-    );
+    expect(await openrouterStore.consume({ state, userId: "user_1" })).toEqual({
+      codeVerifier: "v1",
+    });
+  });
+
+  test("a payload the caller's parser rejects yields nothing", async () => {
+    const cipher = testCipher();
+    const UnrelatedPayload = type({ unrelated: "number" });
+    const richStore = createConnectStateStore({
+      cipher,
+      provider: "openrouter",
+      parsePayload: (value) => {
+        const parsed = UnrelatedPayload(value);
+        return parsed instanceof type.errors ? undefined : parsed;
+      },
+    });
+    const store = verifierStore({ cipher });
+    const state = await richStore.issue({
+      userId: "user_1",
+      payload: { unrelated: 1 },
+    });
+
+    expect(await store.consume({ state, userId: "user_1" })).toBeUndefined();
   });
 
   test("survives a restart: a new store built from the same key redeems a state minted before it existed", async () => {
-    const before = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
-    });
+    const before = verifierStore();
     const state = await before.issue({
       userId: "user_1",
-      codeVerifier: "v1",
+      payload: { codeVerifier: "v1" },
     });
 
     // Simulates a process restart: a brand-new store, sharing nothing in
     // memory with `before`, built from a fresh cipher over the same
     // stable key bytes (as a stable CREDENTIAL_ENCRYPTION_KEY would
     // produce across a real restart).
-    const after = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
-    });
+    const after = verifierStore();
 
-    expect(await after.consume({ state, userId: "user_1" })).toBe("v1");
+    expect(await after.consume({ state, userId: "user_1" })).toEqual({
+      codeVerifier: "v1",
+    });
     // Single-use survives the restart boundary too: replaying the same
     // state against the post-restart store fails.
     expect(await after.consume({ state, userId: "user_1" })).toBeUndefined();
   });
 
   test("a key rotation invalidates every state minted under the old key", async () => {
-    const before = createConnectStateStore({
-      cipher: testCipher(),
-      provider: "openrouter",
-    });
+    const before = verifierStore();
     const state = await before.issue({
       userId: "user_1",
-      codeVerifier: "v1",
+      payload: { codeVerifier: "v1" },
     });
 
     const rotatedKey = Buffer.alloc(32, 9);
-    const after = createConnectStateStore({
+    const after = verifierStore({
       cipher: createEnvKeyCredentialCipher(rotatedKey),
-      provider: "openrouter",
     });
 
     expect(await after.consume({ state, userId: "user_1" })).toBeUndefined();
