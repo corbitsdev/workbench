@@ -319,9 +319,9 @@ non-fatal to the section. Covered by
 `vendor/intx/workflow/src/runtime/run.test.ts` — the intended home
 `runlocal/run-local.ts:8` already names for this layer's coverage.
 
-**This delta targets the current pin** (`59f5e7b9`). Upstream's `486a6b1b`
-changed `run.ts` after this pin; the delta above re-diffs against the
-re-pinned tree once PR #59 lands.
+**Re-applied at `4ed8baf4`.** Upstream's `486a6b1b` reshaped `run.ts` across
+the re-pin; the delta re-diffed onto the new tree without conflict and its
+four tests stay green.
 
 **Retire when** upstream ships a non-fatal body-failure edge on `onTrigger`
 (or the whole source-format workflow line reaches a published `@intx/*` npm
@@ -357,15 +357,15 @@ see below), but the two adapters that wiring needs now exist.
 
 - `vendor/intx/workflow-host/src/adapters/{action-invoker,effect-ledger,run-blobs}.ts`
   (+ their tests), copied from gtm-workbench's `packages/workflow-host/src/
-  adapters/`. Important provenance note carried over from the port scope
+adapters/`. Important provenance note carried over from the port scope
   report: **these three files are gtm-OWNED, not upstream Interchange.**
   Upstream `faremeter/interchange`'s own `packages/workflow-host/src/
-  adapters/` (at the pinned `59f5e7b9`) has none of them — only blob-
+adapters/` (at the pinned `59f5e7b9`) has none of them — only blob-
   substrate/repo-store/spawn-child/step-invoker. So there is no upstream
   publish this sub-delta tracks toward; it is copy-with-attribution from a
   sibling internal fork, not a normal "vendored until the next npm publish"
   entry. The ordinary `VENDORED.md` kill date on the `vendor/intx/
-  workflow-host` row does not really apply to this slice — treat it as
+workflow-host` row does not really apply to this slice — treat it as
   retired only once workbench builds its own equivalent inline (dropping the
   gtm-origin copy) or gtm's fork itself gets folded into a real publish,
   whichever happens first.
@@ -388,12 +388,8 @@ see below), but the two adapters that wiring needs now exist.
 
 **What did NOT land (deliberately, time-boxed):** the run-child wiring
 (`resolveActionHandler` bindings field, `effects`/`invokeAction` construction
-in `buildRuntimeEnv`, `loopFns`) is a separate final commit on this branch,
-explicitly marked in its message as needing re-application after the
-in-flight `vendor/intx` re-pin lands (a sibling change was re-pinning
-concurrently with this port) — `buildRuntimeEnv` is exactly the kind of
-generated/copied vendor surface a re-pin silently regenerates, so the wiring
-diff would otherwise be dropped on the floor. The app-seam wiring in
+in `buildRuntimeEnv`, `loopFns`) landed as a separate commit and has since
+been re-applied onto the `4ed8baf4` tree unchanged. The app-seam wiring in
 `apps/sidecar/src/workflow-substrate-factory/index.ts` (building the registry
 and passing it as `resolveActionHandler`) is likewise deferred to that same
 follow-up, since it depends on the run-child binding field existing first.
@@ -402,6 +398,7 @@ follow-up, since it depends on the run-child binding field existing first.
 src/adapters/blob-substrate.ts` already has inline (private `writeBlob`/
 `readBlob` helpers) rather than reconciling the two into one shared helper —
 left as a known follow-up per the port scope report, not a blocker.
+
 ## CL-6324 re-pin: `59f5e7b9` → `4ed8baf4` (the workflow.json retirement)
 
 The vendored trees are re-copied at upstream `main` tip `4ed8baf4`
@@ -470,3 +467,46 @@ Upstream's own diff over the same span is the reference implementation:
 `workflow-host-wiring.ts` at `4ed8baf4` show every one of these conversions
 against the same contracts, and `apps/sidecar`'s `VENDORED.md` row stays at
 `59f5e7b9` until workbench's fork is reconciled with them.
+
+### Why the conversion is one chain, not four independent sites
+
+Re-basing the re-pin onto post-merge `main` (133 commits, including the
+`#58` workflow-host adapters and the `#68` `onTrigger` edge, both re-applied
+onto the re-vendored trees and green) leaves the four sites above still red,
+and they cannot be taken in any other order than this one:
+
+1. **`packages/folded-runs`' `deployAtHead` must become a code-sourced
+   deploy.** `deployWorkflowFromSource` /
+   `deployPreparedCodeSourcedWorkflow` take a `WorkflowDefinitionSource`
+   (`vendor/intx/types/src/workflow-sources.ts`) — an npm `registry` pin, an
+   asset `tarball` selected by a `name@range` pin, or an asset `source` tree
+   at a `commitSha`. Workbench has no caller of any of them today: grepping
+   `apps/`, `packages/`, `workflows/`, and `scripts/` for
+   `deployWorkflowFromSource` returns nothing. So this is not a call-site
+   rename — it is a new deploy pipeline (mint the `workflow`-kind definition
+   asset, seed the source asset's tarball, configure
+   `toolPackageRegistries`, supply the attachment resolver and asset
+   service).
+2. **A folded run's definition is per-run, a source package is not.** The
+   synthesized definition varies by `systemPrompt`, `trigger.to`
+   (the run's own mail address), resolved inference sources, and the
+   `credentialBindings` folded in for `@corbits/mcp-tools`. A seeded tarball
+   is static, so the varying half has to move out of the definition body and
+   into deploy-time config the entry module reads. That is a design change
+   to the folded-run contract, not a mechanical port.
+3. **Only then can the sidecar convert.** `SpawnTimeEnv` drops
+   `referencedDefinitionHashes` and gains `closurePackageDir`
+   (`vendor/intx/workflow-host/src/child/env-bootstrap.ts:126`), and
+   `createInMemorySpawnChild` / `createInMemorySpawnSuspendableChild`
+   (`adapters/spawn-child.ts:115,220`) take a `bodies: ReadonlyMap<string,
+WorkflowDefinition>` lifted from the re-evaluated closure — not a deploy
+   ref. There is no closure dir to stage and no bodies map to lift until a
+   deploy actually ships a source closure, so swapping the spawners ahead of
+   step 1 could only be done by re-deriving the bodies from the retired
+   in-memory definition: precisely the fallback shim this conversion is not
+   allowed to build.
+
+The sidecar's three remaining red suites
+(`test/workflow-substrate-factory-suspendable-child.test.ts` and siblings,
+failing on the deleted `createWorkflowSpawnChild` export) are the visible
+tail of that same chain.
