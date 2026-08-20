@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable } from "@intx/db/schema";
 import { resolveDefinitionSources } from "@intx/hub-api";
+import { listDefaultInferencePreferences } from "../inference-preferences";
 import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
@@ -123,11 +124,17 @@ export async function ensureRoomRun(
     throw new SpikeRoomLaunchError(`No tenant "${room.tenantId}"`);
   }
 
+  // The room's agent declares no model of its own, so it resolves against
+  // the tenant's own default the same way a workbench host does.
+  const [tenantDefault] = await listDefaultInferencePreferences(
+    deps.db,
+    room.tenantId,
+  );
   const resolution = await resolveDefinitionSources({
     db: deps.db,
     tenantId: room.tenantId,
     modelRequirements: null,
-    fallbackModel: null,
+    fallbackModel: tenantDefault?.model ?? null,
     invokerPreferences: {},
     ...(deps.credentialCipher !== undefined
       ? { credentialCipher: deps.credentialCipher }

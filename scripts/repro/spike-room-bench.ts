@@ -184,17 +184,21 @@ try {
 
   const streamAbort = new AbortController();
   const streamEvents: { type: string; at: number; data: unknown }[] = [];
-  const streamRes = await fetch(
-    `${baseUrl}/api/tenants/${tenantId}/spike-rooms/${roomId}/stream`,
-    { headers: { cookie }, signal: streamAbort.signal },
-  );
+  // The SSE response's headers do not land until the first frame, so the
+  // reader is attached without awaiting the fetch.
   void (async () => {
+    const streamRes = await fetch(
+      `${baseUrl}/api/tenants/${tenantId}/spike-rooms/${roomId}/stream`,
+      { headers: { cookie }, signal: streamAbort.signal },
+    );
     const reader = streamRes.body?.getReader();
     if (reader === undefined) return;
     const decoder = new TextDecoder();
     let buffer = "";
     for (;;) {
-      const { done, value } = await reader.read().catch(() => ({ done: true, value: undefined }));
+      const { done, value } = await reader
+        .read()
+        .catch(() => ({ done: true, value: undefined }));
       if (done) return;
       buffer += decoder.decode(value, { stream: true });
       const frames = buffer.split("\n\n");
@@ -207,6 +211,7 @@ try {
       }
     }
   })();
+  await Bun.sleep(500);
 
   hydrationGets += 1;
   const hydration = await call("GET", `/spike-rooms/${roomId}/messages`);
@@ -303,6 +308,15 @@ try {
   console.log(`child run ids:                ${childRunIds.join(", ")}`);
   console.log(`run-surface reads:            ${JSON.stringify(traceability)}`);
   streamAbort.abort();
+  console.log("--- hub log (spike lines) ---");
+  console.log(
+    hub
+      .output()
+      .split("\n")
+      .filter((line) => line.includes("spike"))
+      .slice(-20)
+      .join("\n"),
+  );
 } catch (err) {
   console.error(err);
   console.error("--- hub output (tail) ---");
