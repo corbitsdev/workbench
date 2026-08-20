@@ -1124,3 +1124,66 @@ repoint, attachment history, audit read — is built and unit-proven.
 The section shape stays red for its own separate reason: a plain
 workflow deployment has no room, so nothing maps a stable id onto a
 fresh run for it. That is out of CL-6365's scope, which is the room.
+
+### Correction: the row was not lying, the terminal event never arrived
+
+The account above named the wrong culprit. Reading the two sides of a
+real crashed stack settles it. After the mid-turn kill and the restart,
+the sidecar's own copy of the folded chat run's workflow-run repo held
+three commits the hub had never seen:
+
+```
+9c14859 compact run run_4de07624… events        <- sidecar only
+2cea7c9 append workflow event RunFailed          <- sidecar only
+ae962fb append workflow event StepFailed         <- sidecar only
+34fe89a SignalReceived …                         <- the hub's tip
+```
+
+So the hub's `workflow_run` row was not disagreeing with the hub's copy
+of the durable log — the hub's copy of the log stopped at the last
+pre-crash event too. Reconciling the row against a received terminal
+log, or having `isBeyondWake` read the log instead of the row, would
+both have read the same "still live" answer. The signal was not
+mis-read; it was never delivered.
+
+Why it is not delivered is an ordering race in the sidecar's boot edge.
+`restoreWorkflowDeployments()` runs BEFORE `hubLink.connect()` — each
+restored deployment's mailbox must be live before the hub can route to
+it. A restored supervisor that finds a step which died mid-invocation
+commits that run's `StepFailed`/`RunFailed` right then, and the
+pack-pushing store schedules the push into a link that does not exist
+yet. The sidecar log says it plainly:
+
+```
+11:17:33.480 Sidecar connecting to ws://…/api/sidecars/ws
+11:17:33.507 Connected to hub
+11:17:33.508 workflow-run pack push failed for deployment run_2c1e98ac…: 'Connection lost'
+11:17:33.509 … × 8 more, every restored deployment
+```
+
+Those failures latch on their slot, and the only thing that re-ships
+them is `notifyAddressRoutable`, fired when the reconnect challenge
+passes. That recovery works when the rejection latches before the
+challenge — one full re-run of proof 4 came back with the hub and the
+sidecar at the identical tip, the row flipped to `failed`, the sweep
+firing, and the room repointed onto a fresh run
+(`prior_run_ids: ["run_8da929dd…"]`). It is lost when the rejection
+lands after the challenge: nothing re-arms the slot, the terminal event
+stays on sidecar disk for good, and the row says `running` for a run
+whose supervisor rejects every further message.
+
+The fix holds rather than recovers. `createBootRestorePushHold` marks
+every address the boot restore registers unroutable — the same block
+the link already applies across a mid-life disconnect — and the
+challenge lifts it, so no workflow-run push is ever attempted against a
+link that has not been established. Both deploy shapes take the same
+path, so both terminal signals now land on the hub at the same, stable
+point in the boot sequence.
+
+One consequence worth stating rather than burying: with the signal
+arriving reliably, proof 4's section hop now fails deterministically
+with `409 workflow_run_terminal` instead of intermittently. That is the
+section shape's own gap — a plain workflow deployment has no room, so
+nothing maps a stable id onto a fresh run for it — surfacing on
+schedule rather than racing the assertion. It stays out of CL-6365's
+scope, which is the room.
