@@ -923,3 +923,77 @@ model turn. The first REAL token is proof 3's reply.
    the tie alphabetically and `all-minilm` can win the bench default. The
    harness narrows the bench catalog to its one pinned model through the
    catalog API before it asserts anything about a turn.
+
+## CL-6365: why the restored run comes back terminal
+
+Reproduced on a second real stack (scratch database, real signup, real
+Ollama), with one correction to the harness first.
+
+### The kill has to be mid-turn, and it was not
+
+Proof 4's kill window was three seconds after "count slowly from one to
+twenty". On an instance whose model answers that in about one second,
+the turn had already completed and the run had parked by the time the
+sidecar came down — so the restart that followed was a clean restart,
+not a crash, and proof 4 passed. It passes that way at this branch's
+tip; the whole finding turns on the kill actually landing while
+inference is running.
+
+Proof 4 now sends a workload no model finishes inside the window and
+asserts, at the moment of the kill, that nothing has answered yet.
+"Mid-turn" is a claim the harness checks rather than a sleep it hopes
+for. With that in place the failure is deterministic.
+
+### What the mid-turn kill leaves behind
+
+Both top-level runs — the folded chat run and the section deployment —
+end up `workflow_run.status = 'failed'` in the hub's own database. The
+sidecar's SIGTERM drain tears the workflow-process child down while the
+step is in flight, and the resulting terminal event is committed to the
+run's durable event log before the process exits.
+
+Boot restore then does its half correctly: the scan finds the
+deployment records, replays each pin, re-materializes the closure, and
+the address is routable again (`liveness: "ok"` about ten seconds after
+the restart). But the run inside it is over:
+
+- the section deployment answers `POST /workflows/:id/mail` with `409
+workflow_run_terminal`;
+- the folded chat run's mail is dequeued and dropped by
+  `vendor/intx/workflow-host/src/supervisor/supervisor.ts`, which finds
+  no in-memory cohort for the run, reads
+  `readWorkflowRunLifecycle` off the durable log, sees `terminal`, and
+  rejects permanently.
+
+`onBodyFailure: "continue"` cannot rescue either shape: the failure is
+on the TOP-LEVEL run, not on a body occurrence.
+
+### Why "wake it again" is not the fix by itself
+
+`@corbits/chat`'s `wakeByAddress` returns early for any routable
+address (CL-6267 handed respawn of a parked-but-announced deployment to
+the sidecar's own park/wake handler), so a routable-but-dead run is
+never woken. Restoring the deleted CL-6147 branch — undeploy the
+resident, then redeploy — is necessary but not sufficient, for two
+reasons found while tracing it:
+
+1. A run's id is derived from its address
+   (`deriveWorkflowRunId(deploymentMailAddress)`), so redeploying the
+   same address re-creates the _same_ run id.
+2. The destructive teardown (`teardownDeployment` with `reclaimDirs`)
+   removes the deployment record and the per-step scratch, but NOT the
+   workflow-run repo that holds the run's durable event log. The
+   terminal event survives the redeploy, and the supervisor rejects the
+   next message for exactly the same reason.
+
+So a relaunch has to produce a genuinely new run, not the same one
+again — either a fresh run id adopting the room's continuity (the room
+is data now, so no history is lost), or a destructive teardown that
+also reclaims the run's durable log. Which of the two is right is the
+open design decision; the detection signal it hangs off is already
+available to the hub as `workflow_run.status`.
+
+The hub-side detection and the relaunch itself are not implemented
+here. What is on the record is a deterministic red: the proof now fails
+at "PROOF 4 — the section survives the restart and runs its next
+occurrence" with `409 workflow_run_terminal`, every time.
