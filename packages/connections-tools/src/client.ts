@@ -72,6 +72,71 @@ export async function listConnections(
   return parsed.data;
 }
 
+/** Thrown when the caller's run has no room of its own to post into —
+ * the workflow-participant route's "not a participant of any channel"
+ * 404. `request_connection` degrades to a plain deep link then. */
+export class NoOwnRoomError extends Error {}
+
+const PostedMessageResponse = type({ id: "string", createdAt: "string" });
+
+export type ConnectServiceCard = {
+  readonly connectorId: string;
+  readonly displayName: string;
+  readonly reason: string;
+};
+
+/** Posts a `connect-service` block into the caller's own room through
+ * the same workflow-run-authenticated `participants/messages` route
+ * `@corbits/interaction-tools`' `ask_user` posts its question blocks
+ * to. The card carries framing only; the room's client resolves the
+ * live connect state when it renders. */
+export async function postConnectServiceBlock(
+  config: ConnectionsToolClientConfig,
+  card: ConnectServiceCard,
+): Promise<{ readonly messageId: string }> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    `${config.hubConnectionsUrl}/api/workflow-chat/participants/messages`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(config), "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [
+          {
+            kind: "block",
+            block: {
+              type: "connect-service",
+              data: {
+                connectorId: card.connectorId,
+                displayName: card.displayName,
+                reason: card.reason,
+              },
+            },
+          },
+        ],
+      }),
+    },
+  );
+  if (response.status === 404) {
+    throw new NoOwnRoomError(
+      "The caller has no room of its own to post into",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Posting the connect card failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  const body: unknown = await response.json();
+  const parsed = PostedMessageResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Post-message response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return { messageId: parsed.id };
+}
+
 export type McpServerConnectionStatus = {
   readonly slug: string;
   readonly name: string;
