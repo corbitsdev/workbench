@@ -156,6 +156,13 @@ export type CreateOAuthConnectRoutesDeps = {
    * Required: without a caller-supplied store step, a successful
    * exchange would have nowhere to land. */
   readonly connectCredential: (args: {
+    /** Given so a tenant-scoped caller (mounted inside the platform's
+     * tenant middleware, same as `afterConnected` below) can read
+     * `c.get("tenant")`/`c.get("principal")` directly instead of
+     * re-deriving them — see `createTenantConnectCredential` in
+     * `./oauth-tenant-connect.ts`. A caller with no tenant middleware
+     * (`packages/onboarding`'s own mount) is free to ignore it. */
+    c: Context;
     connectorId: string;
     userId: string;
     userEmail: string;
@@ -518,6 +525,7 @@ export function createOAuthConnectRoutes(
       const connectCredentialArgs: Parameters<
         typeof deps.connectCredential
       >[0] = {
+        c,
         connectorId,
         userId: user.id,
         userEmail: user.email,
