@@ -7,7 +7,6 @@ import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BoldIconProvider, WarningCircle } from "@corbits/icons";
 import { useEffect, useMemo } from "react";
-import { Toaster } from "sonner";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";

@@ -1655,7 +1655,7 @@ export function WorkbenchTimeline({
       return (
         <div className="chat-timeline-empty">
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title={`Say hello to ${displayNameFromHandle(readyAgent.handle)}`}
             description={CHAT_STRINGS.emptyAgentTimelineDescription}
           />
