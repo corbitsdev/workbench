@@ -79,6 +79,11 @@ function createFakeHub() {
     trigger: unknown;
     name: string;
   }[] = [];
+  const postedCards: {
+    connectorId: string;
+    displayName: string;
+    reason: string;
+  }[] = [];
 
   // Mirrors the real `CONNECTOR_REGISTRY` entries for these three ids
   // (`packages/connections/src/registry.ts`) closely enough for this
@@ -142,6 +147,36 @@ function createFakeHub() {
     }
 
     if (
+      url.pathname === "/api/workflow-chat/participants/messages" &&
+      method === "POST" &&
+      body
+    ) {
+      // The connect-service card post `request_connection` (CL-6393)
+      // makes into the caller's own room. Recorded so the scenario can
+      // assert the card itself, not just the tool's advice text.
+      const parts = body["parts"] as {
+        kind: string;
+        block: { type: string; data: Record<string, unknown> };
+      }[];
+      const block = parts[0]?.block;
+      if (parts[0]?.kind !== "block" || block?.type !== "connect-service") {
+        throw new Error("fake hub: expected one connect-service block part");
+      }
+      postedCards.push({
+        connectorId: block.data["connectorId"] as string,
+        displayName: block.data["displayName"] as string,
+        reason: block.data["reason"] as string,
+      });
+      return Response.json(
+        {
+          id: `msg_${String(postedCards.length)}`,
+          createdAt: "2026-08-16T00:00:00.000Z",
+        },
+        { status: 201 },
+      );
+    }
+
+    if (
       url.pathname === "/api/workflow-chat/participants/invite" &&
       method === "POST" &&
       body
@@ -196,6 +231,7 @@ function createFakeHub() {
     createdDefinitions,
     invitedDefinitionIds,
     createdRoutines,
+    postedCards,
   };
 }
 
@@ -249,27 +285,42 @@ async function runScenario(
 
   // A connector name that is neither a fixed `CONNECTOR_REGISTRY`
   // entry, a curated MCP preset, nor a connected MCP server makes
-  // `request_connection` (CL-6142) fall back to the generic Add MCP
-  // server deep link rather than fabricating a connector-specific one.
+  // `request_connection` tell the agent to keep helping with what it
+  // can do (CL-6393) — never "go add a server and report back".
   const unknown = await connectionsBundle.run(
     call("req_unknown", REQUEST_CONNECTION_TOOL, { connector: "acmecrm" }),
     new AbortController().signal,
   );
   expect(unknown.isError).toBe(false);
   expect(String(unknown.content)).toContain("acmecrm");
-  expect(String(unknown.content)).toContain("plugins?connect=mcp");
+  expect(String(unknown.content)).not.toContain("name and URL");
+  expect(hub.postedCards).toHaveLength(0);
 
-  // She hands over a connect link for each of the three (real) services.
-  const links: string[] = [];
+  // She puts a connect card in the room for each of the three (real)
+  // services (CL-6393) — the card is what the human clicks; the tool
+  // result only tells Myra to keep helping in the meantime.
   for (const connector of ["exa", "granola", "linear"]) {
     const result = await connectionsBundle.run(
       call(`req_${connector}`, REQUEST_CONNECTION_TOOL, { connector }),
       new AbortController().signal,
     );
     expect(result.isError).toBe(false);
-    links.push(String(result.content));
+    expect(String(result.content)).toMatch(/card/i);
+    expect(String(result.content)).toMatch(/keep helping/i);
   }
-  expect(links.every((line) => line.includes("/plugins?connect="))).toBe(true);
+  expect(hub.postedCards.map((card) => card.connectorId)).toEqual([
+    "exa",
+    "granola",
+    "linear",
+  ]);
+  expect(hub.postedCards.map((card) => card.displayName)).toEqual([
+    "Exa",
+    "Granola",
+    "Linear",
+  ]);
+  for (const card of hub.postedCards) {
+    expect(card.reason.length).toBeGreaterThan(0);
+  }
 
   // Human connects all three (simulated).
   hub.connected.add("exa");
