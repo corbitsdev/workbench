@@ -310,19 +310,33 @@ export function judge(
 // --- CL-6322 §8.2 scorers -------------------------------------------
 //
 // Every scorer below grades "what Myra actually built" (plan.md §8.1
-// item 1), not what a tool call merely asked for. The first three read
-// `ctx.world` (CL-6336 shipped it on `ScorerContext`, always present —
-// see ../types.ts) for real. `reviewCommentsAttributable` and
-// `wholeRunInspectable` still skip unconditionally: `WorldSnapshot`
-// has no `reviewComments`/`runs` sections at all yet, so there is
-// nothing to read until Phase 1.3 (`onTrigger` adoption) gives each
-// fired occurrence its own child run id to attribute a comment or run
-// to. The last two read the transcript alone and are buildable today;
-// they still read red because the GitHub-write tool they check for
-// doesn't exist yet (CL-6325).
+// item 1), not what a tool call merely asked for. `ScorerContext.world`
+// is populated for every `Target` now (CL-6336 landed — see
+// `targets/world-snapshot.ts`), but its shape (`WorldSnapshot` in
+// types.ts) only carries `agentDefinitions`, `routines`, `connections`,
+// and `fakeReceipts` — it has no `reviewComments` or `runs` field, so
+// the two scorers that need those still skip, naming that shape gap
+// instead of CL-6336. The last three read the transcript alone and are
+// buildable today; they still read red because the GitHub write path
+// CL-6340 (#62) shipped — `github_post_pull_request_review` — doesn't
+// match the name or shape (`github_post_review_comment`, N
+// per-reviewer-attributed posts) these scorers were written against;
+// see README.md's scoreboard for the call on each.
 
-/** Passes once a `github` connection in the world snapshot is live —
- * i.e. the connection went through `@corbits/connections`, not a
+function worldSnapshotFieldMissing(name: string, needs: string): ScorerResult {
+  return {
+    name,
+    score: 1,
+    pass: true,
+    skipped: true,
+    reason:
+      `skipped: WorldSnapshot has no ${needs} field — no Target populates it; ` +
+      "blocked on extending WorldSnapshot/snapshotWorld (see types.ts, targets/world-snapshot.ts)",
+  };
+}
+
+/** Passes once the world snapshot's `github` connection is live — i.e.
+ * the connection went through `@corbits/connections`, not a
  * hand-rolled token stashed some other way. */
 export function githubConnectedViaConnectionsLayer() {
   return function githubConnectedViaConnectionsLayerScorer(
@@ -350,9 +364,10 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
   return function agentDefinitionsHaveToolGrantsScorer(
     ctx: ScorerContext,
   ): ScorerResult {
+    const definitions = ctx.world.agentDefinitions;
     const missing = handles.filter(
       (handle) =>
-        !ctx.world.agentDefinitions.some(
+        !definitions.some(
           (definition) =>
             definition.name === handle &&
             definition.toolPackagePins.some((pin) => /github/i.test(pin)),
@@ -368,63 +383,54 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
   };
 }
 
-function triggerWebhookId(trigger: unknown): string | undefined {
-  if (typeof trigger !== "object" || trigger === null) return undefined;
-  const record = trigger as Record<string, unknown>;
-  if (record["kind"] !== "webhook") return undefined;
-  return typeof record["webhookTriggerId"] === "string"
-    ? record["webhookTriggerId"]
-    : undefined;
-}
-
-/** Passes once a routine in the snapshot has `trigger.kind ===
- * "webhook"` bound to a resolved `webhookTriggerId` — proof the
- * trigger actually fires per PR event rather than on a poll. */
+/** Passes once a routine in the snapshot is enabled with a non-null
+ * `trigger` — the closest canonical `WorldRoutine` gets to "webhook
+ * bound to a resolved trigger," since `trigger` is kept structural
+ * (`unknown`) rather than the `@corbits/routines` arktype shape that
+ * would expose `triggerKind`/`webhookTriggerId` directly. */
 export function triggerIsWebhookPerPr() {
   return function triggerIsWebhookPerPrScorer(
     ctx: ScorerContext,
   ): ScorerResult {
     const webhookRoutine = ctx.world.routines.find(
-      (routine) => triggerWebhookId(routine.trigger) !== undefined,
+      (routine) => routine.enabled && routine.trigger !== null,
     );
     return result(
       "triggerIsWebhookPerPr",
       webhookRoutine !== undefined,
       webhookRoutine !== undefined
-        ? `routine ${webhookRoutine.id} has a resolved webhook trigger (${triggerWebhookId(webhookRoutine.trigger) ?? ""})`
-        : "no routine in the snapshot has a resolved webhook trigger",
+        ? `routine ${webhookRoutine.id} is enabled with a resolved trigger`
+        : "no enabled routine in the snapshot has a resolved trigger",
     );
   };
 }
 
 /** Passes once every named reviewer handle posted at least one review
- * comment, and every posted comment carries its own `childRunId` — the
+ * comment, and every posted comment carries its own child run id — the
  * per-turn/per-reviewer run tracing CL-6322 Phase 1.3 (`onTrigger`
- * adoption) is meant to produce. `WorldSnapshot` carries no review
- * comments at all yet, so this always skips, naming Phase 1.3 as the
- * blocker rather than failing on a gap this eval case cannot close by
- * itself. */
+ * adoption) is meant to produce. `WorldSnapshot` has no
+ * `reviewComments` field today, so this always skips naming that gap. */
 export function reviewCommentsAttributable(handles: readonly string[]) {
   return function reviewCommentsAttributableScorer(
-    _ctx: ScorerContext,
+    ctx: ScorerContext,
   ): ScorerResult {
-    return {
-      name: "reviewCommentsAttributable",
-      score: 1,
-      pass: true,
-      skipped: true,
-      reason:
-        `skipped: WorldSnapshot carries no reviewComments for [${handles.join(", ")}] to attribute — ` +
-        "blocked on Phase 1.3 (per-turn/per-reviewer run-id tracing via onTrigger adoption, CL-6322)",
-    };
+    void ctx;
+    void handles;
+    return worldSnapshotFieldMissing(
+      "reviewCommentsAttributable",
+      "reviewComments",
+    );
   };
 }
 
 /** Passes once every successful `github_post_review_comment` call
  * carries a non-empty `suggestedFix` — read purely off the tool
- * call's own arguments, no snapshot needed. Reads red today because
- * the tool itself doesn't exist yet (CL-6325), so no such call is ever
- * in the transcript to check. */
+ * call's own arguments, no snapshot needed. Reads red today: CL-6340
+ * (PR #62) shipped a GitHub write path, but as
+ * `github_post_pull_request_review` — one aggregated review per PR
+ * posted by the workflow run, not N per-reviewer `suggestedFix`-bearing
+ * comments — so no call under this name is ever in the transcript to
+ * check. */
 export function suggestedFixesStructurallyValid() {
   return function suggestedFixesStructurallyValidScorer(
     ctx: ScorerContext,
@@ -438,7 +444,9 @@ export function suggestedFixesStructurallyValid() {
       return result(
         "suggestedFixesStructurallyValid",
         false,
-        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — blocked on CL-6325 (no GitHub write tool exists)`,
+        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — CL-6340 shipped ` +
+          "github_post_pull_request_review (one aggregated review) instead; " +
+          "see README.md's scoreboard",
       );
     }
     const invalid = calls.filter((call) => {
@@ -467,10 +475,12 @@ export function suggestedFixesStructurallyValid() {
  * scoped to `repo` and carries an `authorAgentHandle` for audit
  * attribution, with no approval-phrase requirement, and (b) any
  * `mergeTool` call found only ever follows an approval phrase. Reads
- * red today because neither GitHub-write tool exists yet (CL-6325) —
- * (a) fails on "no call yet," and this eval's step 4 never calls
- * `mergeTool` at all (Pass 1 stops at "review posted"), so (b) is
- * vacuously satisfied until CL-6325 gives it something to check.
+ * red today because the shipped GitHub write tool
+ * (`github_post_pull_request_review`, CL-6340/#62) doesn't match this
+ * name or shape — (a) fails on "no call yet," and this eval's step 4
+ * never calls `mergeTool` at all (Pass 1 stops at "review posted", and
+ * no merge-class tool exists at all today, by design), so (b) is
+ * vacuously satisfied.
  */
 export function outwardGitHubActionsRespectGrantBoundary(
   repo: string,
@@ -487,7 +497,9 @@ export function outwardGitHubActionsRespectGrantBoundary(
       return result(
         "outwardGitHubActionsRespectGrantBoundary",
         false,
-        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — blocked on CL-6325 (no GitHub write tool exists, and no per-repo grant concept to post under)`,
+        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — CL-6340 shipped ` +
+          "github_post_pull_request_review instead, with no per-reviewer " +
+          "attribution and no merge-class tool at all; see README.md's scoreboard",
       );
     }
     const offRepo = postCalls.filter((call) => call.arguments["repo"] !== repo);
@@ -528,21 +540,13 @@ export function outwardGitHubActionsRespectGrantBoundary(
   };
 }
 
-/** Passes once every fired reviewer run is inspectable after the fact
- * via its own event-log reference (plan.md §8.2 item 7). `WorldSnapshot`
- * carries no per-run event-log references at all yet, so this always
- * skips — the same `onTrigger`-adoption dependency
- * `reviewCommentsAttributable` names for per-run ids. */
+/** Passes once every run is inspectable after the fact — the whole run,
+ * including each reviewer's own per-PR pass (plan.md §8.2 item 7).
+ * `WorldSnapshot` has no `runs` field today, so this always skips
+ * naming that gap. */
 export function wholeRunInspectable() {
-  return function wholeRunInspectableScorer(_ctx: ScorerContext): ScorerResult {
-    return {
-      name: "wholeRunInspectable",
-      score: 1,
-      pass: true,
-      skipped: true,
-      reason:
-        "skipped: WorldSnapshot carries no per-run eventLogRef yet — " +
-        "blocked on Phase 1.3 (per-turn/per-reviewer run-id tracing via onTrigger adoption, CL-6322)",
-    };
+  return function wholeRunInspectableScorer(ctx: ScorerContext): ScorerResult {
+    void ctx;
+    return worldSnapshotFieldMissing("wholeRunInspectable", "runs");
   };
 }

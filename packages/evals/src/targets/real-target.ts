@@ -409,7 +409,7 @@ export async function bootMyraTarget(
     );
 
     const { chatId, agentAddress } = await pollUntil(
-      "POST /channels kind=chat definitionId=assistant",
+      "POST /workbenches kind=chat definitionId=assistant",
       60_000,
       async () => {
         if (sidecar.exited()) {
@@ -420,7 +420,7 @@ export async function bootMyraTarget(
         const res: EvalApiResult = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${seeded.tenantId}/chat/channels`,
+          `/api/tenants/${seeded.tenantId}/chat/workbenches`,
           { kind: "chat", definitionId: assistantDefinitionId },
           cookies,
         );
@@ -461,7 +461,7 @@ export async function bootMyraTarget(
       );
     }
 
-    // `POST /channels` fires `postCannedGreeting` fire-and-forget
+    // `POST /workbenches` fires `postCannedGreeting` fire-and-forget
     // (see `packages/chat/src/routes.ts`) right after the chat mints —
     // the unprompted canned greeting `greeting-delivery.test.ts` proves
     // lands with zero user messages sent. That test waits for the
@@ -485,7 +485,7 @@ export async function bootMyraTarget(
         const res = await api(
           hub.baseUrl,
           "GET",
-          `/api/tenants/${seeded.tenantId}/chat/channels/${chatId}/messages`,
+          `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
           undefined,
           cookies,
         );
@@ -522,7 +522,7 @@ export async function bootMyraTarget(
       const postRes = await api(
         hub.baseUrl,
         "POST",
-        `/api/tenants/${seeded.tenantId}/chat/channels/${chatId}/messages`,
+        `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
         { parts: [{ kind: "text", text: human }] },
         cookies,
       );
@@ -531,7 +531,7 @@ export async function bootMyraTarget(
       const beforeRes = await api(
         hub.baseUrl,
         "GET",
-        `/api/tenants/${seeded.tenantId}/chat/channels/${chatId}/messages`,
+        `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
         undefined,
         cookies,
       );
@@ -561,7 +561,7 @@ export async function bootMyraTarget(
           const res = await api(
             hub.baseUrl,
             "GET",
-            `/api/tenants/${seeded.tenantId}/chat/channels/${chatId}/messages`,
+            `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
             undefined,
             cookies,
           );
