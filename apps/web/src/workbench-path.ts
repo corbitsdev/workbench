@@ -8,7 +8,11 @@
 // `/settings/:section` and `settingsEntityIdFromPath` for the app-level
 // Settings page.
 
-import type { WorkbenchSettingsSectionId } from "@corbits/chat-ui";
+import {
+  isWorkbenchSettingsSectionId,
+  type WorkbenchSettingsSectionId,
+} from "@corbits/chat-ui";
+import { decodedOrNull } from "@corbits/url-path";
 
 export const WORKBENCH_PATH_PREFIX = "/w";
 const LEGACY_CHAT_PATH_PREFIX = "/chat";
@@ -33,7 +37,7 @@ export function workbenchIdFromPath(path: string): string | null {
     if (!base.startsWith(`${prefix}/`)) continue;
     const rest = base.slice(prefix.length + 1);
     if (rest === "") return null;
-    return decodeURIComponent(rest);
+    return decodedOrNull(rest);
   }
   return null;
 }
@@ -83,12 +87,13 @@ export function workbenchSettingsPath(
 
 /** Extract the section id from `/w/:id/settings/:section` (or
  * `/settings/:section/:entityId`, or its legacy `/chat` equivalent) —
- * `undefined` for bare `/settings` or a non-settings path. Only the first
- * segment after `/settings/` is the section, so a trailing entity id does
- * not change the section. Not validated against the known section ids: the
- * settings surface already falls back to its first section for an id it
- * doesn't recognize, the same contract `settingsSectionIdFromPath` in
- * `path-ids.ts` relies on its caller for. */
+ * `undefined` for bare `/settings`, a non-settings path, a malformed
+ * escape, or a segment that isn't one of `WorkbenchSettingsSectionId`'s own
+ * values. Only the first segment after `/settings/` is the section, so a
+ * trailing entity id does not change the section. An unrecognized id reads
+ * the same as no section at all: the settings surface already falls back
+ * to its first section then, the same contract `settingsSectionIdFromPath`
+ * in `path-ids.ts` relies on its caller for. */
 export function workbenchSettingsSectionFromPath(
   path: string,
 ): WorkbenchSettingsSectionId | undefined {
@@ -99,7 +104,11 @@ export function workbenchSettingsSectionFromPath(
   if (rest === "") return undefined;
   const section = rest.split("/")[0];
   if (section === undefined || section === "") return undefined;
-  return decodeURIComponent(section) as WorkbenchSettingsSectionId;
+  const decoded = decodedOrNull(section);
+  if (decoded === null || !isWorkbenchSettingsSectionId(decoded)) {
+    return undefined;
+  }
+  return decoded;
 }
 
 /** Extract a section's own sub-selection from
@@ -116,5 +125,5 @@ export function workbenchSettingsEntityIdFromPath(
   const index = path.indexOf(sectionPrefix);
   if (index === -1) return null;
   const rest = path.slice(index + sectionPrefix.length);
-  return rest === "" ? null : decodeURIComponent(rest);
+  return rest === "" ? null : decodedOrNull(rest);
 }

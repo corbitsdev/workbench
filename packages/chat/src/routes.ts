@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
+import { decodedOrNull } from "@corbits/url-path";
 
 import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
@@ -2802,9 +2803,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     "/workbenches/:id/participants/:address",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
-      const params = RemoveParticipantParams({
-        address: decodeURIComponent(c.req.param("address")),
-      });
+      const address = decodedOrNull(c.req.param("address"));
+      if (address === null) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "invalid participant: malformed address",
+          ),
+          400,
+        );
+      }
+      const params = RemoveParticipantParams({ address });
       if (params instanceof type.errors) {
         return c.json(
           ErrorEnvelope(

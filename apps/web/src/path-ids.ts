@@ -8,6 +8,7 @@
 // below.
 
 import { isValidSlug, type Slug } from "@corbits/slug";
+import { decodedOrNull } from "@corbits/url-path";
 
 export const SETTINGS_PATH_PREFIX = "/settings";
 export const AGENTS_PATH_PREFIX = "/agents";
@@ -41,19 +42,6 @@ function rawSegmentFromTopLevelPath(
   if (!path.startsWith(`${prefix}/`)) return null;
   const rest = path.slice(prefix.length + 1);
   return rest === "" ? null : rest;
-}
-
-/** A URL segment carries percent-escapes an id needs decoded, and a
- * hand-typed or truncated URL can carry a malformed one — which
- * `decodeURIComponent` answers with a throw. A path that cannot be decoded
- * names no entity, so it reads as no selection at all rather than taking
- * the render down with it. */
-function decodedOrNull(segment: string): string | null {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
 }
 
 /** Extract a sub-selection from a flat top-level route (`/agents/:id`,

@@ -61,6 +61,7 @@ import {
   type WorkbenchInsightsResolution,
 } from "../insights-workbench-scope";
 import { workbenchInsightsPath } from "../insights-deeplinks";
+import { parseInsightsPath } from "../insights-path";
 import {
   ActivityResponseSchema,
   InsightsScopeSchema,
@@ -1075,46 +1076,6 @@ export function InsightsRunDetail({
       </div>
     </div>
   );
-}
-
-/**
- * `/insights/workbench/:workbenchId` (CL-5879) is its own dedicated route — a
- * conversation's own scoped view, resolved by `InsightsWorkbenchPage`, never
- * a sub-mode of the landing. Every other path stays the cross-workbench
- * default landing: no per-mode branch needed there, since scoping happens
- * in InsightsRoute (which tenantId every query below targets), not here.
- * A stale `/insights/workbench/:tenantId` link (that route is retired,
- * hard cut) falls through to the plain landing default below rather than
- * matching anything.
- */
-function parseInsightsPath(path: string): {
-  mode: "landing" | "runs" | "run" | "workbench";
-  runId: string | null;
-  workbenchId: string | null;
-} {
-  const workbenchMatch = /^\/insights\/workbench\/([^/]+)\/?$/.exec(path);
-  if (workbenchMatch !== null && workbenchMatch[1] !== undefined) {
-    return {
-      mode: "workbench",
-      runId: null,
-      workbenchId: decodeURIComponent(workbenchMatch[1]),
-    };
-  }
-  if (path === INSIGHTS_PATH_PREFIX || path === `${INSIGHTS_PATH_PREFIX}/`) {
-    return { mode: "landing", runId: null, workbenchId: null };
-  }
-  if (path === INSIGHTS_RUNS_PATH || path === `${INSIGHTS_RUNS_PATH}/`) {
-    return { mode: "runs", runId: null, workbenchId: null };
-  }
-  const match = /^\/insights\/runs\/([^/]+)\/?$/.exec(path);
-  if (match !== null && match[1] !== undefined) {
-    return {
-      mode: "run",
-      runId: decodeURIComponent(match[1]),
-      workbenchId: null,
-    };
-  }
-  return { mode: "landing", runId: null, workbenchId: null };
 }
 
 /**

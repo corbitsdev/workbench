@@ -95,6 +95,7 @@ import {
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
+import { decodedOrNull } from "@corbits/url-path";
 import {
   createCryptoProviderCache,
   createTopLevelRunRoutes,
@@ -413,12 +414,12 @@ function dbConfigFromUrl(databaseUrl: string) {
 // Serves the single-page application from the hub origin: a real file
 // when one exists, index.html otherwise so client-side routes deep-link,
 // and never anything under /api, which stays with the platform routes.
-function createStaticHandler(staticDir: string) {
+export function createStaticHandler(staticDir: string) {
   return async (c: Context<AppEnv>, next: Next) => {
     if (c.req.path === "/api" || c.req.path.startsWith("/api/")) return next();
-    const rel = path
-      .normalize(decodeURIComponent(c.req.path))
-      .replace(/^[/\\]+/, "");
+    const decodedPath = decodedOrNull(c.req.path);
+    if (decodedPath === null) return next();
+    const rel = path.normalize(decodedPath).replace(/^[/\\]+/, "");
     if (rel === ".." || rel.startsWith(`..${path.sep}`)) return next();
     const asset = Bun.file(path.join(staticDir, rel));
     if (await asset.exists()) return new Response(asset);

@@ -42,6 +42,7 @@
     "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
+    "@corbits/url-path": "workspace:*",
     "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",

@@ -45,7 +45,10 @@ export type BenchState = {
   readonly onBenchCreated: (tenantId: string) => void;
 };
 
-const BenchContext = createContext<BenchState | null>(null);
+/** Exported only so a render test can inject a fixed `BenchState` without
+ * standing up `BenchProvider`'s own `/api/me/principals` fetch — every
+ * real caller still goes through `useBench`/`BenchProvider`. */
+export const BenchContext = createContext<BenchState | null>(null);
 
 /** The membership this context currently treats as selected: the stored
  * choice if it still names a bench the account belongs to *and* still

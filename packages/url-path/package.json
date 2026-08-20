@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/url-path",
+  "private": true,
+  "description": "The one guarded decode for a URL path segment or param — decodeURIComponent throws on a malformed escape, so every route/deep-link parser that reads a path shares this instead of decoding raw",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
