@@ -21,6 +21,10 @@ import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
 } from "../src/agent-workflow";
+import {
+  agentDefinitionSourceTree,
+  AGENT_DEFINITION_ENTRY_PATH,
+} from "../src/definition-asset";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
@@ -29,12 +33,13 @@ import {
 } from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
-/** A `readAssetBlob` that always answers `workflow.json` with
- * `workflowBytes` — pinned skills no longer live in the asset tree (see
- * `../src/skills-store.ts`), so a test that needs a definition's skills
- * seeds a `DefinitionSkillsStore` directly instead of stubbing a second
- * path here. */
+/** A `readAssetBlob` that always answers the definition's entry module
+ * with `workflowBytes` — pinned skills no longer live in the asset tree
+ * (see `../src/skills-store.ts`), so a test that needs a definition's
+ * skills seeds a `DefinitionSkillsStore` directly instead of stubbing a
+ * second path here. */
 function readAssetBlobFor(
   workflowBytes: Uint8Array,
 ): AssetService["readAssetBlob"] {
@@ -106,13 +111,14 @@ function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
   };
 }
 
-/** The serialized definition a stored `workflow.json` carries, so the
- * PUT path has something real to re-index. */
+/** The entry module a stored definition's asset carries, so the PUT
+ * path has something real to re-index. */
 function storedDefinitionBytes(
   systemPrompt = "You are a careful research assistant.",
 ): Uint8Array {
-  return new TextEncoder().encode(
-    serializeAgentDefinitionWorkflow(
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: serializeAgentDefinitionWorkflow(
       buildAgentDefinitionWorkflow({
         handle: "research-buddy",
         tenantDomain: TENANT.domain,
@@ -120,7 +126,8 @@ function storedDefinitionBytes(
         systemPrompt,
       }),
     ),
-  );
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
 /** The one step agent's tool-package pins inside a serialized definition. */
@@ -405,7 +412,7 @@ function fakeCreateDb(): DB["db"] {
   } as unknown as DB["db"];
 }
 
-test("a create request with skills writes only workflow.json to the asset tree and records skills in the skills store", async () => {
+test("a create request with skills writes the definition source tree to the asset and records skills in the skills store", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
@@ -440,7 +447,7 @@ test("a create request with skills writes only workflow.json to the asset tree a
   });
   expect(response.status).toBe(201);
   expect(writtenFiles).toBeDefined();
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(await skillsStore.getSkills("ast_1")).toEqual([
     "web-research",
     "long-form-write",
@@ -482,7 +489,7 @@ test("a create request without skills records an empty skills list", async () =>
     systemPrompt: "You are a careful research assistant.",
   });
   expect(response.status).toBe(201);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(await skillsStore.getSkills("ast_1")).toEqual([]);
 });
 
@@ -546,7 +553,7 @@ test("GET /skills omits unknown definition ids from the map rather than erroring
   expect(body.skills).toEqual({});
 });
 
-test("PUT /:definitionId/skills replaces the skill set, writing only workflow.json to the asset tree", async () => {
+test("PUT /:definitionId/skills replaces the skill set, writing the definition source tree to the asset", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
@@ -567,7 +574,7 @@ test("PUT /:definitionId/skills replaces the skill set, writing only workflow.js
     skills: ["long-form-write"],
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(await skillsStore.getSkills("ast_1")).toEqual(["long-form-write"]);
   const body = (await response.json()) as { skills: readonly string[] };
   expect(body.skills).toEqual(["long-form-write"]);
@@ -598,7 +605,7 @@ test("PUT /:definitionId/skills re-indexes the system prompt to exactly the new 
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
   await put(app, "/def_1/skills", { skills: ["long-form-write"] });
-  const prompt = promptFrom(writtenFiles?.["workflow.json"] as string);
+  const prompt = promptFrom(definitionFrom(writtenFiles));
   expect(prompt).toContain("- long-form-write: What long-form-write does.");
   expect(prompt).not.toContain("stale");
   expect(prompt.split("<available_skills>")).toHaveLength(2);
@@ -623,7 +630,7 @@ test("PUT /:definitionId/skills with no pins strips the index from the prompt", 
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
   await put(app, "/def_1/skills", { skills: [] });
-  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  const workflowJson = definitionFrom(writtenFiles);
   expect(promptFrom(workflowJson)).toBe(
     "You are a careful research assistant.",
   );
@@ -727,13 +734,72 @@ test("GET /:definitionId returns the agent's display name and system prompt", as
   expect(body.systemPrompt).toBe("You are a careful research assistant.");
 });
 
+/** A `readAssetBlob` for an asset written before the source-form
+ * cutover: it carries a bare `workflow.json`, so the entry module the
+ * routes read is simply absent. */
+function retiredEnvelopeAssetService(
+  overrides: Partial<AssetService> = {},
+): AssetService {
+  return fakeAssetService({
+    readAssetBlob: (params) =>
+      Promise.reject(
+        new AssetServiceError(
+          "not_found",
+          `readAssetBlob: asset ${params.assetId} has no blob at "${params.path}"`,
+        ),
+      ),
+    ...overrides,
+  });
+}
+
+test("GET /:definitionId answers 409, never a 500, for an asset still on the retired envelope", async () => {
+  const app = buildApp(
+    retiredEnvelopeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await app.request("/def_1");
+  expect(response.status).toBe(409);
+  const body = (await response.json()) as {
+    error: { code: string; message: string };
+  };
+  expect(body.error.code).toBe("conflict");
+  expect(body.error.message).toContain("workflow.json");
+});
+
+test("PUT /:definitionId answers 409 and writes nothing for an asset still on the retired envelope", async () => {
+  let populateCalled = false;
+  const app = buildApp(
+    retiredEnvelopeAssetService({
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "You are now polite.",
+  });
+  expect(response.status).toBe(409);
+  expect(populateCalled).toBe(false);
+});
+
 test("GET /:definitionId 404s for an unknown definition", async () => {
   const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
   const response = await app.request("/def_missing");
   expect(response.status).toBe(404);
 });
 
-test("PUT /:definitionId writes the new system prompt in a single workflow.json commit", async () => {
+test("PUT /:definitionId writes the new system prompt in a single source-tree commit", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const db = fakeInstructionsDb({
     id: "def_1",
@@ -758,8 +824,8 @@ test("PUT /:definitionId writes the new system prompt in a single workflow.json 
     systemPrompt: "You are now a blunt, no-nonsense researcher.",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
-  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
+  expect(promptFrom(definitionFrom(writtenFiles))).toBe(
     "You are now a blunt, no-nonsense researcher.",
   );
   expect(db.updateCalls).toEqual([
@@ -972,7 +1038,7 @@ test("a create request indexes its pinned skills into the stored system prompt",
     systemPrompt: "You are a careful research assistant.",
     skills: ["web-research"],
   });
-  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  const workflowJson = definitionFrom(writtenFiles);
   const prompt = promptFrom(workflowJson);
   expect(prompt.startsWith("You are a careful research assistant.")).toBe(true);
   expect(prompt).toContain("- web-research: What web-research does.");
@@ -1046,7 +1112,7 @@ test("a create request with no pinned skills stores the author's prompt verbatim
     handle: "research-buddy",
     systemPrompt: "You are a careful research assistant.",
   });
-  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  const workflowJson = definitionFrom(writtenFiles);
   expect(promptFrom(workflowJson)).toBe(
     "You are a careful research assistant.",
   );
@@ -1124,9 +1190,6 @@ test("restore writes the old commit's blobs as a new, human-named commit — nev
   const oldWorkflow = storedDefinitionBytes("You were once blunt.");
   const app = buildApp(
     fakeAssetService({
-      readAssetBlob: readAssetBlobFor(
-        storedDefinitionBytes("You are now polite."),
-      ),
       populateAsset: (params) => {
         writtenFiles = params.tree.files;
         writtenMessage = params.tree.message;
@@ -1147,16 +1210,17 @@ test("restore writes the old commit's blobs as a new, human-named commit — nev
     commitSha: "sha1old",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
-  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
-    "You were once blunt.",
-  );
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
+  expect(promptFrom(definitionFrom(writtenFiles))).toBe("You were once blunt.");
   expect(writtenMessage).toBe("Restore agent research-buddy to sha1old");
+  // The response reports the definition just restored, read out of the
+  // entry module the route wrote — never a re-read of the asset, which
+  // would race whatever else is committing to it.
   const body = (await response.json()) as { systemPrompt: string };
-  expect(body.systemPrompt).toBe("You are now polite.");
+  expect(body.systemPrompt).toBe("You were once blunt.");
 });
 
-test("restore 404s when the target commit never carried a workflow.json", async () => {
+test("restore 404s when the target commit never carried an entry module", async () => {
   const app = buildApp(
     fakeAssetService(),
     fakeInstructionsDb({
@@ -1231,8 +1295,8 @@ test("adding a tool package pin merges it into the definition in one commit, nam
     name: "@corbits/github-tools",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
-  expect(pinsFrom(writtenFiles?.["workflow.json"] as string)).toEqual([
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
+  expect(pinsFrom(definitionFrom(writtenFiles))).toEqual([
     { name: "@corbits/github-tools", version: "*" },
   ]);
   expect(writtenMessage).toBe("Add @corbits/github-tools to research-buddy");
@@ -1320,11 +1384,9 @@ test("adding a skill merges it additively into the skills store and re-indexes t
     name: "research",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
-  expect((writtenFiles?.["workflow.json"] as string).includes("research")).toBe(
-    true,
-  );
+  expect(definitionFrom(writtenFiles).includes("research")).toBe(true);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });
