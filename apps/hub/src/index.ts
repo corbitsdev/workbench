@@ -12,6 +12,7 @@ import {
   createDB,
   createGrantStore,
   createSidecarAllocationStore,
+  createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
   listVisibleOfferings,
   resolveCredentialByName,
@@ -37,6 +38,7 @@ import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
   createRequireGrant,
+  readDurableWorkflowRunLifecycles,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
@@ -229,7 +231,22 @@ import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
-import { createNeedsYouRoutes } from "@corbits/approvals";
+import {
+  createNeedsYouRoutes,
+  createToolAllowanceRegistry,
+  withGrantAllowance,
+} from "@corbits/approvals";
+import {
+  createMcpCallClassifier,
+  MCP_CALL_TOOL,
+  mcpTools,
+} from "@corbits/mcp-tools";
+import {
+  createAllowanceAutoApprover,
+  createMcpServerToolsAllowanceLoader,
+  createRegisteredApprovalFinder,
+  createTenantGrantLister,
+} from "./grant-allowance";
 import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
@@ -584,8 +601,28 @@ export async function createHub(config: HubConfig) {
   // "completed" folded run keeps its reconnect honest without loosening
   // the gate for a real workflow deployment or for a folded run that is
   // genuinely gone ("failed"/"cancelled" still fail closed).
+  // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
+  // so a parked read-only call whose resource a standing grant covers is
+  // auto-approved right after its approval row lands — no card for a
+  // human, the ledgered row still records the decision. The gate's deps
+  // (dispatch service, grant store, approval stores) don't exist yet at
+  // this point in the composition, so the wrapper reads through this ref,
+  // assigned once they do; until then every registration takes the plain
+  // parked path.
+  const grantAllowanceGateRef: {
+    current?: (
+      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
+    ) => Promise<void>;
+  } = {};
   const lookups = {
     ...baseLookups,
+    async registerSignalCorrelation(
+      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
+    ): Promise<void> {
+      const gate = grantAllowanceGateRef.current;
+      if (gate !== undefined) return gate(args);
+      return baseLookups.registerSignalCorrelation(args);
+    },
     async lookupPublicKey(agentAddress: string): Promise<string | null> {
       // CL-6281: the repair runs before `baseLookups` because the case
       // it exists for is exactly the one `baseLookups` answers WRONGLY —
@@ -1009,6 +1046,67 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  // CL-6345: arm the grant-allowance gate declared up at `lookups`. The
+  // one annotation today is `mcp_call` (registered under both its bare
+  // and pinned-namespaced names): a downstream MCP tool the server
+  // itself marks `readOnlyHint: true`, called on a connection whose
+  // `mcp:<slug>` resource an `allow`/"read" grant covers, is
+  // auto-approved through the native resolve machinery; every other
+  // parked call — writes, unverified claims, uncovered connections —
+  // waits for a human exactly as before.
+  {
+    const mcpCallClassify = createMcpCallClassifier(
+      createMcpServerToolsAllowanceLoader({ db, credentialCipher }),
+    );
+    const allowanceLog = (line: string) => log.info`${line}`;
+    grantAllowanceGateRef.current = withGrantAllowance(
+      (args) => baseLookups.registerSignalCorrelation(args),
+      {
+        registry: createToolAllowanceRegistry([
+          {
+            tool: MCP_CALL_TOOL,
+            grantAction: "read",
+            classify: mcpCallClassify,
+          },
+          {
+            tool: `${mcpTools.id}:${MCP_CALL_TOOL}`,
+            grantAction: "read",
+            classify: mcpCallClassify,
+          },
+        ]),
+        findRegisteredApproval: createRegisteredApprovalFinder(db),
+        listTenantGrants: createTenantGrantLister(db),
+        autoApprove: createAllowanceAutoApprover(
+          {
+            db,
+            sidecarRouter,
+            workflowDispatchService,
+            readRunLifecycles: async (
+              agentAddress,
+              topLevelRunId,
+              targetRunId,
+            ) => {
+              const lifecycles = await readDurableWorkflowRunLifecycles(
+                agentRepoStore.repoStore,
+                agentAddress,
+                [topLevelRunId, targetRunId],
+              );
+              return {
+                topLevel: lifecycles.get(topLevelRunId) ?? "absent",
+                target: lifecycles.get(targetRunId) ?? "absent",
+              };
+            },
+            grantStore: chatGrantStore,
+            conditionRegistry: chatConditionRegistry,
+            approvalStore: createApprovalStore(db),
+            signalCorrelationStore: createSignalCorrelationStore(db),
+          },
+          allowanceLog,
+        ),
+        log: allowanceLog,
+      },
+    );
+  }
   // Mounted here (not up with the registry construction above) because
   // its `/update` route's grant gate needs `chatGrantStore`/
   // `chatConditionRegistry`, which don't exist yet up there — the same

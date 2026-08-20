@@ -20,7 +20,7 @@ vendor/intx/crypto | sawyer | 2026-09-14 | 7280b002b09da04b81a53d413580c88c8786f
 vendor/intx/db | sawyer | 2026-09-14 | fda685c284697c10e8a5e637d86df49c8d7c95169949580d299c08cf80fe475c
 vendor/intx/harness | sawyer | 2026-09-14 | af9b270a297ae1dc6d8684da9005ec9d3d6220d1679e5f569086ef313e17f371
 vendor/intx/hub-agent | sawyer | 2026-09-14 | 6402193dfe48dce3525c9b233bd6974e566df57ff5bc209128633af92abe8b17
-vendor/intx/hub-api | sawyer | 2026-09-14 | 7d82a625c852b9e9bb13fd59e71c6c45be792bcbb9ebb5994586e97840dc66c1
+vendor/intx/hub-api | sawyer | 2026-09-14 | d9d40ef0b20ced66f20aec69d38fa33a752083e8e5e22f3443d5cab2f79f44e2
 vendor/intx/hub-common | sawyer | 2026-09-14 | 0e2d71d4754713538d7fd6451c8648c6b277390abfc888e605499fc004ce0349
 vendor/intx/hub-sessions | sawyer | 2026-09-05 | 562ff0509e15360eb578ae51a50f3b1445f22dc71c5012e95069a49b8000b509
 vendor/intx/inference | sawyer | 2026-09-14 | 8714c2ee0f800caadb770db70ed1c66018dccde1b2bd62408c4899b1839b6ea9

@@ -17,6 +17,9 @@ export type {
   McpServerListing,
 } from "./registry-client";
 
+export { createMcpCallClassifier, mcpServerResource } from "./allowance";
+export type { McpCallClassification, McpServerToolsLoader } from "./allowance";
+
 export {
   MCP_CALL_TOOL,
   MCP_LIST_SERVERS_TOOL,

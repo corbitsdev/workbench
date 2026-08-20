@@ -80,16 +80,24 @@ export type ReadRunLifecycles = (
   target: WorkflowRunLifecycle;
 }>;
 
-type ResolveApprovalArgs = {
+export type ResolveApprovalArgs = {
   approvalId: string;
   tenantId: string;
-  principalId: string;
+  /**
+   * The resolving principal, whose `approval:<anchorRunId>`/"resolve"
+   * grant is checked before the claim. `null` means the decision was
+   * already authorized by policy (a standing-grant allowance evaluated
+   * against the tenant's grant store) rather than by a principal's
+   * interactive resolve grant; the caller asserts that authorization and
+   * the principal gate is skipped.
+   */
+  principalId: string | null;
   status: "approved" | "rejected";
   scope?: "once";
   decisionPayload: ApprovalDecision;
 };
 
-type ResolveApprovalResult =
+export type ResolveApprovalResult =
   | { kind: "resolved"; approval: ParsedApproval }
   | { kind: "not_found" }
   | { kind: "forbidden" }
@@ -119,7 +127,7 @@ type PendingFailureKind = Extract<
  * until workflow Git records the signal as received. Shared deployments retain
  * their direct sidecar delivery behavior.
  */
-async function resolveApproval(
+export async function resolveApproval(
   deps: CreateApprovalRoutesDeps,
   args: ResolveApprovalArgs,
 ): Promise<ResolveApprovalResult> {
@@ -139,16 +147,18 @@ async function resolveApproval(
     return { kind: "not_found" };
   }
 
-  const authz = await authorize(
-    grantStore,
-    args.principalId,
-    args.tenantId,
-    `approval:${approval.anchorRunId}`,
-    "resolve",
-    conditionRegistry,
-  );
-  if (authz.effect !== "allow") {
-    return { kind: "forbidden" };
+  if (args.principalId !== null) {
+    const authz = await authorize(
+      grantStore,
+      args.principalId,
+      args.tenantId,
+      `approval:${approval.anchorRunId}`,
+      "resolve",
+      conditionRegistry,
+    );
+    if (authz.effect !== "allow") {
+      return { kind: "forbidden" };
+    }
   }
 
   const resolvedAt = new Date();

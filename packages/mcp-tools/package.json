@@ -2,7 +2,7 @@
   "name": "@corbits/mcp-tools",
   "private": true,
   "description": "Generic MCP server integration: connect any Streamable HTTP MCP server through Plugins and its tools become reachable by any agent via mcp_list_servers/mcp_list_tools/mcp_call",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
