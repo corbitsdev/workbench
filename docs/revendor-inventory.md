@@ -510,3 +510,66 @@ The sidecar's three remaining red suites
 (`test/workflow-substrate-factory-suspendable-child.test.ts` and siblings,
 failing on the deleted `createWorkflowSpawnChild` export) are the visible
 tail of that same chain.
+
+### Section deploys on the new rails (CL-6329's prerequisite)
+
+Phase 1.3's turn=run swap needs the converted front to deploy an `onTrigger`
+SECTION definition carrying `referencedDefinitions`, not just the single-step
+folded agent. Checked against the re-vendored trees, and the answer is that
+the new front handles this **natively and unconditionally** — it is strictly
+more natural here than on the retired path:
+
+- `deployCodeSourcedWorkflow`
+  (`vendor/intx/hub-sessions/src/session-service.ts:745`) calls
+  `enumerateInertOnTriggerBodies(projection)` on **every** code-sourced
+  deploy. It resolves each body step's inference source through the same
+  `pickStepInferenceSource` + operator-approval gate the top-level steps use,
+  recomputes each body's wire hash from the frozen inert body, and ships the
+  set as `referencedDefinitions` on the deploy frame.
+- There is no caller opt-in and no second entry point. A definition with no
+  inline section simply enumerates zero bodies and the field is omitted.
+
+**So the launch API needs no single-step/section branch.** Which shape gets
+deployed is entirely a property of what the source package's
+`interchange.workflow` entry module evaluates to. One front, one set of
+parameters (source, entry, pin, `definitionAssetId`, config); the section-ness
+is downstream of it. A converted `deployAtHead` that exposes a
+"deploy a section" flag would be modelling a distinction the platform does
+not have.
+
+Two corrections to the seams as cited from the old pin:
+
+- `vendor/intx/workflow-deploy/src/orchestrator.ts:1020` no longer exists —
+  the re-pin cut that file from 1094 lines to 319 (`createWorkflowDeployOrchestrator`
+  is deleted). Body enumeration now lives in `hub-sessions`' code-sourced
+  deploy, and the pure structural half in
+  `workflow-deploy/src/inert-ontrigger-bodies.ts`.
+- `vendor/intx/workflow/src/ontrigger-bodies.ts:43` (`onTriggerBodyRef`) is
+  intact and is now the single owner of the `<workflowId>__<stepId>` scheme,
+  shared by the hub's inert enumerator and the in-child rewrite.
+
+#### `onBodyFailure` survives the new rails, but only because of where it is read
+
+The CL-6326 delta adds `onBodyFailure` to the LIVE `onTrigger` primitive and
+reads it live in `runtime/run.ts`. The inert projector does **not** carry it:
+`projectOnTrigger` (`vendor/intx/workflow/src/live-inert-projector.ts:376`)
+is an explicit field whitelist — `kind`, `id`, `on`, `body`, `drainBehavior`,
+`after` — and `InertOnTrigger` has no such field.
+
+On the code-sourced rails this is harmless, and in fact load-bearing in our
+favour. The child EVALUATES the pinned closure to a live definition and runs
+the runtime against that (`run-child.ts:645-649`); the inert projection is
+only the approval/hash surface. So:
+
+- `onBodyFailure` reaches the runtime, because the entry module authored it
+  and the child re-evaluates the entry module.
+- `onBodyFailure` is invisible to `computeLiveDefinitionHash`, because the
+  hash is taken over the projection that drops it — so the field cannot
+  cause a re-verify divergence.
+
+The consequence worth stating plainly: the delta is **only** sound on a path
+where the executing definition is re-evaluated from source. Anything that
+ships the projection as the executable definition would silently drop the
+policy and take the default `"end"` — a section that dies on its first failed
+turn, with no error. That is one more reason the conversion cannot be
+half-taken.
