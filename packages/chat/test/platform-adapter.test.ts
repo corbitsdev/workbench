@@ -305,6 +305,7 @@ function createFakeDb(opts: {
                     tenantId: "ten_1",
                     instanceId: opts.workflowRunRow.id,
                     currentRunId: opts.workflowRunRow.id,
+                    priorRunIds: [],
                     foldedBody: {
                       systemPrompt: "be helpful",
                       toolPackagePins: [],
@@ -319,12 +320,14 @@ function createFakeDb(opts: {
             const withCurrent = row as {
               instanceId: string;
               currentRunId?: string;
+              priorRunIds?: string[];
             };
             return selectChain([
               {
                 ...withCurrent,
                 currentRunId:
                   withCurrent.currentRunId ?? withCurrent.instanceId,
+                priorRunIds: withCurrent.priorRunIds ?? [],
               },
             ]);
           }
@@ -2522,5 +2525,124 @@ describe("createHubChatPlatform", () => {
         "You are now a blunt, no-nonsense assistant.",
       );
     });
+  });
+});
+
+// CL-6365: the send-triggered relaunch only fires when somebody writes
+// into the room. A room whose agent died in a crash has nobody writing
+// into it — that is the whole failure — so the sweep is what makes the
+// interrupted turn surface at all.
+describe("createHubChatPlatform relaunch sweep", () => {
+  const DEAD_ROOM_FOLDED_BODY = {
+    systemPrompt: "be helpful",
+    toolPackagePins: [],
+    grantRequirements: [],
+    credentialBindings: [],
+    model: null,
+  };
+
+  function createSweepFixture(opts: { runStatus: string; parked: boolean }) {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_room1",
+      workflowRunRow: {
+        id: "run_dead",
+        address: "run_dead@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_room1",
+        status: opts.runStatus,
+      },
+      foldedRunMarker: opts.parked,
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "ins_room1",
+        currentRunId: "run_dead",
+        foldedBody: DEAD_ROOM_FOLDED_BODY,
+        noopInference: true,
+      },
+    });
+    const sessionService = createFakeSessionService();
+    const notices: unknown[] = [];
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService,
+      assetService: createFakeAssetService(),
+      // Routable, and dead anyway: that combination is exactly what the
+      // wake path cannot fix — boot restore re-announced the address, so
+      // nothing looks broken until the next message is dropped.
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_dead@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+      relaunchNotice: { current: (notice) => notices.push(notice) },
+    });
+    return { db, platform, sessionService, notices };
+  }
+
+  test("relaunches a routable-but-dead participant and tells the room", async () => {
+    const { db, platform, sessionService, notices } = createSweepFixture({
+      runStatus: "failed",
+      parked: false,
+    });
+
+    const swept = await platform.sweepTerminalRuns();
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+
+    // The fresh run keeps neither the dead run's id nor its address —
+    // the platform derives one from the other — while the room's own
+    // stable id never moves.
+    const repointed = db.updated.at(-1)?.values as {
+      currentRunId: string;
+      priorRunIds: string[];
+    };
+    expect(repointed.currentRunId).not.toBe("run_dead");
+    expect(repointed.priorRunIds).toEqual(["run_dead"]);
+
+    expect(notices).toEqual([
+      {
+        tenantId: "ten_1",
+        roomAddress: "ins_room1@ten1.workbench.test",
+        deadRunId: "run_dead",
+        deadRunStatus: "failed",
+        newRunId: repointed.currentRunId,
+      },
+    ]);
+  });
+
+  test("leaves a folded run merely parked between messages alone", async () => {
+    const { platform, sessionService, notices } = createSweepFixture({
+      runStatus: "completed",
+      parked: true,
+    });
+
+    expect(await platform.sweepTerminalRuns()).toEqual({
+      scanned: 0,
+      relaunched: 0,
+    });
+    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
+    expect(notices).toEqual([]);
+  });
+
+  test("leaves a running participant alone", async () => {
+    const { platform, sessionService, notices } = createSweepFixture({
+      runStatus: "running",
+      parked: false,
+    });
+
+    expect(await platform.sweepTerminalRuns()).toEqual({
+      scanned: 0,
+      relaunched: 0,
+    });
+    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
+    expect(notices).toEqual([]);
   });
 });
