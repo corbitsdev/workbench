@@ -239,6 +239,24 @@ export interface WorkbenchTenancyStore {
     tenantId: string,
     principalId: string,
   ): Promise<TenantPrincipal | undefined>;
+
+  /**
+   * The native principal row for whoever `refId` (the caller's own auth
+   * user identity, `principal.refId`) resolves to within `tenantId`, or
+   * `undefined` when that identity holds no principal there — the
+   * membership check a members-only workbench's own child tenant gates
+   * room access by (CL-6332): "invited" means the workbench's own
+   * tenant minted a principal for this identity, with no separate
+   * membership table to fall out of sync with it. Unlike
+   * `getTenantPrincipal`, which looks up a principal already known to
+   * belong to `tenantId`, this crosses tenant boundaries by the one
+   * identity that stays stable across every tenant it holds a
+   * principal in.
+   */
+  getTenantPrincipalByRefId(
+    tenantId: string,
+    refId: string,
+  ): Promise<TenantPrincipal | undefined>;
 }
 
 export interface WorkbenchTenancyAuthzDeps {
@@ -601,6 +619,21 @@ export function createDrizzleWorkbenchTenancyStore<
         .limit(1);
       return row as TenantPrincipal | undefined;
     },
+
+    async getTenantPrincipalByRefId(tenantId, refId) {
+      const [row] = await db
+        .select({
+          id: principal.id,
+          kind: principal.kind,
+          status: principal.status,
+        })
+        .from(principal)
+        .where(
+          and(eq(principal.tenantId, tenantId), eq(principal.refId, refId)),
+        )
+        .limit(1);
+      return row as TenantPrincipal | undefined;
+    },
   };
 }
 
@@ -625,14 +658,19 @@ export function createDrizzleWorkbenchTenancyStore<
 export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
   registerExistingTenant(tenantId: string, parentTenantId?: string): void;
   grantManageInTenant(refId: string, tenantId: string): void;
-  registerPrincipal(tenantId: string, principal: TenantPrincipal): void;
+  registerPrincipal(
+    tenantId: string,
+    principal: TenantPrincipal & { refId?: string },
+  ): void;
 } {
   const byWorkbenchId = new Map<string, WorkbenchTenancyRow>();
   const existingTenants = new Set<string>();
   const manageGrants = new Set<string>();
   const principalsByKey = new Map<string, TenantPrincipal>();
+  const principalsByRefKey = new Map<string, TenantPrincipal>();
   const principalKey = (tenantId: string, principalId: string) =>
     `${tenantId}::${principalId}`;
+  const refKey = (tenantId: string, refId: string) => `${tenantId}::${refId}`;
   // Mirrors the drizzle store's `tenant.parentId`: every tenant this
   // store knows of maps to its parent, or `undefined` for a root. Kept
   // separately from `byWorkbenchId` because a destination tenant in a
@@ -692,12 +730,26 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
       // drizzle store does — the owner role's `*`/`*` grant covers
       // the move-destination check too.
       manageGrants.add(manageGrantKey(input.creatorUserId, tenantId));
+      const ownerPrincipalId = generateId("principal");
+      const ownerPrincipal: TenantPrincipal = {
+        id: ownerPrincipalId,
+        kind: "user",
+        status: "active",
+      };
+      principalsByKey.set(
+        principalKey(tenantId, ownerPrincipalId),
+        ownerPrincipal,
+      );
+      principalsByRefKey.set(
+        refKey(tenantId, input.creatorUserId),
+        ownerPrincipal,
+      );
       return {
         tenantId,
         parentTenantId: input.parentTenantId,
         domain: `${slug}.localhost`,
         slug,
-        ownerPrincipalId: generateId("principal"),
+        ownerPrincipalId,
       };
     },
 
@@ -742,10 +794,20 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
         principalKey(tenantId, principalRow.id),
         principalRow,
       );
+      if (principalRow.refId !== undefined) {
+        principalsByRefKey.set(
+          refKey(tenantId, principalRow.refId),
+          principalRow,
+        );
+      }
     },
 
     async getTenantPrincipal(tenantId, principalId) {
       return principalsByKey.get(principalKey(tenantId, principalId));
+    },
+
+    async getTenantPrincipalByRefId(tenantId, refId) {
+      return principalsByRefKey.get(refKey(tenantId, refId));
     },
 
     // Mirrors the drizzle store's fold of the destination check into
