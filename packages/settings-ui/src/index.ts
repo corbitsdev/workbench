@@ -119,6 +119,7 @@ export {
   ConnectionsApiError,
   completeConnectorCredential,
   disconnectConnector,
+  fetchOAuthConfigured,
 } from "./connections-api";
 
 export { connectorStatus } from "./connections-status";

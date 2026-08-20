@@ -33,10 +33,6 @@ function matchesQuery(haystacks: readonly string[], query: string): boolean {
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
-function isConnectedLegacyPlugin(plugin: ResolvedPlugin): boolean {
-  return plugin.status !== "not_connected";
-}
-
 function PluginGrid({
   plugins,
   onOpen,
@@ -67,9 +63,7 @@ function PluginsTabPanel({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   const nonPreset = plugins.filter(
-    (plugin) =>
-      !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
-      isConnectedLegacyPlugin(plugin),
+    (plugin) => !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
   );
   const filtered = nonPreset.filter((plugin) =>
     matchesQuery(
@@ -222,8 +216,7 @@ export function PluginsGallery({
         count:
           installablePlugins.filter(
             (plugin) =>
-              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id) &&
-              isConnectedLegacyPlugin(plugin),
+              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
           ).length + MCP_PRESETS.length,
       },
       { id: "skills" as const, label: "Skills", count: skills.length },

@@ -13,8 +13,13 @@ import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useState } from "react";
 
+import type { ConnectGithubRepo } from "@corbits/chat-ui";
+
 import { useBench } from "../bench-context";
-import { createWorkbenchFromTemplate } from "../instant-agent-create";
+import {
+  createWorkbenchFromTemplate,
+  type PickGithubRepos,
+} from "../instant-agent-create";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -22,6 +27,14 @@ import {
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
 } from "../workbench-templates";
+import { GithubRepoSelectDialog } from "./github-repo-select-dialog";
+
+type RepoPickerState = {
+  readonly orgName: string;
+  readonly repos: readonly ConnectGithubRepo[];
+  readonly selectedRepoIds: readonly string[];
+  readonly resolve: (repoIds: readonly string[] | null) => void;
+};
 
 const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
@@ -39,12 +52,27 @@ export function NewWorkbenchPickerRoute() {
     WORKBENCH_TEMPLATES[0]?.id ?? "blank",
   );
   const [creating, setCreating] = useState(false);
+  const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
+
+  const pickGithubRepos: PickGithubRepos = ({
+    orgName,
+    repos,
+    selectedRepoIds,
+  }) =>
+    new Promise((resolve) => {
+      setRepoPicker({ orgName, repos, selectedRepoIds, resolve });
+    });
 
   async function handleCreate() {
     if (selectedTenantId === null || creating) return;
     setCreating(true);
     try {
-      await createWorkbenchFromTemplate(selectedTenantId, selectedId, navigate);
+      await createWorkbenchFromTemplate(
+        selectedTenantId,
+        selectedId,
+        navigate,
+        pickGithubRepos,
+      );
     } catch {
       toast("Couldn't create the workbench — try again.");
       setCreating(false);
@@ -146,6 +174,21 @@ export function NewWorkbenchPickerRoute() {
           </>
         )}
       </div>
+      {repoPicker !== null ? (
+        <GithubRepoSelectDialog
+          orgName={repoPicker.orgName}
+          repos={repoPicker.repos}
+          initialSelectedRepoIds={repoPicker.selectedRepoIds}
+          onStartReviewing={(repoIds) => {
+            repoPicker.resolve(repoIds);
+            setRepoPicker(null);
+          }}
+          onSkip={() => {
+            repoPicker.resolve(null);
+            setRepoPicker(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

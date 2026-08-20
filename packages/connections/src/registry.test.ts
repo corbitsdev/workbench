@@ -10,10 +10,26 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
-  test("every api-key entry has a probe and no oauth config", () => {
+  test("every api-key entry has a probe", () => {
     for (const descriptor of Object.values(CONNECTOR_REGISTRY)) {
       if (descriptor.authKind !== "api-key") continue;
       expect(descriptor.probe).toBeDefined();
+    }
+  });
+
+  // `github` is the one deliberate exception (CL-6386): it stays
+  // `authKind: "api-key"` (the PAT paste form is always available) but
+  // also carries an `oauth` config a caller checks `GET
+  // /oauth-configured` before offering, ahead of the paste form, as a
+  // hosted one-click connect. Every other api-key connector still names
+  // no `oauth` at all.
+  test("only github carries an oauth config alongside api-key", () => {
+    for (const descriptor of Object.values(CONNECTOR_REGISTRY)) {
+      if (descriptor.authKind !== "api-key") continue;
+      if (descriptor.id === "github") {
+        expect(descriptor.oauth).toBeDefined();
+        continue;
+      }
       expect(descriptor.oauth).toBeUndefined();
     }
   });

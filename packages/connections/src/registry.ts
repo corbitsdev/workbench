@@ -59,6 +59,10 @@ import {
 } from "simple-icons";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
+  exchangeCodeForGithubToken,
+  GITHUB_AUTHORIZE_URL,
+} from "./github-connect";
+import {
   testExaCredential,
   testGitHubCredential,
   testGranolaCredential,
@@ -296,9 +300,17 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     github: {
       id: "github",
-      // GitHub's REST API accepts a fine-grained PAT as a Bearer token.
-      // Absent entirely, github-tools degrades to a lower unauthenticated
-      // rate limit rather than "not connected" — see its tool.ts.
+      // GitHub's REST API accepts a fine-grained PAT — or a GitHub OAuth
+      // App user token, which is the same Bearer shape — as a Bearer
+      // token. Absent entirely, github-tools degrades to a lower
+      // unauthenticated rate limit rather than "not connected" — see its
+      // tool.ts. `authKind` stays "api-key" (the PAT paste form is
+      // always available, CL-6386's guaranteed fallback); the `oauth`
+      // config below is this connector's one exception to "oauth fields
+      // are oauth-pkce/oauth-code only" — a caller checks
+      // `GET /oauth-configured`'s `github` entry to decide whether to
+      // offer the one-click app connect ahead of the paste form, never
+      // the other way around, so an unconfigured deploy never dead-ends.
       credentialPlugin: "http",
       displayName: "GitHub",
       authKind: "api-key",
@@ -307,6 +319,38 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       probe: (apiKey) => testGitHubCredential(apiKey),
       description: "Read repos, issues, and pull requests.",
       icon: { path: siGithub.path, hex: siGithub.hex },
+      oauth: {
+        authorizeUrl: GITHUB_AUTHORIZE_URL,
+        usesPKCE: false,
+        echoesState: true,
+        deploysDefaultWorkflows: false,
+        clientId: (env) => env["githubAppClientId"],
+        clientSecret: (env) => env["githubAppClientSecret"],
+        buildAuthorizeUrl: ({ callbackUrl, state, clientId }) => {
+          const url = new URL(GITHUB_AUTHORIZE_URL);
+          if (clientId !== undefined)
+            url.searchParams.set("client_id", clientId);
+          url.searchParams.set("redirect_uri", callbackUrl);
+          url.searchParams.set("scope", "repo");
+          url.searchParams.set("state", state);
+          return url;
+        },
+        exchange: async ({ code, redirectUri, clientId, clientSecret }) => {
+          if (clientId === undefined || clientSecret === undefined) {
+            return {
+              ok: false,
+              message: "github app connect is not configured",
+            };
+          }
+          const result = await exchangeCodeForGithubToken({
+            code,
+            redirectUri,
+            clientId,
+            clientSecret,
+          });
+          return result.ok ? { ok: true, apiKey: result.key } : result;
+        },
+      },
     },
     "granola-webhook": {
       id: "granola-webhook",
