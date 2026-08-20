@@ -30,6 +30,13 @@ import {
 } from "@corbits/icons";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
+import {
+  AGENTS_PATH_PREFIX,
+  PLUGINS_PATH_PREFIX,
+  ROUTINES_PATH_PREFIX,
+  SKILLS_PATH_PREFIX,
+  detailSlugFromPath,
+} from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
   LegacyLibraryRedirect,
@@ -72,6 +79,20 @@ const PluginsRoute = lazy(async () => ({
 const SettingsRoute = lazy(async () => ({
   default: (await import("./pages/settings-page")).SettingsRoute,
 }));
+const AgentDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders")).AgentDetailPlaceholder,
+}));
+const SkillDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders")).SkillDetailPlaceholder,
+}));
+const PluginDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders"))
+    .PluginDetailPlaceholder,
+}));
+const RoutineDetailPlaceholder = lazy(async () => ({
+  default: (await import("./pages/detail-placeholders"))
+    .RoutineDetailPlaceholder,
+}));
 
 /** The signed-out screen (CL-6369) — a real route, not a conditional swap:
  * any unauthenticated request for another path bounces here with `?next=`
@@ -95,6 +116,22 @@ export const SETTINGS_PATH = "/settings";
  * row of its own, only the "+" control and the palette reach it. */
 export const NEW_WORKBENCH_PATH = "/new";
 
+/** Detail routes are addressed by slug (CL-6412): one route path per
+ * entity, ending in this segment. A path matches only when its last
+ * segment is a real slug, so `/agents/wfd_1` still resolves to the Agents
+ * roster (which owns id deep links) while `/agents/triage-bot` resolves to
+ * the agent's own screen. */
+const SLUG_SEGMENT = "/:slug";
+
+export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const PLUGIN_DETAIL_PATH = `${PLUGINS_PATH_PREFIX}${SLUG_SEGMENT}`;
+export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${SLUG_SEGMENT}`;
+
+function slugForDetailRoute(routePath: string, path: string): string | null {
+  return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
+}
+
 export type AppRoute = {
   readonly path: string;
   readonly label: string;
@@ -114,15 +151,21 @@ export type AppRoute = {
 
 /**
  * Matches nested product paths (`/routines/:id`, `/insights/...`) plus
- * conversation deep links (which also match when Myra land `/` is active).
- * Other routes are exact path matches.
+ * conversation deep links (which also match when Myra land `/` is active)
+ * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
+ * exact path matches. A roster prefix still matches its own nested paths,
+ * so the sidebar footer row stays lit on a detail screen.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
     return isWorkbenchPath(path) || path === "/";
   }
+  if (routePath.endsWith(SLUG_SEGMENT)) {
+    return slugForDetailRoute(routePath, path) !== null;
+  }
   if (
     routePath === "/routines" ||
+    routePath === "/plugins" ||
     routePath === "/library" ||
     routePath === "/files" ||
     routePath === "/insights" ||
@@ -181,6 +224,15 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
+    // Detail routes come before their roster: the roster prefix matches
+    // everything beneath it, so the more specific slug route has to be
+    // found first.
+    path: ROUTINE_DETAIL_PATH,
+    label: "Routine",
+    icon: <FlowArrow />,
+    render: (path: string) => <RoutineDetailPlaceholder path={path} />,
+  },
+  {
     path: "/routines",
     label: "Routines",
     icon: <FlowArrow />,
@@ -207,6 +259,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
+    path: AGENT_DETAIL_PATH,
+    label: "Agent",
+    icon: <Robot />,
+    render: (path: string) => <AgentDetailPlaceholder path={path} />,
+  },
+  {
     path: "/agents",
     label: "Agents",
     icon: <Robot />,
@@ -223,6 +281,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string, navigate: (to: string) => void) => (
       <LegacySettingsAgentsRedirect path={path} navigate={navigate} />
     ),
+  },
+  {
+    path: SKILL_DETAIL_PATH,
+    label: "Skill",
+    icon: <Lightning />,
+    render: (path: string) => <SkillDetailPlaceholder path={path} />,
   },
   {
     path: "/skills",
@@ -253,6 +317,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // is CL-6088's (the single-column shell rework), so this is
     // deliberately absent from RAIL_PRIMARY_PATHS / RAIL_UTILITY_PATHS /
     // NAV_ROUTES below.
+    path: PLUGIN_DETAIL_PATH,
+    label: "Plugin",
+    icon: <SquaresFour />,
+    render: (path: string) => <PluginDetailPlaceholder path={path} />,
+  },
+  {
     path: "/plugins",
     label: "Plugins",
     icon: <SquaresFour />,

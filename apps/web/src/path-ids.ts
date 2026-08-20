@@ -7,10 +7,27 @@
 // `/agents/:id` and `/skills/:id`, via `agentIdFromPath`/`skillIdFromPath`
 // below.
 
+import { isValidSlug } from "@corbits/slug";
+
 export const SETTINGS_PATH_PREFIX = "/settings";
 export const AGENTS_PATH_PREFIX = "/agents";
 export const SKILLS_PATH_PREFIX = "/skills";
 export const FILES_PATH_PREFIX = "/files";
+export const PLUGINS_PATH_PREFIX = "/plugins";
+export const ROUTINES_PATH_PREFIX = "/routines";
+
+/** The slug a detail path carries — `null` unless the path is exactly
+ * `<prefix>/<slug>`. An id-shaped segment (`wfd_1`, `skill_1`) is not a
+ * slug, so id deep links keep resolving to their roster rather than to a
+ * slug-addressed detail screen. */
+export function detailSlugFromPath(
+  path: string,
+  prefix: string,
+): string | null {
+  const id = entityIdFromTopLevelPath(path, prefix);
+  if (id === null) return null;
+  return isValidSlug(id) ? id : null;
+}
 
 /** Extract a sub-selection from a flat top-level route (`/agents/:id`,
  * `/skills/:id`) — `null` for the bare prefix or a path outside it. */
