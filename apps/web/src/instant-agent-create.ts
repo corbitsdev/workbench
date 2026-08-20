@@ -84,6 +84,9 @@ export async function createWorkbenchFromTemplate(
     definitionId: setupTemplate.id,
     name: NEW_WORKBENCH_TITLE,
     ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
+    ...(manifest?.requiredConnections.includes("github")
+      ? { connectGithubRequiredFor: manifest.title }
+      : {}),
   });
 
   if (manifest !== undefined) {

@@ -6,7 +6,8 @@
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./connect-github-routes": "./src/connect-github-routes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,7 +16,11 @@
   "dependencies": {
     "@corbits/code-review": "workspace:*",
     "@corbits/github-tools": "workspace:*",
-    "arktype": "catalog:"
+    "@corbits/webhook-triggers": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
+    "arktype": "catalog:",
+    "hono": "^4.11.9"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

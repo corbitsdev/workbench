@@ -273,6 +273,43 @@ describe("POST /workbenches", () => {
     );
   });
 
+  test("creating a chat with connectGithubRequiredFor posts a connect-github block after the greeting", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      templatePromise: "Three reviewers read every pull request.",
+      connectGithubRequiredFor: "Code review",
+    });
+    await deliveries[0]?.();
+
+    const timeline = await timelineOf(deps, body.id);
+    const blockMessage = timeline.find((message) =>
+      message.parts.some(
+        (part) => part.kind === "block" && part.block.type === "connect-github",
+      ),
+    );
+    expect(blockMessage).toBeDefined();
+    const blockPart = blockMessage?.parts.find(
+      (part) => part.kind === "block" && part.block.type === "connect-github",
+    );
+    expect(blockPart).toMatchObject({
+      kind: "block",
+      block: {
+        type: "connect-github",
+        data: { requiredForTemplate: "Code review", state: "disconnected" },
+      },
+    });
+  });
+
   test("creating a chat with no templatePromise mints exactly as it always has", async () => {
     const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({

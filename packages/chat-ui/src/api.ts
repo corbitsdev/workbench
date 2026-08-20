@@ -350,6 +350,12 @@ export type CreateWorkbenchInput =
        * actual job (`packages/chat/src/routes.ts`'s `POST /workbenches`).
        * Omitted for an untemplated chat. */
       readonly templatePromise?: string;
+      /** The template's own display name, present exactly when the
+       * template needs a GitHub connection before it can run — posts one
+       * `connect-github` block right after the canned greeting
+       * (`packages/chat/src/routes.ts`'s `POST /workbenches`). Omitted
+       * for a template with no such requirement. */
+      readonly connectGithubRequiredFor?: string;
     }
   | {
       readonly kind: "chat";
@@ -1146,6 +1152,54 @@ export function patchWorkbenchSettings(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
     WorkbenchSettingsResponse,
     { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+// The room's GitHub connect card (CL-6344): the live read and the
+// start-reviewing write, backed by `@corbits/workflow-catalog`'s
+// `createConnectGithubRoutes` (mounted at
+// `/api/tenants/:tenantId/workbenches/:workbenchId/github/*`). Connecting
+// the PAT itself is a separate, already-generic surface —
+// `@workbench/connections`' `POST /:connectorId/complete` — never
+// duplicated here.
+const ConnectGithubRepoResponse = type({
+  id: "string",
+  name: "string",
+  openPullRequestCount: "number",
+});
+
+const ConnectGithubStateResponse = type({ kind: "'disconnected'" })
+  .or({
+    kind: "'connected'",
+    orgName: "string",
+    repos: ConnectGithubRepoResponse.array(),
+    selectedRepoIds: "string[]",
+  })
+  .or({ kind: "'error'", message: "string" });
+export type ConnectGithubStateResponse =
+  typeof ConnectGithubStateResponse.infer;
+
+export function getConnectGithubState(
+  tenantId: string,
+  workbenchId: string,
+): Promise<ConnectGithubStateResponse> {
+  return request(
+    `/api/tenants/${tenantId}/workbenches/${workbenchId}/github/state`,
+    ConnectGithubStateResponse,
+  );
+}
+
+const StartReviewingResponse = type({ startedTriggerCount: "number" });
+
+export function startReviewingGithubRepos(
+  tenantId: string,
+  workbenchId: string,
+  repoIds: readonly string[],
+): Promise<{ readonly startedTriggerCount: number }> {
+  return request(
+    `/api/tenants/${tenantId}/workbenches/${workbenchId}/github/start-reviewing`,
+    StartReviewingResponse,
+    { method: "POST", body: JSON.stringify({ repoIds }) },
   );
 }
 
