@@ -17,6 +17,7 @@
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-sessions": "workspace:*",

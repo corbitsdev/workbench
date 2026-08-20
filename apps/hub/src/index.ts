@@ -29,7 +29,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
-  generateKeyPair,
 } from "@intx/crypto";
 import { authorize, timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
@@ -159,8 +158,7 @@ import {
   validateTriggerFieldsAtCreate,
   workflowCatalogEntry,
   workflowDisplayName,
-  WORKBENCH_TEMPLATES,
-  serializeWorkbenchTemplateManifest,
+  workbenchTemplateLibraryEntries,
 } from "@corbits/workflow-catalog";
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import {
@@ -208,8 +206,6 @@ import {
 } from "@corbits/task-planner";
 
 import {
-  createAgentRepoStore,
-  createAssetService,
   createEventCollectorRegistry,
   createHubSessionLookups,
   createHubSessionOrchestrator,
@@ -332,13 +328,13 @@ import { scheduleTemplateLibrarySeed } from "./template-library-seed";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
+import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
-const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
 // `packages/skills-tools`) are unpublished to npm and stay that way:
 // they are workbench-specific integration bundles, not general-purpose
@@ -573,16 +569,8 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
-  const signingKey = await generateKeyPair();
-  const agentRepoStore = createAgentRepoStore({
-    dataDir: config.hubDataDir,
-    signingKey,
-  });
-  const assetService = createAssetService({
-    db,
-    repoStore: agentRepoStore.repoStore,
-    reservedPackageRegistryNames: new Set(REGISTRIES.keys()),
-  });
+  const { signingKey, agentRepoStore, assetService } =
+    await createBootAssetWiring({ db, dataDir: config.hubDataDir });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
   // Shared with `createRunKeyHistoryListener` below: one store instance
   // for the process, read here ahead of `workflow_run` and written to
@@ -3328,10 +3316,7 @@ export async function createHub(config: HubConfig) {
           admin: config.envCredentialPlantAdmin,
           fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
           artifactsDb: artifactsHandle.db,
-          entries: WORKBENCH_TEMPLATES.map((template) => ({
-            id: template.id,
-            content: serializeWorkbenchTemplateManifest(template),
-          })),
+          entries: workbenchTemplateLibraryEntries(),
         })
       : { stop: (): void => {} };
 

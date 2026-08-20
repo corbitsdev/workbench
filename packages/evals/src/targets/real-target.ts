@@ -29,6 +29,15 @@ import {
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
+import {
+  instantiateWorkbenchTemplate,
+  parseWorkbenchTemplateManifest,
+  templateSettingsPatch,
+} from "@corbits/workflow-catalog";
+import {
+  signPayload,
+  WEBHOOK_SIGNATURE_HEADER,
+} from "@corbits/webhook-triggers";
 
 import type {
   FakeReceipt,
@@ -114,16 +123,27 @@ export interface MyraTargetInfra {
   freePort(): number;
   /** Optional world-snapshot capability (targets/world-snapshot.ts):
    * when the caller supplies this, the returned `Target` gains
-   * `snapshotWorld`. Left unset in `plumbing-only` runs that never
-   * assert on tenant state, so this package's callers never have to
-   * wire a drizzle handle + AssetService just to run `bun run eval`.
-   * `fakeReceiptsReader` hands back every call the target's connected
-   * MCP fakes received, so the snapshot's `fakeReceipts` come from the
-   * fakes this target actually started. */
-  captureWorldSnapshot?: (
-    tenantId: string,
-    fakeReceiptsReader: () => readonly FakeReceipt[],
-  ) => Promise<WorldSnapshot>;
+   * `snapshotWorld`. `hubDataDir` is the booted hub's own data dir, so
+   * the caller can stand up a read-equivalent `AssetService` over the
+   * same on-disk agent repos (see `apps/hub`'s
+   * `createBootAssetWiring`); `fakeReceipts` hands back every call the
+   * target's connected MCP fakes received, so the snapshot's
+   * `fakeReceipts` come from the fakes this target actually started. */
+  captureWorldSnapshot?: (args: {
+    tenantId: string;
+    hubDataDir: string;
+    fakeReceipts: () => readonly FakeReceipt[];
+  }) => Promise<WorldSnapshot>;
+  /** Seeds the bench-library template shelf for the freshly provisioned
+   * scratch tenant — the SAME `seedTemplateLibrary` path hub boot runs
+   * (`@corbits/artifacts-hub`), with the scratch tenant's own admin
+   * standing in for the operator bench the env-credential-plant admin
+   * resolves in production. Without it the eval tenant has no seeded
+   * manifests and `installTemplate` fails loudly on the library read. */
+  seedTemplateLibrary?: (scope: {
+    tenantId: string;
+    principalId: string;
+  }) => Promise<void>;
 }
 
 /** Never sent anywhere for real in plumbing mode — see the module
@@ -370,6 +390,37 @@ export async function bootMyraTarget(
       },
     );
 
+    // Bench-library template seed: same path, scratch admin (see
+    // `MyraTargetInfra.seedTemplateLibrary`). Runs before any install
+    // step so `installTemplate`'s library read finds the manifests.
+    if (infra.seedTemplateLibrary !== undefined) {
+      const principalsRes = await api(
+        hub.baseUrl,
+        "GET",
+        "/api/me/principals",
+        undefined,
+        cookies,
+      );
+      expectStatus("list principals for the library seed", principalsRes, 200);
+      const memberships = arrayField(
+        principalsRes.data,
+        "data",
+        "list principals for the library seed",
+      ) as { tenantId: string; principalId: string }[];
+      const membership = memberships.find(
+        (row) => row.tenantId === seeded.tenantId,
+      );
+      if (membership === undefined) {
+        throw new Error(
+          `library seed: no principal membership for tenant ${seeded.tenantId}`,
+        );
+      }
+      await infra.seedTemplateLibrary({
+        tenantId: seeded.tenantId,
+        principalId: membership.principalId,
+      });
+    }
+
     // Connect every started fake through the exact same route Plugins
     // uses for a real MCP server — no eval-only connect mechanism.
     for (const [index, fake] of startedFakes.entries()) {
@@ -614,6 +665,154 @@ export async function bootMyraTarget(
       return startedFakes.flatMap((fake) => fake.receipts());
     }
 
+    // The REAL install path (#140): the exact surfaces
+    // `apps/web/src/instant-agent-create.ts`'s
+    // `createWorkbenchFromTemplate` drives — seeded-library manifest
+    // read, workbench mint, `instantiateWorkbenchTemplate` over
+    // HTTP-bound ports — never an eval-only instantiation mechanism.
+    async function installTemplate(templateId: string): Promise<Turn> {
+      const entryRes = await api(
+        hub.baseUrl,
+        "GET",
+        `/api/tenants/${seeded.tenantId}/library/templates/${templateId}`,
+        undefined,
+        cookies,
+      );
+      expectStatus(`fetch seeded template "${templateId}"`, entryRes, 200);
+      const manifest = parseWorkbenchTemplateManifest(
+        stringField(entryRes.data, "content", `template "${templateId}"`),
+      );
+
+      const createBody: Record<string, unknown> = {
+        kind: "chat",
+        definitionId: assistantDefinitionId,
+        name: "New Workbench",
+        templatePromise: manifest.promise,
+      };
+      if (manifest.requiredConnections.includes("github")) {
+        createBody["connectGithubRequiredFor"] = manifest.title;
+      }
+      const createRes = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${seeded.tenantId}/chat/workbenches`,
+        createBody,
+        cookies,
+      );
+      expectStatus(`create workbench from "${templateId}"`, createRes, 201);
+      const workbenchId = stringField(
+        createRes.data,
+        "id",
+        `create workbench from "${templateId}"`,
+      );
+
+      const result = await instantiateWorkbenchTemplate(manifest, {
+        async listAgentHandles() {
+          const res = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${seeded.tenantId}/workflows/definitions?limit=100`,
+            undefined,
+            cookies,
+          );
+          expectStatus("list agent definitions", res, 200);
+          const rows = arrayField(
+            res.data,
+            "data",
+            "list agent definitions",
+          ) as { name: string }[];
+          return rows.map((row) => row.name);
+        },
+        async createParticipantAgent(request) {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${seeded.tenantId}/agent-definitions`,
+            request,
+            cookies,
+          );
+          if (res.status !== 200 && res.status !== 201) {
+            throw new Error(
+              `create participant agent "${request.handle}" returned ` +
+                `${String(res.status)}: ${JSON.stringify(res.data)}`,
+            );
+          }
+          return {
+            id: stringField(res.data, "id", `created "${request.handle}"`),
+          };
+        },
+        async recordPendingConnections(pendingConnections) {
+          const res = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/settings`,
+            templateSettingsPatch(manifest.id, pendingConnections),
+            cookies,
+          );
+          expectStatus("record pending connections", res, 200);
+        },
+      });
+
+      return {
+        human: `(harness) install template "${templateId}"`,
+        replyText:
+          `template "${templateId}" installed into workbench ${workbenchId}: ` +
+          `created [${result.createdHandles.join(", ")}], ` +
+          `skipped [${result.skippedHandles.join(", ")}], ` +
+          `pending connections [${result.pendingConnections.join(", ")}]`,
+        toolCalls: [],
+      };
+    }
+
+    // Fires a trigger through the REAL ingress route
+    // (`POST /api/webhooks/:triggerId`), HMAC-signed the way any
+    // external sender signs. The signing secret is read off the
+    // platform's own table (the trace.ts convention) — the eval hub
+    // boots with ALLOW_PLAINTEXT_SECRETS, so the scratch row carries it
+    // readable; the route itself still verifies the signature for real.
+    async function fireWebhook(
+      triggerId: string,
+      payload: unknown,
+    ): Promise<Turn> {
+      const rows = await sqlClient.unsafe(
+        "select secret from webhook_triggers.webhook_trigger where id = $1",
+        [triggerId],
+      );
+      const secret = rows[0]?.["secret"];
+      if (typeof secret !== "string" || secret === "") {
+        throw new Error(
+          `fireWebhook("${triggerId}"): no readable signing secret on the trigger row`,
+        );
+      }
+      const rawBody = JSON.stringify(payload);
+      const response = await fetch(
+        new URL(`/api/webhooks/${triggerId}`, hub.baseUrl),
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [WEBHOOK_SIGNATURE_HEADER]: signPayload(secret, rawBody),
+          },
+          body: rawBody,
+        },
+      );
+      const data: unknown = await response.json();
+      if (response.status !== 202) {
+        throw new Error(
+          `fireWebhook("${triggerId}"): ingress returned ` +
+            `${String(response.status)}: ${JSON.stringify(data)}`,
+        );
+      }
+      return {
+        human: `(harness) fire webhook trigger ${triggerId}`,
+        replyText:
+          `webhook delivery accepted: instance ` +
+          `${stringField(data, "instanceId", "webhook fire")} at ` +
+          `${stringField(data, "address", "webhook fire")}`,
+        toolCalls: [],
+      };
+    }
+
     async function fireRoutine(routineId: string): Promise<Turn> {
       return fireRoutineNow(
         {
@@ -628,21 +827,23 @@ export async function bootMyraTarget(
       );
     }
 
+    const captureWorldSnapshot = infra.captureWorldSnapshot;
     return {
       configName: config.name,
       sendTurn,
       fireRoutine,
+      installTemplate,
+      fireWebhook,
       close: closeAll,
-      ...(infra.captureWorldSnapshot === undefined
+      ...(captureWorldSnapshot === undefined
         ? {}
         : {
-            snapshotWorld: () =>
-              (
-                infra.captureWorldSnapshot as (
-                  tenantId: string,
-                  fakeReceiptsReader: () => readonly FakeReceipt[],
-                ) => Promise<WorldSnapshot>
-              )(seeded.tenantId, fakeReceipts),
+            snapshotWorld: (): Promise<WorldSnapshot> =>
+              captureWorldSnapshot({
+                tenantId: seeded.tenantId,
+                hubDataDir,
+                fakeReceipts,
+              }),
           }),
     };
   } catch (cause) {

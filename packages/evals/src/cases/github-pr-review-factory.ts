@@ -21,15 +21,14 @@
 //     `outwardGitHubActionsRespectGrantBoundary` grades both halves
 //     of that owner ruling together.
 //
-// Steps 2–3 still narrate the install in the human message because the
-// chat-only `Target` has no way to drive the real install surfaces
-// yet; README.md's scoreboard names each harness gap precisely
-// (library seeding needs the env-credential-plant admin, the
-// connections `/complete` route proves the PAT against real GitHub,
-// and start-reviewing lists repos from real GitHub — none of which a
-// scratch eval deployment can fake today). The scorers grade the
-// world snapshot, so they go green the moment the harness can drive
-// those surfaces — no scorer rewrite needed then.
+// Step 2 drives the real install (CL-6404: the `install-template` step
+// rides #140's seeded-library instantiation route-for-route) and step
+// 4 fires the real ingress route (`fire-webhook`). What still narrates
+// instead of acting is the GitHub side: the `/complete` PAT prove and
+// start-reviewing's repo listing hit real GitHub until CL-6403's
+// baseUrl seam lands — README.md's scoreboard names those precisely.
+// The scorers grade the world snapshot, so they go green the moment
+// that seam falls — no scorer rewrite needed then.
 //
 // Pass 1 (this case) stops at "review posted" — outcome-ingest
 // (GitHub state flowing back into memory so agents improve) is case
@@ -102,17 +101,15 @@ export const githubPrReviewFactoryEval = defineEval({
       ],
     },
     {
-      // Harness gap (README scoreboard): the real connect finishes on
-      // the Plugins surface (`/:connectorId/complete` proves the PAT
-      // against real GitHub and stores it as the "GitHub" credential),
-      // and the picker instantiates the template from the seeded
-      // library. This human message narrates that outcome; a harness
-      // that can seed the credential + drive the picker's routes makes
-      // these scorers grade the real state.
-      human:
-        `org: abklabs, repo: ${TARGET_REPO}; GitHub is connected in ` +
-        "Plugins with a fine-grained PAT scoped to this one repo, and " +
-        "the Code review template is picked in the new-workbench picker",
+      // The real install (CL-6404): the harness drives #140's
+      // seeded-library instantiation — manifest read, workbench mint,
+      // participant creation — through the same routes the picker's
+      // "Create workbench" uses. Remaining red half:
+      // `githubConnectedViaConnectionsLayer` needs the Plugins
+      // `/:connectorId/complete` PAT prove, which still hits real
+      // GitHub (CL-6403's baseUrl-seam lane).
+      kind: "install-template",
+      templateId: "code-review",
       expect: [
         githubConnectedViaConnectionsLayer(),
         agentDefinitionsHaveToolGrants(REVIEWER_HANDLES),
@@ -136,12 +133,22 @@ export const githubPrReviewFactoryEval = defineEval({
       ],
     },
     {
-      // The harness fires a fake `pull_request.opened` GitHub webhook
-      // payload against the webhook_trigger start-reviewing minted —
-      // represented as a scripted human relay until the Target grows a
-      // `fireWebhook(triggerId, payload)` capability alongside
-      // `fireRoutine`.
-      human: `(harness) fake pull_request.opened delivered on ${TARGET_REPO}#101`,
+      // The harness fires a fake `pull_request.opened` delivery through
+      // the REAL ingress route against whatever enabled webhook_trigger
+      // start-reviewing minted (CL-6404's `fireWebhook`). While
+      // start-reviewing itself stays blocked on the GitHub REST seam
+      // (CL-6403), no trigger exists and the step honestly records that
+      // miss, keeping these scorers red rather than crashing the run.
+      kind: "fire-webhook",
+      payload: {
+        action: "opened",
+        repository: { full_name: TARGET_REPO },
+        pull_request: {
+          number: 101,
+          html_url: `https://github.com/${TARGET_REPO}/pull/101`,
+          head: { sha: "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678" },
+        },
+      },
       expect: [
         reviewCommentsAttributable(REVIEWER_HANDLES),
         suggestedFixesStructurallyValid(),

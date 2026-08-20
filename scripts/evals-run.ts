@@ -26,6 +26,7 @@ import {
   ALL_EVALS,
   applyEvalsMigrations,
   bootMyraTarget,
+  captureWorldSnapshot,
   createPostgresEvalRunStore,
   GITHUB_MCP_FAKE_RECORDING,
   renderResultsMarkdown,
@@ -35,6 +36,11 @@ import {
   type MyraTargetMcpFake,
   type RunConfig,
 } from "@corbits/evals";
+import { createArtifactDb } from "@corbits/artifacts";
+import { seedTemplateLibrary } from "@corbits/artifacts-hub";
+import { workbenchTemplateLibraryEntries } from "@corbits/workflow-catalog";
+import { createDB } from "@intx/db";
+import { createBootAssetWiring } from "../apps/hub/src/asset-service-factory.ts";
 import { resetSchema, setupDatabase } from "./db-setup.ts";
 import {
   api,
@@ -47,6 +53,25 @@ import {
   startSidecar,
 } from "./e2e/harness.ts";
 
+function dbConfigFromUrl(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  return {
+    host: url.hostname,
+    port: url.port === "" ? 5432 : Number(url.port),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ""),
+  };
+}
+
+function requireE2eDatabaseUrl(what: string): string {
+  const url = e2eDatabaseUrl();
+  if (url === undefined) {
+    throw new Error(`${what}: DATABASE_URL is not set`);
+  }
+  return url;
+}
+
 const infra: MyraTargetInfra = {
   api,
   connectE2eDb,
@@ -58,6 +83,42 @@ const infra: MyraTargetInfra = {
   setupDatabase,
   startHub,
   startSidecar,
+  // World scorers read real state (CL-6404): an `AssetService` over the
+  // scratch hub's own data dir — built by the hub's OWN boot factory
+  // (`createBootAssetWiring`), never a parallel implementation — plus a
+  // drizzle handle on the same scratch database.
+  captureWorldSnapshot: async ({ tenantId, hubDataDir, fakeReceipts }) => {
+    const url = requireE2eDatabaseUrl("captureWorldSnapshot");
+    const { db, close } = createDB(dbConfigFromUrl(url));
+    try {
+      const { assetService } = await createBootAssetWiring({
+        db,
+        dataDir: hubDataDir,
+      });
+      return await captureWorldSnapshot(
+        { db, assetService, fakeReceiptsReader: fakeReceipts },
+        tenantId,
+      );
+    } finally {
+      await close();
+    }
+  },
+  // The same `seedTemplateLibrary` path hub boot runs
+  // (template-library-seed.ts), with the scratch tenant's own admin in
+  // place of the operator bench — same entries, same idempotent seed.
+  seedTemplateLibrary: async (scope) => {
+    const url = requireE2eDatabaseUrl("seedTemplateLibrary");
+    const { db, close } = createArtifactDb(url);
+    try {
+      await seedTemplateLibrary({
+        db,
+        scope,
+        entries: workbenchTemplateLibraryEntries(),
+      });
+    } finally {
+      await close();
+    }
+  },
 };
 
 function databaseUrl(): string | undefined {

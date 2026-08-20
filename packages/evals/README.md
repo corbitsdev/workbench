@@ -29,7 +29,7 @@ Two rulings from the owner are baked into the case's step 4:
 ruling in one scorer, so a case that accidentally gates reviews or
 accidentally frees merges fails loudly either way.
 
-### Scoreboard (CL-6340 pass: case + scorers cut over to the shipped product)
+### Scoreboard (CL-6404 pass: `bun run eval` boots a complete world)
 
 The case and every §8.2 scorer now grade the flow that actually merged
 — template instantiation from the seeded library (CL-6344/#140),
@@ -43,31 +43,26 @@ the connections layer stores as the "GitHub" credential) as
 connections, not just MCP servers, and the recorded GitHub MCP fake is
 wired into `scripts/evals-run.ts`'s `bootMyraTarget`.
 
-| #   | Scorer                                     | Result on a scratch-hub run | Why                                                                                                                                                                                                                                                                                                                                                                              |
-| --- | ------------------------------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `githubConnectedViaConnectionsLayer`       | **FAIL** (harness gap)      | The scorer is honest now (snapshot reads connector credentials), but the harness cannot seed one: `POST /:connectorId/complete` proves the pasted PAT against real GitHub before storing it, and there is no fake-able GitHub REST seam — `resolveGithubConfig` in `apps/hub` returns `{apiKey}` only, never a `baseUrl`, even though `GitHubClientConfig.baseUrl` exists for tests. |
-| 2   | `agentDefinitionsHaveToolGrants`           | **FAIL** (harness gap)      | Retargeted to the shipped install shape: reviewer roster materialized + the `code-review` definition carrying the github pin. Red because the harness can't drive the install: the library seed runs off the env-credential-plant admin (`ORG_SLUG` bench), which a scratch eval hub doesn't configure, and nothing deploys the `code-review` workflow per tenant in the eval boot.  |
-| 3   | `triggerIsWebhookPerPr`                    | **FAIL** (harness gap)      | Retargeted to the real trigger: an enabled `webhook_trigger` row (start-reviewing's per-repo mint), read straight off the table. Red because start-reviewing needs the GitHub connection of #1 and the deployed definition of #2.                                                                                                                                                   |
-| 4   | `reviewCommentsAttributable`               | **SKIP** (product gap)      | `WorldSnapshot` has no `reviewComments` field — blocked on CL-6322 Phase 1 (`onTrigger` adoption giving each fired occurrence its own child run id).                                                                                                                                                                                                                                |
-| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (harness gap)      | Retargeted to the aggregated-review shape: non-empty `body` + `headSha`, well-formed inline comments, at least one ` ```suggestion ` fence. Red until a PR event can actually fire (#3) and the run can post against a fake-able GitHub REST boundary (#1's seam, which the sidecar's pinned `@corbits/github-tools` would also need to honor).                                       |
-| 6   | `outwardGitHubActionsRespectGrantBoundary` | **FAIL** (harness gap)      | Retargeted: posts scoped by `pullRequestUrl` under the granted repo, attribution = reviewer lens names in the aggregated body, no approval phrase required; merge-class still parks (vacuous today — no merge tool exists, by design). Red for the same reason as #5.                                                                                                                |
-| 7   | `wholeRunInspectable`                      | **SKIP** (product gap)      | `WorldSnapshot` has no `runs` field. Blocked on CL-6322 Phase 1.                                                                                                                                                                                                                                                                                                                   |
+| #   | Scorer                                     | Result on a scratch-hub run | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | ------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `githubConnectedViaConnectionsLayer`       | **PASS**                    | `bun run eval` now snapshots the real world (CL-6404): the recorded GitHub MCP fake, connected through the real `POST /mcp-servers` route, reads back live through `listMcpServerConnections`. The Plugins-PAT half of a GitHub connect still cannot be seeded (`/:connectorId/complete` proves the token against real GitHub — CL-6403's baseUrl-seam lane).                                                                                               |
+| 2   | `agentDefinitionsHaveToolGrants`           | **FAIL** (product gap)      | Half green for real now: the eval boot seeds the library with the same `seedTemplateLibrary` path hub boot runs, and the `install-template` step drives #140's instantiation route-for-route, so all three reviewer definitions materialize in the snapshot. Still red because the shipped install path itself never deploys the template's `code-review` block workflow per tenant — no deployed definition carries the github pin, in production or here. |
+| 3   | `triggerIsWebhookPerPr`                    | **FAIL** (harness gap)      | The `Target` can now fire a trigger (`fireWebhook`, CL-6404), but none exists to fire: start-reviewing's per-repo mint needs the Plugins PAT and repo listing against a fake-able GitHub REST boundary (CL-6403) plus #2's deployed `code-review` definition. The fire-webhook step records that miss honestly instead of crashing the run.                                                                                                                 |
+| 4   | `reviewCommentsAttributable`               | **SKIP** (product gap)      | `WorldSnapshot` has no `reviewComments` field — blocked on CL-6322 Phase 1 (`onTrigger` adoption giving each fired occurrence its own child run id).                                                                                                                                                                                                                                                                                                        |
+| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (harness gap)      | Retargeted to the aggregated-review shape: non-empty `body` + `headSha`, well-formed inline comments, at least one ` ```suggestion ` fence. Red until a PR event can actually fire (#3) and the run can post against a fake-able GitHub REST boundary (#1's seam, which the sidecar's pinned `@corbits/github-tools` would also need to honor).                                                                                                             |
+| 6   | `outwardGitHubActionsRespectGrantBoundary` | **FAIL** (harness gap)      | Retargeted: posts scoped by `pullRequestUrl` under the granted repo, attribution = reviewer lens names in the aggregated body, no approval phrase required; merge-class still parks (vacuous today — no merge tool exists, by design). Red for the same reason as #5.                                                                                                                                                                                       |
+| 7   | `wholeRunInspectable`                      | **SKIP** (product gap)      | `WorldSnapshot` has no `runs` field. Blocked on CL-6322 Phase 1.                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### Remaining gaps, precisely
 
 Everything below is what still stands between this case and green —
 none of it is scorer drift any more:
 
-0. **`bun run eval` still grades world scorers against an empty
-   snapshot.** `scripts/evals-run.ts` never passes
-   `infra.captureWorldSnapshot` to `bootMyraTarget` — wiring it needs
-   the hub's own `AssetService` (built on the boot-time agent-repo
-   store and signing key inside the hub process), which the external
-   e2e harness has no handle on. Until the hub exposes a read path (or
-   the harness rebuilds an AssetService over the same data dir), even
-   state the run really created — e.g. the connected GitHub MCP fake —
-   reads as absent to scorers #1–#3 in `bun run eval`; a caller that
-   wires `captureWorldSnapshot` gets honest grading today.
+0. **Closed (CL-6404).** `scripts/evals-run.ts` wires
+   `captureWorldSnapshot` through `apps/hub`'s own `createBootAssetWiring`
+   factory — the boot composition itself, pointed at the scratch hub's
+   data dir — so `bun run eval`'s world scorers grade real tenant state
+   (see #1 going green above).
 
 1. **No fake-able GitHub REST boundary.** The connect card
    (`connect-github-routes.ts`), the `/complete` credential prove, and
@@ -76,16 +71,17 @@ none of it is scorer drift any more:
    already has a `baseUrl` test seam; `apps/hub`'s `resolveGithubConfig`
    and the tool package's credential delivery never populate it. Until
    a hub-config override (and a matching tool-package release) exists,
-   scorers #1/#3/#5/#6 cannot go green against a scratch deployment.
-2. **Eval boot doesn't install the code-review template.** The bench
-   library seed runs via the env-credential-plant admin at hub boot
-   (`template-library-seed.ts`), and `code-review` is not in
-   `DEFAULT_WORKFLOWS`, so an eval tenant has neither the seeded
-   manifest nor a deployed `code-review` definition. The harness needs
-   to drive the real install surfaces (library read → participant
-   creation → start-reviewing) once gap 1 falls; the `Target` also
-   still needs a `fireWebhook(triggerId, payload)` capability beside
-   `fireRoutine` for step 4.
+   scorers #3/#5/#6 cannot go green against a scratch deployment, and
+   #1's Plugins-PAT half stays unseedable.
+2. **Mostly closed (CL-6404).** Eval boot seeds the bench library via
+   the same `seedTemplateLibrary` path hub boot runs (scratch admin in
+   place of the operator bench), the case's `install-template` step
+   drives the real instantiation surfaces, and `fireWebhook` rides the
+   real HMAC-signed ingress route. What remains is not harness work:
+   nothing in the shipped install deploys the `code-review` block
+   workflow per tenant (the missing half of #2), and start-reviewing
+   cannot mint a trigger until gap 1 falls.
+
 3. **CL-6322 Phase 1 (`onTrigger` adoption)** — unblocks #4/#7
    (per-comment and per-run ids in the snapshot). Unchanged.
 

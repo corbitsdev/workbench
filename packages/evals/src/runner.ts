@@ -8,6 +8,7 @@ import { runPersonaStep } from "./persona-runner.ts";
 import type {
   EvalDefinition,
   EvalRunResult,
+  EvalStep,
   EvalStepRecord,
   ScorerReport,
   Target,
@@ -26,6 +27,52 @@ function emptyWorldSnapshot(): WorldSnapshot {
   };
 }
 
+async function playStep(
+  step: EvalStep,
+  target: Target,
+  personaCall?: (prompt: string) => Promise<{ text: string }>,
+): Promise<readonly Turn[]> {
+  if (step.kind === "persona") {
+    return runPersonaStep(step, target, personaCall);
+  }
+  if (step.kind === "install-template") {
+    if (target.installTemplate === undefined) {
+      throw new Error(
+        `runEval: step installs template "${step.templateId}" but target ` +
+          `"${target.configName}" has no installTemplate capability`,
+      );
+    }
+    return [await target.installTemplate(step.templateId)];
+  }
+  if (step.kind === "fire-webhook") {
+    if (target.fireWebhook === undefined) {
+      throw new Error(
+        `runEval: step fires a webhook but target "${target.configName}" ` +
+          "has no fireWebhook capability",
+      );
+    }
+    const world = (await target.snapshotWorld?.()) ?? emptyWorldSnapshot();
+    const trigger = world.webhookTriggers.find((row) => row.enabled);
+    if (trigger === undefined) {
+      // The honest record of the miss, graded red by the step's own
+      // scorers — never a crash that hides every later step, and never
+      // a pretend delivery.
+      return [
+        {
+          human: "(harness) fire webhook",
+          replyText:
+            "no enabled webhook_trigger exists to fire — start-reviewing " +
+            "never minted one (its repo listing and the /complete " +
+            "credential prove still require a reachable GitHub REST API)",
+          toolCalls: [],
+        },
+      ];
+    }
+    return [await target.fireWebhook(trigger.id, step.payload)];
+  }
+  return [await target.sendTurn(step.human)];
+}
+
 export async function runEval(
   evalDef: EvalDefinition,
   target: Target,
@@ -41,10 +88,7 @@ export async function runEval(
   }
 
   for (const [stepIndex, step] of evalDef.steps.entries()) {
-    const stepTurns =
-      step.kind === "persona"
-        ? await runPersonaStep(step, target, personaCall)
-        : [await target.sendTurn(step.human)];
+    const stepTurns = await playStep(step, target, personaCall);
     const turn = stepTurns[stepTurns.length - 1];
     if (turn === undefined) {
       throw new Error(`runEval: step ${String(stepIndex)} produced no turns`);

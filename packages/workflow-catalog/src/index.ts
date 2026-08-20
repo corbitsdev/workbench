@@ -22,6 +22,7 @@ export {
   serializeWorkbenchTemplateManifest,
   templateBlockAssetNames,
   workbenchTemplate,
+  workbenchTemplateLibraryEntries,
 } from "./templates";
 export type { WorkbenchTemplateManifest } from "./templates";
 export {
