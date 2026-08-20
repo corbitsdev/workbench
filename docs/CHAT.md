@@ -17,9 +17,9 @@ insert plus one publish onto the workbench's live stream (CL-6327) — no mail,
 no wake, no sidecar hop — so a workbench takes messages and renders them
 whether or not a single agent process is running.
 
-A workbench also has a **workbench host** (sometimes called its anchor): a
-credential-free folded interactive instance that gives the workbench an
-address other runs can reach. It no longer stores the timeline; a message
+A workbench has no run of its own (CL-6330): creating one mints a child
+tenant and writes settings rows — no deploy, no anchor instance. Its
+address (`<workbenchId>@<domain>`) is derived, not resolved; a message
 reaches an agent only when the workbench asks that agent for a turn.
 
 A workbench is also its own tenant, parented under the bench it was created
@@ -30,13 +30,12 @@ the mint, listing, and move mechanics.
 ```mermaid
 flowchart LR
     subgraph Workbench
-        Host[Workbench host<br/>anchor run]
+        Room[Room timeline<br/>workbench_messages rows]
     end
-    Alice[Human participant] -->|mail| Host
-    Bot["@handle agent participant"] -->|mail| Host
-    Host -->|timeline read| UI[Chat UI]
-    Host -.->|mention fan-out copy| Bot
-    Bot -.->|connector.reply, bridged| Host
+    Alice[Human participant] -->|POST message| Room
+    Room -->|timeline read| UI[Chat UI]
+    Room -.->|turn dispatch, mail| Bot["@handle agent participant"]
+    Bot -.->|connector.reply, bridged| Room
 ```
 
 ## The message model
