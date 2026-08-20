@@ -770,12 +770,48 @@ folded-run-<runId>`), definition loaded from that closure, run grants
    `scripts/e2e/cl-6324-launch-proof.ts` keeps the assertion as written
    rather than weakening it to something the current shape happens to
    satisfy.
-5. **STILL OPEN — the agent-directory authoring lineage still writes the
-   retired envelope.** `createAgentDefinitionCore` and the read/modify/
-   write routes in `routes.ts`, `workflow-capability-routes.ts`, and
-   `workflow-skill-pin-routes.ts` all populate a `workflow`-kind asset
+5. **CLOSED — the agent-directory authoring lineage now writes the source
+   form.** `createAgentDefinitionCore` and the read/modify/write routes in
+   `routes.ts`, `workflow-capability-routes.ts`, and
+   `workflow-skill-pin-routes.ts` used to populate a `workflow`-kind asset
    with a bare `workflow.json`, which `workflowKindHandler.validatePush`
-   now refuses. That lineage is authoring, not launching — a projection
-   is a read-only artefact and cannot be written back through — so it
-   needs its own cutover to the codebase form, and none of the four
-   proofs exercise it.
+   now refuses. That lineage is authoring, not launching — a projection is
+   a read-only artefact and cannot be written back through — so it got its
+   own cutover. See the section below.
+
+## CL-6324: the agent-directory authoring cutover
+
+The renderer that had been living in `@workbench/hub-client`'s
+`workflow-push.ts`, and a second copy of it in `@corbits/agent-runtime`'s
+`source-tree.ts`, moved into a new dependency-free package,
+`@corbits/workflow-source`. Every authoring path in the repo now writes
+its asset tree through that one `renderWorkflowSourceTree` — the seed
+pusher, the per-run agent-runtime package, and the agent-directory
+lineage — so there is a single producer of the bytes a workflow-kind
+asset carries.
+
+`@corbits/agent-directory`'s `definition-asset.ts` is the lineage's own
+seam onto it: `agentDefinitionSourceTree` renders a definition's tree
+under a `@workbench-agent/<handle>` package name, and
+`readAgentDefinitionWorkflowJson` reads the definition back out of the
+entry module. Both replace the private `AGENT_DEFINITION_ASSET_PATH =
+"workflow.json"` constant each of the four writers used to declare for
+itself; `apps/hub`'s planner deploy and `@corbits/evals`' world snapshot
+route through the same two functions rather than re-deriving the path.
+The `workflow.json` write path is gone, not kept beside the new one.
+
+Reading the definition back is a strict slice of the exact bytes the
+renderer emits (the `export default ` prefix and `;\n` suffix), never an
+eval and never a pattern search. Anything else — in practice, an asset
+last written before this cutover, whose tree still holds a bare
+`workflow.json` — throws `RetiredWorkflowEnvelopeError`, defined in
+`@corbits/workflow-source` and re-exported from `@corbits/agent-directory`.
+It carries re-author-and-re-deploy guidance and is mapped to a 409 in
+every route module that can reach it: `routes.ts`,
+`workflow-capability-routes.ts`, and `workflow-skill-pin-routes.ts` each
+answer it from their own `app.onError`, so a stale asset never reads as a
+server fault.
+
+One behavioural change rode along: `POST /:definitionId/restore` now
+reports the definition it just wrote, parsed from the entry module it
+restored, instead of re-reading the asset immediately afterward.
