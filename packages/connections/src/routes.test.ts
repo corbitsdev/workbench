@@ -992,3 +992,46 @@ describe("DELETE /:connectorId/disconnect", () => {
     expect(body.error.code).toBe("disconnect_failed");
   });
 });
+
+describe("onConnected hook", () => {
+  test("a stored API key fires onConnected with the connected tenant and connector", async () => {
+    const events: unknown[] = [];
+    const app = buildApp({
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      onConnected: async (info) => {
+        events.push(info);
+      },
+    });
+    const response = await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(response.status).toBe(200);
+    expect(events).toEqual([
+      {
+        tenantId: TENANT.id,
+        principalId: PRINCIPAL.id,
+        connectorId: "accepting-connector",
+        displayName: "Accepting Connector",
+      },
+    ]);
+  });
+
+  test("a rejected key never fires onConnected", async () => {
+    const events: unknown[] = [];
+    const app = buildApp({
+      onConnected: async (info) => {
+        events.push(info);
+      },
+    });
+    const response = await app.request("/rejecting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "bad-key" }),
+    });
+    expect(response.status).toBe(422);
+    expect(events).toHaveLength(0);
+  });
+});

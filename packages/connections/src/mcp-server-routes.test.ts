@@ -486,3 +486,29 @@ describe("POST / with presetSlug", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("onConnected hook", () => {
+  test("a connected MCP server fires onConnected with its slug and display name", async () => {
+    const hub = fakeHub({});
+    const events: unknown[] = [];
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      onConnected: async (info) => {
+        events.push(info);
+      },
+    });
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "exa" }),
+    });
+    expect(response.status).toBe(200);
+    expect(events).toEqual([
+      {
+        tenantId: TENANT.id,
+        principalId: PRINCIPAL.id,
+        connectorId: "exa",
+        displayName: "Exa",
+      },
+    ]);
+  });
+});
