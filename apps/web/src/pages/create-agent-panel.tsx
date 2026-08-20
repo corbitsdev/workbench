@@ -83,10 +83,10 @@ const AVATAR_TONES: readonly {
   readonly tone: AvatarTone;
   readonly label: string;
 }[] = [
-  { tone: "neutral", label: "Muted" },
-  { tone: "agent", label: "Primary" },
-  { tone: "agent2", label: "Accent" },
-  { tone: "agent3", label: "Success" },
+  { tone: "neutral", label: "Grey" },
+  { tone: "agent", label: "Orange" },
+  { tone: "agent2", label: "Blue" },
+  { tone: "agent3", label: "Green" },
 ];
 
 type FormValues = {

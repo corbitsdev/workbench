@@ -2,14 +2,15 @@
 // the bench-ui/* components inlines its own copy; it imports from here.
 
 export const BENCH_STRINGS = {
-  switcherLabel: "Bench",
-  switcherEmpty: "No benches",
+  switcherLabel: "Workbench",
+  switcherEmpty: "No workbenches",
 
   membersSectionTitle: "Members",
-  membersSectionDescription: "Everyone on the current bench, and their roles.",
+  membersSectionDescription:
+    "Everyone on the current workbench, and their roles.",
   membersEmptyTitle: "No members yet",
-  membersEmptyDescription: "This bench has no members other than you.",
-  membersLoadError: "this bench's members",
+  membersEmptyDescription: "This workbench has no members other than you.",
+  membersLoadError: "this workbench's members",
   memberUnnamed: "Unnamed member",
   memberRoleNone: "none",
 
@@ -35,21 +36,22 @@ export const BENCH_STRINGS = {
   createBenchSlugPreviewLabel: "Address",
   createBenchSubmit: "Create",
   createBenchCancel: "Cancel",
-  createBenchError: "Couldn't create that bench — try again.",
+  createBenchError: "Couldn't create that workbench — try again.",
   createBenchConflictError:
-    "That name is already taken by another bench — try a different name.",
+    "That name is already taken by another workbench — try a different name.",
 
   inviteMemberAction: "Invite member",
   inviteMemberDialogTitle: "Invite a member",
   inviteMemberDialogDescription:
-    "Invite an existing account to this bench by email.",
+    "Invite an existing account to this workbench by email.",
   inviteMemberEmailLabel: "Email",
   inviteMemberEmailPlaceholder: "person@example.com",
   inviteMemberSubmit: "Invite",
   inviteMemberCancel: "Cancel",
   inviteMemberInviting: "Inviting…",
   inviteMemberNotFoundError: "No account exists with that email yet.",
-  inviteMemberConflictError: "That person is already a member of this bench.",
+  inviteMemberConflictError:
+    "That person is already a member of this workbench.",
   inviteMemberError: "Couldn't send that invite — try again.",
 
   statusActive: "active",

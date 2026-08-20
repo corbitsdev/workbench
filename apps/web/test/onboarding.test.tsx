@@ -413,9 +413,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       });
 
       expect(calls).toEqual(["/"]);
-      expect(container.textContent).not.toContain(
-        "Add an inference credential",
-      );
+      expect(container.textContent).not.toContain("Bring your own AI");
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -464,7 +462,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain("Add an inference credential");
+      expect(container.textContent).toContain("Bring your own AI");
       expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
@@ -513,7 +511,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain("Add an inference credential");
+      expect(container.textContent).toContain("Bring your own AI");
       expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
@@ -556,7 +554,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain("Add an inference credential");
+      expect(container.textContent).toContain("Bring your own AI");
       expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());

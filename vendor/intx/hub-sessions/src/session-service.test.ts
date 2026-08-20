@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   deployAdoptedCodeSourcedWorkflow,
+  deployCodeSourcedWorkflow,
   type DeployCodeSourcedWorkflowArgs,
 } from "./session-service";
 
@@ -171,5 +172,156 @@ describe("deployAdoptedCodeSourcedWorkflow", () => {
     // leave no deployed-but-unanchored agent behind.
     expect(captured).toHaveLength(0);
     expect(db.inserts).toBe(0);
+  });
+});
+
+// CL-6388: the SHARED code-sourced front must persist its anchor row BEFORE
+// the deploy frame goes out. The frame spawns the deployment's child, whose
+// first `refs/heads/events` pack push races the deploy ack back to the hub --
+// and `receiveWorkflowRunPack` fails closed (`path_violation`) on a missing
+// anchor row, so an insert-after-ack ordering rejects every fresh
+// deployment's first events pack. These tests pin the ordering contract:
+// insert, then frame, then the acked-key stamp; a failed frame removes the
+// pre-inserted row so a retried deploy does not collide on the primary key.
+type OrderedFakeDb = {
+  handle: DeployCodeSourcedWorkflowArgs["db"];
+  events: string[];
+  insertedValues: Record<string, unknown>[];
+  updatedSets: Record<string, unknown>[];
+};
+
+function orderedFakeDb(): OrderedFakeDb {
+  const state: OrderedFakeDb = {
+    handle: undefined as unknown as DeployCodeSourcedWorkflowArgs["db"],
+    events: [],
+    insertedValues: [],
+    updatedSets: [],
+  };
+  const handle = {
+    query: {
+      workflowDefinition: {
+        findFirst: () => Promise.resolve({ id: DEFINITION_ID }),
+      },
+      workflowRun: {
+        findFirst: () => Promise.resolve(undefined),
+      },
+    },
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        state.events.push("insert");
+        state.insertedValues.push(values);
+        return Promise.resolve(undefined);
+      },
+    }),
+    update: () => ({
+      set: (values: Record<string, unknown>) => ({
+        where: () => {
+          state.events.push("update");
+          state.updatedSets.push(values);
+          return Promise.resolve(undefined);
+        },
+      }),
+    }),
+    delete: () => ({
+      where: () => {
+        state.events.push("delete");
+        return Promise.resolve(undefined);
+      },
+    }),
+  };
+  state.handle = handle as unknown as DeployCodeSourcedWorkflowArgs["db"];
+  return state;
+}
+
+function sharedDeployArgs(
+  db: OrderedFakeDb,
+  sendAgentDeploy: (agentAddress: string) => Promise<{ publicKey: string }>,
+): DeployCodeSourcedWorkflowArgs {
+  const projection = {
+    id: "wf_shared",
+    triggers: [{ type: "manual" }],
+    stepOrder: [],
+    steps: {},
+  };
+  const args = {
+    approved: {
+      approval: {
+        ok: true,
+        definitionId: DEFINITION_ID,
+        approvedWireHash: "sha256:frozen",
+        approvedGrants: new Set<string>(),
+        projection,
+      },
+      projection,
+      closure: { entries: [] },
+    },
+    sidecarRouter: {
+      sendAgentDeploy: (agentAddress: string) => sendAgentDeploy(agentAddress),
+    },
+    agentAddress: `${ANCHOR_RUN_ID}@${DEPLOYMENT_DOMAIN}`,
+    config: { sources: [], defaultSource: "default", principalId: "prn_x" },
+    sources: {},
+    db: db.handle,
+    tenantId: TENANT,
+    anchorRunId: ANCHOR_RUN_ID,
+    deploymentDomain: DEPLOYMENT_DOMAIN,
+    source: { kind: "registry", registry: "npm" },
+  };
+  return args as unknown as DeployCodeSourcedWorkflowArgs;
+}
+
+describe("deployCodeSourcedWorkflow (CL-6388)", () => {
+  test("persists the anchor run before the deploy frame is emitted", async () => {
+    const db = orderedFakeDb();
+
+    const result = await deployCodeSourcedWorkflow(
+      sharedDeployArgs(db, () => {
+        db.events.push("frame");
+        return Promise.resolve({ publicKey: SUPERVISOR_KEY });
+      }),
+    );
+
+    expect(result.publicKey).toBe(SUPERVISOR_KEY);
+    expect(db.events).toEqual(["insert", "frame", "update"]);
+    expect(db.insertedValues[0]).toMatchObject({
+      id: ANCHOR_RUN_ID,
+      anchorRunId: ANCHOR_RUN_ID,
+      tenantId: TENANT,
+      definitionId: DEFINITION_ID,
+      address: `${ANCHOR_RUN_ID}@${DEPLOYMENT_DOMAIN}`,
+      status: "deployed",
+    });
+  });
+
+  test("stamps the acked supervisor key onto the anchor after the frame", async () => {
+    const db = orderedFakeDb();
+
+    await deployCodeSourcedWorkflow(
+      sharedDeployArgs(db, () => {
+        db.events.push("frame");
+        return Promise.resolve({ publicKey: SUPERVISOR_KEY });
+      }),
+    );
+
+    // The key is only known from the ack, so the pre-frame insert cannot
+    // carry it; the post-frame stamp is where it lands.
+    expect(db.insertedValues[0]).toMatchObject({ publicKey: null });
+    expect(db.updatedSets).toEqual([{ publicKey: SUPERVISOR_KEY }]);
+  });
+
+  test("removes the pre-inserted anchor when the frame emit fails", async () => {
+    const db = orderedFakeDb();
+
+    await expect(
+      deployCodeSourcedWorkflow(
+        sharedDeployArgs(db, () => {
+          db.events.push("frame");
+          return Promise.reject(new Error("sidecar unreachable"));
+        }),
+      ),
+    ).rejects.toThrow(/sidecar unreachable/);
+
+    expect(db.events).toEqual(["insert", "frame", "delete"]);
+    expect(db.updatedSets).toHaveLength(0);
   });
 });

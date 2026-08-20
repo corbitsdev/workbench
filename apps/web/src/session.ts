@@ -35,7 +35,7 @@ export async function fetchSession(): Promise<SessionState> {
     if (!response.ok) {
       return {
         kind: "error",
-        message: `The server answered ${response.status} for the session check.`,
+        message: "We couldn't reach Workbench just now. Try again in a moment.",
       };
     }
     const body: unknown = await response.json();
@@ -49,10 +49,11 @@ export async function fetchSession(): Promise<SessionState> {
     // 401 or a `null` body, never to the "connection lost" error state.
     if (parsed instanceof type.errors) return { kind: "signed-out" };
     return { kind: "signed-in", user: parsed.user };
-  } catch (cause) {
+  } catch {
     return {
       kind: "error",
-      message: cause instanceof Error ? cause.message : String(cause),
+      message:
+        "You're offline, or Workbench isn't reachable. We'll keep trying.",
     };
   }
 }
@@ -66,7 +67,6 @@ const FailureBody = type({ message: "string" });
 async function postAuth(
   path: string,
   body: Record<string, string>,
-  doing: string,
 ): Promise<AuthResult> {
   try {
     const response = await fetch(path, {
@@ -81,7 +81,7 @@ async function postAuth(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The server answered ${response.status} ${doing}.`
+            ? "Something went wrong signing you in. Try again."
             : failure.message,
       };
     }
@@ -89,20 +89,20 @@ async function postAuth(
     if (parsed instanceof type.errors) {
       return {
         ok: false,
-        message: `Unexpected response shape ${doing}: ${parsed.summary}`,
+        message: "Something went wrong signing you in. Try again.",
       };
     }
     return { ok: true, user: parsed.user };
-  } catch (cause) {
+  } catch {
     return {
       ok: false,
-      message: cause instanceof Error ? cause.message : String(cause),
+      message: "Something went wrong signing you in. Try again.",
     };
   }
 }
 
 export function signIn(email: string, password: string): Promise<AuthResult> {
-  return postAuth("/api/auth/sign-in/email", { email, password }, "signing in");
+  return postAuth("/api/auth/sign-in/email", { email, password });
 }
 
 /**
@@ -112,11 +112,7 @@ export function signIn(email: string, password: string): Promise<AuthResult> {
  */
 export function signUp(email: string, password: string): Promise<AuthResult> {
   const name = email.split("@")[0] ?? email;
-  return postAuth(
-    "/api/auth/sign-up/email",
-    { name, email, password },
-    "creating your account",
-  );
+  return postAuth("/api/auth/sign-up/email", { name, email, password });
 }
 
 const SocialProviderId = type("'google' | 'github'");
@@ -197,7 +193,7 @@ export async function signInSocial(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The server answered ${response.status} starting ${provider} sign-in.`
+            ? "Something went wrong signing you in. Try again."
             : failure.message,
       };
     }
@@ -205,15 +201,15 @@ export async function signInSocial(
     if (parsed instanceof type.errors) {
       return {
         ok: false,
-        message: `Unexpected response starting ${provider} sign-in: ${parsed.summary}`,
+        message: "Something went wrong signing you in. Try again.",
       };
     }
     window.location.assign(parsed.url);
     return null;
-  } catch (cause) {
+  } catch {
     return {
       ok: false,
-      message: cause instanceof Error ? cause.message : String(cause),
+      message: "Something went wrong signing you in. Try again.",
     };
   }
 }

@@ -34,6 +34,7 @@ export {
   ChartBar,
   ChatCircle,
   ChatCircleDots,
+  Check,
   CircleNotch,
   Clock,
   Compass,

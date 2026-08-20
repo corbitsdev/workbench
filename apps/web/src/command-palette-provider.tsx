@@ -6,6 +6,7 @@ import {
 } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listWorkbenches } from "@corbits/chat-ui";
+import { libraryArtifactPath } from "@corbits/artifact-ui";
 import {
   filterBenchMemberships,
   listWorkbenchTenantIds,
@@ -508,10 +509,21 @@ export function CommandPaletteProvider({
         navigate(`/w/${workbenchId}`);
         pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
       } else if (id.startsWith("entity:runs:")) {
-        // Routines page owns the /routines prefix (including detail segments).
+        // Routines page owns the /routines prefix, keyed by routine
+        // (definition) id, not by an individual run's own id — deep-link to
+        // the run's routine so the row actually expands instead of landing
+        // on an id the page never recognizes.
         const runId = id.slice("entity:runs:".length);
         const title = runItems.find((item) => item.id === id)?.title ?? runId;
-        navigate(`/routines/${runId}`);
+        const run =
+          runsQuery.kind === "ready"
+            ? runsQuery.data.data.find((candidate) => candidate.id === runId)
+            : undefined;
+        navigate(
+          run !== undefined
+            ? `/routines/${encodeURIComponent(run.definitionId)}`
+            : "/routines",
+        );
         pushRecent({ kind: "runs", id, title, subtitle: "Run" });
       } else if (id.startsWith("entity:agents:")) {
         const agentId = id.slice("entity:agents:".length);
@@ -532,11 +544,10 @@ export function CommandPaletteProvider({
         navigate(`/skills/${encodeURIComponent(skillId)}`);
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:library:")) {
-        // Files detail is local page state, not a route — see the PR
-        // description flag. This opens the Files list.
+        const artifactId = id.slice("entity:library:".length);
         const title =
           libraryItems.find((item) => item.id === id)?.title ?? "Files";
-        navigate("/files");
+        navigate(libraryArtifactPath(artifactId));
         pushRecent({ kind: "library", id, title, subtitle: "Files" });
       }
       setOpen(false);
@@ -551,6 +562,7 @@ export function CommandPaletteProvider({
       pushRecent,
       workbenchItems,
       runItems,
+      runsQuery,
       agentItems,
       routineItems,
       skillItems,
@@ -577,7 +589,8 @@ export function CommandPaletteProvider({
       error={error ? "Search failed. Try again." : undefined}
       hasMore={hasMore}
       onLoadMore={loadMore}
-      placeholder="Search or jump to… (# workbenches · @ people · > actions · / pages)"
+      placeholder="Search or jump to…"
+      footer="# workbenches · @ people · > actions · / pages"
     />
   );
 }

@@ -129,9 +129,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flush();
 
     expect(container.textContent).toContain("Anthropic");
-    expect(container.textContent).toContain(
-      "rejected this key. Reconnect it in Plugins.",
-    );
+    expect(container.textContent).toContain("turned down your key.");
 
     const fixButton = findByText(container, "Fix it");
     expect(fixButton).not.toBeUndefined();
@@ -157,9 +155,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flush();
 
     expect(container.textContent).toContain("OpenAI");
-    expect(container.textContent).toContain(
-      "reports this key's quota is used up.",
-    );
+    expect(container.textContent).toContain("says this key is out of credit.");
   });
 
   // CL-6092: the record only ever carries a closed category, so there is

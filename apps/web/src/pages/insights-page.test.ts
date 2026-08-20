@@ -50,14 +50,14 @@ describe("resolveInsightsScope", () => {
     expect(result.scopeLabel).toBe("All workbenches");
   });
 
-  test("scope not yet resolved: falls back to the current workbench id, never blocks", () => {
+  test("scope not yet resolved: stays on the current workbench id but never labels it with a raw id", () => {
     const result = resolveInsightsScope({
       mode: "landing",
       selectedTenantId: "tnt_bench_a",
       scopeData: null,
     });
     expect(result.effectiveTenantId).toBe("tnt_bench_a");
-    expect(result.scopeLabel).toBe("tnt_bench_a");
+    expect(result.scopeLabel).toBe("All workbenches");
   });
 
   test("non-landing modes always stay tied to the current workbench, ignoring scope", () => {

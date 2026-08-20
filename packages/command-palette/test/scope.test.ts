@@ -40,14 +40,14 @@ describe("parsePaletteQuery", () => {
 
   test("a bare scope prefix yields an empty query", () => {
     expect(parsePaletteQuery("#")).toEqual({
-      scope: { prefix: "#", kind: "workbenches", label: "spaces" },
+      scope: { prefix: "#", kind: "workbenches", label: "workbenches" },
       query: "",
     });
   });
 
   test("trims whitespace after the prefix", () => {
     expect(parsePaletteQuery("#  eng ")).toEqual({
-      scope: { prefix: "#", kind: "workbenches", label: "spaces" },
+      scope: { prefix: "#", kind: "workbenches", label: "workbenches" },
       query: "eng",
     });
   });
