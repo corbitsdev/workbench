@@ -288,14 +288,16 @@ async function countMatching(page: Page, selector: string): Promise<number> {
 
 // --- the walkthrough -----------------------------------------------------
 
+/** The picker row that mints a plain Myra room (`workbench-templates.ts`). */
+const BLANK_TEMPLATE_TITLE = "Just start talking";
+
 /**
- * Clicks the sidebar's "+ New workbench" control — the one creation verb
- * (CL-6138, superseding the CL-6081/CL-6089 picker-and-dialog design): one
- * click mints a fresh Myra workbench against the account's default setup
- * template and navigates straight into it, no dialog, no agent picker, no
- * describe composer. Waits for the URL to actually land on a fresh
- * `/w/:id` distinct from wherever the click started, rather than assuming
- * a fixed delay covers the mint + navigate round trip.
+ * Drives the one creation flow a person actually walks: the sidebar's "+"
+ * opens the new-workbench picker (CL-6342 — "+" no longer mints on the
+ * spot), a kind is chosen, and "Create workbench" mints it and navigates
+ * in. Waits for the URL to actually land on a fresh `/w/:id` distinct from
+ * wherever the click started, rather than assuming a fixed delay covers
+ * the mint + navigate round trip.
  */
 async function createMyraChat(page: Page): Promise<void> {
   const before = await page.evaluate(() => window.location.pathname);
@@ -306,13 +308,36 @@ async function createMyraChat(page: Page): Promise<void> {
   let landed = false;
   for (let attempt = 0; attempt < 3 && !landed; attempt += 1) {
     await clickStable(page, 'button[aria-label="New workbench"]');
+    await page.waitForSelector(
+      '[role="radiogroup"][aria-label="Workbench kind"]',
+      {
+        timeout: 15_000,
+      },
+    );
+    const picked = await page.evaluate((title: string) => {
+      const rows = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+      );
+      const row = rows.find((candidate) =>
+        (candidate.textContent ?? "").includes(title),
+      );
+      if (row === undefined) return false;
+      row.click();
+      return true;
+    }, BLANK_TEMPLATE_TITLE);
+    if (!picked) {
+      throw new Error(
+        `the new-workbench picker offered no "${BLANK_TEMPLATE_TITLE}" row`,
+      );
+    }
+    await clickStable(page, ".new-workbench-picker-foot button");
     landed = await page
       .waitForFunction(
         (previous: string) => {
           const current = window.location.pathname;
           return current.startsWith("/w/") && current !== previous;
         },
-        { timeout: 8_000 },
+        { timeout: 30_000 },
         before,
       )
       .then(() => true)
@@ -320,7 +345,7 @@ async function createMyraChat(page: Page): Promise<void> {
   }
   if (!landed) {
     throw new Error(
-      "the + control never minted a fresh workbench after 3 clicks",
+      "the picker never minted a fresh workbench after 3 attempts",
     );
   }
 }
@@ -671,17 +696,17 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 3: CL-6138 — the sidebar's "+" is the same one creation
-    // verb the bare-root land-hop used above: every click mints a fresh
-    // Myra workbench and navigates straight into it. The second create
-    // must land somewhere NEW, distinct from the auto-minted first one;
-    // only the initial land-hop ever reopens an existing conversation.
+    // --- Step 3: CL-6342 — the sidebar's "+" opens the new-workbench
+    // picker, and a workbench is minted only once a kind is chosen and
+    // "Create workbench" is pressed. The create must land somewhere NEW,
+    // distinct from the auto-minted first one; only the initial land-hop
+    // ever reopens an existing conversation.
     await step(
       () => page,
       "05-second-create-mints-new-workbench",
       async () => {
         // The sidebar (and its "+ New workbench" affordance) is always
-        // present — no navigation needed before clicking it again.
+        // present — no navigation needed before opening the picker again.
         await createMyraChat(page);
         await page.waitForFunction(
           (previous: string) => {
