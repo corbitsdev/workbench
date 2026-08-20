@@ -69,7 +69,8 @@ describe("createGitWorkflowPusher", () => {
         packageName: "@workbench-seed/test",
       });
 
-      expect(outcome).toBe("pushed");
+      expect(outcome.outcome).toBe("pushed");
+      expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
 
       const verify = join(work, "verify");
       await git(["clone", "-b", "main", remoteDir, verify], work);
@@ -101,7 +102,7 @@ describe("createGitWorkflowPusher", () => {
         workflowJson: '{"v":1}',
         packageName: "@workbench-seed/test",
       });
-      expect(first).toBe("pushed");
+      expect(first.outcome).toBe("pushed");
 
       const second = await pusher({
         remoteUrl: `file://${remoteDir}`,
@@ -109,7 +110,9 @@ describe("createGitWorkflowPusher", () => {
         workflowJson: '{"v":1}',
         packageName: "@workbench-seed/test",
       });
-      expect(second).toBe("unchanged");
+      expect(second.outcome).toBe("unchanged");
+      // An unchanged push still reports the pin the deploy sources from.
+      expect(second.commitSha).toBe(first.commitSha);
     } finally {
       await rm(work, { recursive: true, force: true });
     }
