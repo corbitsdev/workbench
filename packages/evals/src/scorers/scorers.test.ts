@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ScorerContext, ToolCall, Turn } from "../types.ts";
+import type { ScorerContext, ToolCall, Turn, WorldSnapshot } from "../types.ts";
 import {
   agentCreatedInWorkbench,
   approvalGated,
@@ -36,8 +36,16 @@ function turn(
   return { human, replyText, toolCalls };
 }
 
+const EMPTY_WORLD: WorldSnapshot = {
+  capturedAt: "2026-01-01T00:00:00.000Z",
+  agentDefinitions: [],
+  routines: [],
+  connections: [],
+  fakeReceipts: [],
+};
+
 function ctxAt(transcript: Turn[], turnIndex: number): ScorerContext {
-  return { transcript, turnIndex };
+  return { transcript, turnIndex, world: EMPTY_WORLD };
 }
 
 describe("asksQuestions", () => {
