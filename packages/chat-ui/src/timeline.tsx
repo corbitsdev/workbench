@@ -56,7 +56,6 @@ import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
 import { WorkbenchLoadingState } from "./loading-state";
 import { Markdown } from "./markdown";
-import { PrFailedTurnStrip } from "./pr-thread-view";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
@@ -625,14 +624,18 @@ function EventLine({
 }
 
 /**
- * The general chat timeline's failed-turn treatment (CL-6332): a text
- * part `postUndeliveredNotice` posted in its unreachable agent's own
- * voice (`part.turnFailed`), rendered through the same
- * `PrFailedTurnStrip` the PR-review mock uses — the "visible treatment
- * matches the mock" is this literal component, just fed chat-specific
- * copy (`titleText`/`subText`) instead of the PR thread's repo-scoped
- * one. `onRetry`/`onWhatHappened` are the host's own actions; a host
- * that wires neither still gets the strip, just with inert buttons —
+ * The general chat timeline's failed-turn treatment (CL-6332, redesigned
+ * CL-6376 to match the timeline's own idiom rather than borrow
+ * `PrFailedTurnStrip`'s bordered banner — that component stays as-is for
+ * the PR-review surface it was built for, but reusing it here read as a
+ * floating alert dropped mid-conversation). A text part
+ * `postUndeliveredNotice` posted in its unreachable agent's own voice
+ * (`part.turnFailed`) now renders as a quiet inline system row, aligned
+ * under the same left gutter every message bubble sits under: muted
+ * danger-tinted copy, a small ghost Retry button, and "What happened" as
+ * a subtle inline disclosure rather than a second button competing for
+ * attention. `onRetry`/`onWhatHappened` are the host's own actions; a
+ * host that wires neither still gets the row, just with inert controls —
  * matching the fixed-disabled framing every other undefined-action port
  * in this file already falls back to.
  */
@@ -651,18 +654,38 @@ function FailedTurnStrip({
 }) {
   const display = senderDisplay(item.sender, participants, currentUser);
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
+  const [expanded, setExpanded] = useState(false);
   return (
-    <PrFailedTurnStrip
-      failedTurn={{
-        afterReplyId: item.id,
-        sender,
-        repo: "",
-        titleText: CHAT_STRINGS.turnFailedTitle(sender),
-        subText: CHAT_STRINGS.turnFailedSub,
-        onRetry: () => onRetryFailedTurn?.(item),
-        onWhatHappened: () => onWhatHappenedFailedTurn?.(item),
-      }}
-    />
+    <div className="chat-turn-failed" role="status">
+      <span className="chat-turn-failed-text">
+        {CHAT_STRINGS.turnFailedTitle(sender)}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="chat-turn-failed-retry"
+        onClick={() => onRetryFailedTurn?.(item)}
+      >
+        {CHAT_STRINGS.prThreadRetryAction}
+      </Button>
+      <button
+        type="button"
+        className="chat-turn-failed-disclosure"
+        aria-expanded={expanded}
+        onClick={() => {
+          setExpanded((open) => !open);
+          onWhatHappenedFailedTurn?.(item);
+        }}
+      >
+        {CHAT_STRINGS.prThreadWhatHappenedAction}
+      </button>
+      {expanded ? (
+        <span className="chat-turn-failed-detail">
+          {CHAT_STRINGS.turnFailedSub}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -1201,139 +1224,155 @@ function MessageParts({
       onContextMenu={handleContextMenu}
     >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
-      {item.parts.map((part, index) => {
-        const key = `${groupKey}-${index}`;
-        if (part.kind === "text" && part.turnFailed === true) {
+      <div className="chat-message-row">
+        {item.parts.map((part, index) => {
+          const key = `${groupKey}-${index}`;
+          if (part.kind === "text" && part.turnFailed === true) {
+            return (
+              <FailedTurnStrip
+                key={key}
+                item={item}
+                participants={participants}
+                currentUser={currentUser}
+                {...(onRetryFailedTurn !== undefined
+                  ? { onRetryFailedTurn }
+                  : {})}
+                {...(onWhatHappenedFailedTurn !== undefined
+                  ? { onWhatHappenedFailedTurn }
+                  : {})}
+              />
+            );
+          }
+          if (part.kind === "text") {
+            return (
+              <TextBubble
+                key={key}
+                text={part.text}
+                createdAt={item.createdAt}
+                sender={item.sender}
+                participants={participants}
+                currentUser={currentUser}
+                showHeader={showHeader}
+                {...(item.pendingStatus !== undefined
+                  ? { pendingStatus: item.pendingStatus, pendingNonce }
+                  : {})}
+                {...(pendingActions !== undefined ? { pendingActions } : {})}
+                {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+                {...(onFixConnection !== undefined ? { onFixConnection } : {})}
+              />
+            );
+          }
+          if (part.kind === "event") {
+            return (
+              <EventLine
+                key={key}
+                part={part}
+                createdAt={item.createdAt}
+                participants={participants}
+              />
+            );
+          }
+          if (part.kind === "file") {
+            return (
+              <FilePartView
+                key={key}
+                part={part}
+                {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+                {...(onOpenArtifactInLibrary !== undefined
+                  ? { onOpenArtifactInLibrary }
+                  : {})}
+              />
+            );
+          }
+          // The agent's own thinking and its tool calls (CL-6318). Both
+          // render through react-ui, which already owns this presentation —
+          // a reasoning disclosure and the tool-call lifecycle — so the
+          // workbench carries no second version of either.
+          if (part.kind === "reasoning") {
+            return (
+              <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />
+            );
+          }
+          if (part.kind === "tool-trace") {
+            const trace = toReactUiToolTrace(part, key);
+            return (
+              <ToolBlock
+                key={key}
+                name={trace.name}
+                state={toolTraceToBlockState(trace)}
+                input={trace.input}
+              />
+            );
+          }
+          if (part.kind === "block") {
+            return (
+              <BlockPartView
+                key={key}
+                block={part.block}
+                messageId={item.id}
+                {...(approvalActions !== undefined ? { approvalActions } : {})}
+                {...(blockResponses !== undefined ? { blockResponses } : {})}
+                {...(connectGithubActions !== undefined
+                  ? { connectGithubActions }
+                  : {})}
+              />
+            );
+          }
+          return <FallbackPart key={key} part={part} />;
+        })}
+        {(() => {
+          const hasReactions =
+            reactionActions !== undefined && (item.reactions?.length ?? 0) > 0;
+          // Unpinned messages offer no persistent glyph here — pinning
+          // itself stays reachable through the ellipsis menu's own
+          // "Pin"/"Unpin" entry (`buildMessageMenu`); this row only shows
+          // once there's something to show (a reaction, or a message
+          // already pinned, which needs a visible way to unpin). Before
+          // this, a pin toggle mounted for every message the moment a host
+          // wired `pinActions` at all, CSS-hidden until hover but present
+          // in the DOM under every line, greeting included.
+          const isPinned = pinActions !== undefined && item.pinned === true;
+          if (isPending || (!hasReactions && !isPinned)) return null;
           return (
-            <FailedTurnStrip
-              key={key}
-              item={item}
-              participants={participants}
-              currentUser={currentUser}
-              {...(onRetryFailedTurn !== undefined
-                ? { onRetryFailedTurn }
-                : {})}
-              {...(onWhatHappenedFailedTurn !== undefined
-                ? { onWhatHappenedFailedTurn }
-                : {})}
-            />
+            <div className="chat-message-actions">
+              {hasReactions && reactionActions !== undefined ? (
+                <ReactionChips
+                  messageId={item.id}
+                  reactions={item.reactions ?? []}
+                  reactionActions={reactionActions}
+                />
+              ) : null}
+              {isPinned && pinActions !== undefined ? (
+                <PinToggleButton
+                  messageId={item.id}
+                  pinned={true}
+                  pinActions={pinActions}
+                />
+              ) : null}
+            </div>
           );
-        }
-        if (part.kind === "text") {
-          return (
-            <TextBubble
-              key={key}
-              text={part.text}
-              createdAt={item.createdAt}
-              sender={item.sender}
-              participants={participants}
-              currentUser={currentUser}
-              showHeader={showHeader}
-              {...(item.pendingStatus !== undefined
-                ? { pendingStatus: item.pendingStatus, pendingNonce }
-                : {})}
-              {...(pendingActions !== undefined ? { pendingActions } : {})}
-              {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
-              {...(onFixConnection !== undefined ? { onFixConnection } : {})}
-            />
-          );
-        }
-        if (part.kind === "event") {
-          return (
-            <EventLine
-              key={key}
-              part={part}
-              createdAt={item.createdAt}
-              participants={participants}
-            />
-          );
-        }
-        if (part.kind === "file") {
-          return (
-            <FilePartView
-              key={key}
-              part={part}
-              {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
-              {...(onOpenArtifactInLibrary !== undefined
-                ? { onOpenArtifactInLibrary }
-                : {})}
-            />
-          );
-        }
-        // The agent's own thinking and its tool calls (CL-6318). Both
-        // render through react-ui, which already owns this presentation —
-        // a reasoning disclosure and the tool-call lifecycle — so the
-        // workbench carries no second version of either.
-        if (part.kind === "reasoning") {
-          return <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />;
-        }
-        if (part.kind === "tool-trace") {
-          const trace = toReactUiToolTrace(part, key);
-          return (
-            <ToolBlock
-              key={key}
-              name={trace.name}
-              state={toolTraceToBlockState(trace)}
-              input={trace.input}
-            />
-          );
-        }
-        if (part.kind === "block") {
-          return (
-            <BlockPartView
-              key={key}
-              block={part.block}
-              messageId={item.id}
-              {...(approvalActions !== undefined ? { approvalActions } : {})}
-              {...(blockResponses !== undefined ? { blockResponses } : {})}
-              {...(connectGithubActions !== undefined
-                ? { connectGithubActions }
-                : {})}
-            />
-          );
-        }
-        return <FallbackPart key={key} part={part} />;
-      })}
-      {!isPending &&
-      ((reactionActions !== undefined && (item.reactions?.length ?? 0) > 0) ||
-        pinActions !== undefined) ? (
-        <div className="chat-message-actions">
-          {reactionActions !== undefined ? (
-            <ReactionChips
-              messageId={item.id}
-              reactions={item.reactions ?? []}
-              reactionActions={reactionActions}
-            />
-          ) : null}
-          {pinActions !== undefined ? (
-            <PinToggleButton
-              messageId={item.id}
-              pinned={item.pinned ?? false}
-              pinActions={pinActions}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {!isPending && onOpenThread !== undefined && replyCount > 0 ? (
-        <ThreadAffordance
-          messageId={item.id}
-          meta={threadMeta}
-          mode={threadAffordanceMode}
-          participants={participants}
-          onOpen={() => onOpenThread(item.id)}
-        />
-      ) : null}
-      {!isPending ? (
-        <MessageHoverToolbar
-          messageId={item.id}
-          menu={menu}
-          menuOpen={contextMenu.open}
-          onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
-          threadAffordanceMode={threadAffordanceMode}
-          {...(onOpenThread !== undefined ? { onOpenThread } : {})}
-          {...(reactionActions !== undefined ? { reactionActions } : {})}
-        />
-      ) : null}
+        })()}
+        {!isPending && onOpenThread !== undefined && replyCount > 0 ? (
+          <ThreadAffordance
+            messageId={item.id}
+            meta={threadMeta}
+            mode={threadAffordanceMode}
+            participants={participants}
+            onOpen={() => onOpenThread(item.id)}
+          />
+        ) : null}
+        {!isPending ? (
+          <MessageHoverToolbar
+            messageId={item.id}
+            menu={menu}
+            menuOpen={contextMenu.open}
+            onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
+            threadAffordanceMode={threadAffordanceMode}
+            {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+            {...(reactionActions !== undefined ? { reactionActions } : {})}
+          />
+        ) : null}
+      </div>
       <ContextMenuView
         x={contextMenu.x}
         y={contextMenu.y}
@@ -1536,7 +1575,7 @@ export function WorkbenchTimeline({
   readonly pendingActions?: PendingActions;
   /** Retry action offered on a failed-turn strip (CL-6332) — the
    * server's undelivered-turn notice (`agent_turns` closed `failed`,
-   * see `postUndeliveredNotice`), rendered via `PrFailedTurnStrip`.
+   * see `postUndeliveredNotice`), rendered via `FailedTurnStrip` above.
    * Undefined still renders the strip, just with a Retry button that
    * does nothing when pressed — the strip's job is to make the failure
    * visible, which it does either way. */

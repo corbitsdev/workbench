@@ -173,6 +173,42 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
   });
 });
 
+describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatch failure too)", () => {
+  test("a chat.message carrying a turnFailed part clears a pending reply", () => {
+    const state = { text: "" };
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          parts: [
+            { kind: "text", text: "I didn't get that one", turnFailed: true },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("an ordinary chat.message (no turnFailed part) leaves the reply untouched", () => {
+    const state = { text: "" };
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: { id: "msg_1", parts: [{ kind: "text", text: "hi" }] },
+      }),
+    ).toBe(state);
+  });
+
+  test("a chat.message with no pending reply stays null", () => {
+    expect(
+      nextStreamingReplyState(null, {
+        eventType: "chat.message",
+        data: { parts: [{ kind: "text", text: "x", turnFailed: true }] },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("openPendingReply", () => {
   test("opens an empty pending reply when idle", () => {
     expect(openPendingReply(null)).toEqual({ text: "" });

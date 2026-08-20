@@ -111,29 +111,61 @@ describe("reaction chip row", () => {
   });
 });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Radix's exit-animation handling runs through a couple of microtasks even
+ * with no real CSS animation configured — mirrors the identical helper in
+ * `test/message-hover-toolbar.test.tsx`. */
+async function flush(): Promise<void> {
+  await act(async () => {
+    await sleep(0);
+    await sleep(0);
+  });
+}
+
 describe("pin toggle", () => {
+  // CL-6376: an unpinned message renders no persistent glyph at all — the
+  // pin toggle only mounts once a message is actually pinned (needing a
+  // visible way to unpin it). Pinning itself stays reachable through the
+  // ellipsis/context menu's own "Pin message" entry either way.
   test("with no pinActions, no pin button renders", async () => {
     const el = await mount(messageWithReactions());
     expect(el.querySelector(".chat-pin-toggle")).toBeNull();
   });
 
-  test("an unpinned message's pin button calls onPin", async () => {
-    const pinned: string[] = [];
-    const unpinned: string[] = [];
+  test("an unpinned message renders no pin toggle, even with pinActions wired", async () => {
     const el = await mount(messageWithReactions(), undefined, {
-      onPin: (id) => pinned.push(id),
-      onUnpin: (id) => unpinned.push(id),
+      onPin: () => undefined,
+      onUnpin: () => undefined,
     });
-
-    const button = el.querySelector(".chat-pin-toggle") as HTMLButtonElement;
-    expect(button.dataset["pinned"]).toBe("false");
-    await act(async () => button.click());
-
-    expect(pinned).toEqual(["m1"]);
-    expect(unpinned).toEqual([]);
+    expect(el.querySelector(".chat-pin-toggle")).toBeNull();
   });
 
-  test("a pinned message's pin button calls onUnpin instead", async () => {
+  test("an unpinned message can still be pinned through the context menu's onPin", async () => {
+    const pinned: string[] = [];
+    const el = await mount(messageWithReactions(), undefined, {
+      onPin: (id) => pinned.push(id),
+      onUnpin: () => undefined,
+    });
+
+    const group = el.querySelector(".chat-message-group") as HTMLElement;
+    await act(async () => {
+      group.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+    });
+    await flush();
+
+    const pinItem = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="menu-item"]'),
+    ).find((item) => item.textContent === "Pin message");
+    expect(pinItem).not.toBeUndefined();
+    await act(async () => pinItem?.click());
+
+    expect(pinned).toEqual(["m1"]);
+  });
+
+  test("a pinned message's pin button calls onUnpin", async () => {
     const pinned: string[] = [];
     const unpinned: string[] = [];
     const items: MessageItem[] = [

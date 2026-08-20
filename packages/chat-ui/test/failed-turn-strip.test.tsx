@@ -1,8 +1,9 @@
-// DOM tests for CL-6332's failed-turn strip: the server's undelivered-turn
-// notice (`postUndeliveredNotice`, `@corbits/chat`'s `workbench-service.ts`)
-// marks its text part `turnFailed: true`; the general chat timeline renders
-// that part through `PrFailedTurnStrip` (PR #71) instead of an ordinary text
-// bubble, matching the PR-review mock's visible treatment.
+// DOM tests for CL-6332/CL-6376's failed-turn strip: the server's
+// undelivered-turn notice (`postUndeliveredNotice`, `@corbits/chat`'s
+// `workbench-service.ts`) marks its text part `turnFailed: true`; the
+// general chat timeline renders that part as its own quiet inline system
+// row (`.chat-turn-failed`, CL-6376) instead of an ordinary text bubble —
+// or, before the CL-6376 redesign, `PrFailedTurnStrip`'s bordered banner.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -60,11 +61,14 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       );
     });
 
-    const strip = container.querySelector(".chat-pr-failed");
+    const strip = container.querySelector(".chat-turn-failed");
     expect(strip).not.toBeNull();
     expect(strip?.getAttribute("role")).toBe("status");
     expect(strip?.textContent).toContain("Echo");
     expect(strip?.textContent).toContain("didn't reply");
+
+    // Never the old bordered-banner treatment.
+    expect(container.querySelector(".chat-pr-failed")).toBeNull();
 
     // The notice never renders as an ordinary bubble alongside the strip.
     const bubbles = container.querySelectorAll(".chat-bubble");
@@ -94,7 +98,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       );
     });
 
-    const buttons = container.querySelectorAll(".chat-pr-failed button");
+    const buttons = container.querySelectorAll(".chat-turn-failed button");
     expect(buttons).toHaveLength(2);
     act(() => {
       (buttons[0] as HTMLButtonElement).click();
@@ -126,7 +130,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       );
     });
 
-    expect(container.querySelector(".chat-pr-failed")).toBeNull();
+    expect(container.querySelector(".chat-turn-failed")).toBeNull();
     expect(container.querySelector(".chat-bubble")).not.toBeNull();
   });
 });

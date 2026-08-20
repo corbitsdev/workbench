@@ -190,69 +190,6 @@ describe("GET /oauth-configured", () => {
   });
 });
 
-describe("POST /:connectorId/credential/test", () => {
-  test("unknown connector 404s", async () => {
-    const app = buildApp();
-    const response = await app.request("/not-a-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "test-key" }),
-    });
-    expect(response.status).toBe(404);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("not_found");
-  });
-
-  test("a display-only connector (no probe) 404s", async () => {
-    const app = buildApp();
-    const response = await app.request(
-      "/display-only-connector/credential/test",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ apiKey: "test-key" }),
-      },
-    );
-    expect(response.status).toBe(404);
-  });
-
-  test("malformed body 400s", async () => {
-    const app = buildApp();
-    const response = await app.request("/accepting-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("bad_request");
-  });
-
-  test("a rejected probe 422s with no storage", async () => {
-    const app = buildApp();
-    const response = await app.request("/rejecting-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "bad-key" }),
-    });
-    expect(response.status).toBe(422);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("invalid_credential");
-  });
-
-  test("an accepted probe 200s with no storage", async () => {
-    const app = buildApp();
-    const response = await app.request("/accepting-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "good-key" }),
-    });
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { ok: boolean };
-    expect(body.ok).toBe(true);
-  });
-});
-
 describe("POST /:connectorId/complete", () => {
   test("unknown connector 404s", async () => {
     const app = buildApp();
@@ -624,39 +561,6 @@ describe("POST /:connectorId/complete", () => {
     expect(providerHealth.get(TENANT.id, "accepting-connector")?.status).toBe(
       "needs_attention",
     );
-  });
-});
-
-describe("POST /:connectorId/credential/test provider health wiring", () => {
-  test("a rejected probe reports the connector needs_attention", async () => {
-    const providerHealth = createProviderHealthStore();
-    const app = buildApp({ providerHealth });
-    await app.request("/rejecting-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "bad-key" }),
-    });
-    const record = providerHealth.get(TENANT.id, "rejecting-connector");
-    expect(record?.status).toBe("needs_attention");
-    expect(record?.category).toBe("credential_failure");
-  });
-
-  test("a passing probe clears any needs_attention record for that connector", async () => {
-    const providerHealth = createProviderHealthStore();
-    providerHealth.report(
-      TENANT.id,
-      "accepting-connector",
-      "credential_failure",
-    );
-    const app = buildApp({ providerHealth });
-    await app.request("/accepting-connector/credential/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "good-key" }),
-    });
-    expect(
-      providerHealth.get(TENANT.id, "accepting-connector"),
-    ).toBeUndefined();
   });
 });
 

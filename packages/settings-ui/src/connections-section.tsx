@@ -49,10 +49,10 @@ import {
   describeQueryError,
 } from "@corbits/api-query";
 import {
+  ConnectionsApiError,
   completeConnectorCredential,
   disconnectConnector,
   fetchOAuthConfigured,
-  testConnectorCredential,
 } from "./connections-api";
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 import {
@@ -829,31 +829,28 @@ export function ConnectorCredentialDialog({
   const open = descriptor !== null;
   const canSubmit = apiKey.trim() !== "" && !submitting;
 
-  // One primary action, not test-then-save: it proves the key with a real
-  // call before ever storing it, so a rejected key never reaches
-  // `completeConnectorCredential` and nothing gets sealed on a bad key.
+  // One action, not test-then-save (CL-6377): the server proves the key
+  // with a real call before ever storing it, so a rejected key never gets
+  // sealed — this call is the only round-trip, and its 422 rejection
+  // renders inline the same as any other connect failure.
   function handleSubmit() {
     if (descriptor === null) return;
     setSubmitting(true);
     setSubmitError(null);
-    testConnectorCredential(tenantId, descriptor.id, apiKey)
-      .then((result) => {
-        if (!result.ok) {
-          setSubmitError(result.message);
-          return;
-        }
-        return completeConnectorCredential(
-          tenantId,
-          descriptor.id,
-          apiKey,
-        ).then(() => {
-          toast(
-            SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
-          );
-          onConnected();
-        });
+    completeConnectorCredential(tenantId, descriptor.id, apiKey)
+      .then(() => {
+        toast(
+          SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
+        );
+        onConnected();
       })
-      .catch((cause: unknown) => setSubmitError(describeQueryError(cause)))
+      .catch((cause: unknown) => {
+        setSubmitError(
+          cause instanceof ConnectionsApiError && cause.status === 422
+            ? cause.message
+            : describeQueryError(cause),
+        );
+      })
       .finally(() => setSubmitting(false));
   }
 
@@ -935,8 +932,8 @@ export function ConnectorCredentialDialog({
             onClick={handleSubmit}
           >
             {submitting
-              ? SETTINGS_STRINGS.connectionsTestAndSaving
-              : SETTINGS_STRINGS.connectionsTestAndSaveAction}
+              ? SETTINGS_STRINGS.connectionsConnecting
+              : SETTINGS_STRINGS.connectionsConnectDialogAction}
           </Button>
         </DialogFooter>
       </DialogContent>

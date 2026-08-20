@@ -8,7 +8,6 @@ import {
   completeConnectorCredential,
   disconnectConnector,
   fetchOAuthConfigured,
-  testConnectorCredential,
 } from "../src/connections-api";
 
 const realFetch = globalThis.fetch;
@@ -83,22 +82,6 @@ describe("fetchOAuthConfigured", () => {
   });
 });
 
-describe("testConnectorCredential", () => {
-  test("resolves ok on 200", async () => {
-    stubFetch(() => json({ ok: true }));
-    const result = await testConnectorCredential("tnt_1", "granola", "key");
-    expect(result).toEqual({ ok: true });
-  });
-
-  test("resolves { ok: false, message } on 422 instead of throwing", async () => {
-    stubFetch(() =>
-      json({ error: { code: "invalid_credential", message: "bad key" } }, 422),
-    );
-    const result = await testConnectorCredential("tnt_1", "granola", "key");
-    expect(result).toEqual({ ok: false, message: "bad key" });
-  });
-});
-
 describe("completeConnectorCredential", () => {
   test("posts the api key and returns the stored credential id", async () => {
     const calls = stubFetch(() =>
@@ -109,6 +92,17 @@ describe("completeConnectorCredential", () => {
       "/api/tenants/tnt_1/connections/granola/complete",
     );
     expect(result).toEqual({ credentialId: "cred_1", status: "active" });
+  });
+
+  // CL-6377: connecting is the one round-trip — a rejected key throws
+  // straight from this call, with no separate test step beforehand.
+  test("throws ConnectionsApiError with the probe's own message on a 422", async () => {
+    stubFetch(() =>
+      json({ error: { code: "invalid_credential", message: "bad key" } }, 422),
+    );
+    await expect(
+      completeConnectorCredential("tnt_1", "granola", "key"),
+    ).rejects.toThrow("bad key");
   });
 });
 

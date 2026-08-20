@@ -27,9 +27,10 @@ resolve a connector's credential across a tenant chain.
   without pulling in `hono` or `@intx/inference`.
 - `descriptor.ts` — the `ConnectorDescriptor`/`ConnectorOAuthConfig` shape
   every registry entry implements.
-- `routes.ts` — tenant-scoped `POST /:connectorId/credential/test` and
-  `/complete`: proves an api-key connector's credential before storing it,
-  mounted inside the platform's native tenant middleware.
+- `routes.ts` — tenant-scoped `POST /:connectorId/complete`: proves an
+  api-key connector's credential against its own probe and only stores it
+  once that probe accepts (one action, not a separate test step), mounted
+  inside the platform's native tenant middleware.
 - `oauth-routes.ts` — the generalized `GET /:connectorId/start` /
   `/callback` factory driving every `oauth-pkce`/`oauth-code` connector
   (OpenRouter, Hugging Face) from one `ConnectorDescriptor.oauth` config.

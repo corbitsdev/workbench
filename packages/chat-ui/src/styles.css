@@ -2772,8 +2772,14 @@
    "Reply in thread" link and the standalone add-reaction trigger. Floats
    over the message's top-right corner, fading in on hover/focus-within
    like `.chat-pin-toggle` above, plus `data-open` so it stays put while its
-   own picker or menu is open even if focus moves into a portaled menu. */
-.chat-message-group {
+   own picker or menu is open even if focus moves into a portaled menu.
+   Positioned relative to `.chat-message-row` (CL-6376) — the wrapper
+   around this one message's own content, siblings-with but excluding its
+   optional `.chat-day-divider` — rather than `.chat-message-group` as a
+   whole: anchoring to the outer group let the toolbar float up into the
+   day divider's own space on the first message of a new day, detached
+   from the row a reader was actually hovering. */
+.chat-message-row {
   position: relative;
 }
 
@@ -3621,4 +3627,50 @@
 
 .chat-pr-failed-what-happened:hover {
   color: var(--foreground);
+}
+
+/* The general chat timeline's own failed-turn row (CL-6376) — a quiet
+   inline system line under the same left gutter every message sits
+   under, not a bordered banner: muted danger-tinted text, a small ghost
+   Retry, and "What happened" as an inline disclosure. Reads as part of
+   the conversation rather than an alert dropped into it. */
+.chat-turn-failed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0.35rem 2.9rem;
+  max-width: 100%;
+  font-size: 0.8125rem;
+}
+
+.chat-turn-failed-text {
+  color: color-mix(in srgb, var(--destructive) 78%, var(--muted-foreground));
+}
+
+.chat-turn-failed-retry {
+  height: auto;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.chat-turn-failed-disclosure {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-turn-failed-disclosure:hover {
+  color: var(--foreground);
+}
+
+.chat-turn-failed-detail {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
