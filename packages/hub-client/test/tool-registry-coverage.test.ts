@@ -144,12 +144,75 @@ describe("corbits-tools registry coverage", () => {
       }
     }
 
-    expect([...uncoveredWorkflows].sort()).toEqual([
-      "collateral-generation",
-      "granola-call",
-      "morning-brief",
-      "pain-point-collateral",
-      "process-granola-call",
-    ]);
+    expect([...uncoveredWorkflows].sort()).toEqual([]);
+  });
+
+  // The class guard: every `@corbits`-scoped pin literal anywhere in the
+  // repo — every `workflows/*/src/index.ts` (deployed or catalog-only,
+  // active or not yet wired through `toolPackagePins`) plus every
+  // statically injected pin idiom (`SKILLS_TOOL_PACKAGE_PIN` in
+  // `@corbits/agent-directory`, the inline pins `apps/hub/src/index.ts`
+  // pushes for its built-in connectors) — must resolve through
+  // `CORBITS_TOOL_PACKAGE_DIRS`. This is broader than the deployed-only
+  // hard check above and the catalog-only informational check: it is
+  // the one place a *new* unresolvable pin, anywhere, fails loud with
+  // its exact location instead of surfacing as a stranger's runtime
+  // "unknown registry" error.
+  test("every @corbits pin literal in the repo — workflow definitions and static pin idioms alike — is published by CORBITS_TOOL_PACKAGE_DIRS", () => {
+    const published = publishedCorbitsPackageNames();
+    const pinPattern = /name:\s*"(@corbits\/[a-zA-Z0-9_-]+)"/g;
+    const found: { location: string; name: string }[] = [];
+
+    const workflowsDir = path.join(REPO_ROOT, "workflows");
+    for (const entry of readdirSync(workflowsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const indexPath = path.join(workflowsDir, entry.name, "src", "index.ts");
+      let source: string;
+      try {
+        source = readFileSync(indexPath, "utf8");
+      } catch {
+        continue;
+      }
+      for (const match of source.matchAll(pinPattern)) {
+        const pkgName = match[1];
+        if (pkgName !== undefined) {
+          found.push({
+            location: `workflows/${entry.name}/src/index.ts`,
+            name: pkgName,
+          });
+        }
+      }
+    }
+
+    const staticPinSites = [
+      "packages/agent-directory/src/agent-workflow.ts",
+      "apps/hub/src/index.ts",
+    ];
+    for (const relativePath of staticPinSites) {
+      const source = readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
+      for (const match of source.matchAll(pinPattern)) {
+        const pkgName = match[1];
+        if (pkgName !== undefined) {
+          found.push({ location: relativePath, name: pkgName });
+        }
+      }
+    }
+
+    const missing = found.filter(({ name }) => !published.has(name));
+
+    if (missing.length > 0) {
+      const missingList = missing
+        .map(({ location, name }) => `${location} pins ${name}`)
+        .join("; ");
+      throw new Error(
+        `The following @corbits tool-package pin literals have no ` +
+          `published tarball: ${missingList}. Register the missing ` +
+          `package's directory in ` +
+          `packages/tool-registry-publish/src/registry.ts's ` +
+          `CORBITS_TOOL_PACKAGE_DIRS, or remove the pin if the package ` +
+          `is not meant to be a publishable tool package.`,
+      );
+    }
+    expect(missing).toEqual([]);
   });
 });
