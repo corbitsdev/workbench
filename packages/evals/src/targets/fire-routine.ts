@@ -10,6 +10,7 @@
 // `workflow_run`/`inference_turn` chain keyed by the same `runId`
 // `readAllToolCalls` (./trace.ts) already reads for a chat turn.
 import type { Turn } from "../types.ts";
+import { arrayField, stringField } from "./json-fields.ts";
 import { readAllToolCalls, type SqlClientLike } from "./trace.ts";
 
 export interface FireRoutineApiResult {
@@ -29,26 +30,6 @@ export interface FireRoutineDeps {
   readonly tenantId: string;
   readonly cookies: string[];
   readonly sql: SqlClientLike;
-}
-
-function stringField(data: unknown, field: string, what: string): string {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
-}
-
-function arrayField(data: unknown, field: string, what: string): unknown[] {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (Array.isArray(value)) return value;
-  }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
 }
 
 interface RoutineRunListItem {

@@ -39,6 +39,7 @@ import type {
 import type { McpFakeRecording } from "../fakes/recording.ts";
 import { startMcpFake } from "../fakes/mcp-fake-server.ts";
 import { fireRoutineNow } from "./fire-routine.ts";
+import { arrayField, stringField } from "./json-fields.ts";
 import {
   newToolCallsSince,
   readAllToolCalls,
@@ -127,26 +128,6 @@ export interface MyraTargetInfra {
 /** Never sent anywhere for real in plumbing mode — see the module
  * comment. Only used when `EVAL_PROVIDER_API_KEY` is unset. */
 const STUB_API_KEY = "corbits-evals-stub-key-not-real";
-
-function stringField(data: unknown, field: string, what: string): string {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
-}
-
-function arrayField(data: unknown, field: string, what: string): unknown[] {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (Array.isArray(value)) return value;
-  }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
-}
 
 interface ChatMessage {
   readonly id: string;
