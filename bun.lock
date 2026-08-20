@@ -229,6 +229,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/agent-runtime": {
+      "name": "@corbits/agent-runtime",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@intx/workflow-deploy": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/api-query": {
       "name": "@corbits/api-query",
       "version": "0.0.1",
@@ -527,7 +542,7 @@
     },
     "packages/connections-tools": {
       "name": "@corbits/connections-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1841,6 +1856,8 @@
     "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:packages/agent-directory-tools"],
 
     "@corbits/agent-lifecycle": ["@corbits/agent-lifecycle@workspace:packages/agent-lifecycle"],
+
+    "@corbits/agent-runtime": ["@corbits/agent-runtime@workspace:packages/agent-runtime"],
 
     "@corbits/api-query": ["@corbits/api-query@workspace:packages/api-query"],
 
