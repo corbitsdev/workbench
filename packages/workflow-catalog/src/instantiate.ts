@@ -48,9 +48,11 @@ export interface WorkbenchTemplateInstantiationResult {
   readonly pendingConnections: readonly string[];
   /**
    * One line per webhook trigger this template names, honestly stating
-   * why no live `webhook_trigger` row was created yet. Never a silent
-   * stub: a caller surfacing these tells the person setup isn't done
-   * rather than pretending it is.
+   * that no live `webhook_trigger` row exists yet — resolved by
+   * `./connect-github-setup.ts`'s `startReviewingRepos` once the person
+   * has picked repos on the connect card, not by this function. Never a
+   * silent stub: a caller surfacing these tells the person setup isn't
+   * done rather than pretending it is.
    */
   readonly webhookTriggerTodos: readonly string[];
 }
@@ -60,10 +62,11 @@ function webhookTriggerTodo(
   trigger: WorkbenchTemplateManifest["webhookTriggers"][number],
 ): string {
   return (
-    `TODO(CL-6345): create the live webhook_trigger row for "${manifest.id}"'s ` +
-    `"${trigger.key}" trigger once the repo-scoping open input is answered and ` +
-    "the GitHub connect card (ConnectGithubBlockView, PR #70) is wired — the " +
-    "manifest spec alone names no repo to scope the trigger to."
+    `pending: the live webhook_trigger row for "${manifest.id}"'s ` +
+    `"${trigger.key}" trigger is created once the person picks repos on the ` +
+    "room's GitHub connect card — see `./connect-github-setup.ts`'s " +
+    "`startReviewingRepos` (CL-6345), which this manifest-resolution step " +
+    "has no repo to hand off to yet."
   );
 }
 
@@ -72,7 +75,9 @@ function webhookTriggerTodo(
  * definitions that don't already exist (Myra is never re-created — she
  * is the bench's seeded default setup agent, reused as-is), and
  * records the manifest's required connections as still pending. Never
- * registers a live webhook trigger — see `webhookTriggerTodos`.
+ * registers a live webhook trigger — see `webhookTriggerTodos` and
+ * `./connect-github-setup.ts`, which is what actually creates one, once
+ * the person has picked repos.
  */
 export async function instantiateWorkbenchTemplate(
   manifest: WorkbenchTemplateManifest,
