@@ -51,7 +51,7 @@
 import crypto from "node:crypto";
 
 import { type } from "arktype";
-import type { ActionHandler } from "@intx/workflow-host";
+import type { ActionHandler } from "@corbits/workflow-host-actions";
 import type { WorkflowDefinition } from "@intx/workflow/definition";
 import type { AnnotatedToolFactory, BaseEnv, ToolBundle } from "@intx/agent";
 import { toolConsumer, type GrantRule } from "@intx/authz";

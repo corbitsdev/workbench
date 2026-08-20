@@ -93,8 +93,8 @@ import {
   createActionHandlerRegistry,
   createLoopFnRegistry,
   createWorkflowActionInvoker,
-} from "../adapters/action-invoker";
-import { createWorkflowRunEffectLedger } from "../adapters/effect-ledger";
+  createWorkflowRunEffectLedger,
+} from "@corbits/workflow-host-actions";
 
 import {
   createWorkflowHostDrainController,

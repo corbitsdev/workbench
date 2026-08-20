@@ -14,12 +14,12 @@
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
 apps/sidecar | sawyer | 2026-09-19
-vendor/intx/db | sawyer | 2026-09-19 | 01fe4e51eff85c37f977637166d89da818623b3d3afe895e506b9023b678ccf4
-vendor/intx/hub-api | sawyer | 2026-09-19 | 87f607a035625d752f96ed30b9fac7f1a42e33e61ac3a4e10055bd79444071ff
-vendor/intx/hub-sessions | sawyer | 2026-09-19 | 72d702d028392640a3c7cd001859ea4804a918cc6ee8310ab78e906a9ae40e1f
-vendor/intx/workflow | sawyer | 2026-09-19 | 3f0840f989440ca5865db416e00f8bb336ca540511f1cd0cecaa415fa19c1993
-vendor/intx/workflow-deploy | sawyer | 2026-09-19 | d7b224d124bd76e33148181e54bd20485f4c6870d4f60e0dc8d2232e2a4efb56
-vendor/intx/workflow-host | sawyer | 2026-09-19 | b8d038879c7ff2f5d8d5cd564fdcded36fcb7a8f79f70e608ea351cd08f0c887
+vendor/intx/db | sawyer | 2026-09-19 | 35b49059e1efc52025e2b3d38e81f0a9911200eec5c685b13e4d561ddadf3945
+vendor/intx/hub-api | sawyer | 2026-09-19 | f60df0650a87529068450abd6b1d482439cd82984dd4ad52ed71680748adaeee
+vendor/intx/hub-sessions | sawyer | 2026-09-19 | 4898613ce9d77771a6207bf82c6ea5084537df7afc1890ec4343db377ecbb48c
+vendor/intx/workflow | sawyer | 2026-09-19 | 34628e7bbd0587f131a07e3a206141983881106963a20ab607e68aeed1135593
+vendor/intx/workflow-deploy | sawyer | 2026-09-19 | 95711adf282180852b0daec1cac39d00a4dc24aff15f9a515e07eb3d2ca749f9
+vendor/intx/workflow-host | sawyer | 2026-09-19 | 4daab41ed006ce9e8b54533583d5863fca3b0d03159684b572e4a661f5b847ab
 
 packages/folded-runs | sawyer | 2026-11-01
 

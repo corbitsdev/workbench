@@ -1,10 +1,4 @@
-// Vendored from gtm-workbench's `packages/workflow-host/src/adapters/
-// action-invoker.ts` (gtm-origin, not upstream Interchange -- see
-// VENDORED.md and docs/revendor-inventory.md). Copied verbatim; no
-// workbench-specific edits were needed, the file compiles unchanged
-// against this repo's vendored `@intx/workflow`.
-//
-// Production `WorkflowRuntimeEnv.ActionInvoker` adapter.
+// Production `WorkflowRuntimeEnv.ActionInvoker` binding.
 //
 // Resolves an action's `handler` string ref to a host TypeScript function,
 // builds a capability- and ledger-checked `EffectContext`, and runs the

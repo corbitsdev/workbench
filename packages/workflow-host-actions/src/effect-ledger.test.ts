@@ -1,7 +1,6 @@
-// Vendored (with import-path adjustment) from gtm-workbench's
-// `packages/workflow-host/src/adapters/effect-ledger.test.ts` -- see
-// VENDORED.md and docs/revendor-inventory.md.
-
+// Covers the durable per-run effect ledger over the workflow-run
+// substrate: miss/hit, durability across adapter rebuilds, envelope
+// fail-closed paths, and kind-handler append-only semantics.
 import { describe, test, expect, afterAll, beforeAll } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
@@ -88,7 +87,8 @@ async function makeLedger(runId: string, deploymentId: string) {
 async function identityKeyHex(effectKey: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- ArrayBuffer-backed; Web Crypto BufferSource rejects ArrayBufferLike under TS 5.9
+    // ArrayBuffer-backed; Web Crypto BufferSource rejects ArrayBufferLike
+    // under TS 5.9, hence the assertion.
     new TextEncoder().encode(effectKey) as Uint8Array<ArrayBuffer>,
   );
   return hexEncode(new Uint8Array(digest));

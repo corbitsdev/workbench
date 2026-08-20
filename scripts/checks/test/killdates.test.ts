@@ -130,10 +130,26 @@ test("an unchanged vendored tree passes the drift audit", () => {
     writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hi");
     const hash = hashDirectory(path.join(root, "vendor", "intx", "log"));
     const report = auditVendorDrift(
-      [{ path: "@intx/log", owner: "ada", killDate: "2027-01-01", hash }],
+      [{ path: "vendor/intx/log", owner: "ada", killDate: "2027-01-01", hash }],
       root,
     );
     expect(report.violations).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a tsc-generated tsbuildinfo does not change a vendored tree's hash", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "killdates-test-"));
+  try {
+    mkdirSync(path.join(root, "vendor", "intx", "log"), { recursive: true });
+    writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hi");
+    const hash = hashDirectory(path.join(root, "vendor", "intx", "log"));
+    writeFileSync(
+      path.join(root, "vendor", "intx", "log", "tsconfig.tsbuildinfo"),
+      "{}",
+    );
+    expect(hashDirectory(path.join(root, "vendor", "intx", "log"))).toBe(hash);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -147,11 +163,11 @@ test("a byte edit in a vendored tree is a drift violation naming the package", (
     const hash = hashDirectory(path.join(root, "vendor", "intx", "log"));
     writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hI");
     const report = auditVendorDrift(
-      [{ path: "@intx/log", owner: "ada", killDate: "2027-01-01", hash }],
+      [{ path: "vendor/intx/log", owner: "ada", killDate: "2027-01-01", hash }],
       root,
     );
     expect(report.violations).toHaveLength(1);
-    expect(report.violations[0]).toContain("@intx/log");
+    expect(report.violations[0]).toContain("vendor/intx/log");
     expect(report.violations[0]).toContain("edited without recording it");
     expect(report.violations[0]).toContain("VENDORED-FROM delta line");
   } finally {
@@ -165,11 +181,11 @@ test("a vendored row without a valid hash column is a drift violation", () => {
     mkdirSync(path.join(root, "vendor", "intx", "log"), { recursive: true });
     writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hi");
     const report = auditVendorDrift(
-      [{ path: "@intx/log", owner: "ada", killDate: "2027-01-01" }],
+      [{ path: "vendor/intx/log", owner: "ada", killDate: "2027-01-01" }],
       root,
     );
     expect(report.violations).toHaveLength(1);
-    expect(report.violations[0]).toContain("@intx/log");
+    expect(report.violations[0]).toContain("vendor/intx/log");
     expect(report.violations[0]).toContain("sha256 content hash");
   } finally {
     rmSync(root, { recursive: true, force: true });

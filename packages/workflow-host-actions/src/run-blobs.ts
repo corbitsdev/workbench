@@ -1,26 +1,15 @@
-// Vendored from gtm-workbench's `packages/workflow-host/src/adapters/
-// run-blobs.ts` (gtm-origin, not upstream Interchange -- see VENDORED.md
-// and docs/revendor-inventory.md). Copied verbatim apart from the import
-// path below (`@workbench/hub-sessions/substrate` -> `@intx/hub-sessions/
-// substrate`, this repo's package name for the same module).
-//
-// This duplicates the write/read pattern this repo's own
-// `adapters/blob-substrate.ts` already has inline (private, unexported
-// `writeBlob`/`readBlob` helpers) rather than reconciling the two into a
-// shared helper -- left as a known follow-up, not a blocker for this port
-// (see docs/revendor-inventory.md).
-//
-// Shared read/write under `runs/<runId>/blobs/` for the effect ledger and
-// blob substrate. Writes go through `writeTreePreservingPrefix` (kind-handler
-// append-only + git commit); reads hit the working-tree materialization the
-// substrate leaves at the same path -- the established production pattern for
-// both adapters, not a durability gap. The substrate materializes the tree
-// on every successful write, so a post-commit lookup always sees the bytes.
+// Shared read/write under `runs/<runId>/blobs/` for the effect ledger.
+// Writes go through `writeTreePreservingPrefix` (kind-handler append-only +
+// git commit); reads hit the working-tree materialization the substrate
+// leaves at the same path — the established production pattern for the
+// workflow-run adapters, not a durability gap. The substrate materializes
+// the tree on every successful write, so a post-commit lookup always sees
+// the bytes.
 //
 // Note: this prefix holds both content-addressed spill blobs (filename =
-// sha256 of bytes) and identity-keyed effect-ledger entries (filename =
-// sha256 of the effect key). Do not treat the whole directory as pure
-// content-addressed storage.
+// sha256 of bytes, written by `@intx/workflow-host`'s blob substrate) and
+// identity-keyed effect-ledger entries (filename = sha256 of the effect
+// key). Do not treat the whole directory as pure content-addressed storage.
 
 import fs from "node:fs/promises";
 import path from "node:path";

@@ -1,0 +1,26 @@
+{
+  "name": "@corbits/workflow-host-actions",
+  "private": true,
+  "description": "Host bindings for @intx/workflow's action/loop runtime seam: fail-closed action-handler and loop-fn registries, a capability-checked action invoker, and a durable per-run effect ledger over the workflow-run substrate.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@intx/crypto": "0.3.0",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

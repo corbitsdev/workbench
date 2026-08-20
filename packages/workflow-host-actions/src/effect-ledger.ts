@@ -1,19 +1,12 @@
-// Vendored from gtm-workbench's `packages/workflow-host/src/adapters/
-// effect-ledger.ts` (gtm-origin, not upstream Interchange -- see
-// VENDORED.md and docs/revendor-inventory.md). Copied verbatim apart
-// from the import path below (`@workbench/hub-sessions/substrate` ->
-// `@intx/hub-sessions/substrate`, this repo's package name for the same
-// module).
-//
-// Production `WorkflowRuntimeEnv.EffectLedger` adapter.
+// Production `WorkflowRuntimeEnv.EffectLedger` binding.
 //
 // Crash-safe exactly-once substrate for action effects. Distinct from the
 // run event log: each `record` commits through `writeTreePreservingPrefix`
 // under `runs/<runId>/blobs/`, so a dropped run-log buffer never takes the
 // ledger with it. The workflow-run kind handler already permits the blobs/
-// subtree and enforces append-only immutability for those paths -- reusing
-// that layout avoids an interchange pin bump while still satisfying the
-// EffectLedger durability contract.
+// subtree and enforces append-only immutability for those paths — reusing
+// that layout satisfies the EffectLedger durability contract with no
+// kind-handler change.
 //
 // Layout: `runs/<runId>/blobs/<sha256(effectKey)>` holds JSON
 // `{ "output": <value> }`. The on-disk name is the SHA-256 of the identity
@@ -23,12 +16,13 @@
 // `filename == sha256(bytes)`. Callers must not assume every entry under
 // `blobs/` is pure content-addressed; GC or verify tooling that does will
 // mis-handle ledger entries. A dedicated `effects/` subtree would need a
-// kind-handler change (and an interchange pin bump).
+// kind-handler change.
 //
 // Outputs must JSON-serialize into a real `{output}` envelope. Values that
 // `JSON.stringify` drops (`undefined`, functions, symbols) fail closed on
 // `record` rather than writing a bare `{}` that later `lookup` would reject.
 
+import { type } from "arktype";
 import { hexEncode } from "@intx/types";
 import type {
   Principal,
@@ -43,6 +37,10 @@ import {
   writeRunBlob,
   type RunBlobStoreOpts,
 } from "./run-blobs";
+
+// Ledger bytes come back off disk — a trust boundary — so the envelope is
+// parsed, never asserted.
+const EffectEnvelope = type({ output: "unknown" });
 
 export type WorkflowRunEffectLedgerOpts = {
   substrate: SubstrateRepoStore;
@@ -67,17 +65,15 @@ export function createWorkflowRunEffectLedger(
       const key = await identityKeyHex(effectKey);
       try {
         const bytes = await readRunBlob(store, key);
-        const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-        if (
-          parsed === null ||
-          typeof parsed !== "object" ||
-          !("output" in parsed)
-        ) {
+        const envelope = EffectEnvelope(
+          JSON.parse(new TextDecoder().decode(bytes)),
+        );
+        if (envelope instanceof type.errors) {
           throw new Error(
-            `workflow-runtime: effect ledger entry ${key} for run ${opts.runId} is not a {output} envelope`,
+            `workflow-host-actions: effect ledger entry ${key} for run ${opts.runId} is not a {output} envelope`,
           );
         }
-        return { output: (parsed as { output: unknown }).output };
+        return { output: envelope.output };
       } catch (cause) {
         if (isErrnoNotFound(cause)) return undefined;
         throw cause;
@@ -88,11 +84,14 @@ export function createWorkflowRunEffectLedger(
       // JSON.stringify omits keys whose value is undefined and returns
       // undefined for bare undefined/function/symbol top-level values. Either
       // form would leave a non-{output} envelope on disk; fail closed before
-      // the substrate write (mirrors blob-substrate's serialize guard).
+      // the substrate write.
       const encoded = JSON.stringify({ output });
-      if (encoded === undefined || !hasOutputEnvelope(encoded)) {
+      if (
+        encoded === undefined ||
+        EffectEnvelope(JSON.parse(encoded)) instanceof type.errors
+      ) {
         throw new Error(
-          `workflow-runtime: effect ledger cannot serialize output for key ${key} on run ${opts.runId} (typeof ${typeof output})`,
+          `workflow-host-actions: effect ledger cannot serialize output for key ${key} on run ${opts.runId} (typeof ${typeof output})`,
         );
       }
       const bytes = new TextEncoder().encode(encoded);
@@ -108,15 +107,11 @@ export function createWorkflowRunEffectLedger(
   };
 }
 
-function hasOutputEnvelope(encoded: string): boolean {
-  const parsed: unknown = JSON.parse(encoded);
-  return parsed !== null && typeof parsed === "object" && "output" in parsed;
-}
-
 async function identityKeyHex(effectKey: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- ArrayBuffer-backed at the call site; Web Crypto's BufferSource type rejects Uint8Array<ArrayBufferLike> under TS 5.9
+    // ArrayBuffer-backed at the call site; Web Crypto's BufferSource type
+    // rejects Uint8Array<ArrayBufferLike> under TS 5.9, hence the assertion.
     new TextEncoder().encode(effectKey) as Uint8Array<ArrayBuffer>,
   );
   return hexEncode(new Uint8Array(digest));

@@ -1,7 +1,6 @@
-// Vendored (with import-path adjustment) from gtm-workbench's
-// `packages/workflow-host/src/adapters/action-invoker.test.ts` -- see
-// VENDORED.md and docs/revendor-inventory.md.
-
+// Covers the fail-closed registry surfaces and the capability- and
+// ledger-checked action invoker, including durable dedupe through the
+// workflow-run effect ledger.
 import { describe, test, expect, afterAll, beforeAll } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
