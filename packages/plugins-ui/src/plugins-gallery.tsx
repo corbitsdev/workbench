@@ -45,7 +45,7 @@ function PluginGrid({
   readonly onOpen: (plugin: ResolvedPlugin) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="border border-border [&>*:last-child]:border-b-0">
       {plugins.map((plugin) => (
         <PluginCard
           key={plugin.descriptor.id}
@@ -172,7 +172,7 @@ function SkillsTabPanel({
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {group.label}
           </h3>
-          <div className="grid grid-cols-1 gap-x-5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="border border-border [&>*:last-child]:border-b-0">
             {group.skills.map((skill) => (
               <SkillCard
                 key={skill.assetId}

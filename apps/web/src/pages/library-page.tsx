@@ -261,7 +261,7 @@ export function LibraryPage({
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [viewMode, setViewMode] = useState<ViewMode>("rows");
   const [localSelected, setLocalSelected] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
