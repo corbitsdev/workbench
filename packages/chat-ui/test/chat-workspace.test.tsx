@@ -96,7 +96,6 @@ function stubFetch(
 }
 
 const { ChatWorkspace } = await import("../src/chat-workspace");
-const { CHAT_STRINGS } = await import("../src/strings");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -654,27 +653,6 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/run calls the host's routine create/run hop", async () => {
-    stubFetch();
-    let opened = 0;
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-      onOpenRoutines: () => {
-        opened += 1;
-      },
-    });
-    await harness.settle();
-
-    const textarea = typeInComposer(harness.container, "/run");
-    pressEnter(textarea);
-    await harness.settle();
-
-    expect(opened).toBe(1);
-    expect(textarea.value).toBe("");
-    harness.unmount();
-  });
-
   test("/routine opens the New Routine panel pre-bound to the active workbench", async () => {
     stubFetch();
     const opened: string[] = [];
@@ -696,7 +674,7 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("/routine with no host-supplied hop wired falls back to the same unavailable toast /run uses", async () => {
+  test("/routine with no host-supplied hop wired falls back to an unavailable toast", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -712,35 +690,7 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("the header's Routines button calls onOpenRoutines, not the per-space create hop", async () => {
-    stubFetch();
-    let opened = 0;
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-      onOpenRoutines: () => {
-        opened += 1;
-      },
-      onCreateRoutineInSpace: () => {
-        throw new Error("the header button must not call this hop");
-      },
-    });
-    await harness.settle();
-
-    const button = harness.container.querySelector(
-      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
-    );
-    expect(button).not.toBeNull();
-    act(() => {
-      (button as HTMLButtonElement).click();
-    });
-    await harness.settle();
-
-    expect(opened).toBe(1);
-    harness.unmount();
-  });
-
-  test("the header's Routines button is hidden when onOpenRoutines is not wired", async () => {
+  test("there is no per-workbench header Routines button (CL-6362: Routines is global-only, reached from the shell rail)", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -748,10 +698,12 @@ describe("composer slash commands — each wired command's real action", () => {
     });
     await harness.settle();
 
-    const button = harness.container.querySelector(
-      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
+    const byLabel = harness.container.querySelector('[aria-label="Routines"]');
+    const byText = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "Routines",
     );
-    expect(button).toBeNull();
+    expect(byLabel).toBeNull();
+    expect(byText).toBeUndefined();
     harness.unmount();
   });
 
@@ -770,32 +722,7 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("'Insights' header button calls the host's onOpenInsights hop", async () => {
-    stubFetch();
-    let opened = 0;
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-      onOpenInsights: () => {
-        opened += 1;
-      },
-    });
-    await harness.settle();
-
-    const button = [...harness.container.querySelectorAll("button")].find(
-      (element) => element.textContent?.trim() === "Insights",
-    );
-    expect(button).not.toBeUndefined();
-    act(() => {
-      button?.click();
-    });
-    await harness.settle();
-
-    expect(opened).toBe(1);
-    harness.unmount();
-  });
-
-  test("the 'Insights' header button is hidden when the host has not wired the hop", async () => {
+  test("there is no per-workbench header Insights button (CL-6362: Insights is global-only, reached from the shell rail)", async () => {
     stubFetch();
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -884,9 +811,9 @@ describe("composer slash commands — each wired command's real action", () => {
     expect(popoverText).not.toContain("/thread");
     expect(popoverText).not.toContain("/status");
     expect(popoverText).not.toContain("/pin");
+    expect(popoverText).not.toContain("/run");
     expect(popoverText).toContain("/invite");
     expect(popoverText).toContain("/summarize");
-    expect(popoverText).toContain("/run");
     expect(popoverText).toContain("/agents");
     expect(popoverText).toContain("/help");
     harness.unmount();
@@ -1569,27 +1496,6 @@ describe("Workbench header polish (CL-6106)", () => {
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("researcher");
     expect((chip as HTMLElement).textContent).toBe("R");
-    harness.unmount();
-  });
-
-  test("the Routines and Insights header buttons render as quiet ghost buttons, not outlined controls", async () => {
-    stubFetch();
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-      onOpenRoutines: () => {},
-      onOpenInsights: () => {},
-    });
-    await harness.settle();
-
-    const routines = harness.container.querySelector(
-      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
-    );
-    const insights = [...harness.container.querySelectorAll("button")].find(
-      (element) => element.textContent?.trim() === "Insights",
-    );
-    expect(routines?.className).not.toContain("border-input");
-    expect(insights?.className).not.toContain("border-input");
     harness.unmount();
   });
 

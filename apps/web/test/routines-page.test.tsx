@@ -1,6 +1,10 @@
-// Screen-level proof for the Routines page's pure components: real
-// (possibly empty) `APIQuery` props in, honest markup out — no live fetch.
-// List rows live in shell col2; this page owns create + detail only.
+// Screen-level proof for the global Routines page (CL-6362): every
+// routine across every workbench the account belongs to, as rows —
+// workbench attribution, running-or-not state, schedule, inline
+// enable/disable, Run now, and an inline-expandable detail with recent
+// runs. `GlobalRoutinesList` is pure (real props in, honest markup out);
+// `RoutinesRoute` (aggregation across bench memberships, never
+// creator-scoped) gets its own fetch-mocked integration coverage below.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -8,52 +12,15 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { APIQuery } from "@corbits/api-query";
 import {
-  RoutineDetailPage,
-  RoutinesListPage,
+  GlobalRoutinesList,
+  routineStateChip,
+  scheduleSummary,
 } from "../src/pages/routines-page";
+import type { GlobalRoutineRow } from "../src/pages/routines-page";
 import type { Routine, RoutineRun } from "../src/routines-api";
-import {
-  CanvasAvailabilityProvider,
-  type RoutinePanelSubject,
-} from "../src/shell/canvas-availability";
-import type { WebhookTrigger } from "../src/webhook-triggers-api";
 
 const noop = () => undefined;
-
-/** Stands in for `ShellChromeProvider`'s position above these pages — just
- * enough of the canvas host context for `useOpenRoutineInCanvas` to resolve
- * to a real, capturing callback instead of the no-op default. */
-function CanvasCapture({
-  onOpenRoutine,
-  children,
-}: {
-  readonly onOpenRoutine: (subject: RoutinePanelSubject) => void;
-  readonly children: import("react").ReactNode;
-}) {
-  return (
-    <CanvasAvailabilityProvider
-      allowed={false}
-      open={false}
-      profile={null}
-      artifact={null}
-      routine={null}
-      focus={false}
-      openProfile={noop}
-      openArtifact={noop}
-      openRoutine={onOpenRoutine}
-      toggleFocus={noop}
-      close={noop}
-    >
-      {children}
-    </CanvasAvailabilityProvider>
-  );
-}
-
-function ready<T>(data: T): APIQuery<T> {
-  return { kind: "ready", data };
-}
 
 const routine: Routine = {
   id: "rtn_1",
@@ -61,9 +28,7 @@ const routine: Routine = {
   definitionId: "wfd_1",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
-  input: {
-    draftedSteps: [{ title: "Pull signups", detail: "CSV from warehouse" }],
-  },
+  input: {},
   enabled: true,
   deliveryWorkbenchId: "ch_1",
   consecutiveFailures: 0,
@@ -72,368 +37,235 @@ const routine: Routine = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-const researcherDefinition = {
-  id: "wfd_1",
-  assetName: "researcher",
-  deliveryMode: "workbench" as const,
-  name: "Researcher",
-  status: "deployed",
-  whatItDoes: "Pulls research from connected sources.",
-  requiredConnections: [] as const,
-  exampleOutput: "Research summary, three sources cited.",
-  typicalDuration: "a few minutes",
-  triggerFields: [] as const,
-};
+function row(overrides: Partial<GlobalRoutineRow> = {}): GlobalRoutineRow {
+  return {
+    routine,
+    tenantId: "tnt_1",
+    tenantName: "Acme Team",
+    deliveryWorkbenchName: "Ops",
+    runs: [],
+    ...overrides,
+  };
+}
 
 const listProps = {
-  runHistories: new Map<string, readonly RoutineRun[]>(),
-  liveRuns: ready([]),
-  definitions: [] as const,
-  workbenches: [] as const,
-  selectedId: null as string | null,
-  onSelect: (_id: string | null) => {},
-  webhookTrigger: null,
-  onRotateWebhookSecret: () => Promise.resolve({ secret: "rotated-secret" }),
-  onToggleEnabled: () => {},
-  onRunNow: () => Promise.resolve(),
-  onOpenRuns: () => {},
+  now: Date.parse("2026-01-01T12:00:00.000Z"),
+  expandedId: null as string | null,
+  onToggleExpanded: noop,
+  onToggleEnabled: (_row: GlobalRoutineRow, _enabled: boolean) => {},
+  onRunNow: (_row: GlobalRoutineRow) => Promise.resolve(),
+  onEdit: (_row: GlobalRoutineRow) => {},
   onOpenWorkbench: (_workbenchId: string) => {},
 };
 
-describe("RoutinesListPage", () => {
-  test("says there are no routines yet when the list is empty", () => {
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage routines={ready([])} {...listProps} />,
-    );
-    expect(markup).toContain("No routines yet");
-    expect(markup).toContain("Create one from a workflow or a prompt.");
-    expect(markup).toContain("New routine");
+describe("routineStateChip", () => {
+  test("Off for a disabled routine, regardless of run history", () => {
+    expect(
+      routineStateChip(row({ routine: { ...routine, enabled: false } })),
+    ).toEqual({ label: "Off", tone: "neutral" });
   });
 
-  test("prompts to select when routines exist but none is open", () => {
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([routine])}
-        definitions={[researcherDefinition]}
-      />,
-    );
-    expect(markup).toContain("Select a routine");
-    // List rows live in col2 — the stage must not re-render the master list.
-    expect(markup).not.toContain("Morning brief");
-    expect(markup).not.toContain("rtn_1");
-  });
-
-  test("selected routine shows steps and recent runs", () => {
-    const runHistories = new Map<string, readonly RoutineRun[]>([
-      [
-        routine.id,
-        [
-          {
-            runId: "run_1",
-            triggeredBy: "schedule",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            run: { status: "completed" },
+  test("Paused for a dead-lettered routine", () => {
+    expect(
+      routineStateChip(
+        row({
+          routine: {
+            ...routine,
+            deadLetteredAt: "2026-01-02T00:00:00.000Z",
           },
-        ],
-      ],
-    ]);
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([routine])}
-        runHistories={runHistories}
-        selectedId={routine.id}
-        definitions={[researcherDefinition]}
-        workbenches={[
-          {
-            id: "ch_1",
-            title: "Ops",
-            kind: "workbench",
-            pinned: false,
-            participants: [],
-          },
-        ]}
-      />,
-    );
-    expect(markup).toContain("Morning brief");
-    expect(markup).toContain("Daily at 09:00 UTC, delivers to Ops.");
-    expect(markup).toContain("Pull signups");
-    expect(markup).toContain("Recent runs");
-    expect(markup).toContain("completed");
-    expect(markup).not.toContain("rtn_1");
+        }),
+      ),
+    ).toEqual({ label: "Paused", tone: "danger" });
   });
 
-  test("a dead-lettered selected routine shows a plain-language paused banner with the real error", () => {
-    const deadLettered: Routine = {
-      ...routine,
-      consecutiveFailures: 5,
-      deadLetteredAt: "2026-01-02T00:00:00.000Z",
-    };
-    const runHistories = new Map<string, readonly RoutineRun[]>([
-      [
-        routine.id,
-        [
-          {
-            runId: "run_fail_1",
-            triggeredBy: "schedule-failed",
-            createdAt: "2026-01-02T00:00:00.000Z",
-            error: "sidecar unreachable",
-          },
-        ],
-      ],
-    ]);
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([deadLettered])}
-        runHistories={runHistories}
-        selectedId={deadLettered.id}
-        definitions={[researcherDefinition]}
-      />,
-    );
-    expect(markup).toContain("Paused after 5 failed attempts");
-    expect(markup).toContain("sidecar unreachable");
+  test("Idle for an enabled routine with no run history", () => {
+    expect(routineStateChip(row())).toEqual({ label: "Idle", tone: "neutral" });
   });
 
-  test("shows an Edit action and an insights link instead of a local toggle", () => {
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([routine])}
-        selectedId={routine.id}
-        definitions={[researcherDefinition]}
-      />,
-    );
-    expect(markup).toContain("Edit");
-    expect(markup).toContain("All runs &amp; traces →");
-    expect(markup).not.toContain("Show three");
-  });
-
-  test("a recent-run row deep-links to the routine's delivery workbench", () => {
-    const runHistories = new Map<string, readonly RoutineRun[]>([
-      [
-        routine.id,
-        [
-          {
-            runId: "run_1",
-            triggeredBy: "schedule",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            run: { status: "completed" },
-          },
-        ],
-      ],
-    ]);
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([routine])}
-        runHistories={runHistories}
-        selectedId={routine.id}
-        definitions={[researcherDefinition]}
-      />,
-    );
-    expect(markup).toContain("routine-run-row-linked");
-    expect(markup).toContain('role="link"');
-  });
-});
-
-describe("RoutineDetailPage", () => {
-  test("shows the routine's name, cadence, and empty run history", () => {
-    const markup = renderToStaticMarkup(
-      <RoutineDetailPage
-        routine={ready(routine)}
-        runs={ready<readonly RoutineRun[]>([])}
-        onBack={() => {}}
-        onOpenRuns={() => {}}
-        onOpenWorkbench={(_workbenchId: string) => {}}
-      />,
-    );
-    expect(markup).toContain("Morning brief");
-    expect(markup).toContain("Daily at 09:00 UTC");
-    expect(markup).toContain("No runs yet");
-    expect(markup).toContain("Pull signups");
-  });
-
-  test("renders run history with a resolved status", () => {
+  test("Running now while the latest run is in flight", () => {
     const run: RoutineRun = {
       runId: "run_1",
-      triggeredBy: "manual",
+      triggeredBy: "schedule",
       createdAt: "2026-01-01T00:00:00.000Z",
-      run: { status: "completed" },
+      run: { status: "running" },
     };
-    const markup = renderToStaticMarkup(
-      <RoutineDetailPage
-        routine={ready(routine)}
-        runs={ready<readonly RoutineRun[]>([run])}
-        onBack={() => {}}
-        onOpenRuns={() => {}}
-        onOpenWorkbench={(_workbenchId: string) => {}}
-      />,
-    );
-    expect(markup).toContain("manual");
-    expect(markup).toContain("completed");
+    expect(routineStateChip(row({ runs: [run] }))).toEqual({
+      label: "Running now",
+      tone: "success",
+    });
   });
 
-  test("a dead-lettered routine shows a plain-language paused state and the real error text", () => {
-    const deadLettered: Routine = {
-      ...routine,
-      consecutiveFailures: 5,
-      deadLetteredAt: "2026-01-02T00:00:00.000Z",
-    };
-    const failedRun: RoutineRun = {
-      runId: "run_fail_1",
+  test("Last run failed when the latest run errored", () => {
+    const run: RoutineRun = {
+      runId: "run_1",
       triggeredBy: "schedule-failed",
-      createdAt: "2026-01-02T00:00:00.000Z",
-      error: 'no definition "wfd_deleted" for this tenant',
+      createdAt: "2026-01-01T00:00:00.000Z",
+      error: "sidecar unreachable",
     };
-    const markup = renderToStaticMarkup(
-      <RoutineDetailPage
-        routine={ready(deadLettered)}
-        runs={ready<readonly RoutineRun[]>([failedRun])}
-        onBack={() => {}}
-        onOpenRuns={() => {}}
-        onOpenWorkbench={(_workbenchId: string) => {}}
-      />,
-    );
-    expect(markup).toContain("Paused after 5 failed attempts");
-    expect(markup).toContain(
-      "no definition &quot;wfd_deleted&quot; for this tenant",
-    );
-    expect(markup).toContain("Failed to start");
-  });
-
-  test("a healthy routine shows no paused banner", () => {
-    const markup = renderToStaticMarkup(
-      <RoutineDetailPage
-        routine={ready(routine)}
-        runs={ready<readonly RoutineRun[]>([])}
-        onBack={() => {}}
-        onOpenRuns={() => {}}
-        onOpenWorkbench={(_workbenchId: string) => {}}
-      />,
-    );
-    expect(markup).not.toContain("Paused after");
+    expect(routineStateChip(row({ runs: [run] }))).toEqual({
+      label: "Last run failed",
+      tone: "danger",
+    });
   });
 });
 
-const webhookRoutine: Routine = {
-  ...routine,
-  id: "rtn_webhook",
-  name: "Support digest",
-  trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
-};
+describe("scheduleSummary", () => {
+  test("humanizes the cadence and appends a relative next-run", () => {
+    const summary = scheduleSummary(
+      row(),
+      Date.parse("2026-01-01T00:00:00.000Z"),
+    );
+    expect(summary).toContain("Daily at 09:00 UTC");
+    expect(summary).toContain("next");
+    expect(summary).not.toMatch(/\d+ \d+ \* \* \*/);
+  });
 
-const webhookTriggerFixture: WebhookTrigger = {
-  id: "wht_1",
-  tenantId: "tnt_1",
-  name: "Support digest",
-  workflowDefinitionId: "wfd_1",
-  inputTemplate: "New webhook delivery.",
-  enabled: true,
-  createdBy: "usr_1",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  lastFiredAt: null,
-};
+  test("no next-run suffix for a manual routine", () => {
+    const summary = scheduleSummary(
+      row({ routine: { ...routine, trigger: null } }),
+      Date.now(),
+    );
+    expect(summary).toBe("Manual");
+  });
+});
 
-describe("webhook trigger panel", () => {
-  test("RoutinesListPage detail shows the hook URL and a masked-secret note for a webhook routine", () => {
+describe("GlobalRoutinesList", () => {
+  test("says there are no routines yet when the list is empty", () => {
     const markup = renderToStaticMarkup(
-      <RoutinesListPage
+      <GlobalRoutinesList rows={[]} {...listProps} />,
+    );
+    expect(markup).toContain("No routines yet");
+  });
+
+  test("renders a row with its name and workbench attribution", () => {
+    const markup = renderToStaticMarkup(
+      <GlobalRoutinesList rows={[row()]} {...listProps} />,
+    );
+    expect(markup).toContain("Morning brief");
+    expect(markup).toContain("Acme Team");
+    expect(markup).toContain("Ops");
+    expect(markup).toContain("Daily at 09:00 UTC");
+  });
+
+  test("a routine with no delivery workbench shows a dash, not a broken link", () => {
+    const markup = renderToStaticMarkup(
+      <GlobalRoutinesList
+        rows={[
+          row({
+            routine: { ...routine, deliveryWorkbenchId: null },
+            deliveryWorkbenchName: null,
+          }),
+        ]}
         {...listProps}
-        routines={ready([webhookRoutine])}
-        selectedId={webhookRoutine.id}
-        webhookTrigger={ready(webhookTriggerFixture)}
-        definitions={[researcherDefinition]}
       />,
     );
-    expect(markup).toContain("/api/webhooks/wht_1");
-    expect(markup).toContain("Rotate secret");
-    expect(markup).toContain("Hidden");
+    expect(markup).toContain("—");
   });
 
-  test("RoutinesListPage detail omits the webhook section for a scheduled routine", () => {
-    const markup = renderToStaticMarkup(
-      <RoutinesListPage
-        {...listProps}
-        routines={ready([routine])}
-        selectedId={routine.id}
-        definitions={[researcherDefinition]}
-      />,
-    );
-    expect(markup).not.toContain("Rotate secret");
-  });
-
-  test("RoutineDetailPage shows the hook URL for a webhook routine", () => {
-    const markup = renderToStaticMarkup(
-      <RoutineDetailPage
-        routine={ready(webhookRoutine)}
-        runs={ready<readonly RoutineRun[]>([])}
-        webhookTrigger={ready(webhookTriggerFixture)}
-        onRotateWebhookSecret={() =>
-          Promise.resolve({ secret: "rotated-secret" })
-        }
-        onBack={() => {}}
-        onOpenRuns={() => {}}
-        onOpenWorkbench={(_workbenchId: string) => {}}
-      />,
-    );
-    expect(markup).toContain("/api/webhooks/wht_1");
-    expect(markup).toContain("Rotate secret");
-  });
-
-  test("clicking Rotate secret reveals the newly rotated secret", async () => {
-    let rotateCalls = 0;
+  test("Run now calls onRunNow with the row", async () => {
+    const calls: GlobalRoutineRow[] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
     act(() => {
       root.render(
-        createElement(RoutinesListPage, {
+        createElement(GlobalRoutinesList, {
+          rows: [row()],
           ...listProps,
-          routines: ready([webhookRoutine]),
-          selectedId: webhookRoutine.id,
-          webhookTrigger: ready(webhookTriggerFixture),
-          definitions: [researcherDefinition],
-          onRotateWebhookSecret: () => {
-            rotateCalls += 1;
-            return Promise.resolve({ secret: "freshly-rotated" });
+          onRunNow: (r: GlobalRoutineRow) => {
+            calls.push(r);
+            return Promise.resolve();
           },
         }),
       );
     });
     try {
-      const rotateButton = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.includes("Rotate secret"),
+      const runButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Run now",
       );
-      expect(rotateButton).not.toBeUndefined();
-      await act(async () => {
-        rotateButton?.click();
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(runButton).not.toBeUndefined();
+      act(() => {
+        runButton?.click();
       });
-      expect(rotateCalls).toBe(1);
-      expect(container.textContent).toContain("freshly-rotated");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.routine.id).toBe("rtn_1");
     } finally {
       act(() => root.unmount());
       container.remove();
     }
   });
 
-  test("Edit opens the routine panel scoped to this routine, not a dialog (CL-6125)", async () => {
+  test("the Enabled switch calls onToggleEnabled with the flipped value", () => {
+    const calls: [GlobalRoutineRow, boolean][] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
-    const opened: RoutinePanelSubject[] = [];
     act(() => {
       root.render(
-        <CanvasCapture onOpenRoutine={(subject) => opened.push(subject)}>
-          {createElement(RoutinesListPage, {
-            ...listProps,
-            routines: ready([routine]),
-            selectedId: routine.id,
-            definitions: [researcherDefinition],
-          })}
-        </CanvasCapture>,
+        createElement(GlobalRoutinesList, {
+          rows: [row()],
+          ...listProps,
+          onToggleEnabled: (r: GlobalRoutineRow, enabled: boolean) => {
+            calls.push([r, enabled]);
+          },
+        }),
+      );
+    });
+    try {
+      const toggle = container.querySelector('button[role="switch"]');
+      expect(toggle).not.toBeNull();
+      act(() => {
+        (toggle as HTMLButtonElement).click();
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.[1]).toBe(false);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("clicking the delivery workbench opens it", () => {
+    const opened: string[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(GlobalRoutinesList, {
+          rows: [row()],
+          ...listProps,
+          onOpenWorkbench: (workbenchId: string) => opened.push(workbenchId),
+        }),
+      );
+    });
+    try {
+      const link = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Ops",
+      );
+      expect(link).not.toBeUndefined();
+      act(() => {
+        link?.click();
+      });
+      expect(opened).toEqual(["ch_1"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Edit calls onEdit with the row", () => {
+    const edited: GlobalRoutineRow[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(GlobalRoutinesList, {
+          rows: [row()],
+          ...listProps,
+          onEdit: (r: GlobalRoutineRow) => edited.push(r),
+        }),
       );
     });
     try {
@@ -444,56 +276,225 @@ describe("webhook trigger panel", () => {
       act(() => {
         editButton?.click();
       });
-      expect(opened).toEqual([{ routineId: routine.id }]);
-      expect(document.body.querySelector('[data-slot="dialog-content"]')).toBe(
-        null,
-      );
+      expect(edited).toHaveLength(1);
+      expect(edited[0]?.routine.id).toBe("rtn_1");
     } finally {
       act(() => root.unmount());
       container.remove();
     }
   });
 
-  test("the routine detail's 'Delivers to' line links to its space", () => {
-    let openedWorkbenchId: string | null = null;
+  test("expanding a row shows recent runs and the delivery note inline, without navigating", () => {
+    const run: RoutineRun = {
+      runId: "run_1",
+      triggeredBy: "schedule",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      run: { status: "completed" },
+    };
+    const markup = renderToStaticMarkup(
+      <GlobalRoutinesList
+        rows={[row({ runs: [run] })]}
+        {...listProps}
+        expandedId="rtn_1"
+      />,
+    );
+    expect(markup).toContain("Run updates post into Ops");
+    expect(markup).toContain("completed");
+  });
+
+  test("a collapsed row shows no run detail", () => {
+    const run: RoutineRun = {
+      runId: "run_1",
+      triggeredBy: "schedule",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      run: { status: "completed" },
+    };
+    const markup = renderToStaticMarkup(
+      <GlobalRoutinesList rows={[row({ runs: [run] })]} {...listProps} />,
+    );
+    expect(markup).not.toContain("Run updates post into");
+  });
+
+  test("expand toggling calls onToggleExpanded with the routine id", () => {
+    const toggled: string[] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
     act(() => {
       root.render(
-        createElement(RoutineDetailPage, {
-          routine: ready(routine),
-          runs: ready<readonly RoutineRun[]>([]),
-          workbenches: [
-            {
-              id: "ch_1",
-              title: "Ops",
-              kind: "workbench" as const,
-              pinned: false,
-              participants: [],
-            },
-          ],
-          onBack: () => {},
-          onOpenRuns: () => {},
-          onOpenWorkbench: (workbenchId: string) => {
-            openedWorkbenchId = workbenchId;
-          },
+        createElement(GlobalRoutinesList, {
+          rows: [row()],
+          ...listProps,
+          onToggleExpanded: (id: string) => toggled.push(id),
         }),
       );
     });
     try {
-      expect(container.textContent).toContain("Delivers to");
-      const link = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Ops",
-      );
-      expect(link).not.toBeUndefined();
+      const expandButton = container.querySelector("button[aria-expanded]");
+      expect(expandButton).not.toBeNull();
       act(() => {
-        link?.click();
+        (expandButton as HTMLButtonElement).click();
       });
-      expect(openedWorkbenchId as string | null).toBe("ch_1");
+      expect(toggled).toEqual(["rtn_1"]);
     } finally {
       act(() => root.unmount());
       container.remove();
+    }
+  });
+});
+
+describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
+  function jsonResponse(body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  test("lists routines from every bench the account is a member of, not just the currently selected one, and never creator-scoped", async () => {
+    const { BenchProvider } = await import("../src/bench-context");
+    const { NavigationProvider } = await import("../src/navigation");
+    const { CanvasAvailabilityProvider } =
+      await import("../src/shell/canvas-availability");
+    const { RoutinesRoute } = await import("../src/pages/routines-page");
+    const { TestQueryProvider } = await import("./test-query-provider");
+
+    const realFetch = globalThis.fetch;
+    // Two benches this account belongs to — GET /routines is already
+    // tenant-scoped, never filtered by who created a row, so a second
+    // member's routine (created by a different principal) shows up here
+    // exactly like the viewer's own.
+    const memberships = [
+      {
+        principalId: "prn_me",
+        tenantId: "tnt_1",
+        tenantName: "Acme Team",
+        tenantSlug: "acme",
+        kind: "user",
+        status: "active",
+        roles: [],
+      },
+      {
+        principalId: "prn_me_2",
+        tenantId: "tnt_2",
+        tenantName: "Beta Team",
+        tenantSlug: "beta",
+        kind: "user",
+        status: "active",
+        roles: [],
+      },
+    ];
+    const routinesByTenant: Record<string, Record<string, unknown>[]> = {
+      tnt_1: [
+        {
+          id: "rtn_mine",
+          name: "My digest",
+          definitionId: "wfd_1",
+          trigger: null,
+          scope: "bench",
+          input: {},
+          enabled: true,
+          deliveryWorkbenchId: null,
+          consecutiveFailures: 0,
+          deadLetteredAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      tnt_2: [
+        {
+          id: "rtn_theirs",
+          name: "Their digest",
+          definitionId: "wfd_2",
+          trigger: null,
+          scope: "bench",
+          input: {},
+          enabled: true,
+          deliveryWorkbenchId: null,
+          consecutiveFailures: 0,
+          deadLetteredAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/api/me/principals")) {
+        return jsonResponse({ data: memberships, nextCursor: null });
+      }
+      if (url.includes("/api/workbench-tenancies/kinds")) {
+        return jsonResponse({ workbenchTenantIds: [] });
+      }
+      const routinesMatch = url.match(/\/api\/tenants\/([^/]+)\/routines$/);
+      if (routinesMatch) {
+        return jsonResponse({
+          items: routinesByTenant[routinesMatch[1] as string] ?? [],
+        });
+      }
+      if (url.includes("/routines/") && url.endsWith("/runs")) {
+        return jsonResponse({ items: [], nextCursor: null });
+      }
+      if (url.includes("/chat/workbenches") && url.includes("kind=workbench")) {
+        return jsonResponse({ items: [] });
+      }
+      return Promise.reject(new Error(`unrouted fetch: ${url}`));
+    }) as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <NavigationProvider navigate={() => {}}>
+              <BenchProvider>
+                <CanvasAvailabilityProvider
+                  allowed={false}
+                  open={false}
+                  profile={null}
+                  artifact={null}
+                  routine={null}
+                  focus={false}
+                  openProfile={() => {}}
+                  openArtifact={() => {}}
+                  openRoutine={() => {}}
+                  toggleFocus={() => {}}
+                  close={() => {}}
+                >
+                  {createElement(RoutinesRoute, {
+                    path: "/routines",
+                    navigate: () => {},
+                  })}
+                </CanvasAvailabilityProvider>
+              </BenchProvider>
+            </NavigationProvider>
+          </TestQueryProvider>,
+        );
+      });
+      for (let i = 0; i < 8; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+
+      // Bench switcher defaults to the first bench (tnt_1) — proving the
+      // second bench's routine still renders proves this page never
+      // narrows to just the selected tenant.
+      expect(container.textContent).toContain("My digest");
+      expect(container.textContent).toContain("Their digest");
+      expect(container.textContent).toContain("Acme Team");
+      expect(container.textContent).toContain("Beta Team");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      globalThis.fetch = realFetch;
+      window.localStorage.clear();
     }
   });
 });

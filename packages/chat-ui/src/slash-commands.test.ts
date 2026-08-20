@@ -46,18 +46,12 @@ describe("filterSlashCommands", () => {
     expect(filterSlashCommands("zzz")).toEqual([]);
   });
 
-  test("the catalog omits /thread, /status, and /pin — no real action behind them today", () => {
+  test("the catalog omits /thread, /status, /pin, and /run — no real action behind them today (routines browse/run moved to the global Routines page, CL-6362)", () => {
     const ids = SLASH_COMMANDS.map((c) => c.id);
     expect(ids).not.toContain("thread");
     expect(ids).not.toContain("status");
     expect(ids).not.toContain("pin");
-    expect(ids).toEqual([
-      "invite",
-      "summarize",
-      "run",
-      "routine",
-      "agents",
-      "help",
-    ]);
+    expect(ids).not.toContain("run");
+    expect(ids).toEqual(["invite", "summarize", "routine", "agents", "help"]);
   });
 });

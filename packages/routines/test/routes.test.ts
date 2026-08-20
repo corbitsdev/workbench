@@ -420,7 +420,7 @@ describe("createRoutineRoutes", () => {
     );
     expect(workbenchNotice.calls[0]?.text).toBe(
       'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
-        "Disable it in the Routines panel.",
+        "Manage it from Routines.",
     );
   });
 
@@ -450,7 +450,7 @@ describe("createRoutineRoutes", () => {
     expect(workbenchNotice.calls.length).toBe(1);
     expect(workbenchNotice.calls[0]?.text).toBe(
       'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
-        "Disable it in the Routines panel.",
+        "Manage it from Routines.",
     );
   });
 

@@ -1,13 +1,13 @@
-// The routine panel (CL-6125, reworked CL-6139): a list view (this
-// workbench's routines, a "New routine" row, name · cadence · Active
-// toggle) and an editor view (create/edit one routine), navigated inline
-// in the canvas column — the back chevron goes list→close, editor→list,
-// never a route hop. Every write autosaves and is serialized through one
-// queue (`saveState` shows "Saving…"/"Saved"/an honest error). A routine
-// created from the panel always targets the conversation it was opened
-// beside — that workbench's own host agent and its own id as the delivery
-// destination — or, with no workbench in scope, this workbench's existing
-// Myra workbench; never a newly minted one.
+// The routine panel (CL-6125, reworked CL-6139, trimmed to editor-only by
+// CL-6362): create/edit one routine, inline in the canvas column — the
+// back chevron closes the canvas, never a route hop. Browsing/running
+// existing routines lives on the global `/routines` page now. Every write
+// autosaves and is serialized through one queue (`saveState` shows
+// "Saving…"/"Saved"/an honest error). A routine created from the panel
+// always targets the conversation it was opened beside — that workbench's
+// own host agent and its own id as the delivery destination — or, with no
+// workbench in scope, this workbench's existing Myra workbench; never a
+// newly minted one.
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act } from "react";
@@ -359,332 +359,29 @@ describe("RoutinePanel", () => {
   }
 
   describe("shared canvas-pane chrome (CL-6200)", () => {
-    test("the list, runs, and editor views all render through the shared CanvasPaneHeader, not a hand-rolled one", async () => {
-      await renderPanel({ view: "list" });
-      let header = container.querySelector(".shell-canvas-pane-header");
-      expect(header).not.toBeNull();
-      expect(
-        header?.querySelector(".shell-canvas-pane-title")?.textContent,
-      ).toBe("Routines");
-      expect(header?.querySelector('[aria-label="Back"]')).not.toBeNull();
-
-      await renderPanel({ view: "runs" });
-      header = container.querySelector(".shell-canvas-pane-header");
-      expect(header).not.toBeNull();
-      expect(
-        header?.querySelector(".shell-canvas-pane-title")?.textContent,
-      ).toBe("Runs");
-
+    test("the editor view renders through the shared CanvasPaneHeader, not a hand-rolled one", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
-      header = container.querySelector(".shell-canvas-pane-header");
+      const header = container.querySelector(".shell-canvas-pane-header");
       expect(header).not.toBeNull();
       expect(
         header?.querySelector(".shell-canvas-pane-title")?.textContent,
       ).toBe("Routine");
-    });
-  });
-
-  describe("list view", () => {
-    test("back chevron on the list view closes the canvas", async () => {
-      await renderPanel({ view: "list" });
-      const back = container.querySelector('[aria-label="Back"]');
-      act(() => (back as HTMLButtonElement).click());
-      expect(closed).toBe(true);
+      expect(header?.querySelector('[aria-label="Back"]')).not.toBeNull();
     });
 
-    test("lists the workbench's routines with a New routine row above them", async () => {
-      routines = [
-        routineRecord({
-          id: "rtn_a",
-          name: "Morning digest",
-          trigger: { kind: "daily", hour: 9, minute: 0 },
-        }),
-        routineRecord({ id: "rtn_b", name: "Weekly report", enabled: true }),
-      ];
-      await renderPanel({ view: "list" });
-
-      expect(buttonWithText("New routine")).toBeDefined();
-      expect(container.textContent).toContain("Morning digest");
-      expect(container.textContent).toContain("Weekly report");
-      expect(container.textContent).toContain("Daily 09:00");
-    });
-
-    test("opened beside a workbench, the list shows only routines delivering there", async () => {
-      routines = [
-        routineRecord({
-          id: "rtn_here",
-          name: "Here digest",
-          deliveryWorkbenchId: "ch_1",
-        }),
-        routineRecord({
-          id: "rtn_elsewhere",
-          name: "Elsewhere digest",
-          deliveryWorkbenchId: "ch_other",
-        }),
-        routineRecord({ id: "rtn_unbound", name: "Unbound digest" }),
-      ];
-      await renderPanel({ view: "list", workbenchId: "ch_1" });
-
-      expect(container.textContent).toContain("Here digest");
-      expect(container.textContent).not.toContain("Elsewhere digest");
-      expect(container.textContent).not.toContain("Unbound digest");
-    });
-
-    test("selecting a row opens that routine's editor via openRoutine", async () => {
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      await renderPanel({ view: "list" });
-
-      const row = [...container.querySelectorAll("button")].find((b) =>
-        b.textContent?.includes("Morning digest"),
-      );
-      act(() => row?.click());
-
-      expect(openedSubjects).toContainEqual({ routineId: "rtn_a" });
-    });
-
-    test("New routine opens the editor with a null routineId, carrying the workbench through", async () => {
-      await renderPanel({ view: "list", workbenchId: "ch_1" });
-      act(() => buttonWithText("New routine")?.click());
-      expect(openedSubjects).toContainEqual({
-        routineId: null,
-        workbenchId: "ch_1",
-      });
-    });
-
-    test("a routine with no run history shows Idle", async () => {
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      await renderPanel({ view: "list" });
-      await settle();
-      expect(container.textContent).toContain("Idle");
-    });
-
-    test("a routine whose latest run succeeded shows Last run OK", async () => {
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      runsByRoutineId["rtn_a"] = [
-        {
-          runId: "run_a",
-          triggeredBy: "schedule",
-          createdAt: new Date(Date.now() - 120_000).toISOString(),
-          run: { status: "completed" },
-        },
-      ];
-      await renderPanel({ view: "list" });
-      await settle();
-      expect(container.textContent).toContain("Last run OK");
-    });
-
-    test("a routine whose latest run failed shows Last run failed", async () => {
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      runsByRoutineId["rtn_a"] = [
-        {
-          runId: "run_a",
-          triggeredBy: "schedule",
-          createdAt: new Date().toISOString(),
-          error: "sidecar unreachable",
-          run: { status: "failed" },
-        },
-      ];
-      await renderPanel({ view: "list" });
-      await settle();
-      expect(container.textContent).toContain("Last run failed");
-    });
-
-    test("Run now flips the row to Running now immediately, then renders an inline outcome once the run completes", async () => {
-      networkDelayMs = 20;
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      runsByRoutineId["rtn_a"] = [];
-      await renderPanel({ view: "list" });
-
-      const runButton = buttonWithText("Run now");
-      expect(runButton).toBeDefined();
-      act(() => {
-        runButton?.click();
-      });
-      // The run "completes" between the click and the panel's poll —
-      // the poll (not the click) is what has to notice.
-      runsByRoutineId["rtn_a"] = [
-        {
-          runId: "run_a",
-          triggeredBy: "manual",
-          createdAt: new Date().toISOString(),
-          run: { status: "completed", reply: "All done — 3 items summarized." },
-        },
-      ];
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      });
-      expect(container.textContent).toContain("Running now");
-
-      await settle();
-      expect(container.textContent).toContain("All done — 3 items summarized.");
-      expect(buttonWithText("Open trace →")).toBeDefined();
-    });
-
-    test("a failed run's inline outcome shows the error, styled distinctly from a successful one", async () => {
-      networkDelayMs = 10;
-      routines = [routineRecord({ id: "rtn_a", name: "Morning digest" })];
-      runsByRoutineId["rtn_a"] = [];
-      await renderPanel({ view: "list" });
-      act(() => {
-        buttonWithText("Run now")?.click();
-      });
-      runsByRoutineId["rtn_a"] = [
-        {
-          runId: "run_a",
-          triggeredBy: "manual",
-          createdAt: new Date().toISOString(),
-          error: "sidecar unreachable",
-          run: { status: "failed" },
-        },
-      ];
-      await settle();
-
-      expect(container.textContent).toContain("sidecar unreachable");
-      const errorSpan = [...container.querySelectorAll("span")].find(
-        (el) => el.textContent === "sidecar unreachable",
-      );
-      expect(errorSpan?.className).toContain("danger");
-    });
-
-    test("Tasks section lists this workbench's in-flight and recent tasks with the same state chips", async () => {
-      tasks = [
-        {
-          id: "tsk_1",
-          definitionId: "def_1",
-          workbenchId: "ch_1",
-          agentName: "Myra",
-          prompt: "Summarize the week",
-          modelPreference: null,
-          status: "running",
-          runId: "run_1",
-          runIds: ["run_1"],
-          stepCount: 1,
-          resultMailId: null,
-          createdAt: new Date().toISOString(),
-          completedAt: null,
-        },
-        {
-          id: "tsk_2",
-          definitionId: "def_1",
-          workbenchId: "ch_1",
-          agentName: "Myra",
-          prompt: "Draft the memo",
-          modelPreference: null,
-          status: "failed",
-          runId: "run_2",
-          runIds: ["run_2"],
-          stepCount: 1,
-          resultMailId: null,
-          createdAt: new Date().toISOString(),
-          completedAt: new Date().toISOString(),
-        },
-      ];
-      await renderPanel({ view: "list" });
-      await settle();
-
-      expect(container.textContent).toContain("Tasks");
-      expect(container.textContent).toContain("Running now");
-      expect(container.textContent).toContain("Last run failed");
-      expect(container.textContent).toContain("Failed.");
-    });
-
-    test("Tasks empty state says exactly how to verify", async () => {
-      await renderPanel({ view: "list" });
-      await settle();
-      expect(container.textContent).toContain("Run one now to see it here.");
-    });
-  });
-
-  describe("runs view", () => {
-    function runRecord(
-      overrides: Partial<Record<string, unknown>> = {},
-    ): Record<string, unknown> {
-      return {
-        id: "run_a",
-        definitionId: "wfd_1",
-        workbenchId: "ch_1",
-        definitionName: "Myra",
-        tenantId: "tnt_1",
-        address: "myra_1@wf_1.tnt_1",
-        status: "deployed",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        routineId: null,
-        routineName: null,
-        ...overrides,
-      };
-    }
-
-    test("Runs button on the list view opens the runs view", async () => {
-      await renderPanel({ view: "list" });
-      act(() => buttonWithText("Runs")?.click());
-      expect(openedSubjects).toContainEqual({ view: "runs" });
-    });
-
-    test("empty state says No runs yet.", async () => {
-      await renderPanel({ view: "runs" });
-      await settle();
-      expect(container.textContent).toContain("No runs yet.");
-    });
-
-    test("lists runs and never navigates away", async () => {
-      topLevelRuns = [runRecord({ id: "run_a", definitionName: "Myra" })];
-      await renderPanel({ view: "runs" });
-      await settle();
-      expect(container.textContent).toContain("Myra");
-    });
-
-    test("clicking a run row shows its trace inline, without navigating", async () => {
-      topLevelRuns = [runRecord({ id: "run_a", definitionName: "Myra" })];
-      runTraces["run_a"] = {
-        runId: "run_a",
-        spans: [
-          {
-            id: "sp_1",
-            label: "Plan",
-            kind: "tool",
-            start: 0,
-            end: 100,
-            durationMs: 100,
-            tokens: null,
-            phase: "ok",
-            error: null,
-            timingSource: "measured",
-          },
-        ],
-      };
-      await renderPanel({ view: "runs" });
-      await settle();
-
-      const row = [...container.querySelectorAll("button")].find((b) =>
-        b.textContent?.includes("Myra"),
-      );
-      act(() => row?.click());
-      await settle();
-
-      expect(container.textContent).toContain("Run trace");
-      expect(container.textContent).toContain("Plan");
-      expect(closed).toBe(false);
-    });
-
-    test("back chevron on the runs view returns to the list", async () => {
-      await renderPanel({ view: "runs" });
-      const back = container.querySelector('[aria-label="Back"]');
-      act(() => (back as HTMLButtonElement).click());
-      expect(openedSubjects).toContainEqual({ view: "list" });
+    test("renders nothing when opened with no subject (CL-6362: the panel is editor-only, never a list to fall back to)", async () => {
+      await renderPanel(null);
+      expect(container.querySelector(".shell-canvas-pane-header")).toBeNull();
+      expect(container.querySelector(".shell-routine-pane")).toBeNull();
     });
   });
 
   describe("editor view", () => {
-    test("back chevron returns to the list, not close — carrying the workbench through", async () => {
+    test("back chevron closes the canvas (CL-6362: no list view to step back to)", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
       const back = container.querySelector('[aria-label="Back"]');
       act(() => (back as HTMLButtonElement).click());
-      expect(closed).toBe(false);
-      expect(openedSubjects).toContainEqual({
-        view: "list",
-        workbenchId: "ch_1",
-      });
+      expect(closed).toBe(true);
     });
 
     test("creating a routine targets the panel's own workbench: its host agent, and delivers back into it", async () => {
