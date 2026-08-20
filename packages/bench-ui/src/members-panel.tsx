@@ -5,7 +5,7 @@
 // which bench is current.
 
 import { Button } from "@corbits/react-ui";
-import { UserPlus } from "lucide-react";
+import { UserPlus } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";

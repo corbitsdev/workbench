@@ -10,7 +10,7 @@
 // open state and the create flow, so other sidebar variants can compose
 // the same parts.
 
-import { ChevronDown, Plus } from "lucide-react";
+import { CaretDown, Plus } from "@corbits/icons";
 import { useState } from "react";
 
 import { BenchApiError, createBench, patchBenchSettings } from "./api";
@@ -64,7 +64,7 @@ export function BenchSwitcherTrigger({
       <span className="bench-switcher-name">
         {activeName ?? BENCH_STRINGS.switcherEmpty}
       </span>
-      <ChevronDown size={14} aria-hidden />
+      <CaretDown size={14} aria-hidden />
     </button>
   );
 }

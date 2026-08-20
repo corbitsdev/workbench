@@ -4,7 +4,7 @@
 // asked to see, the same "no items, no surface" rule the timeline's own
 // empty state follows for the reverse case (see `WorkbenchTimeline`).
 
-import { Pin } from "lucide-react";
+import { PushPin } from "@corbits/icons";
 
 import type { PinnedMessage } from "./api";
 import { CHAT_STRINGS } from "./strings";
@@ -45,7 +45,7 @@ export function PinnedStrip({
       role="region"
       aria-label={CHAT_STRINGS.pinnedStripLabel}
     >
-      <Pin className="chat-pinned-strip-icon" aria-hidden="true" />
+      <PushPin className="chat-pinned-strip-icon" aria-hidden="true" />
       <div className="chat-pinned-strip-row">
         {items.map((item) => {
           const preview = previewOf(item);

@@ -7,7 +7,7 @@
 // connected for itself — and a quiet view affordance.
 
 import { Button } from "@corbits/react-ui";
-import { Sparkles } from "lucide-react";
+import { Lightning } from "@corbits/icons";
 
 export type SkillCardData = {
   readonly assetId: string;
@@ -45,7 +45,7 @@ export function SkillCard({
         aria-hidden="true"
         className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
       >
-        <Sparkles className="size-4" />
+        <Lightning className="size-4" />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm font-medium">{skill.name}</span>

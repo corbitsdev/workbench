@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { Button, ConfirmButton } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { UserPlus } from "lucide-react";
+import { UserPlus } from "@corbits/icons";
 
 import type { ParticipantRecord } from "../api";
 import { describeChatError, removeWorkbenchParticipant } from "../api";

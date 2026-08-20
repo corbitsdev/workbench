@@ -12,7 +12,7 @@
 // ever renders when `artifactId` is present, since a blob-only part has no
 // Library row to deep-link to.
 
-import { FileText, Library } from "lucide-react";
+import { FileText, FolderOpen } from "@corbits/icons";
 
 import type { Part } from "./api";
 import { CHAT_STRINGS } from "./strings";
@@ -60,7 +60,7 @@ export function ArtifactChip({
           title="Open in Files"
           onClick={() => onOpenInLibrary(part)}
         >
-          <Library />
+          <FolderOpen />
         </button>
       ) : null}
     </div>

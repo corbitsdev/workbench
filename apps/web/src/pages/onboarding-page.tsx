@@ -28,7 +28,7 @@
 // a third step.
 
 import { Button, EmptyState, Input, ProviderMark } from "@corbits/react-ui";
-import { CircleAlert, KeyRound } from "lucide-react";
+import { Key, WarningCircle } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test";
@@ -397,7 +397,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           <h1 className="onboarding-title">Couldn't set up your workbench</h1>
           <div className="onboarding-content">
             <EmptyState
-              icon={<CircleAlert />}
+              icon={<WarningCircle />}
               title="Couldn't set up your workbench"
               description={
                 state.refId === undefined ? (
@@ -552,7 +552,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
             )}
             {error !== null && (
               <EmptyState
-                icon={<KeyRound />}
+                icon={<Key />}
                 title="That key didn't work"
                 description={
                   errorRefId === undefined ? (

@@ -2,7 +2,7 @@
 // its pulse-dot header and the risk badge. Kept free of chat state and chat
 // strings so they can lift into @corbits/react-ui unchanged.
 
-import { TriangleAlert } from "lucide-react";
+import { Warning } from "@corbits/icons";
 import type { ReactNode } from "react";
 
 export function BlockCard({
@@ -34,7 +34,7 @@ export function RiskBadge({
 }) {
   return (
     <span className="chat-block-risk" data-risk={level}>
-      <TriangleAlert aria-hidden="true" />
+      <Warning aria-hidden="true" />
       <span>{label}</span>
       {note !== undefined && (
         <span className="chat-block-risk-note">{note}</span>

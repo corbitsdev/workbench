@@ -10,7 +10,7 @@
 
 import { ConfirmButton, toast } from "@corbits/react-ui";
 import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
-import { Plug } from "lucide-react";
+import { PuzzlePiece } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import {
@@ -54,7 +54,7 @@ function ConnectedMcpServerRow({
           aria-hidden="true"
           className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
         >
-          <Plug className="size-4" />
+          <PuzzlePiece className="size-4" />
         </span>
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium">{server.name}</span>

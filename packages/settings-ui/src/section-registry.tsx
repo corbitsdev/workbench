@@ -18,7 +18,15 @@
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
 
-import { Bell, KeyRound, List, Shield, Star, User, Users } from "lucide-react";
+import {
+  Bell,
+  Key,
+  ListBullets,
+  Shield,
+  Star,
+  User,
+  Users,
+} from "@corbits/icons";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
@@ -85,7 +93,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         // creating workbenches in this tenancy inherits.
         id: "connections",
         title: SETTINGS_STRINGS.connectionsSectionTitle,
-        icon: KeyRound,
+        icon: Key,
         gate: "credentials",
         render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
       },
@@ -115,7 +123,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
       {
         id: "audit",
         title: SETTINGS_STRINGS.auditSectionTitle,
-        icon: List,
+        icon: ListBullets,
         advanced: true,
         render: () => <AuditSection />,
       },

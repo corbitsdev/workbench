@@ -3,7 +3,7 @@
 // an empty registry is its own distinct outcome.
 
 import { describe, expect, test } from "bun:test";
-import { Bell } from "lucide-react";
+import { Bell } from "@corbits/icons";
 
 import { flattenSettingsSections, resolveActiveSection } from "../src/shell";
 import type { SettingsSection, SettingsSectionGroup } from "../src/shell";

@@ -26,7 +26,7 @@ import {
 } from "@corbits/react-ui";
 import { credentialTypes } from "@intx/types";
 import type { CredentialType } from "@intx/types";
-import { KeyRound } from "lucide-react";
+import { Key } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -232,7 +232,7 @@ export function CredentialsTable({
   if (credentials.length === 0) {
     return (
       <EmptyState
-        icon={<KeyRound />}
+        icon={<Key />}
         title={SETTINGS_STRINGS.credentialsEmptyTitle}
         description={SETTINGS_STRINGS.credentialsEmptyDescription}
       />

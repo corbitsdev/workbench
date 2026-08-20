@@ -34,7 +34,7 @@ import {
   classifyBenchMembership,
   listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
-import { ChevronDown, ChevronRight, Clock } from "lucide-react";
+import { CaretDown, CaretRight, Clock } from "@corbits/icons";
 import { Fragment, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -395,9 +395,9 @@ export function GlobalRoutinesList({
                     onClick={() => onToggleExpanded(row.routine.id)}
                   >
                     {expanded ? (
-                      <ChevronDown className="size-3.5 shrink-0" />
+                      <CaretDown className="size-3.5 shrink-0" />
                     ) : (
-                      <ChevronRight className="size-3.5 shrink-0" />
+                      <CaretRight className="size-3.5 shrink-0" />
                     )}
                     <span className="flex flex-col">
                       <span className="text-sm font-medium">

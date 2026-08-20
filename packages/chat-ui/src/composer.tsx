@@ -7,7 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { Loader2, Paperclip, Send, X } from "lucide-react";
+import { CircleNotch, Paperclip, PaperPlaneRight, X } from "@corbits/icons";
 import {
   forwardRef,
   useImperativeHandle,
@@ -239,7 +239,7 @@ export function attachmentValidationMessage(
   }
 }
 
-/** Send/Enter stay blocked while a send or file read is in flight. */
+/** PaperPlaneRight/Enter stay blocked while a send or file read is in flight. */
 export function canSendComposerAction(
   text: string,
   attachments: readonly ComposerAttachment[],
@@ -850,12 +850,12 @@ export const Composer = forwardRef<
           }
         >
           {sendVisualState === "sending" ? (
-            <Loader2
+            <CircleNotch
               className="chat-composer-send-spinner"
               aria-hidden="true"
             />
           ) : (
-            <Send aria-hidden="true" />
+            <PaperPlaneRight aria-hidden="true" />
           )}
         </Button>
       </div>

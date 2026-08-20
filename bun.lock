@@ -130,6 +130,7 @@
         "@corbits/client-log": "workspace:*",
         "@corbits/command-palette": "workspace:*",
         "@corbits/context-menu": "workspace:*",
+        "@corbits/icons": "workspace:*",
         "@corbits/inbox": "workspace:*",
         "@corbits/insights": "workspace:*",
         "@corbits/plugins-ui": "workspace:*",
@@ -148,7 +149,6 @@
         "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "yjs": "^13.6.32",
@@ -252,8 +252,8 @@
       "name": "@corbits/api-query",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
       },
       "devDependencies": {
@@ -287,9 +287,9 @@
       "name": "@corbits/artifact-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "yjs": "^13.6.32",
       },
@@ -342,10 +342,10 @@
       "dependencies": {
         "@corbits/api-query": "workspace:*",
         "@corbits/bench": "workspace:*",
+        "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
       },
@@ -426,6 +426,7 @@
         "@corbits/api-query": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/context-menu": "workspace:*",
+        "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/preferences": "workspace:*",
         "@corbits/presence": "workspace:*",
@@ -433,7 +434,6 @@
         "@tanstack/react-query": "catalog:",
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
       },
@@ -726,6 +726,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/icons": {
+      "name": "@corbits/icons",
+      "version": "0.0.1",
+      "dependencies": {
+        "@phosphor-icons/react": "^2.1.10",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
+        "typescript": "catalog:",
+      },
+    },
     "packages/inbox": {
       "name": "@corbits/inbox",
       "version": "0.0.1",
@@ -908,12 +921,12 @@
       "name": "@corbits/plugins-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "@corbits/settings-ui": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
       },
@@ -1053,13 +1066,13 @@
         "@corbits/api-query": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
+        "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
       },
@@ -1224,9 +1237,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/api-query": "workspace:*",
+        "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "arktype": "catalog:",
-        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
       },
@@ -1997,6 +2010,8 @@
 
     "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
+    "@corbits/icons": ["@corbits/icons@workspace:packages/icons"],
+
     "@corbits/inbox": ["@corbits/inbox@workspace:packages/inbox"],
 
     "@corbits/inference-catalog": ["@corbits/inference-catalog@workspace:packages/inference-catalog"],
@@ -2266,6 +2281,8 @@
     "@npmcli/redact": ["@npmcli/redact@4.0.0", "", {}, "sha512-gOBg5YHMfZy+TfHArfVogwgfBeQnKbbGo3pSUyK/gSI0AVu+pEiDVcKlQb0D8Mg1LNRZILZ6XG8I5dJ4KuAd9Q=="],
 
     "@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.43.0", "", {}, "sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg=="],
+
+    "@phosphor-icons/react": ["@phosphor-icons/react@2.1.10", "", { "peerDependencies": { "react": ">= 16.8", "react-dom": ">= 16.8" } }, "sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA=="],
 
     "@puppeteer/browsers": ["@puppeteer/browsers@3.2.0", "", { "dependencies": { "modern-tar": "^0.8.0", "yargs": "^18.0.0" }, "peerDependencies": { "proxy-agent": ">=8.0.1", "yauzl": "^2.10.0 || ^3.4.0" }, "optionalPeers": ["proxy-agent", "yauzl"], "bin": { "browsers": "lib/main-cli.js" } }, "sha512-LlBrE8oqGfU7b1Nk2d5Q1SbuPhZxTj0cJEMDPEws28OjNMELlflekmPPuf4FnK03x0ZRjKaYwJElUcKK4kyqJA=="],
 

@@ -5,7 +5,7 @@
 // only" row; see that package's `resolveAccessPolicy`.
 
 import { Badge, Button, Input } from "@corbits/react-ui";
-import { X } from "lucide-react";
+import { X } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";

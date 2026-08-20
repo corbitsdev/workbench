@@ -4,7 +4,7 @@
 // whole shell rather than a toast a user could miss or dismiss past.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
+import { WarningCircle } from "@corbits/icons";
 
 export function ProvisioningErrorPage({
   message,
@@ -18,7 +18,7 @@ export function ProvisioningErrorPage({
   return (
     <PageShell width="full" className="page-fill">
       <EmptyState
-        icon={<CircleAlert />}
+        icon={<WarningCircle />}
         title="Couldn't set up your workbench"
         description={
           refId === undefined ? (

@@ -88,4 +88,50 @@ export default defineConfig(
     ],
     rules: { "no-console": "error" },
   },
+  // CL-icons-phosphor: Phosphor (bold weight) replaced lucide-react as the
+  // one icon library, and the Sparkle/Sparkles glyph is banned outright —
+  // owner ruling, it read as a generic "AI" cliché everywhere it appeared.
+  // `packages/icons` is the single place allowed to import
+  // `@phosphor-icons/react` directly (see its `src/index.tsx`); every other
+  // package routes glyphs through `@corbits/icons` so the curated name list
+  // and the bold-weight default stay enforced in one place.
+  {
+    files: ["**/*.ts", "**/*.tsx"],
+    ignores: ["packages/icons/src/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "lucide-react",
+              message:
+                "lucide-react is retired — import from @corbits/icons instead.",
+            },
+            {
+              name: "@phosphor-icons/react",
+              message:
+                "Import icons from @corbits/icons, not @phosphor-icons/react directly.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["@phosphor-icons/react/*"],
+              message:
+                "Import icons from @corbits/icons, not @phosphor-icons/react directly.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportSpecifier[imported.name=/^Sparkle(s)?$/], ImportSpecifier[local.name=/^Sparkle(s)?$/]",
+          message:
+            "The Sparkle/Sparkles glyph is banned — pick a glyph that means something specific to what it marks.",
+        },
+      ],
+    },
+  },
 );
