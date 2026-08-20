@@ -153,7 +153,13 @@ export function createMcpOAuthRoutes(
         c.req.path.replace(/\/start$/, "/callback"),
         deps.hubUrl,
       ).toString();
-      const session: McpOAuthSession = {};
+      // Minted before `auth()` runs, not after: `auth()` reads it via
+      // `provider.state()` while building the authorize URL, so it must
+      // already be on the session by the time `redirectToAuthorization`
+      // fires. The same value is what `/callback` requires the provider's
+      // `?state=` to match.
+      const nonce = randomNonce();
+      const session: McpOAuthSession = { state: nonce };
       const provider = createMcpOAuthProvider({
         callbackUrl,
         clientName: "Corbits Workbench",
@@ -195,7 +201,7 @@ export function createMcpOAuthRoutes(
         name: target.name,
         url: target.url,
         returnPath,
-        nonce: randomNonce(),
+        nonce,
         expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
         ...(session.codeVerifier !== undefined
           ? { codeVerifier: session.codeVerifier }
@@ -281,6 +287,22 @@ export function createMcpOAuthRoutes(
             mcpOauth: payload.slug,
             outcome: "error",
             code: "state_expired",
+          }),
+          302,
+        );
+      }
+
+      // CSRF check: `/start` always sends `state=<nonce>` on the
+      // authorize URL (see `mcp-oauth.ts`'s `state()`), so the provider
+      // must echo that exact value back -- never optional-when-absent.
+      // A missing or mismatched `state` means this callback did not
+      // originate from the authorize redirect this session minted.
+      if (c.req.query("state") !== payload.nonce) {
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: payload.slug,
+            outcome: "error",
+            code: "state_mismatch",
           }),
           302,
         );
