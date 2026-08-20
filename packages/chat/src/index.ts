@@ -73,8 +73,28 @@ export type { ParticipantRecord } from "./participants";
 export { createChatRoutes, findExistingAgentChat } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
 
-export { createWorkbenchSubscriberRegistry } from "./workbench-events";
+export {
+  createWorkbenchSubscriberRegistry,
+  bridgeWorkbenchStream,
+  createPlatformWorkbenchFanout,
+} from "./workbench-events";
 export type { WorkbenchSubscriberRegistry } from "./workbench-events";
+
+export { createWorkbenchPresenceRegistry } from "./workbench-presence";
+export type {
+  WorkbenchPresenceRegistry,
+  PresenceMember,
+} from "./workbench-presence";
+
+export {
+  ChatMessageEventData,
+  ChatSettingsEventData,
+  ChatReactionEventData,
+  ChatPinEventData,
+  ChatTypingEventData,
+  ChatPresenceEventData,
+  ChatPresenceSnapshotEventData,
+} from "./stream-events";
 export type {
   WorkbenchEvents,
   WorkbenchLauncher,

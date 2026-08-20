@@ -410,11 +410,26 @@ describe("shared workbench projection", () => {
       ]);
     }
 
+    // Connecting hands this stream a presence snapshot (and an "online"
+    // presence delta) before anything else — see `bridgeWorkbenchStream`'s
+    // `presence` option — so this reads past those rather than assuming
+    // `chat.typing` is the very first chunk.
+    async function readUntilContains(
+      needle: string,
+    ): Promise<string | undefined> {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const chunk = await readChunk(2_000);
+        if (chunk === undefined) return undefined;
+        if (chunk.includes(needle)) return chunk;
+      }
+      return undefined;
+    }
+
     workbenchSubscribers.publish(workbench.id, {
       type: "chat.typing",
       data: { principalId: "prn_alice" },
     });
-    const beforeRevocation = await readChunk(2_000);
+    const beforeRevocation = await readUntilContains("chat.typing");
     expect(beforeRevocation).toContain("chat.typing");
 
     const revoked = await memberSide.request(

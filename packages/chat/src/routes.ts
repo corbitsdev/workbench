@@ -81,6 +81,10 @@ import {
   createPlatformWorkbenchFanout,
   type WorkbenchSubscriberRegistry,
 } from "./workbench-events";
+import {
+  createWorkbenchPresenceRegistry,
+  type WorkbenchPresenceRegistry,
+} from "./workbench-presence";
 import type { ChatPlatform } from "./platform-port";
 import type { WorkbenchSettingsRow, ChatStore } from "./store";
 import {
@@ -241,6 +245,15 @@ export type CreateChatRoutesDeps = {
    * so both sides fan out through the same subscriber set.
    */
   workbenchSubscribers?: WorkbenchSubscriberRegistry;
+  /**
+   * The "who's here" roster `/workbenches/:id/stream` piggybacks
+   * presence onto — see `./workbench-presence.ts`. Defaults to a fresh,
+   * router-scoped registry when omitted, mirroring
+   * `workbenchSubscribers`'s own default; a composition root sharing
+   * one process across multiple routers passes its own instance the
+   * same way.
+   */
+  workbenchPresence?: WorkbenchPresenceRegistry;
   /**
    * Slack-Connect-style workbench projection (CL-5882) — see
    * `./workbench-share.ts`. Omitted entirely, every `/workbenches/:id/shares*`
@@ -844,6 +857,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // One upstream platform subscription per workbench, fanned out to every
   // SSE connection on that workbench — see `createPlatformWorkbenchFanout`.
   const platformEvents = createPlatformWorkbenchFanout(deps.platform);
+  const presence = deps.workbenchPresence ?? createWorkbenchPresenceRegistry();
 
   app.post(
     "/workbenches",
@@ -3318,6 +3332,53 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  // The same idiom `/typing` uses, extended to presence (CL-6328): a
+  // client that wants to keep its `lastActiveAt` fresh while its stream
+  // sits open (a backgrounded tab, say) pings here rather than polling
+  // a heartbeat endpoint. "Here at all" already comes for free from the
+  // stream connection itself — see `bridgeWorkbenchStream`'s `presence`
+  // option — so this route 404s for a principal with no open
+  // connection on this workbench rather than fabricating one.
+  app.post(
+    "/workbenches/:id/presence",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const workbenchId = c.req.param("id");
+      if (
+        (await resolveWorkbenchAccess(
+          deps,
+          tenant.id,
+          workbenchId,
+          principal.id,
+        )) === undefined
+      ) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+      const before = presence.snapshot(workbenchId);
+      if (!before.some((member) => member.principalId === principal.id)) {
+        return c.json(
+          ErrorEnvelope(
+            "not_found",
+            "principal has no open stream on this workbench",
+          ),
+          404,
+        );
+      }
+      presence.ping(workbenchId, principal.id);
+      publish(workbenchId, {
+        type: "chat.presence",
+        data: {
+          principalId: principal.id,
+          state: "online",
+          lastActiveAt: new Date().toISOString(),
+        },
+      });
+      return c.body(null, 202);
+    },
+  );
+
   app.get(
     "/workbenches/:id/stream",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
@@ -3349,6 +3410,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               workbenchId,
               principal.id,
             ).then((access) => access !== undefined),
+          presence: { registry: presence, principalId: principal.id },
         });
         stream.onAbort(unbridge);
         await new Promise<void>(() => undefined);

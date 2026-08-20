@@ -10,6 +10,7 @@ import {
   createWorkbenchSubscriberRegistry,
   createPlatformWorkbenchFanout,
 } from "../src/workbench-events";
+import { createWorkbenchPresenceRegistry } from "../src/workbench-presence";
 import type { ChatWorkbenchEvent, WorkbenchEvents } from "../src/platform-port";
 
 const alwaysAuthorized = () => Promise.resolve(true);
@@ -277,5 +278,156 @@ describe("bridgeWorkbenchStream", () => {
 
     expect(writes).toHaveLength(0);
     expect(closeCount).toBe(1);
+  });
+
+  describe("presence", () => {
+    test("connecting delivers a snapshot directly to this stream and broadcasts an online delta", async () => {
+      const registry = createWorkbenchSubscriberRegistry();
+      const presenceRegistry = createWorkbenchPresenceRegistry();
+      presenceRegistry.connect("chan_1", "prn_bob");
+      const writes: { event?: string; data?: string }[] = [];
+      const stream = fakeStream((message) => {
+        writes.push(message as { event?: string; data?: string });
+        return Promise.resolve();
+      });
+
+      bridgeWorkbenchStream({
+        registry,
+        platform: noopPlatformEvents(),
+        workbenchId: "chan_1",
+        stream,
+        authorize: alwaysAuthorized,
+        presence: { registry: presenceRegistry, principalId: "prn_ada" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const snapshotWrite = writes.find(
+        (write) => write.event === "chat.presence.snapshot",
+      );
+      expect(snapshotWrite).toBeDefined();
+      const snapshot = JSON.parse(snapshotWrite?.data ?? "{}") as {
+        members: { principalId: string }[];
+      };
+      // The connecting principal is already in the roster this stream
+      // is handed — `connect` happens before the snapshot is read.
+      expect(
+        snapshot.members.map((member) => member.principalId).sort(),
+      ).toEqual(["prn_ada", "prn_bob"]);
+
+      const onlineWrite = writes.find(
+        (write) => write.event === "chat.presence",
+      );
+      expect(onlineWrite).toBeDefined();
+      expect(JSON.parse(onlineWrite?.data ?? "{}")).toMatchObject({
+        principalId: "prn_ada",
+        state: "online",
+      });
+    });
+
+    test("tearing down a principal's only connection broadcasts an offline delta", async () => {
+      const registry = createWorkbenchSubscriberRegistry();
+      const presenceRegistry = createWorkbenchPresenceRegistry();
+      const stream = fakeStream(() => Promise.resolve());
+      // A separate observer, not the stream tearing down — that stream
+      // has already unsubscribed itself by the time the offline delta
+      // publishes, exactly like any other subscriber that just closed.
+      const observed: ChatWorkbenchEvent[] = [];
+      registry.subscribe("chan_1", (event) => observed.push(event));
+
+      const teardown = bridgeWorkbenchStream({
+        registry,
+        platform: noopPlatformEvents(),
+        workbenchId: "chan_1",
+        stream,
+        authorize: alwaysAuthorized,
+        presence: { registry: presenceRegistry, principalId: "prn_ada" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      observed.length = 0;
+
+      teardown();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(presenceRegistry.snapshot("chan_1")).toEqual([]);
+      const offlineEvent = observed.find(
+        (event) => event.type === "chat.presence",
+      );
+      expect(offlineEvent).toBeDefined();
+      expect(offlineEvent?.data).toMatchObject({
+        principalId: "prn_ada",
+        state: "offline",
+      });
+    });
+
+    test("tearing down one of two open connections for the same principal does not broadcast offline", async () => {
+      const registry = createWorkbenchSubscriberRegistry();
+      const presenceRegistry = createWorkbenchPresenceRegistry();
+      const writesA: { event?: string; data?: string }[] = [];
+      const writesB: { event?: string; data?: string }[] = [];
+      const streamA = fakeStream((message) => {
+        writesA.push(message as { event?: string; data?: string });
+        return Promise.resolve();
+      });
+      const streamB = fakeStream((message) => {
+        writesB.push(message as { event?: string; data?: string });
+        return Promise.resolve();
+      });
+
+      const teardownA = bridgeWorkbenchStream({
+        registry,
+        platform: noopPlatformEvents(),
+        workbenchId: "chan_1",
+        stream: streamA,
+        authorize: alwaysAuthorized,
+        presence: { registry: presenceRegistry, principalId: "prn_ada" },
+      });
+      bridgeWorkbenchStream({
+        registry,
+        platform: noopPlatformEvents(),
+        workbenchId: "chan_1",
+        stream: streamB,
+        authorize: alwaysAuthorized,
+        presence: { registry: presenceRegistry, principalId: "prn_ada" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      writesB.length = 0;
+
+      teardownA();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Still connected via the second stream — no offline delta.
+      expect(
+        presenceRegistry.snapshot("chan_1").map((member) => member.principalId),
+      ).toEqual(["prn_ada"]);
+      expect(writesB.some((write) => write.event === "chat.presence")).toBe(
+        false,
+      );
+    });
+
+    test("no presence option: the original no-presence behavior is unchanged", async () => {
+      const registry = createWorkbenchSubscriberRegistry();
+      const writes: unknown[] = [];
+      const stream = fakeStream((message) => {
+        writes.push(message);
+        return Promise.resolve();
+      });
+
+      bridgeWorkbenchStream({
+        registry,
+        platform: noopPlatformEvents(),
+        workbenchId: "chan_1",
+        stream,
+        authorize: alwaysAuthorized,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(writes).toHaveLength(0);
+    });
   });
 });

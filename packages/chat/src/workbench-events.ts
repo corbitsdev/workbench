@@ -33,6 +33,8 @@
 //    a hidden gap, and out of scope here.
 import type { SSEStreamingApi } from "hono/streaming";
 import type { WorkbenchEvents, ChatWorkbenchEvent } from "./platform-port";
+import { ChatPresenceSnapshotEventData } from "./stream-events";
+import type { WorkbenchPresenceRegistry } from "./workbench-presence";
 
 export type WorkbenchSubscriber = (event: ChatWorkbenchEvent) => void;
 
@@ -138,16 +140,48 @@ export function bridgeWorkbenchStream(input: {
   workbenchId: string;
   stream: SSEStreamingApi;
   authorize: () => Promise<boolean>;
+  /**
+   * Wires this connection into the workbench's "who's here" roster —
+   * see `./workbench-presence.ts`. Omitted, this stream carries no
+   * presence at all (the original behavior): a caller with no presence
+   * feature wired sees nothing change. When present, connecting
+   * registers one live connection for `principalId`, hands this
+   * stream a `chat.presence.snapshot` of the roster as it stands right
+   * now, and broadcasts a `chat.presence` `"online"` delta; tearing
+   * down releases the connection and, only once this was the
+   * principal's last one on this workbench, broadcasts `"offline"`.
+   */
+  presence?: {
+    registry: WorkbenchPresenceRegistry;
+    principalId: string;
+  };
 }): () => void {
   let tornDown = false;
 
   let unsubscribeLocal: () => void = () => undefined;
   let unsubscribePlatform: () => void = () => undefined;
+  const teardownPresence = () => {
+    if (input.presence === undefined) return;
+    const wentOffline = input.presence.registry.disconnect(
+      input.workbenchId,
+      input.presence.principalId,
+    );
+    if (!wentOffline) return;
+    input.registry.publish(input.workbenchId, {
+      type: "chat.presence",
+      data: {
+        principalId: input.presence.principalId,
+        state: "offline",
+        lastActiveAt: new Date().toISOString(),
+      },
+    });
+  };
   const teardown = () => {
     if (tornDown) return;
     tornDown = true;
     unsubscribeLocal();
     unsubscribePlatform();
+    teardownPresence();
   };
 
   const deliver = async (event: ChatWorkbenchEvent) => {
@@ -186,6 +220,28 @@ export function bridgeWorkbenchStream(input: {
     );
   } catch {
     unsubscribePlatform = () => undefined;
+  }
+
+  if (input.presence !== undefined) {
+    const { registry: presenceRegistry, principalId } = input.presence;
+    presenceRegistry.connect(input.workbenchId, principalId);
+    const snapshot = ChatPresenceSnapshotEventData.assert({
+      members: presenceRegistry.snapshot(input.workbenchId),
+    });
+    void input.stream
+      .writeSSE({
+        event: "chat.presence.snapshot",
+        data: JSON.stringify(snapshot),
+      })
+      .catch(() => undefined);
+    input.registry.publish(input.workbenchId, {
+      type: "chat.presence",
+      data: {
+        principalId,
+        state: "online",
+        lastActiveAt: new Date().toISOString(),
+      },
+    });
   }
 
   return teardown;
