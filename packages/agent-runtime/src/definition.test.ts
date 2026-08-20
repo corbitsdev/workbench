@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { projectLiveToInert } from "@intx/workflow";
 
 import type { AgentRuntimeConfig } from "./config";
 import {
@@ -143,6 +144,25 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
           },
         },
       },
+    });
+  });
+
+  test("authors onBodyFailure 'continue' so a failed turn re-arms the section", () => {
+    const section =
+      buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
+
+    expect(section).toMatchObject({ onBodyFailure: "continue" });
+  });
+
+  test("the section's failure policy survives the live→inert projection", () => {
+    const projected = projectLiveToInert(
+      buildAgentRuntimeWorkflow(sectionConfig),
+    );
+    const section = projected.steps[AGENT_RUNTIME_SECTION_ID];
+
+    expect(section).toMatchObject({
+      kind: "onTrigger",
+      onBodyFailure: "continue",
     });
   });
 
