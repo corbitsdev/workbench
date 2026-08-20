@@ -32,9 +32,9 @@ vendor/intx/pack-transport | sawyer | 2026-09-14 | 94578a75112059d31960abdc0b121
 vendor/intx/storage-isogit | sawyer | 2026-09-14 | a89b58687b8738620ce664e81a99250cba7b3bbaddbe0904661778fafef8d586
 vendor/intx/tool-packaging | sawyer | 2026-09-14 | a4f446a5712f906986ddc02b3a9fb133018d15ac661052026527263d942d0249
 vendor/intx/types | sawyer | 2026-09-14 | 21833d272f619f31371e80d752e22bdf8e1d31839169d7faec71240fb2db1139
-vendor/intx/workflow | sawyer | 2026-09-14 | 326a9e10693d5587cc35f9db0a7830b8037b2a81852b9b8bdd7bc276a5eb66fd
+vendor/intx/workflow | sawyer | 2026-09-14 | 7d880c3c7911018a6e71e4e2b6d3ad3de496b3acc48b4479d4dae3d9a60428dc
 vendor/intx/workflow-deploy | sawyer | 2026-09-14 | ee75c87a3f8141eaa83068ec29731f064b7f27ef108919aac81419755b9bc1e3
-vendor/intx/workflow-host | sawyer | 2026-09-14 | 6522cf5c3efcd8b482e0db418bfa3be350034c76cd63fa9fdd55d6e6718907f6
+vendor/intx/workflow-host | sawyer | 2026-09-14 | 74fa8ba65faba279a654fb83e31b3b6d29780ea799ea32a32b297af6857e0e95
 
 packages/folded-runs | sawyer | 2026-11-01
 
