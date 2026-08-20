@@ -18,6 +18,32 @@ Three reviewers, each a lens rather than a whole opinion:
 requests, so the roster a review fans out to is the roster a person can
 see and edit in the workbench.
 
+## The report contract
+
+Every reviewer replies under `REVIEWER_REPORT_CONTRACT`
+(`src/reviewers.ts`), parsed by `parseReviewerReport` against an arktype
+schema (`src/report.ts`). A reply outside the shape is a named parse
+failure, never coerced into an empty report.
+
+- **At most 5 findings per reviewer.** The prompt asks for the ones that
+  matter most, not a full list — noise crowds out the real findings.
+- **Severity is triaged, not defaulted.** `blocking` is a defect, a
+  broken invariant, or a signature drift a caller depends on — something
+  that should not ship as-is. `should-fix` is real but not urgent.
+  `later` is a good idea with no urgency. The prompt states the bar for
+  each so a reviewer cannot mark everything blocking to be read first.
+- **Noise is suppressed in the prompt, not filtered after the fact.**
+  Typos, docstring wording, import ordering, and formatting nits are
+  told to reviewers to skip outright — never reported even as `later`.
+- **`existingCode`/`suggestedFix` is a before/after code pair, never
+  prose.** `existingCode` is the exact lines quoted from the diff;
+  `suggestedFix` is the literal replacement. Aggregation only renders a
+  `\`\`\`suggestion\`\`\``fence when`existingCode`is verified against
+the diff at that finding's file — a finding whose`suggestedFix`is
+prose, or whose`existingCode` cannot be found in the diff, keeps its
+  text and drops the fence rather than posting a broken commit
+  suggestion.
+
 ## The run
 
 ```ts
@@ -39,15 +65,36 @@ A reviewer that fails or replies outside the report shape does not fail
 the review — the posted review names it under "Reviewers that did not
 report", so a partial review never reads as a complete one.
 
+The result is `{ skipped: true, reason }` when the pull request's author
+reads as a bot login (`isBotAuthor`, `src/bot-guard.ts`) — no inference
+runs and nothing is posted, so a bot pushing a change can never trigger
+a review that something downstream reacts to.
+
 ## Aggregation
 
 - A finding two reviewers raise is one entry crediting both, at the more
-  severe of the two severities.
+  severe of the two severities, keyed by fingerprint (see below) rather
+  than an exact string match.
 - Order is blocking, then worth fixing, then for later.
 - An inline comment is made only for a line the diff reported as
   changed; every other finding stays in the body, where GitHub cannot
   reject it.
 - No findings reads as a clean review, not an empty one.
+
+## Fingerprints and re-runs
+
+Every finding gets a stable id — `fingerprintOf` (`src/fingerprint.ts`)
+SHA-256 hashes its file, line, and normalized summary — embedded as an
+HTML comment marker in the posted text (invisible in rendered markdown).
+Aggregation dedupes on this fingerprint, which is what lets two lenses
+that raise the same problem in different words still collapse into one
+entry.
+
+`runPullRequestReview` reads back every comment already posted on the
+pull request before aggregating, and `aggregateReview`'s third argument
+drops any finding whose fingerprint is already out there. A re-run —
+after a `synchronize`, for instance — never raises a finding it already
+raised.
 
 ## Posting
 
