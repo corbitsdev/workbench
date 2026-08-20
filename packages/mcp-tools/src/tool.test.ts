@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
+import { type } from "arktype";
+import { CredentialBinding } from "@intx/types";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
+import { ToolCredentialHandle } from "@intx/types/package-json";
 import type { ToolCall } from "@intx/types/runtime";
 
 import {
@@ -7,6 +10,7 @@ import {
   MCP_LIST_SERVERS_TOOL,
   MCP_LIST_TOOLS_TOOL,
   MCP_READ_TOOL,
+  mcpCredentialHandle,
   mcpTools,
   readOnlyGate,
 } from "./tool";
@@ -240,6 +244,70 @@ test("mcp_list_tools {server} surfaces the credential resolve reason instead of 
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/not reachable from this run/i);
     expect(result.content).toContain("no credential is bound");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mcpCredentialHandle mints a handle conforming to @intx/types' ToolCredentialHandle grammar", () => {
+  const handle = mcpCredentialHandle("exa");
+  expect(handle).toBe("mcp.exa");
+  const parsed = ToolCredentialHandle(handle);
+  expect(parsed instanceof type.errors).toBe(false);
+});
+
+test("a mcp-tools CredentialBinding built on the minted handle parses under @intx/types' CredentialBinding schema", () => {
+  const binding = {
+    package: "@corbits/mcp-tools",
+    handle: mcpCredentialHandle("exa"),
+    provider: "mcp:exa",
+    locator: "tenant" as const,
+  };
+  const parsed = CredentialBinding(binding);
+  expect(parsed instanceof type.errors).toBe(false);
+});
+
+test("mint -> bind -> resolve round trip: mcp_call resolves credentials by the exact handle mcpCredentialHandle mints", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: [{ slug: "exa", name: "Exa", url: "https://example.test/mcp" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )) as unknown as typeof fetch;
+  try {
+    const boundHandle = mcpCredentialHandle("exa");
+    let resolvedWithHandle: string | undefined;
+    const capability: CredentialCapability = {
+      resolve(handle: string): Promise<MediatedCredential> {
+        resolvedWithHandle = handle;
+        if (handle !== boundHandle) {
+          return Promise.reject(
+            new Error(`no credential is bound to handle "${handle}"`),
+          );
+        }
+        return Promise.reject(new Error("server not reachable in this fake"));
+      },
+    };
+    const bundle = mcpTools(fakeEnv(undefined, capability));
+    const result = await bundle.run(
+      {
+        id: "c1",
+        name: MCP_CALL_TOOL,
+        arguments: { server: "exa", tool: "echo" },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    // The fake rejects even a correctly-resolved handle (no MCP server is
+    // actually reachable here); this proves resolve() was called with
+    // EXACTLY the handle mcp-credential-bindings.ts mints, not that the
+    // call itself succeeds end to end.
+    expect(resolvedWithHandle).toBe(boundHandle);
+    expect(result.isError).toBe(true);
+    expect(result.content).not.toContain("no credential is bound");
   } finally {
     globalThis.fetch = originalFetch;
   }
