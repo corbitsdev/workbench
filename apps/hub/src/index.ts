@@ -64,6 +64,7 @@ import {
   createDrizzleClientIdStore,
   createDrizzlePinStore,
   createDrizzleReactionStore,
+  createDrizzleRoomMessageStore,
   createDrizzleThreadStore,
   createDrizzleWriteClaimStore,
   createHubChatPlatform,
@@ -1060,6 +1061,19 @@ export async function createHub(config: HubConfig) {
       workbenchHostInferencePreferencesResolver,
   });
   wireMailRedelivery({ sidecarRouter, chatPlatform });
+  // The one SSE subscriber registry for this process's workbench events
+  // (see `@corbits/chat`'s `workbench-events.ts`), constructed here in
+  // the composition root and shared by every consumer below: the chat
+  // router bridges it onto `/workbenches/:id/stream`, the
+  // workflow-command path publishes through the same instance so a
+  // command-started workflow's join event reaches an open stream
+  // immediately (exactly like `POST .../invite`'s does), and the
+  // orchestrator publishes every message it posts onto a workbench's
+  // timeline.
+  const workbenchSubscribers = createWorkbenchSubscriberRegistry();
+  // The room timeline store (CL-6327): a workbench's own messages, held
+  // as workbench data rather than platform mail.
+  const roomMessages = createDrizzleRoomMessageStore(db);
   // Built once, beside the platform, for the process's lifetime: turns
   // an invited agent's `connector.reply` events into workbench messages,
   // and a gate-blocked run's approval park into an in-chat approve
@@ -1075,6 +1089,8 @@ export async function createHub(config: HubConfig) {
   const chatOrchestratorDeps: Parameters<typeof createChatOrchestrator>[0] = {
     db,
     store: chatStore,
+    roomMessages,
+    publish: workbenchSubscribers.publish,
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
@@ -1094,6 +1110,8 @@ export async function createHub(config: HubConfig) {
   >[0] = {
     db,
     store: chatStore,
+    roomMessages,
+    publish: workbenchSubscribers.publish,
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
@@ -1107,14 +1125,6 @@ export async function createHub(config: HubConfig) {
   artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(
     artifactDeliveryHandlerDeps,
   );
-  // The one SSE subscriber registry for this process's workbench events
-  // (see `@corbits/chat`'s `workbench-events.ts`), constructed here in
-  // the composition root and shared by both consumers below: the
-  // chat router bridges it onto `/workbenches/:id/stream`, and the
-  // workflow-command path publishes through the same instance so a
-  // command-started workflow's join event reaches an open stream
-  // immediately, exactly like `POST .../invite`'s does.
-  const workbenchSubscribers = createWorkbenchSubscriberRegistry();
   // The "/name args" and "@name args" command registry: every tenant's
   // invitable workflow definitions, exposed as commands by
   // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
@@ -1134,6 +1144,7 @@ export async function createHub(config: HubConfig) {
           {
             store: chatStore,
             platform: chatPlatform,
+            roomMessages,
             publish: workbenchSubscribers.publish,
           },
           input,
@@ -1170,8 +1181,26 @@ export async function createHub(config: HubConfig) {
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
 
+  /** The address a principal's own message is posted under: their id at
+   * their tenant's domain, the same shape every participant address
+   * carries. */
+  const senderAddressFor = async (
+    tenantId: string,
+    principalId: string,
+  ): Promise<string> => {
+    const row = await db.query.tenant.findFirst({
+      where: eq(tenantTable.id, tenantId),
+      columns: { domain: true },
+    });
+    if (row === undefined) {
+      throw new Error(`No tenant "${tenantId}" to derive a sender address in`);
+    }
+    return `${principalId}@${row.domain}`;
+  };
+
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
+    roomMessages,
     platform: chatPlatform,
     tenancy: chatTenancy,
     threads: threadStore,
@@ -1230,6 +1259,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowParticipantRoutes({
       store: chatStore,
       platform: chatPlatform,
+      roomMessages,
       publish: workbenchSubscribers.publish,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
@@ -1247,6 +1277,7 @@ export async function createHub(config: HubConfig) {
     databaseUrl: config.databaseUrl,
     chatStore,
     chatPlatform,
+    roomMessages,
     chatTenancy,
     workbenchSubscribers,
     workbenchHostInferencePreferences:
@@ -2040,15 +2071,25 @@ export async function createHub(config: HubConfig) {
       principalId: string;
       text: string;
     }) =>
-      sendWorkbenchMessage(
-        { store: chatStore, platform: chatPlatform },
-        {
-          tenantId: input.tenantId,
-          principalId: input.principalId,
-          workbenchId: input.workbenchId,
-          messageParts: [{ kind: "text", text: input.text }],
-        },
-      ).then(() => undefined),
+      senderAddressFor(input.tenantId, input.principalId)
+        .then((senderAddress) =>
+          sendWorkbenchMessage(
+            {
+              store: chatStore,
+              platform: chatPlatform,
+              roomMessages,
+              publish: workbenchSubscribers.publish,
+            },
+            {
+              tenantId: input.tenantId,
+              principalId: input.principalId,
+              senderAddress,
+              workbenchId: input.workbenchId,
+              messageParts: [{ kind: "text", text: input.text }],
+            },
+          ),
+        )
+        .then(() => undefined),
   };
   // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
   // mount at the tenant root (same pattern as a package that ships absolute

@@ -1,0 +1,403 @@
+// The room's timeline: every message a workbench holds, as workbench
+// data (CL-6327). Posting is one insert plus one publish onto the
+// workbench's live stream — no mail, no wake, no sidecar hop — so a
+// message is durable and on every open timeline before anything is asked
+// of an agent. Reading is a query against these rows rather than a decode
+// of the platform's mail envelope.
+//
+// `postRoomMessage` is the one way a message enters a workbench: a human's
+// send, an agent's reply, a join notice, a command result. Dispatching an
+// agent turn is a separate act (see `dispatchTurn` in
+// `./workbench-service.ts`) that this module knows nothing about.
+import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
+
+import type { Part } from "./parts";
+import { workbenchMessages } from "./schema";
+import type { ChatDb } from "./store";
+import type { WorkbenchSubscriberRegistry } from "./workbench-events";
+
+export interface RoomMessageSender {
+  /** The sender's display name, when it has one; null otherwise. */
+  readonly name: string | null;
+  readonly address: string;
+}
+
+export interface RoomMessage {
+  readonly id: string;
+  readonly workbenchId: string;
+  readonly createdAt: string;
+  readonly sender: RoomMessageSender;
+  /** Set for a human's own message; null for an agent's. */
+  readonly senderPrincipalId: string | null;
+  /** The agent run this message came out of; null for a human's. */
+  readonly runId: string | null;
+  readonly threadId: string | null;
+  readonly parts: readonly Part[];
+}
+
+export interface PostRoomMessageInput {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly sender: RoomMessageSender;
+  readonly parts: readonly Part[];
+  readonly senderPrincipalId?: string;
+  readonly runId?: string;
+  readonly threadId?: string;
+}
+
+export interface ListRoomMessagesInput {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly cursor?: string;
+}
+
+export interface ListedRoomMessages {
+  readonly items: readonly RoomMessage[];
+  readonly nextCursor?: string;
+}
+
+/**
+ * Per-workbench activity a workbench-list row can honestly show: the
+ * newest message's timestamp, how many messages postdate the caller's
+ * read cursor, and a bounded text preview. A workbench with no messages
+ * reports no `lastActivityAt` and no `preview` — never a zero date, never
+ * an invented snippet.
+ */
+export interface RoomActivitySummary {
+  readonly lastActivityAt?: string;
+  readonly unreadCount: number;
+  readonly preview?: string;
+}
+
+export interface ListRoomActivityInput {
+  readonly tenantId: string;
+  readonly workbenches: readonly {
+    readonly workbenchId: string;
+    /** The caller's own read cursor; absent means everything is unread. */
+    readonly sinceCreatedAt?: string;
+  }[];
+}
+
+export interface RoomMessageStore {
+  insertMessage(
+    input: PostRoomMessageInput & { readonly id: string },
+  ): Promise<RoomMessage>;
+  listMessages(input: ListRoomMessagesInput): Promise<ListedRoomMessages>;
+  getMessage(input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly messageId: string;
+  }): Promise<RoomMessage | undefined>;
+  listActivity(
+    input: ListRoomActivityInput,
+  ): Promise<Record<string, RoomActivitySummary>>;
+}
+
+/** One page of timeline, newest first — the same page size the timeline
+ * has always read a workbench in. */
+const PAGE_SIZE = 50;
+
+const PREVIEW_MAX_LENGTH = 80;
+
+/** Time-ordered: the mint time leads, so ids sort the way the timeline
+ * reads and two messages a second apart never tie-break on randomness.
+ * Messages minted inside the same millisecond are genuinely
+ * simultaneous, and order between them by the random tail. */
+function newMessageId(): string {
+  const mintedAt = Date.now().toString(16).padStart(12, "0");
+  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  return `msg_${mintedAt}${random}`;
+}
+
+/**
+ * A bounded preview of a message for a workbench-list row: its text
+ * parts, whitespace-collapsed and truncated. An attachment-only message
+ * previews as nothing rather than a fabricated placeholder.
+ */
+export function previewOf(parts: readonly Part[]): string {
+  const text = parts
+    .filter((part): part is Extract<Part, { kind: "text" }> => {
+      return part.kind === "text";
+    })
+    .map((part) => part.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > PREVIEW_MAX_LENGTH
+    ? `${text.slice(0, PREVIEW_MAX_LENGTH).trimEnd()}…`
+    : text;
+}
+
+/**
+ * Puts a message on a workbench's timeline: one durable row, then one
+ * event onto the live stream so every open client sees it without asking
+ * for it again. The row is written before the publish — a client that
+ * refetches on the event always finds the message it was told about.
+ */
+export async function postRoomMessage(
+  deps: {
+    readonly roomMessages: RoomMessageStore;
+    readonly publish: WorkbenchSubscriberRegistry["publish"];
+  },
+  input: PostRoomMessageInput,
+): Promise<RoomMessage> {
+  const message = await deps.roomMessages.insertMessage({
+    ...input,
+    id: newMessageId(),
+  });
+  deps.publish(message.workbenchId, {
+    type: "chat.message",
+    data: {
+      id: message.id,
+      workbenchId: message.workbenchId,
+      createdAt: message.createdAt,
+      threadId: message.threadId,
+    },
+  });
+  return message;
+}
+
+function encodeCursor(message: RoomMessage): string {
+  return `${message.createdAt}|${message.id}`;
+}
+
+function decodeCursor(
+  cursor: string,
+): { createdAt: Date; id: string } | undefined {
+  const separator = cursor.lastIndexOf("|");
+  if (separator === -1) return undefined;
+  const createdAt = new Date(cursor.slice(0, separator));
+  if (Number.isNaN(createdAt.getTime())) return undefined;
+  return { createdAt, id: cursor.slice(separator + 1) };
+}
+
+function pageOf(newestFirst: readonly RoomMessage[]): ListedRoomMessages {
+  const items = newestFirst.slice(0, PAGE_SIZE);
+  const last = items[items.length - 1];
+  return newestFirst.length > PAGE_SIZE && last !== undefined
+    ? { items, nextCursor: encodeCursor(last) }
+    : { items };
+}
+
+function summarize(
+  messages: readonly RoomMessage[],
+  sinceCreatedAt: string | undefined,
+): RoomActivitySummary {
+  const newest = messages[messages.length - 1];
+  if (newest === undefined) return { unreadCount: 0 };
+  const unreadCount = messages.filter(
+    (message) =>
+      sinceCreatedAt === undefined || message.createdAt > sinceCreatedAt,
+  ).length;
+  const preview = previewOf(newest.parts);
+  const base = { unreadCount, lastActivityAt: newest.createdAt };
+  return preview.length === 0 ? base : { ...base, preview };
+}
+
+interface MessageRow {
+  id: string;
+  workbenchId: string;
+  senderAddress: string;
+  senderName: string | null;
+  senderPrincipalId: string | null;
+  runId: string | null;
+  threadId: string | null;
+  parts: unknown;
+  createdAt: Date;
+}
+
+function toRoomMessage(row: MessageRow): RoomMessage {
+  return {
+    id: row.id,
+    workbenchId: row.workbenchId,
+    createdAt: row.createdAt.toISOString(),
+    sender: { name: row.senderName, address: row.senderAddress },
+    senderPrincipalId: row.senderPrincipalId,
+    runId: row.runId,
+    threadId: row.threadId,
+    parts: row.parts as Part[],
+  };
+}
+
+export function createDrizzleRoomMessageStore(
+  db: ChatDb<Record<string, unknown>>,
+): RoomMessageStore {
+  return {
+    async insertMessage(input) {
+      const [row] = await db
+        .insert(workbenchMessages)
+        .values({
+          id: input.id,
+          tenantId: input.tenantId,
+          workbenchId: input.workbenchId,
+          senderAddress: input.sender.address,
+          senderName: input.sender.name,
+          senderPrincipalId: input.senderPrincipalId ?? null,
+          runId: input.runId ?? null,
+          threadId: input.threadId ?? null,
+          parts: input.parts,
+        })
+        .returning();
+      if (row === undefined) {
+        throw new Error(
+          `failed to post a message into workbench "${input.workbenchId}"`,
+        );
+      }
+      return toRoomMessage(row as MessageRow);
+    },
+
+    async listMessages(input) {
+      const inWorkbench = and(
+        eq(workbenchMessages.tenantId, input.tenantId),
+        eq(workbenchMessages.workbenchId, input.workbenchId),
+      );
+      const cursor =
+        input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+      // Keyset, never offset: `(created_at, id)` strictly before the
+      // cursor, so a message posted mid-page never shifts a later page.
+      const where =
+        cursor === undefined
+          ? inWorkbench
+          : and(
+              inWorkbench,
+              or(
+                lt(workbenchMessages.createdAt, cursor.createdAt),
+                and(
+                  eq(workbenchMessages.createdAt, cursor.createdAt),
+                  lt(workbenchMessages.id, cursor.id),
+                ),
+              ),
+            );
+      const rows = await db
+        .select()
+        .from(workbenchMessages)
+        .where(where)
+        .orderBy(desc(workbenchMessages.createdAt), desc(workbenchMessages.id))
+        .limit(PAGE_SIZE + 1);
+      return pageOf(rows.map((row) => toRoomMessage(row as MessageRow)));
+    },
+
+    async getMessage(input) {
+      const [row] = await db
+        .select()
+        .from(workbenchMessages)
+        .where(
+          and(
+            eq(workbenchMessages.id, input.messageId),
+            eq(workbenchMessages.tenantId, input.tenantId),
+            eq(workbenchMessages.workbenchId, input.workbenchId),
+          ),
+        )
+        .limit(1);
+      return row === undefined ? undefined : toRoomMessage(row as MessageRow);
+    },
+
+    async listActivity(input) {
+      if (input.workbenches.length === 0) return {};
+      const workbenchIds = input.workbenches.map(
+        (workbench) => workbench.workbenchId,
+      );
+      // The newest message per workbench plus the unread count, in one
+      // scan of the feed index — never one query per row of the list.
+      const rows = await db
+        .select()
+        .from(workbenchMessages)
+        .where(
+          and(
+            eq(workbenchMessages.tenantId, input.tenantId),
+            inArray(workbenchMessages.workbenchId, workbenchIds),
+          ),
+        )
+        .orderBy(asc(workbenchMessages.createdAt), asc(workbenchMessages.id));
+
+      const byWorkbench = new Map<string, RoomMessage[]>();
+      for (const row of rows) {
+        const message = toRoomMessage(row as MessageRow);
+        const messages = byWorkbench.get(message.workbenchId) ?? [];
+        messages.push(message);
+        byWorkbench.set(message.workbenchId, messages);
+      }
+      const result: Record<string, RoomActivitySummary> = {};
+      for (const workbench of input.workbenches) {
+        const messages = byWorkbench.get(workbench.workbenchId);
+        if (messages === undefined) continue;
+        result[workbench.workbenchId] = summarize(
+          messages,
+          workbench.sinceCreatedAt,
+        );
+      }
+      return result;
+    },
+  };
+}
+
+/** In-memory `RoomMessageStore` for tests and any host running without a
+ * database, matching `createInMemoryChatStore`'s role for the other
+ * workbench tables. */
+export function createInMemoryRoomMessageStore(): RoomMessageStore {
+  const byWorkbench = new Map<string, RoomMessage[]>();
+  const keyOf = (tenantId: string, workbenchId: string) =>
+    `${tenantId}:${workbenchId}`;
+
+  return {
+    async insertMessage(input) {
+      const message: RoomMessage = {
+        id: input.id,
+        workbenchId: input.workbenchId,
+        createdAt: new Date().toISOString(),
+        sender: input.sender,
+        senderPrincipalId: input.senderPrincipalId ?? null,
+        runId: input.runId ?? null,
+        threadId: input.threadId ?? null,
+        parts: input.parts,
+      };
+      const key = keyOf(input.tenantId, input.workbenchId);
+      byWorkbench.set(key, [...(byWorkbench.get(key) ?? []), message]);
+      return message;
+    },
+
+    async listMessages(input) {
+      const messages =
+        byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
+      // The same `(created_at, id)` total order the drizzle store pages
+      // by, so a cursor means the same thing against either.
+      const newestFirst = [...messages].sort((left, right) =>
+        left.createdAt === right.createdAt
+          ? right.id.localeCompare(left.id)
+          : right.createdAt.localeCompare(left.createdAt),
+      );
+      const cursor =
+        input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+      if (cursor === undefined) return pageOf(newestFirst);
+      const cursorCreatedAt = cursor.createdAt.toISOString();
+      return pageOf(
+        newestFirst.filter(
+          (message) =>
+            message.createdAt < cursorCreatedAt ||
+            (message.createdAt === cursorCreatedAt && message.id < cursor.id),
+        ),
+      );
+    },
+
+    async getMessage(input) {
+      const messages =
+        byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
+      return messages.find((message) => message.id === input.messageId);
+    },
+
+    async listActivity(input) {
+      const result: Record<string, RoomActivitySummary> = {};
+      for (const workbench of input.workbenches) {
+        const messages = byWorkbench.get(
+          keyOf(input.tenantId, workbench.workbenchId),
+        );
+        if (messages === undefined) continue;
+        result[workbench.workbenchId] = summarize(
+          messages,
+          workbench.sinceCreatedAt,
+        );
+      }
+      return result;
+    },
+  };
+}

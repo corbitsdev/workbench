@@ -76,7 +76,6 @@ export type { CreateChatRoutesDeps } from "./routes";
 export { createWorkbenchSubscriberRegistry } from "./workbench-events";
 export type { WorkbenchSubscriberRegistry } from "./workbench-events";
 export type {
-  WorkbenchActivitySummary,
   WorkbenchEvents,
   WorkbenchLauncher,
   WorkbenchMail,
@@ -85,8 +84,6 @@ export type {
   InvitableDefinition,
   LaunchedWorkbench,
   LaunchedInvite,
-  ListedMail,
-  ListedMailItem,
   SentMail,
 } from "./platform-port";
 
@@ -162,6 +159,7 @@ export type {
   JoinRunParticipantInput,
 } from "./run-participant";
 export {
+  dispatchTurn,
   launchAndJoinAgent,
   postCannedGreeting,
   cannedGreeting,
@@ -232,6 +230,17 @@ export type {
   CreateHubChatPlatformDeps,
   HubChatPlatform,
 } from "./platform-adapter";
+
+export {
+  createDrizzleRoomMessageStore,
+  createInMemoryRoomMessageStore,
+  postRoomMessage,
+} from "./room-messages";
+export type {
+  RoomMessage,
+  RoomMessageStore,
+  PostRoomMessageInput,
+} from "./room-messages";
 
 export {
   createArtifactDeliveryHandler,

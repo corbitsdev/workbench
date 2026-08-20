@@ -31,6 +31,7 @@ import {
   type WorkbenchTenancyStore,
   type ChatPlatform,
   type ChatStore,
+  type RoomMessageStore,
   type CreateChatRoutesDeps,
 } from "@corbits/chat";
 import {
@@ -60,6 +61,7 @@ export type MountWorkbenchSlackTagDeps = {
     | "updateWorkbenchSettings"
   >;
   readonly chatPlatform: ChatPlatform;
+  readonly roomMessages: RoomMessageStore;
   readonly chatTenancy: Pick<WorkbenchTenancyStore, "createWorkbenchTenant">;
   readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
   readonly workbenchHostInferencePreferences?: CreateChatRoutesDeps["workbenchHostInferencePreferences"];
@@ -182,6 +184,7 @@ export async function mountWorkbenchSlackTag(
         {
           store: deps.chatStore,
           platform: deps.chatPlatform,
+          roomMessages: deps.roomMessages,
           publish: deps.workbenchSubscribers.publish,
         },
         {
@@ -208,10 +211,16 @@ export async function mountWorkbenchSlackTag(
     },
     sendMessage: async (input) => {
       const sent = await sendWorkbenchMessage(
-        { store: deps.chatStore, platform: deps.chatPlatform },
+        {
+          store: deps.chatStore,
+          platform: deps.chatPlatform,
+          roomMessages: deps.roomMessages,
+          publish: deps.workbenchSubscribers.publish,
+        },
         {
           tenantId: input.tenantId,
           principalId: input.principalId,
+          senderAddress: `${input.principalId}@${tenantRow.domain}`,
           workbenchId: input.channelId,
           messageParts: [{ kind: "text", text: input.text }],
         },

@@ -24,7 +24,6 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 
-import { decodeMail, encodeParts, senderOf } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import {
   aggregatePollResponses,
@@ -68,6 +67,7 @@ import {
   validateSettingsPatch,
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
+import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import {
   postCannedGreeting,
   joinHumanParticipant,
@@ -101,7 +101,6 @@ import { AgentUnreachableError } from "./platform-port";
 import { isAgentAddress } from "./mentions";
 
 export type {
-  WorkbenchActivitySummary,
   WorkbenchEvents,
   WorkbenchLauncher,
   WorkbenchMail,
@@ -110,14 +109,14 @@ export type {
   InvitableDefinition,
   LaunchedWorkbench,
   LaunchedInvite,
-  ListedMail,
-  ListedMailItem,
   SentMail,
 } from "./platform-port";
 
 export type CreateChatRoutesDeps = {
   store: ChatStore;
   platform: ChatPlatform;
+  /** The workbench timeline itself: every message a room holds. */
+  roomMessages: RoomMessageStore;
   /**
    * Mints and tracks the native child tenant every workbench is anchored
    * as (see `./workbench-tenancy.ts`) — required, never optional: a
@@ -476,7 +475,7 @@ async function workbenchInTenant(
  * `ownerTenantId` is what every downstream `deps.store`/`deps.platform`
  * call takes as `tenantId` — a projected-tenant caller's message reads
  * and writes are always scoped to the OWNING tenant's mailbox
- * (`WorkbenchMail.sendMail`/`listMail` are keyed by an explicit tenantId
+ * (`WorkbenchMail.sendMail` is keyed by an explicit tenantId
  * argument, never an ambient caller tenant — see `./platform-port.ts`),
  * never a copy of the workbench materialized under the projected tenant.
  *
@@ -570,25 +569,30 @@ async function resolveMessageSenderTenant(
 }
 
 /**
- * True when `messageId` names a real message in the workbench's own
- * mail — the guard both write-side reaction/pin routes need before
+ * True when `messageId` names a real message on the workbench's own
+ * timeline — the guard both write-side reaction/pin routes need before
  * touching storage. Without it, a `messageId` that was never sent (a
  * typo, a stale client, a probe) still 200s and writes a permanent row
  * keyed to nothing: invisible (no message ever renders it) and
- * unremovable (no UI affordance exists for a message that isn't
- * there). Mirrors the same single-page `listMail` + id lookup
- * `GET /workbenches/:id/pins` and the thread-messages route already use
- * to resolve a message id against the workbench's mailbox.
+ * unremovable (no UI affordance exists for a message that isn't there).
  */
 async function messageExistsInWorkbench(
-  platform: ChatPlatform,
+  roomMessages: RoomMessageStore,
   tenantId: string,
   workbenchId: string,
   messageId: string,
 ): Promise<boolean> {
   return (
-    (await platform.getMail({ tenantId, workbenchId, messageId })) !== undefined
+    (await roomMessages.getMessage({ tenantId, workbenchId, messageId })) !==
+    undefined
   );
+}
+
+/** The address a caller's own message is posted under: their principal
+ * id at their tenant's domain, the same `id@domain` shape every
+ * participant address carries. */
+function senderAddressOf(c: Context<TenantEnv>): string {
+  return `${c.get("principal").id}@${c.get("tenant").domain}`;
 }
 
 const ToggleReactionBody = type({ emoji: "string" });
@@ -1111,7 +1115,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         let joined: Awaited<ReturnType<typeof launchAndJoinAgent>>;
         try {
           joined = await launchAndJoinAgent(
-            { store: deps.store, platform: deps.platform, publish },
+            {
+              store: deps.store,
+              platform: deps.platform,
+              roomMessages: deps.roomMessages,
+              publish,
+            },
             {
               tenantId: tenant.id,
               principalId: principal.id,
@@ -1155,7 +1164,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           // joined-then-hello; neither ever rejects.
           await joinEventDelivered;
           await postCannedGreeting(
-            { platform: deps.platform },
+            { roomMessages: deps.roomMessages, publish },
             {
               tenantId: tenant.id,
               workbenchId,
@@ -1206,7 +1215,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const memberHandle = handleFromName(body.name ?? "", body.principalId);
         try {
           const joined = await joinHumanParticipant(
-            { store: deps.store, platform: deps.platform, publish },
+            {
+              store: deps.store,
+              roomMessages: deps.roomMessages,
+              publish,
+            },
             {
               tenantId: tenant.id,
               principalId: principal.id,
@@ -1302,10 +1315,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       // Row signals (unread badge, live dot, relative time) in two bulk
       // calls covering every row — never one per workbench. The caller's
-      // own read cursors come from `workbench_read_state` (chat's own
-      // table); the mail-backed activity itself is the platform port's
-      // concern (`listWorkbenchActivity`), since messages live in
-      // platform mail, not a chat-owned table.
+      // own read cursors come from `workbench_read_state`, the activity
+      // from the timeline itself.
       const principal = c.get("principal");
       const readStates = await deps.store.listReadStates(
         tenant.id,
@@ -1318,7 +1329,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           state.lastSeenCreatedAt.toISOString(),
         ]),
       );
-      const activityByWorkbenchId = await deps.platform.listWorkbenchActivity({
+      const activityByWorkbenchId = await deps.roomMessages.listActivity({
         tenantId: tenant.id,
         workbenches: rows.map((row) => {
           const sinceCreatedAt = cursorByWorkbenchId.get(row.workbenchId);
@@ -1457,7 +1468,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // the client renders "N replies" and a last-activity stamp on each
       // affordance, and fanning out to `GET /threads/:id/messages` to
       // count them turned every timeline refresh into N full mailbox reads.
-      const listed = await deps.platform.listMail({
+      const listed = await deps.roomMessages.listMessages({
         tenantId: tenant.id,
         workbenchId,
       });
@@ -1578,23 +1589,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (membership === undefined) {
         return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
       }
-      const listed = await deps.platform.listMail({
+      const listed = await deps.roomMessages.listMessages({
         tenantId: tenant.id,
         workbenchId,
       });
-      const items = await Promise.all(
-        listed.items
-          .filter((item) => membership.threadIdOf(item.id) === threadId)
-          .map(async (item) => ({
-            id: item.id,
-            createdAt: item.createdAt,
-            sender: senderOf(item.mail),
-            parts: await decodeMail(item.mail, {
-              fetchBlob: (blobId) =>
-                deps.platform.fetchBlob(workbenchId, blobId),
-            }),
-          })),
-      );
+      const items = listed.items
+        .filter((message) => membership.threadIdOf(message.id) === threadId)
+        .map((message) => ({
+          id: message.id,
+          createdAt: message.createdAt,
+          sender: message.sender,
+          parts: message.parts,
+        }));
       return c.json({
         thread: {
           id: thread.id,
@@ -1680,9 +1686,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
-      const listMailParams = { tenantId: access.ownerTenantId, workbenchId };
-      const listed = await deps.platform.listMail(
-        cursor !== undefined ? { ...listMailParams, cursor } : listMailParams,
+      const listParams = { tenantId: access.ownerTenantId, workbenchId };
+      const listed = await deps.roomMessages.listMessages(
+        cursor !== undefined ? { ...listParams, cursor } : listParams,
       );
 
       // Stamping each message with its thread is what lets one client
@@ -1697,29 +1703,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
 
       const items = await Promise.all(
-        listed.items.map(async (item) => {
-          const sender = senderOf(item.mail);
+        listed.items.map(async (message) => {
           const senderTenant = await resolveMessageSenderTenant(
             deps,
             access.ownerTenantId,
             workbenchId,
-            sender.address,
+            message.sender.address,
           );
           const base = {
-            id: item.id,
-            createdAt: item.createdAt,
+            id: message.id,
+            createdAt: message.createdAt,
             sender:
               senderTenant !== undefined
-                ? { ...sender, ...senderTenant }
-                : sender,
-            parts: await decodeMail(item.mail, {
-              fetchBlob: (blobId) =>
-                deps.platform.fetchBlob(workbenchId, blobId),
-            }),
+                ? { ...message.sender, ...senderTenant }
+                : message.sender,
+            parts: message.parts,
           };
           return membership === undefined
             ? base
-            : { ...base, threadId: membership.threadIdOf(item.id) };
+            : { ...base, threadId: membership.threadIdOf(message.id) };
         }),
       );
 
@@ -1880,7 +1882,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           if (entry.kind === "agent") {
             try {
               const joined = await launchAndJoinAgent(
-                { store: deps.store, platform: deps.platform, publish },
+                {
+                  store: deps.store,
+                  platform: deps.platform,
+                  roomMessages: deps.roomMessages,
+                  publish,
+                },
                 {
                   tenantId: ownerTenantId,
                   principalId: principal.id,
@@ -1921,7 +1928,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             );
           }
           const joined = await joinHumanParticipant(
-            { store: deps.store, platform: deps.platform, publish },
+            {
+              store: deps.store,
+              roomMessages: deps.roomMessages,
+              publish,
+            },
             {
               tenantId: ownerTenantId,
               principalId: principal.id,
@@ -1952,12 +1963,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (commandResult !== undefined) {
         const resultText = textForCommandResult(commandResult);
         if (resultText !== undefined) {
-          await deps.platform.sendMail({
-            tenantId: ownerTenantId,
-            workbenchId,
-            principalId: principal.id,
-            content: encodeParts([{ kind: "text", text: resultText }]),
-          });
+          await postRoomMessage(
+            { roomMessages: deps.roomMessages, publish },
+            {
+              tenantId: ownerTenantId,
+              workbenchId,
+              sender: { name: null, address: senderAddressOf(c) },
+              senderPrincipalId: principal.id,
+              parts: [{ kind: "text", text: resultText }],
+            },
+          );
         }
         return c.json({ command: commandResult }, 201);
       }
@@ -1965,10 +1980,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       let sent;
       try {
         sent = await sendWorkbenchMessage(
-          { store: deps.store, platform: deps.platform },
+          {
+            store: deps.store,
+            platform: deps.platform,
+            roomMessages: deps.roomMessages,
+            publish,
+          },
           {
             tenantId: ownerTenantId,
             principalId: principal.id,
+            senderAddress: senderAddressOf(c),
             workbenchId,
             messageParts,
             ...(parsed.inReplyToMessageId !== undefined
@@ -2133,10 +2154,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // agent can read.
       if (payload.kind === "question") {
         const answer = await sendWorkbenchMessage(
-          { store: deps.store, platform: deps.platform },
+          {
+            store: deps.store,
+            platform: deps.platform,
+            roomMessages: deps.roomMessages,
+            publish,
+          },
           {
             tenantId: ownerTenantId,
             principalId: principal.id,
+            senderAddress: senderAddressOf(c),
             workbenchId,
             messageParts: [{ kind: "text", text: payload.answer }],
           },
@@ -2153,18 +2180,22 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // that is the workbench's own membership boundary, not a new one — the
       // GET route below is the boundary that must never let a member read
       // *another* member's raw response on demand.
-      await deps.platform.sendMail({
-        tenantId: ownerTenantId,
-        workbenchId,
-        principalId: principal.id,
-        content: encodeParts([
-          {
-            kind: "event",
-            event: "block.response",
-            data: { messageId, blockId, ...payload },
-          },
-        ]),
-      });
+      await postRoomMessage(
+        { roomMessages: deps.roomMessages, publish },
+        {
+          tenantId: ownerTenantId,
+          workbenchId,
+          sender: { name: null, address: senderAddressOf(c) },
+          senderPrincipalId: principal.id,
+          parts: [
+            {
+              kind: "event",
+              event: "block.response",
+              data: { messageId, blockId, ...payload },
+            },
+          ],
+        },
+      );
 
       return c.json({ blockId, updatedAt: row.updatedAt.toISOString() }, 200);
     },
@@ -2244,7 +2275,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const ownerTenantId = access.ownerTenantId;
       if (
         !(await messageExistsInWorkbench(
-          deps.platform,
+          deps.roomMessages,
           ownerTenantId,
           workbenchId,
           messageId,
@@ -2329,7 +2360,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const ownerTenantId = access.ownerTenantId;
       if (
         !(await messageExistsInWorkbench(
-          deps.platform,
+          deps.roomMessages,
           ownerTenantId,
           workbenchId,
           messageId,
@@ -2427,31 +2458,28 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const pins = await deps.pins.listPins(ownerTenantId, workbenchId);
       if (pins.length === 0) return c.json({ items: [] });
 
-      const listed = await deps.platform.listMail({
+      const listed = await deps.roomMessages.listMessages({
         tenantId: ownerTenantId,
         workbenchId,
       });
-      const byId = new Map(listed.items.map((item) => [item.id, item]));
-
-      const items = await Promise.all(
-        pins.flatMap((pin: PinRow) => {
-          const item = byId.get(pin.messageId);
-          if (item === undefined) return [];
-          return [
-            (async () => ({
-              id: item.id,
-              createdAt: item.createdAt,
-              sender: senderOf(item.mail),
-              parts: await decodeMail(item.mail, {
-                fetchBlob: (blobId) =>
-                  deps.platform.fetchBlob(workbenchId, blobId),
-              }),
-              pinnedBy: pin.pinnedBy,
-              pinnedAt: pin.pinnedAt.toISOString(),
-            }))(),
-          ];
-        }),
+      const byId = new Map(
+        listed.items.map((message) => [message.id, message]),
       );
+
+      const items = pins.flatMap((pin: PinRow) => {
+        const message = byId.get(pin.messageId);
+        if (message === undefined) return [];
+        return [
+          {
+            id: message.id,
+            createdAt: message.createdAt,
+            sender: message.sender,
+            parts: message.parts,
+            pinnedBy: pin.pinnedBy,
+            pinnedAt: pin.pinnedAt.toISOString(),
+          },
+        ];
+      });
 
       return c.json({ items });
     },
@@ -2589,7 +2617,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       try {
         const joined = await launchAndJoinAgent(
-          { store: deps.store, platform: deps.platform, publish },
+          {
+            store: deps.store,
+            platform: deps.platform,
+            roomMessages: deps.roomMessages,
+            publish,
+          },
           {
             tenantId: tenant.id,
             principalId: principal.id,
@@ -2673,7 +2706,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       await removeWorkbenchParticipant(
         {
           store: deps.store,
-          platform: deps.platform,
+          roomMessages: deps.roomMessages,
           publish,
           releaseAgentInstance: deps.releaseAgentInstance,
         },
@@ -3175,12 +3208,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.id,
       );
       for (const event of events) {
-        await deps.platform.sendMail({
-          tenantId: tenant.id,
-          workbenchId,
-          principalId: principal.id,
-          content: encodeParts([event]),
-        });
+        await postRoomMessage(
+          { roomMessages: deps.roomMessages, publish },
+          {
+            tenantId: tenant.id,
+            workbenchId,
+            sender: { name: null, address: senderAddressOf(c) },
+            senderPrincipalId: principal.id,
+            parts: [event],
+          },
+        );
       }
 
       publish(workbenchId, {

@@ -304,6 +304,38 @@ export const chatMigrations: readonly ChatMigration[] = [
       ALTER TABLE "chat"."message_client_ids" RENAME COLUMN "channel_id" TO "workbench_id";
     `,
   },
+  // The room's own timeline (CL-6327). Messages used to be platform mail
+  // read back through the platform port; they are workbench data now, and
+  // this table is where they live. Everything keyed by the old mail ids —
+  // thread membership, reactions, pins, client send ids — names messages
+  // that no longer exist, so those rows go with them rather than dangling
+  // against a message store that never had them.
+  {
+    name: "0019_workbench_messages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."workbench_messages" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "workbench_id" text NOT NULL,
+        "sender_address" text NOT NULL,
+        "sender_name" text,
+        "sender_principal_id" text,
+        "run_id" text,
+        "thread_id" text,
+        "parts" jsonb NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS "workbench_messages_feed_idx"
+        ON "chat"."workbench_messages" ("tenant_id", "workbench_id", "created_at");
+
+      DELETE FROM "chat"."workbench_thread_messages";
+      DELETE FROM "chat"."message_reactions";
+      DELETE FROM "chat"."pinned_messages";
+      DELETE FROM "chat"."message_client_ids";
+      DELETE FROM "chat"."block_responses";
+    `,
+  },
 ];
 
 /**

@@ -7,7 +7,7 @@
 // plus the concerns that are chat's own: `workbench_launch` persistence,
 // asset naming, invitable listing, and participant/fromWorkbenchId
 // send semantics.
-import { and, asc, count, desc, eq, gt, inArray, max, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createCryptoProviderCache,
@@ -15,7 +15,6 @@ import {
   findFoldedRunByAddress,
   findFoldedRunById,
   mintFoldedRun,
-  listFoldedMail,
   readDefinitionJSON,
   readFoldedBody,
   resolveFoldedRunSessionId,
@@ -30,18 +29,14 @@ import type { FoldedBody } from "@intx/workflow-deploy";
 import type { Selector } from "@intx/workflow";
 import type { DB } from "@intx/db";
 import {
-  agentSession,
   sessionMail,
   tenant as tenantTable,
   workflowDefinition,
-  workflowRun,
 } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
-import { extractPartByPath, parseMailToEmail } from "@intx/mime";
+import { extractPartByPath } from "@intx/mime";
 import { workbenchLaunch } from "./schema";
-import { summarizeWorkbenchActivity } from "./workbench-activity";
-import { extractTextPreview } from "./codec";
 import {
   workbenchHostAssetName,
   isWorkbenchHostDefinitionName,
@@ -64,8 +59,6 @@ import {
   type InvitableDefinition,
   type LaunchedWorkbench,
   type LaunchedInvite,
-  type ListedMail,
-  type ListedMailItem,
   type SentMail,
 } from "./platform-port";
 
@@ -702,192 +695,6 @@ export function createHubChatPlatform(
       if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
 
       return sent;
-    },
-
-    async listMail(input): Promise<ListedMail> {
-      const run = await findFoldedRunById(deps.db, input.workbenchId);
-      if (run === undefined) {
-        return { items: [] };
-      }
-      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
-      const listMailBase = { tenantId: input.tenantId, sessionId };
-      return listFoldedMail(
-        foldedRunsDeps,
-        input.cursor !== undefined
-          ? { ...listMailBase, cursor: input.cursor }
-          : listMailBase,
-      );
-    },
-
-    async getMail(input): Promise<ListedMailItem | undefined> {
-      const run = await findFoldedRunById(deps.db, input.workbenchId);
-      if (run === undefined) return undefined;
-      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
-
-      // Same `findFirst` by id + session scope `fetchBlob` uses for its
-      // blob-owning mail row, rather than `listMail`'s keyset page: a
-      // single-message lookup by id must resolve regardless of how far
-      // back that message sits, not just when it happens to land on
-      // page one.
-      const mailRow = await deps.db.query.sessionMail.findFirst({
-        where: and(
-          eq(sessionMail.id, input.messageId),
-          eq(sessionMail.tenantId, input.tenantId),
-          eq(sessionMail.sessionId, sessionId),
-        ),
-      });
-      if (mailRow === undefined) return undefined;
-      return {
-        id: mailRow.id,
-        createdAt: mailRow.createdAt.toISOString(),
-        mail: parseMailToEmail(mailRow.raw, mailRow.id),
-      };
-    },
-
-    async listWorkbenchActivity(input) {
-      if (input.workbenches.length === 0) return {};
-
-      // Bulk workbenchId -> sessionId, mirroring `resolveFoldedRunSessionId`'s
-      // per-run resolution (run -> its principal's `agent_session`,
-      // `includeEnded: true` so a workbench whose host session already ended
-      // still reports its mail) but in two `inArray` round trips total
-      // instead of one `findFoldedRunById` + `resolveRunSessionId` pair per
-      // workbench.
-      const workbenchIds = input.workbenches.map((c) => c.workbenchId);
-      const runRows = await deps.db
-        .select({ id: workflowRun.id, principalId: workflowRun.principalId })
-        .from(workflowRun)
-        .where(inArray(workflowRun.id, workbenchIds));
-
-      const principalIds = runRows
-        .map((row) => row.principalId)
-        .filter((id): id is string => id !== null);
-      const sessionRows =
-        principalIds.length === 0
-          ? []
-          : await deps.db
-              .select({
-                id: agentSession.id,
-                principalId: agentSession.principalId,
-              })
-              .from(agentSession)
-              .where(inArray(agentSession.principalId, principalIds))
-              .orderBy(asc(agentSession.createdAt));
-
-      // "One session per run principal" is the same invariant
-      // `resolveRunSessionId` documents; the ordered scan plus
-      // set-if-absent below is the bulk form of its own asc + limit(1).
-      const sessionIdByPrincipal = new Map<string, string>();
-      for (const row of sessionRows) {
-        if (!sessionIdByPrincipal.has(row.principalId)) {
-          sessionIdByPrincipal.set(row.principalId, row.id);
-        }
-      }
-
-      const workbenchSessionIds = new Map<string, string>();
-      for (const run of runRows) {
-        if (run.principalId === null) continue;
-        const sessionId = sessionIdByPrincipal.get(run.principalId);
-        if (sessionId !== undefined) workbenchSessionIds.set(run.id, sessionId);
-      }
-
-      const sessionIds = [...new Set(workbenchSessionIds.values())];
-      if (sessionIds.length === 0) return {};
-
-      const latestBySession = await deps.db
-        .select({
-          sessionId: sessionMail.sessionId,
-          lastActivityAt: max(sessionMail.createdAt),
-        })
-        .from(sessionMail)
-        .where(inArray(sessionMail.sessionId, sessionIds))
-        .groupBy(sessionMail.sessionId);
-
-      const cutoffBySessionId = new Map<string, string>();
-      for (const workbench of input.workbenches) {
-        const sessionId = workbenchSessionIds.get(workbench.workbenchId);
-        if (sessionId === undefined) continue;
-        cutoffBySessionId.set(
-          sessionId,
-          workbench.sinceCreatedAt ?? new Date(0).toISOString(),
-        );
-      }
-
-      // One grouped COUNT, gated by each session's own cutoff via an
-      // OR of per-session conditions rather than a query per workbench —
-      // the composite `session_mail_session_id_created_at_idx` backs
-      // every branch.
-      const unreadConditions = [...cutoffBySessionId].map(
-        ([sessionId, cutoff]) =>
-          and(
-            eq(sessionMail.sessionId, sessionId),
-            gt(sessionMail.createdAt, new Date(cutoff)),
-          ),
-      );
-      const unreadBySession =
-        unreadConditions.length === 0
-          ? []
-          : await deps.db
-              .select({
-                sessionId: sessionMail.sessionId,
-                unreadCount: count(),
-              })
-              .from(sessionMail)
-              .where(or(...unreadConditions))
-              .groupBy(sessionMail.sessionId);
-
-      const latestRows = latestBySession.filter(
-        (row): row is { sessionId: string; lastActivityAt: Date } =>
-          row.lastActivityAt !== null,
-      );
-
-      // The newest message's own row, fetched by the exact
-      // (sessionId, createdAt) pair `max()` just resolved — an OR of
-      // per-session conditions, the same bulk-not-per-workbench shape the
-      // unread count above uses — so the preview snippet below reads
-      // the real latest message rather than an arbitrary row sharing
-      // its session.
-      const latestMailConditions = latestRows.map((row) =>
-        and(
-          eq(sessionMail.sessionId, row.sessionId),
-          eq(sessionMail.createdAt, row.lastActivityAt),
-        ),
-      );
-      const latestMailBySession =
-        latestMailConditions.length === 0
-          ? []
-          : await deps.db
-              .select({
-                id: sessionMail.id,
-                sessionId: sessionMail.sessionId,
-                raw: sessionMail.raw,
-              })
-              .from(sessionMail)
-              .where(or(...latestMailConditions));
-      const previewBySessionId = new Map(
-        latestMailBySession.map((row) => [
-          row.sessionId,
-          extractTextPreview(parseMailToEmail(row.raw, row.id)),
-        ]),
-      );
-
-      return summarizeWorkbenchActivity(
-        workbenchSessionIds,
-        latestRows.map((row) => {
-          const preview = previewBySessionId.get(row.sessionId);
-          return preview === undefined
-            ? {
-                sessionId: row.sessionId,
-                lastActivityAt: row.lastActivityAt.toISOString(),
-              }
-            : {
-                sessionId: row.sessionId,
-                lastActivityAt: row.lastActivityAt.toISOString(),
-                preview,
-              };
-        }),
-        unreadBySession,
-      );
     },
 
     async fetchBlob(workbenchId, blobId): Promise<string | Uint8Array> {
