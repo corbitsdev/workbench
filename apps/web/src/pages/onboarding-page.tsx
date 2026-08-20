@@ -55,11 +55,18 @@ import type { SessionUser } from "../session";
  * derives one from the account so `/api/onboarding/provision` never gets
  * called bare. Prefers the account's display name; an account with no
  * usable name falls back to the email's local part. Editable later from
- * Settings, same as any other display name. */
-function defaultWorkbenchName(user: SessionUser): string {
+ * Settings, same as any other display name.
+ *
+ * This names the account's one root tenant — the container real
+ * workbenches (each its own child tenant, CL-6089) live under, never a
+ * workbench itself (CL-6368). "…'s workbench" mislabeled it as one;
+ * every fresh account now mints under its own name instead ("team space"
+ * / "workspace" stay off the table too — check:ui-vocabulary bans both as
+ * synonyms the CL-6089 product collapse deliberately retired). */
+function defaultTeamName(user: SessionUser): string {
   const source =
     user.name.trim().length > 0 ? user.name.trim() : user.email.split("@")[0];
-  return `${source || "Your"}'s workbench`;
+  return `${source || "Your"}'s team`;
 }
 
 type WizardState =
@@ -281,7 +288,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   // or a stale connect error from a duplicate callback this page never
   // saw resolved — provisions with a default name derived from the
   // account: there is no naming step to gate this on, so it must always
-  // send a name (see `defaultWorkbenchName`). A returning member's
+  // send a name (see `defaultTeamName`). A returning member's
   // already-provisioned workbench is unaffected — the hub route only
   // creates one the first time an account has none.
   useEffect(() => {
@@ -306,7 +313,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       });
       return;
     }
-    runProvisioning(defaultWorkbenchName(user));
+    runProvisioning(defaultTeamName(user));
     // Mount-only: this reads `state.phase` exactly once, at the value
     // `initialWizardState` produced, to decide which of the two checks
     // above applies to this landing.
@@ -408,7 +415,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               action={
                 <Button
                   variant="outline"
-                  onClick={() => runProvisioning(defaultWorkbenchName(user))}
+                  onClick={() => runProvisioning(defaultTeamName(user))}
                 >
                   Try again
                 </Button>
