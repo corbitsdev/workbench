@@ -86,7 +86,8 @@ function stubFetch() {
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path))
+      return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }

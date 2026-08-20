@@ -709,7 +709,9 @@ function ChatWorkspaceInner({
               createdAt: parsed.createdAt,
               parts: parsed.parts,
               sender: parsed.sender,
-              ...(parsed.threadId !== null ? { threadId: parsed.threadId } : {}),
+              ...(parsed.threadId !== null
+                ? { threadId: parsed.threadId }
+                : {}),
             });
           }
           break;

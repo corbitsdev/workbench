@@ -114,7 +114,8 @@ export function applyStreamMessage(
       const alreadyPresent = current.items.some(
         (item) =>
           item.id === message.id ||
-          (message.clientId !== undefined && item.clientId === message.clientId),
+          (message.clientId !== undefined &&
+            item.clientId === message.clientId),
       );
       if (alreadyPresent) return current;
       return { ...current, items: [...current.items, message] };
@@ -125,7 +126,10 @@ export function applyStreamMessage(
     chatThreadsQueryKey(tenantId, workbenchId),
     (
       current:
-        | { readonly rootThreadId: string; readonly items: readonly WorkbenchThreadRow[] }
+        | {
+            readonly rootThreadId: string;
+            readonly items: readonly WorkbenchThreadRow[];
+          }
         | undefined,
     ) => {
       if (current === undefined) return current;
@@ -188,22 +192,28 @@ export function applyStreamReaction(
                       }
                     : entry,
                 );
-        } else if (existingIndex === -1) {
-          nextReactions = reactions;
         } else {
-          const nextCount = reactions[existingIndex]!.count - 1;
-          nextReactions =
-            nextCount <= 0
-              ? reactions.filter((_, index) => index !== existingIndex)
-              : reactions.map((entry, index) =>
-                  index === existingIndex
-                    ? {
-                        ...entry,
-                        count: nextCount,
-                        reactedByMe: isSelf ? false : entry.reactedByMe,
-                      }
-                    : entry,
-                );
+          // A removal for an emoji this cache never saw added is a
+          // no-op, not a negative count.
+          const existing = reactions[existingIndex];
+          const nextCount = existing === undefined ? 0 : existing.count - 1;
+          if (existing === undefined) {
+            nextReactions = reactions;
+          } else if (nextCount <= 0) {
+            nextReactions = reactions.filter(
+              (_, index) => index !== existingIndex,
+            );
+          } else {
+            nextReactions = reactions.map((entry, index) =>
+              index === existingIndex
+                ? {
+                    ...entry,
+                    count: nextCount,
+                    reactedByMe: isSelf ? false : entry.reactedByMe,
+                  }
+                : entry,
+            );
+          }
         }
         return { ...item, reactions: nextReactions };
       });
@@ -259,7 +269,12 @@ export function applyStreamPin(
       if (message === undefined) return current;
       return [
         ...current,
-        { ...message, pinned: true, pinnedBy: pin.pinnedBy, pinnedAt: pin.pinnedAt },
+        {
+          ...message,
+          pinned: true,
+          pinnedBy: pin.pinnedBy,
+          pinnedAt: pin.pinnedAt,
+        },
       ];
     },
   );

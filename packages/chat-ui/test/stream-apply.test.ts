@@ -118,7 +118,10 @@ describe("applyStreamMessage", () => {
     });
 
     const threads = qc.getQueryData<{
-      readonly items: readonly { replyCount: number; lastActivityAt: string | null }[];
+      readonly items: readonly {
+        replyCount: number;
+        lastActivityAt: string | null;
+      }[];
     }>(chatThreadsQueryKey(TENANT, WORKBENCH));
     expect(threads?.items[0]?.replyCount).toBe(3);
     expect(threads?.items[0]?.lastActivityAt).toBe("2026-01-01T00:05:00.000Z");

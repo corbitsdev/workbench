@@ -40,7 +40,9 @@ describe("parsePresenceSnapshotEvent", () => {
           { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
         ],
       }),
-    ).toEqual([{ principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" }]);
+    ).toEqual([
+      { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
+    ]);
   });
 
   test("rejects a malformed roster rather than crashing", () => {

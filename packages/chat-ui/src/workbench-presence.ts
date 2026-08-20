@@ -74,7 +74,9 @@ export function nextPresenceRoster(
     const parsed = parsePresenceEvent(event.data);
     if (parsed === null) return current;
     if (parsed.state === "offline") {
-      return current.filter((member) => member.principalId !== parsed.principalId);
+      return current.filter(
+        (member) => member.principalId !== parsed.principalId,
+      );
     }
     const existingIndex = current.findIndex(
       (member) => member.principalId === parsed.principalId,
