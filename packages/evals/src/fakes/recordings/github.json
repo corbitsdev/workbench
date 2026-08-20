@@ -1,0 +1,32 @@
+{
+  "server": "github",
+  "tools": [
+    {
+      "name": "list_pull_requests",
+      "description": "Lists open pull requests for a repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" }
+        },
+        "required": ["owner", "repo"]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "tool": "list_pull_requests",
+      "arguments": { "owner": "acme-corp", "repo": "widget-service" },
+      "response": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "[{\"number\":42,\"title\":\"Fix flaky checkout test\",\"state\":\"open\"}]"
+          }
+        ]
+      }
+    }
+  ]
+}
