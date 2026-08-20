@@ -108,6 +108,18 @@ describe("run-all", () => {
       );
     }
     await writePackage(workspace, WITHOUT_PROBE, { other: "true" });
+
+    const vendorDir = join(workspace, "vendor", "intx", "vendor-probe");
+    await mkdir(vendorDir, { recursive: true });
+    await writeFile(
+      join(vendorDir, "package.json"),
+      JSON.stringify(
+        { name: "@intx/vendor-probe", scripts: { probe: "bun run probe.ts" } },
+        null,
+        2,
+      ),
+    );
+    await writeFile(join(vendorDir, "probe.ts"), PROBE_SOURCE);
   });
 
   afterAll(async () => {
@@ -121,6 +133,13 @@ describe("run-all", () => {
       expect(result.stdout).toContain(`probe ran in ${name}`);
     }
     expect(result.stdout).not.toContain(WITHOUT_PROBE);
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("runs the script in vendored packages under vendor/intx too", async () => {
+    const result = await runProbe();
+
+    expect(result.stdout).toContain("probe ran in vendor-probe");
     expect(result.exitCode).toBe(0);
   });
 
