@@ -187,20 +187,36 @@ export function createSkill(
  * asset — scope untouched, name untouched (only the author may rename by
  * creating a differently-named skill). Mirrors `createSkill`'s shape minus
  * `name`/`scope`.
+ *
+ * `expectedHeadSha` is the version the editor's content was read from: the
+ * registry answers 409 rather than writing when someone else has saved
+ * since, so a confirmed diff can never bury the version it was not shown.
  */
 export function updateSkill(
   tenantId: string,
   name: string,
-  input: { readonly description: string; readonly body: string },
+  input: {
+    readonly description: string;
+    readonly body: string;
+    /** Null only for a skill with no version history at all. */
+    readonly expectedHeadSha: string | null;
+  },
 ): Promise<SkillSummary> {
-  return request(
-    `${base(tenantId)}/${encodeURIComponent(name)}`,
-    SkillResponse,
-    {
+  const path = `${base(tenantId)}/${encodeURIComponent(name)}`;
+  if (input.expectedHeadSha === null) {
+    return request(path, SkillResponse, {
       method: "PUT",
       body: { description: input.description, body: input.body },
+    }).then((page) => page.skill);
+  }
+  return request(path, SkillResponse, {
+    method: "PUT",
+    body: {
+      description: input.description,
+      body: input.body,
+      expectedHeadSha: input.expectedHeadSha,
     },
-  ).then((page) => page.skill);
+  }).then((page) => page.skill);
 }
 
 export function restoreSkillVersion(

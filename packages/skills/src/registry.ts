@@ -95,7 +95,14 @@ export type SkillRegistry = {
   update(
     caller: SkillCaller,
     name: string,
-    input: { readonly description: string; readonly body: string },
+    input: {
+      readonly description: string;
+      readonly body: string;
+      /** The commit the editor's content was read from. When given and no
+       * longer the current commit, the write is refused as a conflict
+       * rather than silently burying whoever saved in between. */
+      readonly expectedHeadSha?: string | undefined;
+    },
   ): Promise<SkillSummary>;
 };
 
@@ -318,6 +325,12 @@ export function createSkillRegistry(
       const commit = (await assets.history(row.assetId)).find(
         (entry) => entry.commitSha === commitSha,
       );
+      if (commit === undefined) {
+        throw new SkillRegistryError(
+          "not_found",
+          `commit ${commitSha} is not in "${name}"'s history`,
+        );
+      }
       return {
         assetId: row.assetId,
         name: parsed.name,
@@ -325,7 +338,7 @@ export function createSkillRegistry(
         body: parsed.body,
         scope: row.scope,
         creatorPrincipalId: row.creatorPrincipalId,
-        updatedAtIso: commit?.committedAtIso ?? new Date(0).toISOString(),
+        updatedAtIso: commit.committedAtIso,
       };
     },
 
@@ -477,6 +490,15 @@ export function createSkillRegistry(
 
       const { row } = await resolveVisible(caller, parsedName);
       requireOwnTenant(row, caller, parsedName, "update");
+      if (input.expectedHeadSha !== undefined) {
+        const head = (await assets.history(row.assetId))[0];
+        if (head?.commitSha !== input.expectedHeadSha) {
+          throw new SkillRegistryError(
+            "conflict",
+            `"${parsedName}" changed since this edit started — review the current version before saving.`,
+          );
+        }
+      }
       await assets.writeSkillMd({
         assetId: row.assetId,
         skillName: parsedName,

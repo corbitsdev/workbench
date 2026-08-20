@@ -1,7 +1,10 @@
 export {
-  diffLines,
+  DEFAULT_DIFF_LIMITS,
+  diffText,
   diffTotals,
-  hasChanges,
+  normalizeNewlines,
+  type Diff,
+  type DiffLimits,
   type DiffLine,
   type DiffLineKind,
   type DiffTotals,

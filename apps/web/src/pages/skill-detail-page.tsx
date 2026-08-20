@@ -8,10 +8,18 @@
 // "restore" is a new commit carrying an older content. Nothing on this
 // page stores a version itself.
 //
-// A save is never silent. "Save…" opens a review step showing the diff
-// between the version currently published and what is in the editor; the
-// commit happens only when the reader confirms it, so nobody publishes a
-// change they have not seen.
+// A save is never silent, and never blind:
+//
+//   * "Save…" opens a review step showing the diff between the published
+//     version and what is in the editor; the commit happens only on
+//     confirm.
+//   * The save carries the version the editor was seeded from, so if
+//     somebody else saved in the meantime the registry refuses it (409)
+//     and the review re-opens against what is actually published now,
+//     rather than burying their work.
+//
+// The editor buffer is newline-normalized, so the bytes reviewed in the
+// diff are exactly the bytes the confirm writes.
 
 import {
   Badge,
@@ -37,7 +45,9 @@ import {
 } from "@corbits/react-ui";
 import { GitDiff, Lightning } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
-import { useCallback, useEffect, useState } from "react";
+import { ApiQueryError, describeApiError } from "@corbits/api-query";
+import { normalizeNewlines } from "@corbits/text-diff";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
@@ -55,6 +65,8 @@ import {
 } from "../skills-api";
 import { DiffHeading, DiffView } from "./diff-view";
 
+type Draft = { readonly description: string; readonly body: string };
+
 type Loaded = {
   readonly skill: SkillDetail;
   readonly pinnedBy: readonly PinnedByEntry[];
@@ -64,21 +76,26 @@ type Loaded = {
 type PageState =
   | { readonly status: "loading" }
   | ({ readonly status: "ready" } & Loaded)
+  | { readonly status: "missing" }
   | { readonly status: "error"; readonly message: string };
 
-type Comparison = {
-  readonly version: SkillVersion;
-  readonly body: string;
-};
+type Comparison = { readonly version: SkillVersion; readonly body: string };
 
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+function statusOf(cause: unknown): number | undefined {
+  return cause instanceof ApiQueryError ? cause.status : undefined;
 }
 
 /** "Version 3 of 7" numbering: history is newest-first, so a row's number
  * counts up from the oldest commit. */
 function versionLabel(total: number, index: number): string {
   return `Version ${String(total - index)}`;
+}
+
+function draftOf(skill: SkillDetail): Draft {
+  return {
+    description: normalizeNewlines(skill.description),
+    body: normalizeNewlines(skill.body),
+  };
 }
 
 export function SkillDetailPage({
@@ -91,49 +108,67 @@ export function SkillDetailPage({
   readonly now?: number;
 }) {
   const [state, setState] = useState<PageState>({ status: "loading" });
-  const [draft, setDraft] = useState<{
-    readonly description: string;
-    readonly body: string;
-  } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [comparison, setComparison] = useState<Comparison | null>(null);
 
-  const reload = useCallback(async () => {
-    if (tenantId === null) return;
-    setState({ status: "loading" });
-    try {
-      const [detail, versions] = await Promise.all([
-        loadSkill(tenantId, name),
-        listSkillVersions(tenantId, name),
-      ]);
-      setState({
-        status: "ready",
-        skill: detail.skill,
-        pinnedBy: detail.pinnedBy,
-        versions,
-      });
-      setDraft({
-        description: detail.skill.description,
-        body: detail.skill.body,
-      });
-      setComparison(null);
-    } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
-    }
-  }, [tenantId, name]);
+  /** Reads the skill and its history. `keepDraft` protects unsaved edits:
+   * a background re-read must never quietly discard what someone typed. */
+  const read = useCallback(
+    async (options: {
+      readonly keepDraft: boolean;
+    }): Promise<Loaded | null> => {
+      if (tenantId === null) return null;
+      if (!options.keepDraft) setState({ status: "loading" });
+      try {
+        const [detail, versions] = await Promise.all([
+          loadSkill(tenantId, name),
+          listSkillVersions(tenantId, name),
+        ]);
+        const loaded: Loaded = {
+          skill: detail.skill,
+          pinnedBy: detail.pinnedBy,
+          versions,
+        };
+        setState({ status: "ready", ...loaded });
+        if (!options.keepDraft) {
+          setDraft(draftOf(detail.skill));
+          setComparison(null);
+        }
+        return loaded;
+      } catch (cause) {
+        if (options.keepDraft) {
+          setActionError(describeApiError(cause, "re-reading this skill"));
+          return null;
+        }
+        setState(
+          statusOf(cause) === 404
+            ? { status: "missing" }
+            : {
+                status: "error",
+                message: describeApiError(cause, "loading this skill"),
+              },
+        );
+        return null;
+      }
+    },
+    [tenantId, name],
+  );
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void read({ keepDraft: false });
+  }, [read]);
 
   const crumbs = [
     { label: "Skills", href: SKILLS_PATH_PREFIX },
     { label: name },
   ];
 
-  function frame(actions: React.ReactNode, body: React.ReactNode) {
+  function frame(actions: ReactNode, body: ReactNode) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={crumbs} actions={actions} />
@@ -155,14 +190,28 @@ export function SkillDetailPage({
     );
   }
 
+  if (state.status === "missing") {
+    return frame(
+      null,
+      <RichEmptyState
+        icon={<Lightning />}
+        title={`No skill named “${name}”`}
+        description="It may have been renamed, or it belongs to a workbench you can't see."
+        actions={[{ label: "Back to Skills", href: SKILLS_PATH_PREFIX }]}
+      />,
+    );
+  }
+
   if (state.status === "error") {
     return frame(
       null,
       <RichEmptyState
         icon={<Lightning />}
         title="Couldn't load this skill"
-        description="Something went wrong on our side. Try again in a moment."
-        actions={[{ label: "Retry", onClick: () => void reload() }]}
+        description={state.message}
+        actions={[
+          { label: "Retry", onClick: () => void read({ keepDraft: false }) },
+        ]}
       />,
     );
   }
@@ -173,17 +222,25 @@ export function SkillDetailPage({
 
   const registryTenantId: string = tenantId;
   const { skill, pinnedBy, versions } = state;
+  const published = draftOf(skill);
+  const headSha =
+    versions.find((version) => version.current)?.commitSha ?? null;
   const shared = skill.scope === "tenant";
   const edited =
-    draft.body !== skill.body || draft.description !== skill.description;
+    draft.body !== published.body ||
+    draft.description !== published.description;
 
-  async function run(action: () => Promise<unknown>) {
+  /** A side action (visibility, restore, compare): its failure belongs next
+   * to the action, never in place of the whole page, and its success never
+   * throws away a dirty draft. */
+  async function runSideAction(action: () => Promise<unknown>) {
+    setActionError(null);
     setBusy(true);
     try {
       await action();
-      await reload();
+      await read({ keepDraft: edited });
     } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
+      setActionError(describeApiError(cause, "saving that change"));
     } finally {
       setBusy(false);
     }
@@ -195,13 +252,27 @@ export function SkillDetailPage({
     setBusy(true);
     try {
       await updateSkill(registryTenantId, skill.name, {
-        description: draft.description.trim(),
+        description: draft.description,
         body: draft.body,
+        expectedHeadSha: headSha,
       });
       setConfirming(false);
-      await reload();
+      setStaleNotice(null);
+      await read({ keepDraft: false });
     } catch (cause) {
-      setSaveError(messageOf(cause));
+      if (statusOf(cause) === 409) {
+        // Somebody else published while this edit was open. Re-read, keep
+        // the typed edit, and leave the review open — now diffing against
+        // what is actually published.
+        const reread = await read({ keepDraft: true });
+        setStaleNotice(
+          reread === null
+            ? "Someone else saved this skill while you were editing. Reload to see their version."
+            : "Someone else saved this skill while you were editing. The diff below now compares your edit with their version — confirm to save on top of it.",
+        );
+      } else {
+        setSaveError(describeApiError(cause, "saving this skill"));
+      }
     } finally {
       setBusy(false);
     }
@@ -212,6 +283,7 @@ export function SkillDetailPage({
       setComparison(null);
       return;
     }
+    setActionError(null);
     try {
       const at = await loadSkillAtVersion(
         registryTenantId,
@@ -220,7 +292,7 @@ export function SkillDetailPage({
       );
       setComparison({ version, body: at.body });
     } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
+      setActionError(describeApiError(cause, "reading that version"));
     }
   }
 
@@ -229,7 +301,11 @@ export function SkillDetailPage({
       size="sm"
       type="button"
       disabled={!edited || busy}
-      onClick={() => setConfirming(true)}
+      onClick={() => {
+        setSaveError(null);
+        setStaleNotice(null);
+        setConfirming(true);
+      }}
     >
       Save…
     </Button>
@@ -257,7 +333,7 @@ export function SkillDetailPage({
             variant="outline"
             disabled={busy}
             onClick={() =>
-              void run(() =>
+              void runSideAction(() =>
                 setSkillScope(
                   registryTenantId,
                   skill.name,
@@ -271,7 +347,13 @@ export function SkillDetailPage({
         </div>
       </header>
 
-      <div className="flex flex-col gap-6 lg:flex-row">
+      {actionError === null ? null : (
+        <p className="text-sm text-destructive" role="alert">
+          {actionError}
+        </p>
+      )}
+
+      <div className="flex flex-col gap-6 min-[1100px]:flex-row">
         <div className="flex min-w-0 flex-1 flex-col gap-6">
           <Section
             title="Description"
@@ -283,7 +365,10 @@ export function SkillDetailPage({
               value={draft.description}
               rows={2}
               onChange={(event) =>
-                setDraft({ description: event.target.value, body: draft.body })
+                setDraft({
+                  description: normalizeNewlines(event.target.value),
+                  body: draft.body,
+                })
               }
             />
           </Section>
@@ -301,7 +386,7 @@ export function SkillDetailPage({
               onChange={(event) =>
                 setDraft({
                   description: draft.description,
-                  body: event.target.value,
+                  body: normalizeNewlines(event.target.value),
                 })
               }
             />
@@ -360,7 +445,7 @@ export function SkillDetailPage({
           </Section>
         </div>
 
-        <aside className="lg:w-96 lg:shrink-0">
+        <aside className="min-[1100px]:w-96 min-[1100px]:shrink-0">
           <Section
             title="Versions"
             description="Every saved version of this skill. Compare shows what changed; restore makes an older version the current one."
@@ -417,7 +502,7 @@ export function SkillDetailPage({
                             variant="outline"
                             disabled={version.current || busy}
                             onClick={() =>
-                              void run(() =>
+                              void runSideAction(() =>
                                 restoreSkillVersion(
                                   registryTenantId,
                                   skill.name,
@@ -443,7 +528,10 @@ export function SkillDetailPage({
         open={confirming}
         onOpenChange={(next) => {
           setConfirming(next);
-          if (!next) setSaveError(null);
+          if (!next) {
+            setSaveError(null);
+            setStaleNotice(null);
+          }
         }}
       >
         <DialogContent>
@@ -455,19 +543,28 @@ export function SkillDetailPage({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {staleNotice !== null && (
+              <p
+                className="mb-3 text-sm text-foreground"
+                role="alert"
+                data-testid="save-stale-notice"
+              >
+                {staleNotice}
+              </p>
+            )}
             {saveError !== null && (
               <p className="mb-3 text-sm text-destructive" role="alert">
                 {saveError}
               </p>
             )}
             <div className="flex flex-col gap-4">
-              {draft.description === skill.description ? null : (
+              {draft.description === published.description ? null : (
                 <div className="flex flex-col gap-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Description
                   </p>
                   <DiffView
-                    before={skill.description}
+                    before={published.description}
                     after={draft.description}
                   />
                 </div>
@@ -477,7 +574,7 @@ export function SkillDetailPage({
                   Skill body
                 </p>
                 <DiffView
-                  before={skill.body}
+                  before={published.body}
                   after={draft.body}
                   unchangedNotice="The skill body is unchanged."
                 />
