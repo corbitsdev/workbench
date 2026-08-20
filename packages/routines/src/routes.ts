@@ -298,6 +298,8 @@ export function routineView(row: RoutineRow) {
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     consecutiveFailures: row.consecutiveFailures,
     deadLetteredAt: row.deadLetteredAt?.toISOString() ?? null,
+    nextFireAt: row.nextFireAt?.toISOString() ?? null,
+    lastFireAt: row.lastFireAt?.toISOString() ?? null,
     presetKey: row.presetKey,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

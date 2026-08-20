@@ -9,10 +9,25 @@
 // so a browser caller has one import for the whole client surface.
 
 import { type } from "arktype";
+import { slugify } from "@corbits/slug";
 
 import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
 export { suggestRoutineNameFromPrompt } from "./suggest-name";
+export { cronSentence, routineScheduleSentence } from "./schedule-language";
+export {
+  cleanFireStreak,
+  fireFailed,
+  lastFailedFire,
+  medianFireDurationMs,
+  routineHealth,
+} from "./health";
+export type {
+  RoutineFire,
+  RoutineHealth,
+  RoutineHealthState,
+  RoutineHealthSubject,
+} from "./health";
 export {
   RoutineTrigger,
   RoutineTriggerWire,
@@ -58,10 +73,33 @@ export const Routine = type({
   // — the scheduler stops claiming this routine until a person
   // re-enables or edits it. `null` means still scheduling normally.
   deadLetteredAt: "string | null",
+  // The scheduler's own due-fire clock, surfaced rather than recomputed:
+  // a UI that re-derives "next run" from the trigger is guessing, while
+  // this is the instant the scheduler will actually test against. `null`
+  // for a routine that never auto-fires (manual, webhook, run-once) or
+  // one that is disabled or dead-lettered.
+  nextFireAt: "string | null",
+  // The last time it actually fired on its schedule. `null` until it has.
+  lastFireAt: "string | null",
   createdAt: "string",
   updatedAt: "string",
 });
 export type Routine = typeof Routine.infer;
+
+/**
+ * A routine's URL-facing name, for `/routines/<slug>`. Derived from the
+ * display name rather than stored: routines predate slug-addressed detail
+ * routes and carry no slug column, and DESIGN.md's rule for exactly this
+ * case is that a route without a guaranteed-unique slug falls back to an
+ * opaque id — which `/routines/<id>` already is, since an id (`rtn_1`) is
+ * not slug-shaped and so resolves to the roster instead. Empty string for
+ * a name with nothing sluggable in it (emoji, a non-Latin script); a
+ * caller renders that routine without a detail link rather than linking
+ * to a path that cannot resolve.
+ */
+export function routineSlug(name: string): string {
+  return slugify(name);
+}
 
 export const RoutinesResponse = type({ items: Routine.array() });
 

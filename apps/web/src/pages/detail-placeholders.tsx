@@ -4,14 +4,13 @@
 // testable before the page behind it exists.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { FlowArrow, Lightning, SquaresFour } from "@corbits/icons";
+import { Lightning, SquaresFour } from "@corbits/icons";
 import type { Slug } from "@corbits/slug";
 import type { ReactNode } from "react";
 
 import { Link } from "../navigation";
 import {
   PLUGINS_PATH_PREFIX,
-  ROUTINES_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
 } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -70,18 +69,6 @@ export function PluginDetailPlaceholder({ slug }: { readonly slug: Slug }) {
       rosterLabel="Plugins"
       rosterPath={PLUGINS_PATH_PREFIX}
       icon={<SquaresFour />}
-    />
-  );
-}
-
-export function RoutineDetailPlaceholder({ slug }: { readonly slug: Slug }) {
-  return (
-    <DetailPlaceholder
-      slug={slug}
-      entity="Routine"
-      rosterLabel="Routines"
-      rosterPath={ROUTINES_PATH_PREFIX}
-      icon={<FlowArrow />}
     />
   );
 }

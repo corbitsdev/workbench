@@ -90,9 +90,8 @@ const PluginDetailPlaceholder = lazy(async () => ({
   default: (await import("./pages/detail-placeholders"))
     .PluginDetailPlaceholder,
 }));
-const RoutineDetailPlaceholder = lazy(async () => ({
-  default: (await import("./pages/detail-placeholders"))
-    .RoutineDetailPlaceholder,
+const RoutineDetailRoute = lazy(async () => ({
+  default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
 }));
 
 /** The signed-out screen (CL-6369) — a real route, not a conditional swap:
@@ -247,9 +246,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Routine",
     icon: <FlowArrow />,
     render: (path: string) => (
-      <RoutineDetailPlaceholder
-        slug={detailRouteSlug(ROUTINE_DETAIL_PATH, path)}
-      />
+      <RoutineDetailRoute slug={detailRouteSlug(ROUTINE_DETAIL_PATH, path)} />
     ),
   },
   {

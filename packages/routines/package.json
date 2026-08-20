@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@corbits/folded-runs": "workspace:*",
+    "@corbits/slug": "workspace:*",
+    "cronstrue": "^3.24.0",
     "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
