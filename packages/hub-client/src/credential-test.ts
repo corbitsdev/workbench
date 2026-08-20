@@ -513,7 +513,82 @@ const OllamaTagsResponse = type({
 export type OllamaCatalogModel = {
   readonly canonicalName: string;
   readonly displayName: string;
+  /**
+   * This exact model's live-probed capabilities (`fetchOllamaModelCapabilities`),
+   * already translated into this repo's storable capability vocabulary —
+   * bare strings, never narrowed against `Capability` here (this module
+   * stays free of `@intx/types`; the narrowing happens where these are
+   * consumed, `seedCatalog`'s `ensureCatalogOffering` call). Empty when
+   * the instance's `/api/show` answered with no recognized capability
+   * (an older Ollama build that predates the field, or a probe that
+   * failed) — `seedCatalog` reports that plainly rather than guessing.
+   */
+  readonly capabilities: readonly string[];
 };
+
+const OllamaShowResponse = type({ "capabilities?": "string[]" });
+
+/**
+ * Ollama's own capability vocabulary (`/api/show`'s `capabilities` field
+ * — `"completion"`, `"embedding"`, `"tools"`, `"vision"`, `"insert"`,
+ * confirmed against a live instance), translated to the wire capability
+ * strings this repo stores (`WIRE_CAPABILITIES`, `@intx/types`). This is
+ * the ONE place that translation happens: `"embedding"` deliberately has
+ * no entry — an embedding-only model must never earn `"plain-text"` here,
+ * or the whole point of probing (telling it apart from a chat model) is
+ * lost. An Ollama capability this map doesn't recognize is dropped, not
+ * guessed at.
+ */
+const OLLAMA_CAPABILITY_MAP: Readonly<Record<string, readonly string[]>> = {
+  completion: ["plain-text", "plain-text-streaming"],
+  tools: ["function-calling", "function-calling-multi-turn"],
+  vision: ["vision-input"],
+};
+
+function translateOllamaCapabilities(
+  ollamaCapabilities: readonly string[],
+): readonly string[] {
+  const translated = new Set<string>();
+  for (const capability of ollamaCapabilities) {
+    for (const wireCapability of OLLAMA_CAPABILITY_MAP[capability] ?? []) {
+      translated.add(wireCapability);
+    }
+  }
+  return [...translated];
+}
+
+/**
+ * Whether `modelName` is completion-capable (as opposed to an
+ * embedding-only pull), read straight off the instance's own `POST
+ * /api/show` — the live signal `fetchOllamaModelCatalog` probes for
+ * every model it lists, so a fresh Ollama connect's offerings carry real
+ * capability data instead of the empty list every pulled model used to
+ * get (CL-6351's `preferCompletionCapable` had nothing to filter on).
+ * Returns an empty list — never throws, never guesses — on any failure
+ * (unreachable origin, malformed response, an Ollama build old enough
+ * that `/api/show` carries no `capabilities` field at all).
+ */
+export async function fetchOllamaModelCapabilities(
+  baseURL: string,
+  modelName: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+): Promise<readonly string[]> {
+  try {
+    const response = await fetchImpl(`${ollamaApiRoot(baseURL)}/api/show`, {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json" }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      body: JSON.stringify({ model: modelName }),
+    });
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = OllamaShowResponse(body);
+    if (parsed instanceof type.errors) return [];
+    return translateOllamaCapabilities(parsed.capabilities ?? []);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The live model list a reachable Ollama instance actually serves right
@@ -524,6 +599,11 @@ export type OllamaCatalogModel = {
  * every caller treats that as "fall back to the static seed," never as
  * an error to surface — `credential-test.ts`'s own probe already covers
  * telling the person their instance is unreachable.
+ *
+ * Each listed model is also probed for its own capabilities
+ * (`fetchOllamaModelCapabilities`) so the catalog this seeds never has
+ * to fall back to a heuristic (name-sorting, a curated allowlist) to
+ * tell a chat model from an embedding one (CL-6351/CL-6366).
  */
 export async function fetchOllamaModelCatalog(
   baseURL: string,
@@ -541,10 +621,17 @@ export async function fetchOllamaModelCatalog(
     if (parsed instanceof type.errors || parsed.models.length === 0) {
       return undefined;
     }
-    return parsed.models.map((model) => ({
-      canonicalName: model.name,
-      displayName: model.name,
-    }));
+    return await Promise.all(
+      parsed.models.map(async (model) => ({
+        canonicalName: model.name,
+        displayName: model.name,
+        capabilities: await fetchOllamaModelCapabilities(
+          baseURL,
+          model.name,
+          fetchImpl,
+        ),
+      })),
+    );
   } catch {
     return undefined;
   }

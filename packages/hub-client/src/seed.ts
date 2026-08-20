@@ -20,7 +20,7 @@ import {
   ModelResponse,
   ProviderResponse,
   paginatedSchema,
-  type Capability,
+  Capability,
 } from "@intx/types";
 import { type } from "arktype";
 import {
@@ -1379,17 +1379,27 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       : undefined;
   const models = dynamicModels ?? seed.models;
 
-  const seededModels: { id: string; canonicalName: string }[] = [];
+  const seededModels: {
+    id: string;
+    canonicalName: string;
+    liveCapabilities?: readonly string[];
+  }[] = [];
   for (const model of models) {
-    seededModels.push({
-      id: await ensureCatalogModel(
-        api,
-        cookies,
-        { tenantId, canonicalName: model.canonicalName },
-        log,
-      ),
-      canonicalName: model.canonicalName,
-    });
+    const modelId = await ensureCatalogModel(
+      api,
+      cookies,
+      { tenantId, canonicalName: model.canonicalName },
+      log,
+    );
+    seededModels.push(
+      model.capabilities !== undefined
+        ? {
+            id: modelId,
+            canonicalName: model.canonicalName,
+            liveCapabilities: model.capabilities,
+          }
+        : { id: modelId, canonicalName: model.canonicalName },
+    );
   }
 
   const credentialSecret =
@@ -1459,12 +1469,24 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   // known" beats a guess that routes real work to a model that cannot do it.
   const unprobed: string[] = [];
   for (const model of seededModels) {
-    const resolved = capabilitiesForDeployment({
-      plugin: seed.provider.plugin,
-      baseURL: providerBaseURL,
-      canonicalName: model.canonicalName,
-    });
-    if (resolved.provenance === "unknown") unprobed.push(model.canonicalName);
+    // Ollama's dynamic entries already carry their own live-probed
+    // capabilities (`fetchOllamaModelCatalog`, CL-6366) — narrowed against
+    // the real `Capability` enum here, the trust boundary, rather than
+    // trusted as the instance reported them. Every curated seed entry has
+    // no live probe of its own, so it still resolves from the pinned
+    // catalog exactly as before.
+    const capabilities =
+      model.liveCapabilities !== undefined
+        ? model.liveCapabilities.filter(
+            (capability): capability is Capability =>
+              !(Capability(capability) instanceof type.errors),
+          )
+        : capabilitiesForDeployment({
+            plugin: seed.provider.plugin,
+            baseURL: providerBaseURL,
+            canonicalName: model.canonicalName,
+          }).capabilities;
+    if (capabilities.length === 0) unprobed.push(model.canonicalName);
     await ensureCatalogOffering(
       api,
       cookies,
@@ -1473,7 +1495,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
         modelId: model.id,
         providerId: catalogProviderId,
         priority: offeringPriority,
-        capabilities: resolved.capabilities,
+        capabilities,
       },
       log,
     );

@@ -6,6 +6,7 @@
 // provider.
 import { describe, expect, test } from "bun:test";
 import {
+  fetchOllamaModelCapabilities,
   fetchOllamaModelCatalog,
   ollamaApiRoot,
   ollamaOpenAICompatBaseURL,
@@ -430,23 +431,111 @@ describe("ollamaApiRoot / ollamaOpenAICompatBaseURL", () => {
   });
 });
 
-describe("fetchOllamaModelCatalog", () => {
-  test("returns the live model list when the instance answers", async () => {
+describe("fetchOllamaModelCapabilities", () => {
+  test("translates Ollama's completion capability to the storable wire vocabulary", async () => {
     const fetchImpl: FetchLike = async () =>
-      new Response(
-        JSON.stringify({
-          models: [{ name: "qwen3.8:27b" }, { name: "qwen3.5:9b-mlx" }],
-        }),
+      new Response(JSON.stringify({ capabilities: ["completion", "tools"] }), {
+        status: 200,
+      });
+    expect(
+      await fetchOllamaModelCapabilities(
+        "http://localhost:11434",
+        "llama3.2",
+        fetchImpl,
+      ),
+    ).toEqual([
+      "plain-text",
+      "plain-text-streaming",
+      "function-calling",
+      "function-calling-multi-turn",
+    ]);
+  });
+
+  // The alphabetical-embedding trap (CL-6351/CL-6366) never recurs
+  // because an embedding-only pull is never translated to "plain-text" —
+  // there is no map entry for Ollama's own "embedding" capability.
+  test("an embedding-only model earns no completion capability", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({ capabilities: ["embedding"] }), {
+        status: 200,
+      });
+    expect(
+      await fetchOllamaModelCapabilities(
+        "http://localhost:11434",
+        "all-minilm",
+        fetchImpl,
+      ),
+    ).toEqual([]);
+  });
+
+  test("returns an empty list, never throws, when the probe fails", async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    expect(
+      await fetchOllamaModelCapabilities(
+        "http://localhost:11434",
+        "llama3.2",
+        fetchImpl,
+      ),
+    ).toEqual([]);
+  });
+
+  test("returns an empty list when the instance predates the capabilities field", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({}), { status: 200 });
+    expect(
+      await fetchOllamaModelCapabilities(
+        "http://localhost:11434",
+        "llama3.2",
+        fetchImpl,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("fetchOllamaModelCatalog", () => {
+  test("returns the live model list, each with its own probed capabilities", async () => {
+    const showCapabilities: Record<string, string[]> = {
+      "qwen3.8:27b": ["completion", "tools"],
+      "qwen3.5:9b-mlx": ["embedding"],
+    };
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (url.toString().endsWith("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [{ name: "qwen3.8:27b" }, { name: "qwen3.5:9b-mlx" }],
+          }),
+          { status: 200 },
+        );
+      }
+      const body = JSON.parse(init.body as string) as { model: string };
+      return new Response(
+        JSON.stringify({ capabilities: showCapabilities[body.model] ?? [] }),
         { status: 200 },
       );
+    };
 
     const models = await fetchOllamaModelCatalog(
       "http://localhost:11434",
       fetchImpl,
     );
     expect(models).toEqual([
-      { canonicalName: "qwen3.8:27b", displayName: "qwen3.8:27b" },
-      { canonicalName: "qwen3.5:9b-mlx", displayName: "qwen3.5:9b-mlx" },
+      {
+        canonicalName: "qwen3.8:27b",
+        displayName: "qwen3.8:27b",
+        capabilities: [
+          "plain-text",
+          "plain-text-streaming",
+          "function-calling",
+          "function-calling-multi-turn",
+        ],
+      },
+      {
+        canonicalName: "qwen3.5:9b-mlx",
+        displayName: "qwen3.5:9b-mlx",
+        capabilities: [],
+      },
     ]);
   });
 
