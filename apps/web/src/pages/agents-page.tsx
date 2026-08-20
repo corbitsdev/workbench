@@ -35,7 +35,10 @@ import {
   type AgentCapabilities,
   type AgentDefinition,
 } from "../agents-api";
-import { purposeAgentDefinitions } from "../agents-directory";
+import {
+  purposeAgentDefinitions,
+  type AgentDefinitionWithDisplayName,
+} from "../agents-directory";
 import { useBench } from "../bench-context";
 import { rowActivationProps } from "../activatable-row";
 import { Link } from "../navigation";
@@ -90,7 +93,7 @@ function AgentDetailPanel({
   workbenches,
 }: {
   readonly tenantId: string;
-  readonly definition: AgentDefinition;
+  readonly definition: AgentDefinitionWithDisplayName;
   readonly workbenches: readonly DefinitionWorkbenchInstance[];
 }) {
   const [capabilities, setCapabilities] = useState<
@@ -122,7 +125,12 @@ function AgentDetailPanel({
   return (
     <aside className="flex min-h-0 min-w-0 flex-col gap-4 border-l border-border bg-card p-4">
       <div>
-        <p className="truncate text-sm font-semibold">{definition.name}</p>
+        <p className="truncate text-sm font-semibold">
+          {definition.displayName}
+        </p>
+        <p className="truncate font-mono text-xs text-muted-foreground">
+          {definition.name}
+        </p>
         <p className="mt-1 text-sm text-muted-foreground">
           {definition.description !== null &&
           definition.description !== undefined
@@ -201,7 +209,7 @@ export function AgentsPage({
   onCreated,
 }: {
   readonly tenantId: string | null;
-  readonly definitions: readonly AgentDefinition[];
+  readonly definitions: readonly AgentDefinitionWithDisplayName[];
   readonly workbenches: ReadonlyMap<
     string,
     readonly DefinitionWorkbenchInstance[]
@@ -265,7 +273,12 @@ export function AgentsPage({
                         )}
                       >
                         <TableCell className="font-medium">
-                          {definition.name}
+                          <div className="flex flex-col">
+                            <span>{definition.displayName}</span>
+                            <span className="font-mono text-xs font-normal text-muted-foreground">
+                              {definition.name}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {definition.description !== null &&

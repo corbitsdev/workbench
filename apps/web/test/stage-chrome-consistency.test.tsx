@@ -41,7 +41,8 @@ describe("stage chrome consistency (CL-6368)", () => {
           {
             id: "wfd_1",
             tenantId: "tnt_1",
-            name: "Triage bot",
+            name: "triage-bot",
+            displayName: "Triage bot",
             description: "Sorts inbound issues.",
             currentVersion: "v1",
             status: "deployed",

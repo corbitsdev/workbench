@@ -11,14 +11,22 @@ import {
   isOrphanedInstance as isOrphanedInstanceShared,
   purposeAgentDefinitions as purposeAgentDefinitionsShared,
   purposeAgentInstances as purposeAgentInstancesShared,
+  withDisplayNames as withDisplayNamesShared,
+  type WithDisplayName,
 } from "@corbits/agent-directory/client";
 
 import type { AgentDefinition, AgentInstance } from "./agents-api";
 
+/** An `AgentDefinition` with its display name derived (CL-6413) — its own
+ * description when the definition was created with one, otherwise a
+ * humanized reading of its immutable `name` slug. `name` itself stays the
+ * slug throughout; nothing here mutates it. */
+export type AgentDefinitionWithDisplayName = WithDisplayName<AgentDefinition>;
+
 export function purposeAgentDefinitions(
   definitions: readonly AgentDefinition[],
-): readonly AgentDefinition[] {
-  return purposeAgentDefinitionsShared(definitions);
+): readonly AgentDefinitionWithDisplayName[] {
+  return withDisplayNamesShared(purposeAgentDefinitionsShared(definitions));
 }
 
 /**
