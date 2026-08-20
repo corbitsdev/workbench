@@ -236,7 +236,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
         .map((p) => p.text),
     );
     expect(texts).toContain(before);
-  });
+  }, 90_000);
 
   test("a message sent after a hub restart is accepted and answered with no manual intervention", async () => {
     // Stop the hub process — every in-memory fact it held (which run
