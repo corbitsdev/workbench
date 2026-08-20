@@ -60,6 +60,7 @@ import {
   createWorkflowRunPackPushingRepoStore,
 } from "./workflow-run-pack-client";
 import { createWorkflowRunPackRestorer } from "./workflow-run-pack-restore";
+import { createBootRestorePushHold } from "./boot-restore-push-hold";
 
 await setup();
 
@@ -152,6 +153,8 @@ const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
   packClient: workflowRunPackClient,
   registry: deploymentAddressRegistry,
 });
+
+const bootRestorePushHold = createBootRestorePushHold(wrappedRepoStore);
 
 // Substrate-config keys threaded into every workflow-process child's
 // fresh spawn env (nothing is inherited from this process). PATH lets
@@ -289,6 +292,7 @@ const orchestrator = createSidecarOrchestrator({
       assertSourceBuildable: buildHarness.canBuildSource,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
+        bootRestorePushHold.onDeploymentRegistered(agentAddress);
       },
       unregisterDeployment: ({ deploymentId }) => {
         deploymentAddressRegistry.unregister(deploymentId);
@@ -352,7 +356,12 @@ const deployRouter: SidecarDeployRouter = capturedRouter;
 // connection opens: each deployment's mailbox/transport registration
 // must be live before the hub can route to it, and the first register
 // frame must announce every restored address.
-await deployRouter.restoreWorkflowDeployments();
+bootRestorePushHold.begin();
+try {
+  await deployRouter.restoreWorkflowDeployments();
+} finally {
+  bootRestorePushHold.end();
+}
 
 // The first connect bypasses the reconnect scheduler, so arm the stall
 // deadline by hand; the open path's getWorkflowAddresses disarms it.
