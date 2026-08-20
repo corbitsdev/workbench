@@ -12,8 +12,8 @@ import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createCryptoProviderCache,
   domainOf,
-  findFoldedRunByAddress,
   findFoldedRunById,
+  launchFoldedRun,
   mintFoldedRun,
   readDefinitionProjection,
   readFoldedBody,
@@ -22,12 +22,20 @@ import {
   resolveNewestProjectedDefinition,
   sendFoldedMail,
   wakeFoldedRun,
-  FoldedBodySchema,
   type FoldedRunMode,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
   type SourcesOverride,
 } from "@corbits/folded-runs";
+import {
+  isBeyondWake,
+  readBindingByAddress,
+  repointBinding,
+  resolveLiveAgent,
+  resolveLiveByStableId,
+  type AgentBinding,
+  type LiveAgent,
+} from "./agent-binding";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
@@ -305,72 +313,157 @@ export function createHubChatPlatform(
     return deps.sidecarRouter.getRoutableAddresses().includes(address);
   }
 
-  // CL-6267: the sidecar's own park/wake handler now owns respawning a
-  // parked-but-still-announced deployment the moment mail routes to it
-  // — a routable address is never deployed or undeployed here, this
-  // just proceeds so `sendFoldedMail` can deliver straight to it.
-  // Redeploying over it would only trip the sidecar's "already
-  // deployed" bookkeeping for a resident it never actually stopped.
-  // Only a genuinely unroutable/unannounced address gets a real
-  // deploy, and a rejection from that deploy propagates honestly.
-  async function wakeByAddress(address: string): Promise<void> {
-    if (isRoutable(address)) return;
-
-    const run = await findFoldedRunByAddress(deps.db, address);
-    if (run === undefined || run.address === null) {
-      throw new Error(`No run found for address "${address}"`);
+  /**
+   * A definition that declares no model of its own resolves the same
+   * catalog default at every deploy that `launchInvite` used to resolve
+   * at launch time — every deploy of such a run now goes through a wake
+   * or a relaunch (launches mint only), and a slept one always did.
+   */
+  async function resolveFallbackModel(
+    binding: AgentBinding,
+  ): Promise<string | undefined> {
+    if (binding.noopInference || binding.foldedBody.model !== null) {
+      return undefined;
     }
-    const launchRows = await deps.db
-      .select()
-      .from(workbenchLaunch)
-      .where(eq(workbenchLaunch.instanceId, run.id))
-      .limit(1);
-    const launchRow = launchRows[0];
-    if (launchRow === undefined) {
+    const preferences =
+      (await deps.workbenchHostInferencePreferences?.(binding.tenantId)) ?? [];
+    return preferences[0]?.model;
+  }
+
+  /**
+   * The per-deploy pins a binding carries, identical for a wake and a
+   * relaunch: a workbench host pins the noop inference source and the
+   * literal-input step mode, an invited agent resolves the tenant
+   * catalog with a fallback model when its definition declares none.
+   */
+  async function deployShapeFor(
+    binding: AgentBinding,
+  ): Promise<
+    | { sources: SourcesOverride; mode: FoldedRunMode }
+    | { fallbackModel?: string }
+  > {
+    if (binding.noopInference) {
+      return {
+        sources: noopSourcesOverride(
+          deps.noopInferenceBaseUrl,
+          binding.foldedBody,
+        ),
+        mode: WORKBENCH_HOST_MODE,
+      };
+    }
+    const fallbackModel = await resolveFallbackModel(binding);
+    return fallbackModel !== undefined ? { fallbackModel } : {};
+  }
+
+  /**
+   * Replaces a run that died terminally with a genuinely fresh one.
+   *
+   * The dead run's durable event log is never reclaimed or erased — it
+   * stays on disk under its own address and readable through the
+   * platform's run routes, which is the audit trail a resurrection
+   * would have destroyed. What moves is the mapping: a new run id, a
+   * new address (the platform derives one from the other, so a fresh
+   * run cannot keep the old address), a new anchor row, and a new
+   * event log; `repointBinding` then swings the room's stable
+   * participant onto it. The room itself — timeline, settings,
+   * threads, participant records — never moves, because none of it was
+   * ever keyed on the run.
+   */
+  async function relaunchTerminalRun(live: LiveAgent): Promise<string> {
+    const { binding, run } = live;
+    if (run.definitionId === null) {
       throw new Error(
-        `No workbench_launch row for instance "${run.id}"; instances ` +
+        `Cannot relaunch "${binding.stableId}": its run ${run.id} names no definition`,
+      );
+    }
+    const newRunId = generateId("workflowRun");
+    const newAddress = formatRunAddress(
+      newRunId,
+      domainOf(binding.roomAddress),
+    );
+    wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status}); minting fresh run ${newRunId}`;
+
+    await launchFoldedRun(foldedRunsDeps, {
+      tenantId: binding.tenantId,
+      instanceId: newRunId,
+      triggerAddress: newAddress,
+      definitionId: run.definitionId,
+      foldedBody: binding.foldedBody,
+      launchLabel: "the relaunched instance",
+      ...(await deployShapeFor(binding)),
+    });
+
+    // After the deploy, never inside its transaction: a repoint that
+    // outlived a failed launch would leave the room addressing a run
+    // `launchFoldedRun` had already rolled back, and the next message
+    // would resolve nothing at all.
+    await repointBinding(deps.db, binding.stableId, newRunId);
+    lifecycle?.untrack(binding.liveAddress);
+    lifecycle?.track(newAddress);
+    return newAddress;
+  }
+
+  /**
+   * Brings the run behind `address` back to routable, whichever kind of
+   * "not routable" it is in. `address` may be either side of the
+   * mapping — the stable address the room holds, or the live deployment
+   * address the sidecar reports.
+   *
+   * CL-6267: the sidecar's own park/wake handler owns respawning a
+   * parked-but-still-announced deployment the moment mail routes to it,
+   * so a routable address is never deployed or undeployed here.
+   *
+   * CL-6365: a run that is unroutable because it DIED — the hub's own
+   * `workflow_run.status` is terminal and it is not merely a folded run
+   * parked between messages — cannot be woken at all. Its address's
+   * durable event log already carries the terminal event, so
+   * redeploying it would come straight back as `workflow_run_terminal`
+   * and the message would be dropped in silence. That case relaunches.
+   */
+  async function wakeByAddress(address: string): Promise<void> {
+    const binding = await readBindingByAddress(deps.db, address);
+    if (binding === undefined) {
+      throw new Error(
+        `No workbench_launch binding for address "${address}"; instances ` +
           `launched before launch-body persistence existed cannot be woken`,
       );
     }
-    const parsedFoldedBody = FoldedBodySchema(launchRow.foldedBody);
-    if (parsedFoldedBody instanceof type.errors) {
+    const live = await resolveLiveAgent(deps.db, binding);
+    if (live === undefined || live.run.address === null) {
       throw new Error(
-        `workbench_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
+        `No run found for address "${address}" (binding names run "${binding.currentRunId}")`,
       );
     }
-    // A definition that declares no model of its own resolves the same
-    // catalog default here that `launchInvite` used to resolve at
-    // launch time — every deploy of such a run now goes through this
-    // wake path (launches mint only), and a slept one always did.
-    const fallbackModel =
-      !launchRow.noopInference && parsedFoldedBody.model === null
-        ? ((await deps.workbenchHostInferencePreferences?.(
-            launchRow.tenantId,
-          )) ?? [])[0]?.model
-        : undefined;
+    if (await isBeyondWake(deps.db, live.run)) {
+      await relaunchTerminalRun(live);
+      return;
+    }
+    if (isRoutable(live.run.address)) return;
+
     const wakeParams = {
-      tenantId: launchRow.tenantId,
-      instanceId: run.id,
-      triggerAddress: run.address,
-      principalId: run.principalId,
-      foldedBody: parsedFoldedBody,
+      tenantId: binding.tenantId,
+      instanceId: live.run.id,
+      triggerAddress: live.run.address,
+      principalId: live.run.principalId,
+      foldedBody: binding.foldedBody,
     };
-    await wakeFoldedRun(
-      foldedRunsDeps,
-      launchRow.noopInference
-        ? {
-            ...wakeParams,
-            sources: noopSourcesOverride(
-              deps.noopInferenceBaseUrl,
-              parsedFoldedBody,
-            ),
-            mode: WORKBENCH_HOST_MODE,
-          }
-        : {
-            ...wakeParams,
-            ...(fallbackModel !== undefined ? { fallbackModel } : {}),
-          },
-    );
+    await wakeFoldedRun(foldedRunsDeps, {
+      ...wakeParams,
+      ...(await deployShapeFor(binding)),
+    });
+  }
+
+  /**
+   * The live run mail must actually be delivered to for a stable
+   * participant id — not the room's own address, once anything has been
+   * relaunched.
+   */
+  async function requireLive(stableId: string): Promise<LiveAgent> {
+    const live = await resolveLiveByStableId(deps.db, stableId);
+    if (live === undefined) {
+      throw new Error(`No live workbench run for "${stableId}"`);
+    }
+    return live;
   }
 
   /**
@@ -468,6 +561,7 @@ export function createHubChatPlatform(
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,
             instanceId: input.workbenchId,
+            currentRunId: input.workbenchId,
             foldedBody,
             createdAt: new Date(),
             noopInference: true,
@@ -572,6 +666,7 @@ export function createHubChatPlatform(
           await tx.insert(workbenchLaunch).values({
             tenantId: input.tenantId,
             instanceId,
+            currentRunId: instanceId,
             foldedBody,
             createdAt: new Date(),
             noopInference: false,
@@ -603,8 +698,10 @@ export function createHubChatPlatform(
     },
 
     async resolveDefinitionIdByAddress(address): Promise<string | undefined> {
-      const run = await findFoldedRunByAddress(deps.db, address);
-      return run?.definitionId ?? undefined;
+      const binding = await readBindingByAddress(deps.db, address);
+      if (binding === undefined) return undefined;
+      const live = await resolveLiveAgent(deps.db, binding);
+      return live?.run.definitionId ?? undefined;
     },
 
     async refreshAgentInstanceFromDefinition(
@@ -612,12 +709,15 @@ export function createHubChatPlatform(
       _workbenchId,
       address,
     ): Promise<void> {
-      const run = await findFoldedRunByAddress(deps.db, address);
-      if (run === undefined || run.definitionId === null) return;
+      const binding = await readBindingByAddress(deps.db, address);
+      if (binding === undefined) return;
+      const live = await resolveLiveAgent(deps.db, binding);
+      const definitionId = live?.run.definitionId;
+      if (definitionId === undefined || definitionId === null) return;
 
       const definitionRow = await deps.db.query.workflowDefinition.findFirst({
         where: and(
-          eq(workflowDefinition.id, run.definitionId),
+          eq(workflowDefinition.id, definitionId),
           eq(workflowDefinition.tenantId, tenantId),
         ),
       });
@@ -634,17 +734,15 @@ export function createHubChatPlatform(
       await deps.db
         .update(workbenchLaunch)
         .set({ foldedBody })
-        .where(eq(workbenchLaunch.instanceId, run.id));
+        .where(eq(workbenchLaunch.instanceId, binding.stableId));
     },
 
     async sendMail(input): Promise<SentMail> {
-      const run = await findFoldedRunById(deps.db, input.workbenchId);
-      if (run === undefined) {
-        throw new Error(`No workbench run for "${input.workbenchId}"`);
-      }
-      if (run.address === null) {
-        throw new Error(`Workbench run "${input.workbenchId}" has no address`);
-      }
+      // The stable id names the room's participant; the run it resolves
+      // to is whichever one is alive right now, which is a different
+      // run (and a different address) after every relaunch.
+      const { binding, run } = await requireLive(input.workbenchId);
+      const liveAddress = binding.liveAddress;
 
       // Wake before send: a sleeping instance (the lifecycle package's
       // own sweep) or one that never came back up after a stack
@@ -661,30 +759,32 @@ export function createHubChatPlatform(
       // undeploys anything for a routable address, it just proceeds to
       // send. Only a genuinely unroutable address gets an explicit
       // wake here.
+      //
+      // CL-6365: a relaunch can happen inside this wake, minting a
+      // fresh run at a fresh address. Re-resolve afterwards so the
+      // send that follows targets the run that is actually alive, not
+      // the one that just died.
       if (lifecycle !== undefined) {
-        await lifecycle.ensureAwake(run.address);
-      } else if (!isRoutable(run.address)) {
-        await wakeByAddress(run.address);
+        await lifecycle.ensureAwake(liveAddress);
+      } else if (!isRoutable(liveAddress)) {
+        await wakeByAddress(liveAddress);
       }
+      const delivery = await requireLive(input.workbenchId);
+      const deliveryAddress = delivery.binding.liveAddress;
       // Tracking here (not only at launch) brings instances that were
       // already resident before this hub process started — restored by
       // a sidecar reconnect, launched by an earlier run — under the
       // idle sweep the moment they see traffic.
-      lifecycle?.track(run.address);
+      lifecycle?.track(deliveryAddress);
 
-      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
-      const domain = domainOf(run.address);
+      const sessionId = await resolveFoldedRunSessionId(deps.db, delivery.run);
+      const domain = domainOf(deliveryAddress);
       let from: string;
       let originAddress: string | undefined;
       if (input.fromWorkbenchId !== undefined) {
-        const origin = await findFoldedRunById(deps.db, input.fromWorkbenchId);
-        if (origin?.address == null) {
-          throw new Error(
-            `Origin workbench "${input.fromWorkbenchId}" has no address`,
-          );
-        }
-        from = origin.address;
-        originAddress = origin.address;
+        const origin = await requireLive(input.fromWorkbenchId);
+        from = origin.binding.liveAddress;
+        originAddress = origin.binding.liveAddress;
       } else if (input.principalId !== undefined) {
         from = `${input.principalId}@${domain}`;
       } else {
@@ -705,7 +805,7 @@ export function createHubChatPlatform(
       const sendMailBase = {
         tenantId: input.tenantId,
         sessionId,
-        agentAddress: run.address,
+        agentAddress: deliveryAddress,
         from,
         domain,
         content: input.content.content,
@@ -721,7 +821,7 @@ export function createHubChatPlatform(
           : withAttachments,
       );
 
-      lifecycle?.recordActivity(run.address);
+      lifecycle?.recordActivity(deliveryAddress);
       if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
 
       return sent;
@@ -731,10 +831,7 @@ export function createHubChatPlatform(
       // Blobs are only readable when the mail row lives on this workbench's
       // session. Looking up by mail id alone let any authenticated caller
       // read another tenant's attachment by guessing a blob id.
-      const run = await findFoldedRunById(deps.db, workbenchId);
-      if (run === undefined) {
-        throw new Error(`No workbench run for "${workbenchId}"`);
-      }
+      const { run } = await requireLive(workbenchId);
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
 
       const match = /^blob_(.+?)_(\d[\d.]*)$/.exec(blobId);
@@ -764,11 +861,11 @@ export function createHubChatPlatform(
       let cancelled = false;
       let unsubscribeAgent: (() => void) | undefined;
 
-      void findFoldedRunById(deps.db, workbenchId)
-        .then((run) => {
-          if (cancelled || run === undefined || run.address === null) return;
+      void resolveLiveByStableId(deps.db, workbenchId)
+        .then((live) => {
+          if (cancelled || live === undefined) return;
           unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
-            run.address,
+            live.binding.liveAddress,
             (event) => {
               onEvent({ type: "chat.agent", data: event });
             },
@@ -788,12 +885,20 @@ export function createHubChatPlatform(
     },
 
     async ensureAwake(address: string): Promise<void> {
+      // The caller may hold either side of the mapping (the hub's
+      // undelivered-mail handler holds whatever the envelope named), so
+      // the lifecycle is driven on the LIVE address it resolves to —
+      // that is the only address the sidecar ever announces.
+      const binding = await readBindingByAddress(deps.db, address);
+      if (binding === undefined) {
+        throw new Error(`No workbench_launch binding for address "${address}"`);
+      }
       if (lifecycle !== undefined) {
-        await lifecycle.ensureAwake(address);
+        await lifecycle.ensureAwake(binding.liveAddress);
         return;
       }
-      if (isRoutable(address)) return;
-      await wakeByAddress(address);
+      if (isRoutable(binding.liveAddress)) return;
+      await wakeByAddress(binding.liveAddress);
     },
   };
 

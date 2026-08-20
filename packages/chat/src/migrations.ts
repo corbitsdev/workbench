@@ -339,6 +339,28 @@ export const chatMigrations: readonly ChatMigration[] = [
       DELETE FROM "chat"."workbench_threads" WHERE "kind" = 'reply';
     `,
   },
+  {
+    // Un-fuses the room's identity from the run's. `instance_id` stops
+    // meaning "the run" and starts meaning "the stable participant the
+    // room addresses"; `current_run_id` names the run actually
+    // executing behind it, re-pointed on every relaunch. Existing rows
+    // are the identity mapping they have always implied.
+    name: "0020_workbench_launch_current_run",
+    sql: `
+      ALTER TABLE "chat"."workbench_launch"
+        ADD COLUMN IF NOT EXISTS "current_run_id" text;
+
+      UPDATE "chat"."workbench_launch"
+        SET "current_run_id" = "instance_id"
+        WHERE "current_run_id" IS NULL;
+
+      ALTER TABLE "chat"."workbench_launch"
+        ALTER COLUMN "current_run_id" SET NOT NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "workbench_launch_current_run_idx"
+        ON "chat"."workbench_launch" ("current_run_id");
+    `,
+  },
 ];
 
 /**
@@ -366,7 +388,7 @@ export async function listWorkbenchLaunchFoldedRunIds(
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     const rows = await sql.unsafe(
-      `SELECT "instance_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."workbench_launch"`,
+      `SELECT "current_run_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."workbench_launch"`,
     );
     return rows.map((row) => ({
       id: String(row["id"]),
