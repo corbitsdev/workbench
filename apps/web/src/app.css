@@ -709,18 +709,25 @@ select:disabled,
   white-space: nowrap;
 }
 
-.stage-crumbs button {
+/* Parent crumbs share the shrink budget with the current-page crumb, so a
+   three-level trail narrows its ancestors instead of crushing the title. */
+.stage-crumb-link,
+.stage-crumb-label {
+  min-width: 2.5rem;
+  flex-shrink: 1;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted-foreground);
-  cursor: pointer;
   font-size: 0.95rem;
   font-weight: 640;
 }
 
-.stage-crumbs button:hover {
+.stage-crumb-link:hover {
   color: var(--foreground);
 }
 
-.stage-crumbs [aria-current="page"] {
+.stage-crumb-current {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

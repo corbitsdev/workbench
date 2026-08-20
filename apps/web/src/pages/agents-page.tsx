@@ -217,7 +217,7 @@ export function AgentsPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title="Agents"
+        crumbs={[{ label: "Agents" }]}
         subtitle={`${definitions.length} agents`}
         actions={
           tenantId !== null ? (
@@ -328,7 +328,7 @@ export function AgentsRoute({
   if (selectedTenantId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Agents" />
+        <StageTopBar crumbs={[{ label: "Agents" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<Robot />}
@@ -343,7 +343,7 @@ export function AgentsRoute({
   if (directory.kind !== "ready") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Agents" />
+        <StageTopBar crumbs={[{ label: "Agents" }]} />
         <PageShell width="full" className="page-fill">
           <QueryView query={directory} label="your agents" skeleton="rows">
             {() => null}

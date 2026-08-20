@@ -15,6 +15,8 @@ export const SKILLS_PATH_PREFIX = "/skills";
 export const FILES_PATH_PREFIX = "/files";
 export const PLUGINS_PATH_PREFIX = "/plugins";
 export const ROUTINES_PATH_PREFIX = "/routines";
+export const INSIGHTS_PATH_PREFIX = "/insights";
+export const INSIGHTS_RUNS_PATH = `${INSIGHTS_PATH_PREFIX}/runs`;
 
 /** The slug a detail path carries — `null` unless the path is exactly
  * `<prefix>/<slug>`. Validation reads the raw segment: a slug carries no

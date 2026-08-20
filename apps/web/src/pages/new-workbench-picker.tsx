@@ -82,7 +82,7 @@ export function NewWorkbenchPickerRoute() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title="New workbench"
+        crumbs={[{ label: "New workbench" }]}
         actions={
           <Button
             type="button"

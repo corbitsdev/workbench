@@ -1,4 +1,4 @@
-// The shared stage top bar: title · dot · subtitle, right-aligned page
+// The shared stage top bar: breadcrumb trail · dot · subtitle, right-aligned page
 // actions, and breadcrumb trails in the title slot. It carries no sidebar
 // control of any kind — the sidebar is always present and has no collapse
 // affordance. This file covers StageTopBar's own markup plus the frame-level
@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AppShell } from "../src/shell/app-shell";
 import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
-import { StageCrumbs, StageTopBar } from "../src/shell/stage-top-bar";
+import { StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { TestQueryProvider } from "./test-query-provider";
@@ -30,7 +30,7 @@ describe("StageTopBar", () => {
   test("renders title, dot, subtitle, and actions", () => {
     const markup = renderToStaticMarkup(
       <StageTopBar
-        title="Inbox"
+        crumbs={[{ label: "Inbox" }]}
         subtitle="2 need action · 5 open"
         actions={<button type="button">Mark all read</button>}
       />,
@@ -42,29 +42,19 @@ describe("StageTopBar", () => {
   });
 
   test("omits the dot when there is no subtitle", () => {
-    const markup = renderToStaticMarkup(<StageTopBar title="Skills" />);
+    const markup = renderToStaticMarkup(
+      <StageTopBar crumbs={[{ label: "Skills" }]} />,
+    );
     expect(markup).not.toContain("stage-top-bar-dot");
     expect(markup).not.toContain("stage-top-bar-sub");
   });
 
   test("carries no sidebar toggle of its own", () => {
-    const markup = renderToStaticMarkup(<StageTopBar title="Library" />);
+    const markup = renderToStaticMarkup(
+      <StageTopBar crumbs={[{ label: "Library" }]} />,
+    );
     expect(markup).not.toContain('aria-label="Toggle sidebar"');
     expect(markup).not.toContain('aria-label="Collapse sidebar"');
-  });
-});
-
-describe("StageCrumbs", () => {
-  test("renders trail buttons and marks the last crumb current", () => {
-    const markup = renderToStaticMarkup(
-      <StageCrumbs
-        crumbs={[{ label: "Runs", onSelect: noop }, { label: "Morning brief" }]}
-      />,
-    );
-    expect(markup).toContain('aria-label="Breadcrumb"');
-    expect(markup).toContain(">Runs</button>");
-    expect(markup).toContain('aria-current="page">Morning brief</span>');
-    expect(markup).toContain("stage-crumbs-sep");
   });
 });
 
@@ -103,7 +93,7 @@ function ShellHarness({ path = "/inbox" }: { readonly path?: string }) {
           <ProviderHealthProvider>
             <ShellChromeProvider path={path} navigate={noop}>
               <AppShell path={path} user={user} onSignOut={noop}>
-                <StageTopBar title="Inbox" />
+                <StageTopBar crumbs={[{ label: "Inbox" }]} />
               </AppShell>
             </ShellChromeProvider>
           </ProviderHealthProvider>

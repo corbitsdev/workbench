@@ -32,7 +32,7 @@ import {
 } from "@corbits/react-ui";
 import { Lightning, PencilSimple, Plus } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
@@ -299,11 +299,14 @@ function SkillDetailView({
 }
 
 /**
- * The Skills page's content: master-detail over one workbench's skill
- * registry. `tenantId` is the registry every read and write is scoped to;
- * `navigate`/`entityId` drive the `/skills/:name` deep link when passed
- * (see `SkillsRoute` below), or stay local to the component otherwise —
- * same optional-controlled-selection contract `AgentsSection` uses.
+ * The Skills stage: master-detail over one workbench's skill registry, with
+ * its own top-nav contract (CL-6409) — the trail says where the reader is
+ * (`Skills / <skill>`, the parent crumb deep-linking back to `/skills`) and
+ * the top bar's action slot is the only home for "New skill". `tenantId` is
+ * the registry every read and write is scoped to; `navigate`/`entityId`
+ * drive the `/skills/:name` deep link when passed (see `SkillsRoute`
+ * below), or stay local to the component otherwise — same
+ * optional-controlled-selection contract `AgentsSection` uses.
  */
 export function SkillsPage({
   tenantId,
@@ -335,6 +338,14 @@ export function SkillsPage({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // The route is the source of truth for which skill is open: the same
+  // component instance stays mounted across `/skills/<name>` → `/skills`
+  // (both match the one route entry), so a crumb click that only changes
+  // the URL has to move the view with it.
+  useEffect(() => {
+    setSelected(entityId ?? null);
+  }, [entityId]);
 
   useEffect(() => {
     if (consumePendingNewSkill()) setCreateOpen(true);
@@ -372,37 +383,59 @@ export function SkillsPage({
     />
   );
 
-  if (tenantId === null) {
+  const crumbs =
+    selected === null
+      ? [{ label: "Skills" }]
+      : [{ label: "Skills", href: SKILLS_PATH_PREFIX }, { label: selected }];
+
+  function stage(actions: ReactNode, body: ReactNode) {
     return (
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar crumbs={crumbs} actions={actions} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PageShell width="full" className="page-fill">
+            {body}
+          </PageShell>
+        </div>
+      </div>
+    );
+  }
+
+  const newSkillButton = (
+    <Button size="sm" onClick={() => setCreateOpen(true)}>
+      <Plus /> New skill
+    </Button>
+  );
+
+  if (tenantId === null) {
+    return stage(
+      null,
       <p className="text-sm text-muted-foreground">
         Pick a workbench to see its skills.
-      </p>
+      </p>,
     );
   }
 
   if (state.status === "loading") {
-    return <WorkbenchLoadingState title="Loading skills…" />;
+    return stage(null, <WorkbenchLoadingState title="Loading skills…" />);
   }
 
   if (state.status === "error") {
-    return (
+    return stage(
+      null,
       <RichEmptyState
         icon={<Lightning />}
         title="Couldn't load your skills"
         description="Something went wrong on our side. Try again in a moment."
         actions={[{ label: "Retry", onClick: () => void reload() }]}
-      />
+      />,
     );
   }
 
   if (selected !== null) {
-    return (
+    return stage(
+      newSkillButton,
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={() => select(null)}>
-            All skills
-          </Button>
-        </div>
         <SkillDetailView
           tenantId={tenantId}
           name={selected}
@@ -410,29 +443,23 @@ export function SkillsPage({
           onChanged={() => void reload()}
         />
         {createDialog}
-      </div>
+      </div>,
     );
   }
 
   const { skills } = state;
 
   if (skills.length === 0) {
-    return (
+    return stage(
+      newSkillButton,
       <div className="flex flex-col gap-4">
         <RichEmptyState
           icon={<Lightning />}
           title="No skills yet"
           description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin. Write one in this workbench and publish it into the registry."
-          actions={[
-            {
-              label: "New skill",
-              variant: "primary",
-              onClick: () => setCreateOpen(true),
-            },
-          ]}
         />
         {createDialog}
-      </div>
+      </div>,
     );
   }
 
@@ -446,19 +473,16 @@ export function SkillsPage({
             skill.description.toLowerCase().includes(needle),
         );
 
-  return (
+  return stage(
+    <>
+      <LibrarySearchInput
+        label="Search skills"
+        value={query}
+        onChange={setQuery}
+      />
+      {newSkillButton}
+    </>,
     <div className="flex flex-col gap-4">
-      <div className="page-toolbar">
-        <LibrarySearchInput
-          label="Search skills"
-          value={query}
-          onChange={setQuery}
-        />
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus /> New skill
-        </Button>
-      </div>
-
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Lightning />}
@@ -498,15 +522,15 @@ export function SkillsPage({
         </div>
       )}
       {createDialog}
-    </div>
+    </div>,
   );
 }
 
 /**
- * Skills stage: full-page mount at `/skills` (CL-6355), same shell as
- * Files and Agents (`StageTopBar` + full-width `PageShell`). `path` drives
- * the `/skills/:name` deep link the same way `LibraryRoute` drives
- * `/files/:id`.
+ * Skills stage mount at `/skills` (CL-6355): a thin adapter that resolves
+ * the bench tenant and the `/skills/:name` deep link. The stage chrome
+ * itself (breadcrumb trail, action slot) belongs to `SkillsPage`, which is
+ * the component that knows which skill is open.
  */
 export function SkillsRoute({
   path,
@@ -519,17 +543,10 @@ export function SkillsRoute({
   const entityId = skillIdFromPath(path);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar title="Skills" />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <PageShell width="full" className="page-fill">
-          <SkillsPage
-            tenantId={selectedTenantId}
-            navigate={navigate}
-            entityId={entityId}
-          />
-        </PageShell>
-      </div>
-    </div>
+    <SkillsPage
+      tenantId={selectedTenantId}
+      navigate={navigate}
+      entityId={entityId}
+    />
   );
 }

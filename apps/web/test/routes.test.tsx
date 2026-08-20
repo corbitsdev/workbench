@@ -113,7 +113,7 @@ async function renderApp(
 /** Page identity: every route titles its stage's own `StageTopBar` (the
  * one bar-less route, `/`, gets one from `AppShell` itself). */
 function stagePageTitle(markup: string): string | undefined {
-  return /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1];
+  return /class="stage-crumb-current"[^>]*>([^<]*)</.exec(markup)?.[1];
 }
 
 /** The sidebar footer marks its own destination current: Plugins and
@@ -330,7 +330,7 @@ describe("routes render", () => {
         return;
       }
       if (route.path === "/settings") {
-        expect(stagePageTitle(markup)).toBe("Settings · General");
+        expect(stagePageTitle(markup)).toBe("General");
       } else {
         expect(stagePageTitle(markup)).toBe(route.label);
       }
@@ -344,16 +344,15 @@ describe("routes render", () => {
   }
 
   test.each([
-    ["/agents/triage-bot", "Agent", "Agents"],
-    ["/skills/pr-review", "Skill", "Skills"],
-    ["/plugins/linear", "Plugin", "Plugins"],
-    ["/routines/weekly-digest", "Routine", "Routines"],
+    ["/agents/triage-bot", "triage-bot", "Agents"],
+    ["/skills/pr-review", "pr-review", "Skills"],
+    ["/plugins/linear", "linear", "Plugins"],
+    ["/routines/weekly-digest", "weekly-digest", "Routines"],
   ])(
-    "%s renders the %s detail placeholder with its roster row lit",
-    async (path, title, footerLabel) => {
+    "%s titles the detail placeholder %s with its roster row lit",
+    async (path, slug, footerLabel) => {
       const markup = await renderApp(path);
-      expect(stagePageTitle(markup)).toBe(title);
-      expect(markup).toContain(path.split("/")[2] ?? "");
+      expect(stagePageTitle(markup)).toBe(slug);
       expect(markup).toContain(`Back to ${footerLabel}`);
       expect(activeFooterLabel(markup)).toBe(footerLabel);
     },
