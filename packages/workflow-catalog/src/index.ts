@@ -8,6 +8,18 @@
 
 import { type } from "arktype";
 
+export {
+  GTM_TEMPLATE,
+  WORKBENCH_TEMPLATES,
+  WorkbenchTemplateBlock,
+  WorkbenchTemplateOpenInput,
+  WorkbenchTemplateParticipant,
+  WorkbenchTemplateRoutine,
+  templateBlockAssetNames,
+  workbenchTemplate,
+} from "./templates";
+export type { WorkbenchTemplateManifest } from "./templates";
+
 /**
  * One named field a mail trigger reads by name — the create-time UI's only
  * source of truth for what a workflow's trigger actually expects (see each
@@ -67,9 +79,12 @@ export type WorkflowCatalogEntry = {
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
   readonly whatItDoes: string;
   /**
-   * Connector ids (see `@workbench/connections/registry`'s
-   * `CONNECTOR_REGISTRY`) this workflow's tool packages call. Empty for
-   * workflows with no external connector dependency.
+   * Connector ids this workflow's tool packages call — either a native
+   * connector (`@workbench/connections/registry`'s `CONNECTOR_REGISTRY`)
+   * or an MCP preset slug a person connects under Plugins
+   * (`@workbench/connections/mcp-presets`' `MCP_PRESETS`), which is the
+   * only way some integrations (Attio) are reachable here at all. Empty
+   * for workflows with no external connector dependency.
    */
   readonly requiredConnections: readonly string[];
   /** A short, honest one-line readout of what a run actually produces —
@@ -303,6 +318,67 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
         placeholder: "Competing launches",
         required: false,
         help: "Optional — narrows which angle of the topic to chase.",
+      },
+    ],
+  },
+  {
+    assetName: "exa-topic-watch",
+    displayName: "Web topic watch",
+    automatable: true,
+    conversational: false,
+    deliveryMode: "workbench",
+    whatItDoes:
+      "Searches the live web for one topic each run and publishes a short digest of what moved, held for approval before it's saved.",
+    requiredConnections: ["exa"],
+    exampleOutput: "Weekly digest: 4 takeaways, 2 worth a closer look",
+    typicalDuration: "a minute or two, plus the time to approve",
+    // Mirrors workflows/exa-topic-watch/src/index.ts's system prompt: the
+    // trigger carries a `topic` and nothing else, and the prompt refuses
+    // to invent or widen one, so it is the single required field.
+    triggerFields: [
+      {
+        key: "topic",
+        kind: "text",
+        label: "Topic",
+        placeholder: "AI coding agents for go-to-market",
+        required: true,
+        help: "What to watch on the web each run.",
+      },
+    ],
+  },
+  {
+    assetName: "attio-task-agent",
+    displayName: "Attio task agent",
+    automatable: false,
+    conversational: false,
+    deliveryMode: "workbench",
+    whatItDoes:
+      "Works one Attio task: reads the record and the surrounding context, drafts what the task needs, and writes back to Attio only once you approve it.",
+    requiredConnections: ["attio"],
+    exampleOutput:
+      "Two drafts ready to review, plus a CRM note awaiting your OK",
+    typicalDuration: "a few minutes, plus review and approval time",
+    // Mirrors workflows/attio-task-agent/src/index.ts's system prompt:
+    // the trigger names the task by id, or names whose task list to look
+    // in. Neither is required on its own — with neither, the run lists
+    // the open tasks it can see and asks which one, which is a valid
+    // start, not an error.
+    triggerFields: [
+      {
+        key: "taskId",
+        kind: "text",
+        label: "Attio task ID",
+        placeholder: "The task to work",
+        required: false,
+        help: "Or leave blank and name whose tasks to look at below.",
+      },
+      {
+        key: "assignee",
+        kind: "text",
+        label: "Assignee",
+        placeholder: "Whose task list to look in",
+        required: false,
+        help: "Used only if no task ID is given above.",
       },
     ],
   },

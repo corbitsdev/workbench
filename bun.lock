@@ -33,6 +33,7 @@
         "@corbits/bench": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/commands": "workspace:*",
+        "@corbits/config-profiles": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
         "@corbits/docker-provisioner": "workspace:*",
         "@corbits/e2b-sandbox-sidecar": "workspace:*",
@@ -199,7 +200,6 @@
         "postgres": "catalog:",
       },
       "devDependencies": {
-        "@corbits/tool-registry-publish": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -261,6 +261,19 @@
         "@intx/hub-common": "workspace:*",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/artifact-tools": {
+      "name": "@corbits/artifact-tools",
+      "version": "0.0.2",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -426,19 +439,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/code-review": {
-      "name": "@corbits/code-review",
-      "version": "0.0.1",
-      "dependencies": {
-        "@corbits/github-tools": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@corbits/agent-directory": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/command-palette": {
       "name": "@corbits/command-palette",
       "version": "0.0.1",
@@ -464,6 +464,42 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/config-profiles": {
+      "name": "@corbits/config-profiles",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/inference-settings": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@workbench/hub-client": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/config-profiles-ui": {
+      "name": "@corbits/config-profiles-ui",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/api-query": "workspace:*",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
+        "arktype": "catalog:",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.11.2",
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.1",
         "typescript": "catalog:",
       },
     },
@@ -582,18 +618,15 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
-        "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "@workbench/onboarding": "workspace:*",
-        "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "postgres": "catalog:",
       },
       "devDependencies": {
         "@corbits/agent-directory-tools": "workspace:*",
         "@corbits/connections-tools": "workspace:*",
-        "@corbits/mcp-tools": "workspace:*",
         "@corbits/memory-tools": "workspace:*",
         "@corbits/routines-tools": "workspace:*",
         "@corbits/task-dispatch-tools": "workspace:*",
@@ -1243,6 +1276,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workbench-sim": {
+      "name": "@workbench/sim",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workflow-catalog": {
       "name": "@corbits/workflow-catalog",
       "version": "0.0.1",
@@ -1557,14 +1598,14 @@
         "typescript": "catalog:",
       },
     },
-    "workflows/code-review": {
-      "name": "@corbits/code-review-workflow",
+    "workflows/attio-task-agent": {
+      "name": "@corbits/attio-task-agent-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/code-review": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1591,6 +1632,20 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/exa-topic-watch": {
+      "name": "@corbits/exa-topic-watch-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1823,6 +1878,8 @@
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 
+    "@corbits/artifact-tools": ["@corbits/artifact-tools@workspace:packages/artifact-tools"],
+
     "@corbits/artifact-ui": ["@corbits/artifact-ui@workspace:packages/artifact-ui"],
 
     "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#81049ed", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-81049ed", "sha512-oTE0iFDyQdz0ifG1epo39pwaCaYaw19YcKXwfaZqAEQ56a1g9YIozXwH9CG4NaUTwcJKUeYGuNls6oJsMPisCw=="],
@@ -1830,6 +1887,8 @@
     "@corbits/artifacts-hub": ["@corbits/artifacts-hub@workspace:packages/artifacts-hub"],
 
     "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
+
+    "@corbits/attio-task-agent-workflow": ["@corbits/attio-task-agent-workflow@workspace:workflows/attio-task-agent"],
 
     "@corbits/bench": ["@corbits/bench@workspace:packages/bench"],
 
@@ -1841,15 +1900,15 @@
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
 
-    "@corbits/code-review": ["@corbits/code-review@workspace:packages/code-review"],
-
-    "@corbits/code-review-workflow": ["@corbits/code-review-workflow@workspace:workflows/code-review"],
-
     "@corbits/collateral-generation-workflow": ["@corbits/collateral-generation-workflow@workspace:workflows/collateral-generation"],
 
     "@corbits/command-palette": ["@corbits/command-palette@workspace:packages/command-palette"],
 
     "@corbits/commands": ["@corbits/commands@workspace:packages/commands"],
+
+    "@corbits/config-profiles": ["@corbits/config-profiles@workspace:packages/config-profiles"],
+
+    "@corbits/config-profiles-ui": ["@corbits/config-profiles-ui@workspace:packages/config-profiles-ui"],
 
     "@corbits/connections-tools": ["@corbits/connections-tools@workspace:packages/connections-tools"],
 
@@ -1864,6 +1923,8 @@
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 
     "@corbits/evals": ["@corbits/evals@workspace:packages/evals"],
+
+    "@corbits/exa-topic-watch-workflow": ["@corbits/exa-topic-watch-workflow@workspace:workflows/exa-topic-watch"],
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
@@ -2380,6 +2441,8 @@
     "@workbench/onboarding": ["@workbench/onboarding@workspace:packages/onboarding"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
+
+    "@workbench/sim": ["@workbench/sim@workspace:packages/workbench-sim"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
