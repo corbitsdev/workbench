@@ -8,12 +8,15 @@ export {
   SessionLaunchError,
   bridgeOrchestratorDeployContent,
   deployCodeSourcedWorkflow,
+  deployAdoptedCodeSourcedWorkflow,
   type SessionService,
   type DeployWorkflowDefinitionResult,
   type DeployWorkflowFromSourceParams,
   type DeployPreparedCodeSourcedWorkflowParams,
   type InstallAndApproveWorkflowSourceParams,
   type PreparedWorkflowDeployer,
+  type AdoptingWorkflowDeployer,
+  type DeployAdoptedWorkflowFromSourceParams,
   type DeployCodeSourcedWorkflowArgs,
 } from "./session-service";
 export {
