@@ -73,8 +73,10 @@ function hasTurnFailedPart(data: unknown): boolean {
  * The streaming reply's whole state machine, pure: an `inference.start`
  * opens an empty in-progress reply if nothing is showing yet (it never
  * wipes tokens already streamed), each `inference.text.delta` replaces it
- * with that delta's cumulative text, and `reactor.done`/`reactor.error`
- * clear it — the turn is over. `inference.done` only clears once tokens
+ * with that delta's cumulative text, and the turn-terminal events clear
+ * it — `reactor.done`/`reactor.error` for reactor-style runs,
+ * `connector.reply`/`message.run.ended` for folded runs, which never emit
+ * a per-turn `reactor.done` (CL-6432). `inference.done` only clears once tokens
  * have streamed (the persisted message takes over); an empty pending
  * survives so the typing pulse stays up across tool rounds. `inference.error`
  * always clears. A `chat.message` carrying `postUndeliveredNotice`'s
@@ -99,6 +101,17 @@ export function nextStreamingReplyState(
   // the first inference call.
   if (innerType === "reactor.start") return current ?? { text: "" };
   if (innerType === "reactor.done" || innerType === "reactor.error") {
+    return null;
+  }
+  // A folded run (@corbits/folded-runs — every workbench agent) never
+  // emits a per-turn `reactor.done`: its turn is finalized by
+  // `connector.reply` (the very event the chat orchestrator posts the
+  // persisted reply off, see chat-orchestrator.ts) and bracket-closed by
+  // `message.run.ended` either way. Without these two clears, a tool-only
+  // follow-up round after the visible reply (memory writes) reopens the
+  // empty pending pulse via its `inference.start` and nothing ever shuts
+  // it (CL-6432).
+  if (innerType === "connector.reply" || innerType === "message.run.ended") {
     return null;
   }
   if (innerType === "inference.error") return null;
