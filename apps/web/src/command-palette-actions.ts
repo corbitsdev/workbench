@@ -12,12 +12,11 @@
 // by Myra from inside a workbench now.
 //
 // Workbench creation is not one of those — there is no dialog to race, no
-// page to mount first: one click mints a fresh Myra workbench and
-// navigates straight into it (CL-6138, superseding the CL-6089/CL-6121
-// picker-and-dialog design). "new-workbench" and "new-agent" both funnel
-// through `requestNewWorkbench`, the same one-creation-verb hop the
-// sidebar's own "+" control uses. "New thread" is out of scope (killed by
-// owner decision).
+// page to mount first: "new-workbench" and "new-agent" both navigate
+// straight to the template picker (`/new`, CL-6342 — superseding CL-6138's
+// direct mint for these two entry points), the same hop the sidebar's own
+// "+" control uses. "New thread" is out of scope (killed by owner
+// decision).
 //
 // "New routine" (CL-6125, reworked CL-6139) needs none of that: it opens
 // the canvas column's routine pane, and canvas state lives in
@@ -28,11 +27,9 @@
 // either: the panel opens beside whatever page is already showing, it
 // never hops to `/routines` first the way this used to.
 
-import { toast } from "@corbits/react-ui";
-
 import { createPendingDialogRequest } from "@corbits/shell-layout";
 import { WORKBENCH_PATH_PREFIX, workbenchPath } from "./workbench-path";
-import { createAgentAndLaunch } from "./instant-agent-create";
+import { NEW_WORKBENCH_PATH } from "./routes";
 import { ensureMyraWorkbench } from "./myra-workbench";
 import { requestLibraryUpload } from "./library-upload";
 import type { RoutinePanelSubject } from "./shell/canvas-availability";
@@ -41,26 +38,6 @@ export const NEW_SKILL_EVENT = "workbench:skills:create";
 
 const newSkillRequest = createPendingDialogRequest();
 
-/**
- * The one creation verb: mints a fresh Myra workbench and navigates
- * straight into it — no dialog, no picker. Every "create a workbench"
- * affordance in the app (the sidebar's own "+" control, the command
- * palette's "New workbench", the routines page's "no taskable agents"
- * empty state) funnels through this one function. Fails closed with a
- * toast rather than a silent no-op, e.g. a bench that predates seeding
- * and has no default setup template.
- */
-export async function requestNewWorkbench(args: {
-  readonly tenantId: string | null;
-  readonly navigate: (to: string) => void;
-}): Promise<void> {
-  if (args.tenantId === null) return;
-  try {
-    await createAgentAndLaunch(args.tenantId, args.navigate);
-  } catch {
-    toast("Couldn't create the workbench — try again.");
-  }
-}
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
 
@@ -170,12 +147,11 @@ export type ActionCommandContext = {
 };
 
 /**
- * Runs one action command. "new-workbench" and "new-agent" both mint
- * directly — see `requestNewWorkbench`'s doc; "new-skill" still goes
- * through a pending flag when the palette fires it off-route (see the
- * module doc), so the target page's own mount effect opens the dialog
- * instead of a dispatch racing against that page's not-yet-mounted
- * listener.
+ * Runs one action command. "new-workbench" and "new-agent" both open the
+ * template picker (see the module doc); "new-skill" still goes through a
+ * pending flag when the palette fires it off-route (see the module doc),
+ * so the target page's own mount effect opens the dialog instead of a
+ * dispatch racing against that page's not-yet-mounted listener.
  */
 export async function runActionCommand(
   id: ActionCommandId,
@@ -184,10 +160,7 @@ export async function runActionCommand(
   switch (id) {
     case "new-workbench":
     case "new-agent": {
-      await requestNewWorkbench({
-        tenantId: ctx.tenantId,
-        navigate: ctx.navigate,
-      });
+      ctx.navigate(NEW_WORKBENCH_PATH);
       return;
     }
     case "new-routine": {

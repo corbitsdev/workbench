@@ -49,9 +49,8 @@ import {
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
-import { requestNewWorkbench } from "../command-palette-actions";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
-import { matchesRoute, SETTINGS_PATH } from "../routes";
+import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
@@ -109,13 +108,6 @@ export function Sidebar({
   readonly onNavigate: (to: string) => void;
   readonly onSignOut: () => void;
 }) {
-  const { selectedTenantId } = useBench();
-  const newWorkbench = () =>
-    void requestNewWorkbench({
-      tenantId: selectedTenantId,
-      navigate: onNavigate,
-    });
-
   return (
     <SidebarPanel
       className="shell-sidebar"
@@ -132,7 +124,7 @@ export function Sidebar({
           size="sm"
           aria-label="New workbench"
           title="New workbench"
-          onClick={newWorkbench}
+          onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
         >
           <Plus />
         </Button>

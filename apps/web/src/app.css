@@ -3030,3 +3030,119 @@ tr.insights-row-clickable:hover {
   font-variant-numeric: tabular-nums;
   font-weight: 550;
 }
+
+/* ---------------- new-workbench picker (CL-6342) ---------------- */
+/* Screen 1 of the approved mock: one row list, no card grid. The
+   selection rail (`box-shadow: inset 2px 0 0 0 var(--shell-accent)`)
+   matches the sidebar's own active-row treatment exactly. */
+.new-workbench-picker {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 3.25rem 1.5rem 2.5rem;
+}
+
+.new-workbench-picker h3 {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.new-workbench-picker-sub {
+  margin: 0.3rem 0 1.5rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.new-workbench-pick-list {
+  border: 1px solid var(--border);
+}
+
+.new-workbench-pick-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.85rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.new-workbench-pick-row:last-child {
+  border-bottom: 0;
+}
+
+.new-workbench-pick-row:hover:not([aria-disabled="true"]) {
+  background: var(--muted);
+}
+
+.new-workbench-pick-row[data-selected="true"] {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+
+.new-workbench-pick-glyph {
+  width: 2.1rem;
+  height: 2.1rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-strong, var(--border));
+  color: var(--muted-foreground);
+}
+
+.new-workbench-pick-row[data-selected="true"] .new-workbench-pick-glyph {
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  color: var(--primary);
+}
+
+.new-workbench-pick-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.new-workbench-pick-title {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.new-workbench-pick-promise {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin-top: 0.1rem;
+}
+
+.new-workbench-pick-row[aria-disabled="true"] {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.new-workbench-pick-cta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.new-workbench-pick-row[data-selected="true"] .new-workbench-pick-cta {
+  color: var(--primary);
+}
+
+.new-workbench-picker-foot {
+  margin-top: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.new-workbench-picker-foot-note {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
