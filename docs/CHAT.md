@@ -69,6 +69,38 @@ platform's mail-send shape — a single text part rides as bare mail content;
 anything else becomes a list of `text/plain`/`application/json` MIME
 attachments — and that encoding is confined to the dispatch seam.
 
+## One turn in flight per workbench (CL-6331)
+
+A workbench claims itself before it asks any agent for a turn: `dispatchTurn`
+runs behind a `WorkbenchTurnQueue` (`packages/chat/src/turn-queue.ts`), keyed
+by `workbenchId` rather than thread — an owner call, since a workbench's
+agents share one room and a second agent starting a turn while the first is
+mid-review is exactly the collision this closes. A message arriving while a
+turn is already in flight for its workbench queues instead of dispatching,
+and the room is told live (`chat.turn-queued`, non-persisted — a queued
+message's own row already carries it on the timeline; this is only the
+"still waiting" signal a client renders as a queued strip). Once the
+in-flight turn's claim releases, everything that queued behind it dispatches
+together as **one** next turn, recipients unioned and parts concatenated in
+arrival order — never as N separate turns replaying one after another.
+
+The claim (`packages/chat/src/turn-claims.ts`) reuses the tryClaim/release
+shape `write-claims.ts` proved out for the finalized-turn write surfaces,
+not the same table: a turn claim is in-memory, process-local state, released
+once `dispatchTurn`'s own call settles. That is an honest, disclosed gap —
+at this seam `dispatchTurn` only reaches "the mail was handed to the agent's
+mailbox," not "the agent's turn actually finished" (the real turn, and its
+own completion signal, move to this seam in CL-6329) — so a claim also
+expires on a TTL (`turnTimeoutMs`) as the backstop against a dispatch that
+never settles at all, rather than wedging a workbench behind it forever.
+
+A host that composes more than one send surface against the same
+`ChatPlatform` (the hub wires `createChatRoutes`, the workflow-participant
+router, and the Slack tag mount this way) constructs one `WorkbenchTurnQueue`
+and injects it everywhere, the same "one instance, shared" pattern
+`workbenchSubscribers` already follows — otherwise each surface would only
+serialize against its own traffic, not the others'.
+
 ## Threads: workbench → thread → sub-thread
 
 A workbench's timeline is itself a thread — its **root thread**, one per
@@ -281,7 +313,12 @@ app.route("/api/tenants/:tenantId/chat", chatRoutes);
 ```
 
 Any host that can build an equivalent `ChatPlatform` can mount chat the same
-way — the port, not this hub, is the integration contract.
+way — the port, not this hub, is the integration contract. `turnQueue`
+(see [One turn in flight per workbench](#one-turn-in-flight-per-workbench-cl-6331))
+defaults to a fresh, router-scoped queue when omitted, same as
+`workbenchSubscribers`; a host that also drives sends through another
+surface (a workflow-participant router, a Slack mount) constructs one
+`WorkbenchTurnQueue` itself and passes it to every one of them.
 
 ## Consuming it from the UI
 

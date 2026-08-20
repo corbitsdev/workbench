@@ -29,6 +29,7 @@ import {
   serializeWorkbenchHostWorkflow,
   type WorkbenchSubscriberRegistry,
   type WorkbenchTenancyStore,
+  type WorkbenchTurnQueue,
   type ChatPlatform,
   type ChatStore,
   type RoomMessageStore,
@@ -64,6 +65,11 @@ export type MountWorkbenchSlackTagDeps = {
   readonly roomMessages: RoomMessageStore;
   readonly chatTenancy: Pick<WorkbenchTenancyStore, "createWorkbenchTenant">;
   readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
+  /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
+   * is given (CL-6331) — shared, never a second instance, so a Slack
+   * send and a person's own message for the same channel serialize
+   * against each other too. */
+  readonly turnQueue: WorkbenchTurnQueue;
   readonly workbenchHostInferencePreferences?: CreateChatRoutesDeps["workbenchHostInferencePreferences"];
   readonly turnTimeoutMs: number;
 };
@@ -216,6 +222,7 @@ export async function mountWorkbenchSlackTag(
           platform: deps.chatPlatform,
           roomMessages: deps.roomMessages,
           publish: deps.workbenchSubscribers.publish,
+          turnQueue: deps.turnQueue,
         },
         {
           tenantId: input.tenantId,

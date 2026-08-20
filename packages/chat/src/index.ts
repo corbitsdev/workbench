@@ -95,6 +95,16 @@ export {
   ChatPresenceEventData,
   ChatPresenceSnapshotEventData,
 } from "./stream-events";
+
+export { createInMemoryTurnClaimStore } from "./turn-claims";
+export type { TurnClaim, TurnClaimStore } from "./turn-claims";
+export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
+export type {
+  DispatchTurnBatch,
+  QueuedTurn,
+  WorkbenchTurnQueue,
+  WorkbenchTurnQueueDeps,
+} from "./turn-queue";
 export type {
   WorkbenchEvents,
   WorkbenchLauncher,

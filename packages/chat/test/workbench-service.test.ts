@@ -25,6 +25,8 @@ import {
   createInMemoryRoomMessageStore,
   postRoomMessage,
 } from "../src/room-messages";
+import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
+import type { ChatWorkbenchEvent } from "../src/platform-port";
 
 describe("postCannedGreeting (CL-6126)", () => {
   test("posts the greeting onto the chat's own timeline, attributed to the agent's run", async () => {
@@ -1056,5 +1058,115 @@ describe("POST /workbenches/:id/invite", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { address: string };
     expect(body.address).toBe("ins_invited1@acme.example");
+  });
+});
+
+describe("one in-flight turn per workbench (CL-6331)", () => {
+  test("three rapid messages to a room with two agents produce ordered, non-overlapping turns", async () => {
+    // A controllable dispatcher: `sendMail` for the first agent
+    // (`ins_a1`) is held open, once, until this test releases it — so
+    // the test can prove a message arriving mid-turn queues rather than
+    // dispatching, deterministically rather than racing the fake.
+    let releaseFirstDispatch!: () => void;
+    const held = new Promise<void>((resolve) => {
+      releaseFirstDispatch = resolve;
+    });
+    let resolveFirstDispatchStarted!: () => void;
+    const firstDispatchStarted = new Promise<void>((resolve) => {
+      resolveFirstDispatchStarted = resolve;
+    });
+    let holdConsumed = false;
+
+    const testPlatform = fakePlatform();
+    const deliverMail = testPlatform.sendMail.bind(testPlatform);
+    testPlatform.sendMail = async (input) => {
+      if (input.workbenchId === "ins_a1" && !holdConsumed) {
+        holdConsumed = true;
+        resolveFirstDispatchStarted();
+        await held;
+      }
+      return deliverMail(input);
+    };
+
+    const registry = createWorkbenchSubscriberRegistry();
+    const deps = buildDeps({
+      platform: testPlatform,
+      workbenchSubscribers: registry,
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "review",
+      participants: ["ins_a1@acme.example", "ins_b1@acme.example"],
+    });
+
+    const queuedEvents: ChatWorkbenchEvent[] = [];
+    registry.subscribe(workbench.id, (event) => {
+      if (event.type === "chat.turn-queued") queuedEvents.push(event);
+    });
+
+    const send = (text: string) =>
+      app.request(`/workbenches/${workbench.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text }] }),
+      });
+
+    // Message 1 mentions @ins_a1 — it wins the workbench's turn claim
+    // and its dispatch is held open by the fake above.
+    const first = await send("hi @ins_a1, please review this");
+    expect(first.status).toBe(201);
+    await firstDispatchStarted;
+
+    // Messages 2 and 3 arrive while the first turn is still in flight —
+    // both must queue rather than dispatch, and the room must be told.
+    const second = await send("hi @ins_b1, you too");
+    expect(second.status).toBe(201);
+    const third = await send("one more thing for the group");
+    expect(third.status).toBe(201);
+
+    // The first turn's dispatch is still held open — nothing has
+    // actually been recorded as sent yet, only started.
+    expect(testPlatform.sentMail).toHaveLength(0);
+    expect(queuedEvents).toHaveLength(2);
+    expect(
+      queuedEvents.map(
+        (event) => (event.data as { queueLength: number }).queueLength,
+      ),
+    ).toEqual([1, 2]);
+
+    releaseFirstDispatch();
+    await settleFanout();
+
+    // The batched next turn reaches both agents — @ins_b1 from message
+    // 2, and @ins_a1 again from message 3's default-routing-to-host —
+    // deduplicated to one dispatch per agent, never two overlapping
+    // turns.
+    expect(testPlatform.sentMail).toHaveLength(3);
+    const secondTurnRecipients = testPlatform.sentMail
+      .slice(1)
+      .map((mail) => mail.workbenchId)
+      .sort();
+    expect(secondTurnRecipients).toEqual(["ins_a1", "ins_b1"]);
+
+    // Both queued messages' text reached the batched turn, ordered:
+    // message 2's part decodes before message 3's.
+    for (const mail of testPlatform.sentMail.slice(1)) {
+      const attachments = (
+        mail.content as {
+          attachments: readonly { data: string }[];
+        }
+      ).attachments;
+      const decoded = attachments
+        .map((attachment) =>
+          Buffer.from(attachment.data, "base64").toString("utf8"),
+        )
+        .join("\n");
+      expect(decoded).toContain("you too");
+      expect(decoded).toContain("one more thing");
+      expect(
+        decoded.indexOf("you too") < decoded.indexOf("one more thing"),
+      ).toBe(true);
+    }
   });
 });

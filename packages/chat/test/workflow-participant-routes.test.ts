@@ -16,6 +16,8 @@ import {
   type WorkflowParticipantRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-participant-routes";
+import { createInMemoryTurnClaimStore } from "../src/turn-claims";
+import { createWorkbenchTurnQueue } from "../src/turn-queue";
 import { fakePlatform, TENANT } from "./test-support";
 
 const RUN_ID = "run_1";
@@ -39,11 +41,18 @@ function buildApp(
   overrides: Partial<CreateWorkflowParticipantRoutesDeps> = {},
 ): Hono {
   const store = overrides.store ?? createInMemoryChatStore();
+  const publish = overrides.publish ?? (() => undefined);
   return createWorkflowParticipantRoutes({
     store,
     platform: overrides.platform ?? fakePlatform(),
     roomMessages: overrides.roomMessages ?? createInMemoryRoomMessageStore(),
-    publish: overrides.publish ?? (() => undefined),
+    publish,
+    turnQueue:
+      overrides.turnQueue ??
+      createWorkbenchTurnQueue({
+        claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
+        publish,
+      }),
     authenticator: overrides.authenticator ?? authenticateAsRun,
   }) as unknown as Hono;
 }

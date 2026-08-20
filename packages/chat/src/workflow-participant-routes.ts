@@ -102,6 +102,11 @@ export type CreateWorkflowParticipantRoutesDeps = {
     SendWorkbenchMessageDeps["platform"];
   readonly roomMessages: SendWorkbenchMessageDeps["roomMessages"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
+  /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
+   * is given (CL-6331) — shared, never a second instance, so a
+   * workflow-child message and a person's own message for the same
+   * workbench serialize against each other too. */
+  readonly turnQueue: SendWorkbenchMessageDeps["turnQueue"];
   readonly authenticator: WorkflowRunAuthenticator;
 };
 
@@ -222,6 +227,7 @@ export function createWorkflowParticipantRoutes(
         platform: deps.platform,
         roomMessages: deps.roomMessages,
         publish: deps.publish,
+        turnQueue: deps.turnQueue,
       },
       {
         tenantId: scope.tenantId,

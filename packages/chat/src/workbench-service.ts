@@ -49,6 +49,7 @@ import {
   type RoomMessageStore,
 } from "./room-messages";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
+import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ChatStore } from "./store";
 
@@ -918,6 +919,15 @@ export type SendWorkbenchMessageDeps = {
   /** Dispatch only: reaching an agent's own mailbox to ask it for a
    * turn. Nothing on the human write path touches it. */
   readonly platform: Pick<WorkbenchMail, "sendMail">;
+  /**
+   * One in-flight turn per workbench (CL-6331): every message's
+   * recipient fan-out runs through this queue rather than dispatching
+   * straight to `dispatchTurn`, so a message arriving mid-turn queues
+   * instead of racing the turn already running, and batches with
+   * whatever else queued alongside it into one combined next turn once
+   * that claim releases. See `./turn-queue.ts`.
+   */
+  readonly turnQueue: WorkbenchTurnQueue;
 };
 
 export type SendWorkbenchMessageInput = {
@@ -940,13 +950,19 @@ export type SendWorkbenchMessageResult = {
   readonly id: string;
   readonly createdAt: string;
   /**
-   * Settles when every recipient this message routes to has been
-   * dispatched a turn (or its failure surfaced as a notice on the
-   * timeline — it never rejects). Dispatch can wake a slept agent,
-   * which is a full redeploy, so the sender's own message is persisted,
+   * Settles once this message's routing intent is resolved: either its
+   * turn actually dispatched (or its failure surfaced as a notice on
+   * the timeline — it never rejects), or — CL-6331 — it queued behind a
+   * turn already in flight for this workbench, in which case this
+   * settles as soon as it's queued, not once it eventually dispatches
+   * as part of a later batch. Dispatch can wake a slept agent, which is
+   * a full redeploy, so the sender's own message is persisted,
    * published, and returned without waiting on any of it; a caller that
-   * needs the routing settled (a test, or a synchronous relay) awaits
-   * this.
+   * needs a message actually SENT (not merely queued) to be settled —
+   * a test proving delivery, or a synchronous relay — has to know a
+   * queued message's own delivery lands on whichever later message's
+   * `fanoutDelivered` triggers the drain (see `./turn-queue.ts`), not on
+   * this one.
    */
   readonly fanoutDelivered: Promise<void>;
 };
@@ -1105,6 +1121,46 @@ async function routeToRecipients(
       ? (mergeContextIntoParts(contextText, input.messageParts) as PartType[])
       : input.messageParts;
 
+  await deps.turnQueue.run(
+    input.workbenchId,
+    {
+      messageId,
+      principalId: input.principalId,
+      recipients,
+      parts: turnParts,
+    },
+    (batch) =>
+      dispatchTurnBatch(deps, input.tenantId, input.workbenchId, batch),
+  );
+}
+
+/**
+ * Runs one workbench turn — either a single message's own fan-out, or
+ * several queued messages batched together (CL-6331) — against every
+ * recipient the batch names, unioned in arrival order and de-duplicated
+ * so an agent mentioned across more than one queued message is still
+ * only asked once. Each queued message's parts are concatenated in the
+ * same order, so the combined context an agent sees reads the same
+ * left-to-right order the room itself does. Never rejects: a recipient
+ * that can't be reached gets an undelivered notice in its own voice,
+ * exactly as a single, unqueued message's fan-out always has.
+ */
+async function dispatchTurnBatch(
+  deps: Pick<SendWorkbenchMessageDeps, "platform" | "roomMessages" | "publish">,
+  tenantId: string,
+  workbenchId: string,
+  batch: readonly QueuedTurn[],
+): Promise<void> {
+  const recipientSet = new Set<string>();
+  for (const turn of batch) {
+    for (const agentAddress of turn.recipients) recipientSet.add(agentAddress);
+  }
+  const recipients = [...recipientSet];
+  const parts = batch.flatMap((turn) => turn.parts) as PartType[];
+  const last = batch[batch.length - 1];
+  if (last === undefined) return;
+  const messageIds = batch.map((turn) => turn.messageId);
+
   // Concurrent: agents are independent, and a dispatch that has to wake
   // its target pays a full redeploy — serially, one slept agent would
   // delay every agent mentioned after it.
@@ -1112,27 +1168,27 @@ async function routeToRecipients(
     recipients.map(async (agentAddress) => {
       try {
         await dispatchTurn(deps, {
-          tenantId: input.tenantId,
-          workbenchId: input.workbenchId,
-          principalId: input.principalId,
+          tenantId,
+          workbenchId,
+          principalId: last.principalId,
           agentAddress,
-          parts: turnParts,
+          parts,
         });
       } catch (err) {
         fanoutLog.error(
           "Asking {agentAddress} for a turn failed for workbench " +
-            "{workbenchId}'s message {messageId}; posting an undelivered " +
-            "notice in its voice: {err}",
+            "{workbenchId}'s message(s) {messageIds}; posting an " +
+            "undelivered notice in its voice: {err}",
           {
             agentAddress,
-            workbenchId: input.workbenchId,
-            messageId,
+            workbenchId,
+            messageIds,
             err,
           },
         );
         await postUndeliveredNotice(deps, {
-          tenantId: input.tenantId,
-          workbenchId: input.workbenchId,
+          tenantId,
+          workbenchId,
           agentAddress,
         });
       }
