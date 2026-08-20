@@ -48,8 +48,6 @@ import {
   adaptHostScheduler,
   createProxyWorkflowRunRepoStore,
   createWorkflowHostScheduler,
-  createWorkflowSpawnChild,
-  createWorkflowSpawnSuspendableChild,
   createWorkflowStepInvoker,
   type GrantEvaluator,
   type LoadParkedApproval,
@@ -271,10 +269,6 @@ export function createSidecarSubstrateFactory(
       kind: "workflow-run" as const,
       id: validated.WORKFLOW_RUN_REPO_ID,
     };
-    const workflowDefinitionRepoId = {
-      kind: "workflow" as const,
-      id: validated.WORKFLOW_DEFINITION_REPO_ID,
-    };
     const principal: WorkflowRunWorkflowProcessPrincipal = {
       kind: "workflow-process",
       anchorRunId: env.spawn.anchorRunId,
@@ -365,7 +359,7 @@ export function createSidecarSubstrateFactory(
       toolless: false,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
-      definitionId: workflowDefinitionRepoId.id,
+      definitionId: validated.WORKFLOW_DEFINITION_ID,
     };
     const buildStepEnv = createSidecarStepBuildEnv(
       durableConversation !== undefined
@@ -458,7 +452,7 @@ export function createSidecarSubstrateFactory(
       toolless: true,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
-      definitionId: workflowDefinitionRepoId.id,
+      definitionId: validated.WORKFLOW_DEFINITION_ID,
     });
     const bodyInvokeStep: SidecarBodyStepInvoker = (
       req,
@@ -576,7 +570,6 @@ export function createSidecarSubstrateFactory(
       substrate,
       workflowRunRepoId,
       workflowRunRef: validated.WORKFLOW_RUN_REF,
-      workflowDefinitionRef: validated.WORKFLOW_DEFINITION_REF,
       principal,
       scheduler,
       invokeStep: childInvokeStep,
@@ -585,32 +578,20 @@ export function createSidecarSubstrateFactory(
       bodyInvokeStep,
       dataDir: validated.SIDECAR_DATA_DIR,
     };
+    // Terminal childWorkflow executor. `run-child` builds the in-memory
+    // resolver from this plus the lifted-body map it extracts after loading
+    // the parent's re-verified definition, so an owned inline child spawns
+    // with no on-disk asset read.
     const runChild = createSidecarRunChild(childRunDeps);
 
-    const spawnChild = createWorkflowSpawnChild({
-      substrate,
-      principal,
-      deployRef: validated.WORKFLOW_DEFINITION_REF,
-      runChild,
-    });
-
     // An onTrigger section runs each event's body as a suspendable child.
-    // The resolving adapter maps the body's definition ref to a definition
-    // and delegates to the sidecar spawner, which returns the live handle
-    // `runOnTrigger` drives across the body's approval parks.
-    const spawnSuspendableChild = createWorkflowSpawnSuspendableChild({
-      substrate,
-      principal,
-      deployRef: validated.WORKFLOW_DEFINITION_REF,
-      runSuspendableChild: createSidecarSpawnSuspendableChild(childRunDeps),
-      // Hub-approved wire hash per referenced onTrigger body id, carried on
-      // the parent's signed deploy frame and threaded here by the sidecar's
-      // deploy router (`REFERENCED_DEFINITION_HASHES` spawn-time env, parsed
-      // into `env.spawn.referencedDefinitionHashes` by the workflow-host
-      // child bootstrap). Not a sidecar recompute -- the hub is the
-      // authority the body path re-verifies against.
-      referencedDefinitionHashes: env.spawn.referencedDefinitionHashes,
-    });
+    // `run-child` builds the in-memory body resolver from this raw executor
+    // plus the lifted-body map it extracts after re-evaluating the parent's
+    // closure, so a body resolves in-process with no on-disk read and no
+    // separate per-body re-verify -- the parent's re-verify already covers
+    // every inline body.
+    const runSuspendableChild =
+      createSidecarSpawnSuspendableChild(childRunDeps);
 
     // Per-run scratch reclamation for the cold (multi-step) path. The
     // run-loop fires this once each run reaches its terminal status; it
@@ -700,12 +681,10 @@ export function createSidecarSubstrateFactory(
       workflowRunRepoId,
       workflowRunRef: validated.WORKFLOW_RUN_REF,
       principal,
-      workflowDefinitionRepoId,
-      workflowDefinitionRef: validated.WORKFLOW_DEFINITION_REF,
       invokeStep,
       initialSources: stepInferenceSources,
-      spawnChild,
-      spawnSuspendableChild,
+      runChild,
+      runSuspendableChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
       loadParkedApproval,

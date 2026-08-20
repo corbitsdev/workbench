@@ -21,6 +21,7 @@ import { type } from "arktype";
 import { type AnnotatedPluginFactory } from "@intx/agent";
 import { getLogger } from "@intx/log";
 import {
+  type HostPlatform,
   type LoadedToolFactory,
   type LoadedToolPackage,
   type RegistryConfig,
@@ -171,6 +172,18 @@ function assertKnownHostArch(arch: NodeJS.Architecture): void {
       `sidecar boot: process.arch ${JSON.stringify(arch)} is not a recognized npm \`cpu\` token; tool-package platform filtering would be unreliable`,
     );
   }
+}
+
+/**
+ * The host platform token pair the `@intx/tool-packaging` loader filters
+ * manifest entries against, asserted against npm's `os`/`cpu` namespaces
+ * first. Shared by the per-step tool apply below and the workflow-definition
+ * closure materializer so both filter against one resolution.
+ */
+export function resolveHostPlatform(): HostPlatform {
+  assertKnownHostPlatform(process.platform);
+  assertKnownHostArch(process.arch);
+  return { os: process.platform, cpu: process.arch };
 }
 
 // Sentinel `previousDeployId` for an instance that has never applied
@@ -328,12 +341,10 @@ export async function materializeToolPackages(args: {
     rootDir: args.cacheRoot,
     maxBytes: args.cacheMaxBytes,
   });
-  assertKnownHostPlatform(process.platform);
-  assertKnownHostArch(process.arch);
   const loader = createToolLoader({
     cache,
     registries: args.registries,
-    host: { os: process.platform, cpu: process.arch },
+    host: resolveHostPlatform(),
     maxRegistryTarballBytes: args.registryMaxTarballBytes,
   });
   const result = await applyAtomic({
