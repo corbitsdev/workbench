@@ -330,6 +330,7 @@ describe("agentDefinitionsHaveToolGrants", () => {
           {
             id: "1",
             name: "architecture-reviewer",
+            displayName: null,
             toolPackagePins: [],
             skills: [],
             model: null,
@@ -348,6 +349,7 @@ describe("agentDefinitionsHaveToolGrants", () => {
           {
             id: "1",
             name: "architecture-reviewer",
+            displayName: null,
             toolPackagePins: [],
             skills: [],
             model: null,
@@ -355,6 +357,7 @@ describe("agentDefinitionsHaveToolGrants", () => {
           {
             id: "2",
             name: "code-review",
+            displayName: null,
             toolPackagePins: ["@corbits/github-tools"],
             skills: [],
             model: null,

@@ -1,0 +1,5 @@
+| Eval | plumbing-only |
+| --- | --- |
+| ai-daily-research | asksQuestions: FAIL<br>noToolCalls: PASS<br>noBuildBeforeAnswers: PASS<br>noBuildBeforeAnswers: PASS<br>memoryWritten: FAIL<br>namesRequiredTools: FAIL<br>agentCreatedInWorkbench: FAIL<br>routineCreatedOnlyAfterOk: PASS<br>approvalGated: PASS<br>namesRequiredTools: FAIL<br>routineCreated: FAIL<br>judge: skip |
+| docs-on-sdk-change | asksQuestions: FAIL<br>noToolCalls: PASS<br>noBuildBeforeAnswers: PASS<br>noBuildBeforeAnswers: PASS<br>memoryWritten: FAIL<br>namesRequiredTools: FAIL<br>agentCreatedInWorkbench: FAIL<br>routineCreatedOnlyAfterOk: PASS<br>approvalGated: PASS<br>namesRequiredTools: FAIL<br>routineCreated: FAIL<br>judge: skip |
+| github-pr-review-factory | noBuildBeforeAnswers: PASS<br>judge: skip<br>githubConnectedViaConnectionsLayer: PASS<br>agentDefinitionsHaveToolGrants: FAIL<br>routineCreatedOnlyAfterOk: PASS<br>approvalGated: PASS<br>triggerIsWebhookPerPr: PASS<br>judge: skip<br>reviewCommentsAttributable: skip<br>suggestedFixesStructurallyValid: FAIL<br>outwardGitHubActionsRespectGrantBoundary: FAIL<br>wholeRunInspectable: skip |

@@ -32,6 +32,7 @@ describe("agentHasTools", () => {
         {
           id: "def-1",
           name: "AI Daily researcher",
+          displayName: null,
           toolPackagePins: [
             "@corbits/web-search-tools",
             "@corbits/memory-tools",
@@ -53,6 +54,7 @@ describe("agentHasTools", () => {
         {
           id: "def-1",
           name: "AI Daily researcher",
+          displayName: null,
           toolPackagePins: ["@corbits/memory-tools"],
           skills: [],
           model: null,

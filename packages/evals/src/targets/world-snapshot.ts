@@ -78,7 +78,8 @@ async function readAgentDefinitions(
       const capabilities = readAgentCapabilities(workflowJson);
       return {
         id: row.id,
-        name: row.description ?? row.name,
+        name: row.name,
+        displayName: row.description,
         toolPackagePins: capabilities.toolPackagePins.map((pin) => pin.name),
         skills: [] as readonly string[],
         model: capabilities.model ?? null,
