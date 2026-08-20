@@ -307,9 +307,11 @@ export const chatMigrations: readonly ChatMigration[] = [
   // The room's own timeline (CL-6327). Messages used to be platform mail
   // read back through the platform port; they are workbench data now, and
   // this table is where they live. Everything keyed by the old mail ids —
-  // thread membership, reactions, pins, client send ids — names messages
-  // that no longer exist, so those rows go with them rather than dangling
-  // against a message store that never had them.
+  // thread membership, reactions, pins, client send ids, and every reply
+  // thread's own parent — names messages that no longer exist, so those
+  // rows go with them rather than dangling against a message store that
+  // never had them. Root and delivery threads are keyed to a workbench
+  // and a run ref, not to a message, and survive.
   {
     name: "0019_workbench_messages",
     sql: `
@@ -323,7 +325,7 @@ export const chatMigrations: readonly ChatMigration[] = [
         "run_id" text,
         "thread_id" text,
         "parts" jsonb NOT NULL,
-        "created_at" timestamptz NOT NULL DEFAULT now()
+        "created_at" timestamptz(3) NOT NULL DEFAULT now()
       );
 
       CREATE INDEX IF NOT EXISTS "workbench_messages_feed_idx"
@@ -334,6 +336,7 @@ export const chatMigrations: readonly ChatMigration[] = [
       DELETE FROM "chat"."pinned_messages";
       DELETE FROM "chat"."message_client_ids";
       DELETE FROM "chat"."block_responses";
+      DELETE FROM "chat"."workbench_threads" WHERE "kind" = 'reply';
     `,
   },
 ];

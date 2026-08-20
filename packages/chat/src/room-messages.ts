@@ -9,7 +9,7 @@
 // send, an agent's reply, a join notice, a command result. Dispatching an
 // agent turn is a separate act (see `dispatchTurn` in
 // `./workbench-service.ts`) that this module knows nothing about.
-import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 
 import type { Part } from "./parts";
 import { workbenchMessages } from "./schema";
@@ -193,16 +193,10 @@ function pageOf(newestFirst: readonly RoomMessage[]): ListedRoomMessages {
     : { items };
 }
 
-function summarize(
-  messages: readonly RoomMessage[],
-  sinceCreatedAt: string | undefined,
+function summaryOf(
+  newest: RoomMessage,
+  unreadCount: number,
 ): RoomActivitySummary {
-  const newest = messages[messages.length - 1];
-  if (newest === undefined) return { unreadCount: 0 };
-  const unreadCount = messages.filter(
-    (message) =>
-      sinceCreatedAt === undefined || message.createdAt > sinceCreatedAt,
-  ).length;
   const preview = previewOf(newest.parts);
   const base = { unreadCount, lastActivityAt: newest.createdAt };
   return preview.length === 0 ? base : { ...base, preview };
@@ -311,33 +305,57 @@ export function createDrizzleRoomMessageStore(
       const workbenchIds = input.workbenches.map(
         (workbench) => workbench.workbenchId,
       );
-      // The newest message per workbench plus the unread count, in one
-      // scan of the feed index — never one query per row of the list.
-      const rows = await db
-        .select()
+      const inTenant = eq(workbenchMessages.tenantId, input.tenantId);
+
+      // Two bulk queries, never a read of every message the listed
+      // workbenches hold: DISTINCT ON walks the feed index backwards to
+      // the newest row per workbench, and one grouped COUNT tallies the
+      // unread. A workbench holding a hundred thousand messages costs
+      // the list row exactly what a workbench holding three does.
+      const newestRows = await db
+        .selectDistinctOn([workbenchMessages.workbenchId])
         .from(workbenchMessages)
         .where(
-          and(
-            eq(workbenchMessages.tenantId, input.tenantId),
-            inArray(workbenchMessages.workbenchId, workbenchIds),
-          ),
+          and(inTenant, inArray(workbenchMessages.workbenchId, workbenchIds)),
         )
-        .orderBy(asc(workbenchMessages.createdAt), asc(workbenchMessages.id));
+        .orderBy(
+          asc(workbenchMessages.workbenchId),
+          desc(workbenchMessages.createdAt),
+          desc(workbenchMessages.id),
+        );
+      if (newestRows.length === 0) return {};
 
-      const byWorkbench = new Map<string, RoomMessage[]>();
-      for (const row of rows) {
-        const message = toRoomMessage(row as MessageRow);
-        const messages = byWorkbench.get(message.workbenchId) ?? [];
-        messages.push(message);
-        byWorkbench.set(message.workbenchId, messages);
-      }
+      // Each workbench counted from its own read cursor, as an OR of
+      // per-workbench conditions rather than a query per row of the
+      // list. No cursor means everything in that workbench is unread.
+      const unreadConditions = input.workbenches.map((workbench) => {
+        const cursor =
+          workbench.sinceCreatedAt === undefined
+            ? new Date(0)
+            : new Date(workbench.sinceCreatedAt);
+        return and(
+          eq(workbenchMessages.workbenchId, workbench.workbenchId),
+          gt(workbenchMessages.createdAt, cursor),
+        );
+      });
+      const unread = await db
+        .select({
+          workbenchId: workbenchMessages.workbenchId,
+          unreadCount: count(),
+        })
+        .from(workbenchMessages)
+        .where(and(inTenant, or(...unreadConditions)))
+        .groupBy(workbenchMessages.workbenchId);
+      const unreadByWorkbenchId = new Map(
+        unread.map((row) => [row.workbenchId, row.unreadCount]),
+      );
+
       const result: Record<string, RoomActivitySummary> = {};
-      for (const workbench of input.workbenches) {
-        const messages = byWorkbench.get(workbench.workbenchId);
-        if (messages === undefined) continue;
-        result[workbench.workbenchId] = summarize(
-          messages,
-          workbench.sinceCreatedAt,
+      for (const row of newestRows) {
+        const newest = toRoomMessage(row as MessageRow);
+        result[newest.workbenchId] = summaryOf(
+          newest,
+          unreadByWorkbenchId.get(newest.workbenchId) ?? 0,
         );
       }
       return result;
@@ -405,11 +423,14 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
         const messages = byWorkbench.get(
           keyOf(input.tenantId, workbench.workbenchId),
         );
-        if (messages === undefined) continue;
-        result[workbench.workbenchId] = summarize(
-          messages,
-          workbench.sinceCreatedAt,
-        );
+        const newest = messages?.[messages.length - 1];
+        if (messages === undefined || newest === undefined) continue;
+        const unreadCount = messages.filter(
+          (message) =>
+            workbench.sinceCreatedAt === undefined ||
+            message.createdAt > workbench.sinceCreatedAt,
+        ).length;
+        result[workbench.workbenchId] = summaryOf(newest, unreadCount);
       }
       return result;
     },

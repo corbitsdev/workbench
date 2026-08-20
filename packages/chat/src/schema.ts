@@ -150,7 +150,13 @@ export const workbenchMessages = chatSchema.table(
     runId: text("run_id"),
     threadId: text("thread_id"),
     parts: jsonb("parts").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    // Millisecond precision, not the default microsecond: a cursor is a
+    // JS `Date` rendered to an ISO string, which carries milliseconds
+    // and nothing finer. Stored any finer, a keyset page's `created_at =
+    // cursor` tie-break could never match and a message sharing a
+    // millisecond with the cursor row would fall out of the timeline
+    // between pages.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
   },
