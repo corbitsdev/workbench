@@ -165,6 +165,18 @@ folded run's system prompt, tool pins, model, credential bindings) had
 nowhere to get it. Keyed to the approved wire hash and stored beside it,
 this is one store per concept, not a second copy: the projection and the
 hash that addresses it are written and read together.
+`vendor/intx/hub-sessions` (CL-6379) serializes the event
+collector's `onEvent`/`abandon` through an internal promise chain: the
+registry's dispatch is deliberately fire-and-forget, and without the chain
+two events interleave across their DB awaits — a `connector.reply` finalize
+nulls the current turn while `inference.done` is still inserting parts
+(dropped as "no active turn"), and a finalize processed during the next
+`inference.start`'s begin-insert marks the NEW turn finalized, leaving its
+row "running" forever. The same change classifies an accepted workflow-run
+pack's newly-terminal runs through the new pure `decideTerminalRunFlip`
+before the DB flip: a section occurrence's repo-local child run
+(`turn__<n>`) has no `workflow_run` row by design and is skipped quietly
+instead of being logged as a foreign-deployment violation on every turn.
 `vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
