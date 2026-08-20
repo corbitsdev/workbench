@@ -35,7 +35,7 @@ import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
 import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
-import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
+import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import {
   useCloseCanvas,
@@ -79,7 +79,6 @@ export function CommandPaletteProvider({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
-  const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
   const openRoutine = useOpenRoutineInCanvas();
@@ -149,17 +148,6 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId, queryClient]);
 
-  // Workflow runs are what the Routines page lists today. The group is labeled
-  // "Runs" (truthful source) and navigates to `/routines/:id` — never the dead
-  // `/workflows` path the previous palette hard-coded.
-  const listRunsForSearch = useCallback(async () => {
-    if (runsQuery.kind !== "ready") return [];
-    return runsQuery.data.data.map((run) => ({
-      id: run.id,
-      name: run.definitionName,
-    }));
-  }, [runsQuery]);
-
   const listAgentsForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const definitions = await listAgentDefinitions(selectedTenantId);
@@ -172,10 +160,9 @@ export function CommandPaletteProvider({
   const entitySearchSources = useMemo(
     () => [
       { category: "workbenches", fetch: listWorkbenchesForSearch },
-      { category: "runs", fetch: listRunsForSearch },
       { category: "agents", fetch: listAgentsForSearch },
     ],
-    [listWorkbenchesForSearch, listRunsForSearch, listAgentsForSearch],
+    [listWorkbenchesForSearch, listAgentsForSearch],
   );
 
   const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
@@ -362,17 +349,6 @@ export function CommandPaletteProvider({
       }));
   }, [results, bareScopeKind, bareAgents]);
 
-  const runItems = useMemo<readonly PaletteResultItem[]>(
-    () =>
-      results
-        .filter((result) => result.category === "runs")
-        .map((run) => ({
-          id: `entity:runs:${run.id}`,
-          title: run.title,
-        })),
-    [results],
-  );
-
   const routineItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       routinesQuery.kind === "ready"
@@ -430,7 +406,6 @@ export function CommandPaletteProvider({
         items: workbenchItems,
       },
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
-      { id: "runs", heading: "Runs", items: runItems },
       { id: "routines", heading: "Routines", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
       { id: "library", heading: "Files", items: libraryItems },
@@ -445,7 +420,6 @@ export function CommandPaletteProvider({
       actionItems,
       workbenchItems,
       pageItems,
-      runItems,
       routineItems,
       skillItems,
       libraryItems,
@@ -508,23 +482,6 @@ export function CommandPaletteProvider({
           workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
         navigate(`/w/${workbenchId}`);
         pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
-      } else if (id.startsWith("entity:runs:")) {
-        // Routines page owns the /routines prefix, keyed by routine
-        // (definition) id, not by an individual run's own id — deep-link to
-        // the run's routine so the row actually expands instead of landing
-        // on an id the page never recognizes.
-        const runId = id.slice("entity:runs:".length);
-        const title = runItems.find((item) => item.id === id)?.title ?? runId;
-        const run =
-          runsQuery.kind === "ready"
-            ? runsQuery.data.data.find((candidate) => candidate.id === runId)
-            : undefined;
-        navigate(
-          run !== undefined
-            ? `/routines/${encodeURIComponent(run.definitionId)}`
-            : "/routines",
-        );
-        pushRecent({ kind: "runs", id, title, subtitle: "Run" });
       } else if (id.startsWith("entity:agents:")) {
         const agentId = id.slice("entity:agents:".length);
         const title =
@@ -561,8 +518,6 @@ export function CommandPaletteProvider({
       openRoutine,
       pushRecent,
       workbenchItems,
-      runItems,
-      runsQuery,
       agentItems,
       routineItems,
       skillItems,

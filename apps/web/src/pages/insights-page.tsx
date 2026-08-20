@@ -978,10 +978,10 @@ export function InsightsRunDetail({
    * legs are still passed through — the strip itself hides for
    * `legs.length <= 1` so a chain-less run renders unchanged. */
   readonly chainLegs: readonly TaskLeg[] | null;
-  /** True when the by-run chain-context lookup failed for a reason other
-   * than "this run has no owning task" (a genuine 404, the quiet no-op) —
-   * a 500 or a network failure. Never silently omitted: renders a small
-   * honest note instead of just leaving the strip out. */
+  /** True when the by-run chain-context lookup failed — a 500 or a
+   * network failure ("no owning task" is a normal `{item: null}` 200,
+   * not a failure). Never silently omitted: renders a small honest note
+   * instead of just leaving the strip out. */
   readonly chainLookupFailed?: boolean;
   readonly onOpenRun: (runId: string) => void;
   readonly onBack: () => void;
@@ -1444,20 +1444,15 @@ export function InsightsRunDetailRoute({
 
   // Chain context (CL-5626): resolve the owning task from this run, then
   // its legs, so a run reached from a task/inbox link shows its chain. A
-  // run with no owning task 404s the by-run lookup — `shouldRetryQuery`
-  // (`../query-client.ts`) never retries a 404, so that's a stable, cheap
-  // answer, not a transient failure: task stays null, the legs query never
-  // enables, and this quietly renders the plain single-run view for what is
-  // simply "not a chained run." Any OTHER failure (500, network) is a real
-  // problem and must say so, not disappear the same way — see
-  // `chainLookupFailed` below.
+  // run with no owning task answers `{item: null}` — a normal 200, so the
+  // plain single-run view renders quietly. Any failure (500, network) is
+  // a real problem and must say so — see `chainLookupFailed` below.
   const taskByRun = useAPIQuery(
     tenantId === null ? "" : insightsTaskByRunPath(tenantId, runId),
     TaskResponseSchema,
   );
   const task = taskByRun.kind === "ready" ? taskByRun.data.item : null;
-  const chainLookupFailed =
-    taskByRun.kind === "error" && taskByRun.status !== 404;
+  const chainLookupFailed = taskByRun.kind === "error";
   const legsQuery = useAPIQuery(
     tenantId === null || task === null || task.stepCount <= 1
       ? ""

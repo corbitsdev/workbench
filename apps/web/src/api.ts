@@ -25,7 +25,6 @@ import { pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
-export const RunsSchema = paginatedSchema(WorkflowRunSummary);
 export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
 
 // `GET /api/tenants/:tenantId/assets` returns a bare array of
@@ -136,7 +135,6 @@ export function useNeedsYouCount(tenantId: string | null): number | null {
  */
 type Paginated<T> = { data: T[]; nextCursor: string | null };
 export type PrincipalsPage = Paginated<Principal>;
-export type RunsPage = Paginated<WorkflowRun>;
 
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
