@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
+    "./persist-credential": "./src/persist-credential.ts",
     "./plugins": "./src/plugins.ts",
     "./provider-health": "./src/provider-health.ts",
     "./mcp-presets": "./src/mcp-presets.ts"

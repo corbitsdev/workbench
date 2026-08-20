@@ -134,14 +134,6 @@ export type CreateOnboardingRoutesDeps = {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
     connectCredential?: typeof testAndPersistCredential;
   };
-  /** The GitHub OAuth App id/secret from github.com/settings/apps (see
-   * .env.example). Absent leaves the one-click GitHub connect path
-   * reporting `not_configured` — the PAT paste form stays available
-   * either way (CL-6386). Read here so this package's own `/oauth`
-   * mount decides the same thing `@workbench/connections`' tenant-
-   * scoped `GET .../oauth-configured` route already reports. */
-  githubAppClientId?: string;
-  githubAppClientSecret?: string;
   /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
   ensureSeededFn?: typeof ensureSeeded;
   /** Test seam for `POST /complete`'s own success path — defaults to the
@@ -555,8 +547,13 @@ export function createOnboardingRoutes(
       "@workbench/connections' registry is missing the huggingface oauth-pkce entry",
     );
   }
+  // ONLY the two providers onboarding's own first-login flow offers.
+  // Every other OAuth-capable connector (the GitHub App connect
+  // included) belongs to the tenant-scoped `connections/oauth` mount in
+  // `apps/hub` — a `/oauth/github/start` here answers the factory's own
+  // 404, never a silent fall-through into onboarding's inference-only
+  // persistence (CL-6394).
   const oauthRegistry: Readonly<Record<string, ConnectorDescriptor>> = {
-    ...CONNECTOR_REGISTRY,
     openrouter: {
       ...openrouterDescriptor,
       oauth: {
@@ -573,6 +570,20 @@ export function createOnboardingRoutes(
     },
   };
 
+  /** Everything onboarding's own OAuth mount may ever persist for —
+   * enforced twice: `oauthRegistry` above keeps any other connector from
+   * even starting a flow here (a loud 404), and this narrowing refuses
+   * one that somehow reached persistence anyway, instead of an `as`
+   * cast letting it fall into inference-only seeding (CL-6394). */
+  function onboardingOAuthProvider(
+    connectorId: string,
+  ): "openrouter" | "huggingface" | undefined {
+    if (connectorId === "openrouter" || connectorId === "huggingface") {
+      return connectorId;
+    }
+    return undefined;
+  }
+
   /** The fast half only — persists the exchanged material, no probe,
    * never deploys a workflow. Dispatches to whichever provider's own
    * test-seam override (`deps.openrouterConnect`/`deps.huggingfaceConnect`)
@@ -585,7 +596,13 @@ export function createOnboardingRoutes(
     apiKey: string;
     credentialMetadata?: Record<string, unknown>;
   }): Promise<TestAndPersistCredentialResult> {
-    const provider = args.connectorId as SupportedCredentialProvider;
+    const provider = onboardingOAuthProvider(args.connectorId);
+    if (provider === undefined) {
+      return {
+        kind: "invalid-credential",
+        message: `onboarding does not connect ${args.connectorId} — use the workbench's own Connections surface`,
+      };
+    }
     const impl =
       provider === "openrouter"
         ? (deps.openrouterConnect?.connectCredential ??
@@ -620,10 +637,12 @@ export function createOnboardingRoutes(
     cookies: string[];
     withinMs: number;
   }): Promise<PersonalTenant | undefined> {
+    const provider = onboardingOAuthProvider(args.connectorId);
+    if (provider === undefined) return undefined;
     return recentlyConnectedCredential(api, args.cookies, {
       userId: args.userId,
       userEmail: args.userEmail,
-      provider: args.connectorId as SupportedCredentialProvider,
+      provider,
       withinMs: args.withinMs,
       log: deps.log,
     });
@@ -645,7 +664,12 @@ export function createOnboardingRoutes(
     principalId: string;
     tenantDomain: string;
   }): Promise<void> {
-    const provider = args.connectorId as SupportedCredentialProvider;
+    const provider = onboardingOAuthProvider(args.connectorId);
+    if (provider === undefined) {
+      throw new Error(
+        `onboarding's pending-seed store only holds its own providers, not ${args.connectorId}`,
+      );
+    }
     await deps.pendingSeedStore.put({
       userId: args.userId,
       tenantId: args.tenantId,
@@ -665,8 +689,6 @@ export function createOnboardingRoutes(
       registry: oauthRegistry,
       oauthEnv: {
         huggingfaceClientId: deps.huggingfaceClientId,
-        githubAppClientId: deps.githubAppClientId,
-        githubAppClientSecret: deps.githubAppClientSecret,
       },
       connectCredential,
       recentlyConnected,

@@ -1340,6 +1340,15 @@ export type SeedCatalogArgs = {
    */
   credentialVerified?: boolean;
   /**
+   * A credential row the caller already planted (the shared
+   * persist-and-seed sequence, `@workbench/connections`'
+   * `persistConnectorCredential`). When set, this function plants only
+   * the catalog side — provider/credential ensure is skipped entirely,
+   * so the caller's single `ensureCredential` stays the one write (no
+   * second rotation PATCH against the same row).
+   */
+  existingCredentialId?: string;
+  /**
    * Overrides `CATALOG_SEEDS[provider].provider.baseURL` for this seed
    * run — the configurable-base-URL seam every other curated provider
    * ignores (a fixed origin) and `ollama` uses (the root a person
@@ -1424,7 +1433,41 @@ export async function seedCatalog(
     (args.placeholderCredential === true
       ? PLACEHOLDER_CATALOG_API_KEY
       : undefined);
-  if (credentialSecret === undefined) {
+
+  async function plantCredential(secret: string): Promise<string> {
+    const providerArgs =
+      provider === "ollama"
+        ? {
+            tenantId,
+            name: seed.provider.name,
+            plugin: seed.provider.plugin,
+            apiBaseUrl: providerBaseURL,
+          }
+        : { tenantId, name: seed.provider.name, plugin: seed.provider.plugin };
+    const providerId = await ensureProvider(api, cookies, providerArgs, log);
+    const baseCredentialArgs = {
+      tenantId,
+      providerId,
+      name: args.credentialName ?? inferenceCredentialName(seed.provider.name),
+      secret,
+      type: args.credentialType ?? ("api_key" as const),
+      verified: args.credentialVerified ?? false,
+    };
+    return ensureCredential(
+      api,
+      cookies,
+      args.credentialMetadata !== undefined
+        ? { ...baseCredentialArgs, metadata: args.credentialMetadata }
+        : baseCredentialArgs,
+      log,
+    );
+  }
+  let credentialId: string;
+  if (args.existingCredentialId !== undefined) {
+    credentialId = args.existingCredentialId;
+  } else if (credentialSecret !== undefined) {
+    credentialId = await plantCredential(credentialSecret);
+  } else {
     log(
       `catalog models for ${seed.provider.name} seeded without a credential; ` +
         `no workbench or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
@@ -1437,33 +1480,6 @@ export async function seedCatalog(
       ),
     };
   }
-
-  const providerArgs =
-    provider === "ollama"
-      ? {
-          tenantId,
-          name: seed.provider.name,
-          plugin: seed.provider.plugin,
-          apiBaseUrl: providerBaseURL,
-        }
-      : { tenantId, name: seed.provider.name, plugin: seed.provider.plugin };
-  const providerId = await ensureProvider(api, cookies, providerArgs, log);
-  const baseCredentialArgs = {
-    tenantId,
-    providerId,
-    name: args.credentialName ?? inferenceCredentialName(seed.provider.name),
-    secret: credentialSecret,
-    type: args.credentialType ?? ("api_key" as const),
-    verified: args.credentialVerified ?? false,
-  };
-  const credentialId = await ensureCredential(
-    api,
-    cookies,
-    args.credentialMetadata !== undefined
-      ? { ...baseCredentialArgs, metadata: args.credentialMetadata }
-      : baseCredentialArgs,
-    log,
-  );
   const catalogProviderId = await ensureCatalogProvider(
     api,
     cookies,

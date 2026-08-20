@@ -7,7 +7,6 @@
 
 import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { Plus } from "@corbits/icons";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
 import { PluginLogo } from "./plugin-logo";
@@ -57,6 +56,9 @@ export function PluginCard({
         {caption}
       </span>
       {plugin.status === "not_connected" ? (
+        // The same single Connect verb the MCP preset rows use — one
+        // idiom for "not connected yet" across the whole gallery, never
+        // a bare "+" glyph that hides the action.
         <Button
           type="button"
           size="sm"
@@ -64,7 +66,7 @@ export function PluginCard({
           aria-label={`Connect ${plugin.descriptor.displayName}`}
           onClick={onOpen}
         >
-          <Plus className="size-3.5" />
+          Connect
         </Button>
       ) : (
         <Button type="button" size="sm" variant="ghost" onClick={onOpen}>

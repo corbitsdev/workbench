@@ -1879,7 +1879,7 @@ export async function createHub(config: HubConfig) {
   // through to `createTenantConnectCredential`.
   app.route(
     `${TENANT_PREFIX}/connections/oauth`,
-    createOAuthConnectRoutes({
+    createOAuthConnectRoutes<TenantEnv>({
       hubUrl: config.baseUrl,
       log: (line) => log.info`${line}`,
       credentialCipher,
@@ -3121,10 +3121,6 @@ export async function createHub(config: HubConfig) {
     onboardingDeps.seedModel = config.seedModel;
   if (config.huggingfaceOAuthClientId !== undefined)
     onboardingDeps.huggingfaceClientId = config.huggingfaceOAuthClientId;
-  if (config.githubAppClientId !== undefined)
-    onboardingDeps.githubAppClientId = config.githubAppClientId;
-  if (config.githubAppClientSecret !== undefined)
-    onboardingDeps.githubAppClientSecret = config.githubAppClientSecret;
 
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
 

@@ -138,7 +138,7 @@ export type OAuthStoreOutcome =
   | { readonly kind: "invalid-credential"; readonly message: string }
   | { readonly kind: "no-personal-bench" };
 
-export type CreateOAuthConnectRoutesDeps = {
+export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
   readonly hubUrl: string;
   readonly log: (line: string) => void;
   /** Seals the PKCE+state cookie parked between `/start` and
@@ -156,13 +156,14 @@ export type CreateOAuthConnectRoutesDeps = {
    * Required: without a caller-supplied store step, a successful
    * exchange would have nowhere to land. */
   readonly connectCredential: (args: {
-    /** Given so a tenant-scoped caller (mounted inside the platform's
-     * tenant middleware, same as `afterConnected` below) can read
-     * `c.get("tenant")`/`c.get("principal")` directly instead of
-     * re-deriving them — see `createTenantConnectCredential` in
+    /** Typed by the factory's own env parameter, so a tenant-scoped
+     * caller (`E = TenantEnv`, mounted inside the platform's tenant
+     * middleware) reads `c.get("tenant")`/`c.get("principal")` directly
+     * with no cast — see `createTenantConnectCredential` in
      * `./oauth-tenant-connect.ts`. A caller with no tenant middleware
-     * (`packages/onboarding`'s own mount) is free to ignore it. */
-    c: Context;
+     * (`packages/onboarding`'s own mount, `E = AppEnv`) is free to
+     * ignore it. */
+    c: Context<E>;
     connectorId: string;
     userId: string;
     userEmail: string;
@@ -185,7 +186,7 @@ export type CreateOAuthConnectRoutesDeps = {
    * pending-seed sealing lives here, entirely outside this package.
    * Given the Hono `Context` directly so it can set its own cookie. */
   readonly afterConnected?: (args: {
-    c: Context;
+    c: Context<E>;
     connectorId: string;
     userId: string;
     apiKey: string;
@@ -207,10 +208,10 @@ export type CreateOAuthConnectRoutesDeps = {
 const CONNECT_STATE_TTL_MS = 10 * 60 * 1000;
 const CONNECT_START_RATE_LIMIT_MS = 10_000;
 
-export function createOAuthConnectRoutes(
-  deps: CreateOAuthConnectRoutesDeps,
-): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
+export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
+  deps: CreateOAuthConnectRoutesDeps<E>,
+): Hono<E> {
+  const app = new Hono<E>();
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
   const oauthEnv = deps.oauthEnv ?? {};
   const defaultReturnPath = deps.defaultReturnPath ?? "/onboarding";

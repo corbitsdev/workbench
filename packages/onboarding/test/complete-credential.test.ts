@@ -34,6 +34,23 @@ const noopPush: WorkflowPusher = async () => ({
 });
 const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
+// Stubs for the provider/credential half of the shared persist-and-seed
+// sequence (CL-6394) — paired with every stubbed `seedCatalogFn` so a
+// test that fakes the catalog side never dials the real credential
+// endpoints either.
+const stubPersistFns = {
+  ensureProviderFn: async (
+    _api: unknown,
+    _cookies: string[],
+    args: { name: string },
+  ) => `prv_${args.name}`,
+  ensureCredentialFn: async (
+    _api: unknown,
+    _cookies: string[],
+    args: { providerId: string },
+  ) => `cred_${args.providerId}`,
+};
+
 function collector() {
   const lines: string[] = [];
   return { lines, log: (line: string) => lines.push(line) };
@@ -278,6 +295,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
@@ -344,6 +362,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
@@ -395,6 +414,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
@@ -446,6 +466,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
         return { hasCompletionCapableModel: true };
@@ -501,6 +522,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
         return { hasCompletionCapableModel: true };
@@ -811,6 +833,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
     });
 
@@ -1299,6 +1322,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
         return { hasCompletionCapableModel: true };
@@ -1351,6 +1375,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
       seedTenantFn: async () => {
         throw new SidecarUnavailableError(
@@ -1411,6 +1436,7 @@ describe("testAndPersistCredential (the fast half)", () => {
         return { outcome: "pushed" as const, commitSha: "a".repeat(40) };
       },
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
@@ -1451,6 +1477,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
@@ -1493,6 +1520,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
+      ...stubPersistFns,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };

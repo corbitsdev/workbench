@@ -61,7 +61,11 @@ export async function s256Challenge(codeVerifier: string): Promise<string> {
 
 const ConnectStatePayload = type({
   userId: "string > 0",
-  codeVerifier: "string > 0",
+  // Empty for a non-PKCE flow (GitHub's confidential-client web flow
+  // seals `codeVerifier: ""`), so this must accept the empty string —
+  // `string > 0` here silently expired every non-PKCE callback
+  // (CL-6394).
+  codeVerifier: "string",
   nonce: "string > 0",
   expiresAt: "number",
 });

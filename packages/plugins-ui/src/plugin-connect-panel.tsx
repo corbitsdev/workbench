@@ -244,6 +244,7 @@ export function PluginConnectPanel({
               <Button variant="primary" asChild>
                 <a
                   href={oauthStartHref(
+                    tenantId,
                     plugin.descriptor.id,
                     PLUGINS_RETURN_PATH,
                   )}

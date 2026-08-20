@@ -250,6 +250,23 @@ describe("GET /oauth/openrouter/start", () => {
     expect(setCookie).toContain("HttpOnly");
   });
 
+  // CL-6394: onboarding's OAuth mount serves ONLY its own first-login
+  // providers. A GitHub start here must refuse loudly — before this,
+  // github fell through onboarding's inference-only persistence and
+  // crashed AFTER a successful token exchange. The GitHub App connect
+  // lives on the tenant-scoped `connections/oauth` mount instead.
+  test("a github start on the onboarding mount is a loud 404, never a fall-through", async () => {
+    const app = connectRoutes();
+
+    const response = await app.request("/api/onboarding/oauth/github/start");
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("not_found");
+  });
+
   test("derives the callback origin from configuration, not the request host", async () => {
     const app = connectRoutes({ hubUrl: "http://localhost:3000" });
 
