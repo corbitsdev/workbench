@@ -311,3 +311,60 @@ still applies to all 20 rows), but it does close the gap to the run-first /
 self-anchored-run model the workbench-side workarounds were built against,
 which is where the eventual retirement payoff sits once the STILL-OPEN items
 above get their own passes.
+
+## CL-6325: `invokeAction` bind (action-handler registry)
+
+Partially closes the "Tasks chain in-process hand-off" STILL-OPEN row above:
+`buildRuntimeEnv never binds invokeAction` is still true as of this commit
+(the run-child wiring lands in a separate, clearly-marked follow-up commit —
+see below), but the two adapters that wiring needs now exist.
+
+**What landed:**
+
+- `vendor/intx/workflow-host/src/adapters/{action-invoker,effect-ledger,run-blobs}.ts`
+  (+ their tests), copied from gtm-workbench's `packages/workflow-host/src/
+  adapters/`. Important provenance note carried over from the port scope
+  report: **these three files are gtm-OWNED, not upstream Interchange.**
+  Upstream `faremeter/interchange`'s own `packages/workflow-host/src/
+  adapters/` (at the pinned `59f5e7b9`) has none of them — only blob-
+  substrate/repo-store/spawn-child/step-invoker. So there is no upstream
+  publish this sub-delta tracks toward; it is copy-with-attribution from a
+  sibling internal fork, not a normal "vendored until the next npm publish"
+  entry. The ordinary `VENDORED.md` kill date on the `vendor/intx/
+  workflow-host` row does not really apply to this slice — treat it as
+  retired only once workbench builds its own equivalent inline (dropping the
+  gtm-origin copy) or gtm's fork itself gets folded into a real publish,
+  whichever happens first.
+- `apps/sidecar/src/action-tool-handler.ts` (+ tests) — the workbench-native
+  action-handler registry. Two deliberate departures from gtm's own
+  `apps/sidecar/src/action-tool-handler.ts`:
+  1. gtm enumerates action steps by re-reading the deployed `workflow.json`
+     off disk. Workbench retired `workflow.json` as a host-read format in
+     favor of the resolved in-memory `WorkflowDefinition` the closure loader
+     hands the sidecar — this registry takes that object directly as an
+     argument instead.
+  2. gtm dispatches through `step-tool-harness.ts`'s
+     `runDeterministicToolStep`, a deterministic-tool-dispatch harness
+     workbench has no analog of (workbench dispatches tools only inside an
+     agent reactor). This registry instead materializes a step's tool
+     closure via the existing `materializeStepTools`/`attachStepCredentials`
+     seam and dispatches the named tool through the materialized
+     `ToolBundle.run` directly, all still routed through `ctx.perform` for
+     the capability/ledger floor.
+
+**What did NOT land (deliberately, time-boxed):** the run-child wiring
+(`resolveActionHandler` bindings field, `effects`/`invokeAction` construction
+in `buildRuntimeEnv`, `loopFns`) is a separate final commit on this branch,
+explicitly marked in its message as needing re-application after the
+in-flight `vendor/intx` re-pin lands (a sibling change was re-pinning
+concurrently with this port) — `buildRuntimeEnv` is exactly the kind of
+generated/copied vendor surface a re-pin silently regenerates, so the wiring
+diff would otherwise be dropped on the floor. The app-seam wiring in
+`apps/sidecar/src/workflow-substrate-factory/index.ts` (building the registry
+and passing it as `resolveActionHandler`) is likewise deferred to that same
+follow-up, since it depends on the run-child binding field existing first.
+
+`run-blobs.ts` duplicates the write/read pattern `vendor/intx/workflow-host/
+src/adapters/blob-substrate.ts` already has inline (private `writeBlob`/
+`readBlob` helpers) rather than reconciling the two into one shared helper —
+left as a known follow-up per the port scope report, not a blocker.
