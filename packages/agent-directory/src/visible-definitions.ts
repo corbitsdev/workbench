@@ -12,9 +12,13 @@ import type { DB } from "@intx/db";
 import { getAncestorChain, schema } from "@intx/db";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
+import { deriveDisplayName } from "./client";
 
 export type VisibleAgentDefinition = {
   readonly id: string;
+  /** The definition's display name — its own description when one was
+   * set at creation, otherwise a humanized reading of its immutable slug
+   * (`deriveDisplayName`, CL-6413). Never the raw slug itself. */
   readonly name: string;
   /** The tenant that actually owns this definition — where its DM workbench
    * must be minted, not necessarily the caller's own tenant. */
@@ -70,7 +74,7 @@ export async function listVisibleAgentDefinitions(
       if (byName.has(row.name)) continue;
       byName.set(row.name, {
         id: row.id,
-        name: row.description ?? row.name,
+        name: deriveDisplayName(row),
         tenantId: tid,
         tenantName,
         createdAt: row.createdAt.toISOString(),

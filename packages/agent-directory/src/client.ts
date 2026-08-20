@@ -7,6 +7,7 @@
 // to identify that plumbing; a host injects only its raw definition/
 // instance lists, already fetched from wherever it gets them.
 
+import { type } from "arktype";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 export type UserFacingAgentDefinition = {
@@ -14,6 +15,76 @@ export type UserFacingAgentDefinition = {
   readonly name: string;
   readonly description?: string | null;
 };
+
+/**
+ * A definition's kebab `name` is its immutable, URL-facing identifier
+ * (CL-6413) — the mail handle `createAgentDefinitionCore` binds it to
+ * (`@corbits/agent-directory/agent-workflow`'s `input.handle`). The
+ * person-facing display name it was created with lands one hop away, on
+ * `description`: that same handler seeds `workflowDefinition.description`
+ * from the asset's own `displayName`
+ * (`vendor/intx/hub-sessions/src/workflow-definition-ensure.ts`), so
+ * `deriveDisplayName` reads it from there. A definition created before
+ * that seeding existed, or with no description ever set, has no display
+ * name to read — `humanizeSlug` backfills one from the identifier itself
+ * rather than showing the raw slug as if it were a name.
+ */
+const DisplayNameSource = type({
+  name: "string",
+  "description?": "string | null",
+});
+
+/** kebab-case identifier -> Title Case words: `"research-analyst"` ->
+ * `"Research Analyst"`. Words that aren't hyphen-separated (a name that
+ * already reads as prose) pass through with only their case fixed up, so
+ * this is safe to run over a definition's raw `name` unconditionally. */
+export function humanizeSlug(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
+ * The display name a definition should render as: its own description
+ * when one was set at creation, otherwise a humanized reading of its
+ * immutable slug. Throws on a shape that isn't at least `{ name }` — this
+ * is a trust boundary, not a formatting helper, so a malformed record
+ * fails loudly rather than rendering "undefined".
+ */
+export function deriveDisplayName(definition: {
+  readonly name: string;
+  readonly description?: string | null;
+}): string {
+  const parsed = DisplayNameSource(definition);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `deriveDisplayName: invalid agent definition: ${parsed.summary}`,
+    );
+  }
+  const { description } = parsed;
+  return description !== undefined && description !== null && description !== ""
+    ? description
+    : humanizeSlug(parsed.name);
+}
+
+export type WithDisplayName<T> = T & { readonly displayName: string };
+
+/** Projects `deriveDisplayName` onto a definition, keeping every other
+ * field untouched — the read-boundary derivation the ticket calls for,
+ * done once here rather than as scattered `??` fallbacks in UI code. */
+export function withDisplayName<T extends UserFacingAgentDefinition>(
+  definition: T,
+): WithDisplayName<T> {
+  return { ...definition, displayName: deriveDisplayName(definition) };
+}
+
+export function withDisplayNames<T extends UserFacingAgentDefinition>(
+  definitions: readonly T[],
+): readonly WithDisplayName<T>[] {
+  return definitions.map(withDisplayName);
+}
 
 export type UserFacingAgentInstance = {
   readonly id: string;
