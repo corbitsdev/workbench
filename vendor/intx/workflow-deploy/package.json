@@ -14,6 +14,9 @@
       "default": "./src/testing/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/tool-packaging": "workspace:*",
@@ -21,7 +24,9 @@
     "@intx/workflow": "workspace:*"
   },
   "devDependencies": {
-    "arktype": "catalog:"
+    "@types/bun": "catalog:",
+    "arktype": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

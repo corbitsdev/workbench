@@ -10,6 +10,10 @@
       "default": "./src/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/crypto": "workspace:*",
@@ -22,6 +26,10 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

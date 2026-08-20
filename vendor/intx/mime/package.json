@@ -10,10 +10,17 @@
       "default": "./src/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/crypto": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

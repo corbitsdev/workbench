@@ -54,12 +54,17 @@
       "default": "./src/workflow-sources.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "arktype": "catalog:",
     "semver": "catalog:"
   },
   "devDependencies": {
-    "@types/semver": "catalog:"
+    "@types/bun": "catalog:",
+    "@types/semver": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

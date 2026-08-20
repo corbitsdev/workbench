@@ -14,6 +14,9 @@
       "default": "./src/paths.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/harness": "workspace:*",
     "@intx/log": "workspace:*",
@@ -27,7 +30,9 @@
   "devDependencies": {
     "@intx/crypto": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
-    "hono": "catalog:"
+    "@types/bun": "catalog:",
+    "hono": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

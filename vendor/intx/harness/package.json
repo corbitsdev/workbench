@@ -10,6 +10,9 @@
       "default": "./src/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/authz": "workspace:*",
@@ -19,7 +22,9 @@
   "devDependencies": {
     "@intx/mime": "workspace:*",
     "@intx/storage-isogit": "workspace:*",
-    "arktype": "catalog:"
+    "@types/bun": "catalog:",
+    "arktype": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

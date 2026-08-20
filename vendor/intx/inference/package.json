@@ -14,13 +14,18 @@
       "default": "./src/providers/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/log": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
-    "@intx/mime": "workspace:*"
+    "@intx/mime": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

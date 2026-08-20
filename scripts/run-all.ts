@@ -27,17 +27,30 @@ function resolveConcurrency(script: string): number {
   return parsed;
 }
 
+// Bun's Glob silently matches nothing when a brace alternative contains a
+// slash (e.g. "{apps,vendor/intx}/*/package.json"), so each workspace root
+// gets its own glob rather than one combined brace pattern.
+const WORKSPACE_ROOTS = [
+  "apps/*/package.json",
+  "packages/*/package.json",
+  "tools/*/package.json",
+  "workflows/*/package.json",
+  "vendor/intx/*/package.json",
+];
+
 async function discover(script: string): Promise<Job[]> {
-  const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
   const jobs: Job[] = [];
-  for await (const manifestPath of glob.scan(".")) {
-    const manifest = (await Bun.file(manifestPath).json()) as {
-      name?: string;
-      scripts?: Record<string, string>;
-    };
-    if (!manifest.scripts?.[script]) continue;
-    const dir = manifestPath.slice(0, -"/package.json".length);
-    jobs.push({ name: manifest.name ?? dir, dir });
+  for (const pattern of WORKSPACE_ROOTS) {
+    const glob = new Glob(pattern);
+    for await (const manifestPath of glob.scan(".")) {
+      const manifest = (await Bun.file(manifestPath).json()) as {
+        name?: string;
+        scripts?: Record<string, string>;
+      };
+      if (!manifest.scripts?.[script]) continue;
+      const dir = manifestPath.slice(0, -"/package.json".length);
+      jobs.push({ name: manifest.name ?? dir, dir });
+    }
   }
   return jobs;
 }
