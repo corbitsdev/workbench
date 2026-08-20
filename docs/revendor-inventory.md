@@ -815,3 +815,111 @@ server fault.
 One behavioural change rode along: `POST /:definitionId/restore` now
 reports the definition it just wrote, parsed from the entry module it
 restored, instead of re-reading the asset immediately afterward.
+
+## CL-6324: what the four proofs found on a real stack
+
+`scripts/e2e/cl-6324-launch-proof.ts` is the harness: one scratch
+database, a real signup, a real local Ollama, nothing mocked. It runs as
+
+```
+E2E_PROVIDER=ollama OLLAMA_BASE_URL=http://localhost:11434 \
+E2E_OLLAMA_MODEL=<a model the instance serves> \
+DATABASE_URL=postgres://localhost:5432/<scratch> \
+bun run scripts/e2e/cl-6324-launch-proof.ts
+```
+
+### Proof 2, in the shape each deploy actually takes
+
+The earlier revision asserted a workflow-host `RunStarted` for a folded
+`step`-mode run and hung on it forever. That was an assertion about the
+section shape aimed at the step shape's run. The two are now asserted
+separately, each against the artefact it really produces.
+
+**Step mode.** One unbounded step services every inbound mail, so the run
+starts no child run per message and its own workflow event log stays
+empty — the harness asserts exactly that, as a falsifiable statement
+rather than a footnote. Its per-message bracket is the
+`message.run.started` / `message.run.ended` AGENT event pair, which
+travels the sidecar's `agent.event` channel and is never committed to the
+workflow-run repo. The durable, HTTP-observable evidence that the bracket
+opened AND closed is `@corbits/insights`' `turn_latency` row: the tracker
+opens it on `message.run.started` and commits it on `message.run.ended`,
+and `GET /api/tenants/:tenantId/insights/latency` reports it as a sample
+count. That, plus the reply row itself, is what the proof asserts.
+
+**Section mode — and CL-6329's first live validation.** `mode: "section"`
+had existed as a config argument since the agent-runtime cutover and
+nothing had ever deployed or run one. The proof now does, for real: it
+renders a section-mode `AgentRuntimeConfig` into its own source package,
+pushes it as a `workflow`-kind asset, deploys it by source-ref through
+`POST /workflows/deployments`, and drives it with real mail. Every
+message is an `onTrigger` occurrence with its own child run and its own
+event log, which is where `RunStarted` genuinely lives:
+
+```
+turn__0 events:      RunStarted, StepStarted, StepCompleted, RunCompleted
+parent run events:   RunStarted, StepStarted, ChildSpawned,
+                     ChildCompleted, SignalAwaited
+```
+
+The parent's `SignalAwaited` after `ChildCompleted` is the section
+re-arming for the next message. This is the shape the milestone's
+`RunStarted` assertion was always about, and it works.
+
+### Proof 4 FAILS, in both shapes, for the same reason
+
+Kill the sidecar mid-turn, restart it, and boot restore does its half of
+the job: the scan finds every deployment record, replays each pin, and
+re-materializes the closure — the restarted stack reports the run's own
+`liveness: "ok"` 9.2s after the restart. But the run inside it comes back
+**terminal**, and every later message is refused:
+
+- the folded chat run: `workflow-host·supervisor: rejecting inbound mail
+'<...>': workflow run 'run_...' is terminal` — the hub accepts the room
+  message, nothing ever answers it, and the turn times out with no reply
+  and no notice;
+- the section deployment: `POST /workflows/<id>/mail` answers `409
+workflow_run_terminal`, "is terminal and cannot receive more mail".
+
+So a mid-turn sidecar death is permanent for the run. `onBodyFailure:
+"continue"` does not rescue the section here, and could not: the failure
+is on the TOP-LEVEL run, not on a body occurrence, so there is no failed
+child edge for the policy to act on. Nothing in the chat layer recovers
+either, because its wake choke point only redeploys an address that is
+NOT routable — and this address is routable, just dead.
+
+This is the milestone's real remaining gap, and it is a platform-level
+one rather than anything the app-side conversion introduced: restoring a
+deployment is not the same as resurrecting its run, and at this pin
+nothing does the second half.
+
+### Timings, from a clean boot
+
+| Phase                                                | Wall clock |
+| ---------------------------------------------------- | ---------- |
+| section-mode deploy (push + probe + freeze + deploy) | 4.3s       |
+| section occurrence to its own `RunStarted`           | 1.0s       |
+| sidecar restart + boot restore to `liveness: "ok"`   | 9.2s       |
+
+Two phases read as ~0s and should not be mistaken for speed: a chat mint
+is DB-only (the deploy happens later, on the first traffic), and the join
+greeting is canned copy `@corbits/chat` posts in the agent's voice, not a
+model turn. The first REAL token is proof 3's reply.
+
+### Two environment traps the harness now closes explicitly
+
+1. **The onboarding seed pins the curated model; the catalog is seeded
+   from the live instance.** `modelSourceFor` takes its model from
+   `CATALOG_SEEDS.ollama`, so every default workflow deploys pinned at
+   that name, while `seedCatalog` fills the tenant catalog from the
+   instance's own `/api/tags`. On an instance that never pulled the
+   curated model the two never meet, and every chat turn dies as
+   `InferenceResolutionError: No launchable inference source for model
+"<curated>"` — surfaced to the reader as "I can't reach a model right
+   now". The harness names its model through `E2E_OLLAMA_MODEL` instead
+   of inheriting the curated one.
+2. **A live Ollama connect seeds embedding models as offerings with no
+   capability metadata** (CL-6351), so default-model resolution breaks
+   the tie alphabetically and `all-minilm` can win the bench default. The
+   harness narrows the bench catalog to its one pinned model through the
+   catalog API before it asserts anything about a turn.
