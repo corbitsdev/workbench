@@ -7,6 +7,7 @@
 // SidecarProvisioner needs to behave correctly under concurrent and
 // out-of-order ensure()/destroy() calls.
 import { sha256 } from "@intx/crypto";
+import { getLogger } from "@intx/log";
 import type {
   DestroySidecarRequest,
   DestroySidecarResult,
@@ -17,6 +18,8 @@ import type {
 
 import { BackendOperationError, type SidecarBackend } from "./backend";
 import type { AllocationStateStore } from "./state-store";
+
+const log = getLogger(["sandbox-sidecar", "provisioner"]);
 
 export type CreateSidecarProvisionerOpts = {
   readonly id: string;
@@ -188,9 +191,9 @@ async function sweepObsoleteUnits(
     try {
       await backend.stopUnit(externalRef);
     } catch (error) {
-      console.error(
-        `[sandbox-sidecar] failed to sweep obsolete unit ${externalRef} for allocation ${allocationId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      log.error`failed to sweep obsolete unit ${externalRef} for allocation ${allocationId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     }
   }
 }

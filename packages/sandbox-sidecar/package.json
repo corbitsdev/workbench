@@ -15,6 +15,7 @@
   "dependencies": {
     "@intx/crypto": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

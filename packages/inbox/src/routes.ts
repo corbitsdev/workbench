@@ -18,6 +18,7 @@ import {
 } from "@corbits/mailbox";
 
 import type { TenantEnv } from "@intx/hub-api";
+import { getLogger } from "@intx/log";
 import { Hono } from "hono";
 
 import { isInboxGroup, type InboxGroup } from "./group";
@@ -35,11 +36,7 @@ import { WORKBENCH_INBOX_PRIORITIES } from "./vocabulary";
 // walks with the package's cursor.
 const BULK_PAGE_LIMIT = 100;
 
-const publishLog = {
-  error(message: string, data?: Record<string, unknown>): void {
-    console.error(message, data);
-  },
-};
+const publishLog = getLogger(["inbox", "publish"]);
 
 export interface CreateInboxRoutesDeps {
   db: MailboxDb;
@@ -57,13 +54,16 @@ function publish(
   try {
     bus.publish(scope, { type: "mailbox", id, op });
   } catch (error) {
-    publishLog.error("mailbox event publish failed", {
-      id,
-      op,
-      tenantId: scope.tenantId,
-      principalId: scope.principalId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    publishLog.error(
+      "mailbox event publish failed for {id} ({op}) on tenant {tenantId}, principal {principalId}: {error}",
+      {
+        id,
+        op,
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
   }
 }
 

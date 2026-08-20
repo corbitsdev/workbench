@@ -4,11 +4,14 @@
 
 import { Button } from "@corbits/react-ui";
 import { LoginForm } from "@corbits/react-ui/blocks/login/login-form";
+import { getLogger } from "@corbits/client-log";
 import { useEffect, useState } from "react";
 
 import { AuthLayout } from "./auth/auth-layout";
 import { fetchAuthConfig, signIn, signInSocial, signUp } from "./session";
 import type { SessionUser, SocialProviderId } from "./session";
+
+const log = getLogger("web.auth-screen");
 
 type Mode = "sign-in" | "sign-up";
 
@@ -48,7 +51,9 @@ export function AuthScreen({
     void fetchAuthConfig().then((result) => {
       if (cancelled) return;
       if (result.kind === "unavailable") {
-        console.error(`Could not load sign-in options: ${result.message}`);
+        log.error("Could not load sign-in options", {
+          message: result.message,
+        });
         setAuthConfigUnavailable(true);
         return;
       }
@@ -63,7 +68,9 @@ export function AuthScreen({
     setAuthConfigUnavailable(false);
     void fetchAuthConfig().then((result) => {
       if (result.kind === "unavailable") {
-        console.error(`Could not load sign-in options: ${result.message}`);
+        log.error("Could not load sign-in options", {
+          message: result.message,
+        });
         setAuthConfigUnavailable(true);
         return;
       }

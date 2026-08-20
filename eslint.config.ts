@@ -29,7 +29,11 @@ export default defineConfig(
       reportUnusedDisableDirectives: "error",
     },
     rules: {
-      "no-console": ["error", { allow: ["error"] }],
+      // The real rule lives in the `src/**` override below, scoped there
+      // so generated build output, one-off scripts, and top-level
+      // entrypoints (which install `@intx/log`'s own console sink) are
+      // never in scope for it. Off by default here.
+      "no-console": 0,
       "@typescript-eslint/no-unused-expressions": [
         "error",
         { allowTaggedTemplates: true },
@@ -67,5 +71,21 @@ export default defineConfig(
   {
     files: ["scripts/**/*.ts"],
     rules: { "no-console": 0 },
+  },
+  // CL-6359: every app/package's `src/` routes through the global logger
+  // — `@intx/log` on the backend, `@corbits/client-log` in the browser —
+  // instead of ad-hoc `console.*` calls, so a category+level shape is
+  // traceable end-to-end and nothing bypasses it silently. Two carve-outs:
+  // tests, where a stray console call is dev noise, not a product
+  // surface; and each logger module's own implementation, which is the
+  // one sanctioned place `console.*` is still called directly.
+  {
+    files: ["**/src/**/*.ts", "**/src/**/*.tsx"],
+    ignores: [
+      "**/src/**/*.test.ts",
+      "**/src/**/*.test.tsx",
+      "packages/client-log/src/index.ts",
+    ],
+    rules: { "no-console": "error" },
   },
 );
