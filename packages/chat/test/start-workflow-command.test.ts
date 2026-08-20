@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { startWorkflowCommand } from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
+import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { fakePlatform, TENANT } from "./test-support";
 
 describe("startWorkflowCommand", () => {
@@ -21,7 +22,12 @@ describe("startWorkflowCommand", () => {
     });
 
     const result = await startWorkflowCommand(
-      { store, platform, publish: () => undefined },
+      {
+        store,
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
       {
         tenantId: TENANT.id,
         principalId: "prn_alice",
@@ -55,7 +61,12 @@ describe("startWorkflowCommand", () => {
     });
 
     await startWorkflowCommand(
-      { store, platform, publish: () => undefined },
+      {
+        store,
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
       {
         tenantId: TENANT.id,
         principalId: "prn_alice",
@@ -79,7 +90,12 @@ describe("startWorkflowCommand", () => {
 
     await expect(
       startWorkflowCommand(
-        { store, platform, publish: () => undefined },
+        {
+          store,
+          platform,
+          roomMessages: createInMemoryRoomMessageStore(),
+          publish: () => undefined,
+        },
         {
           tenantId: TENANT.id,
           principalId: "prn_alice",

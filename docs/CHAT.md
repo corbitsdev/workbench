@@ -1,25 +1,26 @@
 # Chat
 
 Chat is Workbench's shared conversation surface: teams and agents read and
-write the same timeline, in the same [bench](GLOSSARY.md), through the same
-mail-based transport Interchange already gives every agent. It ships as two
+write the same timeline, in the same [bench](GLOSSARY.md). A message is
+workbench data — a row the hub writes and reads directly — and asking an
+agent for a turn is a separate act, over the mail transport Interchange
+already gives every agent. It ships as two
 packages — `@corbits/chat` (the HTTP surface and domain logic) and
 `@corbits/chat-ui` (the React components a host renders it with) — composed
 onto the hub and the web app respectively.
 
 ## What a workbench is
 
-A workbench is a credential-free, folded interactive instance: a single
-long-lived agent run whose only job is to hold a mailbox. Creating a workbench
-launches this instance (its **workbench host**, sometimes called its anchor)
-and every message sent to the workbench is mail delivered to that instance's
-address. The host's system prompt forbids it from ever replying, commenting,
-or acting — it exists purely to give the workbench a durable, listable
-mailbox. That mailbox, read back in order, is the workbench's **timeline**.
+A workbench holds a **timeline**: the rows in `chat.workbench_messages`
+belonging to that workbench, read back in order. Posting a message is one
+insert plus one publish onto the workbench's live stream (CL-6327) — no mail,
+no wake, no sidecar hop — so a workbench takes messages and renders them
+whether or not a single agent process is running.
 
-Because a workbench is an ordinary folded run, it goes through the same
-launch, addressing, and mail machinery any other interactive agent run
-uses — chat adds no parallel transport of its own.
+A workbench also has a **workbench host** (sometimes called its anchor): a
+credential-free folded interactive instance that gives the workbench an
+address other runs can reach. It no longer stores the timeline; a message
+reaches an agent only when the workbench asks that agent for a turn.
 
 A workbench is also its own tenant, parented under the bench it was created
 in, so its membership and permissions are native grants rather than a
@@ -62,12 +63,11 @@ supports:
   tallies. Blocks render read-only today; their controls stay disabled
   until the action round-trip ships.
 
-Parts are encoded onto the platform's own mail-send shape: a message that is
-a single text part rides as bare mail content; anything else — multiple
-parts, or one non-text part — becomes a list of MIME attachments, each
-`text/plain` or `application/json`. Reading mail back decodes the
-platform's JMAP-style response the same way, so callers always see the same
-`Part[]` shape regardless of which side of the wire produced it.
+A message stores its `Part[]` as it is, so reading a timeline is a query, not
+a decode. Asking an agent for a turn still encodes the parts onto the
+platform's mail-send shape — a single text part rides as bare mail content;
+anything else becomes a list of `text/plain`/`application/json` MIME
+attachments — and that encoding is confined to the dispatch seam.
 
 ## Threads: workbench → thread → sub-thread
 
@@ -171,8 +171,8 @@ its own — replies surface only as `connector.reply` events on that agent's
 own event stream, never as mail it sends. The **reply bridge** is the piece
 that turns those events into workbench messages: for each agent participant,
 the platform subscribes to that agent's event stream and, on a
-`connector.reply` event, posts its content into the workbench's timeline as
-mail from the workbench (mirroring how a mention fan-out copy is sent).
+`connector.reply` event, posts its content onto the workbench's timeline as
+a message from that agent's own address, carrying the run id it came from.
 
 The bridge is armed when an agent is invited, and idempotently re-armed
 whenever a workbench's messages are read — bridges are in-memory, so a host
@@ -249,8 +249,10 @@ never appear in a path.
 `@corbits/chat` never talks to the platform's own HTTP API or reimplements
 its session, grant, or mail machinery. Instead it depends on `ChatPlatform`:
 a narrow port describing exactly what the package needs — launching a
-workbench or an invited agent, sending and listing mail, fetching an
-attachment's bytes, subscribing to live events, and arming a reply bridge.
+workbench or an invited agent, dispatching mail to an agent's own mailbox,
+fetching an attachment's bytes, and subscribing to live events. The timeline
+itself is not on that port: it is a chat-owned table behind
+`RoomMessageStore`.
 A host composes this port from services it already builds (a session
 service, an asset service, a sidecar router, and its database), and injects
 it — along with a settings store and a grant check — into

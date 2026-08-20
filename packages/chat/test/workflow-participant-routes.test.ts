@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 
 import { createInMemoryChatStore } from "../src/store";
+import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import {
   createWorkflowParticipantRoutes,
   type CreateWorkflowParticipantRoutesDeps,
@@ -41,6 +42,7 @@ function buildApp(
   return createWorkflowParticipantRoutes({
     store,
     platform: overrides.platform ?? fakePlatform(),
+    roomMessages: overrides.roomMessages ?? createInMemoryRoomMessageStore(),
     publish: overrides.publish ?? (() => undefined),
     authenticator: overrides.authenticator ?? authenticateAsRun,
   }) as unknown as Hono;
@@ -180,10 +182,11 @@ describe("POST /participants/messages", () => {
       updatedBy: "prn_1",
     });
     const platform = fakePlatform();
+    const roomMessages = createInMemoryRoomMessageStore();
 
-    const app = buildApp({ store, platform });
+    const app = buildApp({ store, platform, roomMessages });
     const questionBlock = {
-      kind: "block",
+      kind: "block" as const,
       block: {
         type: "question",
         data: {
@@ -202,8 +205,21 @@ describe("POST /participants/messages", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { id: string; createdAt: string };
     expect(typeof body.id).toBe("string");
-    expect(platform.sentMail.length).toBeGreaterThanOrEqual(1);
-    expect(platform.sentMail[0]?.principalId).toBe("prn_1");
-    expect(platform.sentMail[0]?.workbenchId).toBe("chan_1");
+
+    // The block lands on the workbench's own timeline, under the run's
+    // own address — the mail the send makes is the turn it asks of the
+    // workbench's agent, addressed to that agent and never to the room.
+    const listed = await roomMessages.listMessages({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+    });
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0]?.id).toBe(body.id);
+    expect(listed.items[0]?.sender.address).toBe(RUN_ADDRESS);
+    expect(listed.items[0]?.senderPrincipalId).toBe("prn_1");
+    expect(listed.items[0]?.parts).toEqual([questionBlock]);
+    expect(
+      platform.sentMail.every((mail) => mail.workbenchId !== "chan_1"),
+    ).toBe(true);
   });
 });

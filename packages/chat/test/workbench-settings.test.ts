@@ -15,6 +15,8 @@ import {
   mountAs,
   sendText,
   TENANT,
+  timelineEvents,
+  timelineOf,
 } from "./test-support";
 import type { fakePlatform } from "./test-support";
 
@@ -259,7 +261,7 @@ describe("benchContextWindowOf", () => {
 });
 
 describe("PATCH /workbenches/:id/settings", () => {
-  test("validates chat/* strictly, passes foreign namespaces opaquely, and sends control mail", async () => {
+  test("validates chat/* strictly, passes foreign namespaces opaquely, and posts the change onto the timeline", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -286,8 +288,15 @@ describe("PATCH /workbenches/:id/settings", () => {
     expect(body.pinned).toBe(false);
     expect(body.settings["acme-widget/color"]).toBe("blue");
 
+    // What changed is a fact about the room, so it is recorded on the
+    // room's own timeline rather than mailed anywhere.
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail).toHaveLength(0);
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timelineEvents(timeline, "workbench.settings-changed")).toHaveLength(
+      1,
+    );
+    expect(timeline[0]?.senderPrincipalId).toBe("prn_alice");
   });
 
   test("rejects an unknown chat/* key strictly", async () => {

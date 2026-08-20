@@ -10,7 +10,7 @@ import { formatRunAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
-import { decodeMail, encodeParts, senderOf } from "./codec";
+import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
@@ -42,8 +42,13 @@ import type {
   WorkbenchMail,
   ChatWorkbenchEvent,
   InvitableDefinition,
-  ListedMailItem,
 } from "./platform-port";
+import {
+  postRoomMessage,
+  type RoomMessage,
+  type RoomMessageStore,
+} from "./room-messages";
+import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ChatStore } from "./store";
 
@@ -168,7 +173,8 @@ export async function provisionSpaceWorkbench(
 
 export type LaunchAndJoinAgentDeps = {
   readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
-  readonly platform: WorkbenchLauncher & Pick<WorkbenchMail, "sendMail">;
+  readonly platform: WorkbenchLauncher;
+  readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
 };
 
@@ -272,17 +278,17 @@ export async function launchAndJoinAgent(
   // truth, and this send may be the host's first traffic — the wake it
   // triggers deploys the host, which must never put deploy time back
   // on the caller's path. A delivery failure is logged, never thrown.
-  const joinEventDelivered = deps.platform
-    .sendMail({
-      tenantId: input.tenantId,
-      workbenchId: input.workbenchId,
-      principalId: input.principalId,
-      content: encodeParts([joinEvent]),
-    })
+  const joinEventDelivered = postRoomMessage(deps, {
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    sender: { name: null, address: launched.address },
+    runId: localPartOf(launched.address),
+    parts: [joinEvent],
+  })
     .then(() => undefined)
     .catch((err: unknown) => {
       greetingLog.error(
-        "Join event delivery failed for workbench {workbenchId}'s agent " +
+        "Join event post failed for workbench {workbenchId}'s agent " +
           "{address}; the participant record is durable, only the " +
           "timeline's joined line is missing: {err}",
         { workbenchId: input.workbenchId, address: launched.address, err },
@@ -304,7 +310,8 @@ export async function launchAndJoinAgent(
 }
 
 export type PostCannedGreetingDeps = {
-  readonly platform: Pick<WorkbenchMail, "sendMail">;
+  readonly roomMessages: RoomMessageStore;
+  readonly publish: WorkbenchSubscriberRegistry["publish"];
 };
 
 export type CannedGreetingInput = {
@@ -414,11 +421,12 @@ export async function postCannedGreeting(
   input: PostCannedGreetingInput,
 ): Promise<void> {
   try {
-    await deps.platform.sendMail({
+    await postRoomMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
-      content: encodeParts([{ kind: "text", text: cannedGreeting(input) }]),
-      fromWorkbenchId: localPartOf(input.agentAddress),
+      sender: { name: null, address: input.agentAddress },
+      runId: localPartOf(input.agentAddress),
+      parts: [{ kind: "text", text: cannedGreeting(input) }],
     });
   } catch (err) {
     greetingLog.error(
@@ -432,7 +440,7 @@ export async function postCannedGreeting(
 
 export type JoinHumanParticipantDeps = {
   readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
-  readonly platform: Pick<WorkbenchMail, "sendMail">;
+  readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
 };
 
@@ -504,17 +512,17 @@ export async function joinHumanParticipant(
   // Not awaited, for the same reason `launchAndJoinAgent`'s own join
   // event isn't: the participant record above is the durable source of
   // truth, and this send can carry the host's deploy.
-  const joinEventDelivered = deps.platform
-    .sendMail({
-      tenantId: input.tenantId,
-      workbenchId: input.workbenchId,
-      principalId: input.principalId,
-      content: encodeParts([joinEvent]),
-    })
+  const joinEventDelivered = postRoomMessage(deps, {
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    sender: { name: null, address: input.principalId },
+    senderPrincipalId: input.principalId,
+    parts: [joinEvent],
+  })
     .then(() => undefined)
     .catch((err: unknown) => {
       greetingLog.error(
-        "Member-joined event delivery failed for workbench {workbenchId}'s " +
+        "Member-joined event post failed for workbench {workbenchId}'s " +
           "member {memberPrincipalId}; the participant record is durable, " +
           "only the timeline's joined line is missing",
         {
@@ -540,7 +548,7 @@ export async function joinHumanParticipant(
 
 export type RemoveWorkbenchParticipantDeps = {
   readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
-  readonly platform: Pick<WorkbenchMail, "sendMail">;
+  readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
   /**
    * Releases an invited agent's launched instance the way the idle-sleep
@@ -622,11 +630,12 @@ export async function removeWorkbenchParticipant(
           removedBy: input.principalId,
         },
       };
-  await deps.platform.sendMail({
+  await postRoomMessage(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    principalId: input.principalId,
-    content: encodeParts([leaveEvent]),
+    sender: { name: null, address: input.principalId },
+    senderPrincipalId: input.principalId,
+    parts: [leaveEvent],
   });
 
   if (isAgent) {
@@ -673,6 +682,7 @@ export type StartWorkflowCommandDeps = {
     "getWorkbenchSettings" | "updateWorkbenchSettings"
   >;
   readonly platform: WorkbenchLauncher & Pick<WorkbenchMail, "sendMail">;
+  readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
 };
 
@@ -716,7 +726,12 @@ export async function startWorkflowCommand(
   }
 
   const joined = await launchAndJoinAgent(
-    { store: deps.store, platform: deps.platform, publish: deps.publish },
+    {
+      store: deps.store,
+      platform: deps.platform,
+      roomMessages: deps.roomMessages,
+      publish: deps.publish,
+    },
     {
       tenantId: input.tenantId,
       principalId: input.principalId,
@@ -771,70 +786,63 @@ function labelForSender(
  * for event-only mail with no text parts — contributes nothing a
  * context block can render.
  */
-async function decodeContextItem(
-  platform: Pick<WorkbenchMail, "fetchBlob">,
-  workbenchId: string,
-  item: ListedMailItem,
+function contextItemFor(
+  message: RoomMessage,
   participants: readonly ParticipantRecord[],
-): Promise<WorkbenchContextItem | undefined> {
-  const parts = await decodeMail(item.mail, {
-    fetchBlob: (blobId) => platform.fetchBlob(workbenchId, blobId),
-  });
-  const texts = parts
+): WorkbenchContextItem | undefined {
+  const texts = message.parts
     .filter(
       (part): part is Extract<PartType, { kind: "text" }> =>
         part.kind === "text",
     )
     .map((part) => part.text);
   if (texts.length === 0) return undefined;
-  const sender = senderOf(item.mail);
   return {
-    label: labelForSender(sender.address, participants),
+    label: labelForSender(message.sender.address, participants),
     text: texts.join(" "),
   };
 }
 
 /**
- * Loads and decodes the workbench's recent timeline into context items
- * for a mention fan-out copy, excluding the just-sent message (matched
- * by mail id, since it is typically the newest item in the listing)
- * and any decoded message with no text parts (event-only mail
- * contributes nothing a context block can render). Capped to the
- * workbench's resolved `contextWindow` (most-recent-first before the
- * final oldest-first slice, so a window of 0 loads nothing and a small
- * window keeps only the newest few).
+ * Loads the workbench's recent timeline into context items for a
+ * mention fan-out copy, excluding the just-sent message (matched by id,
+ * since it is typically the newest item in the listing) and any message
+ * with no text parts (an event-only message contributes nothing a
+ * context block can render). Capped to the workbench's resolved
+ * `contextWindow` (most-recent-first before the final oldest-first
+ * slice, so a window of 0 loads nothing and a small window keeps only
+ * the newest few).
  *
  * When the workbench carries more messages than the window keeps, the
  * dropped span (CL-6204) is folded into one synthetic recap entry
  * (`buildDroppedRecap`) prepended ahead of the kept items, rather than
- * silently vanishing. The listing is paged (`listMail`'s own cursor)
- * out to `contextWindow + DROPPED_RECAP_LOOKBACK` items — just enough
- * to cover the window plus the recap's own bounded lookback — never
- * further: a dropped span longer than that is still counted (and its
- * date range still reported) from what was fetched, just marked as a
- * lower bound (`moreBeyondFold`) rather than pretending to know the
- * exact total.
+ * silently vanishing. The listing is paged out to
+ * `contextWindow + DROPPED_RECAP_LOOKBACK` items — just enough to cover
+ * the window plus the recap's own bounded lookback — never further: a
+ * dropped span longer than that is still counted (and its date range
+ * still reported) from what was fetched, just marked as a lower bound
+ * (`moreBeyondFold`) rather than pretending to know the exact total.
  *
  * Returns `undefined` when there is nothing to show at all — no kept
- * items and no recap — or when the timeline fails to load or decode:
- * that failure must never break the send, so it is logged and
- * swallowed here, leaving the caller to fan out un-situated.
+ * items and no recap — or when the timeline fails to load: that failure
+ * must never break the send, so it is logged and swallowed here,
+ * leaving the caller to fan out un-situated.
  */
 async function loadWorkbenchContext(input: {
-  platform: Pick<WorkbenchMail, "listMail" | "fetchBlob">;
+  roomMessages: Pick<RoomMessageStore, "listMessages">;
   tenantId: string;
   workbenchId: string;
-  excludeMailId: string;
+  excludeMessageId: string;
   participants: readonly ParticipantRecord[];
   contextWindow: number;
 }): Promise<string | undefined> {
   if (input.contextWindow === 0) return undefined;
   try {
     const fetchCap = input.contextWindow + DROPPED_RECAP_LOOKBACK;
-    const fetched: ListedMailItem[] = [];
+    const fetched: RoomMessage[] = [];
     let cursor: string | undefined;
     do {
-      const page = await input.platform.listMail(
+      const page = await input.roomMessages.listMessages(
         cursor === undefined
           ? { tenantId: input.tenantId, workbenchId: input.workbenchId }
           : {
@@ -848,54 +856,44 @@ async function loadWorkbenchContext(input: {
     } while (cursor !== undefined && fetched.length < fetchCap);
 
     const newestFirstExcludingSent = fetched
-      .filter((item) => item.id !== input.excludeMailId)
+      .filter((message) => message.id !== input.excludeMessageId)
       .slice(0, fetchCap);
     const moreBeyondFold = cursor !== undefined;
 
-    const windowMail = newestFirstExcludingSent.slice(0, input.contextWindow);
-    const droppedMail = newestFirstExcludingSent.slice(input.contextWindow);
-    const wasDropped = droppedMail.length > 0 || moreBeyondFold;
+    const windowed = newestFirstExcludingSent.slice(0, input.contextWindow);
+    const dropped = newestFirstExcludingSent.slice(input.contextWindow);
+    const wasDropped = dropped.length > 0 || moreBeyondFold;
 
     const items: WorkbenchContextItem[] = [];
-    for (const item of [...windowMail].reverse()) {
-      const decoded = await decodeContextItem(
-        input.platform,
-        input.workbenchId,
-        item,
-        input.participants,
-      );
-      if (decoded !== undefined) items.push(decoded);
+    for (const message of [...windowed].reverse()) {
+      const item = contextItemFor(message, input.participants);
+      if (item !== undefined) items.push(item);
     }
 
     let recap: WorkbenchContextItem | undefined;
     if (wasDropped) {
       const droppedItems: WorkbenchContextItem[] = [];
-      for (const item of droppedMail) {
-        const decoded = await decodeContextItem(
-          input.platform,
-          input.workbenchId,
-          item,
-          input.participants,
-        );
-        if (decoded !== undefined) droppedItems.push(decoded);
+      for (const message of dropped) {
+        const item = contextItemFor(message, input.participants);
+        if (item !== undefined) droppedItems.push(item);
       }
       const humanTexts = [...droppedItems]
         .reverse()
         .filter((item) => item.label === "user")
         .map((item) => item.text);
-      const oldestDropped = droppedMail[droppedMail.length - 1];
-      const newestDropped = droppedMail[0];
+      const oldestDropped = dropped[dropped.length - 1];
+      const newestDropped = dropped[0];
       recap =
         oldestDropped !== undefined && newestDropped !== undefined
           ? buildDroppedRecap({
-              droppedCount: droppedMail.length,
+              droppedCount: dropped.length,
               moreBeyondFold,
               humanTexts,
               firstDate: oldestDropped.createdAt,
               lastDate: newestDropped.createdAt,
             })
           : buildDroppedRecap({
-              droppedCount: droppedMail.length,
+              droppedCount: dropped.length,
               moreBeyondFold,
               humanTexts,
             });
@@ -915,15 +913,19 @@ async function loadWorkbenchContext(input: {
 
 export type SendWorkbenchMessageDeps = {
   readonly store: Pick<ChatStore, "getWorkbenchSettings" | "getBenchSettings">;
-  readonly platform: Pick<
-    WorkbenchMail,
-    "sendMail" | "listMail" | "fetchBlob" | "getMail"
-  >;
+  readonly roomMessages: RoomMessageStore;
+  readonly publish: WorkbenchSubscriberRegistry["publish"];
+  /** Dispatch only: reaching an agent's own mailbox to ask it for a
+   * turn. Nothing on the human write path touches it. */
+  readonly platform: Pick<WorkbenchMail, "sendMail">;
 };
 
 export type SendWorkbenchMessageInput = {
   readonly tenantId: string;
   readonly principalId: string;
+  /** The address the sender's message is posted under — `id@domain`,
+   * the same shape every participant address carries. */
+  readonly senderAddress: string;
   readonly workbenchId: string;
   readonly messageParts: PartType[];
   /**
@@ -939,11 +941,12 @@ export type SendWorkbenchMessageResult = {
   readonly createdAt: string;
   /**
    * Settles when every recipient this message routes to has been
-   * delivered (or its failure surfaced as a notice on the timeline —
-   * it never rejects). A delivery can wake a slept agent, which is a
-   * full redeploy, so the sender's own message is persisted and
-   * returned without waiting on any of it; a caller that needs the
-   * fan-out settled (a test, or a synchronous relay) awaits this.
+   * dispatched a turn (or its failure surfaced as a notice on the
+   * timeline — it never rejects). Dispatch can wake a slept agent,
+   * which is a full redeploy, so the sender's own message is persisted,
+   * published, and returned without waiting on any of it; a caller that
+   * needs the routing settled (a test, or a synchronous relay) awaits
+   * this.
    */
   readonly fanoutDelivered: Promise<void>;
 };
@@ -955,7 +958,7 @@ export type SendWorkbenchMessageResult = {
  * human message, an unknown message id, or no reply at all.
  */
 async function replyTargetAgent(
-  deps: Pick<SendWorkbenchMessageDeps["platform"], "getMail">,
+  roomMessages: Pick<RoomMessageStore, "getMessage">,
   input: {
     tenantId: string;
     workbenchId: string;
@@ -963,83 +966,90 @@ async function replyTargetAgent(
     participants: readonly ParticipantRecord[];
   },
 ): Promise<string | undefined> {
-  const parent = await deps.getMail({
+  const parent = await roomMessages.getMessage({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     messageId: input.inReplyToMessageId,
   });
   if (parent === undefined) return undefined;
-  const sender = senderOf(parent.mail);
   const match = input.participants.find(
     (participant) =>
       isAgentAddress(participant.address) &&
-      localPartOf(participant.address) === localPartOf(sender.address),
+      localPartOf(participant.address) === localPartOf(parent.sender.address),
   );
   return match?.address;
 }
 
 /**
- * Sends a message into a workbench and fans it out to every recipient
- * its mentions, reply target, and host-default resolve to — routing
- * never branches on the workbench's `kind` (a chat and a workbench are
- * routed identically): an `@mention` always reaches its agent; a plain
- * reply to an agent's message reaches that agent too, even unmentioned;
- * and a message naming no agent at all (no mention, no agent reply
- * target) defaults to the workbench's host — its first agent
- * participant — so a single-agent workbench still auto-responds and a
- * multi-agent one routes through its host instead of going silent.
+ * Posts a message into a workbench and routes it to every agent its
+ * mentions, reply target, and host-default resolve to. The message
+ * itself is one row plus one publish — no mail, no wake, no sidecar hop
+ * — so a workbench with every agent process stopped still takes
+ * messages and still renders them.
+ *
+ * Routing never branches on the workbench's `kind` (a chat and a
+ * workbench are routed identically): an `@mention` always reaches its
+ * agent; a plain reply to an agent's message reaches that agent too,
+ * even unmentioned; and a message naming no agent at all (no mention,
+ * no agent reply target) defaults to the workbench's host — its first
+ * agent participant — so a single-agent workbench still auto-responds
+ * and a multi-agent one routes through its host instead of going
+ * silent.
  */
 export async function sendWorkbenchMessage(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
 ): Promise<SendWorkbenchMessageResult> {
-  const sent = await deps.platform.sendMail({
+  const posted = await postRoomMessage(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    principalId: input.principalId,
-    content: encodeParts(input.messageParts),
+    sender: { name: null, address: input.senderAddress },
+    senderPrincipalId: input.principalId,
+    parts: input.messageParts,
   });
 
-  return { ...sent, fanoutDelivered: fanOutMessage(deps, input, sent.id) };
+  return {
+    id: posted.id,
+    createdAt: posted.createdAt,
+    fanoutDelivered: routeMessage(deps, input, posted.id),
+  };
 }
 
 /**
  * Everything the sender's own message does NOT have to wait for:
- * resolving recipients, loading the re-situating context a mentioned
- * agent needs, and delivering one copy per recipient. Every delivery
- * goes through `sendMail`, which wakes an unroutable target first — a
- * full redeploy of a slept agent — so keeping this off the request
- * path is what stops a quiet workbench's first message from paying
- * deploy time before the sender's own bubble confirms.
+ * resolving which agents this message is for, loading the re-situating
+ * context a mentioned agent needs, and asking each of them for a turn.
+ * A dispatch wakes an unroutable agent first — a full redeploy of a
+ * slept one — so keeping this off the request path is what stops a
+ * quiet workbench's first message from paying deploy time before the
+ * sender's own bubble confirms.
  *
- * Never rejects. A recipient that stays unreachable through
- * `sendMail`'s own reclaim retries gets an honest notice on the
- * timeline in that agent's own voice, matching how the orchestrator
- * already reports a turn that produced nothing (see
- * `chat-orchestrator.ts`'s silent-turn notice) — a sender must never
- * be left believing an agent received something it never did.
+ * Never rejects. An agent that stays unreachable gets an honest notice
+ * on the timeline in its own voice, matching how the orchestrator
+ * already reports a turn that produced nothing — a sender must never be
+ * left believing an agent received something it never did.
  */
-async function fanOutMessage(
+async function routeMessage(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
-  sentMailId: string,
+  messageId: string,
 ): Promise<void> {
   try {
-    await deliverFanout(deps, input, sentMailId);
+    await routeToRecipients(deps, input, messageId);
   } catch (err) {
     fanoutLog.error(
-      "Fan-out failed for workbench {workbenchId}'s message {messageId}; " +
-        "the sender's own message is durable, but its recipients may not " +
-        "have received it",
-      { workbenchId: input.workbenchId, messageId: sentMailId, err },
+      "Routing failed for workbench {workbenchId}'s message {messageId}; " +
+        "the message itself is durable, but the agents it names may never " +
+        "have been asked for a turn",
+      { workbenchId: input.workbenchId, messageId, err },
     );
   }
 }
 
-async function deliverFanout(
+async function routeToRecipients(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
-  sentMailId: string,
+  messageId: string,
 ): Promise<void> {
   const settingsRow = await deps.store.getWorkbenchSettings(
     input.tenantId,
@@ -1052,7 +1062,7 @@ async function deliverFanout(
     mentionedParticipants(input.messageParts, participants),
   );
   if (input.inReplyToMessageId !== undefined) {
-    const target = await replyTargetAgent(deps.platform, {
+    const target = await replyTargetAgent(deps.roomMessages, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
       inReplyToMessageId: input.inReplyToMessageId,
@@ -1076,10 +1086,10 @@ async function deliverFanout(
   const contextText =
     !isDefaultRouting && recipients.length > 0
       ? await loadWorkbenchContext({
-          platform: deps.platform,
+          roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
-          excludeMailId: sentMailId,
+          excludeMessageId: messageId,
           participants,
           contextWindow: resolveContextWindow(
             settingsRow?.settings ?? {},
@@ -1090,59 +1100,86 @@ async function deliverFanout(
           ).value,
         })
       : undefined;
-  const fanoutParts =
+  const turnParts =
     contextText !== undefined
       ? (mergeContextIntoParts(contextText, input.messageParts) as PartType[])
       : input.messageParts;
 
-  // Concurrent: recipients are independent mailboxes, and a delivery
-  // that has to wake its target pays a full redeploy — serially, one
-  // slept agent would delay every agent mentioned after it.
+  // Concurrent: agents are independent, and a dispatch that has to wake
+  // its target pays a full redeploy — serially, one slept agent would
+  // delay every agent mentioned after it.
   await Promise.all(
-    recipients.map(async (participant) => {
+    recipients.map(async (agentAddress) => {
       try {
-        // The chat orchestrator (built once by the host, subscribed to
-        // the sidecar's own event stream) is what turns this
-        // participant's eventual `connector.reply` back into a workbench
-        // message — no per-delivery arming needed here anymore.
-        await deps.platform.sendMail({
+        await dispatchTurn(deps, {
           tenantId: input.tenantId,
-          workbenchId: localPartOf(participant),
+          workbenchId: input.workbenchId,
           principalId: input.principalId,
-          content: encodeParts(fanoutParts, { replyTo: input.workbenchId }),
-          fromWorkbenchId: input.workbenchId,
+          agentAddress,
+          parts: turnParts,
         });
       } catch (err) {
         fanoutLog.error(
-          "Delivery to {participant} failed for workbench {workbenchId}'s " +
-            "message {messageId}; posting an undelivered notice in its voice: {err}",
+          "Asking {agentAddress} for a turn failed for workbench " +
+            "{workbenchId}'s message {messageId}; posting an undelivered " +
+            "notice in its voice: {err}",
           {
-            participant,
+            agentAddress,
             workbenchId: input.workbenchId,
-            messageId: sentMailId,
+            messageId,
             err,
           },
         );
-        await postUndeliveredNotice(deps.platform, {
+        await postUndeliveredNotice(deps, {
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
-          agentAddress: participant,
+          agentAddress,
         });
       }
     }),
   );
 }
 
+export type DispatchTurnInput = {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly principalId: string;
+  readonly agentAddress: string;
+  readonly parts: PartType[];
+};
+
 /**
- * Reports one undeliverable fan-out copy on the timeline, in the
- * agent's own voice and from its own address — the same attribution
- * its real replies carry — so an unreachable teammate reads as a
- * teammate who missed the message rather than as silence. Swallows its
- * own failure: if the timeline itself is unreachable there is nowhere
- * left to say so, and the error is already logged by the caller.
+ * Asks one agent for a turn on a workbench's newest message — the seam
+ * between the room (rows on a timeline) and the execution plane. It is
+ * still mail underneath: a copy of the message is delivered to the
+ * agent's own mailbox from the workbench's address, and the chat
+ * orchestrator turns the agent's eventual reply back into a room
+ * message. CL-6327 moved the room off mail; the turn itself moves in
+ * CL-6329, and this function is the only place that has to change.
+ */
+export async function dispatchTurn(
+  deps: Pick<SendWorkbenchMessageDeps, "platform">,
+  input: DispatchTurnInput,
+): Promise<void> {
+  await deps.platform.sendMail({
+    tenantId: input.tenantId,
+    workbenchId: localPartOf(input.agentAddress),
+    principalId: input.principalId,
+    content: encodeParts(input.parts, { replyTo: input.workbenchId }),
+    fromWorkbenchId: input.workbenchId,
+  });
+}
+
+/**
+ * Reports one agent that could not be reached on the timeline, in that
+ * agent's own voice and from its own address — the same attribution its
+ * real replies carry — so an unreachable teammate reads as a teammate
+ * who missed the message rather than as silence. Swallows its own
+ * failure: if the timeline itself is unreachable there is nowhere left
+ * to say so, and the error is already logged by the caller.
  */
 async function postUndeliveredNotice(
-  deps: Pick<SendWorkbenchMessageDeps["platform"], "sendMail">,
+  deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "publish">,
   input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -1150,16 +1187,17 @@ async function postUndeliveredNotice(
   },
 ): Promise<void> {
   try {
-    await deps.sendMail({
+    await postRoomMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
-      content: encodeParts([
+      sender: { name: null, address: input.agentAddress },
+      runId: localPartOf(input.agentAddress),
+      parts: [
         {
           kind: "text",
           text: "I didn't get that one — send it again and I'll pick it up.",
         },
-      ]),
-      fromWorkbenchId: localPartOf(input.agentAddress),
+      ],
     });
   } catch (err) {
     fanoutLog.error(

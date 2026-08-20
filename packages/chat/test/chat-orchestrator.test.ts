@@ -2,11 +2,15 @@
 // shared `agent.event` stream resolves the replying address to its
 // folded run, finds every workbench whose participants carry that
 // address (defensively — more than one, if the store ever shows it),
-// and posts the reply into each via `platform.sendMail` with
-// `fromWorkbenchId` set to the agent's own run id. Non-reply events are
-// ignored for posting but still bump activity; an address the store
-// never produced (no folded run) is ignored outright; `dispose` stops
-// the subscription.
+// and posts the reply onto each one's own timeline via
+// `postRoomMessage`, sent by the replying agent's address and carrying
+// its run id. Non-reply events are ignored for posting but still bump
+// activity; an address the store never produced (no folded run) is
+// ignored outright; `dispose` stops the subscription.
+//
+// Mail is left with exactly one job here — the delegation hop that
+// dispatches a mentioned specialist's own mailbox — so a test that
+// asserts on `sendMail` is asserting on that hop and nothing else.
 //
 // Also proves the `reactor.gate.blocked` -> approve-block wiring: an
 // approval-gate park resolves its `correlationId` to the platform's own
@@ -20,8 +24,14 @@ import {
   createChatOrchestrator,
 } from "../src/chat-orchestrator";
 import { parseBlock } from "../src/blocks";
-import { decodeParts, type MailContent } from "../src/codec";
+import type { ChatPlatform, ChatWorkbenchEvent } from "../src/platform-port";
+import {
+  createInMemoryRoomMessageStore,
+  type RoomMessage,
+  type RoomMessageStore,
+} from "../src/room-messages";
 import type { WorkbenchSettingsRow } from "../src/store";
+import type { WorkbenchSubscriberRegistry } from "../src/workbench-events";
 import { createInMemoryWriteClaimStore } from "../src/write-claims";
 
 // A fresh claim store per test, unless a test explicitly wants to share
@@ -30,6 +40,61 @@ import { createInMemoryWriteClaimStore } from "../src/write-claims";
 // view (see the "restart-shaped redelivery" tests below).
 function fakeClaims() {
   return createInMemoryWriteClaimStore();
+}
+
+/**
+ * The room timeline every poster writes to, plus the live-stream publish
+ * that goes with it. `posted` is the recording every assertion below
+ * reads: the real in-memory store does the work, this only remembers what
+ * came back out of it, in order. `failPostOnCall` makes one nominated
+ * post throw, for the partial-failure recovery cases.
+ */
+function fakeRoom(options?: { failPostOnCall: number }) {
+  const posted: RoomMessage[] = [];
+  const published: { workbenchId: string; event: ChatWorkbenchEvent }[] = [];
+  const store = createInMemoryRoomMessageStore();
+  let posts = 0;
+  const roomMessages: RoomMessageStore = {
+    async insertMessage(input) {
+      posts += 1;
+      if (posts === options?.failPostOnCall) {
+        throw new Error("simulated room-message post failure");
+      }
+      const message = await store.insertMessage(input);
+      posted.push(message);
+      return message;
+    },
+    listMessages: store.listMessages,
+    getMessage: store.getMessage,
+    listActivity: store.listActivity,
+  };
+  const publish: WorkbenchSubscriberRegistry["publish"] = (
+    workbenchId,
+    event,
+  ) => {
+    published.push({ workbenchId, event });
+  };
+  return { roomMessages, publish, posted, published };
+}
+
+/** The agent-dispatch side: every `sendMail` the delegation hop makes. */
+function fakeMail() {
+  const sentMail: {
+    tenantId: string;
+    workbenchId: string;
+    content: unknown;
+    fromWorkbenchId?: string;
+  }[] = [];
+  const platform: Pick<ChatPlatform, "sendMail"> = {
+    async sendMail(input) {
+      sentMail.push(input as never);
+      return {
+        id: `mail_${sentMail.length}`,
+        createdAt: new Date().toISOString(),
+      };
+    },
+  };
+  return { platform, sentMail };
 }
 
 function approvalRow(overrides?: {
@@ -113,13 +178,8 @@ function workbenchRow(
 }
 
 describe("createChatOrchestrator", () => {
-  test("posts a connector.reply into the member workbench resolved from the store", async () => {
-    const sentMail: {
-      tenantId: string;
-      workbenchId: string;
-      content: unknown;
-      fromWorkbenchId?: string;
-    }[] = [];
+  test("posts a connector.reply onto the member workbench's timeline resolved from the store", async () => {
+    const room = fakeRoom();
     const listWorkbenchSettingsCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -132,12 +192,9 @@ describe("createChatOrchestrator", () => {
           ];
         },
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input as never);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -152,23 +209,23 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(listWorkbenchSettingsCalls).toEqual(["ten_1"]);
-    expect(sentMail).toHaveLength(1);
-    expect(sentMail[0]).toMatchObject({
-      tenantId: "ten_1",
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_workbench1",
-      fromWorkbenchId: "ins_echo1",
+      sender: { name: null, address: "ins_echo1@ten1.workbench.test" },
+      runId: "ins_echo1",
+      parts: [{ kind: "text", text: "hello back" }],
     });
+    // The message is on every open timeline, not only in the table.
+    expect(room.published).toHaveLength(1);
+    expect(room.published[0]?.workbenchId).toBe("ins_workbench1");
 
     orchestrator.dispose();
   });
 
   test("the host's reply mentioning a specialist fans out to that specialist too — the delegation hop", async () => {
-    const sentMail: {
-      tenantId: string;
-      workbenchId: string;
-      content: unknown;
-      fromWorkbenchId?: string;
-    }[] = [];
+    const room = fakeRoom();
+    const { platform, sentMail } = fakeMail();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_myra1", tenantId: "ten_1" }) as never,
@@ -180,12 +237,9 @@ describe("createChatOrchestrator", () => {
           ]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input as never);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -202,13 +256,15 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(2);
-    expect(sentMail[0]).toMatchObject({
-      tenantId: "ten_1",
+    // The reply itself lands on the workbench's own timeline...
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_workbench1",
-      fromWorkbenchId: "ins_myra1",
+      sender: { address: "ins_myra1@ten1.workbench.test" },
     });
-    expect(sentMail[1]).toMatchObject({
+    // ...and only the hop that wakes the mentioned specialist is mail.
+    expect(sentMail).toHaveLength(1);
+    expect(sentMail[0]).toMatchObject({
       tenantId: "ten_1",
       workbenchId: "ins_echo1",
       fromWorkbenchId: "ins_workbench1",
@@ -218,7 +274,7 @@ describe("createChatOrchestrator", () => {
   });
 
   test("a delegated specialist's reply threads under the delegating message; the host's own replies stay in main (CL-5879)", async () => {
-    const sentMail: { workbenchId: string; fromWorkbenchId?: string }[] = [];
+    const room = fakeRoom();
     const assignments: {
       tenantId: string;
       workbenchId: string;
@@ -262,20 +318,9 @@ describe("createChatOrchestrator", () => {
           ]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push({
-            workbenchId: input.workbenchId,
-            ...(input.fromWorkbenchId !== undefined
-              ? { fromWorkbenchId: input.fromWorkbenchId }
-              : {}),
-          });
-          return {
-            id: `mail_${sentMail.length}`,
-            createdAt: new Date().toISOString(),
-          };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       threads: {
         openReplyThread: async (input) => {
           openedThreadFor.push(input.parentMessageId);
@@ -311,10 +356,14 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The delegating message is mail_1, posted into ins_workbench1.
-    expect(sentMail[0]).toMatchObject({
+    // The delegating message is the first one posted into ins_workbench1.
+    const delegatingMessage = room.posted[0];
+    if (delegatingMessage === undefined) {
+      throw new Error("expected the host's delegating message to be posted");
+    }
+    expect(delegatingMessage).toMatchObject({
       workbenchId: "ins_workbench1",
-      fromWorkbenchId: "ins_myra1",
+      sender: { address: "ins_myra1@ten1.workbench.test" },
     });
     // No thread assignment yet — only the specialist's own reply threads.
     expect(assignments).toHaveLength(0);
@@ -331,13 +380,13 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // The specialist's reply lands in the same main workbench as the host...
-    const specialistReply = sentMail.find(
-      (m) => m.fromWorkbenchId === "ins_echo1",
+    const specialistReply = room.posted.find(
+      (message) => message.sender.address === "ins_echo1@ten1.workbench.test",
     );
     expect(specialistReply).toMatchObject({ workbenchId: "ins_workbench1" });
-    // ...but is threaded under the delegating message (mail_1), not left
-    // loose on the root feed.
-    expect(openedThreadFor).toEqual(["mail_1"]);
+    // ...but is threaded under the delegating message, not left loose on
+    // the root feed.
+    expect(openedThreadFor).toEqual([delegatingMessage.id]);
     expect(assignments).toHaveLength(1);
     expect(assignments[0]).toMatchObject({
       tenantId: "ten_1",
@@ -349,7 +398,7 @@ describe("createChatOrchestrator", () => {
   });
 
   test("posts into every workbench when the store shows the address in more than one", async () => {
-    const sentMail: { workbenchId: string }[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -359,12 +408,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench2", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push({ workbenchId: input.workbenchId });
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -378,7 +424,7 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail.map((m) => m.workbenchId).sort()).toEqual([
+    expect(room.posted.map((message) => message.workbenchId).sort()).toEqual([
       "ins_workbench1",
       "ins_workbench2",
     ]);
@@ -392,7 +438,7 @@ describe("createChatOrchestrator", () => {
   // process already saw for the turn is never followed by a redundant
   // notice, and a redelivered bracket-close event posts at most one.
   test("message.run.ended posts a notice only for a turn that ended with no reply, once per redelivery", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -401,12 +447,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -426,7 +469,7 @@ describe("createChatOrchestrator", () => {
       event: { type: "message.run.ended", data: { status: "completed" } },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(1);
+    expect(room.posted).toHaveLength(1);
 
     // Turn 2: a silent completion — no reply this process ever saw for
     // it — posts the honest empty-turn notice.
@@ -440,10 +483,8 @@ describe("createChatOrchestrator", () => {
       event: silentEnd,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(2);
-    expect(
-      decodeParts((sentMail[1] as { content: MailContent }).content),
-    ).toEqual([
+    expect(room.posted).toHaveLength(2);
+    expect(room.posted[1]?.parts).toEqual([
       {
         kind: "text",
         text: "I didn't manage to answer that one — say it again and I'll pick it up.",
@@ -458,7 +499,7 @@ describe("createChatOrchestrator", () => {
       event: silentEnd,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(2);
+    expect(room.posted).toHaveLength(2);
 
     // Turn 3: a fresh reply after the silent turn 2 still posts — the
     // bracket-close bookkeeping never leaves stale state behind.
@@ -468,7 +509,7 @@ describe("createChatOrchestrator", () => {
       event: { type: "connector.reply", data: { content: "hi again" } },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(3);
+    expect(room.posted).toHaveLength(3);
 
     orchestrator.dispose();
   });
@@ -482,7 +523,7 @@ describe("createChatOrchestrator", () => {
   // sending consecutive messages during a rough patch saw exactly one
   // notice ever, then total silence with no trace anywhere.
   test("message.run.ended posts a notice for EACH silent turn, not just the first", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -491,12 +532,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -509,7 +547,7 @@ describe("createChatOrchestrator", () => {
       event: { type: "message.run.ended", data: { status: "completed" } },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(1);
+    expect(room.posted).toHaveLength(1);
 
     // Turn 2 opens (a genuinely new message, not a redelivery) —
     // re-arms the notice guard for this fresh turn.
@@ -528,13 +566,13 @@ describe("createChatOrchestrator", () => {
       event: { type: "message.run.ended", data: { status: "completed" } },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sentMail).toHaveLength(2);
+    expect(room.posted).toHaveLength(2);
 
     orchestrator.dispose();
   });
 
   test("message.run.ended posts the extracted error text for a failed turn", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -543,12 +581,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -564,22 +599,24 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(1);
-    expect(
-      decodeParts((sentMail[0] as { content: MailContent }).content),
-    ).toEqual([{ kind: "text", text: "provider timed out" }]);
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.parts).toEqual([
+      { kind: "text", text: "provider timed out" },
+    ]);
 
     orchestrator.dispose();
   });
 
   test("ignores non-reply events for posting but still bumps activity", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const recordActivityCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: { listWorkbenchSettings: async () => [] },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -594,19 +631,21 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
     expect(recordActivityCalls).toEqual(["ins_echo1@ten1.workbench.test"]);
 
     orchestrator.dispose();
   });
 
   test("ignores an address with no folded run", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb(undefined) as never,
       store: { listWorkbenchSettings: async () => [] },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -620,13 +659,13 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
 
     orchestrator.dispose();
   });
 
   test("dispose unsubscribes from the event stream", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -635,7 +674,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -651,16 +692,11 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
   });
 
   test("posts an approve block for a gate-blocked approval, keyed off the platform's own row", async () => {
-    const sentMail: {
-      tenantId: string;
-      workbenchId: string;
-      content: unknown;
-      fromWorkbenchId?: string;
-    }[] = [];
+    const room = fakeRoom();
     const findByCorrelationIdCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -670,12 +706,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push(input as never);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: {
@@ -698,14 +731,14 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(findByCorrelationIdCalls).toEqual(["cor_1"]);
-    expect(sentMail).toHaveLength(1);
-    expect(sentMail[0]).toMatchObject({
-      tenantId: "ten_1",
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_workbench1",
-      fromWorkbenchId: "ins_echo1",
+      sender: { name: null, address: "ins_echo1@ten1.workbench.test" },
+      runId: "ins_echo1",
     });
 
-    const parts = decodeParts(sentMail[0]?.content as never);
+    const parts = room.posted[0]?.parts ?? [];
     expect(parts).toHaveLength(1);
     const part = parts[0];
     if (part?.kind !== "block") throw new Error("expected a block part");
@@ -720,7 +753,7 @@ describe("createChatOrchestrator", () => {
   });
 
   test("ignores a gate-blocked event for a non-approval gate", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -729,7 +762,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: {
@@ -750,13 +785,13 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
 
     orchestrator.dispose();
   });
 
   test("a redelivered gate-blocked event does not post a second card", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -765,7 +800,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => approvalRow() },
@@ -790,13 +827,13 @@ describe("createChatOrchestrator", () => {
     emitGateBlocked();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(1);
+    expect(room.posted).toHaveLength(1);
 
     orchestrator.dispose();
   });
 
   test("a gate-blocked event for an already-resolved approval posts nothing", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
@@ -805,7 +842,9 @@ describe("createChatOrchestrator", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: {
@@ -824,7 +863,7 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
 
     orchestrator.dispose();
   });
@@ -832,7 +871,7 @@ describe("createChatOrchestrator", () => {
 
 describe("createArtifactDeliveryHandler", () => {
   test("posts a FilePart into every member workbench for a finalized turn naming a persisted artifact", async () => {
-    const sentMail: { workbenchId: string; content: unknown }[] = [];
+    const room = fakeRoom();
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
@@ -841,15 +880,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sentMail.push({
-            workbenchId: input.workbenchId,
-            content: input.content,
-          });
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
     });
@@ -873,10 +906,9 @@ describe("createArtifactDeliveryHandler", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(1);
-    expect(sentMail[0]?.workbenchId).toBe("ins_workbench1");
-    const decodedParts = decodeParts(sentMail[0]?.content as MailContent);
-    expect(decodedParts).toEqual([
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.workbenchId).toBe("ins_workbench1");
+    expect(room.posted[0]?.parts).toEqual([
       {
         kind: "file",
         name: "Notes",
@@ -887,7 +919,7 @@ describe("createArtifactDeliveryHandler", () => {
   });
 
   test("sends nothing when the turn's tool calls name no persisted artifact", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
@@ -896,7 +928,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: { sendMail: async () => sentMail.push(1) as never },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
     });
@@ -909,11 +943,12 @@ describe("createArtifactDeliveryHandler", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(0);
+    expect(room.posted).toHaveLength(0);
   });
 
   test("records a memory entry for a persisted artifact, attributed to the run's own tenant + principal — never a model-supplied value", async () => {
     const { memory, added } = fakeMemory();
+    const room = fakeRoom();
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({
@@ -926,12 +961,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
       memory,
@@ -975,6 +1007,7 @@ describe("createArtifactDeliveryHandler", () => {
   });
 
   test("records nothing when the memory plane is not mounted", async () => {
+    const room = fakeRoom();
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({
@@ -987,12 +1020,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
     });
@@ -1020,6 +1050,7 @@ describe("createArtifactDeliveryHandler", () => {
 
   test("records nothing when the run has no principal to attribute the entry to", async () => {
     const { memory, added } = fakeMemory();
+    const room = fakeRoom();
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({
@@ -1032,12 +1063,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
       memory,
@@ -1076,7 +1104,7 @@ describe("createArtifactDeliveryHandler", () => {
   // fresh in-memory `Set` if there were one — but the durable claim
   // table survives), proving the dedup holds even then.
   test("a redelivered finalized turn posts no second FilePart and records no second memory entry, even across a restart-shaped new handler instance", async () => {
-    const sentMail: unknown[] = [];
+    const room = fakeRoom();
     const { memory, added } = fakeMemory();
     const claims = fakeClaims();
     const deps = {
@@ -1091,12 +1119,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => {
-          sentMail.push(1);
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims,
       memory,
@@ -1128,7 +1153,7 @@ describe("createArtifactDeliveryHandler", () => {
     secondHandler("run_1@ten1.workbench.test", turn);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(1);
+    expect(room.posted).toHaveLength(1);
     expect(added).toHaveLength(1);
   });
 
@@ -1151,6 +1176,7 @@ describe("createArtifactDeliveryHandler", () => {
         return { documentId: "doc_1", versionId: "ver_1" };
       },
     };
+    const room = fakeRoom();
     const deps = {
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({
@@ -1163,12 +1189,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
       memory,
@@ -1229,9 +1252,8 @@ describe("createArtifactDeliveryHandler", () => {
     ).toEqual(["art_1", "art_2"]);
   });
 
-  test("a mid-loop sendMail failure loses no FilePart: the failed workbench recovers on redelivery, the one that already succeeded is not duplicated", async () => {
-    const sentMail: { workbenchId: string }[] = [];
-    let sendCalls = 0;
+  test("a mid-loop post failure loses no FilePart: the failed workbench recovers on redelivery, the one that already succeeded is not duplicated", async () => {
+    const room = fakeRoom({ failPostOnCall: 2 });
     const handler = createArtifactDeliveryHandler({
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
@@ -1241,14 +1263,9 @@ describe("createArtifactDeliveryHandler", () => {
           workbenchRow("ins_workbench2", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async (input) => {
-          sendCalls += 1;
-          if (sendCalls === 2) throw new Error("simulated sendMail failure");
-          sentMail.push({ workbenchId: input.workbenchId });
-          return { id: "mail_1", createdAt: new Date().toISOString() };
-        },
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
     });
@@ -1272,17 +1289,17 @@ describe("createArtifactDeliveryHandler", () => {
     handler("run_1@ten1.workbench.test", turn);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // One workbench got its FilePart; the other's send threw, releasing
+    // One workbench got its FilePart; the other's post threw, releasing
     // its claim.
-    expect(sentMail).toHaveLength(1);
+    expect(room.posted).toHaveLength(1);
 
-    // Redelivery: the workbench that already succeeded is not resent; the
-    // one whose send failed is retried and this time succeeds.
+    // Redelivery: the workbench that already succeeded is not reposted;
+    // the one whose post failed is retried and this time succeeds.
     handler("run_1@ten1.workbench.test", turn);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sentMail).toHaveLength(2);
-    expect(sentMail.map((m) => m.workbenchId).sort()).toEqual([
+    expect(room.posted).toHaveLength(2);
+    expect(room.posted.map((message) => message.workbenchId).sort()).toEqual([
       "ins_workbench1",
       "ins_workbench2",
     ]);
@@ -1297,6 +1314,7 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
     providerHealth?: { reportInferenceFailure: (args: unknown) => void };
     listConnectedProviders?: (tenantId: string) => Promise<readonly string[]>;
   }) {
+    const room = fakeRoom();
     return {
       approvals: { findByCorrelationId: async () => null },
       db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
@@ -1305,12 +1323,9 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
           workbenchRow("ins_workbench1", ["run_1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events: createSidecarEmitter(),
       claims: fakeClaims(),
       ...overrides,
@@ -1449,6 +1464,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
   test("records at most one memory entry per workbench per day for a connector.reply", async () => {
     const { memory, added } = fakeMemory();
     const events = createSidecarEmitter();
+    const room = fakeRoom();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({
         id: "ins_echo1",
@@ -1460,12 +1476,9 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -1498,6 +1511,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
 
   test("records nothing when the memory plane is not mounted", async () => {
     const events = createSidecarEmitter();
+    const room = fakeRoom();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({
         id: "ins_echo1",
@@ -1509,12 +1523,9 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
@@ -1540,6 +1551,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
   test("still records at most one digest entry per workbench per day across a restart-shaped new orchestrator instance", async () => {
     const { memory, added } = fakeMemory();
     const claims = fakeClaims();
+    const room = fakeRoom();
     const deps = {
       db: createFakeDb({
         id: "ins_echo1",
@@ -1551,12 +1563,9 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       approvals: { findByCorrelationId: async () => null },
       claims,
       memory,
@@ -1612,6 +1621,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
       },
     };
     const events = createSidecarEmitter();
+    const room = fakeRoom();
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({
         id: "ins_echo1",
@@ -1623,12 +1633,9 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
           workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
         ],
       },
-      platform: {
-        sendMail: async () => ({
-          id: "mail_1",
-          createdAt: new Date().toISOString(),
-        }),
-      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
       events,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },

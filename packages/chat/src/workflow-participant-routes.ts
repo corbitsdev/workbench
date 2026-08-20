@@ -100,6 +100,7 @@ export type CreateWorkflowParticipantRoutesDeps = {
     SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &
     SendWorkbenchMessageDeps["platform"];
+  readonly roomMessages: SendWorkbenchMessageDeps["roomMessages"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
   readonly authenticator: WorkflowRunAuthenticator;
 };
@@ -156,7 +157,12 @@ export function createWorkflowParticipantRoutes(
     }
 
     const joined = await launchAndJoinAgent(
-      { store: deps.store, platform: deps.platform, publish: deps.publish },
+      {
+        store: deps.store,
+        platform: deps.platform,
+        roomMessages: deps.roomMessages,
+        publish: deps.publish,
+      },
       {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
@@ -211,10 +217,16 @@ export function createWorkflowParticipantRoutes(
     }
 
     const sent = await sendWorkbenchMessage(
-      { store: deps.store, platform: deps.platform },
+      {
+        store: deps.store,
+        platform: deps.platform,
+        roomMessages: deps.roomMessages,
+        publish: deps.publish,
+      },
       {
         tenantId: scope.tenantId,
         principalId: scope.principalId,
+        senderAddress: scope.address,
         workbenchId: workbench.workbenchId,
         messageParts: body.parts as PartType[],
       },

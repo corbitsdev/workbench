@@ -14,16 +14,24 @@ import {
   createWorkbench,
   fakePlatform,
   mountAs,
+  nextTimelineMoment,
   settleFanout,
   TENANT,
+  timelineEvents,
+  timelineOf,
+  timelineTexts,
 } from "./test-support";
+import {
+  createInMemoryRoomMessageStore,
+  postRoomMessage,
+} from "../src/room-messages";
 
 describe("postCannedGreeting (CL-6126)", () => {
   test("posts the greeting onto the chat's own timeline, attributed to the agent's run", async () => {
-    const platform = fakePlatform();
+    const roomMessages = createInMemoryRoomMessageStore();
 
     await postCannedGreeting(
-      { platform },
+      { roomMessages, publish: () => undefined },
       {
         tenantId: TENANT.id,
         workbenchId: "chan_1",
@@ -33,17 +41,25 @@ describe("postCannedGreeting (CL-6126)", () => {
       },
     );
 
-    expect(platform.sentMail).toHaveLength(1);
-    const posted = platform.sentMail[0];
-    expect(posted?.workbenchId).toBe("chan_1");
-    expect(posted?.fromWorkbenchId).toBe("ins_agent1");
-    expect(posted?.content).toEqual({
-      content: cannedGreeting({
-        workbenchId: "chan_1",
-        agentName: "Myra",
-        senderName: "Alice",
-      }),
+    const listed = await roomMessages.listMessages({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
     });
+    expect(listed.items).toHaveLength(1);
+    const posted = listed.items[0];
+    expect(posted?.workbenchId).toBe("chan_1");
+    expect(posted?.sender.address).toBe("ins_agent1@acme.example");
+    expect(posted?.runId).toBe("ins_agent1");
+    expect(posted?.parts).toEqual([
+      {
+        kind: "text",
+        text: cannedGreeting({
+          workbenchId: "chan_1",
+          agentName: "Myra",
+          senderName: "Alice",
+        }),
+      },
+    ]);
   });
 
   test("the greeting names the opener and the agent, and asks a question — never a menu or the workbench title", () => {
@@ -118,15 +134,14 @@ describe("postCannedGreeting (CL-6126)", () => {
   });
 
   test("a post failure is swallowed, never thrown", async () => {
-    const platform = fakePlatform({
-      sendMail: async () => {
-        throw new Error("agent unreachable");
-      },
-    });
+    const roomMessages = createInMemoryRoomMessageStore();
+    roomMessages.insertMessage = async () => {
+      throw new Error("the timeline is unavailable");
+    };
 
     await expect(
       postCannedGreeting(
-        { platform },
+        { roomMessages, publish: () => undefined },
         {
           tenantId: TENANT.id,
           workbenchId: "chan_1",
@@ -139,7 +154,7 @@ describe("postCannedGreeting (CL-6126)", () => {
 });
 
 describe("message fan-out", () => {
-  test("fan-out copies to mentioned agents are sent from the workbench", async () => {
+  test("a mentioned agent is asked for a turn on its own mailbox, from the workbench", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -159,16 +174,24 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
+    await settleFanout();
+
+    // The message itself is a row on the workbench's own timeline; the
+    // one mail the send makes is the turn dispatch, addressed to the
+    // agent's own instance and never to the room.
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(2);
-    const copy = platform.sentMail[1];
-    expect(copy?.workbenchId).toBe("ins_echo1");
-    expect(copy?.fromWorkbenchId).toBe(workbench.id);
+    expect(platform.sentMail).toHaveLength(1);
+    const dispatch = platform.sentMail[0];
+    expect(dispatch?.workbenchId).toBe("ins_echo1");
+    expect(dispatch?.fromWorkbenchId).toBe(workbench.id);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "hi @ins_echo1",
+    ]);
   });
 
-  test("a posted message returns before its recipients are delivered", async () => {
-    // The delivery is held open, so "the sender's own message is on the
-    // timeline while the fan-out is still in flight" is a fact about
+  test("a posted message returns before the agents it names are asked for a turn", async () => {
+    // The dispatch is held open, so "the sender's own message is on the
+    // timeline while the routing is still in flight" is a fact about
     // ordering rather than a race the in-memory fake happens to win.
     let releaseDelivery!: () => void;
     const delivery = new Promise<void>((resolve) => {
@@ -199,13 +222,15 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(platform.sentMail).toHaveLength(1);
-    expect(platform.sentMail[0]?.workbenchId).toBe(workbench.id);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "hi @ins_echo1",
+    ]);
+    expect(platform.sentMail).toHaveLength(0);
 
     releaseDelivery();
     await settleFanout();
-    expect(platform.sentMail).toHaveLength(2);
-    expect(platform.sentMail[1]?.workbenchId).toBe("ins_echo1");
+    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail[0]?.workbenchId).toBe("ins_echo1");
   });
 
   test("an undeliverable recipient is reported on the timeline in its own voice", async () => {
@@ -239,10 +264,18 @@ describe("message fan-out", () => {
     expect(response.status).toBe(201);
     await settleFanout();
 
-    const notice = platform.sentMail[platform.sentMail.length - 1];
+    // The notice lands on the workbench's own timeline, in the agent's
+    // voice and under its own address — never as mail to the agent that
+    // could not be reached in the first place.
+    const timeline = await timelineOf(deps, workbench.id);
+    const notice = timeline.find(
+      (message) => message.sender.address === "ins_echo1@acme.example",
+    );
     expect(notice?.workbenchId).toBe(workbench.id);
-    expect(notice?.fromWorkbenchId).toBe("ins_echo1");
-    expect(notice?.content.content).toContain("send it again");
+    expect(notice?.runId).toBe("ins_echo1");
+    expect(notice?.parts).toEqual([
+      { kind: "text", text: expect.stringContaining("send it again") },
+    ]);
   });
 
   test("a message to a chat delivers to its agent without a mention", async () => {
@@ -256,7 +289,7 @@ describe("message fan-out", () => {
     });
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const mailBefore = platform.sentMail.length; // the join event
+    expect(platform.sentMail).toHaveLength(0); // the mint asks no agent for anything
 
     const parts: Part[] = [{ kind: "text", text: "hello, no mention here" }];
     const response = await app.request(
@@ -269,10 +302,11 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(platform.sentMail).toHaveLength(mailBefore + 2); // to the chat, then fanned to the agent
-    const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.workbenchId).toBe("ins_invited1");
-    expect(fanned?.fromWorkbenchId).toBe(workbench.id);
+    await settleFanout();
+    expect(platform.sentMail).toHaveLength(1); // one turn, asked of the chat's agent
+    const dispatch = platform.sentMail[0];
+    expect(dispatch?.workbenchId).toBe("ins_invited1");
+    expect(dispatch?.fromWorkbenchId).toBe(workbench.id);
   });
 
   test("a message to a person-DM chat fans out to no one — the other party reads the workbench's own timeline", async () => {
@@ -292,7 +326,6 @@ describe("message fan-out", () => {
     });
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const mailBefore = platform.sentMail.length; // the join event
 
     const parts: Part[] = [{ kind: "text", text: "hey Bob" }];
     const response = await app.request(
@@ -305,7 +338,13 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(platform.sentMail).toHaveLength(mailBefore + 1); // only the send itself, no fan-out copy
+    await settleFanout();
+    // Nobody to ask for a turn: the message is the whole event, and Bob
+    // reads it off the chat's own timeline.
+    expect(platform.sentMail).toHaveLength(0);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toContain(
+      "hey Bob",
+    );
   });
 
   test("a no-mention message in a workbench routes to its host — the first agent participant", async () => {
@@ -329,10 +368,10 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
+    await settleFanout();
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(2); // to the workbench, then fanned to the host
-    const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.workbenchId).toBe("ins_echo1");
+    expect(platform.sentMail).toHaveLength(1); // one turn, asked of the host
+    expect(platform.sentMail[0]?.workbenchId).toBe("ins_echo1");
   });
 
   test("a no-mention message in a multi-agent workbench delivers to the host only, not every agent", async () => {
@@ -362,10 +401,11 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
+    await settleFanout();
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(2); // to the workbench, then fanned to the host only
-    const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.workbenchId).toBe("ins_echo1");
+    // One turn, asked of the host alone — never one per agent in the room.
+    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail[0]?.workbenchId).toBe("ins_echo1");
   });
 
   test("a reply to an agent's message routes to that agent even unmentioned", async () => {
@@ -384,15 +424,19 @@ describe("message fan-out", () => {
     });
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    // Simulates the orchestrator's own posted reply — sent from the
-    // agent's workbench, no principalId — landing in the workbench's
-    // mailbox exactly as `postReply` delivers it.
-    const parent = await platform.sendMail({
-      tenantId: TENANT.id,
-      workbenchId: workbench.id,
-      fromWorkbenchId: "ins_echo2",
-      content: { content: "here's my answer" },
-    });
+    // Simulates the orchestrator's own posted reply — under the agent's
+    // run, no principal — landing on the workbench's timeline exactly as
+    // `postReply` puts it there.
+    const parent = await postRoomMessage(
+      { roomMessages: deps.roomMessages, publish: () => undefined },
+      {
+        tenantId: TENANT.id,
+        workbenchId: workbench.id,
+        sender: { name: null, address: "ins_echo2@acme.example" },
+        runId: "ins_echo2",
+        parts: [{ kind: "text", text: "here's my answer" }],
+      },
+    );
 
     const response = await app.request(
       `/workbenches/${workbench.id}/messages`,
@@ -407,8 +451,10 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
-    const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.workbenchId).toBe("ins_echo2");
+    await settleFanout();
+    expect(platform.sentMail.map((mail) => mail.workbenchId)).toEqual([
+      "ins_echo2",
+    ]);
   });
 
   test("a mention fan-out carries the prior workbench conversation, excluding the just-sent message", async () => {
@@ -426,6 +472,7 @@ describe("message fan-out", () => {
         parts: [{ kind: "text", text: "first message" }],
       }),
     });
+    await nextTimelineMoment();
     await app.request(`/workbenches/${workbench.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -588,16 +635,19 @@ describe("message fan-out", () => {
         parts: [{ kind: "text", text: "the launch date is March 3rd" }],
       }),
     });
+    await nextTimelineMoment();
     await app.request(`/workbenches/${workbench.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "kept one" }] }),
     });
+    await nextTimelineMoment();
     await app.request(`/workbenches/${workbench.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "kept two" }] }),
     });
+    await nextTimelineMoment();
     const response = await app.request(
       `/workbenches/${workbench.id}/messages`,
       {
@@ -651,20 +701,28 @@ describe("message fan-out", () => {
     });
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    // Simulates an agent's own posted reply landing in the mailbox, the
-    // way the orchestrator's `postReply` delivers it — no principalId.
-    await platform.sendMail({
-      tenantId: TENANT.id,
-      workbenchId: workbench.id,
-      fromWorkbenchId: "ins_echo2",
-      content: { content: "agent-only reply, no facts a human said" },
-    });
+    // Simulates an agent's own posted reply landing on the timeline, the
+    // way the orchestrator's `postReply` puts it there — no principal.
+    await postRoomMessage(
+      { roomMessages: deps.roomMessages, publish: () => undefined },
+      {
+        tenantId: TENANT.id,
+        workbenchId: workbench.id,
+        sender: { name: null, address: "ins_echo2@acme.example" },
+        runId: "ins_echo2",
+        parts: [
+          { kind: "text", text: "agent-only reply, no facts a human said" },
+        ],
+      },
+    );
+    await nextTimelineMoment();
     await app.request(`/workbenches/${workbench.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "kept" }] }),
     });
     await settleFanout();
+    await nextTimelineMoment();
     const response = await app.request(
       `/workbenches/${workbench.id}/messages`,
       {
@@ -683,8 +741,8 @@ describe("message fan-out", () => {
     const contextText = contextPart?.kind === "text" ? contextPart.text : "";
 
     // 2, not 1: the workbench's own join event (from the two participants
-    // at creation) is itself a dropped mail row, alongside the agent's
-    // reply — both fall outside the window of 1.
+    // at creation) is itself a dropped timeline row, alongside the
+    // agent's reply — both fall outside the window of 1.
     expect(contextText).toContain("2 older messages");
     expect(contextText).not.toContain("agent-only reply");
     expect(contextText).toContain("no human messages");
@@ -692,10 +750,11 @@ describe("message fan-out", () => {
 
   test("a timeline load failure does not break the send; it fans out un-situated", async () => {
     const platform = fakePlatform();
-    platform.listMail = () => {
-      throw new Error("boom: platform unavailable");
+    const roomMessages = createInMemoryRoomMessageStore();
+    roomMessages.listMessages = () => {
+      throw new Error("boom: the timeline is unavailable");
     };
-    const deps = buildDeps({ platform });
+    const deps = buildDeps({ platform, roomMessages });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
@@ -737,30 +796,31 @@ describe("message fan-out", () => {
     });
 
     expect(response.status).toBe(201);
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
     // Reply routing for the invited agent is the chat orchestrator's
     // concern now (see `chat-orchestrator.test.ts`), not a bridge this
-    // route arms — this route only proves the join event was sent.
-    expect(platform.sentMail.some((m) => m.workbenchId === workbench.id)).toBe(
-      true,
-    );
+    // route arms — this route only proves the join event was posted.
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timelineEvents(timeline, "workbench.agent-joined")).toHaveLength(1);
   });
 
-  // CL-6120: a post-restart send that exhausts the adapter's own
-  // reclaim-settle-then-redeploy budget must not surface as an
-  // unhandled 500 with a raw "agent is unreachable" stack trace — the
-  // route's job is to translate that into a clean, retriable response.
-  test("a send that never becomes routable answers 503 with a plain-language message, not an unhandled 500", async () => {
+  // CL-6120: a post-restart agent that exhausts the adapter's own
+  // reclaim-settle-then-redeploy budget must not surface as an unhandled
+  // 500 with a raw "agent is unreachable" stack trace. Since CL-6327 the
+  // sender's message no longer travels through the agent at all, so an
+  // unreachable agent cannot fail the send: the message stands, and the
+  // room says plainly that the agent missed it.
+  test("an agent that never becomes routable never fails the send; the timeline says so instead", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         sendMail() {
-          throw new AgentUnreachableError("ins_workbench1@acme.example");
+          throw new AgentUnreachableError("ins_echo1@acme.example");
         },
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
+      participants: ["ins_echo1@acme.example"],
     });
 
     const parts: Part[] = [{ kind: "text", text: "hello?" }];
@@ -773,15 +833,17 @@ describe("message fan-out", () => {
       },
     );
 
-    expect(response.status).toBe(503);
-    const body = await response.json();
-    expect(body).toMatchObject({
-      error: {
-        code: "agent_unreachable",
-        message:
-          "The agent is reconnecting after a restart — try again in a moment.",
-      },
-    });
+    expect(response.status).toBe(201);
+    await settleFanout();
+
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timelineTexts(timeline)).toContain("hello?");
+    const notice = timeline.find(
+      (message) => message.sender.address === "ins_echo1@acme.example",
+    );
+    expect(notice?.parts).toEqual([
+      { kind: "text", text: expect.stringContaining("send it again") },
+    ]);
   });
 });
 
@@ -826,18 +888,21 @@ describe("POST /workbenches/:id/invite", () => {
       { address: "ins_invited1@acme.example", handle: "ins_invited1" },
     ]);
 
-    expect(platform.sentMail).toHaveLength(1);
-    const sent = platform.sentMail[0];
-    expect(sent?.workbenchId).toBe(workbench.id);
-    const decoded = JSON.parse(
-      Buffer.from(
-        (sent?.content.attachments?.[0]?.data ?? "") as string,
-        "base64",
-      ).toString("utf-8"),
-    ) as { kind: string; event: string; data: { address: string } };
-    expect(decoded.kind).toBe("event");
-    expect(decoded.event).toBe("workbench.agent-joined");
-    expect(decoded.data.address).toBe("ins_invited1@acme.example");
+    // Joining is a fact about the room, so it is posted onto the room's
+    // own timeline — never mailed to anyone.
+    expect(platform.sentMail).toHaveLength(0);
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]?.workbenchId).toBe(workbench.id);
+    expect(timelineEvents(timeline, "workbench.agent-joined")).toEqual([
+      {
+        kind: "event",
+        event: "workbench.agent-joined",
+        data: expect.objectContaining({
+          address: "ins_invited1@acme.example",
+        }),
+      },
+    ]);
   });
 
   test("appends onto an existing participant list rather than replacing it", async () => {

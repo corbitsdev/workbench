@@ -48,8 +48,10 @@ import { mentionedParticipants } from "./mentions";
 import { localPartOf } from "./agent-address";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { ChatPlatform } from "./platform-port";
+import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { ChatStore } from "./store";
 import type { ThreadStore } from "./threads";
+import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { WriteClaimStore } from "./write-claims";
 
 const log = getLogger(["chat", "orchestrator"]);
@@ -57,6 +59,20 @@ const log = getLogger(["chat", "orchestrator"]);
 export type ChatOrchestratorDeps = {
   db: DB["db"];
   store: Pick<ChatStore, "listWorkbenchSettings">;
+  /**
+   * The room timeline every poster below writes to (CL-6327): an agent's
+   * reply, an approve block, a finalized turn's artifact chips all land
+   * as workbench-owned rows, not as platform mail.
+   */
+  roomMessages: RoomMessageStore;
+  /** The same registry `createChatRoutes` bridges onto a workbench's SSE
+   * stream — how a posted message reaches an open timeline immediately. */
+  publish: WorkbenchSubscriberRegistry["publish"];
+  /**
+   * Mail is now only ever a dispatch to another agent's own mailbox — the
+   * delegation hop that wakes a specialist the replying agent @mentioned.
+   * Nothing here posts onto a workbench's timeline through mail.
+   */
   platform: Pick<ChatPlatform, "sendMail">;
   events: SidecarEventEmitter;
   /**
@@ -183,7 +199,6 @@ async function resolveMemberWorkbenches(
        * than guessing an owner.
        */
       principalId: string | null;
-      agentWorkbenchId: string;
       workbenchIds: string[];
       /**
        * Each member workbench's own participant records, keyed by
@@ -215,7 +230,6 @@ async function resolveMemberWorkbenches(
   return {
     tenantId: run.tenantId,
     principalId: run.principalId,
-    agentWorkbenchId: run.id,
     workbenchIds: memberWorkbenches.map((workbench) => workbench.workbenchId),
     participantsByWorkbenchId: new Map(
       memberWorkbenches.map((workbench) => [
@@ -231,8 +245,8 @@ async function resolveMemberWorkbenches(
  * thread under (CL-5879) — set the moment `postReply`'s own mention
  * fan-out below wakes that specialist, read (and cleared) the moment
  * that specialist's own `postReply` call posts into the same workbench.
- * Keyed by the specialist's run id (`localPartOf` its agent address,
- * the same id `resolveMemberWorkbenches` calls `agentWorkbenchId`): that id
+ * Keyed by the specialist's run id (`localPartOf` its agent address, the
+ * same id every posted message carries as its `runId`): that id
  * is stable across the fan-out send and the specialist's own later
  * reply, unlike a workbench id, which the specialist's reply shares with
  * the host's (see the module's own postReply doc below) but arrives
@@ -286,11 +300,12 @@ async function postReply(
   if (resolved === undefined) return;
 
   for (const workbenchId of resolved.workbenchIds) {
-    const sent = await deps.platform.sendMail({
+    const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
-      content: encodeParts([{ kind: "text", text: content }]),
-      fromWorkbenchId: resolved.agentWorkbenchId,
+      sender: { name: null, address: agentAddress },
+      parts: [{ kind: "text", text: content }],
+      runId: localPartOf(agentAddress),
     });
 
     await threadDelegatedReply(
@@ -298,7 +313,7 @@ async function postReply(
       pendingDelegationThreads,
       agentAddress,
       workbenchId,
-      sent.id,
+      posted.id,
     );
 
     // The delegation hop: when the host's reply @mentions other agent
@@ -326,7 +341,7 @@ async function postReply(
       pendingDelegationThreads.set(localPartOf(recipient), {
         tenantId: resolved.tenantId,
         workbenchId,
-        messageId: sent.id,
+        messageId: posted.id,
       });
     }
   }
@@ -364,16 +379,13 @@ async function postApproveBlock(
     approvalId: approval.id,
     title: headlineFor(approval.toolDefinition, approval.toolArguments),
   };
-  const content = encodeParts([
-    { kind: "block", block: { type: "approve", data } },
-  ]);
-
   for (const workbenchId of resolved.workbenchIds) {
-    await deps.platform.sendMail({
+    await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
-      content,
-      fromWorkbenchId: resolved.agentWorkbenchId,
+      sender: { name: null, address: agentAddress },
+      parts: [{ kind: "block", block: { type: "approve", data } }],
+      runId: localPartOf(agentAddress),
     });
   }
 }
@@ -388,9 +400,9 @@ async function postApproveBlock(
  *
  * Claims `(tenantId, "artifact", "${turnId}:${workbenchId}")` in the durable
  * `finalized_turn_write_claim` table (CL-6039) before each workbench's
- * send, one claim per workbench rather than one for the whole turn: a
- * claim means "won the right to attempt this send", not "this send
- * succeeded", so a send that throws releases its own claim (in the
+ * post, one claim per workbench rather than one for the whole turn: a
+ * claim means "won the right to attempt this post", not "this post
+ * succeeded", so a post that throws releases its own claim (in the
  * `catch` below) before this function's own log-and-drop catch in
  * `createArtifactDeliveryHandler` runs — a redelivery then retries only
  * the workbench that never got its message, not every workbench again. A
@@ -400,7 +412,7 @@ async function postApproveBlock(
  * an already-delivered workbench forever (claim never released) or resend
  * to it (claim released) — this per-workbench key sidesteps that
  * trade-off entirely, at the cost of nothing this loop wasn't already
- * paying (one workbench-scoped `sendMail` call).
+ * paying (one workbench-scoped post).
  */
 async function postFinalizedTurnArtifacts(
   deps: ChatOrchestratorDeps,
@@ -424,11 +436,12 @@ async function postFinalizedTurnArtifacts(
     if (!claimed) continue;
 
     try {
-      await deps.platform.sendMail({
+      await postRoomMessage(deps, {
         tenantId: resolved.tenantId,
         workbenchId,
-        content: encodeParts([...parts]),
-        fromWorkbenchId: resolved.agentWorkbenchId,
+        sender: { name: null, address: agentAddress },
+        parts,
+        runId: localPartOf(agentAddress),
       });
     } catch (error) {
       await deps.claims.release(claim);
@@ -773,8 +786,8 @@ export function createChatOrchestrator(
       // text (a first-turn tool call with no accompanying text, an
       // inference failure `default-director` doesn't fold into a
       // reportable reply) reads to a human as "the room stayed empty"
-      // with no trace anywhere. Mail dispatch already logs loudly when
-      // *sending* itself fails (see `postCannedGreeting` in
+      // with no trace anywhere. Turn dispatch already logs loudly when
+      // *dispatching* itself fails (see `postCannedGreeting` in
       // `workbench-service.ts` for the same doctrine), but had no
       // counterpart for "delivered fine, the turn ran, nothing ever
       // came back out." Beyond the error log, an honest notice now goes

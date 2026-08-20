@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { InferenceResolutionError } from "@corbits/folded-runs";
-import { encodeParts } from "../src/codec";
+import { postRoomMessage } from "../src/room-messages";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
@@ -22,6 +22,9 @@ import {
   principal,
   sendText,
   TENANT,
+  timelineEvents,
+  timelineOf,
+  timelineTexts,
 } from "./test-support";
 
 describe("POST /workbenches", () => {
@@ -217,25 +220,25 @@ describe("POST /workbenches", () => {
         definitionId: "wfd_echo",
       },
     ]);
-    expect(platform.sentMail).toHaveLength(2);
-    const decoded = JSON.parse(
-      Buffer.from(
-        (platform.sentMail[0]?.content.attachments?.[0]?.data ?? "") as string,
-        "base64",
-      ).toString("utf-8"),
-    ) as { kind: string; event: string };
-    expect(decoded.kind).toBe("event");
-    expect(decoded.event).toBe("workbench.agent-joined");
+    // The mint asks no agent for a turn: everything it says lands on the
+    // chat's own timeline, never in an agent's mailbox.
+    expect(platform.sentMail).toHaveLength(0);
+
+    const timeline = await timelineOf(deps, body.id);
+    expect(timelineEvents(timeline, "workbench.agent-joined")).toHaveLength(1);
 
     // CL-6126: the agent speaks first on every mint — a canned greeting
     // is posted straight onto the chat's own timeline under the agent's
-    // run (never as a mail to the agent's mailbox), so the room opens
-    // with a hello without waiting on an inference turn.
-    const greeting = platform.sentMail[1];
+    // run, so the room opens with a hello without waiting on an
+    // inference turn.
+    const greeting = timeline.find((message) =>
+      message.parts.some((part) => part.kind === "text"),
+    );
     expect(greeting?.workbenchId).toBe(body.id);
-    expect(greeting?.fromWorkbenchId).toBe("ins_invited1");
-    expect(greeting?.content.content).toContain("echo");
-    expect(greeting?.content.content).toMatch(/\?$/);
+    expect(greeting?.runId).toBe("ins_invited1");
+    expect(greeting?.sender.address).toBe("ins_invited1@acme.example");
+    expect(timelineTexts(timeline)[0]).toContain("echo");
+    expect(timelineTexts(timeline)[0]).toMatch(/\?$/);
   });
 
   test("creating a chat with a templatePromise greets with it, not a random opener", async () => {
@@ -732,15 +735,10 @@ describe("POST /workbenches — chat with a person (DM)", () => {
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.launchInviteCalls).toHaveLength(0);
-    expect(platform.sentMail).toHaveLength(1);
-    const decoded = JSON.parse(
-      Buffer.from(
-        (platform.sentMail[0]?.content.attachments?.[0]?.data ?? "") as string,
-        "base64",
-      ).toString("utf-8"),
-    ) as { kind: string; event: string };
-    expect(decoded.kind).toBe("event");
-    expect(decoded.event).toBe("workbench.member-joined");
+    expect(platform.sentMail).toHaveLength(0);
+
+    const timeline = await timelineOf(deps, body.id);
+    expect(timelineEvents(timeline, "workbench.member-joined")).toHaveLength(1);
   });
 
   test("falls back to the bare principal id as both handle and title when no name is given — the defensive edge case a bare API call can hit; chat-ui always sends the member's display name as `name` instead", async () => {
@@ -1230,7 +1228,7 @@ describe("GET /workbenches", () => {
     expect(body.items[0]?.title).toBe("Durable");
   });
 
-  test("a workbench with no messages reports unreadCount 0 and no lastActivityAt", async () => {
+  test("a workbench with no messages carries no activity signals at all", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     await createWorkbench(app, { kind: "workbench", name: "Quiet" });
@@ -1244,7 +1242,10 @@ describe("GET /workbenches", () => {
       }[];
     };
 
-    expect(body.items[0]?.unreadCount).toBe(0);
+    // An empty timeline has nothing to report: no unread badge, no
+    // relative time, no live dot — never a fabricated zero date.
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.unreadCount).toBeUndefined();
     expect(body.items[0]?.lastActivityAt).toBeUndefined();
     expect(body.items[0]?.live).toBeUndefined();
   });
@@ -1332,7 +1333,7 @@ describe("GET /workbenches", () => {
 });
 
 describe("messages", () => {
-  test("POST encodes Part[] via the codec and sends as the calling principal", async () => {
+  test("POST puts the Part[] on the timeline as the calling principal", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -1350,10 +1351,14 @@ describe("messages", () => {
     );
 
     expect(response.status).toBe(201);
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(1);
-    expect(platform.sentMail[0]?.principalId).toBe("prn_alice");
-    expect(platform.sentMail[0]?.content).toEqual({ content: "hello" });
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]?.senderPrincipalId).toBe("prn_alice");
+    expect(timeline[0]?.sender).toEqual({
+      name: null,
+      address: `prn_alice@${TENANT.domain}`,
+    });
+    expect(timeline[0]?.parts).toEqual(parts);
   });
 
   test("POST rejects a malformed message body with the 400 envelope", async () => {
@@ -1787,15 +1792,15 @@ describe("threads — root feed vs reply membership (4a)", () => {
   // carries no thread membership belongs to it — the contract
   // `workbench_thread_messages` states ("root feed by default"). Every
   // agent-originated message reaches the workbench through
-  // `ChatPlatform.sendMail` alone (`chat-orchestrator`'s `postReply`
-  // for a `connector.reply` event, its approve-block and
+  // `postRoomMessage` alone (`chat-orchestrator`'s `postReply` for a
+  // `connector.reply` event, its approve-block and
   // finalized-turn-artifact posters, `workbench-service`'s join/leave
   // notices): none of them go through `POST /messages`, the only
   // caller that assigns membership. Listing the root feed by
   // membership rows alone therefore hid every one of them — a fresh
   // chat's very first agent reply included, which is what the browser
   // walkthrough sees as silence after "hi".
-  test("a reply posted through the platform, never through POST /messages, still lands in the root feed", async () => {
+  test("a reply posted straight onto the timeline, never through POST /messages, still lands in the root feed", async () => {
     const deps = buildDeps({ threads: createInMemoryThreadStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -1809,12 +1814,16 @@ describe("threads — root feed vs reply membership (4a)", () => {
       threadId: string;
     };
 
-    const replied = await deps.platform.sendMail({
-      tenantId: TENANT.id,
-      workbenchId: workbench.id,
-      content: encodeParts([{ kind: "text", text: "hello back" }]),
-      fromWorkbenchId: "run_agent1",
-    });
+    const replied = await postRoomMessage(
+      { roomMessages: deps.roomMessages, publish: () => undefined },
+      {
+        tenantId: TENANT.id,
+        workbenchId: workbench.id,
+        sender: { name: null, address: "run_agent1@acme.example" },
+        runId: "run_agent1",
+        parts: [{ kind: "text", text: "hello back" }],
+      },
+    );
 
     const rootFeed = await app.request(
       `/workbenches/${workbench.id}/threads/${askedSent.threadId}/messages`,
@@ -1856,12 +1865,16 @@ describe("threads — root feed vs reply membership (4a)", () => {
       threadId: string;
     };
 
-    await deps.platform.sendMail({
-      tenantId: TENANT.id,
-      workbenchId: workbench.id,
-      content: encodeParts([{ kind: "text", text: "workbench-level reply" }]),
-      fromWorkbenchId: "run_agent1",
-    });
+    await postRoomMessage(
+      { roomMessages: deps.roomMessages, publish: () => undefined },
+      {
+        tenantId: TENANT.id,
+        workbenchId: workbench.id,
+        sender: { name: null, address: "run_agent1@acme.example" },
+        runId: "run_agent1",
+        parts: [{ kind: "text", text: "workbench-level reply" }],
+      },
+    );
 
     const replyFeed = await app.request(
       `/workbenches/${workbench.id}/threads/${threadSent.threadId}/messages`,
@@ -2720,15 +2733,19 @@ describe("GET /workbenches/:id/messages — thread membership on every item (CL-
       threadId: string;
     };
 
-    // A message the platform delivered directly (an agent reply) carries
-    // no membership row at all — it belongs to the root feed by default,
-    // and must be stamped as such rather than left absent.
-    const agentSent = await deps.platform.sendMail({
-      tenantId: TENANT.id,
-      workbenchId: workbench.id,
-      principalId: "prn_agent",
-      content: { content: "agent reply" },
-    });
+    // A message posted straight onto the timeline (an agent reply)
+    // carries no membership row at all — it belongs to the root feed by
+    // default, and must be stamped as such rather than left absent.
+    const agentSent = await postRoomMessage(
+      { roomMessages: deps.roomMessages, publish: () => undefined },
+      {
+        tenantId: TENANT.id,
+        workbenchId: workbench.id,
+        sender: { name: null, address: "run_agent1@acme.example" },
+        runId: "run_agent1",
+        parts: [{ kind: "text", text: "agent reply" }],
+      },
+    );
 
     const res = await app.request(`/workbenches/${workbench.id}/messages`);
     expect(res.status).toBe(200);

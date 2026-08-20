@@ -126,10 +126,54 @@ export const workbenchTenancy = chatSchema.table("workbench_tenancy", {
 });
 
 /**
+ * Every message posted into a workbench — the room's own timeline
+ * (CL-6327). A message is a row here and nowhere else: posting one is a
+ * single insert plus a publish onto the workbench's live stream, with no
+ * mail, no wake, and no sidecar hop on the write path. `parts` is the
+ * decoded `Part[]` a client renders directly (see `./parts.ts`), so
+ * reading the timeline is a query rather than a decode of someone else's
+ * envelope.
+ *
+ * `senderPrincipalId` is set for a human's own message and null for an
+ * agent's (an agent posts under its run's address); `runId` names the
+ * agent run a message came out of, null for anything a human wrote.
+ */
+export const workbenchMessages = chatSchema.table(
+  "workbench_messages",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
+    senderAddress: text("sender_address").notNull(),
+    senderName: text("sender_name"),
+    senderPrincipalId: text("sender_principal_id"),
+    runId: text("run_id"),
+    threadId: text("thread_id"),
+    parts: jsonb("parts").notNull(),
+    // Millisecond precision, not the default microsecond: a cursor is a
+    // JS `Date` rendered to an ISO string, which carries milliseconds
+    // and nothing finer. Stored any finer, a keyset page's `created_at =
+    // cursor` tie-break could never match and a message sharing a
+    // millisecond with the cursor row would fall out of the timeline
+    // between pages.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("workbench_messages_feed_idx").on(
+      table.tenantId,
+      table.workbenchId,
+      table.createdAt,
+    ),
+  ],
+);
+
+/**
  * A thread inside a workbench. The root feed is the thread with
  * `kind = 'root'` (one per workbench). Reply threads hang off a parent
  * message id; delivery threads hang off a routine run ref. Messages
- * themselves still live in platform mail — this table is workbench
+ * themselves live in `workbenchMessages` — this table is workbench
  * thread identity only (see `./threads.ts`).
  */
 export const workbenchThreads = chatSchema.table(

@@ -130,11 +130,12 @@ export function useWorkbenchStream(
         }
       };
 
-      // "chat.agent" is the event name the server's workbench stream
-      // actually emits for every agent-run event (mail delivered,
-      // inference progress, replies) — it is what makes a connected
-      // stream refresh the timeline at all.
+      // "chat.message" is every message posted into the room;
+      // "chat.agent" carries the agent-run events (inference progress,
+      // turn lifecycle) that sit between them. Together they are what
+      // makes a connected stream refresh the timeline at all.
       for (const eventType of [
+        "chat.message",
         "chat.agent",
         "chat.settings",
         "chat.typing",

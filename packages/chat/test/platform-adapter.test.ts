@@ -48,32 +48,6 @@ import {
 } from "../src/workbench-workflow";
 
 const actualHubApi = await import("@intx/hub-api");
-const actualDrizzleOrm = await import("drizzle-orm");
-
-// `listMail`'s keyset pagination builds its next-page predicate with
-// real `lt`/`or`/`and`/`eq` calls (proven against a real Postgres in
-// integration, not here). This wrapper still delegates to the real
-// `lt` -- the fake `sessionMail` chain below has no SQL engine of its
-// own to evaluate the resulting condition against, so it reads the
-// cursor values straight off this spy instead, then filters/sorts a
-// synthetic in-memory row set the same way the real predicate would.
-const realLt = actualDrizzleOrm.lt;
-const ltCalls: { value: unknown }[] = [];
-mock.module("drizzle-orm", () => ({
-  ...actualDrizzleOrm,
-  // Pinning `realLt` to the function object captured above matters:
-  // calling `actualDrizzleOrm.lt(...)` here instead would resolve
-  // through the live module namespace binding, which `mock.module`
-  // has by then repointed at this very wrapper -- an infinite loop
-  // disguised as a hang, not a stack overflow.
-  lt: (column: unknown, value: unknown) => {
-    ltCalls.push({ value });
-    return realLt(
-      column as Parameters<typeof actualDrizzleOrm.lt>[0],
-      value as never,
-    );
-  },
-}));
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
@@ -111,48 +85,6 @@ function selectChain(rows: unknown[]): SelectChain {
     where: () => chain,
     orderBy: () => chain,
     limit: () => Promise.resolve(rows),
-  };
-  return chain;
-}
-
-/**
- * `listMail`'s own `sessionMail` chain: `.where()` reads the cursor
- * straight off `ltCalls` (the last two `lt(...)` calls the real
- * `listMail` made to build its condition -- `createdAt` then `id`,
- * per its `or(lt(createdAt, ...), and(eq(createdAt, ...), lt(id,
- * ...)))` shape) rather than interpreting the opaque SQL condition
- * object itself, then filters/sorts/limits a synthetic newest-first
- * row set the same way the real predicate would.
- */
-function sessionMailSelectChain(rows: { id: string; createdAt: Date }[]) {
-  let filtered = rows;
-  const chain = {
-    where(..._args: unknown[]) {
-      if (ltCalls.length >= 2) {
-        const createdAtCursor = ltCalls[ltCalls.length - 2]?.value as Date;
-        const idCursor = ltCalls[ltCalls.length - 1]?.value as string;
-        filtered = rows.filter(
-          (row) =>
-            row.createdAt.getTime() < createdAtCursor.getTime() ||
-            (row.createdAt.getTime() === createdAtCursor.getTime() &&
-              row.id < idCursor),
-        );
-      } else {
-        filtered = rows;
-      }
-      return chain;
-    },
-    orderBy(..._args: unknown[]) {
-      filtered = [...filtered].sort((a, b) => {
-        const byDate = b.createdAt.getTime() - a.createdAt.getTime();
-        if (byDate !== 0) return byDate;
-        return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-      });
-      return chain;
-    },
-    limit(n?: number) {
-      return Promise.resolve(n === undefined ? filtered : filtered.slice(0, n));
-    },
   };
   return chain;
 }
@@ -212,16 +144,6 @@ function createFakeDb(opts: {
    */
   foldedRunMarker?: boolean;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
-  /**
-   * A full synthetic `session_mail` table, newest-first, for
-   * `listMail`'s keyset-pagination tests. `select().from(sessionMail)`
-   * filters it using the cursor values `ltCalls` captures off the real
-   * `lt` calls `listMail` makes, then re-sorts/limits -- the same
-   * predicate the real SQL condition encodes, evaluated in JS since
-   * this fake has no SQL engine of its own.
-   */
-  sessionMailRows?:
-    { id: string; createdAt: Date; raw: Uint8Array }[] | undefined;
   workflowDefinitionRow?:
     | { id: string; tenantId: string; status: string; assetId: string | null }
     | undefined;
@@ -327,9 +249,6 @@ function createFakeDb(opts: {
               .filter((row) => row.table === agentSession)
               .map((row) => ({ id: (row.values as { id: string }).id }));
             return selectChain(sessions);
-          }
-          if (table === sessionMail) {
-            return sessionMailSelectChain(opts.sessionMailRows ?? []);
           }
           if (table === foldedRun) {
             const marker = opts.foldedRunMarker ?? true;
@@ -1463,142 +1382,6 @@ describe("createHubChatPlatform", () => {
     ]);
 
     unsubscribe();
-  });
-
-  describe("listMail", () => {
-    test("returns an empty page while an asynchronously minted workbench has no run yet", async () => {
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-      });
-      const platform = createHubChatPlatform({
-        hubPublicKey: "hub-key",
-        toolGrantsForPins: () => [],
-        db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
-        sidecarRouter: createFakeSidecarRouter(),
-        eventCollectors: createFakeEventCollectors(),
-      });
-
-      await expect(
-        platform.listMail({
-          tenantId: "ten_1",
-          workbenchId: "ins_workbench1",
-        }),
-      ).resolves.toEqual({ items: [] });
-    });
-
-    test("walks three pages via keyset pagination, with a stable order across a createdAt tie", async () => {
-      const RAW_MIME = new TextEncoder().encode(
-        "Content-Type: text/plain\r\n\r\nhello",
-      );
-      const totalRows = 105;
-      const baseTime = new Date("2024-01-01T00:00:00Z").getTime();
-      const sessionMailRows: {
-        id: string;
-        createdAt: Date;
-        raw: Uint8Array;
-      }[] = [];
-      for (let i = 0; i < totalRows; i++) {
-        sessionMailRows.push({
-          id: `mail_${String(999 - i).padStart(4, "0")}`,
-          createdAt: new Date(baseTime - i * 1_000),
-          raw: RAW_MIME,
-        });
-      }
-      // Force a tie: the two oldest rows share one createdAt, so only
-      // the id tiebreak (descending) can order them -- proving the
-      // cursor comparison is `(createdAt, id) < (cursor.createdAt,
-      // cursor.id)`, not `createdAt` alone.
-      const oldest = sessionMailRows[totalRows - 1];
-      const secondOldest = sessionMailRows[totalRows - 2];
-      if (oldest === undefined || secondOldest === undefined) {
-        throw new Error("unreachable: totalRows >= 2");
-      }
-      oldest.createdAt = secondOldest.createdAt;
-
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address: "ins_workbench1@ten1.workbench.test",
-          principalId: "prin_run1",
-        },
-        sessionMailRows,
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const platform = createHubChatPlatform({
-        hubPublicKey: "hub-key",
-        toolGrantsForPins: () => [],
-        db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
-        sidecarRouter: createFakeSidecarRouter(),
-        eventCollectors: createFakeEventCollectors(),
-      });
-
-      const expectedIds = sessionMailRows.map((row) => row.id);
-
-      ltCalls.length = 0;
-      const page1 = await platform.listMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-      });
-      expect(page1.items.map((item) => item.id)).toEqual(
-        expectedIds.slice(0, 50),
-      );
-      expect(page1.nextCursor).toBeDefined();
-
-      ltCalls.length = 0;
-      const nextCursorAfterPage1 = page1.nextCursor;
-      if (nextCursorAfterPage1 === undefined) {
-        throw new Error("unreachable: asserted defined above");
-      }
-      const page2 = await platform.listMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        cursor: nextCursorAfterPage1,
-      });
-      expect(page2.items.map((item) => item.id)).toEqual(
-        expectedIds.slice(50, 100),
-      );
-      expect(page2.nextCursor).toBeDefined();
-
-      ltCalls.length = 0;
-      const nextCursorAfterPage2 = page2.nextCursor;
-      if (nextCursorAfterPage2 === undefined) {
-        throw new Error("unreachable: asserted defined above");
-      }
-      const page3 = await platform.listMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        cursor: nextCursorAfterPage2,
-      });
-      // The last five rows, including the tie -- ordered by the id
-      // tiebreak, not left in storage order or truncated to [].
-      expect(page3.items.map((item) => item.id)).toEqual(
-        expectedIds.slice(100, 105),
-      );
-      expect(page3.nextCursor).toBeUndefined();
-    });
   });
 
   // The idle-sleep sweep's own gates (idle sleeps, active/busy/untracked
