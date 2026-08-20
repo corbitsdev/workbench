@@ -210,6 +210,122 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 });
 
+describe("nextStreamingReplyState (CL-6432: folded-run turns end on connector.reply / message.run.ended, not reactor.done)", () => {
+  test("connector.reply clears the reply — the orchestrator posts the persisted message off this very event", () => {
+    expect(
+      nextStreamingReplyState(
+        { text: "Hey! What are you working on today?" },
+        agentEvent({
+          type: "connector.reply",
+          seq: 9,
+          data: { content: "Hey! What are you working on today?" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("connector.reply clears an empty pending reply too — the reply is finalized even when its tokens never streamed here", () => {
+    expect(
+      nextStreamingReplyState(
+        { text: "" },
+        agentEvent({
+          type: "connector.reply",
+          seq: 9,
+          data: { content: "Hey!" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("message.run.ended clears an empty pending reply — the turn bracket closed, nothing more streams", () => {
+    expect(
+      nextStreamingReplyState(
+        { text: "" },
+        agentEvent({
+          type: "message.run.ended",
+          seq: 12,
+          data: { status: "completed" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("connector.reply and message.run.ended while idle stay idle", () => {
+    expect(
+      nextStreamingReplyState(
+        null,
+        agentEvent({ type: "connector.reply", seq: 9, data: { content: "x" } }),
+      ),
+    ).toBeNull();
+    expect(
+      nextStreamingReplyState(
+        null,
+        agentEvent({
+          type: "message.run.ended",
+          seq: 12,
+          data: { status: "completed" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("the Myra repro: a post-reply tool round reopens the pulse and the turn's own terminal events shut it", () => {
+    // Round 1: the visible reply streams and its inference.done hands off
+    // to the persisted message.
+    let state = openPendingReply(null);
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "inference.start", seq: 1, data: { model: "x" } }),
+    );
+    state = nextStreamingReplyState(
+      state,
+      delta("Hey! What are you working on today?"),
+    );
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({
+        type: "inference.done",
+        seq: 4,
+        data: { turn: {}, usage: {}, source: "primary" },
+      }),
+    );
+    expect(state).toBeNull();
+
+    // Round 2: a tool-only follow-up (memory writes) reopens the pulse and
+    // its textless inference.done deliberately leaves it up mid-turn.
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "inference.start", seq: 5, data: { model: "x" } }),
+    );
+    expect(state).toEqual({ text: "" });
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({
+        type: "inference.done",
+        seq: 7,
+        data: { turn: {}, usage: {}, source: "primary" },
+      }),
+    );
+    expect(state).toEqual({ text: "" });
+
+    // The folded run never emits reactor.done — its turn ends here.
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "connector.reply", seq: 8, data: { content: "Hey!" } }),
+    );
+    expect(state).toBeNull();
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({
+        type: "message.run.ended",
+        seq: 9,
+        data: { status: "completed" },
+      }),
+    );
+    expect(state).toBeNull();
+  });
+});
+
 describe("openPendingReply", () => {
   test("opens an empty pending reply when idle", () => {
     expect(openPendingReply(null)).toEqual({ text: "" });
