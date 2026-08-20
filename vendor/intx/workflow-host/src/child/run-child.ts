@@ -65,6 +65,7 @@ import { rewriteInlineOnTriggerBodies } from "@intx/workflow";
 import type { AuthzCallResult } from "@intx/inference";
 
 import type {
+  ActionHandler,
   RunResult,
   Scheduler,
   ReadParkedApprovalOps,
@@ -80,6 +81,8 @@ import type {
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
 import { baseStepId, emptyState, runtimeRun } from "@intx/workflow";
+import { createWorkflowActionInvoker } from "../adapters/action-invoker";
+import { createWorkflowRunEffectLedger } from "../adapters/effect-ledger";
 
 import {
   createWorkflowHostDrainController,
@@ -449,6 +452,24 @@ export interface RunWorkflowChildBindings {
     privateKey: Uint8Array;
     publicKey: Uint8Array;
   }>;
+  /**
+   * CL-6325 (this is the skeletal half of the `invokeAction` bind --
+   * see docs/revendor-inventory.md "CL-6325: invokeAction bind" and
+   * VENDORED.md's `vendor/intx/workflow-host` row; MUST be re-applied
+   * after the concurrent `vendor/intx` re-pin regenerates this file).
+   * Resolve an action step's `handler` ref to a host `ActionHandler`,
+   * built from the resolved `WorkflowDefinition` this function already
+   * has in scope by the time it calls `buildRuntimeEnv` -- the app-owned
+   * registry (`apps/sidecar/src/action-tool-handler.ts`) is constructed
+   * against that definition, never against `workflow.json`. Optional so
+   * a deployment with no `action` steps, and every existing test
+   * bindings object, need not wire it; an `action` step whose handler
+   * this resolver rejects fails the run loudly via
+   * `createActionHandlerRegistry`'s fail-closed default.
+   */
+  resolveActionHandler?: (
+    definition: WorkflowDefinition,
+  ) => (ref: string) => ActionHandler;
 }
 
 export interface RunWorkflowChildOpts {
@@ -770,6 +791,7 @@ export async function runWorkflowChild(
         });
       },
       upstreamSender,
+      definition,
     });
     const handle = runtimeRun(definition, env, {
       runId: run.runId,
@@ -1000,6 +1022,7 @@ async function handleControlPayload(
           });
         },
         upstreamSender: ctx.upstreamSender,
+        definition: ctx.definition,
       });
       const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
         runId: payload.data.runId,
@@ -1355,6 +1378,11 @@ function buildRuntimeEnv(args: {
   credentialWiring: CredentialWiring;
   onEvent: (event: EventPayload) => void;
   upstreamSender: ControlChannelSender;
+  /**
+   * CL-6325 (skeletal `invokeAction` bind, re-apply after the concurrent
+   * `vendor/intx` re-pin -- see `RunWorkflowChildBindings.resolveActionHandler`).
+   */
+  definition: WorkflowDefinition;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
     repoStore: args.bindings.substrate,
@@ -1401,6 +1429,29 @@ function buildRuntimeEnv(args: {
     hostSuspendable === undefined
       ? undefined
       : (spawnInput) => hostSuspendable(spawnInput, args.onEvent);
+  // CL-6325: skeletal `invokeAction`/`effects` bind. Mirrors gtm-workbench's
+  // run-child.ts:1170-1185 -- built ONLY when the app seam supplied a
+  // resolver, since a deployment with no `action` steps has nothing to
+  // resolve. MUST be re-applied after the concurrent `vendor/intx` re-pin
+  // regenerates this file (see docs/revendor-inventory.md).
+  const effects =
+    args.bindings.resolveActionHandler !== undefined
+      ? createWorkflowRunEffectLedger({
+          substrate: args.bindings.substrate,
+          repoId: args.bindings.workflowRunRepoId,
+          principal: args.bindings.principal,
+          runId: args.runId,
+          ref: args.bindings.workflowRunRef,
+        })
+      : undefined;
+  const invokeAction =
+    args.bindings.resolveActionHandler !== undefined && effects !== undefined
+      ? createWorkflowActionInvoker({
+          authorize: args.authorize,
+          effects,
+          resolveHandler: args.bindings.resolveActionHandler(args.definition),
+        })
+      : undefined;
   return {
     repoStore: args.runtimeRepoStore,
     scheduler: args.bindings.scheduler,
@@ -1431,6 +1482,9 @@ function buildRuntimeEnv(args: {
     ...(args.bindings.readParkedApprovalOps !== undefined
       ? { readParkedApprovalOps: args.bindings.readParkedApprovalOps }
       : {}),
+    // CL-6325: skeletal bind, re-apply after the concurrent re-pin.
+    ...(effects !== undefined ? { effects } : {}),
+    ...(invokeAction !== undefined ? { invokeAction } : {}),
   };
 }
 
