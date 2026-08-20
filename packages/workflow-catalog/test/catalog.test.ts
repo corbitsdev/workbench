@@ -2,6 +2,7 @@ import { type } from "arktype";
 import { describe, expect, test } from "bun:test";
 
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 
 import {
   deliveryWorkbenchRequiredForWorkflowName,
@@ -185,11 +186,17 @@ describe("workflow catalog", () => {
     }
   });
 
-  test("every requiredConnections id names a real connector in the registry", () => {
-    const knownConnectorIds = new Set(Object.keys(CONNECTOR_REGISTRY));
+  test("every requiredConnections id names a connector a person can actually connect", () => {
+    // Either a native connector (its own credential plugin and tool
+    // package) or an MCP preset a person connects under Plugins — Attio
+    // is only ever the latter here, reached through `@corbits/mcp-tools`.
+    const connectable = new Set([
+      ...Object.keys(CONNECTOR_REGISTRY),
+      ...MCP_PRESETS.map((preset) => preset.slug),
+    ]);
     for (const entry of WORKFLOW_CATALOG) {
       for (const connectorId of entry.requiredConnections) {
-        expect(knownConnectorIds.has(connectorId)).toBe(true);
+        expect(connectable.has(connectorId)).toBe(true);
       }
     }
   });
