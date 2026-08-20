@@ -152,10 +152,9 @@ const fakeDb = {
   transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn({}),
 } as unknown as Parameters<typeof seedTemplateLibrary>[0]["db"];
 
-const ENTRIES = [
-  { id: "code-review", content: '{"id":"code-review"}' },
-  { id: "gtm", content: '{"id":"gtm"}' },
-];
+const CODE_REVIEW_ENTRY = { id: "code-review", content: '{"id":"code-review"}' };
+const GTM_ENTRY = { id: "gtm", content: '{"id":"gtm"}' };
+const ENTRIES = [CODE_REVIEW_ENTRY, GTM_ENTRY];
 
 describe("seedTemplateLibrary", () => {
   test("seeds each template once under the workbench-template kind", async () => {
@@ -237,13 +236,13 @@ describe("seedTemplateLibrary", () => {
     await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, ENTRIES[1]],
+      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
       engine,
     });
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":3}' }, ENTRIES[1]],
+      entries: [{ id: "code-review", content: '{"id":"code-review","v":3}' }, GTM_ENTRY],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "revised" });
@@ -258,7 +257,7 @@ describe("seedTemplateLibrary", () => {
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [ENTRIES[1]],
+      entries: [GTM_ENTRY],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "retired" });
@@ -274,7 +273,7 @@ describe("seedTemplateLibrary", () => {
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [ENTRIES[1]],
+      entries: [GTM_ENTRY],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "kept" });
@@ -284,11 +283,11 @@ describe("seedTemplateLibrary", () => {
   test("a retired template re-added to the manifest is restored to the current content", async () => {
     const { engine, rows } = memoryEngine();
     await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: [ENTRIES[1]], engine });
+    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: [GTM_ENTRY], engine });
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, ENTRIES[1]],
+      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "restored" });
@@ -328,7 +327,7 @@ describe("seedTemplateLibrary", () => {
     const moved = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, ENTRIES[1]],
+      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
       engine,
     });
     expect(moved).toContainEqual({ id: "code-review", outcome: "revised" });
@@ -346,7 +345,7 @@ describe("seedTemplateLibrary", () => {
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, ENTRIES[1]],
+      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "kept" });
@@ -368,7 +367,7 @@ describe("seedTemplateLibrary", () => {
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [ENTRIES[0]],
+      entries: [CODE_REVIEW_ENTRY],
       engine,
     });
     expect(outcomes).toEqual([{ id: "code-review", outcome: "kept" }]);
@@ -417,7 +416,7 @@ describe("template library routes", () => {
       "/library/templates/code-review",
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(ENTRIES[0]);
+    expect(await res.json()).toEqual(CODE_REVIEW_ENTRY);
   });
 
   test("404s an id the library does not hold", async () => {
