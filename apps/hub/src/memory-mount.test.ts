@@ -17,8 +17,12 @@ type EnvKey = (typeof KEYS)[number];
 const saved: Partial<Record<EnvKey, string | undefined>> = {};
 
 function clearEnvKey(key: EnvKey): void {
-  // Prefer assignment over `delete process.env[key]` — eslint forbids dynamic delete.
-  process.env[key] = undefined;
+  // Must actually remove the key: `process.env[key] = undefined` stores the
+  // *string* "undefined" (Bun >= 1.4 matches Node here), which reads as a
+  // configured value and makes every DATABASE_URL/EMBED_BASE_URL gate in this
+  // app's suites fire against postgres.js's localhost:5432 default.
+  // `Reflect.deleteProperty` because eslint forbids dynamic `delete`.
+  Reflect.deleteProperty(process.env, key);
 }
 
 afterEach(() => {

@@ -24,7 +24,9 @@ type EnvKey = (typeof KEYS)[number];
 const saved: Partial<Record<EnvKey, string | undefined>> = {};
 
 function clearEnvKey(key: EnvKey): void {
-  process.env[key] = undefined;
+  // Assigning `undefined` would store the string "undefined"; the key has to
+  // go. `Reflect.deleteProperty` because eslint forbids dynamic `delete`.
+  Reflect.deleteProperty(process.env, key);
 }
 
 function stashEnv(): void {
