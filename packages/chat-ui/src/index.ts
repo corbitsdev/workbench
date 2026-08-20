@@ -213,6 +213,25 @@ export type {
 export { ArtifactChip } from "./artifact-chip";
 
 export {
+  PrThreadView,
+  PrQueuedStrip,
+  PrFailedTurnStrip,
+} from "./pr-thread-view";
+export type {
+  PrThreadRole,
+  PrThreadStatus,
+  PrThreadFixLineKind,
+  PrThreadFixLine,
+  PrThreadSuggestedFix,
+  PrThreadTrace,
+  PrThreadReply,
+  PrThreadFailedTurn,
+  PrThreadNextReviewer,
+  PrThreadFooter,
+  PrThreadViewProps,
+} from "./pr-thread-view";
+
+export {
   TypingIndicator,
   parseTypingEvent,
   nextTypingState,

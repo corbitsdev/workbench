@@ -7,6 +7,11 @@
 // any more (CL-6138): the one creation verb mints and navigates directly —
 // see `apps/web/src/instant-agent-create.ts`.
 
+function joinWithAnd(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 export const CHAT_STRINGS = {
   workbenchesSectionLabel: "Pinned",
   chatsSectionLabel: "Workbenches",
@@ -207,6 +212,28 @@ export const CHAT_STRINGS = {
   blockConnectGithubStartReviewing: (count: number) =>
     `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
   blockConnectGithubSkip: "skip for now",
+  prThreadStatusReviewed: "Reviewed",
+  prThreadStatusReading: "Reading now",
+  prThreadStatusWaitingOnYou: "Waiting on you",
+  prThreadHostBadge: "Host",
+  prThreadReviewerBadge: "Reviewer",
+  prThreadViewWork: (stepCount: number, seconds: number) =>
+    `view the work · ${stepCount} step${stepCount === 1 ? "" : "s"}, ${seconds}s`,
+  prThreadSettledFooter: (repo: string, postedAt: string) =>
+    `All three posted to ${repo} · ${postedAt}`,
+  prThreadViewOnGithub: "View on GitHub",
+  prThreadNextReviewers: (names: readonly string[], currentReviewer: string) =>
+    `${joinWithAnd(names)} ${names.length === 1 ? "is" : "are"} next, once ${currentReviewer} finishes.`,
+  prThreadQueued: (prNumber: number, repo: string) =>
+    `#${prNumber} in ${repo} is queued — waiting for the current review to finish.`,
+  prThreadSuggestedFixLabel: "Suggested fix",
+  prThreadCopyAction: "Copy",
+  prThreadOpenOnGithubAction: "Open on GitHub",
+  prThreadFailedTitle: (sender: string) => `${sender}'s review didn't finish`,
+  prThreadFailedSub: (repo: string) =>
+    `We retried once. Nothing was posted to ${repo}.`,
+  prThreadRetryAction: "Retry",
+  prThreadWhatHappenedAction: "what happened",
   optionLetter: (index: number) => String.fromCharCode(65 + index),
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
