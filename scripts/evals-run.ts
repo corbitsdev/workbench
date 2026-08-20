@@ -211,6 +211,15 @@ async function main(): Promise<void> {
     // see why a scorer is red.
     for (const result of results) {
       for (const step of result.steps) {
+        // A harness-driven step's reply IS its outcome record (an
+        // install summary, a webhook delivery result) — print it so a
+        // failed delivery's status and body are readable off the run.
+        if (step.turn.human.startsWith("(harness)")) {
+          process.stdout.write(
+            `  ${result.evalName} step ${String(step.stepIndex)}: ` +
+              `${step.turn.replyText}\n`,
+          );
+        }
         for (const report of step.scorerReports) {
           if (report.pass || report.skipped === true) continue;
           process.stdout.write(
