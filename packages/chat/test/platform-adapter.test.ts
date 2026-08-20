@@ -170,6 +170,13 @@ function createFakeDb(opts: {
     | {
         tenantId: string;
         instanceId: string;
+        /**
+         * The run the stable `instanceId` currently resolves to (see
+         * `../src/agent-binding.ts`). Defaults to `instanceId` — the
+         * identity mapping every room starts life with, before any
+         * relaunch has re-pointed it.
+         */
+        currentRunId?: string;
         foldedBody: unknown;
         noopInference?: boolean;
       }
@@ -285,13 +292,41 @@ function createFakeDb(opts: {
             const insertedLaunch = inserted.findLast(
               (row) => row.table === workbenchLaunch,
             )?.values;
-            return selectChain(
-              opts.workbenchLaunchRow !== undefined
-                ? [opts.workbenchLaunchRow]
-                : insertedLaunch !== undefined
-                  ? [insertedLaunch]
-                  : [],
-            );
+            // Every run this package launches has a launch row, and
+            // that row is now the address→run mapping every lookup
+            // goes through — so a scenario that configures a run but
+            // no launch row gets the identity mapping for it rather
+            // than a hole no production run could be in.
+            const row =
+              opts.workbenchLaunchRow ??
+              insertedLaunch ??
+              (opts.workflowRunRow !== undefined
+                ? {
+                    tenantId: "ten_1",
+                    instanceId: opts.workflowRunRow.id,
+                    currentRunId: opts.workflowRunRow.id,
+                    foldedBody: {
+                      systemPrompt: "be helpful",
+                      toolPackagePins: [],
+                      grantRequirements: [],
+                      credentialBindings: [],
+                      model: null,
+                    },
+                    noopInference: false,
+                  }
+                : undefined);
+            if (row === undefined) return selectChain([]);
+            const withCurrent = row as {
+              instanceId: string;
+              currentRunId?: string;
+            };
+            return selectChain([
+              {
+                ...withCurrent,
+                currentRunId:
+                  withCurrent.currentRunId ?? withCurrent.instanceId,
+              },
+            ]);
           }
           if (table === agentSession) {
             // `resolveRunSessionId` selects `{ id }` filtered by
@@ -2192,6 +2227,20 @@ describe("createHubChatPlatform", () => {
           displayName: null,
         },
         definitionId: "wfd_workbench1",
+        // `ensureAwake` resolves the LIVE address through the mapping
+        // before it asks whether anything is routable, so even the
+        // no-op path needs the participant's binding to exist.
+        workbenchLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          foldedBody: {
+            systemPrompt: "be helpful",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+            model: null,
+          },
+        },
       });
       const sessionService = createFakeSessionService();
       const platform = createHubChatPlatform({
