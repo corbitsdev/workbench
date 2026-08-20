@@ -29,11 +29,13 @@ Top to bottom:
    upward. Settings is reached only through this menu — it has no rail
    icon of its own.
 
-A workbench IS an agent conversation (one per account in the common case),
-so there is no bench-switcher chrome in the shell; a multi-bench install
-resolves correctly but the escape hatch lives in the command palette
-("Switch workbench"), not in a permanent sidebar control. Approvals render
-inside the conversation, never as a standing band in the shell.
+A workbench is an agent conversation, and the bench list IS the switcher —
+its rows are the primary way to move between workbenches, with no separate
+"switcher" control layered on top. The command palette's hidden "Switch
+workbench" action is a second door onto the same list, reachable by search
+rather than by scanning rows; it does not replace the sidebar as the
+switching mechanism. Approvals render inside the conversation, never as a
+standing band in the shell.
 
 ## Pages & Routing
 
