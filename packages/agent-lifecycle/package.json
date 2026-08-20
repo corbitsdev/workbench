@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/log": "workspace:*"
+    "@intx/log": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -22,66 +22,43 @@ never a convenience.
 
 ## Ledger
 
-| Vendored path                   | What was copied                                                                                                                                                                                                                                                                                                                                 | Upstream repo @ commit                                                         | Why not a published package                                                                                                                                                        | Owner  | Kill date  | Kill-date test    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------- | ----------------- |
-| `apps/sidecar`                  | Derived from upstream's own `apps/sidecar`: 11 shared modules, of which `signing-keypair.ts` is near-verbatim and the rest (`index.ts`, `config.ts`, `tool-materialization.ts`, `workflow-run-pack-client.ts`, …) are substantially rewritten, plus workbench-only modules. A living fork, not a frozen copy, so this row carries no tree hash. | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | An app is never npm-published, so no publish can cover the execution host; retired by consuming an upstream-published host, or by renewing this row deliberately                   | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/agent`             | `@intx/agent` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                               | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/authz`             | `@intx/authz` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                               | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/crypto`            | `@intx/crypto` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                              | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/db`                | `@intx/db` source (`src/`, `migrations/`, drizzle config, manifest, tsconfigs)                                                                                                                                                                                                                                                                  | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/harness`           | `@intx/harness` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                             | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/hub-agent`         | `@intx/hub-agent` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/hub-api`           | `@intx/hub-api` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                             | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/hub-common`        | `@intx/hub-common` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                          | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/hub-sessions`      | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                        | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it, or by an upstream `inference.usage`-carrying event stream (CL-5879, whichever lands first) | sawyer | 2026-09-05 | `check:killdates` |
-| `vendor/intx/inference`         | `@intx/inference` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/inference-catalog` | `@intx/inference-catalog` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                   | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/log`               | `@intx/log` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                 | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/mail-memory`       | `@intx/mail-memory` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                         | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/mime`              | `@intx/mime` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/pack-transport`    | `@intx/pack-transport` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/storage-isogit`    | `@intx/storage-isogit` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/tool-packaging`    | `@intx/tool-packaging` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/types`             | `@intx/types` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                               | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/workflow`          | `@intx/workflow` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                            | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
-| `vendor/intx/workflow-host`     | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `4ed8baf4` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it                                                                                             | sawyer | 2026-09-14 | `check:killdates` |
+| Vendored path                 | What was copied                                                                                                                                                                                                                                                                                                                                 | Upstream repo @ commit                                                                  | Why not a published package                                                                                                                                                                   | Owner  | Kill date  | Kill-date test    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------- | ----------------- |
+| `apps/sidecar`                | Derived from upstream's own `apps/sidecar`: 11 shared modules, of which `signing-keypair.ts` is near-verbatim and the rest (`index.ts`, `config.ts`, `tool-materialization.ts`, `workflow-run-pack-client.ts`, …) are substantially rewritten, plus workbench-only modules. A living fork, not a frozen copy, so this row carries no tree hash. | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | An app is never npm-published, so no publish can cover the execution host; retired by consuming an upstream-published host, or by renewing this row deliberately                              | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/db`              | `@intx/db` source (`src/`, `migrations/`, drizzle config, manifest, tsconfigs)                                                                                                                                                                                                                                                                  | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the `wire_projection` column/loader delta (CL-6324); retired when upstream absorbs the delta                                                        | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/hub-api`         | `@intx/hub-api` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                             | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the `needs-you` approval-route reservation or the exported null-principal `resolveApproval` (CL-6345); retired when upstream absorbs the deltas     | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/hub-sessions`    | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                        | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the usage forward (CL-5879), pack-acceptance fixes, adopted deploy front, wire-projection writer, event-collector serialization, or anchor ordering | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/workflow`        | `@intx/workflow` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                            | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the `onBodyFailure` trigger policy and its projection (CL-6326, CL-6324); retired when upstream absorbs the delta                                   | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/workflow-deploy` | `@intx/workflow-deploy` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | Carries no delta of its own, but must bind against the vendored `@intx/workflow` (whose `onBodyFailure` field flows through the projection it hashes); retired with the workflow delta        | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/workflow-host`   | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the empty-mail drop (CL-6164) or the action/loop runtime bind and adapters (CL-6325); retired when upstream absorbs the deltas                      | sawyer | 2026-09-19 | `check:killdates` |
 
-The pinned commit `4ed8baf4` is the tip of upstream `main` as of 2026-08-19,
-a plain main-tip bump from `59f5e7b9`. The 45 commits it adds retire
-`workflow.json`: a deployed workflow's definition is no longer serialized
-into the deploy tree and re-read on the sidecar, it is evaluated from the
-deployment's own source closure and re-verified in-child against the
-approved wire hash. Source-ref is now the only deploy lineage — the
-live-authored and instance deploy chains (`createWorkflowDeployOrchestrator`,
-`SessionService.deploySingleStepAtHead`, `deployInstanceAtHead`,
-`wrapHarnessAsSingleStepWorkflow`) are deleted upstream, `childWorkflow`
-became an owned inline import resolved in memory, run grants derive from a
-persisted grant-walk snapshot, and the child spawn adapters lost their
-deploy-ref arguments (`createInMemorySpawnChild` /
-`createInMemorySpawnSuspendableChild`). Eleven rows below carry trees that
-are byte-identical at both commits; they move to the new pin so the ledger
-records one commit rather than a mix. No published `@intx/*` version yet
-covers any vendored path: npm still tops out at `0.2.2`, which predates the
-folded model, so every row below stays vendored.
+The pinned commit `b5580a02` is upstream's `v0.3.0` release tag, 16 commits
+past the previous pin `4ed8baf4`: a workflow-host supervisor
+crash-respawn/backoff policy with a `RunFailed` terminal commit when the
+crash-loop guard latches, credential/wallet deletion guards with
+per-credential grant cleanup (and the removal of the dead `bindingGrants`
+construction from `buildCredentialDelivery`), and an orphaned-grant cleanup
+migration (upstream `0084`, which took the number our `wire_projection`
+migration held — ours is renumbered `0085`).
 
-`apps/sidecar` now records `4ed8baf4`: its fork is converted onto the
-closure-sourced lineage. Four modules are near-verbatim copies of upstream's
-own at that commit — `workflow-probe-handler.ts`,
-`workflow-closure-materialization.ts`, `workflow-closure-apply.ts`,
-`source-asset-delivery.ts` — plus `bin/workflow-probe-child`; each is adapted
-only where the fork's module layout differs (the host-platform resolution
-lives in this fork's `tool-materialization.ts`, and the probe child's shebang
-drops upstream's `intx-src` condition, which workbench forbids). The
-remaining shared modules stay substantially rewritten, as the row records.
+v0.3.0 is also the first release whose `@intx/*` npm publishes cover the
+folded model, so the fifteen previously vendored trees that carried no local
+delta — `agent`, `authz`, `crypto`, `harness`, `hub-agent`, `hub-common`,
+`inference`, `inference-catalog`, `log`, `mail-memory`, `mime`,
+`pack-transport`, `storage-isogit`, `tool-packaging`, `types` — are retired:
+deleted and consumed as published `@intx/*@0.3.0` packages. The six rows
+above survive only because each carries (or must bind against) a local delta
+the publish lacks. The root `package.json` `overrides` pin every `@intx/*`
+name to `0.3.0` so external dependencies' older exact pins collapse onto the
+same resolution workbench uses: the npm publish for retired names, the
+vendored workspace copy for surviving ones.
 
-Local modifications (all `vendor/intx/*` rows): each package's exports map
-is repointed from the upstream `intx-src` resolve condition to direct
-TypeScript source resolution (`types`/`default` → `./src/...`), with `dist/`
-references and the `customConditions` entry in the shared tsconfig removed —
-workbench forbids custom resolve conditions; `vendor/intx/harness` drops the
-unvendored `@intx/inference-testing` devDependency and `vendor/intx/hub-agent`
-drops the unvendored `@intx/test-harness` devDependency; `vendor/intx/hub-api`
+Local modifications (all surviving `vendor/intx/*` rows): each package's
+exports map is repointed from the upstream `intx-src` resolve condition to
+direct TypeScript source resolution (`types`/`default` → `./src/...`), with
+`dist/` references and the `customConditions` entry in the shared tsconfig
+removed — workbench forbids custom resolve conditions — and each tsconfig
+carries `types: ["bun"]`; `vendor/intx/hub-api`
 adds a `@types/ssri` devDependency that bun's isolated linker does not hoist
 from tool-packaging the way upstream's install does, and its approval param
 routes exclude the reserved segment `needs-you` so hosts can mount a sibling
@@ -112,14 +89,7 @@ own event-log commits (e.g. a step named `write`) under their step-suffixed
 address, so every such pack was rejected `path_violation` with "source
 address has no deployment anchor it owns," the sidecar withheld the ack, and
 the hub redelivered forever — the same infinite-retry shape as the terminal-run
-case above, one layer up the address hierarchy. `vendor/intx/inference`
-narrows `UploadGoogleGenAIFileOpts.bytes` from `Uint8Array` to
-`Uint8Array<ArrayBuffer>`: the bytes go straight out as a
-`RequestInit.body`, and the DOM's `BodyInit` accepts only an
-`ArrayBuffer`-backed view, so under a browser package's `lib` the
-unnarrowed parameter is a hard type error while under a Node-only `lib` it
-slips through undici's laxer `BodyInit`. The narrowing is what lets one
-vendored file type-check identically in both. `vendor/intx/workflow-host`
+case above, one layer up the address hierarchy. `vendor/intx/workflow-host`
 (CL-6164) drops
 inbound mail carrying no conversation text on the parked-resume path rather
 than delivering an empty string that throws inside `agent.send` and fails the
@@ -165,7 +135,10 @@ composes the same private halves and follows the prepared front's semantics
 minus that lock. `vendor/intx/db` and `vendor/intx/hub-sessions` (CL-6324) together
 persist a definition's evaluated inert projection at approval time:
 `workflow_definition_version` gains a `wire_projection` jsonb column
-(migration `0084_workflow_definition_version_wire_projection.sql`),
+(migration `0085_workflow_definition_version_wire_projection.sql`, renumbered
+from `0084` when upstream v0.3.0 took that slot; the journal keeps the
+original `when` timestamp so databases that already applied it do not re-run
+the `ADD COLUMN`),
 `createDbFrozenApprovalWriter` stamps it in the SAME transaction that
 writes `approved_wire_hash`, and `loadFrozenWireProjection` reads it back
 validated as a `WorkflowProjectionDefinition`. Upstream carries no
@@ -212,19 +185,27 @@ already-spawned child on the missing-anchor `path_violation` path.
 where a guard clause or the `conn.send()` call itself fails before the
 frame could have reached the wire; `deployCodeSourcedWorkflow` deletes the
 row only on that error and otherwise keeps the row and logs a
-reconciliation line. `vendor/intx/inference-catalog`'s own local
-modification also repoints the `./models` subpath's exports, not just the
-root export.
+reconciliation line.
 Each package's `VENDORED-FROM` file restates its own delta.
+
+`apps/sidecar` records `b5580a02` (v0.3.0): the fork tracks the
+closure-sourced lineage. Four modules are near-verbatim copies of upstream's
+own — `workflow-probe-handler.ts`,
+`workflow-closure-materialization.ts`, `workflow-closure-apply.ts`,
+`source-asset-delivery.ts` — plus `bin/workflow-probe-child`; each is adapted
+only where the fork's module layout differs (the host-platform resolution
+lives in this fork's `tool-materialization.ts`, and the probe child's shebang
+drops upstream's `intx-src` condition, which workbench forbids). The
+remaining shared modules stay substantially rewritten, as the row records.
 
 ### Un-vendoring `vendor/intx`
 
 - [ ] Delete `vendor/intx/` and remove `vendor/intx/*` from the root
       `package.json` workspaces.
 - [ ] Restore the `@intx/*` dependencies in `apps/*`, `packages/*`, and
-      `workflows/*` to the published npm version that covers the vendored
-      surface.
-- [ ] Delete the twenty ledger rows above and the local-modifications note.
+      `workflows/*` to the published npm version that covers each surviving
+      tree's delta, and drop the root `overrides` pins.
+- [ ] Delete the six ledger rows above and the local-modifications note.
 - [ ] Drop the `vendor/intx/*` rows from `scripts/checks/kill-dates.txt`.
 - [ ] `bun install`
 - [ ] `bun run check`

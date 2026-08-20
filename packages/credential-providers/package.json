@@ -13,8 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/harness": "workspace:*",
-    "@intx/types": "workspace:*"
+    "@intx/harness": "0.3.0",
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

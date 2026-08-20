@@ -17,7 +17,7 @@
 // tenant data, unknown at package-publish time, so this package's
 // `package.json` declares no static `interchange.credentials` entry
 // the way `@corbits/web-search-tools` declares `exa` — a declaration is
-// advisory only (`vendor/intx/tool-packaging/src/loader.ts`'s
+// advisory only (`@intx/tool-packaging/src/loader.ts`'s
 // `readInterchangeCredentials` docs), so a dynamic handle still
 // resolves through `env.credentials.resolve(handle)` at call time; it
 // just never appears in a deploy-time credential-binding UI the way a
@@ -28,7 +28,7 @@
 // (write a row, send a message, delete something), so it declares
 // `approval: "ask"` unconditionally in its static `ToolDeclaration` —
 // the only place `@intx/agent`'s `toolApprovalEffect` reads a floor
-// from (`vendor/intx/agent/src/tool.ts`). That floor is fixed per tool
+// from (`@intx/agent/src/tool.ts`). That floor is fixed per tool
 // NAME at deploy time, one grant for "mcp_call" covering every server
 // and every downstream tool alike; there is no per-invocation floor in
 // this substrate today, so a downstream tool's own `readOnlyHint`

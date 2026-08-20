@@ -110,7 +110,7 @@ export const EXA_TOPIC_WATCH_SYSTEM_PROMPT = [
  * travels with the deploy of this package itself.
  */
 export const EXA_TOPIC_WATCH_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/mcp-tools", version: "0.0.6" },
+  { name: "@corbits/mcp-tools", version: "0.0.7" },
 ];
 
 /**

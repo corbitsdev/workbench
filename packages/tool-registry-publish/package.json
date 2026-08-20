@@ -14,9 +14,9 @@
     "check:freshness": "bun src/freshness-check.ts"
   },
   "dependencies": {
-    "@intx/inference": "workspace:*",
-    "@intx/log": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/inference": "0.3.0",
+    "@intx/log": "0.3.0",
+    "@intx/types": "0.3.0",
     "arktype": "catalog:",
     "tar": "catalog:"
   },

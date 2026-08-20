@@ -198,7 +198,7 @@ leg fails in CI, first rule out third-party network/provider behavior
 before suspecting the platform: the fast-fail shape it depends on is the
 real host answering the stub key with a `401` (or `403` — Anthropic could
 shift which code it uses for an invalid key), which
-`vendor/intx/inference/src/errors.ts` classifies `credential_failure`, a
+`@intx/inference/src/errors.ts` classifies `credential_failure`, a
 category the retry policy never retries. A hang, a timeout, or a
 different status code the assertion doesn't recognize points at the
 provider or the network path, not at `@corbits/tasks`.

@@ -24,7 +24,7 @@
 // `compactorNames` to a director factory but the default factory's
 // `decide()` never reads them. Firing compaction for real needs a
 // director that decides to compact, which the reactor's control flow
-// (`vendor/intx/inference/src/reactor.ts` ~1375) only accepts as an
+// (`@intx/inference/src/reactor.ts` ~1375) only accepts as an
 // action exclusive of `infer` in the same cycle, with no synthetic
 // follow-up event afterward -- so a director cannot fire it on
 // `message.received` without stalling that message's reply. Registering

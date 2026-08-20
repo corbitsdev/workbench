@@ -17,7 +17,7 @@ than forking a second Granola client.
 ## Credential
 
 The bundle's env carries `credentials`, the harness's consumer-gated
-`CredentialCapability` (`vendor/intx/harness/src/credential-capability.ts`).
+`CredentialCapability` (`@intx/harness/src/credential-capability.ts`).
 When it is absent, or `credentials.resolve("granola")` throws — no bound
 handle, or a grant that doesn't authorize this consumer — the tool never
 throws itself: it returns a completed result with `isError: true` and

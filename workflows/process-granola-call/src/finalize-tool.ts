@@ -10,7 +10,7 @@
 //
 // Approval mechanics: `defineTool`'s `definitions` array marks this
 // tool's one definition `approval: "ask"` (see
-// `vendor/intx/agent/src/tool.ts`'s `ToolDeclaration`/`toolApprovalEffect`),
+// `@intx/agent/src/tool.ts`'s `ToolDeclaration`/`toolApprovalEffect`),
 // the platform's native gate — see `workflows/pain-point-collateral/src/finalize-tool.ts`'s
 // header comment for the full suspend/resume path, identical here.
 //

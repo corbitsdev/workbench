@@ -4,7 +4,7 @@
 // `content_block_delta`/`content_block_stop`/`message_delta`/
 // `message_stop` sequence, parsed here with the exact `parseSSE` byte
 // framing and the exact per-event arktype schemas
-// `vendor/intx/inference/src/providers/anthropic.ts` uses to accept
+// `@intx/inference/src/providers/anthropic.ts` uses to accept
 // real Anthropic traffic — so a drift in this endpoint's shape shows
 // up here, not only when a real workbench host tries to use it.
 import { describe, expect, test } from "bun:test";

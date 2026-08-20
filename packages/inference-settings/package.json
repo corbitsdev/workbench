@@ -15,7 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/types": "workspace:*",
+    "@intx/types": "0.3.0",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:"
   },

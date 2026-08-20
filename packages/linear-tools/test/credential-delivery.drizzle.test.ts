@@ -112,12 +112,6 @@ describeIfDb("buildCredentialDelivery: the linear handle binding", () => {
           secret: "linear-plaintext-secret",
         },
       ]);
-      expect(result.bindingGrants).toEqual([
-        {
-          resource: `credential:${credentialId}`,
-          conditions: { tool: "tool:@corbits/linear-tools" },
-        },
-      ]);
     } finally {
       await close();
     }

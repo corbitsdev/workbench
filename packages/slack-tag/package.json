@@ -18,7 +18,7 @@
     "@chat-adapter/state-memory": "^4.35.0",
     "@corbits/chat": "workspace:*",
     "@intx/db": "workspace:*",
-    "@intx/log": "workspace:*",
+    "@intx/log": "0.3.0",
     "arktype": "catalog:",
     "chat": "^4.34.0",
     "corbits-tag": "github:corbitsdev/corbits-tag#92eabf4f7bf0a9663799c07db6c3f72a4275f894",

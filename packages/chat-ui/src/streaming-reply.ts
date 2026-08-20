@@ -7,7 +7,7 @@
 // a run of `inference.text.delta` events into one growing string.
 //
 // `inference.text.delta`'s `data.partial.text` is already cumulative (see
-// `PartialMessage` in `vendor/intx/types/src/runtime.ts`) — each delta is
+// `PartialMessage` in `@intx/types/src/runtime.ts`) — each delta is
 // "all text streamed so far," not just the new token — so this module never
 // concatenates fragments itself; it just takes the latest one.
 

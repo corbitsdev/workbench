@@ -201,7 +201,7 @@ export function getStepCredentialContext(
  *
  * Trust boundary: this derives the consumer identity from the tool
  * bundle's OWN self-declared `id` string (`defineTool({ id, ... })`,
- * `vendor/intx/agent/src/tool.ts`) -- nothing in the loader checks that a
+ * `@intx/agent/src/tool.ts`) -- nothing in the loader checks that a
  * factory whose `id` claims package X actually shipped inside package
  * X's tarball. A factory could declare `id: "@corbits/granola-tools/
  * granola"` from inside a different package's code and this function

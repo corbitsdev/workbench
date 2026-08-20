@@ -1,6 +1,6 @@
 // Recognizes a one-shot Myra reply that is actually an inference-failure
 // report (saturation, a 402, a timeout, ...), not a malformed plan —
-// mirrors every preamble in `vendor/intx/inference/src/default-director.ts`'s
+// mirrors every preamble in `@intx/inference/src/default-director.ts`'s
 // `ERROR_PREAMBLE` (not exported upstream, so copied rather than
 // imported). Broader on purpose than
 // `@workbench/connections/provider-health`'s `isClassifiedInferenceFailure`

@@ -23,8 +23,8 @@ import type {
  * contributes to a folded run's deploy-time `config.grants`. `resource`
  * is already prefixed (`tool:<factory.id>:<definition.name>`, the exact
  * shape the workflow child's authz gate matches against — see
- * `vendor/intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`
- * and `vendor/intx/inference/src/authz-extension.ts`'s
+ * `@intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`
+ * and `@intx/inference/src/authz-extension.ts`'s
  * `beforeTool`); `effect` is the tool's static approval floor
  * (`@intx/agent`'s `toolApprovalEffect`: `"ask"` for a tool declared
  * `approval: "ask"`, `"allow"` otherwise).

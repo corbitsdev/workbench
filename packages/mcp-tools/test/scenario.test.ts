@@ -3,7 +3,7 @@
 // mcp_list_tools (including the per-tool readOnlyHint signal), and
 // mcp_call actually invokes the downstream tool and returns its result
 // — plus mcp_call's static approval gate, which `toolApprovalEffect`
-// (`vendor/intx/agent/src/tool.ts`) reads from this bundle's
+// (`@intx/agent/src/tool.ts`) reads from this bundle's
 // `definitions`.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { toolApprovalEffect } from "@intx/agent";

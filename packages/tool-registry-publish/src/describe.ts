@@ -86,7 +86,7 @@ let cached: Promise<readonly CorbitsToolPackageDescription[]> | undefined;
  * Describe every `@corbits/*-tools` package's exported tool bundles:
  * each bundle's namespaced tool id (`<bundle.id>:<definition.name>`,
  * the exact shape the workflow child's authz gate matches — see
- * `vendor/intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`)
+ * `@intx/tool-packaging/src/loader.ts`'s `applyNamespacePrefix`)
  * and its static approval mark.
  */
 export function describeCorbitsToolPackages(): Promise<

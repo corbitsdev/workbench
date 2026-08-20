@@ -2,7 +2,7 @@
   "name": "@corbits/skills-tools",
   "private": true,
   "description": "The list_skills/create_skill/update_skill/pin_skill @intx/agent tool bundle: Myra's in-chat way to capture repeatable know-how as a workbench skill and pin an existing one onto an agent definition, over @corbits/skills' asset store and @corbits/agent-directory's definition_skills store",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -13,8 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
     "arktype": "catalog:"
   },
   "devDependencies": {

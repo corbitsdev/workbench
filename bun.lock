@@ -14,8 +14,8 @@
         "@corbits/workflow-catalog": "workspace:*",
         "@eslint/js": "^10.0.0",
         "@intx/db": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/mime": "0.3.0",
+        "@intx/types": "0.3.0",
         "@types/bun": "1.3.14",
         "eslint": "^10.8.0",
         "jiti": "^2.7.0",
@@ -64,15 +64,15 @@
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/access-policy": "workspace:*",
@@ -101,18 +101,18 @@
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
-        "@intx/agent": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
-        "@intx/harness": "workspace:*",
-        "@intx/hub-agent": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
+        "@intx/harness": "0.3.0",
+        "@intx/hub-agent": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/inference": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mail-memory": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/tool-packaging": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/inference": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/mail-memory": "0.3.0",
+        "@intx/storage-isogit": "0.3.0",
+        "@intx/tool-packaging": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "@intx/workflow-host": "workspace:*",
@@ -149,7 +149,7 @@
         "@corbits/slug": "workspace:*",
         "@corbits/tasks-ui": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-slot": "^1.2.3",
         "@tanstack/react-query": "catalog:",
@@ -197,11 +197,11 @@
         "@corbits/skills": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -211,7 +211,7 @@
       },
       "devDependencies": {
         "@corbits/tool-registry-publish": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -220,8 +220,8 @@
       "name": "@corbits/agent-directory-tools",
       "version": "0.0.3",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -233,7 +233,7 @@
       "name": "@corbits/agent-lifecycle",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/log": "workspace:*",
+        "@intx/log": "0.3.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -245,8 +245,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/workflow-source": "workspace:*",
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
@@ -276,16 +276,16 @@
       "name": "@corbits/approvals",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/authz": "workspace:*",
+        "@intx/authz": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
       },
       "devDependencies": {
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
         "typescript": "catalog:",
@@ -316,7 +316,7 @@
         "@corbits/artifact-ui": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/folded-runs": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
@@ -353,7 +353,7 @@
         "@corbits/bench": "workspace:*",
         "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -368,10 +368,10 @@
     },
     "packages/capability-tools": {
       "name": "@corbits/capability-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -383,8 +383,8 @@
       "name": "@corbits/catalog-tools",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -404,16 +404,16 @@
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
         "@corbits/turn-artifacts": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
-        "@intx/agent": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "@workbench/connections": "workspace:*",
@@ -449,6 +449,7 @@
       "devDependencies": {
         "@corbits/workflow-catalog": "workspace:*",
         "@happy-dom/global-registrator": "^20.11.2",
+        "@intx/inference": "0.3.0",
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
@@ -462,7 +463,7 @@
         "workbench": "./src/index.ts",
       },
       "dependencies": {
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
       },
@@ -526,10 +527,10 @@
       "dependencies": {
         "@corbits/credential-providers": "workspace:*",
         "@corbits/mcp-tools": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
@@ -546,8 +547,8 @@
       "name": "@corbits/connections-tools",
       "version": "0.0.4",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
       },
@@ -576,8 +577,8 @@
       "name": "@corbits/credential-providers",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/harness": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/harness": "0.3.0",
+        "@intx/types": "0.3.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -632,11 +633,11 @@
         "@corbits/routines": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/connections": "workspace:*",
@@ -664,14 +665,14 @@
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
@@ -686,10 +687,10 @@
     },
     "packages/github-tools": {
       "name": "@corbits/github-tools",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -699,18 +700,18 @@
     },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
         "@corbits/credential-providers": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
-        "@intx/harness": "workspace:*",
+        "@intx/harness": "0.3.0",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -729,8 +730,8 @@
         "@corbits/workbench-digest-workflow": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
-        "@intx/inference": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/inference": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -758,13 +759,13 @@
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
         "@corbits/notify": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/log": "workspace:*",
+        "@intx/log": "0.3.0",
         "arktype": "catalog:",
         "hono": "catalog:",
       },
       "devDependencies": {
         "@intx/db": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
         "typescript": "catalog:",
@@ -776,8 +777,8 @@
       "dependencies": {
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/inference-catalog": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/inference-catalog": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
@@ -792,7 +793,7 @@
       "name": "@corbits/inference-settings",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
       },
@@ -808,9 +809,9 @@
         "@corbits/provider-pricing": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/hub-common": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
@@ -825,8 +826,8 @@
       "name": "@corbits/interaction-tools",
       "version": "0.0.2",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -836,28 +837,28 @@
     },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
         "@corbits/credential-providers": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
-        "@intx/harness": "workspace:*",
+        "@intx/harness": "0.3.0",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@modelcontextprotocol/sdk": "catalog:",
         "arktype": "catalog:",
       },
@@ -884,8 +885,8 @@
       "name": "@corbits/memory-tools",
       "version": "0.0.4",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -897,9 +898,9 @@
       "name": "@corbits/notify",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/authz": "workspace:*",
-        "@intx/hub-common": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/hub-common": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "postgres": "catalog:",
@@ -913,9 +914,9 @@
       "name": "@workbench/onboarding",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@workbench/access-policy": "workspace:*",
         "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
@@ -986,7 +987,7 @@
       "name": "@corbits/provider-pricing",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/inference-catalog": "workspace:*",
+        "@intx/inference-catalog": "0.3.0",
         "@workbench/hub-client": "workspace:*",
       },
       "devDependencies": {
@@ -998,8 +999,8 @@
       "name": "@corbits/reddit-tools",
       "version": "0.0.2",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1015,8 +1016,8 @@
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
-        "@intx/log": "workspace:*",
+        "@intx/hub-common": "0.3.0",
+        "@intx/log": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -1031,8 +1032,8 @@
       "name": "@corbits/routines-tools",
       "version": "0.0.5",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1046,7 +1047,7 @@
       "dependencies": {
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/log": "workspace:*",
+        "@intx/log": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
@@ -1061,9 +1062,9 @@
       "name": "@corbits/sandbox-sidecar",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
+        "@intx/log": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1082,7 +1083,7 @@
         "@corbits/inference-settings": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
         "@corbits/workflow-catalog": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
@@ -1118,7 +1119,7 @@
       "dependencies": {
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
@@ -1148,10 +1149,10 @@
     },
     "packages/skills-tools": {
       "name": "@corbits/skills-tools",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1166,7 +1167,7 @@
         "@chat-adapter/state-memory": "^4.35.0",
         "@corbits/chat": "workspace:*",
         "@intx/db": "workspace:*",
-        "@intx/log": "workspace:*",
+        "@intx/log": "0.3.0",
         "arktype": "catalog:",
         "chat": "^4.34.0",
         "corbits-tag": "github:corbitsdev/corbits-tag#92eabf4f7bf0a9663799c07db6c3f72a4275f894",
@@ -1189,10 +1190,10 @@
     },
     "packages/task-dispatch-tools": {
       "name": "@corbits/task-dispatch-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1211,10 +1212,10 @@
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -1236,10 +1237,10 @@
         "@corbits/turn-artifacts": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -1275,9 +1276,9 @@
       "name": "@corbits/tool-registry-publish",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/inference": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/inference": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "tar": "catalog:",
       },
@@ -1290,8 +1291,8 @@
       "name": "@corbits/tools-skills",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1312,10 +1313,10 @@
     },
     "packages/web-search-tools": {
       "name": "@corbits/web-search-tools",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1330,17 +1331,17 @@
         "@corbits/folded-runs": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
         "postgres": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto": "workspace:*",
+        "@intx/crypto": "0.3.0",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1372,52 +1373,14 @@
         "typescript": "catalog:",
       },
     },
-    "vendor/intx/agent": {
-      "name": "@intx/agent",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/inference": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/storage-isogit": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/authz": {
-      "name": "@intx/authz",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/crypto": {
-      "name": "@intx/crypto",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "vendor/intx/db": {
       "name": "@intx/db",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "postgres": "catalog:",
@@ -1428,59 +1391,21 @@
         "typescript": "catalog:",
       },
     },
-    "vendor/intx/harness": {
-      "name": "@intx/harness",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@types/bun": "catalog:",
-        "arktype": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/hub-agent": {
-      "name": "@intx/hub-agent",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/harness": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mail-memory": "workspace:*",
-        "@intx/pack-transport": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-        "isomorphic-git": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/crypto": "workspace:*",
-        "@intx/hub-sessions": "workspace:*",
-        "@types/bun": "catalog:",
-        "hono": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "vendor/intx/hub-api": {
       "name": "@intx/hub-api",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
         "@hono/standard-validator": "^0.2.2",
-        "@intx/agent": "workspace:*",
-        "@intx/authz": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
-        "@intx/hub-common": "workspace:*",
+        "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/storage-isogit": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
@@ -1499,31 +1424,20 @@
         "typescript": "catalog:",
       },
     },
-    "vendor/intx/hub-common": {
-      "name": "@intx/hub-common",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "vendor/intx/hub-sessions": {
       "name": "@intx/hub-sessions",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
-        "@intx/hub-common": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/pack-transport": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/tool-packaging": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/hub-common": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/pack-transport": "0.3.0",
+        "@intx/storage-isogit": "0.3.0",
+        "@intx/tool-packaging": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
@@ -1536,148 +1450,13 @@
         "typescript": "catalog:",
       },
     },
-    "vendor/intx/inference": {
-      "name": "@intx/inference",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/log": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/mime": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/inference-catalog": {
-      "name": "@intx/inference-catalog",
-      "version": "0.2.2",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/log": {
-      "name": "@intx/log",
-      "version": "0.2.2",
-      "dependencies": {
-        "@logtape/hono": "^2.0.2",
-        "@logtape/logtape": "^2.0.2",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "hono": "^4.0.0",
-      },
-      "optionalPeers": [
-        "hono",
-      ],
-    },
-    "vendor/intx/mail-memory": {
-      "name": "@intx/mail-memory",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/crypto": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/mime": {
-      "name": "@intx/mime",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/crypto": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/pack-transport": {
-      "name": "@intx/pack-transport",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/types": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/storage-isogit": {
-      "name": "@intx/storage-isogit",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/log": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/types": "workspace:*",
-        "@isomorphic-git/lightning-fs": "4.7.0",
-        "arktype": "catalog:",
-        "buffer": "^6.0.3",
-        "isomorphic-git": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/crypto": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/tool-packaging": {
-      "name": "@intx/tool-packaging",
-      "version": "0.2.2",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-        "isomorphic-git": "catalog:",
-        "npm-package-arg": "^12.0.2",
-        "npm-pick-manifest": "^10.0.0",
-        "npm-registry-fetch": "^19.0.0",
-        "semver": "catalog:",
-        "ssri": "catalog:",
-        "tar": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/npm-package-arg": "^6.1.4",
-        "@types/semver": "catalog:",
-        "@types/ssri": "^7.1.5",
-        "typescript": "catalog:",
-      },
-    },
-    "vendor/intx/types": {
-      "name": "@intx/types",
-      "version": "0.2.2",
-      "dependencies": {
-        "arktype": "catalog:",
-        "semver": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/semver": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "vendor/intx/workflow": {
       "name": "@intx/workflow",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/inference": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/inference": "0.3.0",
+        "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1687,11 +1466,11 @@
     },
     "vendor/intx/workflow-deploy": {
       "name": "@intx/workflow-deploy",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/tool-packaging": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/tool-packaging": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1702,17 +1481,17 @@
     },
     "vendor/intx/workflow-host": {
       "name": "@intx/workflow-host",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/crypto": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/crypto": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/inference": "workspace:*",
-        "@intx/log": "workspace:*",
-        "@intx/mail-memory": "workspace:*",
-        "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/inference": "0.3.0",
+        "@intx/log": "0.3.0",
+        "@intx/mail-memory": "0.3.0",
+        "@intx/mime": "0.3.0",
+        "@intx/storage-isogit": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1726,8 +1505,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/catalog-tools": "workspace:*",
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1743,8 +1522,8 @@
       "name": "@corbits/attio-task-agent-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1758,8 +1537,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/code-review": "workspace:*",
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1771,8 +1550,8 @@
       "name": "@corbits/collateral-generation-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1785,7 +1564,7 @@
       "name": "@corbits/echo-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1797,8 +1576,8 @@
       "name": "@corbits/exa-topic-watch-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1811,8 +1590,8 @@
       "name": "@corbits/granola-call-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1825,7 +1604,7 @@
       "name": "@corbits/heartbeat-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1837,7 +1616,7 @@
       "name": "@corbits/last-30-days-research-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1850,8 +1629,8 @@
       "name": "@corbits/morning-brief-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1865,8 +1644,8 @@
       "name": "@corbits/pain-point-collateral-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1879,8 +1658,8 @@
       "name": "@corbits/process-granola-call-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1893,7 +1672,7 @@
       "name": "@corbits/recurring-task-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1905,7 +1684,7 @@
       "name": "@corbits/reddit-opportunity-scanner-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -1918,7 +1697,7 @@
       "name": "@corbits/workbench-digest-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/agent": "workspace:*",
+        "@intx/agent": "0.3.0",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -1932,7 +1711,29 @@
     "@corbits/mailbox",
   ],
   "overrides": {
+    "@intx/agent": "0.3.0",
+    "@intx/authz": "0.3.0",
+    "@intx/crypto": "0.3.0",
+    "@intx/db": "0.3.0",
+    "@intx/harness": "0.3.0",
+    "@intx/hub-agent": "0.3.0",
+    "@intx/hub-api": "0.3.0",
+    "@intx/hub-common": "0.3.0",
+    "@intx/hub-sessions": "0.3.0",
+    "@intx/inference": "0.3.0",
+    "@intx/inference-catalog": "0.3.0",
+    "@intx/log": "0.3.0",
+    "@intx/mail-memory": "0.3.0",
+    "@intx/mime": "0.3.0",
+    "@intx/pack-transport": "0.3.0",
+    "@intx/storage-isogit": "0.3.0",
+    "@intx/tool-packaging": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0",
+    "@intx/workflow-deploy": "0.3.0",
+    "@intx/workflow-host": "0.3.0",
     "arktype": "^2.2.0",
+    "better-auth": "1.6.29",
   },
   "catalog": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -2013,11 +1814,11 @@
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.14.0", "", {}, "sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w=="],
 
-    "@chat-adapter/shared": ["@chat-adapter/shared@4.38.0", "", { "dependencies": { "chat": "4.38.0" } }, "sha512-mBOAVJ18eB1w8yOEhVRfQGvR0ALg/VawndP/mht4Da3xXJQIiwUid8v/G+wm9XuQieJyIG4JL9dIUed4YUHDdQ=="],
+    "@chat-adapter/shared": ["@chat-adapter/shared@4.38.1", "", { "dependencies": { "chat": "4.38.1" } }, "sha512-zJiMl43fiS3a2RjLFdCyTUTqcDY2xss1Acbzc9yfsw8YAkS0LZRdrNmp9/RjLhZB0+FzLarNAayvdKqF2GwnQg=="],
 
-    "@chat-adapter/slack": ["@chat-adapter/slack@4.38.0", "", { "dependencies": { "@chat-adapter/shared": "4.38.0", "@slack/socket-mode": "^2.0.5", "@slack/web-api": "^7.18.0", "chat": "4.38.0" } }, "sha512-AzLU+yYlPUJwYvj+0+nwp/b+oQfYAQuRY0hjYhSN3VGaksyhLtvdn3ir3Buwly+V/ojAtD7D7EvXOIAzZtCY6A=="],
+    "@chat-adapter/slack": ["@chat-adapter/slack@4.38.1", "", { "dependencies": { "@chat-adapter/shared": "4.38.1", "@slack/socket-mode": "^2.0.5", "@slack/web-api": "^7.18.0", "chat": "4.38.1" } }, "sha512-xMZ43YUQKzqOAiePR5mEFjhJPI6/jsEHCMq9Y+Rrm+N4+DotBddQDpbGMzb5oiogZD6iyMVCMvWSPLST7ZX0sg=="],
 
-    "@chat-adapter/state-memory": ["@chat-adapter/state-memory@4.38.0", "", { "dependencies": { "chat": "4.38.0" } }, "sha512-fqwGvFp/NC8ocuv1RRjlzsjt9H23f5D+RcdtyYY5RiEOOWeaxEtZheM36gpBjOr2NTzYfNz/1aOQNRWDYsJTsg=="],
+    "@chat-adapter/state-memory": ["@chat-adapter/state-memory@4.38.1", "", { "dependencies": { "chat": "4.38.1" } }, "sha512-XYRmnnuckJ7HubQIRqKTwOn2XbpK+GQclN7mRJEpiGk/4LXD46g0XKrYPrQMGe8PGLMdSQ4139Huu34rvyfgSw=="],
 
     "@connectrpc/connect": ["@connectrpc/connect@2.1.2", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0" } }, "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="],
 
@@ -2275,7 +2076,7 @@
 
     "@gar/promise-retry": ["@gar/promise-retry@1.0.3", "", {}, "sha512-GmzA9ckNokPypTg10pgpeHNQe7ph+iIKKmhKu3Ob9ANkswreCx7R3cKmY781K8QK3AqVL3xVh9A42JvIAbkkSA=="],
 
-    "@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.11.2", "", { "dependencies": { "@types/node": ">=20.0.0", "happy-dom": "^20.11.2" } }, "sha512-7fkpoXZWzyxaBkzRtlD0wRU5ckxbNT4j6BywzpSYh+SFPsGxEVmNR9KHaMwM2xkHB0pADQLl4Z8DSrztECJ7Ww=="],
+    "@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.11.6", "", { "dependencies": { "@types/node": ">=20.0.0", "happy-dom": "^20.11.6" } }, "sha512-ZQ47qUTeNbGhHkCGExJ1oZhruoxKRaxO44RgFETl3T4c1rRxIBlAOnM3SAH4XHu7Ue2owJXP+jOx1vOuKuxcSg=="],
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
@@ -2291,41 +2092,41 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@intx/agent": ["@intx/agent@workspace:vendor/intx/agent"],
+    "@intx/agent": ["@intx/agent@0.3.0", "", { "dependencies": { "@intx/inference": "0.3.0", "@intx/log": "0.3.0", "@intx/mime": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-a7cgmH8FSsGQ7BpLKQhEwZYRfofWh3lWEGgKFsk53zdgjndtDfqAf2I64QMPAqC2Y2Npag/z1NA5lEsIqAGvPg=="],
 
-    "@intx/authz": ["@intx/authz@workspace:vendor/intx/authz"],
+    "@intx/authz": ["@intx/authz@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-kyIKQAVjfB8H84mES0QA4cNnYfpPoyLmQITVBxiuXv1VO/K74TQZnCDpoo0IL7oFk2q7bbDXSAEE4ubMBVTHzA=="],
 
-    "@intx/crypto": ["@intx/crypto@workspace:vendor/intx/crypto"],
+    "@intx/crypto": ["@intx/crypto@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-NsRzvkFGb0Pcsm9uLFFSXNl6Cbu+ii6VkYAw81qs9IbZzbAFfsZSUVQaX6EZuPNyJ8KK4KmBtqmioq1mhXsJww=="],
 
     "@intx/db": ["@intx/db@workspace:vendor/intx/db"],
 
-    "@intx/harness": ["@intx/harness@workspace:vendor/intx/harness"],
+    "@intx/harness": ["@intx/harness@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/authz": "0.3.0", "@intx/log": "0.3.0", "@intx/types": "0.3.0" } }, "sha512-YXXHhM+Gr4FPd0UjJ9iEA5rh8DQCV7oJoL+I9X4g8KBNQtq7ZLUa3xVvQ/YeDZhz7g8OtN7023b3OkkjHuSHUw=="],
 
-    "@intx/hub-agent": ["@intx/hub-agent@workspace:vendor/intx/hub-agent"],
+    "@intx/hub-agent": ["@intx/hub-agent@0.3.0", "", { "dependencies": { "@intx/harness": "0.3.0", "@intx/log": "0.3.0", "@intx/mail-memory": "0.3.0", "@intx/pack-transport": "0.3.0", "@intx/storage-isogit": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29", "isomorphic-git": "^1.27.2" } }, "sha512-X0Y9Hh1nWIQrEfAqGF39ff9lN3Qh17AmW8kUtr+LxM0xqqE4OdRnxZauyImVMAKpuLcIQDUppLrZ7O4lj81hEQ=="],
 
     "@intx/hub-api": ["@intx/hub-api@workspace:vendor/intx/hub-api"],
 
-    "@intx/hub-common": ["@intx/hub-common@workspace:vendor/intx/hub-common"],
+    "@intx/hub-common": ["@intx/hub-common@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-dA8pTmBTu1JHGd3rGJrMsRWrai4GBBNnPxpZFFtXwQPzgL290lx2R+9BpRo2apdKbmgd+KOVshLvOdcUhAqghw=="],
 
     "@intx/hub-sessions": ["@intx/hub-sessions@workspace:vendor/intx/hub-sessions"],
 
-    "@intx/inference": ["@intx/inference@workspace:vendor/intx/inference"],
+    "@intx/inference": ["@intx/inference@0.3.0", "", { "dependencies": { "@intx/log": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-2DxqWRp5cSziXgDXPomSy0HTLVesBCtZErsKXYFnliTwYM6U+GRKk5rzwWMMgMWMFbtUaiogPExcNQYBYmfjQA=="],
 
-    "@intx/inference-catalog": ["@intx/inference-catalog@workspace:vendor/intx/inference-catalog"],
+    "@intx/inference-catalog": ["@intx/inference-catalog@0.3.0", "", {}, "sha512-iSimimSoIALXWWNGOG+jYmJQEQgXnWtVREB5DkSCZum/EhSTZBESUn9+aT+poB8VZAmMbeExxaiKjWWpoPM3GA=="],
 
-    "@intx/log": ["@intx/log@workspace:vendor/intx/log"],
+    "@intx/log": ["@intx/log@0.3.0", "", { "dependencies": { "@logtape/hono": "^2.0.2", "@logtape/logtape": "^2.0.2" }, "peerDependencies": { "hono": "^4.0.0" }, "optionalPeers": ["hono"] }, "sha512-iooPSZjiEUO1A91X5STRhOAk+2RprliB4nbriV/dOOz86kuxZ60y5T8ISQ5Jaj1US870gntN6QwnefY38aWi2Q=="],
 
-    "@intx/mail-memory": ["@intx/mail-memory@workspace:vendor/intx/mail-memory"],
+    "@intx/mail-memory": ["@intx/mail-memory@0.3.0", "", { "dependencies": { "@intx/crypto": "0.3.0", "@intx/log": "0.3.0", "@intx/mime": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-A0bEHi0tbGxZ9Wpvt9YwrbGkekirBJvKtzgG+dm3/tLkLfWuaEFHTJ8IuSnR3CRyjeLcNw8ItuznXRFs4WfgcA=="],
 
-    "@intx/mime": ["@intx/mime@workspace:vendor/intx/mime"],
+    "@intx/mime": ["@intx/mime@0.3.0", "", { "dependencies": { "@intx/crypto": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-jpKZZpfWRQJ6fI8BEpHnr83N+1ZHrnOMY978B/6bgcjFn3qtm1f3KiR0yaQ8eF3r1VF327r3H2qiCCx0OFN9Ow=="],
 
-    "@intx/pack-transport": ["@intx/pack-transport@workspace:vendor/intx/pack-transport"],
+    "@intx/pack-transport": ["@intx/pack-transport@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-EQ1wM16323aIFhw3Ak6HwB8YqzKSAfRmJUwjIfqyXk2t6TGv4grws6dIs7Yau1dc372s/SO+GhvFaKgvI6XTWA=="],
 
-    "@intx/storage-isogit": ["@intx/storage-isogit@workspace:vendor/intx/storage-isogit"],
+    "@intx/storage-isogit": ["@intx/storage-isogit@0.3.0", "", { "dependencies": { "@intx/log": "0.3.0", "@intx/mime": "0.3.0", "@intx/types": "0.3.0", "@isomorphic-git/lightning-fs": "4.7.0", "arktype": "^2.1.29", "buffer": "^6.0.3", "isomorphic-git": "^1.27.2" } }, "sha512-nzhl9WvxV66J1jjBfuAOjvwgiuS1DScnYomCPQrBxZNG35M5CYR3xyqR0RN0GfTj/7JlKWk6rF6Lu44aZDfzuw=="],
 
-    "@intx/tool-packaging": ["@intx/tool-packaging@workspace:vendor/intx/tool-packaging"],
+    "@intx/tool-packaging": ["@intx/tool-packaging@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/log": "0.3.0", "@intx/storage-isogit": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29", "isomorphic-git": "^1.27.2", "npm-package-arg": "^12.0.2", "npm-pick-manifest": "^10.0.0", "npm-registry-fetch": "^19.0.0", "semver": "^7.7.2", "ssri": "^12.0.0", "tar": "^7.5.1" } }, "sha512-Lr/xdEjXTindJRm+eITvfeqpW/yl71thYjr3HXl41GJ9wpuOZPCjm9vBoRVKhUSwmIUKBYbm2VplXCCXaS7f4g=="],
 
-    "@intx/types": ["@intx/types@workspace:vendor/intx/types"],
+    "@intx/types": ["@intx/types@0.3.0", "", { "dependencies": { "arktype": "^2.1.29", "semver": "^7.7.2" } }, "sha512-PJ+v3IhtfZ4J7ZqJ8E39TteRMnC6Y503Q0JeCJdskkK+jhcjx01z7TJSozucagauAlpyh8Hn/9CyWFl53Ji0DQ=="],
 
     "@intx/workflow": ["@intx/workflow@workspace:vendor/intx/workflow"],
 
@@ -2371,7 +2172,7 @@
 
     "@phosphor-icons/react": ["@phosphor-icons/react@2.1.10", "", { "peerDependencies": { "react": ">= 16.8", "react-dom": ">= 16.8" } }, "sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA=="],
 
-    "@puppeteer/browsers": ["@puppeteer/browsers@3.2.0", "", { "dependencies": { "modern-tar": "^0.8.0", "yargs": "^18.0.0" }, "peerDependencies": { "proxy-agent": ">=8.0.1", "yauzl": "^2.10.0 || ^3.4.0" }, "optionalPeers": ["proxy-agent", "yauzl"], "bin": { "browsers": "lib/main-cli.js" } }, "sha512-LlBrE8oqGfU7b1Nk2d5Q1SbuPhZxTj0cJEMDPEws28OjNMELlflekmPPuf4FnK03x0ZRjKaYwJElUcKK4kyqJA=="],
+    "@puppeteer/browsers": ["@puppeteer/browsers@3.2.1", "", { "dependencies": { "modern-tar": "^0.8.0", "yargs": "^18.0.0" }, "peerDependencies": { "proxy-agent": ">=8.0.1", "yauzl": "^2.10.0 || ^3.4.0" }, "optionalPeers": ["proxy-agent", "yauzl"], "bin": { "browsers": "lib/main-cli.js" } }, "sha512-KDz+3qDRdBAlRlMjmKyj6dEs33YHTk/xRHEENSXq6TNnhgoU15ruSHtEBeVF6OZ9tBDY55Se4P0nFMNsipzU9A=="],
 
     "@radix-ui/primitive": ["@radix-ui/primitive@1.1.7", "", {}, "sha512-rqWnm76nYT8HoNNqEjpgJ7Pw/DrBj5iBTrmEPo6HTX5+VJyBNOqTdv4g89G63HuR5g0AaENoAcH7Is5fF2kZ8Q=="],
 
@@ -2433,55 +2234,55 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-rc.3", "", {}, "sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q=="],
 
-    "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.62.4", "", { "os": "android", "cpu": "arm" }, "sha512-RrPokAb7dmbxFoeO3TloqHyOjgye8RkBhSqmp4aJMIex4c9r46ZstPnleDQOq1t46VOVjwIuwNogIqbodV1Vvg=="],
+    "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.62.5", "", { "os": "android", "cpu": "arm" }, "sha512-jfkGfTwhQpsiSckPF8r9bU3pn3vyd72NlWaO+TgEO6WPSDnUhXzrNYCHBMOYj0ACaUgjm6eERLF+XV9a6RstoA=="],
 
-    "@rollup/rollup-android-arm64": ["@rollup/rollup-android-arm64@4.62.4", "", { "os": "android", "cpu": "arm64" }, "sha512-JKuJc+pnpks2pjy7L/N3v/cAkZxYlnmuZoD840ldbMI5KDbC4iO9NKwPKYdjYFCMAIIlBzYSFHxIJVYzRo2/8A=="],
+    "@rollup/rollup-android-arm64": ["@rollup/rollup-android-arm64@4.62.5", "", { "os": "android", "cpu": "arm64" }, "sha512-oGVqyQlxnrz9/ty89oHpU857VUHEl5/Xu4R2lS+aivCTrNnSsbiENzTnNaBsjxH0CNWGPhzHArOLFwo+oKXveA=="],
 
-    "@rollup/rollup-darwin-arm64": ["@rollup/rollup-darwin-arm64@4.62.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-krw5uS2STmvJ02x0uTXHbqQNuz+9eZ1iw+qXk9dmW2gvV4jV7O2hEoOnuhFrpOPiel1mBFtqbxYZZtC46hXLOw=="],
+    "@rollup/rollup-darwin-arm64": ["@rollup/rollup-darwin-arm64@4.62.5", "", { "os": "darwin", "cpu": "arm64" }, "sha512-bW7B8xMEq8n99Q3ieEcPRGuphurdZAaFzQc9Efyyw3FL6DZO6pMy9xhdN+kBoD7Sy05xNXSr4OyPPnpkYriS/A=="],
 
-    "@rollup/rollup-darwin-x64": ["@rollup/rollup-darwin-x64@4.62.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-wsTxtgApb4PrOsNJIm0FZ1h3WvCC+k9uxLJ4ad75hgoS4NiRes2SoJFlDAyMwiUY8IssDqGcHbXuN0sx1tfF1A=="],
+    "@rollup/rollup-darwin-x64": ["@rollup/rollup-darwin-x64@4.62.5", "", { "os": "darwin", "cpu": "x64" }, "sha512-YSwBS86QeHOGlrxJ1PSOIZSkzRL/JmKeunhc+lV6M1a6En8QuVCD/T/qIA0J4Gd2Y86RIOBYrLcOUtqGh9+/1w=="],
 
-    "@rollup/rollup-freebsd-arm64": ["@rollup/rollup-freebsd-arm64@4.62.4", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-GUOnQlyZe3yAXhWOtOMsn5Qkrv5E5mZXa0thbARWi5Ei2szlVXJFQhddZ4HbAzh8q92w5twp+CQvs/eFanz9YQ=="],
+    "@rollup/rollup-freebsd-arm64": ["@rollup/rollup-freebsd-arm64@4.62.5", "", { "os": "freebsd", "cpu": "arm64" }, "sha512-2fST8lILgl7cKbme/1KDdPCmbXbG+gqoV3bHp19L0ypX/3akYMBVdOunPleRCwonoLnXOZ/0F+Mt/v8POFmfcQ=="],
 
-    "@rollup/rollup-freebsd-x64": ["@rollup/rollup-freebsd-x64@4.62.4", "", { "os": "freebsd", "cpu": "x64" }, "sha512-/Y7f3QuxjzPKsjA/rfEDa3+0vXqyjmJ50Ln8dPpCmWkKTrUoWHG1cWhTqaAMLob2m2nESWuC7yGrREz019Ztqg=="],
+    "@rollup/rollup-freebsd-x64": ["@rollup/rollup-freebsd-x64@4.62.5", "", { "os": "freebsd", "cpu": "x64" }, "sha512-cpIxQCP9J+EVad0a6LO1kY3ZGODlk80VlI+2I96B8xMcdHZ4pLVhfQ49JFpYqjPF91FFkQWftf57YlDcTiw9yQ=="],
 
-    "@rollup/rollup-linux-arm-gnueabihf": ["@rollup/rollup-linux-arm-gnueabihf@4.62.4", "", { "os": "linux", "cpu": "arm" }, "sha512-81wiiX3v7aqy+T+bT61TJ78yJjRquqFFTTbAPt08imfQQzkPIW8t6aJbkTagtCCrXMNc9D66+geqlK7ydLPNqA=="],
+    "@rollup/rollup-linux-arm-gnueabihf": ["@rollup/rollup-linux-arm-gnueabihf@4.62.5", "", { "os": "linux", "cpu": "arm" }, "sha512-r9fGh3eFs3e/udWh5ZjXQtxiYK/xoFxQaYR/cELxac/Udkl5Th+IsFm0CX3Kl9hmUH/we7EoMpjJgeQNnE0+IA=="],
 
-    "@rollup/rollup-linux-arm-musleabihf": ["@rollup/rollup-linux-arm-musleabihf@4.62.4", "", { "os": "linux", "cpu": "arm" }, "sha512-9kmDIvNZqdoHOBZgNtpTBeLWYO/LVipM3H/j62P8848/l/VPEQL6N3uxU9pvP1oZAsXyC2MEnFP3ovRjo7WYNQ=="],
+    "@rollup/rollup-linux-arm-musleabihf": ["@rollup/rollup-linux-arm-musleabihf@4.62.5", "", { "os": "linux", "cpu": "arm" }, "sha512-xdvFdp7OM6KLJviJT2g/YuRSUjnZgGHk4RNgwIbN7X6cPugOucV60DdHXWzsBVCUdrGb6qSXnJQrrAKMmQuj3Q=="],
 
-    "@rollup/rollup-linux-arm64-gnu": ["@rollup/rollup-linux-arm64-gnu@4.62.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-CcnXHWnXg69g+DX5VWL3FHts3qMRN2uVEHX+BZvGLdd07/gXkn3ePjYtO1LDJvxkGKVHMclKBRa1QUTH+6toYQ=="],
+    "@rollup/rollup-linux-arm64-gnu": ["@rollup/rollup-linux-arm64-gnu@4.62.5", "", { "os": "linux", "cpu": "arm64" }, "sha512-rRqILAndyzHzP7T9NFQrq+4HFWNhqkqkKur7eiBpfLmz01PO0JKx5Vchu3YllE4YXI/Ftgq/szrDWg5GJ0mI8g=="],
 
-    "@rollup/rollup-linux-arm64-musl": ["@rollup/rollup-linux-arm64-musl@4.62.4", "", { "os": "linux", "cpu": "arm64" }, "sha512-iFOibiHnTRuhrWLlRsOQFdZJJIa7S8OwkneJr4ocALP16u5yk6lWLINFwhHaEqBFMsKDUZofLkGos7+CPzGB3g=="],
+    "@rollup/rollup-linux-arm64-musl": ["@rollup/rollup-linux-arm64-musl@4.62.5", "", { "os": "linux", "cpu": "arm64" }, "sha512-Gf4X3qVMucayUvux6aXXPgXovocSFUC0rrffDuPI/S2nHhNMhjcZxsrAFYCOF350PRreW1XwzFj3CT/3bKsWCw=="],
 
-    "@rollup/rollup-linux-loong64-gnu": ["@rollup/rollup-linux-loong64-gnu@4.62.4", "", { "os": "linux", "cpu": "none" }, "sha512-XnWYMI7euHlb5a871xPja+Gm7DRCFU+FGRrtS2sMq9N8FvqtpagUy6gD4YOemC5MRk9xbh8+jYMEJbigFQwsgA=="],
+    "@rollup/rollup-linux-loong64-gnu": ["@rollup/rollup-linux-loong64-gnu@4.62.5", "", { "os": "linux", "cpu": "none" }, "sha512-+s5qA0TNM0qm8PK/a5gt/1Hpx+NV08uSuCncvhziIlQzT6AEV2fnUQo7eBtFTFO0nA9scauvoR2HusfXmQnO4w=="],
 
-    "@rollup/rollup-linux-loong64-musl": ["@rollup/rollup-linux-loong64-musl@4.62.4", "", { "os": "linux", "cpu": "none" }, "sha512-qGDAlO0U8xedCcsdRm9oaoQY8DAx/QT7uIxJWhCdx0ceIWX783UC9QSYkdpzAe29wNiVfp24+bZdQmn49o45SQ=="],
+    "@rollup/rollup-linux-loong64-musl": ["@rollup/rollup-linux-loong64-musl@4.62.5", "", { "os": "linux", "cpu": "none" }, "sha512-ybb6QvWwWJCbBWqERpc8K3pYVGIrXlG8MEQ8IIuJY6Y9KdHQxoFoNyfkAOtKn1VHu3KuLidXvwrvGR1mEjeWCw=="],
 
-    "@rollup/rollup-linux-ppc64-gnu": ["@rollup/rollup-linux-ppc64-gnu@4.62.4", "", { "os": "linux", "cpu": "ppc64" }, "sha512-ru4H6ezD7ysA5EiEK6qkkaEb4modH8CTej6kUy/gQi20u3kB3G7Zn8snXXkeJSCOFKG/rbPPtM/+9Wgas1961w=="],
+    "@rollup/rollup-linux-ppc64-gnu": ["@rollup/rollup-linux-ppc64-gnu@4.62.5", "", { "os": "linux", "cpu": "ppc64" }, "sha512-nZb1DtnOyhCmYvsC8A2CwOkopVg+IS1+fPUa7rMOAXtNw5+lLCLLPqd6XAiNrGtoQKsbvIBOwsHnBH/3wnb4HQ=="],
 
-    "@rollup/rollup-linux-ppc64-musl": ["@rollup/rollup-linux-ppc64-musl@4.62.4", "", { "os": "linux", "cpu": "ppc64" }, "sha512-2W4MO5WQVJnbJaZdvDb9rhBDuFU1nKIepPFpJUBsTh2k1YY2g+ODViaWuyOAjQ5cOP7NvrvLzt3wvHOoiAvc7w=="],
+    "@rollup/rollup-linux-ppc64-musl": ["@rollup/rollup-linux-ppc64-musl@4.62.5", "", { "os": "linux", "cpu": "ppc64" }, "sha512-yMbj63Sp89ryrXLWyz+sy+fYD2HpOnMCLGbe4Oa1smclFSUukdtD/BgdiHaAetJNb74URD8U4hM+qG5KVzMEkg=="],
 
-    "@rollup/rollup-linux-riscv64-gnu": ["@rollup/rollup-linux-riscv64-gnu@4.62.4", "", { "os": "linux", "cpu": "none" }, "sha512-+fxjfuoAmVMCYV5QyjoIpu0cp5DOiOTeqYFk1AVaxGr+/ravWLX89XfQmptsoWcaVy/TGf2hexzbUOrCQIL1CQ=="],
+    "@rollup/rollup-linux-riscv64-gnu": ["@rollup/rollup-linux-riscv64-gnu@4.62.5", "", { "os": "linux", "cpu": "none" }, "sha512-mhoan3OJw2kYV/e1jtIdmvUZgyBFeA6zGWsOswmR0Tg19TQbowZuR+JMLID6spbbBN7Zee2ejrgmy3+FxGrIdA=="],
 
-    "@rollup/rollup-linux-riscv64-musl": ["@rollup/rollup-linux-riscv64-musl@4.62.4", "", { "os": "linux", "cpu": "none" }, "sha512-jTn8JfHGL4djjFxPuM06LmNUJDsst2jeVlsd9OmIH6zc5sC9K6rIuO4YajXatLUpBmBKl6b35ro1QZocLi+tcA=="],
+    "@rollup/rollup-linux-riscv64-musl": ["@rollup/rollup-linux-riscv64-musl@4.62.5", "", { "os": "linux", "cpu": "none" }, "sha512-5ZTLmjWbb1VZdjuyhe83K/8QO0/h11midQCBP+X5OYn32ra7eOBoM0ZqtaY4nkgNsYgmdVhMYPoyVPTjUpHf3w=="],
 
-    "@rollup/rollup-linux-s390x-gnu": ["@rollup/rollup-linux-s390x-gnu@4.62.4", "", { "os": "linux", "cpu": "s390x" }, "sha512-oCJCJL4pXsoDcP2QZ+JVlPTIRc6266zsIaeJJsWImmF7HO0W8nb6HuSgZlMWxJwaPf8ehbSw8yo0EUw925hKsA=="],
+    "@rollup/rollup-linux-s390x-gnu": ["@rollup/rollup-linux-s390x-gnu@4.62.5", "", { "os": "linux", "cpu": "s390x" }, "sha512-m53kG+br6PGxOTmgBEM2DHSDs9RVjsyEbUwjJPJGTFm1grWOG8EKJggDCTb60unD4Tjby8fi7/m9XfkEWasVWg=="],
 
-    "@rollup/rollup-linux-x64-gnu": ["@rollup/rollup-linux-x64-gnu@4.62.4", "", { "os": "linux", "cpu": "x64" }, "sha512-W69hukhZ3KKNRCaMIEzKvcFye42hh0FE1+YoYaf5+Ikacuftoco6yO/xouz0hc5d5W/s3yBro5jRiuEE/Q5vUw=="],
+    "@rollup/rollup-linux-x64-gnu": ["@rollup/rollup-linux-x64-gnu@4.62.5", "", { "os": "linux", "cpu": "x64" }, "sha512-6RHPJR1g/uvdYU8uXBnfq3nlqyZCP82Fr6NHgfGoaIeSh0YEqnX/x6uA9MmJJbnSH7swqX4F+CkGdUF+6doiQA=="],
 
-    "@rollup/rollup-linux-x64-musl": ["@rollup/rollup-linux-x64-musl@4.62.4", "", { "os": "linux", "cpu": "x64" }, "sha512-qiXbGG2jkjXhzXpsFZSR2Xpb8DN/UaxYsbb/STbuR/6fpaDgRmmaq1B/LmtF2wQFOFOSsK2jdE0RZ3a0zHn4QA=="],
+    "@rollup/rollup-linux-x64-musl": ["@rollup/rollup-linux-x64-musl@4.62.5", "", { "os": "linux", "cpu": "x64" }, "sha512-xs+OXQtEXgpXT0DmA5+U3qnRZHdCST/5HRQxS8wSPZTUZN/EMWeHuSIod32LQklTBZBV9DyfncKBQ8n5V3eFdw=="],
 
-    "@rollup/rollup-openbsd-x64": ["@rollup/rollup-openbsd-x64@4.62.4", "", { "os": "openbsd", "cpu": "x64" }, "sha512-nWeM//hxv8mIo6jD7Hu4o48DVmV9pbV6gsKaWU+4NFyqHoPKwrkRiZGLKUhOBk8qNmDmpwFtPKg80Bo/Tn4xiQ=="],
+    "@rollup/rollup-openbsd-x64": ["@rollup/rollup-openbsd-x64@4.62.5", "", { "os": "openbsd", "cpu": "x64" }, "sha512-e7hD+sl3s+mcLQDZ8pbudBVsdG6r5yN4w3LqG2TJ8sQHDpblWj5lrJs/3m01Cvlxbt4x13zu5thLjgypgtkYzw=="],
 
-    "@rollup/rollup-openharmony-arm64": ["@rollup/rollup-openharmony-arm64@4.62.4", "", { "os": "none", "cpu": "arm64" }, "sha512-s62SQ/vgsRSvMwDkOEfTqfgASF0f26ZNaQuTA6Aok5lrikf89yI2W0gFHvZb2Jpgc6N8JnOKZgCK2iciO3CsxQ=="],
+    "@rollup/rollup-openharmony-arm64": ["@rollup/rollup-openharmony-arm64@4.62.5", "", { "os": "none", "cpu": "arm64" }, "sha512-GiyJaCf+WpMub/17aPcKk27QMl5W6f+KhdPTjlFOn5akH5Wa/DCM9Stdx5cDfmasyKB08MqpVQ1uJE2RkkpbXg=="],
 
-    "@rollup/rollup-win32-arm64-msvc": ["@rollup/rollup-win32-arm64-msvc@4.62.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-J6wGf8TVGbXJq+HH+ttTvrcfNKPbuZecV6KT1B8I18BC5IURUh5kl4Yl5OEP5eFIUoI5BWxCsyYMhFsDx8kekw=="],
+    "@rollup/rollup-win32-arm64-msvc": ["@rollup/rollup-win32-arm64-msvc@4.62.5", "", { "os": "win32", "cpu": "arm64" }, "sha512-+OQ8U2DdoEfXl8T4Fb18AjmEwbXMerKDKCL8yCPAYhKCEEKoul7rkbeGCBFCbAlaGaa7pmtRTpkAJM2LE/i5FA=="],
 
-    "@rollup/rollup-win32-ia32-msvc": ["@rollup/rollup-win32-ia32-msvc@4.62.4", "", { "os": "win32", "cpu": "ia32" }, "sha512-zmfrQd/0wu6oJs8Vq8KwY/YtsKSsLtKe/HwAP4Wqy8LhWjeT55fHRAkOhYQ12wI3ayS4Tt12d5CDRD7N96SAYQ=="],
+    "@rollup/rollup-win32-ia32-msvc": ["@rollup/rollup-win32-ia32-msvc@4.62.5", "", { "os": "win32", "cpu": "ia32" }, "sha512-KanvAZrPKbDBFwrgiU9yEVpQoox9QPV1WZOXX7HudJQY+eSlu82CtWxDU8WtuRRvtN5EGkLczkd6Y6DTcvm9wA=="],
 
-    "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.62.4", "", { "os": "win32", "cpu": "x64" }, "sha512-qPzHqdj9rfUD+w79dtE07zi/kFwKyCJqplp5K5ygeLTp7jLpAoc16OAH39HSmRC9UpozaecsleI8uAdEj6v2yw=="],
+    "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.62.5", "", { "os": "win32", "cpu": "x64" }, "sha512-1aC3UEWTtRl3RK3VpDJ/Tqk1XI4SLTmXIthAq6wRWo8XiSXJNd+VprJM4/1P4+i6HIaFEFlVi9sTTziniD2tOQ=="],
 
-    "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.62.4", "", { "os": "win32", "cpu": "x64" }, "sha512-zD6NdeWEByGE9QF9vCrlJ5YQB4oq9q91kPZS37Jwj5hOkvR1lTBSpsKhKDw4IJtbQ35LsTS1HD9DZYGKIshU1Q=="],
+    "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.62.5", "", { "os": "win32", "cpu": "x64" }, "sha512-/gDJaRs4gl0NPIwqCz+6PkpmhhjRAD2j6P4rSNHBzUkO3naEx2mIU0pRle1vUNRQ7mE/+8OOeXLTv/J56FKiQg=="],
 
     "@slack/logger": ["@slack/logger@4.0.1", "", { "dependencies": { "@types/node": ">=18" } }, "sha512-6cmdPrV/RYfd2U0mDGiMK8S7OJqpCTm7enMLRR3edccsPX8j7zXTLnaEF4fhxxJJTAIOil6+qZrnUPTuaLvwrQ=="],
 
@@ -2555,15 +2356,11 @@
 
     "@types/node": ["@types/node@26.2.0", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg=="],
 
-    "@types/npm-package-arg": ["@types/npm-package-arg@6.1.4", "", {}, "sha512-vDgdbMy2QXHnAruzlv68pUtXCjmqUk3WrBAsRboRovsOmxbfn/WiYCjmecyKjGztnMps5dWp4Uq2prp+Ilo17Q=="],
-
     "@types/react": ["@types/react@19.2.18", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w=="],
 
     "@types/react-dom": ["@types/react-dom@19.2.4", "", { "peerDependencies": { "@types/react": "^19.2.0" } }, "sha512-Bsc+QHgp+P/F02XDzNCY9jnZNCUuLki36KT7VKrTXXLdHf+vHMNZnW1rVu5DNW/rCK+fya3DATySbLM4yhtKUw=="],
 
     "@types/retry": ["@types/retry@0.12.0", "", {}, "sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA=="],
-
-    "@types/semver": ["@types/semver@7.8.0", "", {}, "sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ=="],
 
     "@types/ssri": ["@types/ssri@7.1.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-odD/56S3B51liILSk5aXJlnYt99S6Rt9EFDDqGtJM26rKHApHcwyU/UoYHrzKkdkHMAIquGWCuHtQTbes+FRQw=="],
 
@@ -2653,7 +2450,7 @@
 
     "base64-js": ["base64-js@1.5.1", "", {}, "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA=="],
 
-    "baseline-browser-mapping": ["baseline-browser-mapping@2.11.14", "", { "bin": { "baseline-browser-mapping": "dist/cli.cjs" } }, "sha512-JyJ954WzuIR8/FFzX0o5krdSTrBAkcCSRfWSleRsIHSWV+cZe2FI1PKggVkFke1hBldRs+LRxUczzE9iPmgZww=="],
+    "baseline-browser-mapping": ["baseline-browser-mapping@2.11.16", "", { "bin": { "baseline-browser-mapping": "dist/cli.cjs" } }, "sha512-H/bNPUFHewJHyCTdjn1n3Pit5+2GmWT6mmeHImPX+8MA9NA6b67jO4gYmi4jTbCJb2otq34KMZnovndDPqJwhQ=="],
 
     "better-auth": ["better-auth@1.6.29", "", { "dependencies": { "@better-auth/core": "1.6.29", "@better-auth/drizzle-adapter": "1.6.29", "@better-auth/kysely-adapter": "1.6.29", "@better-auth/memory-adapter": "1.6.29", "@better-auth/mongo-adapter": "1.6.29", "@better-auth/prisma-adapter": "1.6.29", "@better-auth/telemetry": "1.6.29", "@better-auth/utils": "0.4.2", "@better-fetch/fetch": "1.3.1", "@noble/ciphers": "^2.1.1", "@noble/hashes": "^2.0.1", "better-call": "1.4.0", "defu": "^6.1.4", "jose": "^6.1.3", "kysely": "^0.28.17 || ^0.29.0", "nanostores": "^1.1.1", "zod": "^4.3.6" }, "peerDependencies": { "@lynx-js/react": "*", "@prisma/client": "^5.0.0 || ^6.0.0 || ^7.0.0", "@sveltejs/kit": "^2.0.0", "@tanstack/react-start": "^1.0.0", "@tanstack/solid-start": "^1.0.0", "better-sqlite3": "^12.0.0", "drizzle-kit": ">=0.31.4", "drizzle-orm": "^0.45.2", "mongodb": "^6.0.0 || ^7.0.0", "mysql2": "^3.0.0", "next": "^14.0.0 || ^15.0.0 || ^16.0.0", "pg": "^8.0.0", "prisma": "^5.0.0 || ^6.0.0 || ^7.0.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0", "solid-js": "^1.0.0", "svelte": "^4.0.0 || ^5.0.0", "vitest": "^2.0.0 || ^3.0.0 || ^4.0.0", "vue": "^3.0.0" }, "optionalPeers": ["@lynx-js/react", "@prisma/client", "@sveltejs/kit", "@tanstack/react-start", "@tanstack/solid-start", "better-sqlite3", "drizzle-kit", "drizzle-orm", "mongodb", "mysql2", "next", "pg", "prisma", "react", "react-dom", "solid-js", "svelte", "vitest", "vue"] }, "sha512-7i2kOry+Jb1mRUR14kCDVS23GCKUGWxayZRXULbNz/6nFLPT6XSuGJVrwo/d+Qfq/iubA0/4Acw2/eg/tPCCnA=="],
 
@@ -2691,7 +2488,7 @@
 
     "character-entities": ["character-entities@2.0.2", "", {}, "sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ=="],
 
-    "chat": ["chat@4.38.0", "", { "dependencies": { "@workflow/serde": "4.1.0-beta.2", "mdast-util-to-string": "^4.0.0", "remark-gfm": "^4.0.0", "remark-parse": "^11.0.0", "remark-stringify": "^11.0.0", "remend": "^1.2.1", "unified": "^11.0.5" }, "peerDependencies": { "ai": "^6.0.182 || ^7.0.0", "workflow": "^5.0.0-beta.35", "zod": "^3.0.0 || ^4.0.0" }, "optionalPeers": ["ai", "workflow", "zod"] }, "sha512-begN9W19/kSfMPz7hl0q8CNufs6TE7ddvIERhBPjShxWRvwI6+KGVGlr9cJsNoppjE3JywvHUYUuifZa5uj6IA=="],
+    "chat": ["chat@4.38.1", "", { "dependencies": { "@workflow/serde": "4.1.0-beta.2", "mdast-util-to-string": "^4.0.0", "remark-gfm": "^4.0.0", "remark-parse": "^11.0.0", "remark-stringify": "^11.0.0", "remend": "^1.2.1", "unified": "^11.0.5" }, "peerDependencies": { "ai": "^6.0.182 || ^7.0.0", "workflow": "^5.0.0-beta.35", "zod": "^3.0.0 || ^4.0.0" }, "optionalPeers": ["ai", "workflow", "zod"] }, "sha512-FD6vNLT8clXHKhN3I1m+3Bn2nz0rsB6/bmNPsJeh6Cr7kwWLg0MYl2uor9YaKBp38F77sBRVKdYKVA6ihUby3w=="],
 
     "chownr": ["chownr@3.0.0", "", {}, "sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g=="],
 
@@ -2765,11 +2562,11 @@
 
     "dunder-proto": ["dunder-proto@1.0.1", "", { "dependencies": { "call-bind-apply-helpers": "^1.0.1", "es-errors": "^1.3.0", "gopd": "^1.2.0" } }, "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A=="],
 
-    "e2b": ["e2b@2.40.0", "", { "dependencies": { "@bufbuild/protobuf": "^2.12.1", "@connectrpc/connect": "^2.1.2", "@connectrpc/connect-web": "^2.1.2", "chalk": "^5.3.0", "compare-versions": "^6.1.0", "dockerfile-ast": "^0.7.1", "glob": "^13.0.6", "openapi-fetch": "^0.14.1", "platform": "^1.3.6", "tar": "^7.5.19", "undici": "^7.29.0" }, "optionalDependencies": { "undici8": "npm:undici@8.10.0" } }, "sha512-GZ6agF6pg9g9nHpruQ2kSjXa8xzqGyXRECf+seTtz/ay5fyueKTMOUUvS27tqCBjo3tkUKBKzfatx9UD5T0/5g=="],
+    "e2b": ["e2b@2.44.1", "", { "dependencies": { "@bufbuild/protobuf": "^2.12.1", "@connectrpc/connect": "^2.1.2", "@connectrpc/connect-web": "^2.1.2", "chalk": "^5.3.0", "compare-versions": "^6.1.0", "dockerfile-ast": "^0.7.1", "glob": "^13.0.6", "openapi-fetch": "^0.14.1", "platform": "^1.3.6", "tar": "^7.5.19", "undici": "^7.29.0" }, "optionalDependencies": { "undici8": "npm:undici@8.10.0" } }, "sha512-6yx3FjYnR2zlidvF5QLaFQAtv7WndKAIrP8NEi9lhJm5+98Iinb7zHYel/Ug/o9BEZTb7ODYUvD/0P9b2Q6ufg=="],
 
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
-    "electron-to-chromium": ["electron-to-chromium@1.5.407", "", {}, "sha512-4R8XgQOdfxexCd/u63lRm6wCHjECwI45MV9wxAs2ggtfWe2hwlo1ql97jKsju2IcJ+jFSTwBssyYoiWhh7mauQ=="],
+    "electron-to-chromium": ["electron-to-chromium@1.5.411", "", {}, "sha512-gglkxzokjHfawpGxq75XdBV2/l3BAPzrsMs70qgaZdTW5rpV1tC4MdgJVP9fN126bODA4ZJQkn1wryEzJyQXIg=="],
 
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
 
@@ -2879,7 +2676,7 @@
 
     "get-proto": ["get-proto@1.0.1", "", { "dependencies": { "dunder-proto": "^1.0.1", "es-object-atoms": "^1.0.0" } }, "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g=="],
 
-    "get-tsconfig": ["get-tsconfig@4.14.2", "", { "dependencies": { "resolve-pkg-maps": "^1.0.0" } }, "sha512-XpwZALwwl/BaKTAyC6+c5T8y6kCg2jk+XGqOVrKIQmW49pNypYLMRjCUXqa28tQgJlhS2RlzP7sc+Rx7W6qsfw=="],
+    "get-tsconfig": ["get-tsconfig@4.14.3", "", { "dependencies": { "resolve-pkg-maps": "^1.0.0" } }, "sha512-++QEw4DIY7WGoukz+/+A/8dGYPT9l9yIadnmSgZ8Rjr3YVSVDipQSO9CdnJo9ePqFqUUqh+wk9uIaoiAwsiPkA=="],
 
     "glob": ["glob@13.0.6", "", { "dependencies": { "minimatch": "^10.2.2", "minipass": "^7.1.3", "path-scurry": "^2.0.2" } }, "sha512-Wjlyrolmm8uDpm/ogGyXZXb1Z+Ca2B8NbJwqBVg0axK9GbBeoS7yGV6vjXnYdGm6X53iehEuxxbyiKp8QmN4Vw=="],
 
@@ -2889,7 +2686,7 @@
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
-    "happy-dom": ["happy-dom@20.11.2", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-7MB+bJLkxu3SowAfBJbjW+c55kNz5tkR45gu2qzrxznezhLeN5YIlJbwUgSzlGc+qWoZ8Ykg71H5ezz69xixrw=="],
+    "happy-dom": ["happy-dom@20.11.6", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-Hldbg8AdAa5a5oDcZpjqnGitp7JB0hqWmfv/8qr+kft4vzSD8BHsbdRfzYvL/0QcbKcURC/yyoygbeDQarPvYg=="],
 
     "has-property-descriptors": ["has-property-descriptors@1.0.2", "", { "dependencies": { "es-define-property": "^1.0.0" } }, "sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg=="],
 
@@ -2899,7 +2696,7 @@
 
     "hasown": ["hasown@2.0.4", "", { "dependencies": { "function-bind": "^1.1.2" } }, "sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A=="],
 
-    "hono": ["hono@4.13.2", "", {}, "sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA=="],
+    "hono": ["hono@4.13.3", "", {}, "sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw=="],
 
     "hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
@@ -2911,7 +2708,7 @@
 
     "http-proxy-agent": ["http-proxy-agent@7.0.2", "", { "dependencies": { "agent-base": "^7.1.0", "debug": "^4.3.4" } }, "sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig=="],
 
-    "https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
+    "https-proxy-agent": ["https-proxy-agent@5.0.1", "", { "dependencies": { "agent-base": "6", "debug": "4" } }, "sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA=="],
 
     "iconv-lite": ["iconv-lite@0.7.3", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ=="],
 
@@ -2947,7 +2744,7 @@
 
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
 
-    "isomorphic-git": ["isomorphic-git@1.41.4", "", { "dependencies": { "async-lock": "^1.4.1", "clean-git-ref": "^2.0.1", "crc-32": "^1.2.0", "diff3": "0.0.3", "ignore": "^5.1.4", "minimisted": "^2.0.0", "pako": "^1.0.10", "pify": "^4.0.1", "readable-stream": "^4.0.0", "sha.js": "^2.4.12", "simple-get": "^4.0.1" }, "bin": { "isogit": "cli.cjs" } }, "sha512-XfZteQRhteAdzOlKcWAeC+Zkx0ZtAh0yIO0EyURAO+mDcIBg5kzKg4UtnYE7GcmKB6qFZc0zMCXdgod/cQXVXw=="],
+    "isomorphic-git": ["isomorphic-git@1.41.7", "", { "dependencies": { "async-lock": "^1.4.1", "clean-git-ref": "^2.0.1", "crc-32": "^1.2.0", "diff3": "0.0.3", "ignore": "^5.1.4", "minimisted": "^2.0.0", "pako": "^1.0.10", "pify": "^4.0.1", "readable-stream": "^4.0.0", "sha.js": "^2.4.12", "simple-get": "^4.0.1" }, "bin": { "isogit": "cli.cjs" } }, "sha512-ZCyMNg0eLUmuhGXdVQFi56fM93kwIqqlUSVnWbgzf1oDYidrQbWfrf+hEvn2E8xyo191zRPQyDCIlwg6YJ6isQ=="],
 
     "isomorphic-textencoder": ["isomorphic-textencoder@1.0.1", "", { "dependencies": { "fast-text-encoding": "^1.0.0" } }, "sha512-676hESgHullDdHDsj469hr+7t3i/neBKU9J7q1T4RHaWwLAsaQnywC0D1dIUId0YZ+JtVrShzuBk1soo0+GVcQ=="],
 
@@ -3013,9 +2810,9 @@
 
     "longest-streak": ["longest-streak@3.1.0", "", {}, "sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g=="],
 
-    "lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
+    "lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
-    "lucide-react": ["lucide-react@1.31.0", "", { "peerDependencies": { "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-G8u2eEtoHUnUa9f8lbvqDhCiORMnYLdUEo06EEG9MQvHQrInKcX3Pa2TH39MM5qyzRcWETxB0+aOwAPI1g1kEg=="],
+    "lucide-react": ["lucide-react@1.33.0", "", { "peerDependencies": { "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-MTRwMy0ZlL8Ur/vOAiJ9XGHE+kFPC7brq6MxAm0GiGXEBj0qy0jA/pG4N675oSzciO/UCdX8T+5yUQdmDeTLxg=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
@@ -3141,11 +2938,11 @@
 
     "nanoid": ["nanoid@3.3.18", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w=="],
 
-    "nanostores": ["nanostores@1.5.0", "", {}, "sha512-E0SrU7uLV/k4E6YbBIpQNDnRj00vgE5wlutM1sYVSAXDtHQosiRCGS9eKMKyiGg4ChXfDiJmTB+NCR3yXr6UAw=="],
+    "nanostores": ["nanostores@1.5.2", "", {}, "sha512-B0UbxzK1s0CN8Xht6r+7iT5+xV8PTaRERR1nATeplRv1Rw5YLWfVAid0hkqY3EceqpG4RjTk8GAwIxQY39Rnwg=="],
 
     "natural-compare": ["natural-compare@1.4.0", "", {}, "sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw=="],
 
-    "negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
+    "negotiator": ["negotiator@1.1.0", "", { "dependencies": { "content-type": "^2.1.0" } }, "sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg=="],
 
     "node-releases": ["node-releases@2.0.53", "", {}, "sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ=="],
 
@@ -3231,7 +3028,7 @@
 
     "punycode": ["punycode@2.3.1", "", {}, "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg=="],
 
-    "puppeteer-core": ["puppeteer-core@25.7.0", "", { "dependencies": { "@puppeteer/browsers": "3.2.0", "chromium-bidi": "17.0.2", "devtools-protocol": "0.0.1666840", "typed-query-selector": "^2.12.2", "webdriver-bidi-protocol": "0.4.2", "ws": "^8.21.1" } }, "sha512-wgBBj7dU5ceGyoT2PCrJpkYOhxPY8mDOmcSKZP92Cj5GgqQ3kv/UxzawnOLxiYuupe4bDf/yiQm3bzs/1nI0rQ=="],
+    "puppeteer-core": ["puppeteer-core@25.8.0", "", { "dependencies": { "@puppeteer/browsers": "3.2.1", "chromium-bidi": "17.0.2", "devtools-protocol": "0.0.1666840", "typed-query-selector": "^2.12.2", "webdriver-bidi-protocol": "0.4.2", "ws": "^8.21.1" } }, "sha512-LDOrawV8vfCVk+yLj2ozvajNP4Sv3OV9y3Tpiyy2g2Z+aQlbcozP6KJfI4iSBq7YQER+86ihEtPa5ioiZyWxMQ=="],
 
     "qs": ["qs@6.15.3", "", { "dependencies": { "es-define-property": "^1.0.1", "side-channel": "^1.1.1" } }, "sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A=="],
 
@@ -3269,7 +3066,7 @@
 
     "retry": ["retry@0.13.1", "", {}, "sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg=="],
 
-    "rollup": ["rollup@4.62.4", "", { "dependencies": { "@types/estree": "1.0.9" }, "optionalDependencies": { "@napi-rs/lzma-linux-x64-gnu": "1.5.1", "@rollup/rollup-android-arm-eabi": "4.62.4", "@rollup/rollup-android-arm64": "4.62.4", "@rollup/rollup-darwin-arm64": "4.62.4", "@rollup/rollup-darwin-x64": "4.62.4", "@rollup/rollup-freebsd-arm64": "4.62.4", "@rollup/rollup-freebsd-x64": "4.62.4", "@rollup/rollup-linux-arm-gnueabihf": "4.62.4", "@rollup/rollup-linux-arm-musleabihf": "4.62.4", "@rollup/rollup-linux-arm64-gnu": "4.62.4", "@rollup/rollup-linux-arm64-musl": "4.62.4", "@rollup/rollup-linux-loong64-gnu": "4.62.4", "@rollup/rollup-linux-loong64-musl": "4.62.4", "@rollup/rollup-linux-ppc64-gnu": "4.62.4", "@rollup/rollup-linux-ppc64-musl": "4.62.4", "@rollup/rollup-linux-riscv64-gnu": "4.62.4", "@rollup/rollup-linux-riscv64-musl": "4.62.4", "@rollup/rollup-linux-s390x-gnu": "4.62.4", "@rollup/rollup-linux-x64-gnu": "4.62.4", "@rollup/rollup-linux-x64-musl": "4.62.4", "@rollup/rollup-openbsd-x64": "4.62.4", "@rollup/rollup-openharmony-arm64": "4.62.4", "@rollup/rollup-win32-arm64-msvc": "4.62.4", "@rollup/rollup-win32-ia32-msvc": "4.62.4", "@rollup/rollup-win32-x64-gnu": "4.62.4", "@rollup/rollup-win32-x64-msvc": "4.62.4", "fsevents": "~2.3.2" }, "bin": { "rollup": "dist/bin/rollup" } }, "sha512-RXOqwaPsBGjMNMa4sQjDjHieHEZDFoj/Rdr46l2MU5DfEs16wHJPC2RPTPHWhNl+M3aI472LLqFkFKut4SblOg=="],
+    "rollup": ["rollup@4.62.5", "", { "dependencies": { "@types/estree": "1.0.9" }, "optionalDependencies": { "@napi-rs/lzma-linux-x64-gnu": "1.5.1", "@rollup/rollup-android-arm-eabi": "4.62.5", "@rollup/rollup-android-arm64": "4.62.5", "@rollup/rollup-darwin-arm64": "4.62.5", "@rollup/rollup-darwin-x64": "4.62.5", "@rollup/rollup-freebsd-arm64": "4.62.5", "@rollup/rollup-freebsd-x64": "4.62.5", "@rollup/rollup-linux-arm-gnueabihf": "4.62.5", "@rollup/rollup-linux-arm-musleabihf": "4.62.5", "@rollup/rollup-linux-arm64-gnu": "4.62.5", "@rollup/rollup-linux-arm64-musl": "4.62.5", "@rollup/rollup-linux-loong64-gnu": "4.62.5", "@rollup/rollup-linux-loong64-musl": "4.62.5", "@rollup/rollup-linux-ppc64-gnu": "4.62.5", "@rollup/rollup-linux-ppc64-musl": "4.62.5", "@rollup/rollup-linux-riscv64-gnu": "4.62.5", "@rollup/rollup-linux-riscv64-musl": "4.62.5", "@rollup/rollup-linux-s390x-gnu": "4.62.5", "@rollup/rollup-linux-x64-gnu": "4.62.5", "@rollup/rollup-linux-x64-musl": "4.62.5", "@rollup/rollup-openbsd-x64": "4.62.5", "@rollup/rollup-openharmony-arm64": "4.62.5", "@rollup/rollup-win32-arm64-msvc": "4.62.5", "@rollup/rollup-win32-ia32-msvc": "4.62.5", "@rollup/rollup-win32-x64-gnu": "4.62.5", "@rollup/rollup-win32-x64-msvc": "4.62.5", "fsevents": "~2.3.2" }, "bin": { "rollup": "dist/bin/rollup" } }, "sha512-/tqMfgP7GPA3PHhCmuiS4vIjrSVhHLgY++i+dhbG462euyAj7FpM4D9uq1X3BgjlqRdpcOrYhcQtfiQLNc8tqw=="],
 
     "rou3": ["rou3@0.9.2", "", {}, "sha512-3SOzvaAg8rkHrXtRjpCvCvbyO5to9oOO27Z/XqHEYXfMRVSw/qMIVdmaOk9W2lcRLtR6dlqTjo9hDeJk70QBYQ=="],
 
@@ -3463,7 +3260,7 @@
 
     "@modelcontextprotocol/sdk/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
-    "@npmcli/agent/lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
+    "@npmcli/agent/https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.11.3", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.3", "tslib": "^2.4.0" }, "bundled": true }, "sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg=="],
 
@@ -3481,13 +3278,9 @@
 
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
-    "axios/https-proxy-agent": ["https-proxy-agent@5.0.1", "", { "dependencies": { "agent-base": "6", "debug": "4" } }, "sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA=="],
-
     "better-call/@better-auth/utils": ["@better-auth/utils@0.5.0", "", { "dependencies": { "@noble/hashes": "^2.0.1" } }, "sha512-BL8W4EfIZFwlu0r54m3v1ztjDhu6dDe/amLTm0xybmbZaNgYUqhD3SjpAsnq0q8YD6/ki4iwIgxJNLP/N3TxiA=="],
 
     "body-parser/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
-
-    "cacache/lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
     "cacache/ssri": ["ssri@13.0.1", "", { "dependencies": { "minipass": "^7.0.3" } }, "sha512-QUiRf1+u9wPTL/76GTYlKttDEBWV1ga9ZXW8BG6kfdeyyM8LGPix9gROyg9V2+P0xNyF3X2Go526xKFdMZrHSQ=="],
 
@@ -3496,6 +3289,10 @@
     "cliui/string-width": ["string-width@7.2.0", "", { "dependencies": { "emoji-regex": "^10.3.0", "get-east-asian-width": "^1.0.0", "strip-ansi": "^7.1.0" } }, "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="],
 
     "form-data/mime-types": ["mime-types@2.1.35", "", { "dependencies": { "mime-db": "1.52.0" } }, "sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw=="],
+
+    "hosted-git-info/lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
+
+    "https-proxy-agent/agent-base": ["agent-base@6.0.2", "", { "dependencies": { "debug": "4" } }, "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ=="],
 
     "make-fetch-happen/proc-log": ["proc-log@6.1.0", "", {}, "sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ=="],
 
@@ -3507,13 +3304,13 @@
 
     "minipass-pipeline/minipass": ["minipass@3.3.6", "", { "dependencies": { "yallist": "^4.0.0" } }, "sha512-DxiNidxSEK+tHG6zOIklvNOwm3hvCrbUrdtzY74U6HKTJxvIDfOUL5W5P2Ghd3DTkhhKPYGqeNUIh5qcM4YBfw=="],
 
+    "negotiator/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
+
     "npm-registry-fetch/npm-package-arg": ["npm-package-arg@13.0.2", "", { "dependencies": { "hosted-git-info": "^9.0.0", "proc-log": "^6.0.0", "semver": "^7.3.5", "validate-npm-package-name": "^7.0.0" } }, "sha512-IciCE3SY3uE84Ld8WZU23gAPPV9rIYod4F+rc+vJ7h7cwAJt9Vk6TVsK60ry7Uj3SRS3bqRRIGuTp9YVlk6WNA=="],
 
     "npm-registry-fetch/proc-log": ["proc-log@6.1.0", "", {}, "sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ=="],
 
     "p-queue/eventemitter3": ["eventemitter3@4.0.7", "", {}, "sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw=="],
-
-    "path-scurry/lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
     "tsx/esbuild": ["esbuild@0.28.2", "", { "optionalDependencies": { "@esbuild/aix-ppc64": "0.28.2", "@esbuild/android-arm": "0.28.2", "@esbuild/android-arm64": "0.28.2", "@esbuild/android-x64": "0.28.2", "@esbuild/darwin-arm64": "0.28.2", "@esbuild/darwin-x64": "0.28.2", "@esbuild/freebsd-arm64": "0.28.2", "@esbuild/freebsd-x64": "0.28.2", "@esbuild/linux-arm": "0.28.2", "@esbuild/linux-arm64": "0.28.2", "@esbuild/linux-ia32": "0.28.2", "@esbuild/linux-loong64": "0.28.2", "@esbuild/linux-mips64el": "0.28.2", "@esbuild/linux-ppc64": "0.28.2", "@esbuild/linux-riscv64": "0.28.2", "@esbuild/linux-s390x": "0.28.2", "@esbuild/linux-x64": "0.28.2", "@esbuild/netbsd-arm64": "0.28.2", "@esbuild/netbsd-x64": "0.28.2", "@esbuild/openbsd-arm64": "0.28.2", "@esbuild/openbsd-x64": "0.28.2", "@esbuild/openharmony-arm64": "0.28.2", "@esbuild/sunos-x64": "0.28.2", "@esbuild/win32-arm64": "0.28.2", "@esbuild/win32-ia32": "0.28.2", "@esbuild/win32-x64": "0.28.2" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA=="],
 
@@ -3572,8 +3369,6 @@
     "@modelcontextprotocol/sdk/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 
     "ajv-formats/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
-
-    "axios/https-proxy-agent/agent-base": ["agent-base@6.0.2", "", { "dependencies": { "debug": "4" } }, "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ=="],
 
     "form-data/mime-types/mime-db": ["mime-db@1.52.0", "", {}, "sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg=="],
 
@@ -3688,7 +3483,5 @@
     "vite/esbuild/@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.28.2", "", { "os": "win32", "cpu": "ia32" }, "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA=="],
 
     "vite/esbuild/@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
-
-    "npm-registry-fetch/npm-package-arg/hosted-git-info/lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
   }
 }

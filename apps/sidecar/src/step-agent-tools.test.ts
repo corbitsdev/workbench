@@ -2,7 +2,7 @@
 // (CL-6032): `consumerBindings` derives a consumer-scoped
 // `ResolvedCredentialBinding` map from a step's live `CredentialWiring`,
 // and composes with the platform's own `createCredentialCapability`
-// (`vendor/intx/harness/src/credential-capability.ts`) exactly as
+// (`@intx/harness/src/credential-capability.ts`) exactly as
 // `createToolBearingAgentFactory` does inside its `credentialCapabilityFor`
 // closure. These tests exercise that composition directly -- a fake
 // `CredentialWiring` in, a shaped `credentials` capability out -- without

@@ -1,5 +1,5 @@
 // Proves this package's own `package.json` satisfies the vendored
-// `PackageJSON` manifest schema (`vendor/intx/types/src/package-json.ts`)
+// `PackageJSON` manifest schema (`@intx/types/src/package-json.ts`)
 // with an `interchange.credentials` declaration the deploy-time
 // `ToolPackageManifest` harvests into `topLevel[].credentials` — the
 // static half of the credential-binding seam CL-6028 adopts. Not a test

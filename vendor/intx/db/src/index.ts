@@ -79,7 +79,6 @@ export {
 } from "./credential-resolution";
 export type {
   BuildCredentialDeliveryResult,
-  BindingCredentialGrant,
   CredentialDeliveryFailure,
 } from "./credential-resolution";
 export {

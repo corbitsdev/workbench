@@ -112,12 +112,6 @@ describeIfDb("buildCredentialDelivery: the granola handle binding", () => {
           secret: "granola-plaintext-secret",
         },
       ]);
-      expect(result.bindingGrants).toEqual([
-        {
-          resource: `credential:${credentialId}`,
-          conditions: { tool: "tool:@corbits/granola-tools" },
-        },
-      ]);
     } finally {
       await close();
     }

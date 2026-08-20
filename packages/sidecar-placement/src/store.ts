@@ -15,7 +15,7 @@ import { TenantConfig, type SidecarPlacementRequirement } from "@intx/types";
  * occurrences, rather than provisioning fresh infrastructure per run.
  *
  * This cannot name which backend serves that exclusive sidecar.
- * `SidecarPlacementRequirement` (vendor/intx/types/src/sidecar-placement.ts)
+ * `SidecarPlacementRequirement` (@intx/types/src/sidecar-placement.ts)
  * carries only `sharing`/`reuse`, and `@intx/hub-sessions`'s
  * `WorkflowAllocationService.prepareExclusiveDeployment` always resolves
  * the backend via `plugins.getDefaultProvisioner()` — there is no per-

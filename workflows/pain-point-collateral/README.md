@@ -74,7 +74,7 @@ this port. Calling it suspends the run: the sidecar co-writes a real
 `approval` row (`vendor/intx/db/src/schema/approvals.ts`), visible in
 the inbox via `@corbits/approvals`' "needs-you" list, and the run parks
 until a human approves or rejects it
-(`vendor/intx/inference/src/reactor.ts`). On approval the parked call
+(`@intx/inference/src/reactor.ts`). On approval the parked call
 re-dispatches and the tool actually runs, exactly once. On rejection the
 tool never runs at all — the model sees a synthetic "denied by approver"
 error, which the system prompt turns into the calm terminal reply above.

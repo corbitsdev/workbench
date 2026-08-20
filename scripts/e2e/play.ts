@@ -410,7 +410,7 @@ async function main(): Promise<void> {
   // 401, which the platform's own inference director folds into a
   // *completed* turn carrying a self-describing credential-error
   // report rather than failing the run outright (see
-  // `vendor/intx/inference/src/default-director.ts` and
+  // `@intx/inference/src/default-director.ts` and
   // `local-rip.test.ts`'s task leg, which asserts the identical
   // text for the same reason) — that report landing here, with
   // zero human messages sent, is the honest, deterministic proof

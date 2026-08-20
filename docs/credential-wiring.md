@@ -26,7 +26,7 @@ run-child.ts`), which threads them to every step invocation as
 step-agent-tools.ts`) derives each tool factory's consumer identity
    from its own declared `id`, and shapes a consumer-scoped `credentials`
    capability via the platform's `createCredentialCapability`
-   (`vendor/intx/harness/src/credential-capability.ts`) -- the same
+   (`@intx/harness/src/credential-capability.ts`) -- the same
    fail-closed, per-`{tool}`-condition gate the launch-time grant sets up.
 7. The tool bundle calls `env.credentials.resolve(handle)` and gets a
    mediated `fetch`, never the raw secret. An unbound handle or a denied

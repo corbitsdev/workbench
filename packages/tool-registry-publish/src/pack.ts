@@ -11,7 +11,7 @@
 // `dependencies` at all, and the closure resolver has nothing further
 // to fetch. `interchange.tools` on the synthesized `package.json`
 // points at that bundle, matching the shape
-// `vendor/intx/tool-packaging/src/loader.ts` reads.
+// `@intx/tool-packaging/src/loader.ts` reads.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

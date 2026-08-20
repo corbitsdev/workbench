@@ -70,7 +70,7 @@ test("the agent pins @corbits/granola-tools by name and version", () => {
     ...PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
   ]);
   expect(PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.3" },
+    { name: "@corbits/granola-tools", version: "0.0.4" },
   ]);
 });
 

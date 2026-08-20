@@ -2,7 +2,7 @@
 // tarball in a tenant's `corbits-tools` package-registry asset and rebuilds
 // a full git pack for every asset attachment — see
 // `AssetRegistrySource.#buildPackuments` in
-// `vendor/intx/tool-packaging/src/resolver.ts` and
+// `@intx/tool-packaging/src/resolver.ts` and
 // `resolveAssetAttachment` in `vendor/intx/hub-sessions/src/session-service.ts`.
 // Both reads are uncached across launches even though the content they read
 // is immutable per commit: a blob, a directory listing, and a deploy pack

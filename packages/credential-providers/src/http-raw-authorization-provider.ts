@@ -1,5 +1,5 @@
 // A workbench-owned `CredentialProvider`, sibling to `@intx/harness`'s
-// vendored `createHttpCredentialProvider` (`vendor/intx/harness/src/
+// vendored `createHttpCredentialProvider` (`@intx/harness/src/
 // credential-providers.ts`, read-only per AGENTS.md). That provider
 // unconditionally sends `authorization: Bearer <secret>` -- correct for a
 // bearer-token API, but Linear's REST/GraphQL API expects the raw key with

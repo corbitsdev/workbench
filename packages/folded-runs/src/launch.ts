@@ -250,7 +250,7 @@ export async function deployAtHead(
 
   // Every pinned tool package's `tool:<qualifiedId>` grant, minted
   // against this run's own principal so the child's authz gate
-  // (`vendor/intx/inference/src/authz-extension.ts`) has a matching
+  // (`@intx/inference/src/authz-extension.ts`) has a matching
   // grant for every call the pinned package can make. See
   // `ToolGrantsForPins`'s doc for why this has to happen here rather
   // than relying on the deploy-time capability walk.
@@ -291,8 +291,9 @@ export async function deployAtHead(
   // The deploy front resolves the credential MATERIAL itself from the
   // deployed definition's own bindings under `credentialCipher`. What it
   // does not derive is the `credential:` use grants this run's principal
-  // needs in its own `grants.json`, so the delivery is still walked here
-  // — for `bindingGrants` alone.
+  // needs in its own `grants.json`, so the delivery is still walked here —
+  // each delivered binding descriptor becomes a `credential:{id}` / `use`
+  // grant scoped to its consuming tool.
   if (credentialBindings.length > 0) {
     if (deps.credentialCipher === undefined) {
       throw new Error(
@@ -312,14 +313,14 @@ export async function deployAtHead(
         `${params.launchLabel}: credential binding resolution failed: ${delivery.reason.message}`,
       );
     }
-    for (const bindingGrant of delivery.bindingGrants) {
+    for (const descriptor of delivery.delivery?.bindings ?? []) {
       grants.push({
         id: generateId("grant"),
-        resource: bindingGrant.resource,
+        resource: `credential:${descriptor.credentialId}`,
         action: "use",
         effect: "allow",
         origin: "system",
-        conditions: bindingGrant.conditions,
+        conditions: { tool: descriptor.consumer },
         expiresAt: null,
         roleId: null,
         principalId: params.principalId,

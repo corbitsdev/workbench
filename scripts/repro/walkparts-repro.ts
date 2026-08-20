@@ -2,8 +2,8 @@
  * Minimal reproducer for a defect in @intx/mime's part-walking API.
  *
  * API path: `extractPartByPath` (exported from `@intx/mime`, vendored at
- * vendor/intx/mime/src/mime.ts) delegates internally to the unexported
- * `walkParts` (vendor/intx/mime/src/mime.ts:709-745). For a *leaf* part
+ * @intx/mime/src/mime.ts) delegates internally to the unexported
+ * `walkParts` (@intx/mime/src/mime.ts:709-745). For a *leaf* part
  * path (the final path segment), `walkParts` returns the raw multipart
  * slice produced by `parseMultipart` (mime.ts:738-739) instead of the
  * parsed, transfer-decoded body every non-leaf depth already produces via

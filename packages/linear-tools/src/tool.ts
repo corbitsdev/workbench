@@ -9,7 +9,7 @@
 // CL-6028 declared this package's "linear" credential handle in
 // `package.json` (`interchange.credentials`); CL-6032 wires the runtime
 // half. `env.credentials` is the harness's consumer-gated capability
-// (`vendor/intx/harness/src/credential-capability.ts`,
+// (`@intx/harness/src/credential-capability.ts`,
 // `createCredentialCapability`): the sidecar's step-invoker binding
 // (`apps/sidecar/src/step-agent-tools.ts`) shapes one scoped to this
 // package's consumer identity from the step's `CredentialWiring`

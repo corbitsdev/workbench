@@ -20,10 +20,10 @@
   "dependencies": {
     "@corbits/credential-providers": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
-    "@intx/crypto": "workspace:*",
+    "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/types": "0.3.0",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",

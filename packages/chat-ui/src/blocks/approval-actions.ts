@@ -9,7 +9,7 @@
 // source of truth.
 
 /** The platform's own status vocabulary for an approval (`ApprovalResponse.status`
- * in `vendor/intx/types/src/approvals.ts`) -- never invented here. */
+ * in `@intx/types/src/approvals.ts`) -- never invented here. */
 export type ApprovalLiveStatus =
   "pending" | "approved" | "rejected" | "timeout" | "expired";
 
