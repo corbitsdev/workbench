@@ -274,6 +274,109 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-6378: a turn's `inference.done` events already split the model's
+  // output into prose and tool calls (see `event-collector.ts`'s
+  // `handleInferenceDone`), and `tool.done` resolves each call's
+  // outcome. The orchestrator must read that structure and post it as
+  // ordered [text, tool-trace, text] parts — never fold a tool call's
+  // JSON into a `TextPart`'s prose, which is the leak this test guards
+  // against.
+  test("a turn with a tool call posts [text, tool-trace, text] parts, with zero raw JSON in any text part", async () => {
+    const room = fakeRoom();
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "inference.done",
+        seq: 1,
+        data: {
+          turn: {
+            content: [
+              { type: "text", text: "Let me check that." },
+              {
+                type: "tool_call",
+                id: "call_1",
+                name: "web_search",
+                arguments: { query: "web search browser" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "tool.done",
+        seq: 2,
+        data: {
+          result: { callId: "call_1", content: "3 results found" },
+        },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "inference.done",
+        seq: 3,
+        data: {
+          turn: { content: [{ type: "text", text: "Here's what I found." }] },
+        },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "Here's what I found." },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    const parts = room.posted[0]?.parts;
+    expect(parts).toEqual([
+      { kind: "text", text: "Let me check that." },
+      {
+        kind: "tool-trace",
+        name: "web_search",
+        input: { query: "web search browser" },
+        status: "success",
+        output: "3 results found",
+      },
+      { kind: "text", text: "Here's what I found." },
+    ]);
+    for (const part of parts ?? []) {
+      if (part.kind === "text") {
+        expect(part.text).not.toContain("{");
+      }
+    }
+
+    orchestrator.dispose();
+  });
+
   test("the host's reply mentioning a specialist fans out to that specialist too — the delegation hop", async () => {
     const room = fakeRoom();
     const { platform, sentMail } = fakeMail();
