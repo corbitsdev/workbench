@@ -12,8 +12,9 @@
 //     `listVisibleAgentDefinitions` query shape, minus its DM-only
 //     filtering (a world snapshot wants every deployed definition, not
 //     just the conversational ones a sidebar would show), then
-//     `readAgentCapabilities` on each definition's `workflow.json` —
-//     the same function `GET /:definitionId/capabilities` calls.
+//     `readAgentCapabilities` on the definition its asset's source tree
+//     carries, read back through `readAgentDefinitionWorkflowJson` —
+//     the same pair `GET /:definitionId/capabilities` calls.
 //   - routines: `routines.routine`, queried the same
 //     `tenantId`/`deletedAt IS NULL` shape `RoutineStore.listRoutines`
 //     uses.
@@ -24,14 +25,14 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { schema } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
-import { readAgentCapabilities } from "@corbits/agent-directory";
+import {
+  readAgentCapabilities,
+  readAgentDefinitionWorkflowJson,
+} from "@corbits/agent-directory";
 import { routine as routineTable } from "@corbits/routines";
 import { listMcpServerConnections } from "@workbench/connections";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
-
-const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 /** The infra `captureWorldSnapshot` reads through — a real `@intx/db`
  * drizzle handle and `AssetService`, the same two things
@@ -62,12 +63,9 @@ async function readAgentDefinitions(
   );
   return Promise.all(
     deployable.map(async (row) => {
-      const workflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          ref: DEFAULT_ASSET_REF,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
       );
       const capabilities = readAgentCapabilities(workflowJson);
       return {

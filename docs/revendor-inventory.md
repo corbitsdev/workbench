@@ -402,3 +402,788 @@ follow-up, since it depends on the run-child binding field existing first.
 src/adapters/blob-substrate.ts` already has inline (private `writeBlob`/
 `readBlob` helpers) rather than reconciling the two into one shared helper —
 left as a known follow-up per the port scope report, not a blocker.
+
+## CL-6324 re-pin: `59f5e7b9` → `4ed8baf4` (the workflow.json retirement)
+
+The vendored trees are re-copied at upstream `main` tip `4ed8baf4`
+(2026-08-19, 45 commits on). `VENDORED.md` is the pin of record. This
+section is the map of what the bump costs on the workbench side, because
+the app-side conversion does **not** land with it.
+
+### What landed cleanly
+
+- All 21 `vendor/intx/*` rows re-copied. Only nine trees actually changed
+  (`hub-sessions`, `workflow-host`, `workflow`, `workflow-deploy`, `types`,
+  `hub-api`, `db`, `agent`, `hub-agent`); the other twelve are byte-identical
+  at both commits and were re-pinned so the ledger records one commit rather
+  than a mix (this also collapses `inference-catalog`'s separate `5d2aa94a`
+  pin).
+- Every workbench-local delta re-applied unchanged — upstream subsumed none
+  of them, and none of the five files they touch was modified upstream in the
+  45 commits: the `inference.usage` forward, `ownsWorkflowRunRepo`,
+  `hasConversationText`, and the `needs-you` approval-route carve-out. Their
+  tests pass.
+- `packages/folded-runs`' `wrapHarnessAsSingleStepWorkflow` call moved onto
+  `buildSingleStepAgentDefinition`, which survives the deletion.
+
+### What the bump breaks, and why it is one migration
+
+Upstream retired the on-disk `workflow.json`. A deployed workflow's
+definition is no longer serialized into the deploy tree and re-read by the
+sidecar; it is evaluated from the deployment's own **source closure** and
+re-verified in-child against the approved wire hash. Source-ref is now the
+only deploy lineage, and the live-authored and instance chains are deleted:
+`createWorkflowDeployOrchestrator`, `SessionService.deploySingleStepAtHead`,
+`SessionService.deployInstanceAtHead`, `wrapHarnessAsSingleStepWorkflow`,
+`createWorkflowSpawnChild`, `createWorkflowSpawnSuspendableChild`,
+`loadVerifiedWorkflowDefinition`, and the `definition` field on the deploy
+frame. `SpawnTimeEnv` drops `referencedDefinitionHashes` and gains
+`closurePackageDir`; `RunWorkflowChildBindings` drops
+`workflowDefinitionRepoId`.
+
+Workbench has no code-sourced deploy front. Every run it launches — chat,
+tasks, routines, agent lifecycle — goes through `packages/folded-runs`'
+`deployAtHead`, which synthesizes a single-step definition in memory from a
+system prompt plus tool-package pins and hands it to `deploySingleStepAtHead`.
+The new front (`deployWorkflowFromSource` / `installAndApproveWorkflowSource`
+/ `deployPreparedCodeSourcedWorkflow`) takes a registry `name@range` pin or
+an asset tarball and resolves a dependency closure from it. Converting means
+giving a folded run a real source package, not renaming a call.
+
+That is why the remaining breakage cannot be split by tree:
+`hub-sessions` (deploy front), `workflow-deploy` (orchestrator), `types`
+(deploy frame), `workflow-host` (child definition load), `db` (frozen
+approval bundle, migrations 0082/0083) and `hub-api` (run trigger) all move
+together, and `apps/sidecar` reads the frame both sides write. Leaving any
+one on the old pin leaves the frame contract split down the middle.
+
+Open conversion sites:
+
+| Site                                                                                        | What it needs                             |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| ~~`packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`~~                        | **Done** — see "Conversion step 2" below. |
+| ~~`apps/sidecar/src/workflow-host-wiring/index.ts`, `asset-materialization.ts`~~            | **Done** — see "Conversion step 3" below. |
+| ~~`apps/sidecar/src/workflow-substrate-factory/index.ts`, `child-runtime.ts`, `config.ts`~~ | **Done** — see "Conversion step 3" below. |
+| ~~`apps/sidecar/src/workflow-deployment-record.ts`~~                                        | **Done** — see "Conversion step 3" below. |
+
+Upstream's own diff over the same span is the reference implementation:
+`apps/sidecar/src/workflow-substrate-factory.ts` and
+`workflow-host-wiring.ts` at `4ed8baf4` show every one of these conversions
+against the same contracts, and `apps/sidecar`'s `VENDORED.md` row stays at
+`59f5e7b9` until workbench's fork is reconciled with them.
+
+### Conversion step 1: `packages/agent-runtime`
+
+`packages/agent-runtime` holds the definition builder every workbench
+agent run deploys. `AgentRuntimeConfig` is the arktype contract for
+everything that differs per run — the mailbox it answers on, its system
+prompt, its resolved inference chain, its tool-package pins, its
+credential bindings — and the config's `mode` selects the shape:
+`buildAgentRuntimeWorkflow` returns either the folded unbounded step or
+the per-turn `onTrigger` section. Because the mode lives in the config,
+the deploy front keeps one parameter set and no call site ever branches
+on which shape it wants; `deployCodeSourcedWorkflow` already enumerates
+inert `onTrigger` bodies on every deploy, so the section shape needs
+nothing extra from the API.
+
+#### There is no out-of-band config channel — the config IS the bytes
+
+The obvious design, one static published package whose entry reads a
+per-run config from its environment, does not work at this pin and
+cannot be made to work by the sidecar.
+
+The approval probe and the run child each evaluate the entry module
+independently, and the child refuses to run a definition whose recomputed
+wire hash differs from the approved one
+(`workflow-host/src/child/verified-definition-loader.ts`). The hashed
+preimage (`workflow/src/live-inert-projector.ts`) covers the trigger
+address, the agent's system prompt, its `(provider, model)` pairs, its
+tool-package pins, and the definition's credential bindings — every field
+of the config. So a config read from anywhere outside the closure's bytes
+diverges between the two evaluations and fails closed. And there is
+nowhere to read it from anyway: `WorkflowDefinitionSource` has no overlay
+or params on any variant, `AgentDeployWorkflow` carries no config bag
+(the code-sourced route builds `HarnessConfig` with an empty
+`systemPrompt`, empty `tools`, empty `grants`), `SpawnTimeEnv` has no
+config field, and `WorkflowProbeRequestFrame` carries no env at all — so
+even a sidecar willing to inject one could not make the probe see it.
+
+`renderAgentRuntimeSourceTree` is the consequence: it renders a thin
+per-run package — a `package.json` plus a four-line entry module that
+pins `@corbits/agent-runtime` and calls `buildAgentRuntimeWorkflow` with
+the run's config as a literal. All the behaviour stays in the one
+versioned package; what varies per run is a JSON literal inside the
+hashed bytes. A host commits that tree into a `workflow`-kind asset and
+deploys `source.kind: "asset"`, `package.format: "source"`, `commitSha` —
+the only source variant whose pin is cheap enough to mint per run, since
+the registry and tarball variants each need a publish.
+
+Two in-tree prerequisites remain for any of this to execute, both already
+on the conversion table above: nothing produces `CLOSURE_PACKAGE_DIR`, and
+no `WorkflowProbeExecutor` is wired on the sidecar, so every probe
+currently answers `workflow.probe.error`. Both are conversion step 2.
+
+#### Conversion step 2: `deployAtHead` is on the seam
+
+`deployAtHead` no longer synthesizes a definition. It renders the run's
+config into a per-run `@corbits/agent-runtime` package, commits that tree
+into the run's OWN `workflow`-kind definition asset on
+`refs/heads/runs/<runId>`, and deploys the resulting `commitSha` through
+`deployAdoptedWorkflowFromSource` — the adopting shared-capacity front,
+the only one that accepts a pre-minted anchor row and threads a
+`credentialCipher`. `wake.ts` takes the same path. The old
+synthesize-in-memory branch is deleted, not gated.
+
+Reuse, not a second asset: one definition asset can back many runs (a
+chat's workbench host, an invited agent's every launch), so each run gets
+its own ref inside that asset rather than its own asset per deploy. The
+pin is the `commitSha`, so the ref is bookkeeping.
+
+The step's input selector became the config's `mode`: `step` (with the
+workbench host's optional `literalInput`, the CL-6164 pin) or `section`
+with a per-turn timeout. The Phase 1.3 swap changes a caller's argument,
+never a branch inside `deployAtHead`. Section mode authors
+`onBodyFailure: "continue"`, which the vendored surface now carries
+through the live→inert projection.
+
+##### What still blocks EXECUTION
+
+Deploying works at the type and call level; nothing has run it end to
+end, because the two sidecar prerequisites are untouched: nothing
+produces `CLOSURE_PACKAGE_DIR`, and no `WorkflowProbeExecutor` is wired,
+so every probe still answers `workflow.probe.error`. The remaining
+in-tree typecheck failures are exactly the sidecar rows in the table
+above — `projection.definition` reads, `createWorkflowSpawnChild` /
+`createWorkflowSpawnSuspendableChild`, `SpawnTimeEnv.referencedDefinitionHashes`,
+and `RunWorkflowChildBindings.workflowDefinitionRepoId`.
+
+##### Defect surfaced by the conversion
+
+`renderAgentRuntimeSourceTree` parses the config before writing it, which
+is the first time a folded run's credential bindings are validated
+against the platform's `CredentialBinding` schema. `apps/hub`'s
+`mcp-credential-bindings.ts` mints `handle: "mcp:<slug>"`, and
+`ToolCredentialHandle` is `/^[a-z0-9][a-z0-9._-]*$/` — the colon is not
+in it, so every MCP-pinned launch would now fail closed at render time.
+Nothing caught this before because the in-memory definition was never
+parsed. Either the handle shape changes here (and with it the
+`env.credentials.resolve("mcp:<slug>")` key `@corbits/mcp-tools` uses) or
+upstream widens the handle grammar; it is not fixed in this change.
+
+#### Conversion step 3: the sidecar is on closures
+
+The execution host is converted. A deploy no longer writes a definition
+into the deploy tree and reads it back: it materializes the frame's frozen
+closure, evaluates the pinned code, and runs that. The boot-time restore
+replays the same pin through the same helper, so both paths reach the
+runnable definition by one computation rather than two that can drift.
+
+What moved:
+
+- **Closure staging.** `workflow-host-wiring/closure-staging.ts` owns the
+  durable per-deployment source stores (plain-file and indexed-git,
+  siblings of the reclaimed instance dir so they survive a restart with no
+  re-delivery), the `assetId -> mount` resolution both paths derive from
+  the pin alone, and the apply. It is an injectable router dependency, so
+  a test stands in for fetch + SRI-verify + layout + evaluate without
+  publishing a package.
+- **`CLOSURE_PACKAGE_DIR` exists.** It is threaded on the frozen substrate
+  env, so the run child evaluates the pinned code and re-verifies its own
+  projection against `DEFINITION_HASH` — which is now the hub's
+  `approvedWireHash`, never a sidecar recompute. A frame carrying no
+  approved hash fails closed rather than substituting one.
+- **The probe answers.** `createWorkflowProbeExecutor` is wired at the boot
+  edge against a closure materializer rooted in the sidecar data dir, so
+  `workflow.probe.request` returns a real inert projection, its advisory
+  grant set, and its wire hash instead of `workflow.probe.error`.
+- **Child spawns are in-memory.** `createWorkflowSpawnChild` /
+  `createWorkflowSpawnSuspendableChild` are gone. A rung lifts its inline
+  children to refs and serves grandchildren from that map, so no rung reads
+  a definition off disk at any depth. An onTrigger body's `sources.json` is
+  still staged (a body child is in-process and loses its env across a
+  restart); its definition is not.
+- **The deployment record carries the pin.** `referencedDefinitionHashes`
+  is gone; `approvedWireHash` and `sourceRef` are required, so a record
+  that cannot be restored fails at the scan boundary rather than
+  half-restoring.
+- **`WORKFLOW_DEFINITION_REPO_ID`/`_REF` are gone.** What survives is
+  `WORKFLOW_DEFINITION_ID`: identity for the run-authenticated
+  capabilities route a step tool calls, never a repo to read from.
+
+Four modules are near-verbatim copies of upstream's own sidecar at
+`4ed8baf4` — the probe handler, the closure materializer, the closure
+apply, and the inline source-asset delivery — plus `bin/workflow-probe-child`.
+`VENDORED.md` records them and the two adaptations the fork's module layout
+forced.
+
+##### What is still unproven
+
+`bun run typecheck` is green repo-wide and the sidecar, folded-runs, and
+chat suites pass, but **no run has executed end to end on these rails**.
+The remaining wire, in order:
+
+1. **The MCP credential-handle defect from step 2 still stands.** Any
+   MCP-pinned launch fails closed at render time (`mcp:<slug>` is not a
+   legal `ToolCredentialHandle`). It gates a real chat launch, not the
+   deploy path itself.
+2. **Nothing has published or committed a real per-run source package
+   through the deploy.** Every test injects the closure materializer, so
+   the fetch/SRI/layout/evaluate path itself is exercised only by
+   upstream's own tests at the vendored pin, never against a
+   `renderAgentRuntimeSourceTree` output.
+3. **The probe has never been driven by a hub.** The executor is wired and
+   typechecks; nothing has sent it a `workflow.probe.request` frame.
+4. **The pinned tool-package arm is untouched, deliberately.** Upstream
+   went all-source-tools (`req.agent.toolFactories`); workbench's
+   `agent-runtime` pins tool packages instead, so the sidecar keeps
+   `materializeStepTools`. Whether the source-format deploy still stages a
+   `tool-packages-manifest.json` for those pins is the first thing an
+   end-to-end run will answer.
+
+## CL-6324 e2e proof: what a real boot found
+
+The stack's first real boot (scratch database, real signup, real Ollama)
+walked the seed/launch path with nothing mocked. It got as far as a fully
+seeded tenant with every default workflow deployed by source-ref, then
+stopped at the folded launch. What it found, in the order it found it:
+
+1. **`@corbits/mcp-tools` shipped new `src/` under an unchanged version.**
+   PR #98's `mcp.<slug>` handle change edited `src/tool.ts` and left
+   `0.0.4` in place, which `assertToolPackagesFresh` refuses — the seed's
+   tool-registry publish failed before any workflow deployed. Fixed by the
+   bump the check asks for.
+2. **The seed pushed the retired `workflow.json` envelope.** A workflow
+   asset now accepts only a source codebase declaring an
+   `interchange.workflow` entry (`workflow-kind.ts`), so every asset push
+   was rejected `path-violation`. `createGitWorkflowPusher` now renders the
+   serialized definition into that two-file form.
+3. **The seed deployed by bare `assetId`.** `POST /workflows/deployments`
+   takes the code-sourced pair — a `source` with
+   `package: { format: "source", commitSha }` plus the declared `entry`.
+   The pusher reports the sha it left on `main` and the deploy pins it.
+4. **STILL OPEN — a folded launch reads its body from `workflow.json`.**
+   `packages/folded-runs/src/definition.ts`'s `readDefinitionJSON` reads
+   `WORKFLOW_JSON_PATH` out of the definition asset, which a source-format
+   asset does not carry, so minting a chat 409s `not_launchable`. The same
+   read appears four more times in `packages/agent-directory/src/routes.ts`.
+   This one is not mechanical: under the retirement a definition's body is
+   whatever its closure evaluates to, and nothing hub-side persists that
+   evaluated projection for a shared deploy — `workflow_definition` holds
+   only the wire hash and the manifests, and `workflow_run_launch_spec`'s
+   frozen bundle covers exclusive placement only. Deciding where a folded
+   launch body comes from is the next blocker, and it blocks the RunStarted
+   milestone behind it.
+5. **STILL OPEN — no `deploy/tool-packages-manifest.json` is staged.** The
+   source-ref front (`deployAdoptedCodeSourcedWorkflow` →
+   `emitSourceRefDeployFrame`) never calls `executeLaunchPhases`, so
+   nothing runs `agentRepoStore.writeDeployTree` and no deploy tree lands
+   for the step. `materializeStepTools` reads its manifest off that tree,
+   so a folded run's pinned tool packages would materialize empty — the
+   prompt moved into the rendered bytes, the tool manifest did not.
+   `stageWorkflowStep` is the seam that still writes one; wiring it into
+   `deployAtHead` is the shape of the fix, unproven until (4) clears.
+
+## CL-6324: the persisted projection, and what the second real boot found
+
+The design blocker from the run above is closed. The ruling — the hub
+persists a definition's evaluated inert projection, stored WITH the
+definition, keyed to the approved wire hash — landed at the **freeze**
+rather than at the deploy front, because that is where the projection and
+the hash it is addressed by are already written in one transaction:
+`createDbFrozenApprovalWriter` now stamps a `wire_projection` jsonb
+column onto `workflow_definition_version` beside `approved_wire_hash` and
+`grant_snapshot`, and `loadFrozenWireProjection` reads it back validated
+as a `WorkflowProjectionDefinition`. Both code-sourced deploy fronts
+consume `args.approved.projection`, which IS that value, so nothing can
+drift between what the hub stores and what the sidecar re-verifies.
+
+`packages/folded-runs/src/definition.ts` is now the single reader of that
+projection: `readDefinitionProjection` (one definition),
+`resolveNewestProjectedDefinition` (the newest sibling that actually
+carries one — the DB-side successor to CL-6357's asset-drift walk), and
+`readFoldedBody(projection, grantRequirements)`. A pre-cutover row with
+no stored projection fails as the named `DefinitionProjectionMissingError`
+carrying re-deploy guidance, mapped to a 4xx at every chat route
+boundary, never a raw 500.
+
+Two shape facts the conversion turned up, both load-bearing:
+
+- The inert projector **renames and flattens** the agent's inference
+  chain: `agent.inference.sources` becomes a top-level
+  `agent.modelSources: { provider, model }[]`. A reader written against
+  the live shape silently sees no step primitive at all.
+- The projector **drops `grantRequirements` entirely** — it is not in the
+  projection and therefore not in the wire hash. Its hub-side home is the
+  `workflow_definition.grant_requirements` column, so the folded body
+  reader takes it as a second argument rather than reading it off the
+  projection.
+
+One live-shape reader survives, deliberately: `readLiveFoldedBody`, for
+the workbench host, which builds its definition in process
+(`buildWorkbenchHostWorkflow`) and launches it in the same breath without
+ever round-tripping through a deploy freeze.
+
+### What the second real boot found
+
+1. **The rendered per-run tree could never resolve its own dependency.**
+   `renderAgentRuntimeSourceTree` pinned `@corbits/agent-runtime` at
+   `workspace:*`, but an asset tree is a standalone codebase with no
+   workspace root, so `resolveSourceWorkflowClosure` rejected every
+   folded deploy outright. Fixed by rendering the tree the way the seed's
+   default workflows already render theirs (`renderWorkflowSourceTree`):
+   the hub evaluates `buildAgentRuntimeWorkflow` at render time and
+   writes the definition out as a JSON literal, so the closure is the two
+   files and nothing else. The config-IS-the-bytes property is unchanged.
+2. **The per-run tree lives on a per-run ref, and the pack shipped the
+   default one.** A folded run commits its source into the shared
+   definition asset on `refs/heads/runs/<runId>`;
+   `bindAssetAttachmentResolver` packed `DEFAULT_ASSET_REF`, so the
+   sidecar got a history the pinned commit was not reachable from and
+   failed "could not find <sha>". `DeployWorkflowFromSourceParams` now
+   carries an optional `sourceRef` (a ledgered vendored delta) that
+   `deployAtHead` sets; omitted, the default ref is packed exactly as
+   upstream.
+3. **The tool manifest is now staged.** `deployAtHead` calls
+   `stageWorkflowStep` before the deploy frame, writing the step's
+   `deploy/tool-packages-manifest.json` where `materializeStepTools`
+   reads it. This is workbench's deliberate divergence: upstream's
+   source-ref front stages no per-step tree at all, but the sidecar's
+   tool loader still reads pins off one. With it wired, a real turn comes
+   back naming its own pinned tools.
+4. **STILL OPEN — a folded `step`-mode run publishes no `RunStarted`.**
+   With everything above in place a real boot reaches: seed fully green
+   by source-ref, chat minted, probe answered, closure materialized for
+   real on the sidecar (`materialized workflow-probe closure for
+folded-run-<runId>`), definition loaded from that closure, run grants
+   written into the workflow-run repo, the anchor row flipped
+   `deployed` → `running`, and a real Ollama reply to a real message. But
+   `GET /workflows/<runId>/runs/<runId>/events` stays empty: the folded
+   conversational shape is one unbounded step servicing every inbound
+   mail, and its per-message bracket is the `message.run.started` AGENT
+   event (`packages/folded-runs/src/agent-events.ts`), not a
+   workflow-host `RunStarted` in the run's durable event log. The
+   milestone's RunStarted assertion is therefore an assertion about
+   CL-6329's `section` mode — where every message is an `onTrigger`
+   occurrence with its own child run id and event log — not about the
+   `step` mode every launcher deploys today. Proving it means either
+   flipping the default mode or asserting the section shape directly;
+   `scripts/e2e/cl-6324-launch-proof.ts` keeps the assertion as written
+   rather than weakening it to something the current shape happens to
+   satisfy.
+5. **CLOSED — the agent-directory authoring lineage now writes the source
+   form.** `createAgentDefinitionCore` and the read/modify/write routes in
+   `routes.ts`, `workflow-capability-routes.ts`, and
+   `workflow-skill-pin-routes.ts` used to populate a `workflow`-kind asset
+   with a bare `workflow.json`, which `workflowKindHandler.validatePush`
+   now refuses. That lineage is authoring, not launching — a projection is
+   a read-only artefact and cannot be written back through — so it got its
+   own cutover. See the section below.
+
+## CL-6324: the agent-directory authoring cutover
+
+The renderer that had been living in `@workbench/hub-client`'s
+`workflow-push.ts`, and a second copy of it in `@corbits/agent-runtime`'s
+`source-tree.ts`, moved into a new dependency-free package,
+`@corbits/workflow-source`. Every authoring path in the repo now writes
+its asset tree through that one `renderWorkflowSourceTree` — the seed
+pusher, the per-run agent-runtime package, and the agent-directory
+lineage — so there is a single producer of the bytes a workflow-kind
+asset carries.
+
+`@corbits/agent-directory`'s `definition-asset.ts` is the lineage's own
+seam onto it: `agentDefinitionSourceTree` renders a definition's tree
+under a `@workbench-agent/<handle>` package name, and
+`readAgentDefinitionWorkflowJson` reads the definition back out of the
+entry module. Both replace the private `AGENT_DEFINITION_ASSET_PATH =
+"workflow.json"` constant each of the four writers used to declare for
+itself; `apps/hub`'s planner deploy and `@corbits/evals`' world snapshot
+route through the same two functions rather than re-deriving the path.
+The `workflow.json` write path is gone, not kept beside the new one.
+
+Reading the definition back is a strict slice of the exact bytes the
+renderer emits (the `export default ` prefix and `;\n` suffix), never an
+eval and never a pattern search. Anything else — in practice, an asset
+last written before this cutover, whose tree still holds a bare
+`workflow.json` — throws `RetiredWorkflowEnvelopeError`, defined in
+`@corbits/workflow-source` and re-exported from `@corbits/agent-directory`.
+It carries re-author-and-re-deploy guidance and is mapped to a 409 in
+every route module that can reach it: `routes.ts`,
+`workflow-capability-routes.ts`, and `workflow-skill-pin-routes.ts` each
+answer it from their own `app.onError`, so a stale asset never reads as a
+server fault.
+
+One behavioural change rode along: `POST /:definitionId/restore` now
+reports the definition it just wrote, parsed from the entry module it
+restored, instead of re-reading the asset immediately afterward.
+
+## CL-6324: what the four proofs found on a real stack
+
+`scripts/e2e/cl-6324-launch-proof.ts` is the harness: one scratch
+database, a real signup, a real local Ollama, nothing mocked. It runs as
+
+```
+E2E_PROVIDER=ollama OLLAMA_BASE_URL=http://localhost:11434 \
+E2E_OLLAMA_MODEL=<a model the instance serves> \
+DATABASE_URL=postgres://localhost:5432/<scratch> \
+bun run scripts/e2e/cl-6324-launch-proof.ts
+```
+
+### Proof 2, in the shape each deploy actually takes
+
+The earlier revision asserted a workflow-host `RunStarted` for a folded
+`step`-mode run and hung on it forever. That was an assertion about the
+section shape aimed at the step shape's run. The two are now asserted
+separately, each against the artefact it really produces.
+
+**Step mode.** One unbounded step services every inbound mail, so the run
+starts no child run per message and its own workflow event log stays
+empty — the harness asserts exactly that, as a falsifiable statement
+rather than a footnote. Its per-message bracket is the
+`message.run.started` / `message.run.ended` AGENT event pair, which
+travels the sidecar's `agent.event` channel and is never committed to the
+workflow-run repo. The durable, HTTP-observable evidence that the bracket
+opened AND closed is `@corbits/insights`' `turn_latency` row: the tracker
+opens it on `message.run.started` and commits it on `message.run.ended`,
+and `GET /api/tenants/:tenantId/insights/latency` reports it as a sample
+count. That, plus the reply row itself, is what the proof asserts.
+
+**Section mode — and CL-6329's first live validation.** `mode: "section"`
+had existed as a config argument since the agent-runtime cutover and
+nothing had ever deployed or run one. The proof now does, for real: it
+renders a section-mode `AgentRuntimeConfig` into its own source package,
+pushes it as a `workflow`-kind asset, deploys it by source-ref through
+`POST /workflows/deployments`, and drives it with real mail. Every
+message is an `onTrigger` occurrence with its own child run and its own
+event log, which is where `RunStarted` genuinely lives:
+
+```
+turn__0 events:      RunStarted, StepStarted, StepCompleted, RunCompleted
+parent run events:   RunStarted, StepStarted, ChildSpawned,
+                     ChildCompleted, SignalAwaited
+```
+
+The parent's `SignalAwaited` after `ChildCompleted` is the section
+re-arming for the next message. This is the shape the milestone's
+`RunStarted` assertion was always about, and it works.
+
+### Proof 4 FAILS, in both shapes, for the same reason
+
+Kill the sidecar mid-turn, restart it, and boot restore does its half of
+the job: the scan finds every deployment record, replays each pin, and
+re-materializes the closure — the restarted stack reports the run's own
+`liveness: "ok"` 9.2s after the restart. But the run inside it comes back
+**terminal**, and every later message is refused:
+
+- the folded chat run: `workflow-host·supervisor: rejecting inbound mail
+'<...>': workflow run 'run_...' is terminal` — the hub accepts the room
+  message, nothing ever answers it, and the turn times out with no reply
+  and no notice;
+- the section deployment: `POST /workflows/<id>/mail` answers `409
+workflow_run_terminal`, "is terminal and cannot receive more mail".
+
+So a mid-turn sidecar death is permanent for the run. `onBodyFailure:
+"continue"` does not rescue the section here, and could not: the failure
+is on the TOP-LEVEL run, not on a body occurrence, so there is no failed
+child edge for the policy to act on. Nothing in the chat layer recovers
+either, because its wake choke point only redeploys an address that is
+NOT routable — and this address is routable, just dead.
+
+This is the milestone's real remaining gap, and it is a platform-level
+one rather than anything the app-side conversion introduced: restoring a
+deployment is not the same as resurrecting its run, and at this pin
+nothing does the second half.
+
+### Timings, from a clean boot
+
+| Phase                                                | Wall clock |
+| ---------------------------------------------------- | ---------- |
+| section-mode deploy (push + probe + freeze + deploy) | 4.3s       |
+| section occurrence to its own `RunStarted`           | 1.0s       |
+| sidecar restart + boot restore to `liveness: "ok"`   | 9.2s       |
+
+Two phases read as ~0s and should not be mistaken for speed: a chat mint
+is DB-only (the deploy happens later, on the first traffic), and the join
+greeting is canned copy `@corbits/chat` posts in the agent's voice, not a
+model turn. The first REAL token is proof 3's reply.
+
+### Two environment traps the harness now closes explicitly
+
+1. **The onboarding seed pins the curated model; the catalog is seeded
+   from the live instance.** `modelSourceFor` takes its model from
+   `CATALOG_SEEDS.ollama`, so every default workflow deploys pinned at
+   that name, while `seedCatalog` fills the tenant catalog from the
+   instance's own `/api/tags`. On an instance that never pulled the
+   curated model the two never meet, and every chat turn dies as
+   `InferenceResolutionError: No launchable inference source for model
+"<curated>"` — surfaced to the reader as "I can't reach a model right
+   now". The harness names its model through `E2E_OLLAMA_MODEL` instead
+   of inheriting the curated one.
+2. **A live Ollama connect seeds embedding models as offerings with no
+   capability metadata** (CL-6351), so default-model resolution breaks
+   the tie alphabetically and `all-minilm` can win the bench default. The
+   harness narrows the bench catalog to its one pinned model through the
+   catalog API before it asserts anything about a turn.
+
+## CL-6365: why the restored run comes back terminal
+
+Reproduced on a second real stack (scratch database, real signup, real
+Ollama), with one correction to the harness first.
+
+### The kill has to be mid-turn, and it was not
+
+Proof 4's kill window was three seconds after "count slowly from one to
+twenty". On an instance whose model answers that in about one second,
+the turn had already completed and the run had parked by the time the
+sidecar came down — so the restart that followed was a clean restart,
+not a crash, and proof 4 passed. It passes that way at this branch's
+tip; the whole finding turns on the kill actually landing while
+inference is running.
+
+Proof 4 now sends a workload no model finishes inside the window and
+asserts, at the moment of the kill, that nothing has answered yet.
+"Mid-turn" is a claim the harness checks rather than a sleep it hopes
+for. With that in place the failure is deterministic.
+
+### What the mid-turn kill leaves behind
+
+Both top-level runs — the folded chat run and the section deployment —
+end up `workflow_run.status = 'failed'` in the hub's own database. The
+sidecar's SIGTERM drain tears the workflow-process child down while the
+step is in flight, and the resulting terminal event is committed to the
+run's durable event log before the process exits.
+
+Boot restore then does its half correctly: the scan finds the
+deployment records, replays each pin, re-materializes the closure, and
+the address is routable again (`liveness: "ok"` about ten seconds after
+the restart). But the run inside it is over:
+
+- the section deployment answers `POST /workflows/:id/mail` with `409
+workflow_run_terminal`;
+- the folded chat run's mail is dequeued and dropped by
+  `vendor/intx/workflow-host/src/supervisor/supervisor.ts`, which finds
+  no in-memory cohort for the run, reads
+  `readWorkflowRunLifecycle` off the durable log, sees `terminal`, and
+  rejects permanently.
+
+`onBodyFailure: "continue"` cannot rescue either shape: the failure is
+on the TOP-LEVEL run, not on a body occurrence.
+
+### Why "wake it again" is not the fix by itself
+
+`@corbits/chat`'s `wakeByAddress` returns early for any routable
+address (CL-6267 handed respawn of a parked-but-announced deployment to
+the sidecar's own park/wake handler), so a routable-but-dead run is
+never woken. Restoring the deleted CL-6147 branch — undeploy the
+resident, then redeploy — is necessary but not sufficient, for two
+reasons found while tracing it:
+
+1. A run's id is derived from its address
+   (`deriveWorkflowRunId(deploymentMailAddress)`), so redeploying the
+   same address re-creates the _same_ run id.
+2. The destructive teardown (`teardownDeployment` with `reclaimDirs`)
+   removes the deployment record and the per-step scratch, but NOT the
+   workflow-run repo that holds the run's durable event log. The
+   terminal event survives the redeploy, and the supervisor rejects the
+   next message for exactly the same reason.
+
+So a relaunch has to produce a genuinely new run, not the same one
+again — either a fresh run id adopting the room's continuity (the room
+is data now, so no history is lost), or a destructive teardown that
+also reclaims the run's durable log. Which of the two is right is the
+open design decision; the detection signal it hangs off is already
+available to the hub as `workflow_run.status`.
+
+The hub-side detection and the relaunch itself are not implemented
+here. What is on the record is a deterministic red: the proof now fails
+at "PROOF 4 — the section survives the restart and runs its next
+occurrence" with `409 workflow_run_terminal`, every time.
+
+### The ruling: relaunch, and un-fuse the room from the run
+
+The open design decision above is settled in favour of the FRESH run.
+The durable log is never reclaimed and never erased: it is the audit
+trail, and a resurrection that overwrote it would trade the one thing
+this shape is better at for a shortcut. A relaunch mints a new run,
+which the platform gives a new address and therefore a new event-log
+repo (`<dataDir>/workflow-runs/<sanitized address>/runs/<runId>/`),
+leaving the dead run's log intact and readable through the ordinary run
+routes.
+
+That is only possible because the room stops being the run. Three
+independent points in the platform fuse a run's id to its address —
+`deriveWorkflowRunId(address)` is the address's local part, the
+code-sourced deploy front refuses an `(anchorRunId, agentAddress)` pair
+that does not name the same run
+(`vendor/intx/hub-sessions/src/session-service.ts`'s coherence guard),
+and `receiveWorkflowRunPack` marks runs terminal by an id read out of
+the address-derived repo — so a fresh run CANNOT keep the old address.
+Nothing can be done about that from here, and nothing needs to be: the
+address only has to be stable for the ROOM, not for the sidecar.
+
+`chat.workbench_launch` is where the two come apart. `instance_id` is
+now the stable participant id the room addresses forever — the
+workbench id for a host, the first-mint id for an invited agent — and
+`current_run_id` names the run executing behind it, re-pointed on every
+relaunch. `packages/chat/src/agent-binding.ts` owns both directions:
+outbound (`sendMail`, `ensureAwake`, `subscribeToWorkbench`) resolves
+the stable id to the live address, and inbound
+(`chat-orchestrator.ts`'s `resolveMemberWorkbenches`) resolves a live
+address the sidecar reported back to the room address the participant
+records, the mention handles, and every already-posted message's
+`sender_address` carry. Nothing else in the room moves, because none of
+the room's tables were ever keyed on the run — only on the id that is
+now the stable one.
+
+Detection is `workflow_run.status` plus `@corbits/folded-runs`'
+previously orphaned `isFoldedRunSettled`: a terminal status that is NOT
+a folded run parked between messages is a run beyond waking, and
+`wakeByAddress` relaunches it instead of redeploying an address whose
+log already says terminal.
+
+### Closing it: the sweep, the notice, and the old attachments
+
+Three things stood between the relaunch and a reader actually
+experiencing it.
+
+**The sweep.** The relaunch was send-triggered — it fired on the next
+`sendMail` through the wake choke point — so a room whose agent died in
+a crash stayed silently dead until somebody wrote into it, which is
+precisely what nobody does when the room looks broken.
+`createHubChatPlatform.sweepTerminalRuns` scans `workbench_launch`
+(bounded at 100 rows), keeps the participants `isBeyondWake` says are
+terminal-and-not-merely-parked, and relaunches each through the same
+path a send would; every relaunch and every failure is logged under
+`chat·wake`, and one failure never aborts the pass.
+
+The hub runs it at boot and re-arms it on `sidecar.disconnect`, as a
+short bounded series of passes rather than a single one. That is not
+belt-and-braces: "this run is dead" is not knowable at the instant the
+execution plane comes back. The dying sidecar commits the terminal event
+to the run's own durable log, and `workflow_run.status` only follows once
+the RESTARTED sidecar has packed that log back to the hub — seconds
+after the reconnect. A single pass at boot would look at a run still
+marked `running` and find nothing.
+
+**The notice.** `chat-orchestrator.ts`'s turn-drop notice hangs off
+`message.run.ended`, which a killed sidecar never sends — so the
+interrupted turn had no way to surface at all. `relaunch-notice.ts` is
+the other half: `createHubChatPlatform` takes a notice port (a ref, since
+the adapter is built before the room-message store it posts through), the
+hub arms it beside `roomMessages`, and every relaunch — swept or
+send-triggered — posts into each room the replaced participant belongs
+to, under the STABLE address the room has always known it by, so the
+notice reads as the same teammate rather than a stranger. The wording is
+cause-aware (crashed / stopped / ended) and stays in the reader's
+language: the turn didn't finish, it's back now, say it again.
+
+**Pre-relaunch attachments.** `fetchBlob` read through the live run's
+session, and a folded run's mail session is resolved from its PRINCIPAL
+— a fresh run has a fresh principal, so every attachment sent before the
+crash became unreachable. `workbench_launch.prior_run_ids` records each
+run as it is retired (capped at 20), and `fetchBlob` walks those
+sessions newest-first after the live one. Room messages were never
+affected: they are `chat.workbench_messages` rows, not mail.
+
+**The audit assertion.** Proof 4 now ends by reading the replaced run's
+events back through the ordinary run routes AFTER its replacement is
+already answering. That is the fresh-run ruling's whole justification,
+and it is now a hop rather than an argument.
+
+### And what re-running proof 4 found: the detection signal does not fire
+
+Proof 4 was re-run on a real stack (scratch database, real signup, real
+Ollama, both shapes). Proofs 1, 2, 2b and 3 are green; proof 4's restart
+and boot restore are green at 9.2s. Hop 3 — "the turn the kill
+interrupted surfaces visibly" — is still red, and the sweep is not why.
+Nothing in the sweep's log fired at all, because it found nothing to
+sweep:
+
+```
+run_10dd09d1…  failed    <- the SECTION deployment
+run_4de07624…  running   <- the folded CHAT run, after the mid-turn kill
+```
+
+The claim recorded above — that both top-level runs end up
+`workflow_run.status = 'failed'` — holds for the section deployment
+only. The folded chat run's terminal event goes to its durable log
+(which is why its supervisor rejects the next message) while its
+`workflow_run` row stays `running` forever. `isBeyondWake` reads that
+row, so for the shape hop 3 measures it answers "still alive" and
+neither the sweep nor the send-triggered relaunch ever fires. The room
+keeps the reader's message with nothing after it — the exact silent
+drop the hop asserts against.
+
+So the remaining gap is the DETECTION signal, not the relaunch: the hub
+needs to learn a folded run's lifecycle from the same durable log the
+supervisor reads (`readWorkflowRunLifecycle`) rather than from
+`workflow_run.status`, either by reconciling the row when a restarted
+sidecar packs a terminal log back, or by having `isBeyondWake` consult
+the log directly. Everything downstream of that signal — sweep, notice,
+repoint, attachment history, audit read — is built and unit-proven.
+
+The section shape stays red for its own separate reason: a plain
+workflow deployment has no room, so nothing maps a stable id onto a
+fresh run for it. That is out of CL-6365's scope, which is the room.
+
+### Correction: the row was not lying, the terminal event never arrived
+
+The account above named the wrong culprit. Reading the two sides of a
+real crashed stack settles it. After the mid-turn kill and the restart,
+the sidecar's own copy of the folded chat run's workflow-run repo held
+three commits the hub had never seen:
+
+```
+9c14859 compact run run_4de07624… events        <- sidecar only
+2cea7c9 append workflow event RunFailed          <- sidecar only
+ae962fb append workflow event StepFailed         <- sidecar only
+34fe89a SignalReceived …                         <- the hub's tip
+```
+
+So the hub's `workflow_run` row was not disagreeing with the hub's copy
+of the durable log — the hub's copy of the log stopped at the last
+pre-crash event too. Reconciling the row against a received terminal
+log, or having `isBeyondWake` read the log instead of the row, would
+both have read the same "still live" answer. The signal was not
+mis-read; it was never delivered.
+
+Why it is not delivered is an ordering race in the sidecar's boot edge.
+`restoreWorkflowDeployments()` runs BEFORE `hubLink.connect()` — each
+restored deployment's mailbox must be live before the hub can route to
+it. A restored supervisor that finds a step which died mid-invocation
+commits that run's `StepFailed`/`RunFailed` right then, and the
+pack-pushing store schedules the push into a link that does not exist
+yet. The sidecar log says it plainly:
+
+```
+11:17:33.480 Sidecar connecting to ws://…/api/sidecars/ws
+11:17:33.507 Connected to hub
+11:17:33.508 workflow-run pack push failed for deployment run_2c1e98ac…: 'Connection lost'
+11:17:33.509 … × 8 more, every restored deployment
+```
+
+Those failures latch on their slot, and the only thing that re-ships
+them is `notifyAddressRoutable`, fired when the reconnect challenge
+passes. That recovery works when the rejection latches before the
+challenge — one full re-run of proof 4 came back with the hub and the
+sidecar at the identical tip, the row flipped to `failed`, the sweep
+firing, and the room repointed onto a fresh run
+(`prior_run_ids: ["run_8da929dd…"]`). It is lost when the rejection
+lands after the challenge: nothing re-arms the slot, the terminal event
+stays on sidecar disk for good, and the row says `running` for a run
+whose supervisor rejects every further message.
+
+The fix holds rather than recovers. `createBootRestorePushHold` marks
+every address the boot restore registers unroutable — the same block
+the link already applies across a mid-life disconnect — and the
+challenge lifts it, so no workflow-run push is ever attempted against a
+link that has not been established. Both deploy shapes take the same
+path, so both terminal signals now land on the hub at the same, stable
+point in the boot sequence.
+
+One consequence worth stating rather than burying: with the signal
+arriving reliably, proof 4's section hop now fails deterministically
+with `409 workflow_run_terminal` instead of intermittently. That is the
+section shape's own gap — a plain workflow deployment has no room, so
+nothing maps a stable id onto a fresh run for it — surfacing on
+schedule rather than racing the assertion. It stays out of CL-6365's
+scope, which is the room.

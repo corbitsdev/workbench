@@ -21,7 +21,7 @@ import { and, eq } from "drizzle-orm";
 import {
   domainOf,
   launchFoldedRun,
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
   sendFoldedMailWithRetry,
   type FoldedRunsDeps,
@@ -96,11 +96,11 @@ export async function launchWebhookTrigger(
     throw new Error(`no tenant "${trigger.tenantId}"`);
   }
 
-  const definitionJSON = await readDefinitionJSON(
-    deps.assetService,
-    definitionRow.assetId,
+  const projection = await readDefinitionProjection(deps.db, definitionRow);
+  const foldedBody = readFoldedBody(
+    projection,
+    definitionRow.grantRequirements,
   );
-  const foldedBody = readFoldedBody(definitionJSON);
   if (foldedBody.systemPrompt === "") {
     throw new Error(
       `workflow definition "${trigger.workflowDefinitionId}" cannot be ` +

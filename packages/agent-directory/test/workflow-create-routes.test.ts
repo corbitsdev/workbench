@@ -21,6 +21,7 @@ import type {
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import { createInMemoryDefinitionSkillsStore } from "../src/skills-store";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const RUN_ID = "run_1";
@@ -208,7 +209,7 @@ test("creates a definition and returns it, reusing the same materialization the 
     }),
   });
   expect(response.status).toBe(201);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   const body = (await response.json()) as { id: string; name: string };
   expect(body.id).toBe("def_new");
 });
@@ -258,9 +259,8 @@ test("a toolPackagePins entry the tenant's inventory offers is pinned onto the c
     }),
   });
   expect(response.status).toBe(201);
-  const written = writtenFiles?.["workflow.json"];
-  expect(typeof written).toBe("string");
-  expect(written as string).toContain("@corbits/memory-tools");
+  const written = definitionFrom(writtenFiles);
+  expect(written).toContain("@corbits/memory-tools");
 });
 
 test("a create naming no pins gets the baseline set the inventory offers — a specialist is never toolless (CL-6206)", async () => {
@@ -283,7 +283,7 @@ test("a create naming no pins gets the baseline set the inventory offers — a s
     }),
   });
   expect(response.status).toBe(201);
-  const written = writtenFiles?.["workflow.json"] as string;
+  const written = definitionFrom(writtenFiles);
   // The fake inventory offers memory-tools (see buildApp); mcp-tools and
   // interaction-tools are not offered, so only the resolvable baseline
   // member is pinned — never a pin that would fail at launch.
@@ -315,9 +315,8 @@ test("a create with no model bakes the tenant's catalog default in, so the defin
     }),
   });
   expect(response.status).toBe(201);
-  const written = writtenFiles?.["workflow.json"];
-  expect(typeof written).toBe("string");
-  expect(written as string).toContain("anthropic/claude-sonnet");
+  const written = definitionFrom(writtenFiles);
+  expect(written).toContain("anthropic/claude-sonnet");
 });
 
 test("a create with an explicit model never consults the tenant default", async () => {
@@ -344,8 +343,8 @@ test("a create with an explicit model never consults the tenant default", async 
     }),
   });
   expect(response.status).toBe(201);
-  const written = writtenFiles?.["workflow.json"];
-  expect(written as string).toContain("openrouter/some-model");
+  const written = definitionFrom(writtenFiles);
+  expect(written).toContain("openrouter/some-model");
 });
 
 test("an invalid body is a 400", async () => {

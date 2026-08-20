@@ -3,6 +3,8 @@ import { expect, test } from "bun:test";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 
+import { agentDefinitionSourceTree } from "@corbits/agent-directory";
+
 import {
   captureWorldSnapshot,
   type WorldSnapshotInfra,
@@ -65,10 +67,23 @@ function fakeDb(tables: FakeTables): DB["db"] {
   } as unknown as DB["db"];
 }
 
+/** Answers each asset's entry module out of the source tree its
+ * definition renders into — the shape the snapshot reads through. */
 function fakeAssetService(blobs: Record<string, string>): AssetService {
   return {
-    readAssetBlob: async ({ assetId }: { assetId: string }) =>
-      new TextEncoder().encode(blobs[assetId] ?? "{}"),
+    readAssetBlob: async ({
+      assetId,
+      path,
+    }: {
+      assetId: string;
+      path: string;
+    }) =>
+      new TextEncoder().encode(
+        agentDefinitionSourceTree({
+          handle: assetId,
+          workflowJson: blobs[assetId] ?? "{}",
+        })[path],
+      ),
   } as unknown as AssetService;
 }
 

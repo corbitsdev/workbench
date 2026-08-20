@@ -45,8 +45,8 @@ describe("createGitWorkflowPusher", () => {
 
       const seeder = join(work, "seeder");
       await git(["init", seeder], work);
-      await Bun.write(join(seeder, "workflow.json"), '{"v":1}');
-      await git(["add", "workflow.json"], seeder);
+      await Bun.write(join(seeder, "workflow.js"), "export default {};\n");
+      await git(["add", "workflow.js"], seeder);
       await git(
         [
           "-c",
@@ -66,14 +66,24 @@ describe("createGitWorkflowPusher", () => {
         remoteUrl: `file://${remoteDir}`,
         tokenSecret: "unused-for-file-transport",
         workflowJson: '{"v":2}',
+        packageName: "@workbench-seed/test",
       });
 
-      expect(outcome).toBe("pushed");
+      expect(outcome.outcome).toBe("pushed");
+      expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
 
       const verify = join(work, "verify");
       await git(["clone", "-b", "main", remoteDir, verify], work);
-      const content = await readFile(join(verify, "workflow.json"), "utf-8");
-      expect(content).toBe('{"v":2}');
+      // A workflow asset takes a source codebase, never the retired
+      // `workflow.json` envelope: the entry module the pushed
+      // `package.json` declares default-exports the definition.
+      const entry = await readFile(join(verify, "workflow.js"), "utf-8");
+      expect(entry).toBe('export default {"v":2};\n');
+      const manifest = await readFile(join(verify, "package.json"), "utf-8");
+      expect(JSON.parse(manifest)).toMatchObject({
+        name: "@workbench-seed/test",
+        interchange: { workflow: "./workflow.js" },
+      });
     } finally {
       await rm(work, { recursive: true, force: true });
     }
@@ -90,15 +100,19 @@ describe("createGitWorkflowPusher", () => {
         remoteUrl: `file://${remoteDir}`,
         tokenSecret: "unused-for-file-transport",
         workflowJson: '{"v":1}',
+        packageName: "@workbench-seed/test",
       });
-      expect(first).toBe("pushed");
+      expect(first.outcome).toBe("pushed");
 
       const second = await pusher({
         remoteUrl: `file://${remoteDir}`,
         tokenSecret: "unused-for-file-transport",
         workflowJson: '{"v":1}',
+        packageName: "@workbench-seed/test",
       });
-      expect(second).toBe("unchanged");
+      expect(second.outcome).toBe("unchanged");
+      // An unchanged push still reports the pin the deploy sources from.
+      expect(second.commitSha).toBe(first.commitSha);
     } finally {
       await rm(work, { recursive: true, force: true });
     }

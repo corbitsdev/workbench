@@ -8,12 +8,13 @@ export type {
   ListedFoldedMailItem,
 } from "./types";
 export {
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
-  resolveNewestReadableDefinitionJSON,
-  DefinitionAssetUnresolvableError,
+  readLiveFoldedBody,
+  resolveNewestProjectedDefinition,
+  DefinitionProjectionMissingError,
   FoldedBodySchema,
-  type DefinitionAssetCandidate,
+  type DefinitionCandidate,
 } from "./definition";
 export {
   createCryptoProviderCache,
@@ -28,11 +29,13 @@ export {
 } from "./runs";
 export {
   deployAtHead,
+  foldedRunSourceRef,
   launchFoldedRun,
   mintFoldedRun,
   parseSourcesOverride,
   SourcesOverride,
   InferenceResolutionError,
+  type FoldedRunMode,
   type LaunchFoldedRunParams,
   type MintFoldedRunParams,
   type LaunchedFoldedRun,

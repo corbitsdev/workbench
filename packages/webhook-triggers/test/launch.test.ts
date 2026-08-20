@@ -23,7 +23,7 @@ let sendFoldedMailWithRetryResult: unknown = { ok: true, mail: { id: "m_1" } };
 
 mock.module("@corbits/folded-runs", () => ({
   ...actualFoldedRuns,
-  readDefinitionJSON: async () => ({ __fake: true }),
+  readDefinitionProjection: async () => ({ __fake: true }),
   readFoldedBody: () => FOLDED_BODY,
   launchFoldedRun: async (...args: unknown[]) => {
     launchFoldedRunCalls.push(args);
@@ -77,7 +77,6 @@ function baseDeps() {
     sessionService: {} as never,
     assetService: {} as never,
     sidecarRouter: {} as never,
-    hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },

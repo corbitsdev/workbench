@@ -6,6 +6,7 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
+import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
@@ -18,11 +19,16 @@ import {
   type WorkflowSkillPinRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-skill-pin-routes";
+import {
+  agentDefinitionSourceTree,
+  AGENT_DEFINITION_ENTRY_PATH,
+} from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
   createInMemoryDefinitionSkillsStore,
   type DefinitionSkillsStore,
 } from "../src/skills-store";
+import { SOURCE_TREE_PATHS } from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
@@ -39,8 +45,9 @@ const fakeSkillIndex: PinnedSkillIndexResolver = {
 };
 
 function storedDefinitionBytes(): Uint8Array {
-  return new TextEncoder().encode(
-    serializeAgentDefinitionWorkflow(
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: serializeAgentDefinitionWorkflow(
       buildAgentDefinitionWorkflow({
         handle: "research-buddy",
         tenantDomain: "acme.example",
@@ -48,7 +55,8 @@ function storedDefinitionBytes(): Uint8Array {
         systemPrompt: "You are a careful research assistant.",
       }),
     ),
-  );
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
 function readAssetBlobFor(
@@ -252,11 +260,46 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
     skillName: "research",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
   expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
+});
+
+test("a definition still on the retired envelope is a 409, never a 500, and writes nothing", async () => {
+  lookupId = TARGET_DEFINITION_ID;
+  lookupTenant = TENANT_ID;
+  let populateCalled = false;
+  const app = buildApp({
+    db: fakeDbWithRows([
+      {
+        id: TARGET_DEFINITION_ID,
+        tenantId: TENANT_ID,
+        assetId: "ast_1",
+        name: "research-buddy",
+      },
+    ]),
+    assetService: fakeAssetService({
+      readAssetBlob: (params) =>
+        Promise.reject(
+          new AssetServiceError(
+            "not_found",
+            `readAssetBlob: asset ${params.assetId} has no blob at "${params.path}"`,
+          ),
+        ),
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+  });
+  const response = await postPin(app, {
+    definitionId: TARGET_DEFINITION_ID,
+    skillName: "research",
+  });
+  expect(response.status).toBe(409);
+  expect(populateCalled).toBe(false);
 });
 
 test("pinning the same skill twice is idempotent, never duplicated", async () => {

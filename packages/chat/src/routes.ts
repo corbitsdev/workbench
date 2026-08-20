@@ -102,7 +102,7 @@ import {
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import {
   InferenceResolutionError,
-  DefinitionAssetUnresolvableError,
+  DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ThreadStore } from "./threads";
@@ -1233,7 +1233,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           // unresolvable (DB/blob drift) is a named, consumer-facing
           // 4xx — never an unhandled 500 — with the same compensation
           // every other agent-mint failure already ran above.
-          if (err instanceof DefinitionAssetUnresolvableError) {
+          if (err instanceof DefinitionProjectionMissingError) {
             return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
           }
           throw err;
@@ -2031,7 +2031,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   409,
                 );
               }
-              if (err instanceof DefinitionAssetUnresolvableError) {
+              if (err instanceof DefinitionProjectionMissingError) {
                 return c.json(
                   ErrorEnvelope("not_launchable", err.guidance),
                   409,
@@ -2774,7 +2774,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             409,
           );
         }
-        if (err instanceof DefinitionAssetUnresolvableError) {
+        if (err instanceof DefinitionProjectionMissingError) {
           return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
         }
         throw err;

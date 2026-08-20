@@ -1,0 +1,27 @@
+{
+  "name": "@corbits/agent-runtime",
+  "private": true,
+  "description": "The versioned definition builder every workbench agent run deploys, plus the renderer that pins it into a per-run code-sourced workflow package",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/workflow-source": "workspace:*",
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

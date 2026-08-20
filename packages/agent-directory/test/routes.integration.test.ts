@@ -5,13 +5,13 @@
 // an actual git commit — `routes.test.ts`'s hand-rolled fake
 // `AssetService` never exercises that validator, so it could not have
 // caught this. A definition created WITH skills used to write
-// `skills.json` alongside `workflow.json` into the asset tree; that
-// validator's hard allowlist (`workflow.json`,
-// `capability-declarations.json`, `.gitignore`) rejects any other
-// top-level entry with a `path_violation` 500. Pinned skills now live
-// in this package's own `agent_directory.definition_skills` table (see
-// `../src/skills-store.ts`), so the asset tree only ever carries
-// `workflow.json`.
+// `skills.json` into the asset tree beside its definition, which that
+// validator rejected. Pinned skills now live in this package's own
+// `agent_directory.definition_skills` table (see
+// `../src/skills-store.ts`), so the asset tree only ever carries the
+// source codebase `agentDefinitionSourceTree` renders — the one shape
+// the validator now accepts, the retired `workflow.json` envelope
+// having been refused at the push boundary.
 //
 // DB-gated: skipped when DATABASE_URL is unset, so a fresh checkout
 // still runs the unit gates. Run with e.g.

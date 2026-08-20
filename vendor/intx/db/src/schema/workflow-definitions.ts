@@ -104,6 +104,24 @@ export const workflowDefinitionVersion = pgTable(
     // and read back during re-verify to detect drift. Null before approval is
     // a legitimate state, so the column takes no NOT NULL constraint.
     approvedWireHash: text("approved_wire_hash"),
+    // Serializable projection of the deploy-time capability walk, recorded
+    // at approval so a run materializes grants from it instead of re-reading
+    // and re-walking a workflow.json blob. Validated as GrantWalkSnapshot at
+    // parse time. Null before approval is a legitimate state, so the column
+    // takes no NOT NULL constraint.
+    grantSnapshot: jsonb("grant_snapshot"),
+    // WORKBENCH DELTA (see VENDORED.md): the inert wire projection the freeze
+    // hashed, stored beside the hash it is keyed to. Under the workflow.json
+    // retirement a definition's body is whatever its source closure evaluates
+    // to, and a source-format asset carries no envelope to read it back from --
+    // so a launch that needs the body (a folded run reading its system prompt,
+    // tool pins, model, and credential bindings) has nowhere hub-side to get
+    // it. This column is that place: written in the same transaction as
+    // `approvedWireHash`, so a projection is never present without the hash
+    // that addresses it. Validated as `WorkflowProjectionDefinition` at read.
+    // Null before approval is a legitimate state, matching the two columns
+    // above.
+    wireProjection: jsonb("wire_projection"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

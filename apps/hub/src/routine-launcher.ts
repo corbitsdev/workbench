@@ -48,7 +48,7 @@ import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import {
   domainOf,
   launchFoldedRun,
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
   sendFoldedMailWithRetry,
   type CryptoProviderCache,
@@ -162,11 +162,11 @@ export function createHubRoutineLauncher(
         throw new Error(`no tenant "${input.tenantId}"`);
       }
 
-      const definitionJSON = await readDefinitionJSON(
-        deps.assetService,
-        definitionRow.assetId,
+      const projection = await readDefinitionProjection(deps.db, definitionRow);
+      const foldedBody = readFoldedBody(
+        projection,
+        definitionRow.grantRequirements,
       );
-      const foldedBody = readFoldedBody(definitionJSON);
 
       const instanceId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);

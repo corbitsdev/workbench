@@ -8,11 +8,15 @@ export {
   SessionLaunchError,
   bridgeOrchestratorDeployContent,
   deployCodeSourcedWorkflow,
+  deployAdoptedCodeSourcedWorkflow,
   type SessionService,
-  type DeployWorkflowDefinitionParams,
   type DeployWorkflowDefinitionResult,
-  type DeployPreparedWorkflowDefinitionParams,
+  type DeployWorkflowFromSourceParams,
+  type DeployPreparedCodeSourcedWorkflowParams,
+  type InstallAndApproveWorkflowSourceParams,
   type PreparedWorkflowDeployer,
+  type AdoptingWorkflowDeployer,
+  type DeployAdoptedWorkflowFromSourceParams,
   type DeployCodeSourcedWorkflowArgs,
 } from "./session-service";
 export {
@@ -21,6 +25,8 @@ export {
   type InstallAndApproveArgs,
   type InstallAndApproveResult,
   type ProbeGateResult,
+  type ProbeApprovalPolicy,
+  type ApproveProbedGrants,
 } from "./workflow-probe-gate";
 export { committedReadsToSourceTree } from "./committed-source-tree";
 export type { SourceTreeReads } from "./workflow-source-closure";
@@ -141,7 +147,6 @@ export {
   workflowDefinitionEnvelopeSchema,
   WORKFLOW_JSON_PATH,
   CAPABILITY_DECLARATIONS_JSON_PATH,
-  WORKFLOW_GITIGNORE_PATH,
   type WorkflowPrincipal,
   type WorkflowHubPrincipal,
   type WorkflowSidecarPrincipal,

@@ -34,17 +34,17 @@ import type { AssetService } from "@intx/hub-sessions";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import { reindexPinnedSkills } from "./agent-workflow";
+import {
+  agentDefinitionSourceTree,
+  readAgentDefinitionWorkflowJson,
+  RetiredWorkflowEnvelopeError,
+} from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
 } from "./workflow-capability-routes";
-
-/** Where a definition's serialized `WorkflowDefinition` lives in its
- * asset tree — same path `./routes.ts`/`./workflow-capability-routes.ts`
- * read/write. */
-const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 /** Structurally the same run scope `workflow-capability-routes.ts`
  * resolves — reused by type alias rather than a fresh declaration, since
@@ -101,6 +101,16 @@ export function createWorkflowSkillPinRoutes(
 ): Hono<WorkflowSkillPinEnv> {
   const app = new Hono<WorkflowSkillPinEnv>();
 
+  // A definition whose asset predates the source-form cutover cannot be
+  // read or re-pinned until it is re-authored — a client-visible
+  // conflict, never a server fault.
+  app.onError((err, c) => {
+    if (err instanceof RetiredWorkflowEnvelopeError) {
+      return c.json(errorEnvelope("conflict", err.message), 409);
+    }
+    throw err;
+  });
+
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
     const token = authHeader.startsWith("Bearer ")
@@ -141,11 +151,9 @@ export function createWorkflowSkillPinRoutes(
       return c.json(definitionNotFound(body.definitionId), 404);
     }
 
-    const workflowJson = new TextDecoder().decode(
-      await deps.assetService.readAssetBlob({
-        assetId: row.assetId,
-        path: AGENT_DEFINITION_ASSET_PATH,
-      }),
+    const workflowJson = await readAgentDefinitionWorkflowJson(
+      deps.assetService,
+      row.assetId,
     );
 
     const skills = await deps.skillsStore.getSkills(row.assetId);
@@ -166,7 +174,10 @@ export function createWorkflowSkillPinRoutes(
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
-        files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
+        files: agentDefinitionSourceTree({
+          handle: row.name,
+          workflowJson: nextWorkflowJson,
+        }),
         message: `Pin ${body.skillName} skill to ${row.name}`,
       },
     });

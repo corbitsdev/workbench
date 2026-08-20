@@ -32,6 +32,7 @@ import {
 } from "@corbits/skills";
 import { type } from "arktype";
 
+import { agentDefinitionSourceTree } from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -367,13 +368,6 @@ export function serializeAgentDefinitionWorkflow(
   return JSON.stringify(definition);
 }
 
-/** Where a definition's serialized `WorkflowDefinition` lives in its
- * asset tree — the same path every route that reads/writes a
- * definition's `workflow.json` declares privately for itself
- * (`./routes.ts`, `./workflow-capability-routes.ts`); this copy is the
- * one `createAgentDefinitionCore` itself writes to. */
-const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
-
 export type CreateAgentDefinitionCoreDeps = {
   readonly db: DB["db"];
   readonly assetService: AssetService;
@@ -448,7 +442,7 @@ export class DuplicateAgentHandleError extends Error {
 
 /**
  * The full create-agent-definition sequence: resolve the tenant's mail
- * domain, build and pin the definition's `workflow.json`, materialize
+ * domain, build and pin the definition's serialized workflow, materialize
  * it as a `workflow`-kind asset, persist its pinned skills, and
  * project it onto a first-class `workflow_definition` row. Factored out
  * of `./routes.ts`'s `POST /` handler so `./workflow-create-routes.ts`
@@ -509,7 +503,7 @@ export async function createAgentDefinitionCore(
       cause.reason === "duplicate_asset"
     ) {
       // A previous attempt may have created the asset row but failed
-      // before populateAsset wrote workflow.json — an empty shell that
+      // before populateAsset wrote its source tree — an empty shell that
       // blocks retries with a misleading conflict. Recover: look up the
       // existing asset and reuse it only if it has no definition yet.
       const existing = await deps.db.query.asset.findFirst({
@@ -542,7 +536,7 @@ export async function createAgentDefinitionCore(
     ref: DEFAULT_ASSET_REF,
     principal: { kind: "hub" },
     tree: {
-      files: { [AGENT_DEFINITION_ASSET_PATH]: workflowJson },
+      files: agentDefinitionSourceTree({ handle: input.handle, workflowJson }),
       message: `Define agent ${input.name}`,
     },
   });

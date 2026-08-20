@@ -33,7 +33,7 @@ function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
   const { log } = collector();
   return {
     config: CONFIG,
-    pushWorkflow: async () => "pushed",
+    pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
     publishToolRegistry: async () => undefined,
     log,
     ...overrides,
@@ -279,7 +279,7 @@ describe("runSeed", () => {
     await runSeed(
       deps({
         api: fakeAPI(handler),
-        pushWorkflow: async () => "pushed",
+        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
         log,
         sleep: async () => {},
         runStartTimeoutMs: 3,
@@ -472,7 +472,7 @@ describe("runSeed", () => {
     await runSeed(
       deps({
         api: fakeAPI(handler),
-        pushWorkflow: async () => "pushed",
+        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
         log,
         sleep: async () => {},
         runStartTimeoutMs: 3,

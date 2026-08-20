@@ -25,6 +25,7 @@
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
+    "@corbits/workflow-source": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:"

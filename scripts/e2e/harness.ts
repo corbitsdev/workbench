@@ -215,10 +215,20 @@ function spawnApp(
   });
   let captured = "";
   let done = false;
+  // A killed-and-restarted process's output is otherwise only reachable
+  // through the handle the suite still holds; teeing to a file makes a
+  // crash-recovery run diagnosable after the fact.
+  const logDir = process.env["E2E_LOG_DIR"];
+  const logPath =
+    logDir === undefined
+      ? undefined
+      : `${logDir}/${label}-${String(proc.pid)}.log`;
   const capture = async (stream: ReadableStream<Uint8Array>) => {
     const decoder = new TextDecoder();
     for await (const chunk of stream) {
-      captured += decoder.decode(chunk, { stream: true });
+      const text = decoder.decode(chunk, { stream: true });
+      captured += text;
+      if (logPath !== undefined) await Bun.write(logPath, captured);
     }
   };
   void capture(proc.stdout);

@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/workflow-source",
+  "private": true,
+  "description": "The source codebase a workflow-kind asset carries — the two-file renderer every authoring path writes and the reader that recovers the definition back out of it",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -5,7 +5,7 @@
 // goes through — and that a delivery failure past launch never un-does
 // or hides the already-real run. `@corbits/folded-runs` is real here
 // except for `launchFoldedRun`/`sendFoldedMailWithRetry`/
-// `readDefinitionJSON`, which would otherwise need a real tenant catalog
+// `readDefinitionProjection`, which would otherwise need a real tenant catalog
 // and asset store — the same "swap the one export that needs a join"
 // approach `packages/folded-runs/test/launch.test.ts` and
 // `packages/webhook-triggers/test/launch.test.ts` use.
@@ -33,7 +33,7 @@ let sendFoldedMailWithRetryResult: unknown = {
 
 mock.module("@corbits/folded-runs", () => ({
   ...actualFoldedRuns,
-  readDefinitionJSON: async () => ({ __fake: true }),
+  readDefinitionProjection: async () => ({ __fake: true }),
   readFoldedBody: () => FOLDED_BODY,
   launchFoldedRun: async (...args: unknown[]) => {
     launchFoldedRunCalls.push(args);
@@ -114,7 +114,6 @@ function buildLauncher(overrides: { definition?: unknown } = {}) {
     sessionService: {} as never,
     assetService: {} as never,
     sidecarRouter: {} as never,
-    hubPublicKey: "hub-key",
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
@@ -232,7 +231,6 @@ describe("createHubRoutineLauncher — delivery workbench", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
@@ -259,7 +257,6 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
@@ -297,7 +294,6 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
@@ -324,7 +320,6 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
@@ -356,7 +351,6 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
@@ -378,7 +372,6 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       sessionService: {} as never,
       assetService: {} as never,
       sidecarRouter: {} as never,
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },

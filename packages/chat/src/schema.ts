@@ -85,10 +85,37 @@ export const workbenchReadState = chatSchema.table(
  * definition exists nowhere else (its workflow asset is never pushed
  * a workflow.json), so this row is the single wake-time source for
  * both launch kinds.
+ *
+ * This row is also the address→run mapping the whole room depends on.
+ * `instanceId` is the STABLE participant id — the room's own workbench
+ * id for a host, the id an invited agent was first minted under — and
+ * `formatRunAddress(instanceId, domain)` is the address the room
+ * addresses this agent by forever (participant records, message
+ * `senderAddress`, mention handles). `currentRunId` is the run actually
+ * executing behind it. The two are equal until the first relaunch;
+ * after a run dies terminally (a mid-turn crash), `currentRunId` is
+ * re-pointed at a FRESH run with a fresh id, a fresh address, and a
+ * fresh durable event log, while the stable id — and therefore the
+ * room, its timeline, its settings, and every participant record —
+ * does not move. See `./agent-binding.ts`.
  */
 export const workbenchLaunch = chatSchema.table("workbench_launch", {
   tenantId: text("tenant_id").notNull(),
   instanceId: text("instance_id").primaryKey(),
+  /**
+   * The live `workflow_run.id` this stable id currently resolves to.
+   * Unique: one run backs at most one room participant.
+   */
+  currentRunId: text("current_run_id").notNull().unique(),
+  /**
+   * Every run that used to be `currentRunId`, oldest first. A relaunch
+   * mints a fresh run with its own principal, and a folded run's mail
+   * session is resolved from its principal — so an attachment a reader
+   * uploaded before the crash lives on a session the live run cannot
+   * see. This is the trail `fetchBlob` walks back through so a blob
+   * posted to the room yesterday is still downloadable today.
+   */
+  priorRunIds: jsonb("prior_run_ids").notNull().default([]),
   foldedBody: jsonb("folded_body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

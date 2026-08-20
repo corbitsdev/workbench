@@ -24,16 +24,14 @@ import {
 } from "@intx/types";
 import { InferenceSource } from "@intx/types/runtime";
 import type { HarnessConfig } from "@intx/types/runtime";
-import { ToolPackagePinArray } from "@intx/types/tool-packages";
+import { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
 import {
   createWorkflowRunReader,
   ExclusiveWorkflowPlacementError,
   resolveWorkflowSidecarPlacement,
-  type AssetService,
   type RepoStore,
   type SessionService,
   type SidecarRouter,
-  type WorkflowDefinition,
   type WorkflowAllocationService,
   type WorkflowDispatchService,
 } from "@intx/hub-sessions";
@@ -47,7 +45,6 @@ import {
 import type { TenantEnv } from "../context";
 import { idResource, type RequireGrant } from "../middleware/grant";
 import {
-  hydrateDefinition,
   lockDispatchableAllocation,
   lockWorkflowRunState,
 } from "../run-grant-materialization";
@@ -64,15 +61,19 @@ import {
   WorkflowRunTriggerResponse,
 } from "../workflow-run-trigger";
 
-// Request body for the general workflow deploy. The workflow definition
-// is hydrated from `assetId`'s `workflow.json`; the caller supplies the
-// inference sources the per-step agents launch against (full credential
-// resolution is the agent-instance path's concern, not this one).
+// Request body for the general workflow deploy. The definition is CODE-SOURCED:
+// `source` names where its bytes come from and `entry` the `interchange.workflow`
+// module the sidecar evaluates; the hub installs + probes + gates + freezes it
+// and deploys by source-ref. The caller supplies the inference chain the
+// per-step agents launch against. `pin` selects the definition package for the
+// `registry` and asset-`tarball` variants (asset-`source` selects by
+// `packageName`). The `source` union is validated at this boundary.
 const DeployWorkflow = type({
-  assetId: "string",
+  source: WorkflowDefinitionSource,
+  entry: "string > 0",
   sources: InferenceSource.array(),
   defaultSource: "string",
-  "toolPackages?": ToolPackagePinArray,
+  "pin?": "string > 0",
 });
 
 // Request body for signal delivery. `signalId` is caller-supplied and
@@ -187,7 +188,6 @@ export type CreateWorkflowRoutesDeps = {
   workflowAllocationService?: WorkflowAllocationService;
   workflowDispatchService?: WorkflowDispatchService;
   sidecarRouter: SidecarRouter;
-  assetService: AssetService;
   repoStore: RepoStore;
   grantStore: GrantStore;
   requireGrant: RequireGrant;
@@ -199,7 +199,6 @@ export function createWorkflowRoutes({
   workflowAllocationService,
   workflowDispatchService,
   sidecarRouter,
-  assetService,
   repoStore,
   grantStore,
   requireGrant,
@@ -208,7 +207,6 @@ export function createWorkflowRoutes({
   const runReader = createWorkflowRunReader(repoStore);
   const triggerWorkflowRun = createWorkflowRunTrigger({
     db,
-    assetService,
     grantStore,
     sidecarRouter,
     ...(workflowDispatchService !== undefined
@@ -236,7 +234,7 @@ export function createWorkflowRoutes({
       tags: ["Workflows"],
       summary: "Deploy a workflow",
       description:
-        "Hydrates a workflow definition from its workflow asset's workflow.json and deploys it through the general multi-step workflow deploy path. Returns the deployment record.",
+        "Installs, probes, gates, and freezes a code-sourced workflow definition from its `source`/`entry`, then deploys it by source-ref. Returns the deployment record.",
       responses: {
         201: {
           description: "Workflow deployed",
@@ -251,11 +249,13 @@ export function createWorkflowRoutes({
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Workflow definition could not be hydrated",
+          description:
+            "Workflow definition invalid, exclusive placement unavailable on this Hub, or exclusive prepare rejected the source chain",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         500: {
-          description: "Deployment projection row missing after deploy",
+          description:
+            "Deployment projection row missing after deploy, or exclusive prepare failed unexpectedly",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         502: {
@@ -269,9 +269,28 @@ export function createWorkflowRoutes({
       const tenant = c.get("tenant");
       const body = c.req.valid("json");
 
+      // The deployment anchors its frozen `workflow_definition` to a
+      // `workflow`-kind asset. An asset-sourced deploy projects the definition
+      // over the very asset it sources from; a registry-sourced deploy has no
+      // backing asset for the definition, so this route (which anchors every
+      // deployment to a workflow asset) does not support it yet.
+      if (body.source.kind !== "asset") {
+        return c.json(
+          {
+            error: {
+              code: "unsupported_source",
+              message:
+                "Registry-sourced workflow deploys are not yet supported on this route",
+            },
+          },
+          400,
+        );
+      }
+      const definitionAssetId = body.source.assetId;
+
       const assetRow = await db.query.asset.findFirst({
         where: and(
-          eq(asset.id, body.assetId),
+          eq(asset.id, definitionAssetId),
           eq(asset.tenantId, tenant.id),
           eq(asset.kind, "workflow"),
         ),
@@ -282,24 +301,6 @@ export function createWorkflowRoutes({
             error: { code: "not_found", message: "Workflow asset not found" },
           },
           404,
-        );
-      }
-
-      let definition: WorkflowDefinition;
-      try {
-        definition = await hydrateDefinition(assetService, assetRow.id);
-      } catch (err) {
-        return c.json(
-          {
-            error: {
-              code: "invalid_workflow",
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Failed to hydrate workflow definition",
-            },
-          },
-          409,
         );
       }
 
@@ -316,36 +317,12 @@ export function createWorkflowRoutes({
         );
       }
 
-      // A single-step deploy pins its full ordered inference chain and the
-      // reactor activates the head, so the default source must be the chain
-      // head. Reject a contradictory ordering here at the edge with a
-      // caller-facing message rather than letting it fall through to the
-      // orchestrator's internal invariant guard, which speaks in reactor terms.
-      // Multi-step deploys select a source per step, so their deploy-wide
-      // ordering is unconstrained and this check does not apply.
-      if (
-        definition.stepOrder.length === 1 &&
-        firstSource.id !== body.defaultSource
-      ) {
-        return c.json(
-          {
-            error: {
-              code: "invalid_workflow",
-              message:
-                "defaultSource must be the first entry in sources: a single-step deploy runs the default at the head of its pinned chain",
-            },
-          },
-          409,
-        );
-      }
-
+      // Placement is now a pure tenant-config concern, decided BEFORE any
+      // definition is installed: a code-sourced deploy never hydrates a live
+      // definition to read declared placement off.
       let placement;
       try {
-        placement = await resolveWorkflowSidecarPlacement(
-          db,
-          tenant.id,
-          definition,
-        );
+        placement = await resolveWorkflowSidecarPlacement(db, tenant.id);
       } catch (err) {
         return c.json(
           {
@@ -363,25 +340,21 @@ export function createWorkflowRoutes({
 
       const anchorRunId = generateId("workflowRun");
       const sessionId = generateId("session");
-      const config: HarnessConfig = {
-        sessionId,
-        agentId: deriveRunAgentId({ runId: anchorRunId }),
-        tenantId: tenant.id,
-        principalId: c.get("principal").id,
-        agentAddress: deriveRunAddress({
-          runId: anchorRunId,
-          domain: tenant.domain,
-        }),
-        systemPrompt: "",
-        tools: [],
-        grants: [],
-        sources: body.sources,
-        defaultSource: body.defaultSource,
-      };
+      const agentAddress = deriveRunAddress({
+        runId: anchorRunId,
+        domain: tenant.domain,
+      });
 
       let deployedId: string;
       let deploymentStatus = "deployed";
       if (placement?.sharing === "exclusive") {
+        // Exclusive placement freezes the code-sourced approval on shared
+        // capacity NOW and defers the deploy to a dedicated allocation. The
+        // route only records the intent and returns a pending deployment;
+        // `deployReadyAllocation` deploys the frozen bundle once the sidecar is
+        // provisioned. (Exclusive is dormant in-tree -- no provisioner is
+        // registered -- so `prepareExclusiveDeployment` fails closed unless a
+        // tenant config requests it AND an operator build wires a provisioner.)
         if (workflowAllocationService === undefined) {
           return c.json(
             {
@@ -400,7 +373,9 @@ export function createWorkflowRoutes({
               tenantId: tenant.id,
               anchorRunId,
               deploymentDomain: tenant.domain,
-              definition,
+              source: body.source,
+              entry: body.entry,
+              ...(body.pin !== undefined ? { pin: body.pin } : {}),
               definitionAssetId: assetRow.id,
               placement,
               sessionId,
@@ -408,21 +383,21 @@ export function createWorkflowRoutes({
               sourceOfferingIds: body.sources.map((source) => source.id),
               defaultSourceOfferingId: body.defaultSource,
               deployContent: { systemPrompt: "" },
-              ...(body.toolPackages !== undefined
-                ? { toolPackagePins: body.toolPackages }
-                : {}),
             });
           deployedId = prepared.anchorRunId;
           deploymentStatus = prepared.status;
         } catch (err) {
+          // The shared-capacity probe/gate ran inside prepare: an unapproved
+          // definition is a client/definition error, not an infra failure.
+          if (err instanceof WorkflowDefinitionInvalidError) {
+            return c.json(
+              { error: { code: "invalid_workflow", message: err.message } },
+              409,
+            );
+          }
           if (err instanceof ExclusiveWorkflowPlacementError) {
             return c.json(
-              {
-                error: {
-                  code: err.code,
-                  message: err.message,
-                },
-              },
+              { error: { code: err.code, message: err.message } },
               409,
             );
           }
@@ -440,32 +415,37 @@ export function createWorkflowRoutes({
           );
         }
       } else {
+        const config: HarnessConfig = {
+          sessionId,
+          agentId: deriveRunAgentId({ runId: anchorRunId }),
+          tenantId: tenant.id,
+          principalId: c.get("principal").id,
+          agentAddress,
+          systemPrompt: "",
+          tools: [],
+          grants: [],
+          sources: body.sources,
+          defaultSource: body.defaultSource,
+        };
         try {
-          const result = await sessionService.deployWorkflowDefinition({
+          const result = await sessionService.deployWorkflowFromSource({
             tenantId: tenant.id,
             anchorRunId,
             deploymentDomain: tenant.domain,
-            definition,
+            agentAddress,
+            source: body.source,
+            entry: body.entry,
+            ...(body.pin !== undefined ? { pin: body.pin } : {}),
             definitionAssetId: assetRow.id,
             config,
-            deployContent: { systemPrompt: "" },
-            ...(body.toolPackages !== undefined
-              ? { toolPackagePins: body.toolPackages }
-              : {}),
           });
           deployedId = result.anchorRunId;
         } catch (err) {
-          // A single-step deploy whose source chain is invalid (head is not the
-          // default source, or a chain source the operator never approved) is a
-          // client/definition error, not a sidecar-reachability failure.
+          // An install/gate rejection or an unapproved/mis-ordered source chain
+          // is a client/definition error, not a sidecar-reachability failure.
           if (err instanceof WorkflowDefinitionInvalidError) {
             return c.json(
-              {
-                error: {
-                  code: "invalid_workflow",
-                  message: err.message,
-                },
-              },
+              { error: { code: "invalid_workflow", message: err.message } },
               409,
             );
           }

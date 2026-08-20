@@ -28,7 +28,7 @@ const TENANT_ID = "ten_personal";
 const PRINCIPAL_ID = "prn_personal";
 const TENANT_SLUG = "alice-user1";
 
-const noopPush: WorkflowPusher = async () => "pushed";
+const noopPush: WorkflowPusher = async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) });
 const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {
@@ -615,7 +615,7 @@ describe("completeCredentialSetup", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        const assetId = (body as { assetId: string }).assetId;
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         return {
           status: 201,
           data: {
@@ -832,7 +832,7 @@ describe("completeCredentialSetup", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { assetId: string }).assetId;
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {
@@ -1255,7 +1255,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       apiKey: "sk-ant-good",
       pushWorkflow: async () => {
         seedTenantCalled = true;
-        return "pushed";
+        return { outcome: "pushed" as const, commitSha: "a".repeat(40) };
       },
       log: collector().log,
       seedCatalogFn: async (args) => {
@@ -1563,7 +1563,7 @@ describe("ensureSeeded (the slow half)", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { assetId: string }).assetId;
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {

@@ -25,8 +25,7 @@ import { InferenceSource } from "@intx/types/runtime";
  */
 export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   "SIDECAR_DATA_DIR",
-  "WORKFLOW_DEFINITION_REPO_ID",
-  "WORKFLOW_DEFINITION_REF",
+  "WORKFLOW_DEFINITION_ID",
   "WORKFLOW_RUN_REPO_ID",
   "WORKFLOW_RUN_REF",
   "SIDECAR_SIGNING_PUBLIC_KEY",
@@ -43,8 +42,10 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
 
 export const SubstrateConfig = type({
   SIDECAR_DATA_DIR: "string > 0",
-  WORKFLOW_DEFINITION_REPO_ID: "string > 0",
-  WORKFLOW_DEFINITION_REF: "string > 0",
+  // The deployed definition's own id, for the workflow-run-authenticated
+  // capabilities route a step tool calls. Identity only: the definition
+  // itself is evaluated from the closure, never read from a repo.
+  WORKFLOW_DEFINITION_ID: "string > 0",
   WORKFLOW_RUN_REPO_ID: "string > 0",
   WORKFLOW_RUN_REF: "string > 0",
   SIDECAR_SIGNING_PUBLIC_KEY: "string > 0",

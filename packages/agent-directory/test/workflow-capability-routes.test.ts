@@ -7,6 +7,7 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
+import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
@@ -19,11 +20,16 @@ import {
   type WorkflowCapabilityRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-capability-routes";
+import {
+  agentDefinitionSourceTree,
+  AGENT_DEFINITION_ENTRY_PATH,
+} from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
   createInMemoryDefinitionSkillsStore,
   type DefinitionSkillsStore,
 } from "../src/skills-store";
+import { SOURCE_TREE_PATHS } from "./source-tree";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 
 const TENANT_ID = "tnt_1";
@@ -50,8 +56,9 @@ const fakeSkillIndex: PinnedSkillIndexResolver = {
 };
 
 function storedDefinitionBytes(): Uint8Array {
-  return new TextEncoder().encode(
-    serializeAgentDefinitionWorkflow(
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: serializeAgentDefinitionWorkflow(
       buildAgentDefinitionWorkflow({
         handle: "research-buddy",
         tenantDomain: "acme.example",
@@ -59,12 +66,14 @@ function storedDefinitionBytes(): Uint8Array {
         systemPrompt: "You are a careful research assistant.",
       }),
     ),
-  );
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
-/** A `readAssetBlob` that always answers `workflow.json` — pinned skills
- * no longer live in the asset tree, so a test that needs a definition's
- * skills seeds a `DefinitionSkillsStore` directly instead. */
+/** A `readAssetBlob` that always answers the definition's entry module
+ * — pinned skills no longer live in the asset tree, so a test that needs
+ * a definition's skills seeds a `DefinitionSkillsStore` directly
+ * instead. */
 function readAssetBlobFor(
   workflowBytes: Uint8Array,
 ): AssetService["readAssetBlob"] {
@@ -165,6 +174,31 @@ test("a missing or unrecognized bearer token / run address is a 401", async () =
   expect(response.status).toBe(401);
 });
 
+test("a definition still on the retired envelope is a 409, never a 500, and writes nothing", async () => {
+  let populateCalled = false;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      readAssetBlob: (params) =>
+        Promise.reject(
+          new AssetServiceError(
+            "not_found",
+            `readAssetBlob: asset ${params.assetId} has no blob at "${params.path}"`,
+          ),
+        ),
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+  });
+  const response = await postCapability(app, OWN_DEFINITION_ID, {
+    kind: "toolPackage",
+    name: "@corbits/capability-tools",
+  });
+  expect(response.status).toBe(409);
+  expect(populateCalled).toBe(false);
+});
+
 test("a run targeting another definition's capabilities is a 403", async () => {
   const app = buildApp({});
   const response = await postCapability(app, OTHER_DEFINITION_ID, {
@@ -192,7 +226,7 @@ test("a run may add a capability to its own definition without any grant check",
     name: "@corbits/capability-tools",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe(
     "Add @corbits/capability-tools to research-buddy",
   );
@@ -241,7 +275,7 @@ test("adding a skill merges it additively into the skills store and re-indexes t
     name: "research",
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);

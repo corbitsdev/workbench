@@ -119,6 +119,29 @@ function approvalRow(overrides?: {
   } as const;
 }
 
+// The `workbench_launch` mapping row `readBindingByAddress` reads to
+// turn an event-stream address into the room's own participant address
+// (see `../src/agent-binding.ts`). Every scenario here predates any
+// relaunch, so the stable id and the current run id are the same value
+// — which is exactly the identity mapping a room starts life with.
+function launchRowFor(runId: string, tenantId: string) {
+  return {
+    tenantId,
+    instanceId: runId,
+    currentRunId: runId,
+    priorRunIds: [],
+    foldedBody: {
+      systemPrompt: "be helpful",
+      toolPackagePins: [],
+      grantRequirements: [],
+      credentialBindings: [],
+      model: null,
+    },
+    noopInference: false,
+    createdAt: new Date("2026-08-08T09:00:00.000Z"),
+  };
+}
+
 // The real `findFoldedRunByAddress` (exercised, not mocked, so this
 // file never risks poisoning `@corbits/folded-runs`'s module namespace
 // for `platform-adapter.test.ts` when the whole package's suite runs
@@ -142,6 +165,14 @@ function createFakeDb(run?: {
             : { ...run, principalId: run.principalId ?? null },
       },
     },
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () =>
+            run === undefined ? [] : [launchRowFor(run.id, run.tenantId)],
+        }),
+      }),
+    }),
   };
 }
 
@@ -294,6 +325,7 @@ describe("createChatOrchestrator", () => {
       { id: "ins_echo1", tenantId: "ten_1" },
     ];
     let dbCallIndex = 0;
+    let launchCallIndex = 0;
     const db = {
       query: {
         workflowRun: {
@@ -306,6 +338,19 @@ describe("createChatOrchestrator", () => {
           },
         },
       },
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => {
+              const run = runsByCallOrder[launchCallIndex];
+              launchCallIndex += 1;
+              return run === undefined
+                ? []
+                : [launchRowFor(run.id, run.tenantId)];
+            },
+          }),
+        }),
+      }),
     };
 
     const orchestrator = createChatOrchestrator({

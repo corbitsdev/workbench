@@ -59,6 +59,8 @@ export {
 } from "./sidecar-allocation-store";
 export {
   createWorkflowDefinitionStore,
+  loadFrozenGrantSnapshot,
+  loadFrozenWireProjection,
   resolveDefinitionIdForAsset,
   type WorkflowDefinitionRollbackResult,
   type WorkflowDefinitionSelector,

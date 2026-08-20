@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import {
   InferenceResolutionError,
-  DefinitionAssetUnresolvableError,
+  DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import { postRoomMessage } from "../src/room-messages";
 import type { Part } from "../src/parts";
@@ -406,17 +406,17 @@ describe("POST /workbenches", () => {
     );
   });
 
-  // CL-6357: a workbench create must never 500 on the same DB/blob
-  // drift that made a definition's asset unresolvable — it answers a
-  // named 4xx with consumer-language guidance, and still compensates
-  // the orphaned tenant/settings exactly as every other agent-mint
-  // failure does.
-  test("an unresolvable definition asset answers 409 with re-publish guidance, not 500, and still compensates", async () => {
+  // A workbench create must never 500 on a definition row with no
+  // frozen wire projection stored on it (a pre-cutover row, or one
+  // whose approval never completed) — it answers a named 4xx with
+  // consumer-language guidance, and still compensates the orphaned
+  // tenant/settings exactly as every other agent-mint failure does.
+  test("a definition with no stored launch body answers 409 with re-deploy guidance, not 500, and still compensates", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
         launchInvite: async () => {
-          throw new DefinitionAssetUnresolvableError("assistant");
+          throw new DefinitionProjectionMissingError("assistant");
         },
       }),
     });
@@ -433,7 +433,7 @@ describe("POST /workbenches", () => {
       error: { code: string; message: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/re-publishing/);
+    expect(errorBody.error.message).toMatch(/re-deploy it/);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -954,11 +954,11 @@ describe("POST /workbenches/:id/invite", () => {
     );
   });
 
-  test("an unresolvable definition asset returns 409, not 500", async () => {
+  test("a definition with no stored launch body returns 409, not 500", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         launchInvite: async () => {
-          throw new DefinitionAssetUnresolvableError("assistant");
+          throw new DefinitionProjectionMissingError("assistant");
         },
       }),
     });
@@ -981,7 +981,7 @@ describe("POST /workbenches/:id/invite", () => {
       error: { code: string; message: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/re-publishing/);
+    expect(errorBody.error.message).toMatch(/re-deploy it/);
   });
 });
 

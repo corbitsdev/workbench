@@ -53,6 +53,7 @@ import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
 } from "@corbits/tool-registry-publish";
+import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflow-source";
 import { CliError, SidecarUnavailableError } from "./errors";
 import { DEFAULT_SKILLS } from "./default-skills";
 import { ensureDefaultRoutines } from "./default-routines";
@@ -155,11 +156,21 @@ export function isLiveDeploymentStatus(status: string): boolean {
 
 export type PushOutcome = "pushed" | "unchanged";
 
+/**
+ * What the push left on the asset's `main`: whether it wrote a commit,
+ * and the sha that commit (or the already-current one) sits at. The sha
+ * IS the deploy pin — a code-sourced deploy sources
+ * `package: { format: "source", commitSha }`.
+ */
+export type PushResult = { outcome: PushOutcome; commitSha: string };
+
 export type WorkflowPusher = (args: {
   remoteUrl: string;
   tokenSecret: string;
   workflowJson: string;
-}) => Promise<PushOutcome>;
+  /** Name the rendered source package declares; never leaves the asset. */
+  packageName: string;
+}) => Promise<PushResult>;
 
 export type DefaultWorkflow = {
   /** Asset name; lowercase-kebab so the smart-HTTP repo path is clean. */
@@ -556,6 +567,7 @@ async function ensureDeployment(
     tenantId: string;
     assetId: string;
     assetName: string;
+    commitSha: string;
     model: ModelSource;
   },
   log: (line: string) => void,
@@ -586,7 +598,12 @@ async function ensureDeployment(
     "POST",
     `/api/tenants/${args.tenantId}/workflows/deployments`,
     {
-      assetId: args.assetId,
+      source: {
+        kind: "asset",
+        assetId: args.assetId,
+        package: { format: "source", commitSha: args.commitSha },
+      },
+      entry: WORKFLOW_SOURCE_ENTRY,
       sources: [
         {
           id: SEED_SOURCE_ID,
@@ -818,15 +835,16 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
 
     const tokenSecret = await mintGitToken(api, cookies, tenant.tenantId);
-    const outcome = await args.pushWorkflow({
+    const pushed = await args.pushWorkflow({
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
       workflowJson: workflow.buildJson(tenant.domain, workflowModel),
+      packageName: `@workbench-seed/${workflow.assetName}`,
     });
     log(
-      outcome === "pushed"
-        ? `pushed workflow.json for ${workflow.assetName}`
-        : `workflow.json for ${workflow.assetName} already current (skipped)`,
+      pushed.outcome === "pushed"
+        ? `pushed the workflow source package for ${workflow.assetName}`
+        : `workflow source for ${workflow.assetName} already current (skipped)`,
     );
 
     const deploymentId = await ensureDeployment(
@@ -836,6 +854,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         tenantId: tenant.tenantId,
         assetId,
         assetName: workflow.assetName,
+        commitSha: pushed.commitSha,
         model: workflowModel,
       },
       log,
