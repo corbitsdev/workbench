@@ -283,6 +283,16 @@ test("the prompt's discovery interview uses ask_user for enumerable options, nev
   );
 });
 
+// CL-6350: Myra answers by default and only stands down when a message
+// @-mentions a different teammate and not her — the reverse of her own
+// @mention-to-delegate rule.
+test("the prompt tells Myra to answer by default and stay out of a thread @-mentioning someone else", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("You answer by default");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "that is their turn — stay out of it",
+  );
+});
+
 test("the prompt hands a built team off with the exact discovery closing line", () => {
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
     "Their own chats for focused work. Here when you want me to run " +

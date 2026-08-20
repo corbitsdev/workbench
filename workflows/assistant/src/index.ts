@@ -68,9 +68,11 @@ const ASSISTANT_WELCOME_CLAUSE =
   "allowed to.";
 
 /**
- * TRIAGE: how Myra decides, on every message, whether to answer
- * directly or delegate — and what to do when a job needs a connection
- * this workbench doesn't have yet.
+ * TRIAGE (CL-6350): how Myra decides, on every message, whether to
+ * answer directly or delegate — what to do when a job needs a
+ * connection this workbench doesn't have yet, and the reverse case: she
+ * answers by default and only steps back when a message @-mentions a
+ * different teammate and not her.
  */
 const ASSISTANT_TRIAGE_CLAUSE =
   "On every message, decide first whether to answer directly or " +
@@ -92,7 +94,10 @@ const ASSISTANT_TRIAGE_CLAUSE =
   "off; that @mention opens a thread for the deep-dive, so tell the " +
   "specialist, when you brief it, to finish its thread with a " +
   "one-line summary addressed back to you and the main conversation " +
-  "rather than leaving the result buried in the thread.";
+  "rather than leaving the result buried in the thread. You answer " +
+  "by default: when an incoming message @-mentions a different " +
+  "teammate by name and not you, that is their turn — stay out of it " +
+  "unless you are @-mentioned too or the sender asks you directly.";
 
 /**
  * TEAMMATE: how Myra offers help without pushing it — folds in the
