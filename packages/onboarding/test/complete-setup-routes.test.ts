@@ -109,7 +109,7 @@ describe("POST /complete-setup", () => {
       "/api/onboarding",
       createOnboardingRoutes({
         hubUrl: "https://bench.example.com",
-        pushWorkflow: async () => "pushed",
+        pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
         log: () => undefined,
         pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
       }),
@@ -132,7 +132,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
@@ -182,7 +182,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
           ensureSeededFn: async () => {
@@ -227,7 +227,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
@@ -263,7 +263,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async (args) => {
@@ -347,7 +347,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -391,7 +391,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -429,7 +429,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async () => {
@@ -557,14 +557,15 @@ describe("POST /complete-setup", () => {
     );
     hub.post(`/api/tenants/${TENANT_ID}/workflows/deployments`, async (c) => {
       deploymentCreatePosts += 1;
-      const body = (await c.req.json()) as { assetId: string };
-      const id = `dep_${body.assetId}`;
-      deployments.push({ definitionAssetId: body.assetId, id });
+      const body = (await c.req.json()) as { source: { assetId: string } };
+      const assetId = body.source.assetId;
+      const id = `dep_${assetId}`;
+      deployments.push({ definitionAssetId: assetId, id });
       return c.json(
         {
           id,
           tenantId: TENANT_ID,
-          definitionAssetId: body.assetId,
+          definitionAssetId: assetId,
           status: "deployed",
           createdAt: TIMESTAMP,
         },
@@ -581,7 +582,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
         }),
@@ -636,7 +637,7 @@ describe("POST /complete-setup", () => {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => "pushed",
+          pushWorkflow: async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) }),
           log: () => undefined,
           pendingSeedStore,
           ensureSeededFn: async () => ({
