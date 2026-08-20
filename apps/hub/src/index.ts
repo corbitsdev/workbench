@@ -536,6 +536,25 @@ export async function createHub(config: HubConfig) {
         },
       },
     },
+    // No mailer is wired up anywhere in this stack, so better-auth can
+    // never actually verify an address -- `emailVerified` would stay
+    // false forever and every self-serve signup would dead-end at
+    // @workbench/access-policy's gate. `allowUnverifiedEmails`
+    // (ALLOW_UNVERIFIED_EMAILS, dev/test only) auto-verifies at the
+    // source instead of leaving each downstream consumer of
+    // `emailVerified` to separately special-case it.
+    databaseHooks: config.allowUnverifiedEmails
+      ? {
+          user: {
+            create: {
+              before: async (user: { email: string }) => {
+                log.info`ALLOW_UNVERIFIED_EMAILS is set: auto-verifying ${user.email} at account creation (dev/test only)`;
+                return { data: { ...user, emailVerified: true } };
+              },
+            },
+          },
+        }
+      : undefined,
   });
   const signingKey = await generateKeyPair();
   const agentRepoStore = createAgentRepoStore({

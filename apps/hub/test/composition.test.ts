@@ -171,3 +171,45 @@ describeIfDb("extension mounting", () => {
     });
   });
 });
+
+describeIfDb("dev-mode email verification", () => {
+  test("ALLOW_UNVERIFIED_EMAILS auto-verifies a fresh self-serve signup, so it never 403s on the unverified-email gate", async () => {
+    const hub = await createHub({
+      ...config,
+      signupMode: "open",
+    });
+    closers.push(hub.close);
+
+    const email = `first-run-${crypto.randomUUID()}@example.com`;
+    const signUp = await hub.app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password: "password123",
+        name: "New User",
+      }),
+    });
+    expect(signUp.status).toBe(200);
+    const body = (await signUp.json()) as { user: { emailVerified: boolean } };
+    // No mailer exists anywhere in this stack, so better-auth itself
+    // would leave this false forever without the dev-mode auto-verify
+    // hook -- this is the exact condition that used to dead-end fresh
+    // signup at signup_not_allowed.
+    expect(body.user.emailVerified).toBe(true);
+
+    const cookie = signUp.headers.get("set-cookie");
+    expect(cookie).not.toBeNull();
+    const createTenant = await hub.app.request("/api/tenants", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookie ?? "",
+      },
+      body: JSON.stringify({
+        slug: `bench-${crypto.randomUUID().slice(0, 8)}`,
+      }),
+    });
+    expect(createTenant.status).not.toBe(403);
+  });
+});
