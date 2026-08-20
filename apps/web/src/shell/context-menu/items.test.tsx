@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { spyOnReactUiToast } from "../../../test/react-ui-toast-mock";
 import type { ContextMenuEntry } from "@corbits/context-menu";
 
-const toastMock = mock(() => undefined);
-const actualReactUi = await import("@corbits/react-ui");
-mock.module("@corbits/react-ui", () => ({
-  ...actualReactUi,
-  toast: toastMock,
-}));
+const toastMock = spyOnReactUiToast();
 
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";

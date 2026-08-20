@@ -9,16 +9,13 @@
 // workbench in scope, this workbench's existing Myra workbench; never a
 // newly minted one.
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+import { spyOnReactUiToast } from "./react-ui-toast-mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-const toastMock = mock((_message: string) => undefined);
-const actualReactUi = await import("@corbits/react-ui");
-mock.module("@corbits/react-ui", () => ({
-  ...actualReactUi,
-  toast: toastMock,
-}));
+const toastMock = spyOnReactUiToast();
 
 const { BenchProvider } = await import("../src/bench-context");
 const { NavigationProvider } = await import("../src/navigation");

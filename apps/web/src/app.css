@@ -2397,7 +2397,8 @@ select:disabled,
 
 .insights-grid > .insights-panel {
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .insights-grid > .insights-panel:last-child {
