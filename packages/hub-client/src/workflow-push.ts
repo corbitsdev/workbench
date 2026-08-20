@@ -5,44 +5,17 @@
 // convention. Content-aware: an identical tree is a reported skip, not
 // a duplicate commit, which is what makes re-running seed safe.
 //
-// The pushed tree is a source codebase, not the retired `workflow.json`
-// envelope: a `package.json` declaring an `interchange.workflow` entry
-// plus that entry module, which default-exports the definition. A
-// workflow-kind asset accepts nothing else (see
-// `vendor/intx/hub-sessions/src/workflow-kind.ts`), and a code-sourced
-// deploy evaluates the entry rather than re-reading a serialized
-// envelope. The definition these default workflows carry is inert data,
-// so the entry is that data as a literal and the package declares no
-// dependencies — the whole closure is these two files.
+// The pushed tree is the source codebase `@corbits/workflow-source`
+// renders — the one shape a workflow-kind asset accepts (see
+// `vendor/intx/hub-sessions/src/workflow-kind.ts`), shared with every
+// other authoring path in this repo.
 
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { renderWorkflowSourceTree } from "@corbits/workflow-source";
 import { CliError } from "./errors";
 import type { WorkflowPusher } from "./seed";
-
-const ENTRY_PATH = "workflow.js";
-/** The `interchange.workflow` entry a code-sourced deploy names. */
-export const WORKFLOW_SOURCE_ENTRY = `./${ENTRY_PATH}`;
-const PACKAGE_JSON_PATH = "package.json";
-
-/** The two-file source tree a serialized definition renders into. */
-export function renderWorkflowSourceTree(args: {
-  packageName: string;
-  workflowJson: string;
-}): Record<string, string> {
-  const packageJson = {
-    name: args.packageName,
-    version: "0.0.0",
-    private: true,
-    type: "module",
-    interchange: { workflow: WORKFLOW_SOURCE_ENTRY },
-  };
-  return {
-    [PACKAGE_JSON_PATH]: `${JSON.stringify(packageJson, null, 2)}\n`,
-    [ENTRY_PATH]: `export default ${args.workflowJson};\n`,
-  };
-}
 
 function requireGit(): void {
   if (Bun.which("git") === null) {

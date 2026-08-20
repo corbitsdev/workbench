@@ -42,6 +42,7 @@ import {
 } from "@intx/hub-api";
 
 import {
+  agentDefinitionSourceTree,
   buildAgentDefinitionWorkflow,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
@@ -2568,13 +2569,6 @@ export async function createHub(config: HubConfig) {
     listModels: listMyraModels,
   };
 
-  // Mirrors `@corbits/agent-directory`'s own private
-  // `AGENT_DEFINITION_ASSET_PATH` constant (not exported — the route
-  // module keeps it internal), kept in lockstep by convention since
-  // this is the same asset-tree contract `ensureWorkflowDefinitionForAsset`
-  // reads back from.
-  const PLANNER_AGENT_DEFINITION_ASSET_PATH = "workflow.json";
-
   /**
    * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
    * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
@@ -2656,9 +2650,7 @@ export async function createHub(config: HubConfig) {
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
-        files: {
-          [PLANNER_AGENT_DEFINITION_ASSET_PATH]: workflowJson,
-        },
+        files: agentDefinitionSourceTree({ handle, workflowJson }),
         message: `Define agent ${input.name}`,
       },
     });

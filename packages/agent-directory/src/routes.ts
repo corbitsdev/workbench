@@ -3,8 +3,8 @@
 // materializes it exactly the way the platform's own starter agents
 // (`@corbits/assistant-workflow`, `@corbits/chat`'s workbench host) are
 // materialized — a `workflow`-kind asset carrying a single-step
-// `workflow.json`, projected onto a first-class `workflow_definition`
-// row. No git subprocess: `AssetService.populateAsset` writes the
+// definition as a source codebase (see `./definition-asset.ts`),
+// projected onto a first-class `workflow_definition` row. No git subprocess: `AssetService.populateAsset` writes the
 // commit in-process, the same seam `createAsset` used to hydrate a
 // workbench host's asset lives beside.
 //
@@ -43,6 +43,13 @@ import {
   type CreateAgentDefinitionCoreDeps,
   type CreateAgentDefinitionCoreInput,
 } from "./agent-workflow";
+import {
+  agentDefinitionSourceTree,
+  AGENT_DEFINITION_ENTRY_PATH,
+  parseAgentDefinitionEntry,
+  readAgentDefinitionWorkflowJson,
+  RetiredWorkflowEnvelopeError,
+} from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
 import {
   CreateAgentDefinitionInput,
@@ -83,9 +90,6 @@ export type CreateAgentDefinitionRoutesDeps = {
   requireGrant: RequireGrant;
   tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
-
-/** Where a definition's serialized `WorkflowDefinition` lives in its asset tree. */
-const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -142,6 +146,9 @@ export function createAgentDefinitionRoutes({
     }
     if (err instanceof CapabilityOutOfInventoryError) {
       return c.json(errorEnvelope("bad_request", err.message), 400);
+    }
+    if (err instanceof RetiredWorkflowEnvelopeError) {
+      return c.json(errorEnvelope("conflict", err.message), 409);
     }
     throw err;
   });
@@ -307,11 +314,9 @@ export function createAgentDefinitionRoutes({
         return c.json(definitionNotFound(definitionId), 404);
       }
 
-      const workflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
       );
       const capabilities = readAgentCapabilities(workflowJson);
       const skills = await skillsStore.getSkills(row.assetId);
@@ -378,12 +383,12 @@ export function createAgentDefinitionRoutes({
         return c.json(definitionNotFound(definitionId), 404);
       }
 
-      const workflowBytes = await history.readBlobAtCommit({
+      const entryBytes = await history.readBlobAtCommit({
         assetId: row.assetId,
-        path: AGENT_DEFINITION_ASSET_PATH,
+        path: AGENT_DEFINITION_ENTRY_PATH,
         commitSha: body.commitSha,
       });
-      if (workflowBytes === null) {
+      if (entryBytes === null) {
         return c.json(
           errorEnvelope(
             "not_found",
@@ -392,31 +397,29 @@ export function createAgentDefinitionRoutes({
           404,
         );
       }
-      const decoder = new TextDecoder();
+      const restoredWorkflowJson = parseAgentDefinitionEntry(
+        entryBytes,
+        row.assetId,
+      );
 
       // Pinned skills live outside the asset tree (see
       // `DefinitionSkillsStore`), so restoring a prior commit only ever
-      // rewrites `workflow.json` — the definition's currently pinned
-      // skills are untouched by restoring an earlier instructions
-      // revision.
+      // rewrites the definition's source tree — the definition's
+      // currently pinned skills are untouched by restoring an earlier
+      // instructions revision.
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files: {
-            [AGENT_DEFINITION_ASSET_PATH]: decoder.decode(workflowBytes),
-          },
+          files: agentDefinitionSourceTree({
+            handle: row.name,
+            workflowJson: restoredWorkflowJson,
+          }),
           message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
         },
       });
 
-      const restoredWorkflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
-      );
       const capabilities = readAgentCapabilities(restoredWorkflowJson);
       const skills = await skillsStore.getSkills(row.assetId);
 
@@ -467,11 +470,9 @@ export function createAgentDefinitionRoutes({
       // fetched, never a stale or wider one.
       assertCapabilityInInventory(body, inventory);
 
-      const workflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
       );
 
       let nextWorkflowJson: string;
@@ -512,7 +513,10 @@ export function createAgentDefinitionRoutes({
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
+          files: agentDefinitionSourceTree({
+            handle: row.name,
+            workflowJson: nextWorkflowJson,
+          }),
           message,
         },
       });
@@ -558,11 +562,9 @@ export function createAgentDefinitionRoutes({
         return c.json(definitionNotFound(definitionId), 404);
       }
 
-      const workflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
       );
 
       // Git first: the row updates below are what can still be retried
@@ -574,12 +576,13 @@ export function createAgentDefinitionRoutes({
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files: {
-            [AGENT_DEFINITION_ASSET_PATH]: withAgentSystemPrompt(
+          files: agentDefinitionSourceTree({
+            handle: row.name,
+            workflowJson: withAgentSystemPrompt(
               workflowJson,
               body.systemPrompt,
             ),
-          },
+          }),
           message: `Update agent instructions for ${row.name}`,
         },
       });
@@ -650,11 +653,9 @@ export function createAgentDefinitionRoutes({
       }
 
       const principal = c.get("principal");
-      const workflowJson = new TextDecoder().decode(
-        await assetService.readAssetBlob({
-          assetId: row.assetId,
-          path: AGENT_DEFINITION_ASSET_PATH,
-        }),
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
       );
 
       await assetService.populateAsset({
@@ -662,12 +663,13 @@ export function createAgentDefinitionRoutes({
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files: {
-            [AGENT_DEFINITION_ASSET_PATH]: reindexPinnedSkills(
+          files: agentDefinitionSourceTree({
+            handle: row.name,
+            workflowJson: reindexPinnedSkills(
               workflowJson,
               await skillIndex.resolve(tenant.id, principal.id, body.skills),
             ),
-          },
+          }),
           message: `Update agent skills for ${row.name}`,
         },
       });
