@@ -22,6 +22,8 @@ import { CliError } from "./errors";
 import type { PushOutcome, WorkflowPusher } from "./seed";
 
 const ENTRY_PATH = "workflow.js";
+/** The `interchange.workflow` entry a code-sourced deploy names. */
+export const WORKFLOW_SOURCE_ENTRY = `./${ENTRY_PATH}`;
 const PACKAGE_JSON_PATH = "package.json";
 
 /** The two-file source tree a serialized definition renders into. */
@@ -34,7 +36,7 @@ export function renderWorkflowSourceTree(args: {
     version: "0.0.0",
     private: true,
     type: "module",
-    interchange: { workflow: `./${ENTRY_PATH}` },
+    interchange: { workflow: WORKFLOW_SOURCE_ENTRY },
   };
   return {
     [PACKAGE_JSON_PATH]: `${JSON.stringify(packageJson, null, 2)}\n`,
@@ -68,6 +70,22 @@ async function runGit(
     child.exited,
   ]);
   return { code, output: `${stdout}${stderr}`.trim() };
+}
+
+/**
+ * The pushed commit is the definition's pin: a code-sourced deploy names
+ * `package.format: "source"` plus this sha, so the pusher is the only
+ * place that can report it.
+ */
+async function headSha(repoDir: string): Promise<string> {
+  const result = await runGit(["rev-parse", "HEAD"], repoDir, {});
+  if (result.code !== 0) {
+    throw new CliError(
+      `reading the pushed workflow commit failed: ${result.output}`,
+      "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
+    );
+  }
+  return result.output.trim();
 }
 
 function withToken(remoteUrl: string, tokenSecret: string): string {
@@ -129,7 +147,9 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         unchanged = false;
         await writeFile(target, contents, "utf-8");
       }
-      if (unchanged) return "unchanged" satisfies PushOutcome;
+      if (unchanged) {
+        return { outcome: "unchanged", commitSha: await headSha(repoDir) };
+      }
 
       const steps: { label: string; args: string[] }[] = [
         { label: "stage", args: ["add", ...Object.keys(tree)] },
@@ -166,7 +186,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           );
         }
       }
-      return "pushed" satisfies PushOutcome;
+      return { outcome: "pushed", commitSha: await headSha(repoDir) };
     } finally {
       await rm(work, { recursive: true, force: true });
     }

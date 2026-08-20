@@ -36,7 +36,7 @@ const recordingPusher = () => {
   const pushes: { remoteUrl: string; workflowJson: string }[] = [];
   const push: WorkflowPusher = async (args) => {
     pushes.push({ remoteUrl: args.remoteUrl, workflowJson: args.workflowJson });
-    return "pushed";
+    return { outcome: "pushed", commitSha: "a".repeat(40) };
   };
   return { pushes, push };
 };
@@ -332,7 +332,10 @@ describe("seedTenant", () => {
 
   test("re-run skips the asset, definition, and deployment but still confirms", async () => {
     const { lines, log } = collector();
-    const push: WorkflowPusher = async () => "unchanged";
+    const push: WorkflowPusher = async () => ({
+      outcome: "unchanged" as const,
+      commitSha: "b".repeat(40),
+    });
     let runsCalls = 0;
     const handler: FakeHandler = (method, path) => {
       const base = baseRoutes(method, path);
@@ -399,7 +402,7 @@ describe("seedTenant", () => {
     const output = lines.join("\n");
     expect(output).toContain("workflow asset echo already exists (skipped)");
     expect(output).toContain(
-      "workflow.json for echo already current (skipped)",
+      "workflow source for echo already current (skipped)",
     );
     expect(output).toContain(
       "workflow echo already deployed as dep_1 (skipped)",
