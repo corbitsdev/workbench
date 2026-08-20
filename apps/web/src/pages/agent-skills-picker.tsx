@@ -121,7 +121,7 @@ export function AgentSkillsPicker({
             <input
               id={id}
               type="checkbox"
-              className="mt-0.5 size-4 rounded-sm border border-input accent-[var(--primary)]"
+              className="mt-0.5 size-4 rounded-none border border-input accent-[var(--primary)]"
               checked={selected.includes(skill.name)}
               disabled={disabled}
               onChange={() => toggle(skill.name)}

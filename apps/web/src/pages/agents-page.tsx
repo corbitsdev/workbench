@@ -36,6 +36,7 @@ import {
 } from "../agents-api";
 import { purposeAgentDefinitions } from "../agents-directory";
 import { useBench } from "../bench-context";
+import { rowActivationProps } from "../activatable-row";
 import { useBenchActivity } from "../shell/bench-activity";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
@@ -218,11 +219,11 @@ export function AgentsPage({
                           selectedId === definition.id ? "selected" : undefined
                         }
                         className="cursor-pointer"
-                        onClick={() =>
+                        {...rowActivationProps(() =>
                           onSelect(
                             selectedId === definition.id ? null : definition.id,
-                          )
-                        }
+                          ),
+                        )}
                       >
                         <TableCell className="font-medium">
                           {definition.name}

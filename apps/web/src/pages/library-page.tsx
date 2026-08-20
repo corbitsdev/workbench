@@ -49,6 +49,7 @@ import {
   useAPIQuery,
   type ArtifactDetail,
 } from "../api";
+import { rowActivationProps } from "../activatable-row";
 import { useBench } from "../bench-context";
 import {
   consumePendingLibraryUpload,
@@ -96,7 +97,7 @@ function ArtifactRows({
             key={artifact.id}
             data-state={selectedId === artifact.id ? "selected" : undefined}
             className="cursor-pointer"
-            onClick={() => onSelect(artifact.id)}
+            {...rowActivationProps(() => onSelect(artifact.id))}
           >
             <TableCell className="font-medium">{artifact.title}</TableCell>
             <TableCell className="text-muted-foreground">

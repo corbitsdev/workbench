@@ -30,6 +30,7 @@ import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { useNeedsYouCount } from "../api";
 import { useBench } from "../bench-context";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import {
@@ -37,7 +38,26 @@ import {
   isWorkbenchRenameRequestFor,
 } from "../workbench-rename-events";
 import { useBenchActivity } from "./bench-activity";
+import { Chip } from "./chip";
 import { buildSidebarRows, type SidebarRow } from "./sidebar-rows";
+
+/**
+ * The bench-wide "something needs you" signal above the row list. The
+ * `/approvals/needs-you` read is scoped to the selected bench already, but
+ * carries no per-workbench id (a known v1 gap — see
+ * `workbench-timeline-merge.ts`'s `toApprovalEvents` doc), so this renders
+ * once for the whole list rather than guessing which row it belongs to.
+ */
+function NeedsYouSignal({ tenantId }: { readonly tenantId: string | null }) {
+  const count = useNeedsYouCount(tenantId);
+  if (count === null || count <= 0) return null;
+  return (
+    <div className="shell-panel-needs-you">
+      <span>{count} waiting on you</span>
+      <Chip tone="needs-you">Needs you</Chip>
+    </div>
+  );
+}
 
 /**
  * The always-active, no-op row naming the current screen as "where the
@@ -393,6 +413,7 @@ export function WorkbenchList({
     return (
       <div className="panel-stack" aria-label="Workbenches">
         {workingGroup}
+        <NeedsYouSignal tenantId={selectedTenantId} />
         <h2 className="shell-panel-list-label">Workbenches</h2>
         <div className="panel-stack-group">
           <NewWorkbenchStubRow />
@@ -425,6 +446,7 @@ export function WorkbenchList({
           aria-label="Search workbenches"
         />
       </label>
+      <NeedsYouSignal tenantId={selectedTenantId} />
       <h2 className="shell-panel-list-label">Workbenches</h2>
       {filtered.length === 0 ? (
         <EmptyState
