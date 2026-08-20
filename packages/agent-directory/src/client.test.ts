@@ -2,11 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 import {
   definitionsById,
+  deriveDisplayName,
   filterDefinitions,
   filterInstances,
+  humanizeSlug,
   isOrphanedInstance,
   purposeAgentDefinitions,
   purposeAgentInstances,
+  withDisplayName,
+  withDisplayNames,
 } from "./client";
 
 const researcher = {
@@ -128,6 +132,77 @@ describe("filterInstances", () => {
   test("preserves extra fields callers have attached", () => {
     const augmented = { ...instance, orphaned: false } as const;
     expect(filterInstances([augmented], "research")).toEqual([augmented]);
+  });
+});
+
+describe("humanizeSlug", () => {
+  test("turns a hyphenated slug into Title Case words", () => {
+    expect(humanizeSlug("research-analyst")).toBe("Research Analyst");
+  });
+
+  test("capitalizes a single-word slug", () => {
+    expect(humanizeSlug("assist")).toBe("Assist");
+  });
+
+  test("collapses repeated separators and trims empties", () => {
+    expect(humanizeSlug("outreach--bot")).toBe("Outreach Bot");
+  });
+
+  test("passes an already-prose name through with only case fixed up", () => {
+    expect(humanizeSlug("triage bot")).toBe("Triage Bot");
+  });
+});
+
+describe("deriveDisplayName", () => {
+  test("prefers the definition's own description", () => {
+    expect(
+      deriveDisplayName({
+        name: "research-analyst",
+        description: "Research Analyst",
+      }),
+    ).toBe("Research Analyst");
+  });
+
+  test("backfills a humanized name when description is null", () => {
+    expect(
+      deriveDisplayName({ name: "research-analyst", description: null }),
+    ).toBe("Research Analyst");
+  });
+
+  test("backfills a humanized name when description is missing entirely", () => {
+    expect(deriveDisplayName({ name: "research-analyst" })).toBe(
+      "Research Analyst",
+    );
+  });
+
+  test("backfills when description is an empty string", () => {
+    expect(
+      deriveDisplayName({ name: "research-analyst", description: "" }),
+    ).toBe("Research Analyst");
+  });
+
+  test("throws on a malformed record instead of rendering undefined", () => {
+    expect(() => deriveDisplayName({} as { name: string })).toThrow();
+  });
+});
+
+describe("withDisplayName / withDisplayNames", () => {
+  test("attaches a displayName without disturbing other fields", () => {
+    const withName = withDisplayName(researcher);
+    expect(withName).toEqual({
+      ...researcher,
+      displayName: researcher.description,
+    });
+    expect(withName.id).toBe(researcher.id);
+    expect(withName.name).toBe(researcher.name);
+  });
+
+  test("maps over a list", () => {
+    const result = withDisplayNames([researcher, workbenchHostDefinition]);
+    expect(result.map((d) => d.displayName)).toEqual([
+      researcher.description,
+      humanizeSlug(workbenchHostDefinition.name),
+    ]);
   });
 });
 
