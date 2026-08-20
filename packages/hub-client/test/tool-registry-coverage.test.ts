@@ -145,6 +145,7 @@ describe("corbits-tools registry coverage", () => {
     }
 
     expect([...uncoveredWorkflows].sort()).toEqual([
+      "code-review",
       "collateral-generation",
       "granola-call",
       "morning-brief",
