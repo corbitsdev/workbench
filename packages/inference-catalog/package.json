@@ -1,0 +1,33 @@
+{
+  "name": "@corbits/inference-catalog",
+  "private": true,
+  "description": "Model concepts and chain resolution: agents ask for what the work needs (a concept or a capability set) and get an ordered, priced fallback chain of the models this bench can actually reach — never a single model, never a model named by hand.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./concepts": "./src/concepts.ts",
+    "./resolve-chain": "./src/resolve-chain.ts",
+    "./offering-capabilities": "./src/offering-capabilities.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/inference-catalog": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
