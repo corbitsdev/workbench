@@ -22,8 +22,7 @@ export type ConnectServiceQuery =
   | { readonly kind: "error"; readonly message: string };
 
 export type ConnectServiceResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly message: string };
+  { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 export interface ConnectServiceActions {
   getConnectState(connectorId: string): Promise<ConnectServiceQuery>;

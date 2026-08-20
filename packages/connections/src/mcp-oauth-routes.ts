@@ -32,10 +32,7 @@ import { createHubAPI } from "@workbench/hub-client";
 import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createMcpOAuthProvider, type McpOAuthSession } from "./mcp-oauth";
 import { createConnectStateStore, randomToken } from "./pkce";
-import {
-  fireConnectedHook,
-  type ServiceConnectedHook,
-} from "./connected-hook";
+import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { mcpPresetBySlug } from "./mcp-presets";
 import { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 import {

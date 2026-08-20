@@ -47,7 +47,10 @@ export function ConnectServiceBlockContainer({
 
   if (query.kind === "connected") {
     return (
-      <ConnectServiceBlockView kind="connected" displayName={data.displayName} />
+      <ConnectServiceBlockView
+        kind="connected"
+        displayName={data.displayName}
+      />
     );
   }
 

@@ -118,9 +118,7 @@ export async function postConnectServiceBlock(
     },
   );
   if (response.status === 404) {
-    throw new NoOwnRoomError(
-      "The caller has no room of its own to post into",
-    );
+    throw new NoOwnRoomError("The caller has no room of its own to post into");
   }
   if (!response.ok) {
     throw new Error(

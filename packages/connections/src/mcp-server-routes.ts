@@ -33,10 +33,7 @@ import {
   MCP_STREAMABLE_HTTP_PROVIDER_KEY,
 } from "@corbits/credential-providers";
 import { probeMcpServer } from "./mcp-probe";
-import {
-  fireConnectedHook,
-  type ServiceConnectedHook,
-} from "./connected-hook";
+import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
 const ErrorEnvelope = (code: string, message: string) => ({

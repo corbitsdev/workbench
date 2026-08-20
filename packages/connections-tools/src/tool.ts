@@ -377,7 +377,7 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
               type: "string",
               description:
                 "One plain sentence, in the human's own terms, saying " +
-                "what connecting unlocks right now — e.g. \"Connect " +
+                'what connecting unlocks right now — e.g. "Connect ' +
                 'Gmail so I can send this for you." Always speak to ' +
                 "their request, never to the system.",
             },

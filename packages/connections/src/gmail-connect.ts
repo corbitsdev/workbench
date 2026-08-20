@@ -110,7 +110,11 @@ export async function exchangeCodeForGoogleToken(
     ok: true,
     apiKey: parsed.access_token,
     ...(parsed.expires_in !== undefined
-      ? { expiresAt: new Date(Date.now() + parsed.expires_in * 1000).toISOString() }
+      ? {
+          expiresAt: new Date(
+            Date.now() + parsed.expires_in * 1000,
+          ).toISOString(),
+        }
       : {}),
     ...(parsed.refresh_token !== undefined
       ? { refreshToken: parsed.refresh_token }

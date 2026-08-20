@@ -34,10 +34,7 @@ import {
   type SeedCatalogArgs,
 } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
-import {
-  fireConnectedHook,
-  type ServiceConnectedHook,
-} from "./connected-hook";
+import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { persistConnectorCredential } from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";

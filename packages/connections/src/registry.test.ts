@@ -175,9 +175,9 @@ describe("gmail connector", () => {
     expect(descriptor?.authKind).toBe("oauth-code");
     expect(descriptor?.credentialPlugin).toBe("http");
     expect(descriptor?.oauth).toBeDefined();
-    expect(
-      descriptor?.oauth?.clientId?.({ gmailClientId: "client-1" }),
-    ).toBe("client-1");
+    expect(descriptor?.oauth?.clientId?.({ gmailClientId: "client-1" })).toBe(
+      "client-1",
+    );
     expect(
       descriptor?.oauth?.clientSecret?.({ gmailClientSecret: "secret-1" }),
     ).toBe("secret-1");

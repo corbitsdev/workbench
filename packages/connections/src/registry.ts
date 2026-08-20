@@ -328,7 +328,12 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
         deploysDefaultWorkflows: false,
         clientId: (env) => env["gmailClientId"],
         clientSecret: (env) => env["gmailClientSecret"],
-        buildAuthorizeUrl: ({ callbackUrl, state, codeChallenge, clientId }) => {
+        buildAuthorizeUrl: ({
+          callbackUrl,
+          state,
+          codeChallenge,
+          clientId,
+        }) => {
           const url = new URL(GOOGLE_AUTHORIZE_URL);
           if (clientId !== undefined)
             url.searchParams.set("client_id", clientId);
@@ -347,7 +352,13 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
           }
           return url;
         },
-        exchange: async ({ code, codeVerifier, redirectUri, clientId, clientSecret }) => {
+        exchange: async ({
+          code,
+          codeVerifier,
+          redirectUri,
+          clientId,
+          clientSecret,
+        }) => {
           if (clientId === undefined || clientSecret === undefined) {
             return {
               ok: false,

@@ -98,7 +98,9 @@ describe("ConnectServiceBlockContainer", () => {
   });
 
   test("renders the disconnected framing with no port at all", async () => {
-    const host = await mountElement(<ConnectServiceBlockContainer data={DATA} />);
+    const host = await mountElement(
+      <ConnectServiceBlockContainer data={DATA} />,
+    );
     expect(host.textContent).toContain("Connect Gmail");
   });
 });

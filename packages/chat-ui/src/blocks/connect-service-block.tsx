@@ -12,7 +12,10 @@ import { Button, Input } from "@corbits/react-ui";
 import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";
-import type { ConnectAffordance, ConnectServiceResult } from "./connect-service-actions";
+import type {
+  ConnectAffordance,
+  ConnectServiceResult,
+} from "./connect-service-actions";
 import { BlockCard } from "./block-card";
 
 export type ConnectServiceCardProps =

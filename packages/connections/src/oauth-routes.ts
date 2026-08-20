@@ -41,10 +41,7 @@ import {
   generatePKCEPair,
   type ConnectStateStore,
 } from "./pkce";
-import {
-  fireConnectedHook,
-  type ServiceConnectedHook,
-} from "./connected-hook";
+import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
 
