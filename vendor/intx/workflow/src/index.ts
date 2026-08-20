@@ -5,16 +5,22 @@ export type {
 
 export * from "./state-machine/index";
 export * from "./definition/index";
+export { collectDeclaredPluginNames } from "./declared-plugins";
 export {
   onTriggerBodyRef,
   rewriteInlineOnTriggerBodies,
+  rewriteInlineChildWorkflowBodies,
   type ExtractedOnTriggerBody,
   type OnTriggerBodyRewrite,
+  type ExtractedChildWorkflowBody,
+  type ChildWorkflowBodyRewrite,
 } from "./ontrigger-bodies";
 export {
   projectLiveToInert,
   computeLiveDefinitionHash,
   type InertAgent,
+  type InertChildWorkflow,
+  type InertChildWorkflowBody,
   type InertLoop,
   type InertMap,
   type InertModelSource,

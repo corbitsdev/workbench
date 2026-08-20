@@ -9,11 +9,7 @@
 
 import { canonicalizeForHash } from "@intx/agent";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
-import {
-  SidecarPlacementRequirement,
-  type CredentialBinding,
-  type GrantRequirement,
-} from "@intx/types";
+import type { CredentialBinding, GrantRequirement } from "@intx/types";
 
 import { normalizeSingularShorthand } from "./shorthand";
 import {
@@ -24,8 +20,6 @@ import {
   type StepPrimitive,
 } from "./primitives";
 import type { Trigger } from "./triggers";
-
-export type { SidecarPlacementRequirement } from "@intx/types";
 
 export interface WorkflowDefinition {
   id: string;
@@ -38,11 +32,6 @@ export interface WorkflowDefinition {
    */
   stepOrder: readonly string[];
   state?: { schema?: StateSchema };
-  /**
-   * Requires an exclusive sidecar for this workflow. This is a placement
-   * guarantee, not a process, filesystem, network, or host boundary.
-   */
-  sidecarPlacement?: SidecarPlacementRequirement;
   /**
    * The grant requirements a run resolves against the creator's and
    * invoker's authority at trigger time. Each entry declares a resource,
@@ -68,7 +57,6 @@ export interface WorkflowConfig {
   triggers?: readonly Trigger[];
   steps: Record<string, Primitive>;
   state?: { schema?: StateSchema };
-  sidecarPlacement?: SidecarPlacementRequirement;
   grantRequirements?: readonly GrantRequirement[];
   credentialBindings?: readonly CredentialBinding[];
 }
@@ -79,7 +67,6 @@ export interface SingularWorkflowConfig<EnvReq extends BaseEnv> {
   trigger?: Trigger;
   triggers?: readonly Trigger[];
   state?: { schema?: StateSchema };
-  sidecarPlacement?: SidecarPlacementRequirement;
   grantRequirements?: readonly GrantRequirement[];
   credentialBindings?: readonly CredentialBinding[];
 }
@@ -157,12 +144,7 @@ function normalize(config: WorkflowConfig): WorkflowDefinition {
     stepOrder.push(stepId);
   }
 
-  validateAfterRefs(steps);
-  // Runs after validateAfterRefs so every after/then/else endpoint is
-  // already known to name a real step; this pass only rejects cycles.
-  validateAcyclic(steps);
-  validateLoopBody(steps);
-  validateOnTriggerBody(steps);
+  validateSteps(steps);
 
   // An onTrigger section's `on` is the first-class binding between a
   // trigger and the section it drives, so each section contributes its
@@ -175,9 +157,6 @@ function normalize(config: WorkflowConfig): WorkflowDefinition {
     steps,
     stepOrder,
     ...(config.state !== undefined ? { state: config.state } : {}),
-    ...(config.sidecarPlacement !== undefined
-      ? { sidecarPlacement: normalizeSidecarPlacement(config.sidecarPlacement) }
-      : {}),
     ...(config.grantRequirements !== undefined
       ? { grantRequirements: config.grantRequirements }
       : {}),
@@ -186,16 +165,6 @@ function normalize(config: WorkflowConfig): WorkflowDefinition {
       : {}),
   };
   return definition;
-}
-
-function normalizeSidecarPlacement(
-  placement: SidecarPlacementRequirement,
-): SidecarPlacementRequirement {
-  const validated = SidecarPlacementRequirement.assert(placement);
-  return {
-    sharing: "exclusive",
-    reuse: validated.reuse ?? "never",
-  };
 }
 
 function resolveTriggers(
@@ -304,6 +273,24 @@ function applyDefaultInputStep(
     };
   }
   return primitive;
+}
+
+/**
+ * Run every step-record validation pass in the order their dependencies
+ * require. `validateChildWorkflowBody` re-enters this same suite on an
+ * inline child body, so factoring the passes here keeps the top-level and
+ * embedded-child validations identical -- a malformed child (dangling
+ * `after`, cycle, forbidden loop body, nested section) fails at the parent's
+ * authoring time exactly as it would at its own.
+ */
+function validateSteps(steps: Record<string, Primitive>): void {
+  validateAfterRefs(steps);
+  // Runs after validateAfterRefs so every after/then/else endpoint is
+  // already known to name a real step; this pass only rejects cycles.
+  validateAcyclic(steps);
+  validateLoopBody(steps);
+  validateOnTriggerBody(steps);
+  validateChildWorkflowBody(steps);
 }
 
 function validateAfterRefs(steps: Record<string, Primitive>): void {
@@ -468,6 +455,25 @@ function validateOnTriggerBody(steps: Record<string, Primitive>): void {
 }
 
 /**
+ * Recursively validate every inline `childWorkflow` body. A child is an
+ * owned import embedded inline, so its full definition must be as valid as a
+ * top-level one; this pass re-enters `validateSteps` on the inline body so a
+ * malformed embedded child is rejected at the parent's authoring time. A
+ * deployed `{ ref }` body was validated at its own deploy and is skipped.
+ *
+ * A separate pass from `validateAcyclic`, which does not recurse into the
+ * child's own (already-normalized) `WorkflowDefinition`. The recursion is
+ * bounded by the authored nesting depth.
+ */
+function validateChildWorkflowBody(steps: Record<string, Primitive>): void {
+  for (const primitive of Object.values(steps)) {
+    if (primitive.kind !== "childWorkflow") continue;
+    if (!("inline" in primitive.definition)) continue;
+    validateSteps(primitive.definition.inline.steps);
+  }
+}
+
+/**
  * Reject any dependency cycle in the definition. The graph is the union
  * of two edge kinds: an `after: [X]` on step S contributes X -> S (X
  * must precede S), and a `gate` G with branches `then`/`else`
@@ -579,9 +585,6 @@ function projectForHash(definition: WorkflowDefinition): unknown {
     id: definition.id,
     triggers: definition.triggers,
     ...(definition.state !== undefined ? { state: definition.state } : {}),
-    ...(definition.sidecarPlacement !== undefined
-      ? { sidecarPlacement: definition.sidecarPlacement }
-      : {}),
     ...(definition.grantRequirements !== undefined
       ? { grantRequirements: definition.grantRequirements }
       : {}),
