@@ -73,8 +73,11 @@ function ApiKeyConnectForm({
     setSubmitting(true);
     setError(null);
     completeConnectorCredential(tenantId, connectorId, value)
-      .then(() => {
-        toast(`${displayName} connected.`);
+      .then((completed) => {
+        // CL-6351: a fresh Ollama connect with only an embedding model
+        // pulled still succeeds — `modelGuidance` says so instead of
+        // the generic "connected" toast.
+        toast(completed.modelGuidance ?? `${displayName} connected.`);
         setValue(isUrl ? (fieldPlaceholder ?? "") : "");
         onConnected();
       })

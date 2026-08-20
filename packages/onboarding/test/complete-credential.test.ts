@@ -280,6 +280,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async () => {},
     });
@@ -345,6 +346,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async (args) => {
         seedTenantCalls.push(args as never);
@@ -395,6 +397,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async (args) => {
         seedTenantCalls.push(args as never);
@@ -445,6 +448,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async (args) => {
         seedTenantCalls.push(args as never);
@@ -499,6 +503,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async () => {},
     });
@@ -806,7 +811,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      seedCatalogFn: async () => {},
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
     });
 
     expect(result.kind).toBe("seeded");
@@ -1296,6 +1301,7 @@ describe("completeCredentialSetup", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
+        return { hasCompletionCapableModel: true };
       },
       seedTenantFn: async () => {},
     });
@@ -1345,7 +1351,7 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      seedCatalogFn: async () => {},
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
       seedTenantFn: async () => {
         throw new SidecarUnavailableError(
           "the hub could not deploy workflow echo: the sidecar is unavailable",
@@ -1407,6 +1413,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -1446,6 +1453,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -1487,6 +1495,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       log: collector().log,
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
 
