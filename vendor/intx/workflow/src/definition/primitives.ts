@@ -134,12 +134,34 @@ export interface SleepPrimitive extends PrimitiveBase {
   drainBehavior?: DrainBehavior;
 }
 
+/**
+ * Spawns an OWNED child workflow. The child is an import: its full
+ * `WorkflowDefinition` is embedded inline (mirroring an inline `onTrigger`
+ * body and a `loop` body), so the child's grants fold into the parent's
+ * approved surface and no separately-deployed asset is read. `input`
+ * selects the child run's launch payload.
+ */
 export interface ChildWorkflowPrimitive extends PrimitiveBase {
   kind: "childWorkflow";
-  definitionRef: string;
+  definition: ChildWorkflowBody;
   input?: Selector;
   drainBehavior?: DrainBehavior;
 }
+
+/**
+ * The embedded child definition, in one of its two lifecycle forms.
+ * Authored inline (the constructor wraps the author's `WorkflowDefinition`
+ * as `{ inline }`); the deploy step materializes that inline child into its
+ * own workflow asset and rewrites it to `{ ref }`, so the runtime spawns the
+ * child as a run resolved by ref. The `{ ref }` arm is only the internal
+ * extracted-child handle -- never an author-facing separate-deployment id.
+ * Exactly one arm is present -- a discriminated union, not two optionals, so
+ * neither "both" nor "neither" is representable and consumers switch
+ * exhaustively. Mirrors `OnTriggerBody`.
+ */
+export type ChildWorkflowBody =
+  | { inline: WorkflowDefinition }
+  | { ref: string };
 
 export interface EscalationPrimitive extends PrimitiveBase {
   kind: "escalation";
@@ -297,11 +319,10 @@ export interface StepOpts<EnvReq extends BaseEnv> {
  * `"unbounded"` is the long-lived interactive agent that never self-completes.
  *
  * Validates the declared value on every read: `step()` rejects a bad value at
- * authoring time, but a definition hydrated from `workflow.json` never passes
- * through `step()` (the envelope schema checks structure only), so this read
- * point is where a persisted `triggers: 0`/`-1`/`1.5` fails loud instead of
- * silently coercing (a non-positive budget would behave as `1`; a fractional
- * one would service an extra trigger).
+ * authoring time, but this read point re-checks rather than trust that every
+ * definition reached it through `step()`, so a `triggers: 0`/`-1`/`1.5` fails
+ * loud instead of silently coercing (a non-positive budget would behave as
+ * `1`; a fractional one would service an extra trigger).
  */
 export function stepTriggerBudget(step: StepPrimitive): number | "unbounded" {
   if (step.triggers === undefined) return 1;
@@ -331,8 +352,8 @@ function validateTriggers(triggers: number | "unbounded"): void {
  * would re-service the launch trigger and never re-service the
  * already-consumed one -- a wrong conversation reported as success.
  * `step()` enforces this at authoring time; the runtime re-applies it at
- * `runStep` entry because a definition hydrated from `workflow.json` never
- * passes through `step()`.
+ * `runStep` entry as a defensive re-check, rather than trust that every
+ * definition reached it through `step()`.
  */
 export function validateRetryTriggerCombination(step: StepPrimitive): void {
   const retry = step.retry;
@@ -477,7 +498,7 @@ export function sleep(opts: SleepOpts): SleepPrimitive {
 }
 
 export interface ChildWorkflowOpts {
-  definitionRef: string;
+  definition: WorkflowDefinition;
   input?: Selector;
   drainBehavior?: DrainBehavior;
   after?: readonly string[];
@@ -488,7 +509,8 @@ export function childWorkflow(opts: ChildWorkflowOpts): ChildWorkflowPrimitive {
   return {
     kind: "childWorkflow",
     id: "",
-    definitionRef: opts.definitionRef,
+    // Authored inline; the deploy step rewrites this to `{ ref }`.
+    definition: { inline: opts.definition },
     drainBehavior,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),

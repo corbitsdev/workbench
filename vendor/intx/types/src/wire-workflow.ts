@@ -80,11 +80,11 @@ const WorkflowSteps = type({ "[string]": "unknown" }).narrow((steps, ctx) => {
  * materialization (`packages/hub-sessions/src/workflow-kind.ts`'s
  * `workflowDefinitionEnvelopeSchema`): `id`, `triggers`, `steps`,
  * `stepOrder`, optional `state`. The wire validator MUST require every
- * field the envelope requires — the sidecar's deploy router serializes
- * `projection.definition` verbatim into `workflow.json` and the child
- * rejects a tree missing any envelope-required field. Deeper validation
- * of authoring-time primitive shape lives on the workflow definition
- * surface in `@intx/workflow`, not on the wire.
+ * field the envelope requires — this projection is the approved surface
+ * the source-ref child re-verifies its closure-evaluated definition
+ * against, and the child rejects a tree missing any envelope-required
+ * field. Deeper validation of authoring-time primitive shape lives on the
+ * workflow definition surface in `@intx/workflow`, not on the wire.
  *
  * `sources` pins an ordered, non-empty inference-source list per step in
  * `definition.stepOrder` so the workflow-process child can resolve inference
@@ -149,9 +149,9 @@ export const WorkflowProjectionWithSources = type({
   // the child as the `DEFINITION_HASH` it re-verifies its own recompute
   // against, rather than trusting a sidecar-computed hash. At the top level it
   // pins the deployment's content handle; per body it pins the body's
-  // projection. Optional on the wire so a frame built before the source-ref
-  // hand-off (raw-frame paths) still validates; the production hub builder
-  // always stamps it.
+  // projection, which is re-verified in-memory as part of the parent's
+  // already-re-verified closure. Optional on the wire because the frame schema
+  // does not force it; the production hub builder always stamps it.
   "approvedWireHash?": "string > 0",
 }).narrow((value, ctx) => {
   for (const stepId of value.definition.stepOrder) {
