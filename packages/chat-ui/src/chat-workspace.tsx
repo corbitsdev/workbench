@@ -28,6 +28,7 @@ import {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
   describeChatError,
+  fetchRunningTurn,
   inviteAgent,
   listWorkbenches,
   listInvitableDefinitions,
@@ -626,6 +627,7 @@ function ChatWorkspaceInner({
     replyTimedOut,
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
+    resumeFromTurn,
   } = useStreamingReply(activeWorkbenchId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
     useTurnActivity(activeWorkbenchId);
@@ -789,6 +791,34 @@ function ChatWorkspaceInner({
   const hasAgentParticipant = (activeWorkbench?.participants ?? []).some(
     (participant) => isAgentAddress(participant.address),
   );
+
+  const resumeAgentAddress = (activeWorkbench?.participants ?? []).find(
+    (participant) => isAgentAddress(participant.address),
+  )?.address;
+
+  // CL-6380: a turn runs entirely server-side — this component mounting or
+  // unmounting never starts or stops it (see `useWorkbenchStream`'s own
+  // header: unmount only closes the `EventSource`, nothing server-side).
+  // So a fresh mount (first visit, or a return after navigating away while
+  // a reply was still streaming) asks once whether the agent has a turn
+  // still running and, if so, replays its committed text immediately
+  // rather than showing nothing until the next live token arrives. Any
+  // live event that beats this fetch back always wins — see
+  // `resumeFromTurn`'s own guard.
+  useEffect(() => {
+    if (activeWorkbenchId === null || resumeAgentAddress === undefined) {
+      return;
+    }
+    let cancelled = false;
+    fetchRunningTurn(tenantId, activeWorkbenchId, resumeAgentAddress)
+      .then((runningTurn) => {
+        if (!cancelled) resumeFromTurn(runningTurn);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, activeWorkbenchId, resumeAgentAddress]);
 
   const { pendingSends, handleSend, retryPendingSend, discardPendingSend } =
     useOptimisticSends({

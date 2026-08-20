@@ -103,6 +103,7 @@ import {
 import {
   applyInsightsMigrations,
   createDrizzleRunTraceReader,
+  createDrizzleTurnTextSnapshotReader,
   createInsightsRoutes,
   createPostgresTurnLatencyStore,
   createPostgresUsageStore,
@@ -1288,6 +1289,8 @@ export async function createHub(config: HubConfig) {
     tenancy: chatTenancy,
     threads: threadStore,
     agentTurns,
+    turnTextSnapshot: (input) =>
+      createDrizzleTurnTextSnapshotReader(db).read(input),
     blockResponses: blockResponseStore,
     reactions: reactionStore,
     pins: pinStore,
