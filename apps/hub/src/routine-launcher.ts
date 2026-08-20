@@ -58,7 +58,11 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
-import { handleFromName } from "@corbits/chat";
+import {
+  AGENT_SECTION_MODE,
+  handleFromName,
+  workbenchLaunchPersistExtra,
+} from "@corbits/chat";
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
 import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 import type { LaunchTaskInput, TaskRecord } from "@corbits/tasks";
@@ -178,6 +182,17 @@ export function createHubRoutineLauncher(
         definitionId: input.definitionId,
         foldedBody,
         launchLabel: "a routine",
+        // The same `onTrigger` section shape and stable-id → current-run
+        // mapping every room-invited agent launches with (CL-6367):
+        // without the mapping row, a routine run that dies with its
+        // sidecar could never be relaunched — chat's terminal sweep and
+        // wake path both resolve through it.
+        mode: AGENT_SECTION_MODE,
+        persistExtra: workbenchLaunchPersistExtra({
+          tenantId: input.tenantId,
+          instanceId,
+          foldedBody,
+        }),
       });
 
       if (

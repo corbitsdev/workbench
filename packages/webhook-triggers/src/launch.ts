@@ -24,7 +24,9 @@ import {
   readDefinitionProjection,
   readFoldedBody,
   sendFoldedMailWithRetry,
+  type FoldedRunMode,
   type FoldedRunsDeps,
+  type LaunchFoldedRunParams,
   type CryptoProviderCache,
 } from "@corbits/folded-runs";
 import type { DB } from "@intx/db";
@@ -41,6 +43,27 @@ const log = getLogger(["webhook-triggers", "launch"]);
 export type LaunchWebhookTriggerDeps = FoldedRunsDeps & {
   db: DB["db"];
   cryptoProviderCache: CryptoProviderCache;
+  /**
+   * The shape the launched run deploys as — the host wires this to
+   * `@corbits/chat`'s `AGENT_SECTION_MODE`, the same `onTrigger`
+   * section every room-invited agent deploys as (CL-6329). Injected
+   * rather than imported because this package depends on
+   * `@corbits/folded-runs` alone, never on chat.
+   */
+  launchMode: FoldedRunMode;
+  /**
+   * Builds the `persistExtra` the launch commits atomically with its
+   * run rows — the host wires this to `@corbits/chat`'s
+   * `workbenchLaunchPersistExtra`, the stable-id → current-run mapping
+   * chat's relaunch machinery resolves through. Without it a run that
+   * dies with its sidecar can never be relaunched: nothing maps a
+   * stable participant id onto it (CL-6367).
+   */
+  persistLaunch: (input: {
+    readonly tenantId: string;
+    readonly instanceId: string;
+    readonly foldedBody: LaunchFoldedRunParams["foldedBody"];
+  }) => NonNullable<LaunchFoldedRunParams["persistExtra"]>;
 };
 
 export type LaunchedWebhookTrigger = {
@@ -118,6 +141,12 @@ export async function launchWebhookTrigger(
     definitionId: trigger.workflowDefinitionId,
     foldedBody,
     launchLabel: `webhook trigger "${trigger.name}"`,
+    mode: deps.launchMode,
+    persistExtra: deps.persistLaunch({
+      tenantId: trigger.tenantId,
+      instanceId,
+      foldedBody,
+    }),
   });
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);
