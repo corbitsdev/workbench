@@ -75,6 +75,12 @@ import {
   startWorkflowCommand,
   sendWorkbenchMessage,
 } from "@corbits/chat";
+import {
+  createSpikeRoomRoutes,
+  createSpikeRoomStore,
+  createSpikeRoomSubscribers,
+  ensureSpikeTables,
+} from "@corbits/chat/spike";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import {
   createCryptoProviderCache,
@@ -1215,6 +1221,29 @@ export async function createHub(config: HubConfig) {
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  // CL-6323 Phase 0 spike: rooms as data, turns as onTrigger child runs.
+  // Off unless WORKBENCH_SPIKE_ROOMS=1, and removable with this block plus
+  // `git rm packages/chat/src/spike`.
+  if (process.env["WORKBENCH_SPIKE_ROOMS"] === "1") {
+    await ensureSpikeTables(config.databaseUrl);
+    app.route(
+      `${TENANT_PREFIX}/spike-rooms`,
+      createSpikeRoomRoutes({
+        store: createSpikeRoomStore(config.databaseUrl),
+        subscribers: createSpikeRoomSubscribers(),
+        runDeps: {
+          db,
+          assetService,
+          events: sidecarRouter.events,
+          sessionService,
+          eventCollectors,
+          cryptoProviders: createCryptoProviderCache(),
+          credentialCipher,
+          turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+        },
+      }),
+    );
+  }
   // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'
   // `create_agent`'s `invite: true` default): the workflow-run-
   // authenticated counterpart to `POST .../invite` above, self-WORKBENCH

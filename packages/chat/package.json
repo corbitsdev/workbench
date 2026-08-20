@@ -14,7 +14,8 @@
     "./reaction-emoji": "./src/reaction-emoji.ts",
     "./blocks": "./src/blocks.ts",
     "./agent-address": "./src/agent-address.ts",
-    "./workbench-host-naming": "./src/workbench-host-naming.ts"
+    "./workbench-host-naming": "./src/workbench-host-naming.ts",
+    "./spike": "./src/spike/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
