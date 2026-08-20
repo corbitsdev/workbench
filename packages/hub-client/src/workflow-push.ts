@@ -2,9 +2,18 @@
 // smart-HTTP git route, using the system git binary with a bearer
 // token as the basic-auth password and a GIT_ASKPASS shim as the
 // non-interactive fallback — the platform's established asset-push
-// convention. Content-aware: an identical workflow.json is a reported
-// skip, not a duplicate commit, which is what makes re-running seed
-// safe.
+// convention. Content-aware: an identical tree is a reported skip, not
+// a duplicate commit, which is what makes re-running seed safe.
+//
+// The pushed tree is a source codebase, not the retired `workflow.json`
+// envelope: a `package.json` declaring an `interchange.workflow` entry
+// plus that entry module, which default-exports the definition. A
+// workflow-kind asset accepts nothing else (see
+// `vendor/intx/hub-sessions/src/workflow-kind.ts`), and a code-sourced
+// deploy evaluates the entry rather than re-reading a serialized
+// envelope. The definition these default workflows carry is inert data,
+// so the entry is that data as a literal and the package declares no
+// dependencies — the whole closure is these two files.
 
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +21,26 @@ import { join } from "node:path";
 import { CliError } from "./errors";
 import type { PushOutcome, WorkflowPusher } from "./seed";
 
-const WORKFLOW_JSON = "workflow.json";
+const ENTRY_PATH = "workflow.js";
+const PACKAGE_JSON_PATH = "package.json";
+
+/** The two-file source tree a serialized definition renders into. */
+export function renderWorkflowSourceTree(args: {
+  packageName: string;
+  workflowJson: string;
+}): Record<string, string> {
+  const packageJson = {
+    name: args.packageName,
+    version: "0.0.0",
+    private: true,
+    type: "module",
+    interchange: { workflow: `./${ENTRY_PATH}` },
+  };
+  return {
+    [PACKAGE_JSON_PATH]: `${JSON.stringify(packageJson, null, 2)}\n`,
+    [ENTRY_PATH]: `export default ${args.workflowJson};\n`,
+  };
+}
 
 function requireGit(): void {
   if (Bun.which("git") === null) {
@@ -50,7 +78,7 @@ function withToken(remoteUrl: string, tokenSecret: string): string {
 }
 
 export function createGitWorkflowPusher(): WorkflowPusher {
-  return async ({ remoteUrl, tokenSecret, workflowJson }) => {
+  return async ({ remoteUrl, tokenSecret, workflowJson, packageName }) => {
     requireGit();
     const work = await mkdtemp(join(tmpdir(), "workbench-seed-"));
     try {
@@ -84,18 +112,27 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         );
       }
 
-      const target = join(repoDir, WORKFLOW_JSON);
-      let existing: string | null = null;
-      try {
-        existing = await readFile(target, "utf-8");
-      } catch (_cause) {
-        existing = null;
+      const tree = renderWorkflowSourceTree({
+        packageName,
+        workflowJson,
+      });
+      let unchanged = true;
+      for (const [file, contents] of Object.entries(tree)) {
+        const target = join(repoDir, file);
+        let existing: string | null = null;
+        try {
+          existing = await readFile(target, "utf-8");
+        } catch (_cause) {
+          existing = null;
+        }
+        if (existing === contents) continue;
+        unchanged = false;
+        await writeFile(target, contents, "utf-8");
       }
-      if (existing === workflowJson) return "unchanged" satisfies PushOutcome;
+      if (unchanged) return "unchanged" satisfies PushOutcome;
 
-      await writeFile(target, workflowJson, "utf-8");
       const steps: { label: string; args: string[] }[] = [
-        { label: "stage", args: ["add", WORKFLOW_JSON] },
+        { label: "stage", args: ["add", ...Object.keys(tree)] },
         {
           label: "commit",
           args: ["commit", "-m", "Deploy the default workflow definition"],
@@ -103,13 +140,12 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         {
           // Forced deliberately: this asset repo is seed-owned (this
           // pusher is its only writer), so `main` always carries
-          // exactly the canonical `workflow.json` this run computed.
-          // A plain push 409s as "non-fast-forward" the moment the
-          // remote's `main` shares no ancestry with this run's fresh
-          // clone — an existing asset whose repo was seeded through a
-          // different path, in particular — which would otherwise
-          // fail the entire seed on a re-run rather than repointing
-          // the ref it owns.
+          // exactly the canonical tree this run computed. A plain push
+          // 409s as "non-fast-forward" the moment the remote's `main`
+          // shares no ancestry with this run's fresh clone — an
+          // existing asset whose repo was seeded through a different
+          // path, in particular — which would otherwise fail the entire
+          // seed on a re-run rather than repointing the ref it owns.
           label: "push",
           args: [
             "-c",
@@ -125,7 +161,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         const result = await runGit(step.args, repoDir, gitEnv);
         if (result.code !== 0) {
           throw new CliError(
-            `the workflow.json ${step.label} failed: ${result.output}`,
+            `the workflow source ${step.label} failed: ${result.output}`,
             "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
           );
         }
