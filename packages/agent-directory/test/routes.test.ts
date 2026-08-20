@@ -669,7 +669,12 @@ test("PUT /:definitionId/skills rejects a blank skill name with a 400", async ()
 function fakeInstructionsDb(
   row: { id: string; assetId: string | null; name: string } | undefined,
   options: { readonly failSecondUpdate?: boolean } = {},
-): DB["db"] & { readonly updateCalls: readonly unknown[] } {
+): DB["db"] & {
+  readonly updateCalls: readonly unknown[];
+  /** `.set(...)` calls made straight on `db.update`, outside a
+   * transaction — what the status route writes. */
+  readonly directUpdateCalls: readonly unknown[];
+} {
   const updateCalls: unknown[] = [];
   const committedUpdateCalls: unknown[] = [];
   const makeUpdater = (target: unknown[]) => () => ({
@@ -708,7 +713,11 @@ function fakeInstructionsDb(
       updateCalls.push(...txCalls);
     },
     updateCalls,
-  } as unknown as DB["db"] & { readonly updateCalls: readonly unknown[] };
+    directUpdateCalls: committedUpdateCalls,
+  } as unknown as DB["db"] & {
+    readonly updateCalls: readonly unknown[];
+    readonly directUpdateCalls: readonly unknown[];
+  };
 }
 
 test("GET /:definitionId returns the agent's display name and system prompt", async () => {
@@ -1008,6 +1017,97 @@ test("PUT /:definitionId updates the definition's row and its asset's row togeth
   // Neither row update is left standing when the transaction fails
   // partway through.
   expect(failingDb.updateCalls).toEqual([]);
+});
+
+// --- PUT /:definitionId/status (archive and restore) ---
+
+test("archiving a definition writes the stopped status and touches nothing else", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  let populateCalled = false;
+  const app = buildApp(
+    fakeAssetService({
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    db,
+  );
+  const response = await put(app, "/def_1/status", { status: "stopped" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ id: "def_1", status: "stopped" });
+  expect(db.directUpdateCalls).toEqual([
+    { status: "stopped", updatedAt: expect.any(Date) },
+  ]);
+  // Archiving is a row-status change: the definition's asset and its git
+  // history are never rewritten, which is what makes a restore possible.
+  expect(populateCalled).toBe(false);
+});
+
+test("restoring a definition writes the deployed status back", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(fakeAssetService(), db);
+  const response = await put(app, "/def_1/status", { status: "deployed" });
+  expect(response.status).toBe(200);
+  expect(db.directUpdateCalls).toEqual([
+    { status: "deployed", updatedAt: expect.any(Date) },
+  ]);
+});
+
+test("a status outside the schema's two lifecycle states is a 400, never written", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(fakeAssetService(), db);
+  const response = await put(app, "/def_1/status", { status: "deleted" });
+  expect(response.status).toBe(400);
+  expect(db.directUpdateCalls).toEqual([]);
+});
+
+test("status 404s for an unknown definition and for a workbench host", async () => {
+  const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  expect(
+    (await put(unknown, "/def_missing/status", { status: "stopped" })).status,
+  ).toBe(404);
+
+  const host = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_host",
+      assetId: "ast_host",
+      name: `run-${"a".repeat(32)}`,
+    }),
+  );
+  expect(
+    (await put(host, "/def_host/status", { status: "stopped" })).status,
+  ).toBe(404);
+});
+
+test("status scopes its grant check per definition id and requires update", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await put(app, "/def_1/status", { status: "stopped" });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
 });
 
 test("a create request indexes its pinned skills into the stored system prompt", async () => {

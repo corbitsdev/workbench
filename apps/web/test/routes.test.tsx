@@ -343,8 +343,17 @@ describe("routes render", () => {
     });
   }
 
+  // Agents is the one detail route whose real screen has landed (CL-6414),
+  // so it titles itself with the slug and lights its roster row without a
+  // placeholder's "Back to" affordance.
+  test("/agents/<slug> titles the agent's own page with its roster row lit", async () => {
+    const markup = await renderApp("/agents/triage-bot");
+    expect(stagePageTitle(markup)).toBe("triage-bot");
+    expect(activeFooterLabel(markup)).toBe("Agents");
+    expect(markup).not.toContain("still being built");
+  });
+
   test.each([
-    ["/agents/triage-bot", "triage-bot", "Agents"],
     ["/skills/pr-review", "pr-review", "Skills"],
     ["/plugins/linear", "linear", "Plugins"],
     ["/routines/weekly-digest", "weekly-digest", "Routines"],
