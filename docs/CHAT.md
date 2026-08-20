@@ -101,6 +101,63 @@ and injects it everywhere, the same "one instance, shared" pattern
 `workbenchSubscribers` already follows — otherwise each surface would only
 serialize against its own traffic, not the others'.
 
+## Turn = run: agents as `onTrigger` sections (CL-6329, in progress)
+
+A turn today is mail with no identity of its own: `dispatchTurn` hands a
+copy to the agent's mailbox, the agent's reply comes back through the
+reply bridge, and the message row's `run_id` names the agent's _instance_,
+not the turn. Two replies from one agent are indistinguishable at the row
+level, and there is nothing to point at when one turn fails.
+
+The shape that fixes it — proved out by the CL-6323 spike — is an
+**`onTrigger` section keyed on (agent, workbench)**: one warm run per
+pair, every message an occurrence, every occurrence its own child run with
+its own run id and event log. `buildAgentTurnWorkflow`
+(`packages/chat/src/agent-turn-workflow.ts`) is that definition. Its one
+step is a section on the agent's own address whose body is the single
+agent step that answers one message, and it carries
+`onBodyFailure: "continue"` — the whole failure edge (CL-6326): a turn
+that ends `failed` records the failed occurrence and leaves the section
+subscribed, so one bad turn never kills the agent or the room. The
+runtime names an occurrence's child run `turn__<n>`, which is what
+`agentTurnChildRunId` derives and what a reply's `run_id` is meant to
+carry.
+
+Two pieces of that model are in place ahead of the dispatch cutover:
+
+- **Context assembly** (`packages/chat/src/turn-context.ts`) —
+  `assembleTurnContext` builds the conversation a turn is asked with from
+  message rows: the turn's own thread (never the whole room when a thread
+  is named), capped to the workbench's resolved `chat/contextWindow`, with
+  the dropped span folded into one bounded recap rather than silently
+  lost. It grew up inside `workbench-service.ts` as mention fan-out
+  plumbing; the turn seam is now its own concern, so it is its own module.
+  Thread membership lives in its own store, so the scope is injected as a
+  `TurnContextThreadScope` rather than this module reaching for a second
+  store.
+- **The turn projection** (`packages/chat/src/agent-turns.ts`, table
+  `chat.agent_turns`) — one row per turn, opened as the turn starts and
+  closed as it settles, carrying the child run id, the messages it was
+  asked to answer, the message it produced, and how it ended. This is
+  deliberately **our** projection rather than a read of the platform's own
+  run tables (the same shape gtm's event collector settled on): a room has
+  to answer "which run produced this reply, and how did that turn end"
+  from its own rows, at timeline speed, whether or not the execution plane
+  is reachable. Occurrence allocation happens inside the insert with a
+  unique index behind it, so two dispatches racing for one agent can never
+  quietly share a child run id. `GET /workbenches/:id/turns` and
+  `GET /workbenches/:id/turns/:turnId` serve it, following the same
+  "no store, no feature" contract `pins` already does.
+
+**Not yet cut over.** `dispatchTurn` still sends mail, because the deploy
+path an agent participant actually takes (`deployAtHead` in
+`@corbits/folded-runs`, which synthesizes a one-step definition and calls
+`deploySingleStepAtHead`) can only deploy a single-step folded run — it
+has no way to carry a section's inline body through as a referenced
+definition. Teaching that path to deploy a section, and adding the
+platform-port seam that fires an occurrence and observes it settle, is
+what remains before the mail-dispatch edge can be retired.
+
 ## Threads: workbench → thread → sub-thread
 
 A workbench's timeline is itself a thread — its **root thread**, one per
@@ -268,6 +325,8 @@ following routes:
 | `POST /workbenches/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                              |
 | `DELETE /workbenches/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                            |
 | `GET /workbenches/:id/pins`                                  | Lists a workbench's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
+| `GET /workbenches/:id/turns`                                 | Lists the workbench's agent turns, newest first — each carrying the child run id its reply is traceable to (CL-6329)                                                                                                              |
+| `GET /workbenches/:id/turns/:turnId`                         | Reads one turn: its child run id, the messages it answered, the message it produced, and how it ended                                                                                                                             |
 | `GET /workbenches/:id/stream`                                | Server-Sent Events stream of live workbench activity, including the who's-here roster (`chat.presence`/`chat.presence.snapshot`, CL-6328)                                                                                         |
 | `POST /workbenches/:id/presence`                             | Refreshes the calling principal's `lastActiveAt` on the who's-here roster; 404s with no open stream connection (CL-6328) — never polled, called on real client-side activity                                                      |
 | `GET /bench/settings`                                        | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                       |
