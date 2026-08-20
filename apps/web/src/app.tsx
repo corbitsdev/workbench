@@ -17,7 +17,12 @@ import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { createAppQueryClient } from "./query-client";
-import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH } from "./routes";
+import {
+  APP_ROUTES,
+  LOGIN_PATH,
+  matchesRoute,
+  ONBOARDING_PATH,
+} from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
