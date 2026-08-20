@@ -73,6 +73,14 @@ const SettingsRoute = lazy(async () => ({
   default: (await import("./pages/settings-page")).SettingsRoute,
 }));
 
+/** The signed-out screen (CL-6369) — a real route, not a conditional swap:
+ * any unauthenticated request for another path bounces here with `?next=`
+ * so a successful sign-in returns to where the visitor meant to go. Not
+ * one of `APP_ROUTES`: like `ONBOARDING_PATH`, it renders above the shell
+ * entirely (no sidebar, no chrome to be "current" in) and is reached only
+ * through the signed-out branch of `App`'s session switch. */
+export const LOGIN_PATH = "/login";
+
 /** Landing point for a session the first-login hook just provisioned a
  * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,
  * it is only ever reached by the first-login redirect. */

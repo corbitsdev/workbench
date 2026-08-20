@@ -6,23 +6,50 @@
 import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Toaster } from "sonner";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
 import { CommandPaletteProvider } from "./command-palette-provider";
+import { buildLoginRedirect } from "./login-next";
 import { NavigationProvider, type Navigate } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { createAppQueryClient } from "./query-client";
-import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
+import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
 import { ProviderHealthProvider } from "./shell/provider-health-context";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
+
+/** Any signed-out request for a path other than `/login` itself bounces
+ * there with `?next=` so a successful sign-in returns to where the visitor
+ * meant to go — the URL is the source of truth for "where was I headed",
+ * not an implicit conditional swap in `App`. */
+function LoginRedirect({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: Navigate;
+}) {
+  useEffect(() => {
+    navigate(buildLoginRedirect(path));
+  }, [path, navigate]);
+  return null;
+}
+
+/** An already-authed visit to `/login` (a stale tab, a bookmark) bounces
+ * home rather than showing the sign-in form to someone already signed in. */
+function LoginBounceHome({ navigate }: { readonly navigate: Navigate }) {
+  useEffect(() => {
+    navigate("/");
+  }, [navigate]);
+  return null;
+}
 
 /**
  * Onboarding renders above the shell entirely — no rail, no col2, no bench
@@ -147,6 +174,9 @@ export function App({
         </div>
       );
     case "signed-out":
+      if (path !== LOGIN_PATH) {
+        return <LoginRedirect path={path} navigate={navigate} />;
+      }
       return <AuthScreen onSignedIn={onSignedIn} />;
     case "error":
       return (
@@ -164,6 +194,9 @@ export function App({
         </div>
       );
     case "signed-in":
+      if (path === LOGIN_PATH) {
+        return <LoginBounceHome navigate={navigate} />;
+      }
       if (path === ONBOARDING_PATH) {
         return <OnboardingGate navigate={navigate} user={session.user} />;
       }
