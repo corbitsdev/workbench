@@ -39,6 +39,7 @@ import {
   type LiveAgent,
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
+import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
@@ -227,6 +228,26 @@ const WORKBENCH_HOST_MODE: FoldedRunMode = {
 };
 
 /**
+ * Every agent invited into a room deploys as an `onTrigger` section
+ * (CL-6329): one warm run per (agent, workbench), and each message
+ * asking it for a turn is an occurrence running as its own child run
+ * (`turn__<n>`) with its own event log. That child id is what a reply's
+ * `run_id` carries, which is the whole reason a reply is traceable.
+ *
+ * `onBodyFailure: "continue"` — authored in the section shape itself
+ * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
+ * records a failed occurrence and leaves the section subscribed, so one
+ * bad turn kills neither the agent nor the room.
+ *
+ * The workbench host keeps `WORKBENCH_HOST_MODE` above: it holds a
+ * mailbox and never takes a turn, so it has no occurrences to name.
+ */
+const ROOM_AGENT_MODE: FoldedRunMode = {
+  kind: "section",
+  turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+};
+
+/**
  * The concrete object `createHubChatPlatform` returns: the `ChatPlatform`
  * port itself, plus a `recordActivity` hook the host wires into
  * `createChatOrchestrator` (see `chat-orchestrator.ts`) so an invited
@@ -367,7 +388,7 @@ export function createHubChatPlatform(
     binding: AgentBinding,
   ): Promise<
     | { sources: SourcesOverride; mode: FoldedRunMode }
-    | { fallbackModel?: string }
+    | { mode: FoldedRunMode; fallbackModel?: string }
   > {
     if (binding.noopInference) {
       return {
@@ -379,7 +400,9 @@ export function createHubChatPlatform(
       };
     }
     const fallbackModel = await resolveFallbackModel(binding);
-    return fallbackModel !== undefined ? { fallbackModel } : {};
+    return fallbackModel !== undefined
+      ? { mode: ROOM_AGENT_MODE, fallbackModel }
+      : { mode: ROOM_AGENT_MODE };
   }
 
   /**

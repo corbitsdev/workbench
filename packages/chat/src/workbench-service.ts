@@ -15,13 +15,13 @@ import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
+import { mergeContextIntoParts } from "./workbench-context";
 import {
-  buildDroppedRecap,
-  DROPPED_RECAP_LOOKBACK,
-  mergeContextIntoParts,
-  renderWorkbenchContext,
-  type WorkbenchContextItem,
-} from "./workbench-context";
+  assembleTurnContext,
+  type TurnContextThreadScope,
+} from "./turn-context";
+import type { AgentTurnStore } from "./agent-turns";
+import type { ThreadStore } from "./threads";
 import {
   addParticipant,
   handleFromName,
@@ -44,17 +44,12 @@ import type {
   ChatWorkbenchEvent,
   InvitableDefinition,
 } from "./platform-port";
-import {
-  postRoomMessage,
-  type RoomMessage,
-  type RoomMessageStore,
-} from "./room-messages";
+import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ChatStore } from "./store";
 
-const contextLog = getLogger(["chat", "context"]);
 const provisionLog = getLogger(["chat", "provision-space"]);
 const removeLog = getLogger(["chat", "remove-participant"]);
 const greetingLog = getLogger(["chat", "canned-greeting"]);
@@ -757,162 +752,6 @@ export async function startWorkflowCommand(
   return { handle: joined.handle, address: joined.address };
 }
 
-/**
- * The label a sender renders as inside a workbench context block: an
- * agent participant renders as its workbench handle (`@echo`), matching
- * the mention syntax participants already type; anything else — the
- * server has no human display names to draw on — renders as the
- * literal string `"user"`. Never a raw address or principal id: this
- * text reaches a model prompt and possibly logs.
- */
-function labelForSender(
-  address: string,
-  participants: readonly ParticipantRecord[],
-): string {
-  // Mail's `from` always carries a full `id@domain` address regardless
-  // of sender kind (see `platform-adapter.ts`'s `sendMail`), so an
-  // agent sender is recognized by matching its local part against a
-  // known *agent* participant's local part — never by the mere
-  // presence of "@", which every mail sender address carries either
-  // way.
-  const known = participants.find(
-    (participant) =>
-      isAgentAddress(participant.address) &&
-      localPartOf(participant.address) === localPartOf(address),
-  );
-  return known !== undefined ? `@${known.handle}` : "user";
-}
-
-/**
- * Decodes a single listed mail item into a context item, or `undefined`
- * for event-only mail with no text parts — contributes nothing a
- * context block can render.
- */
-function contextItemFor(
-  message: RoomMessage,
-  participants: readonly ParticipantRecord[],
-): WorkbenchContextItem | undefined {
-  const texts = message.parts
-    .filter(
-      (part): part is Extract<PartType, { kind: "text" }> =>
-        part.kind === "text",
-    )
-    .map((part) => part.text);
-  if (texts.length === 0) return undefined;
-  return {
-    label: labelForSender(message.sender.address, participants),
-    text: texts.join(" "),
-  };
-}
-
-/**
- * Loads the workbench's recent timeline into context items for a
- * mention fan-out copy, excluding the just-sent message (matched by id,
- * since it is typically the newest item in the listing) and any message
- * with no text parts (an event-only message contributes nothing a
- * context block can render). Capped to the workbench's resolved
- * `contextWindow` (most-recent-first before the final oldest-first
- * slice, so a window of 0 loads nothing and a small window keeps only
- * the newest few).
- *
- * When the workbench carries more messages than the window keeps, the
- * dropped span (CL-6204) is folded into one synthetic recap entry
- * (`buildDroppedRecap`) prepended ahead of the kept items, rather than
- * silently vanishing. The listing is paged out to
- * `contextWindow + DROPPED_RECAP_LOOKBACK` items — just enough to cover
- * the window plus the recap's own bounded lookback — never further: a
- * dropped span longer than that is still counted (and its date range
- * still reported) from what was fetched, just marked as a lower bound
- * (`moreBeyondFold`) rather than pretending to know the exact total.
- *
- * Returns `undefined` when there is nothing to show at all — no kept
- * items and no recap — or when the timeline fails to load: that failure
- * must never break the send, so it is logged and swallowed here,
- * leaving the caller to fan out un-situated.
- */
-async function loadWorkbenchContext(input: {
-  roomMessages: Pick<RoomMessageStore, "listMessages">;
-  tenantId: string;
-  workbenchId: string;
-  excludeMessageId: string;
-  participants: readonly ParticipantRecord[];
-  contextWindow: number;
-}): Promise<string | undefined> {
-  if (input.contextWindow === 0) return undefined;
-  try {
-    const fetchCap = input.contextWindow + DROPPED_RECAP_LOOKBACK;
-    const fetched: RoomMessage[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await input.roomMessages.listMessages(
-        cursor === undefined
-          ? { tenantId: input.tenantId, workbenchId: input.workbenchId }
-          : {
-              tenantId: input.tenantId,
-              workbenchId: input.workbenchId,
-              cursor,
-            },
-      );
-      fetched.push(...page.items);
-      cursor = page.nextCursor;
-    } while (cursor !== undefined && fetched.length < fetchCap);
-
-    const newestFirstExcludingSent = fetched
-      .filter((message) => message.id !== input.excludeMessageId)
-      .slice(0, fetchCap);
-    const moreBeyondFold = cursor !== undefined;
-
-    const windowed = newestFirstExcludingSent.slice(0, input.contextWindow);
-    const dropped = newestFirstExcludingSent.slice(input.contextWindow);
-    const wasDropped = dropped.length > 0 || moreBeyondFold;
-
-    const items: WorkbenchContextItem[] = [];
-    for (const message of [...windowed].reverse()) {
-      const item = contextItemFor(message, input.participants);
-      if (item !== undefined) items.push(item);
-    }
-
-    let recap: WorkbenchContextItem | undefined;
-    if (wasDropped) {
-      const droppedItems: WorkbenchContextItem[] = [];
-      for (const message of dropped) {
-        const item = contextItemFor(message, input.participants);
-        if (item !== undefined) droppedItems.push(item);
-      }
-      const humanTexts = [...droppedItems]
-        .reverse()
-        .filter((item) => item.label === "user")
-        .map((item) => item.text);
-      const oldestDropped = dropped[dropped.length - 1];
-      const newestDropped = dropped[0];
-      recap =
-        oldestDropped !== undefined && newestDropped !== undefined
-          ? buildDroppedRecap({
-              droppedCount: dropped.length,
-              moreBeyondFold,
-              humanTexts,
-              firstDate: oldestDropped.createdAt,
-              lastDate: newestDropped.createdAt,
-            })
-          : buildDroppedRecap({
-              droppedCount: dropped.length,
-              moreBeyondFold,
-              humanTexts,
-            });
-    }
-
-    if (items.length === 0 && recap === undefined) return undefined;
-    return recap !== undefined
-      ? renderWorkbenchContext({ items, recap })
-      : renderWorkbenchContext({ items });
-  } catch (err) {
-    contextLog.warn`failed to load workbench context for mention fan-out on workbench ${input.workbenchId}: ${
-      err instanceof Error ? err.message : String(err)
-    }`;
-    return undefined;
-  }
-}
-
 export type SendWorkbenchMessageDeps = {
   readonly store: Pick<ChatStore, "getWorkbenchSettings" | "getBenchSettings">;
   readonly roomMessages: RoomMessageStore;
@@ -929,6 +768,20 @@ export type SendWorkbenchMessageDeps = {
    * that claim releases. See `./turn-queue.ts`.
    */
   readonly turnQueue: WorkbenchTurnQueue;
+  /**
+   * The turn projection (CL-6329). `dispatchTurn` opens a row before it
+   * touches the execution plane, so an in-flight turn is visible from
+   * its first moment and the child run id its reply will carry is
+   * already allocated. Optional so unit suites that only exercise
+   * routing stay free of the table; a composition that wants traceable
+   * replies (the hub) injects a real store.
+   */
+  readonly agentTurns?: AgentTurnStore;
+  /**
+   * Narrows a turn's context to its own thread. Absent, a turn is asked
+   * with the whole room. See `./turn-context.ts`.
+   */
+  readonly threads?: Pick<ThreadStore, "listThreadAssignments">;
 };
 
 export type SendWorkbenchMessageInput = {
@@ -1063,6 +916,37 @@ async function routeMessage(
   }
 }
 
+/**
+ * The thread a turn's context is confined to (CL-6329): a message inside
+ * a sub-thread is answered with that sub-thread, never the whole room.
+ * Returns nothing at all when the workbench has no thread store or the
+ * triggering message carries no membership row — the room itself is the
+ * scope then, which is exactly `assembleTurnContext`'s no-thread case.
+ *
+ * Membership is read once, in bulk, so the resolver `assembleTurnContext`
+ * calls per message stays synchronous rather than fanning a query out
+ * per timeline row.
+ */
+async function turnThreadScope(
+  deps: Pick<SendWorkbenchMessageDeps, "threads">,
+  input: Pick<SendWorkbenchMessageInput, "tenantId" | "workbenchId">,
+  messageId: string,
+): Promise<{ thread?: TurnContextThreadScope }> {
+  if (deps.threads === undefined) return {};
+  const assignments = await deps.threads.listThreadAssignments(
+    input.tenantId,
+    input.workbenchId,
+  );
+  const threadId = assignments.get(messageId);
+  if (threadId === undefined) return {};
+  return {
+    thread: {
+      threadId,
+      threadIdOf: (id) => assignments.get(id) ?? "",
+    },
+  };
+}
+
 async function routeToRecipients(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
@@ -1102,7 +986,7 @@ async function routeToRecipients(
 
   const contextText =
     !isDefaultRouting && recipients.length > 0
-      ? await loadWorkbenchContext({
+      ? await assembleTurnContext({
           roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
@@ -1115,6 +999,7 @@ async function routeToRecipients(
                 {},
             ),
           ).value,
+          ...(await turnThreadScope(deps, input, messageId)),
         })
       : undefined;
   const turnParts =
@@ -1174,6 +1059,7 @@ async function dispatchTurnBatch(
           principalId: last.principalId,
           agentAddress,
           parts,
+          requestMessageIds: messageIds,
         });
       } catch (err) {
         fanoutLog.error(
@@ -1204,28 +1090,58 @@ export type DispatchTurnInput = {
   readonly principalId: string;
   readonly agentAddress: string;
   readonly parts: PartType[];
+  /** The room messages this turn answers, in arrival order. */
+  readonly requestMessageIds: readonly string[];
 };
 
 /**
- * Asks one agent for a turn on a workbench's newest message — the seam
- * between the room (rows on a timeline) and the execution plane. It is
- * still mail underneath: a copy of the message is delivered to the
- * agent's own mailbox from the workbench's address, and the chat
- * orchestrator turns the agent's eventual reply back into a room
- * message. CL-6327 moved the room off mail; the turn itself moves in
- * CL-6329, and this function is the only place that has to change.
+ * Asks one agent for a turn — the seam between the room (rows on a
+ * timeline) and the execution plane.
+ *
+ * A room agent deploys as an `onTrigger` section (CL-6329, see
+ * `./platform-adapter.ts`'s `ROOM_AGENT_MODE`), so this fires that
+ * section's trigger: one occurrence, running as its own child run
+ * (`turn__<n>`) with its own event log, against the one warm run the
+ * (agent, workbench) pair already holds. The trigger is a mail trigger —
+ * that is the primitive the section subscribes on — so `sendMail`
+ * remains the transport, but what it starts is now an occurrence rather
+ * than another turn folded into one endless step.
+ *
+ * The projection row opens BEFORE the trigger fires, so an in-flight
+ * turn is visible from its first moment and the child run id its reply
+ * will carry is already allocated. A trigger that never lands closes the
+ * row `failed` and rethrows, leaving the caller to post the undelivered
+ * notice it always has.
  */
 export async function dispatchTurn(
-  deps: Pick<SendWorkbenchMessageDeps, "platform">,
+  deps: Pick<SendWorkbenchMessageDeps, "platform" | "agentTurns">,
   input: DispatchTurnInput,
 ): Promise<void> {
-  await deps.platform.sendMail({
+  const turn = await deps.agentTurns?.startTurn({
     tenantId: input.tenantId,
-    workbenchId: localPartOf(input.agentAddress),
-    principalId: input.principalId,
-    content: encodeParts(input.parts, { replyTo: input.workbenchId }),
-    fromWorkbenchId: input.workbenchId,
+    workbenchId: input.workbenchId,
+    agentAddress: input.agentAddress,
+    requestMessageIds: input.requestMessageIds,
   });
+  try {
+    await deps.platform.sendMail({
+      tenantId: input.tenantId,
+      workbenchId: localPartOf(input.agentAddress),
+      principalId: input.principalId,
+      content: encodeParts(input.parts, { replyTo: input.workbenchId }),
+      fromWorkbenchId: input.workbenchId,
+    });
+  } catch (err) {
+    if (turn !== undefined) {
+      await deps.agentTurns?.finishTurn({
+        tenantId: input.tenantId,
+        turnId: turn.id,
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    throw err;
+  }
 }
 
 const CREDENTIAL_UNDELIVERED_NOTICE =

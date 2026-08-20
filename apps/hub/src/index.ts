@@ -56,7 +56,9 @@ import {
 } from "@corbits/agent-directory";
 
 import {
+  CHAT_TURN_TIMEOUT_MS,
   createArtifactDeliveryHandler,
+  createDrizzleAgentTurnStore,
   createInMemoryTurnClaimStore,
   createWorkbenchHostInferencePreferencesResolver,
   createWorkbenchSubscriberRegistry,
@@ -329,7 +331,6 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
-const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 // Chat residents carry a real hub-driven idle-reap again (reversing
 // CL-5477's removal): the sidecar's own park/wake scheme it was meant to
 // replace has itself been retired in favor of a simpler reap-and-relaunch
@@ -1119,8 +1120,10 @@ export async function createHub(config: HubConfig) {
   // `recordActivity` call. `approvals` is the same `ApprovalStore` the
   // platform's own approve/reject routes read and write — this
   // orchestrator only ever reads it.
+  const agentTurns = createDrizzleAgentTurnStore(db);
   const chatOrchestratorDeps: Parameters<typeof createChatOrchestrator>[0] = {
     db,
+    agentTurns,
     store: chatStore,
     roomMessages,
     publish: workbenchSubscribers.publish,
@@ -1284,6 +1287,7 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     tenancy: chatTenancy,
     threads: threadStore,
+    agentTurns,
     blockResponses: blockResponseStore,
     reactions: reactionStore,
     pins: pinStore,
