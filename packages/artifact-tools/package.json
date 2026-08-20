@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/artifact-tools",
+  "private": true,
+  "description": "Workbench artifacts as an @intx/agent tool bundle: lists a tenant's Library artifacts, and the HTTP client the sanctioned workflow-artifacts surface (CL-6000) is built on",
+  "version": "0.0.2",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,5 +1,5 @@
 import { createSSHSignature } from "@intx/crypto";
-import type { GCPolicy } from "@intx/storage-isogit";
+import type { GCPolicy } from "@intx/storage-isogit/node";
 import type { ToolPackageManifest } from "@intx/types/tool-packages";
 
 import { createRepoStore } from "./repo-store";
@@ -73,7 +73,7 @@ export type AgentRepoStore = {
    * tree.
    *
    * `repoId.kind` must be `"agent-state"`. The `repoId.id` is used as
-   * the agent address internally. Stamps an
+   * the run address internally. Stamps an
    * `AgentStateSidecarPrincipal` so the agent-state kind handler
    * authorizes the receivePack as a per-agent sidecar write.
    */
@@ -90,7 +90,7 @@ export type AgentRepoStore = {
    * tree.
    *
    * `repoId.kind` must be `"workflow-run"`. Stamps a
-   * `WorkflowRunSupervisorPrincipal` whose `deploymentId` equals
+   * `WorkflowRunSupervisorPrincipal` whose `anchorRunId` equals
    * `repoId.id`; the workflow-run kind handler denies sidecar-kind
    * writes by design, so the supervisor branch is the correct path for
    * sidecar-originated run-event commits (the supervisor lives on the
@@ -248,7 +248,7 @@ export function createAgentRepoStore(config: {
       }
       const principal: WorkflowRunSupervisorPrincipal = {
         kind: "supervisor",
-        deploymentId: incomingRepoId.id,
+        anchorRunId: incomingRepoId.id,
       };
       const expectedOldSha = await store.resolveRef(hub, incomingRepoId, ref);
       return store.receivePack(

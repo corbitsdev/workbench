@@ -1,0 +1,20 @@
+{
+  "name": "@workbench/sim",
+  "private": true,
+  "description": "Scale and behavior simulator: scripted teams of humans, agents, and routines played against a real booted hub + sidecar, with per-run assertions and a markdown report",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src",
+    "sim": "bun run src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

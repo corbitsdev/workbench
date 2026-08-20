@@ -7,10 +7,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import { createDependencies, type AdapterRegistry } from "@intx/inference";
-import { createIsogitStore } from "@intx/storage-isogit";
+import {
+  createIsogitStorage,
+  createNodeIsogitRuntime,
+} from "@intx/storage-isogit/node";
 import type { RegistryConfig } from "@intx/tool-packaging";
 import type {
   AuditStore,
@@ -21,19 +23,45 @@ import type { StepInvokeRequest } from "@intx/workflow";
 import {
   createSupervisorBackedTransport,
   type ChildOutboundMailBridge,
+  type CredentialWiring,
   type SourcesSnapshotRef,
   type StepEnvBase,
 } from "@intx/workflow-host";
 
 import type { DurableConversationRegistry } from "../conversation-state";
 import {
+  attachStepCredentials,
   attachStepTools,
   materializeStepTools,
   type StepToolCacheConfig,
   type StepToolMaterialization,
 } from "../step-agent-tools";
+import {
+  SUMMARIZE_OLDER_TURNS_NAME,
+  createSummarizeOlderTurnsCompactor,
+} from "./compactors";
 import { createStepInferenceSourceResolver } from "./config";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
+import { createWorkbenchDirectorRegistry } from "./workbench-director";
+
+// Registered once and reused across every step env this builder produces:
+// the compactor is a pure, stateless `Compactor` (see `./compactors`), so
+// one instance can serve every step's `env.compactors` map. Registering it
+// here (CL-6204) makes the name resolvable to any director that names it
+// via `caps.compact("summarize-older-turns", reason)`; see `./compactors`'s
+// header comment for the remaining gap -- no director in this codebase
+// fires that action yet.
+const stepCompactors = {
+  [SUMMARIZE_OLDER_TURNS_NAME]: createSummarizeOlderTurnsCompactor(),
+};
+
+// Registered once and reused across every step env this builder produces:
+// the workbench director wraps DefaultDirector with empty-turn retry and
+// is the sidecar default (see `./workbench-director`). `@intx/agent/default`
+// stays resolvable for definitions that name it.
+const stepDirectors = createWorkbenchDirectorRegistry();
+
+const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
 export interface SidecarStepBuildEnvDeps {
   dataDir: string;
@@ -77,6 +105,41 @@ export interface SidecarStepBuildEnvDeps {
   outboundMailBridge: ChildOutboundMailBridge;
   /** Per-step tool-loader caps (cache + registry tarball size). */
   cache: StepToolCacheConfig;
+  /**
+   * The hub's plain HTTP origin (derived from `HUB_WS_URL` via
+   * `deriveHubHttpUrl`) and the same `SIDECAR_TOKEN` bearer the child
+   * already carries for pack-push. Carried on `env` beyond `BaseEnv` so
+   * a workflow-artifacts tool bundle (`@corbits/artifact-tools`,
+   * `requires: ["hubArtifactsUrl", "sidecarToken", "address"]`) can call
+   * the sanctioned workflow-artifacts HTTP surface
+   * (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`, CL-6000)
+   * without ever holding a database handle. `address` is already on
+   * `env` via `mailboxAddress` below; these two widen the same surface.
+   * The same origin is re-exposed on the step env as `hubMemoryUrl` for
+   * `@corbits/memory-tools` (`requires: ["hubMemoryUrl", "sidecarToken",
+   * "address"]`), which calls the sibling workflow-memory HTTP surface
+   * (`@corbits/memory-hub`'s `createWorkflowMemoryRoutes`, CL-5852), and
+   * again as `hubSkillsUrl` for `@corbits/tools-skills`, which calls
+   * `@corbits/skills`' `createWorkflowSkillRoutes`.
+   */
+  hubArtifactsUrl: string;
+  sidecarToken: string;
+  /**
+   * The deploying `WorkflowDefinition`'s own id, threaded from the
+   * substrate factory's `WORKFLOW_DEFINITION_REPO_ID` substrate-config
+   * entry (`spec.definition.id` at deploy time, see
+   * `apps/sidecar/src/workflow-host-wiring/index.ts`'s
+   * `buildDeploymentRecord`). Carried on the step env beyond `BaseEnv`
+   * exactly like `hubArtifactsUrl`/`sidecarToken`/`address` above so
+   * `@corbits/capability-tools` (`requires: ["hubCapabilitiesUrl",
+   * "sidecarToken", "address", "definitionId"]`) can name its OWN
+   * definition when calling the workflow-run-authenticated capabilities
+   * route — the run's definitionId has no other sanctioned way to reach
+   * a tool execution (see the [Intx gap] note in
+   * `@corbits/capability-tools`'s `tool.ts`, now closed on the workbench
+   * side by this field).
+   */
+  definitionId: string;
   /**
    * Adapter registry the step agent resolves inference adapters through.
    * The child builds this eagerly at boot from the validated
@@ -135,10 +198,12 @@ export function createSidecarStepBuildEnv(
 ): (
   req: StepInvokeRequest,
   sourcesRef: SourcesSnapshotRef,
+  credentialWiring?: CredentialWiring,
 ) => Promise<StepEnvBase> {
   return async (
     req: StepInvokeRequest,
     sourcesRef: SourcesSnapshotRef,
+    credentialWiring?: CredentialWiring,
   ): Promise<StepEnvBase> => {
     // Resolve against the live table each build so a source rotation that
     // wrote `sourcesRef.current` before this build is reflected in the
@@ -214,7 +279,7 @@ export function createSidecarStepBuildEnv(
     const storage: ContextStore & AuditStore =
       deps.durableConversation !== undefined
         ? (await deps.durableConversation.acquire(stepId)).storage
-        : await createIsogitStore(storeDir, deps.signer);
+        : await isogitStorage.createIsogitStore(storeDir, deps.signer);
     const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 
@@ -266,33 +331,87 @@ export function createSidecarStepBuildEnv(
     // returned `StepEnvBase` structurally, which the buildEnv return
     // type (`StepEnvBase`) accepts (a wider object is assignable to the
     // narrower type).
-    const env: StepEnvBase & { transport: MessageTransport; address: string } =
-      {
-        // Feed the reactor the step's full ordered failover chain and pin
-        // its initial source to element 0. The reactor resolves the initial
-        // source by id and fails over forward through `sources`, so this
-        // restores cross-source failover inside the workflow-child.
-        sources,
-        defaultSource: activeSource.id,
-        storage,
-        workdir,
-        audit: storage,
-        directors: createDefaultDirectorRegistry(),
-        // Resolve inference adapters through the child's boot-built
-        // registry (built-ins + operator custom adapters), so a
-        // custom-provider step source resolves in the child the same way
-        // it does on the sidecar main path rather than hitting
-        // `createAgent`'s built-ins-only default.
-        deps: createDependencies(deps.adapters),
-        transport,
-        address: deps.mailboxAddress,
-      };
+    const env: StepEnvBase & {
+      transport: MessageTransport;
+      address: string;
+      hubArtifactsUrl: string;
+      hubMemoryUrl: string;
+      hubSkillsUrl: string;
+      hubCapabilitiesUrl: string;
+      hubRoutinesUrl: string;
+      hubTaskPlannerUrl: string;
+      hubConnectionsUrl: string;
+      hubAgentDirectoryUrl: string;
+      hubChatUrl: string;
+      sidecarToken: string;
+      definitionId: string;
+    } = {
+      // Feed the reactor the step's full ordered failover chain and pin
+      // its initial source to element 0. The reactor resolves the initial
+      // source by id and fails over forward through `sources`, so this
+      // restores cross-source failover inside the workflow-child.
+      sources,
+      defaultSource: activeSource.id,
+      storage,
+      workdir,
+      audit: storage,
+      directors: stepDirectors,
+      compactors: stepCompactors,
+      // Resolve inference adapters through the child's boot-built
+      // registry (built-ins + operator custom adapters), so a
+      // custom-provider step source resolves in the child the same way
+      // it does on the sidecar main path rather than hitting
+      // `createAgent`'s built-ins-only default.
+      deps: createDependencies(deps.adapters),
+      transport,
+      address: deps.mailboxAddress,
+      hubArtifactsUrl: deps.hubArtifactsUrl,
+      // Same hub HTTP origin as `hubArtifactsUrl` above, under the key
+      // `@corbits/memory-tools` declares (`requires: ["hubMemoryUrl",
+      // "sidecarToken", "address"]`) — one hub origin, two accurately
+      // named env keys per tool-bundle surface, matching the artifact
+      // bundle's own precedent rather than overloading its name for an
+      // unrelated surface.
+      hubMemoryUrl: deps.hubArtifactsUrl,
+      // And once more under the key `@corbits/tools-skills` declares
+      // (`requires: ["hubSkillsUrl", "sidecarToken", "address"]`) for the
+      // skill registry's own run-authenticated surface.
+      hubSkillsUrl: deps.hubArtifactsUrl,
+      // Same hub HTTP origin again, under the key
+      // `@corbits/capability-tools` declares (`requires:
+      // ["hubCapabilitiesUrl", "sidecarToken", "address",
+      // "definitionId"]`) for its workflow-run-authenticated capabilities
+      // surface.
+      hubCapabilitiesUrl: deps.hubArtifactsUrl,
+      // Same hub HTTP origin again, under the keys the Myra manager-tools
+      // bundles declare (CL-5879 follow-up: routines-tools, task-dispatch-
+      // tools, connections-tools, agent-directory-tools) for their own
+      // workflow-run-authenticated surfaces — one hub origin, one env key
+      // per tool-bundle surface, matching every precedent above rather
+      // than overloading an existing name for an unrelated surface.
+      hubRoutinesUrl: deps.hubArtifactsUrl,
+      hubTaskPlannerUrl: deps.hubArtifactsUrl,
+      hubConnectionsUrl: deps.hubArtifactsUrl,
+      hubAgentDirectoryUrl: deps.hubArtifactsUrl,
+      hubChatUrl: deps.hubArtifactsUrl,
+      sidecarToken: deps.sidecarToken,
+      definitionId: deps.definitionId,
+    };
     // Carry the materialized tool runtime to the tool-bearing
     // `agentFactory` via the env's symbol-keyed slot. The step-invoker
     // adapter spreads this env (`{ ...envBase, authorize }`) before
     // handing it to `agentFactory`; object spread preserves own
     // symbol-keyed properties, so the slot survives the spread.
     attachStepTools(env, materialization);
+    // Carry this step's live credential wiring the same way, so the
+    // tool-bearing `agentFactory` can shape a consumer-scoped
+    // `credentials` capability for any tool package that declares one.
+    // Omitted for a toolless body step's cold env builder (`toolless:
+    // true` callers pass no `credentialWiring`) -- a body agent is
+    // guaranteed toolless, so it has no tool to hand a credential to.
+    if (credentialWiring !== undefined) {
+      attachStepCredentials(env, { wiring: credentialWiring, stepId });
+    }
     return env;
   };
 }

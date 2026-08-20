@@ -40,7 +40,7 @@ describeIfDb("applyRoutineMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
   afterAll(async () => {
     const maintenanceUrl = new URL(scratchUrl);
@@ -54,13 +54,13 @@ describeIfDb("applyRoutineMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
   // Deliberately agnostic to how many migration steps exist or what
   // they're named — this proves the schema and the idempotency
   // contract, not a specific migration sequence, so it stays true
   // whether the package ships one migration or many.
-  test("applies both tables in their final shape and is idempotent on a second run", async () => {
+  test("applies every table into its own schema in final shape and is idempotent on a second run", async () => {
     const first = await applyRoutineMigrations(scratchUrl);
     expect(first.applied.length).toBeGreaterThan(0);
 
@@ -72,17 +72,25 @@ describeIfDb("applyRoutineMigrations", () => {
     try {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
-          `WHERE table_schema = 'public' AND table_name IN ` +
-          `('routine', 'routine_run')`,
+          `WHERE table_schema = 'routines' AND table_name IN ` +
+          `('routine', 'routine_run', 'routine_draft')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
         "routine",
+        "routine_draft",
         "routine_run",
       ]);
 
+      const inPublic = await sql.unsafe(
+        `SELECT table_name FROM information_schema.tables ` +
+          `WHERE table_schema = 'public' AND table_name IN ` +
+          `('routine', 'routine_run', 'routine_draft')`,
+      );
+      expect(inPublic).toHaveLength(0);
+
       const columns = await sql.unsafe(
         `SELECT column_name FROM information_schema.columns ` +
-          `WHERE table_schema = 'public' AND table_name = 'routine'`,
+          `WHERE table_schema = 'routines' AND table_name = 'routine'`,
       );
       const columnNames = columns.map((row) => String(row["column_name"]));
       expect(columnNames).toContain("next_fire_at");

@@ -1,19 +1,48 @@
 import { describe, expect, test } from "bun:test";
 
-import type { WorkflowRun } from "./api";
-import { computeInsightsStats } from "./insights-stats";
+import {
+  computeInsightsStats,
+  computeTraceStats,
+  filterRunsByCreatedAt,
+  groupRunsByDefinition,
+  legDurationMs,
+  legStatusTone,
+  purposeRunsForInsights,
+  runDisplayName,
+} from "./insights-stats";
+import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
+import type { TaskLeg } from "./insights-api";
+
+function span(
+  partial: Partial<RunTraceSpan> & Pick<RunTraceSpan, "id">,
+): RunTraceSpan {
+  return {
+    label: partial.id,
+    kind: "tool",
+    start: 0,
+    end: 1000,
+    durationMs: null,
+    tokens: null,
+    phase: "ok",
+    error: null,
+    timingSource: "measured",
+    ...partial,
+  };
+}
 
 function run(
-  partial: Partial<WorkflowRun> & Pick<WorkflowRun, "id" | "status">,
-): WorkflowRun {
+  partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">,
+): InsightsRun {
   return {
     tenantId: "t1",
-    tenantName: "Bench",
     definitionId: "def",
     definitionName: partial.definitionName ?? "research-brief",
     address: "addr",
     createdAt: partial.createdAt ?? "2026-01-02T00:00:00.000Z",
+    updatedAt: partial.updatedAt ?? "2026-01-02T00:00:00.000Z",
+    routineId: partial.routineId ?? null,
+    routineName: partial.routineName ?? null,
     ...partial,
   };
 }
@@ -27,7 +56,9 @@ function routine(
     trigger: { kind: "interval", unit: "hours", every: 24 },
     scope: "bench",
     input: {},
-    deliveryChannelId: null,
+    deliveryWorkbenchId: null,
+    consecutiveFailures: 0,
+    deadLetteredAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...partial,
@@ -35,7 +66,7 @@ function routine(
 }
 
 describe("computeInsightsStats", () => {
-  test("counts purposeful runs by status and drops channel hosts", () => {
+  test("counts purposeful runs by status and drops workbench hosts", () => {
     const stats = computeInsightsStats(
       [
         run({
@@ -56,7 +87,7 @@ describe("computeInsightsStats", () => {
         run({
           id: "host",
           status: "running",
-          definitionName: "ins-cd03d8e3",
+          definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
           createdAt: "2026-01-04T00:00:00.000Z",
         }),
       ],
@@ -86,5 +117,271 @@ describe("computeInsightsStats", () => {
     const stats = computeInsightsStats(runs, [], 2);
     expect(stats.recentRuns).toHaveLength(2);
     expect(stats.deployed).toBe(5);
+  });
+});
+
+describe("purposeRunsForInsights", () => {
+  const workbenchHost = run({
+    id: "host",
+    status: "running",
+    definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  });
+  const deployment = run({ id: "ins_deployed", status: "running" });
+
+  test("drops a workbench-host run by its definition-name pattern", () => {
+    expect(purposeRunsForInsights([deployment, workbenchHost])).toEqual([
+      deployment,
+    ]);
+  });
+
+  test("leaves an ordinary top-level deployment run alone", () => {
+    expect(purposeRunsForInsights([deployment])).toEqual([deployment]);
+  });
+
+  test("an empty feed (server already scoped out everything) reads as zero, not an error", () => {
+    expect(purposeRunsForInsights([])).toEqual([]);
+  });
+});
+
+describe("computeTraceStats", () => {
+  test("returns null when spans are absent or empty", () => {
+    expect(computeTraceStats(null)).toBeNull();
+    expect(computeTraceStats([])).toBeNull();
+  });
+
+  test("derives steps, completed, failed, and duration from spans", () => {
+    const stats = computeTraceStats([
+      span({ id: "a", phase: "ok", start: 0, end: 500 }),
+      span({ id: "b", phase: "failed", start: 200, end: 900 }),
+      span({ id: "c", phase: "awaiting", start: 400, end: 1200 }),
+    ]);
+    expect(stats).toEqual({
+      steps: 3,
+      completed: 1,
+      failed: 1,
+      durationMs: 1200,
+    });
+  });
+});
+
+function leg(partial: Partial<TaskLeg> & Pick<TaskLeg, "position">): TaskLeg {
+  return {
+    definitionId: "wfd_agent",
+    prompt: "do the thing",
+    status: "pending",
+    runId: null,
+    startedAt: null,
+    settledAt: null,
+    ...partial,
+  };
+}
+
+describe("groupRunsByDefinition", () => {
+  test("groups runs by definitionId, newest first within each group", () => {
+    const groups = groupRunsByDefinition([
+      run({
+        id: "a1",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "Research brief",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      run({
+        id: "b1",
+        status: "running",
+        definitionId: "wfd_b",
+        definitionName: "Weekly digest",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+      run({
+        id: "a2",
+        status: "error",
+        definitionId: "wfd_a",
+        definitionName: "Research brief",
+        createdAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(groups.map((g) => g.groupKey)).toEqual(["wfd_a", "wfd_b"]);
+    expect(groups[0]?.runs.map((r) => r.id)).toEqual(["a2", "a1"]);
+    expect(groups[0]?.displayName).toBe("Research brief");
+  });
+
+  test("an empty feed groups to nothing", () => {
+    expect(groupRunsByDefinition([])).toEqual([]);
+  });
+
+  test("uses the newest run's name, not input-array-first, when a definition was renamed", () => {
+    // Old run (chronologically oldest) appears FIRST in the input array,
+    // simulating an unsorted/out-of-order feed. Newer run (renamed) is second.
+    const groups = groupRunsByDefinition([
+      run({
+        id: "old",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "Old Name",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      run({
+        id: "new",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "New Name",
+        createdAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    expect(groups[0]?.runs.map((r) => r.id)).toEqual(["new", "old"]);
+    // The group header should reflect the current (newest) name.
+    expect(groups[0]?.displayName).toBe("New Name");
+  });
+
+  test("groups a routine fire by its routine, not its shared definition, and shows the routine's name", () => {
+    const groups = groupRunsByDefinition([
+      run({
+        id: "fire1",
+        status: "running",
+        definitionId: "wfd_workbench_digest",
+        definitionName: "workbench-digest",
+        routineId: "rtn_pulse_check",
+        routineName: "Pulse check",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      // A second routine firing the very same definition must land in
+      // its own group, not merge with "Pulse check" above.
+      run({
+        id: "fire2",
+        status: "running",
+        definitionId: "wfd_workbench_digest",
+        definitionName: "workbench-digest",
+        routineId: "rtn_weekly_roundup",
+        routineName: "Weekly roundup",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(groups.map((g) => g.groupKey).sort()).toEqual(
+      ["rtn_pulse_check", "rtn_weekly_roundup"].sort(),
+    );
+    expect(groups.map((g) => g.displayName).sort()).toEqual(
+      ["Pulse check", "Weekly roundup"].sort(),
+    );
+  });
+});
+
+describe("runDisplayName", () => {
+  test("prefers the routine's name when the run fired from one", () => {
+    expect(
+      runDisplayName(
+        run({
+          id: "fire1",
+          status: "running",
+          definitionName: "workbench-digest",
+          routineId: "rtn_pulse_check",
+          routineName: "Pulse check",
+        }),
+      ),
+    ).toBe("Pulse check");
+  });
+
+  test("falls back to the definition name for a run with no routine/task parent", () => {
+    expect(
+      runDisplayName(
+        run({
+          id: "direct1",
+          status: "running",
+          definitionName: "researcher",
+          routineId: null,
+          routineName: null,
+        }),
+      ),
+    ).toBe("researcher");
+  });
+});
+
+describe("legDurationMs", () => {
+  test("derives duration from startedAt/settledAt", () => {
+    expect(
+      legDurationMs(
+        leg({
+          position: 0,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          settledAt: "2026-01-01T00:00:05.000Z",
+        }),
+      ),
+    ).toBe(5000);
+  });
+
+  test("returns null when the leg has not settled", () => {
+    expect(
+      legDurationMs(
+        leg({
+          position: 0,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          settledAt: null,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null when the leg never started", () => {
+    expect(legDurationMs(leg({ position: 0 }))).toBeNull();
+  });
+});
+
+describe("legStatusTone", () => {
+  test("maps each leg status to a badge tone", () => {
+    expect(legStatusTone("pending")).toBe("neutral");
+    expect(legStatusTone("dispatching")).toBe("info");
+    expect(legStatusTone("running")).toBe("info");
+    expect(legStatusTone("done")).toBe("success");
+    expect(legStatusTone("failed")).toBe("danger");
+  });
+});
+
+describe("filterRunsByCreatedAt", () => {
+  const from = "2026-01-08T18:00:00.000Z";
+  const to = "2026-01-15T18:00:00.000Z";
+
+  test("keeps runs inside the inclusive window", () => {
+    const filtered = filterRunsByCreatedAt(
+      [
+        run({
+          id: "old",
+          status: "stopped",
+          createdAt: "2026-01-08T17:59:59.000Z",
+        }),
+        run({ id: "edge-from", status: "stopped", createdAt: from }),
+        run({
+          id: "mid",
+          status: "running",
+          createdAt: "2026-01-12T12:00:00.000Z",
+        }),
+        run({ id: "edge-to", status: "deployed", createdAt: to }),
+        run({
+          id: "future",
+          status: "running",
+          createdAt: "2026-01-15T18:00:01.000Z",
+        }),
+      ],
+      from,
+      to,
+    );
+    expect(filtered.map((r) => r.id)).toEqual(["edge-from", "mid", "edge-to"]);
+  });
+
+  test("drops invalid createdAt timestamps", () => {
+    const filtered = filterRunsByCreatedAt(
+      [
+        run({ id: "bad", status: "stopped", createdAt: "not-a-date" }),
+        run({
+          id: "ok",
+          status: "stopped",
+          createdAt: "2026-01-10T00:00:00.000Z",
+        }),
+      ],
+      from,
+      to,
+    );
+    expect(filtered.map((r) => r.id)).toEqual(["ok"]);
   });
 });

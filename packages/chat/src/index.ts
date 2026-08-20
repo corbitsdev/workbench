@@ -10,6 +10,17 @@ export {
   Part,
   parsePart,
 } from "./parts";
+export {
+  ApproveBlockData,
+  StepsBlockData,
+  MetricsBlockData,
+  PollBlockData,
+  FormBlockData,
+  StreamBlockData,
+  QuestionBlockData,
+  parseBlock,
+} from "./blocks";
+export type { Block, BlockParseResult } from "./blocks";
 export { encodeParts, decodeParts, decodeMail, senderOf } from "./codec";
 export type {
   MailContent,
@@ -19,29 +30,33 @@ export type {
 } from "./codec";
 
 export {
-  CHANNEL_HOST_WORKFLOW_ID,
-  CHANNEL_HOST_STEP_ID,
-  CHANNEL_HOST_SYSTEM_PROMPT,
-  buildChannelHostWorkflow,
-  serializeChannelHostWorkflow,
-} from "./channel-workflow";
-export type { ChannelHostWorkflowInput } from "./channel-workflow";
+  WORKBENCH_HOST_WORKFLOW_ID,
+  WORKBENCH_HOST_STEP_ID,
+  WORKBENCH_HOST_SYSTEM_PROMPT,
+  buildWorkbenchHostWorkflow,
+  serializeWorkbenchHostWorkflow,
+} from "./workbench-workflow";
+export type { WorkbenchHostWorkflowInput } from "./workbench-workflow";
+export {
+  workbenchHostAssetName,
+  isWorkbenchHostDefinitionName,
+} from "./workbench-host-naming";
 
 export {
-  CHANNEL_CONTROL_NAMESPACE,
-  ChannelControlPayload,
-  EMPTY_CHANNEL_STATE,
+  WORKBENCH_CONTROL_NAMESPACE,
+  WorkbenchControlPayload,
+  EMPTY_WORKBENCH_STATE,
   isControlMessage,
   parseControlPayload,
   applyControlPayload,
 } from "./settings-control";
 export type {
-  ChannelParticipantState,
+  WorkbenchParticipantState,
   ControlApplyResult,
 } from "./settings-control";
 
 export { presetForKind } from "./kinds";
-export type { ChannelKindPreset } from "./kinds";
+export type { WorkbenchKindPreset } from "./kinds";
 
 export { localPartOf, domainOf } from "./agent-address";
 export { isAgentAddress, mentionedParticipants } from "./mentions";
@@ -55,16 +70,20 @@ export {
 } from "./participants";
 export type { ParticipantRecord } from "./participants";
 
-export { createChatRoutes } from "./routes";
+export { createChatRoutes, findExistingAgentChat } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
+
+export { createWorkbenchSubscriberRegistry } from "./workbench-events";
+export type { WorkbenchSubscriberRegistry } from "./workbench-events";
 export type {
-  ChannelEvents,
-  ChannelLauncher,
-  ChannelMail,
+  WorkbenchActivitySummary,
+  WorkbenchEvents,
+  WorkbenchLauncher,
+  WorkbenchMail,
   ChatPlatform,
-  ChatChannelEvent,
+  ChatWorkbenchEvent,
   InvitableDefinition,
-  LaunchedChannel,
+  LaunchedWorkbench,
   LaunchedInvite,
   ListedMail,
   ListedMailItem,
@@ -72,38 +91,141 @@ export type {
 } from "./platform-port";
 
 export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
-export type { ChatDb, ChatStore } from "./store";
+export type { ChatDb, ChatStore, WorkbenchByParticipantAddress } from "./store";
+
+export {
+  createInMemoryThreadStore,
+  createDrizzleThreadStore,
+  createDeliveryThread,
+  resolveTargetThread,
+} from "./threads";
+export type {
+  ThreadStore,
+  WorkbenchThread,
+  ThreadKind,
+  CreateDeliveryThreadInput,
+  OpenReplyThreadInput,
+  AssignMessageInput,
+  ThreadDb,
+} from "./threads";
+
+export {
+  createInMemoryBlockResponseStore,
+  createDrizzleBlockResponseStore,
+  aggregatePollResponses,
+} from "./block-responses";
+export type {
+  BlockResponsePayload,
+  BlockResponseRow,
+  BlockResponseStore,
+  BlockResponseAggregation,
+  BlockResponseDb,
+  UpsertBlockResponseInput,
+} from "./block-responses";
+
+export { REACTION_EMOJI, isKnownReactionEmoji } from "./reaction-emoji";
+export type { ReactionEmoji } from "./reaction-emoji";
+
+export {
+  createInMemoryReactionStore,
+  createDrizzleReactionStore,
+  aggregateReactions,
+  aggregateReactionsByMessage,
+} from "./reactions";
+export type {
+  ReactionRow,
+  ReactionStore,
+  ReactionSummary,
+  ReactionDb,
+  ToggleReactionInput,
+  ToggleReactionResult,
+} from "./reactions";
+
+export { createInMemoryPinStore, createDrizzlePinStore } from "./pins";
+export type { PinRow, PinStore, PinDb, PinMessageInput } from "./pins";
+
+export {
+  createInMemoryClientIdStore,
+  createDrizzleClientIdStore,
+} from "./client-ids";
+export type {
+  ClientIdRow,
+  ClientIdStore,
+  ClientIdDb,
+  RecordClientIdInput,
+} from "./client-ids";
 
 export { createNoopInferenceRoutes } from "./noop-inference";
+export { joinRunParticipant } from "./run-participant";
+export type {
+  JoinRunParticipantDeps,
+  JoinRunParticipantInput,
+} from "./run-participant";
 export {
   launchAndJoinAgent,
-  sendChannelMessage,
+  postCannedGreeting,
+  cannedGreeting,
+  sendWorkbenchMessage,
   startWorkflowCommand,
-} from "./channel-service";
+  provisionSpaceWorkbench,
+} from "./workbench-service";
 export type {
   LaunchAndJoinAgentDeps,
   LaunchAndJoinAgentInput,
   LaunchAndJoinAgentResult,
-  SendChannelMessageDeps,
-  SendChannelMessageInput,
-  SendChannelMessageResult,
+  PostCannedGreetingDeps,
+  PostCannedGreetingInput,
+  CannedGreetingInput,
+  SendWorkbenchMessageDeps,
+  SendWorkbenchMessageInput,
+  SendWorkbenchMessageResult,
   StartWorkflowCommandDeps,
   StartWorkflowCommandInput,
   StartWorkflowCommandResult,
-} from "./channel-service";
+  ProvisionSpaceWorkbenchDeps,
+  ProvisionSpaceWorkbenchInput,
+  ProvisionSpaceWorkbenchResult,
+} from "./workbench-service";
 
 export {
-  createDrizzleChannelTenancyStore,
-  createInMemoryChannelTenancyStore,
-} from "./channel-tenancy";
+  createDrizzleWorkbenchTenancyStore,
+  createInMemoryWorkbenchTenancyStore,
+} from "./workbench-tenancy";
 export type {
-  ChannelTenancyDb,
-  ChannelTenancyRow,
-  ChannelTenancyStore,
-  CreateChannelTenantInput,
-  CreateChannelTenantResult,
-  MoveChannelTenancyInput,
-} from "./channel-tenancy";
+  WorkbenchTenancyDb,
+  WorkbenchTenancyRow,
+  WorkbenchTenancyStore,
+  CreateWorkbenchTenantInput,
+  CreateWorkbenchTenantResult,
+  MoveWorkbenchTenancyInput,
+} from "./workbench-tenancy";
+
+export { createWorkbenchTenancyRoutes } from "./workbench-tenancy-routes";
+export type { CreateWorkbenchTenancyRoutesDeps } from "./workbench-tenancy-routes";
+
+export {
+  createDrizzleFederationTrustStore,
+  createInMemoryFederationTrustStore,
+} from "./federation-trust";
+export type {
+  FederationTrustDb,
+  FederationTrustStore,
+} from "./federation-trust";
+
+export {
+  createDrizzleWorkbenchShareStore,
+  createInMemoryWorkbenchShareStore,
+  monogramFromName,
+} from "./workbench-share";
+export type {
+  AddShareMemberInput,
+  WorkbenchShareDb,
+  WorkbenchShareRow,
+  WorkbenchShareStore,
+  WorkbenchShareStoreDeps,
+  CreateShareInput,
+  CreateShareOutcome,
+} from "./workbench-share";
 
 export { createHubChatPlatform } from "./platform-adapter";
 export type {
@@ -111,8 +233,45 @@ export type {
   HubChatPlatform,
 } from "./platform-adapter";
 
-export { createChatOrchestrator } from "./chat-orchestrator";
+export {
+  createArtifactDeliveryHandler,
+  createChatOrchestrator,
+} from "./chat-orchestrator";
 export type {
   ChatOrchestrator,
   ChatOrchestratorDeps,
 } from "./chat-orchestrator";
+
+export {
+  createDrizzleWriteClaimStore,
+  createInMemoryWriteClaimStore,
+} from "./write-claims";
+export type {
+  WriteClaim,
+  WriteClaimDb,
+  WriteClaimStore,
+  WriteClaimSurface,
+} from "./write-claims";
+
+export {
+  createWorkbenchHostInferencePreferencesResolver,
+  listDefaultInferencePreferences,
+  listConnectedProviders,
+} from "./inference-preferences";
+export type {
+  ConnectedProviderLister,
+  DefaultInferencePreferenceLister,
+} from "./inference-preferences";
+
+export {
+  artifactPartsForFinalizedTurn,
+  artifactPartsForToolCall,
+} from "./artifact-delivery";
+
+export { createWorkflowParticipantRoutes } from "./workflow-participant-routes";
+export type {
+  CreateWorkflowParticipantRoutesDeps,
+  WorkflowParticipantEnv,
+  WorkflowParticipantRunScope,
+  WorkflowRunAuthenticator as WorkflowParticipantRunAuthenticator,
+} from "./workflow-participant-routes";

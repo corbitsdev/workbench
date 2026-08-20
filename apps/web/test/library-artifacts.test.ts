@@ -1,11 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   artifactListRowToSummary,
-  isArtifactsUnavailableMessage,
+  isArtifactsUnavailableStatus,
   mapArtifactListToSummaries,
+  uploadArtifactFiles,
   type ArtifactListRow,
 } from "../src/shell/library-artifacts";
+
+const realFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
 
 const sample: ArtifactListRow = {
   id: "art_1",
@@ -43,12 +51,17 @@ describe("library-artifacts", () => {
     expect(mapped[1]?.ownerName).toBeNull();
   });
 
-  test("detects the unconfigured-plane error message", () => {
-    expect(
-      isArtifactsUnavailableMessage(
-        "The hub answered 503 for /api/tenants/t/artifacts.",
-      ),
-    ).toBe(true);
-    expect(isArtifactsUnavailableMessage("network failed")).toBe(false);
+  test("detects the unconfigured-plane status", () => {
+    expect(isArtifactsUnavailableStatus(503)).toBe(true);
+    expect(isArtifactsUnavailableStatus(500)).toBe(false);
+    expect(isArtifactsUnavailableStatus(undefined)).toBe(false);
+  });
+
+  test("uploadArtifactFiles throws an UnauthenticatedError on 401", async () => {
+    globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(null, { status: 401 }))) as typeof fetch;
+    await expect(
+      uploadArtifactFiles("tnt_1", [new File(["x"], "x.txt")]),
+    ).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 });

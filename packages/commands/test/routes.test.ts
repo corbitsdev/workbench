@@ -1,5 +1,5 @@
 // Command HTTP surface: listing and execute, including the tenant-scoped
-// channel membership gate on execute (CL-5768).
+// workbench membership gate on execute (CL-5768).
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
@@ -44,7 +44,7 @@ function mount(routes: ReturnType<typeof createCommandRoutes>) {
 const passGrant: RequireGrant = () => async (_c, next) => next();
 
 describe("POST /commands/execute", () => {
-  test("rejects a channel that does not belong to the tenant", async () => {
+  test("rejects a workbench that does not belong to the tenant", async () => {
     const registry = createCommandRegistry();
     registry.registerCommand({
       name: "ping",
@@ -56,7 +56,7 @@ describe("POST /commands/execute", () => {
       createCommandRoutes({
         registry,
         requireGrant: passGrant,
-        channelBelongsToTenant: async () => false,
+        workbenchBelongsToTenant: async () => false,
       }),
     );
 
@@ -65,7 +65,7 @@ describe("POST /commands/execute", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: "ping",
-        channelId: "ins_foreign",
+        workbenchId: "ins_foreign",
       }),
     });
 
@@ -74,7 +74,7 @@ describe("POST /commands/execute", () => {
     expect(body.error.code).toBe("not_found");
   });
 
-  test("dispatches when the channel belongs to the tenant", async () => {
+  test("dispatches when the workbench belongs to the tenant", async () => {
     const registry = createCommandRegistry();
     registry.registerCommand({
       name: "ping",
@@ -86,8 +86,8 @@ describe("POST /commands/execute", () => {
       createCommandRoutes({
         registry,
         requireGrant: passGrant,
-        channelBelongsToTenant: async (tenantId, channelId) =>
-          tenantId === TENANT.id && channelId === "ins_mine",
+        workbenchBelongsToTenant: async (tenantId, workbenchId) =>
+          tenantId === TENANT.id && workbenchId === "ins_mine",
       }),
     );
 
@@ -96,7 +96,7 @@ describe("POST /commands/execute", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: "ping",
-        channelId: "ins_mine",
+        workbenchId: "ins_mine",
       }),
     });
 

@@ -25,7 +25,8 @@
 //      each one whose log lacks a terminal event.
 //   4. Emit `ready` on the control channel.
 //   5. Loop on control-channel frames:
-//        - `trigger.fired` -> open a new run via `runtimeRun`.
+//        - `trigger.fired` -> first-fire the deployment's top-level run via
+//          `runtimeRun` (the supervisor only sends this for an absent log).
 //        - `grants-updated` -> replace the credentialsSnapshot.
 //        - `drain` -> forward to the drain controller (no-op here).
 //        - `shutdown` -> stop accepting new triggers and exit the
@@ -48,8 +49,6 @@
 // supervisor's recycle policy is OS-driven (drain, SIGTERM, SIGKILL,
 // respawn) and does not require a child-side control frame.
 
-import { type } from "arktype";
-
 import { getLogger } from "@intx/log";
 import { generateKeyPair } from "@intx/crypto";
 import { base64Decode, hexEncode } from "@intx/types";
@@ -59,12 +58,10 @@ import type {
   RepoId,
   RepoStore as SubstrateRepoStore,
 } from "@intx/hub-sessions/substrate";
-import {
-  readProcessingEntry,
-  workflowDefinitionEnvelopeSchema,
-} from "@intx/hub-sessions/substrate";
+import { readProcessingEntry } from "@intx/hub-sessions/substrate";
 import type { DirectorRegistry } from "@intx/agent";
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { rewriteInlineOnTriggerBodies } from "@intx/workflow";
 import type { AuthzCallResult } from "@intx/inference";
 
 import type {
@@ -94,7 +91,11 @@ import type { CredentialDelivery } from "@intx/types/sidecar";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
-import type { HostSpawnSuspendableChild } from "../adapters/spawn-child";
+import type {
+  HostSpawnSuspendableChild,
+  RunSuspendableChild,
+} from "../adapters/spawn-child";
+import { createInMemorySpawnSuspendableChild } from "../adapters/spawn-child";
 import {
   createControlChannelSender,
   createEventChannelSender,
@@ -112,6 +113,11 @@ import type { CredentialsSnapshot } from "../supervisor/credentials";
 import { hashGrants } from "../supervisor/credentials";
 
 import type { SpawnTimeEnv } from "./env-bootstrap";
+import {
+  loadVerifiedWorkflowDefinition,
+  loadVerifiedWorkflowDefinitionFromClosure,
+} from "./verified-definition-loader";
+import { loadWorkflowDirectorRegistryFromClosure } from "../workflow-definition-loader";
 import { discoverInFlightRuns } from "./self-discovery";
 import {
   collectParkedApprovalCorrelations,
@@ -345,6 +351,15 @@ export interface RunWorkflowChildBindings {
    * inference events reach the hub stream. The runtime contract stays narrow.
    */
   spawnSuspendableChild?: HostSpawnSuspendableChild;
+  /**
+   * Raw in-process suspendable-child executor. On the source-ref lineage,
+   * `run-child` builds the in-memory body resolver from this executor plus the
+   * bodies map it extracts AFTER re-evaluating the closure -- the substrate
+   * factory cannot build that resolver because the bodies map does not exist
+   * pre-eval. Optional for the same reason as `spawnSuspendableChild`: a child
+   * that runs no onTrigger section omits it.
+   */
+  runSuspendableChild?: RunSuspendableChild;
   /** Host-process scheduler singleton. The child consumes the same instance. */
   scheduler: Scheduler;
   /** Grant evaluator wired against the host's grant-rule grammar. */
@@ -572,7 +587,6 @@ export async function runWorkflowChild(
       return entry.grants;
     },
   };
-  const directors = opts.bindings.directors ?? createDefaultDirectorRegistry();
   const clock = opts.bindings.clock ?? defaultClock;
   const newId = opts.bindings.newId ?? defaultNewId;
 
@@ -597,7 +611,90 @@ export async function runWorkflowChild(
     writer: opts.eventWriter,
   });
 
-  const definition = await loadWorkflowDefinition(opts.bindings);
+  // Re-verify barrier at the load boundary, branching on deployment lineage.
+  // `opts.env.definitionHash` is the hub-approved wire hash in both arms; the
+  // load happens once before both the resume loop and the trigger loop, so the
+  // same verified definition serves every fresh trigger AND every resume.
+  //
+  //   - source-ref: the inert `workflow.json` is a non-executable approval
+  //     surface (agents carry `modelSources`/no `inference`, tool factories are
+  //     plain data), so the child EVALUATES the pinned code closure to a live
+  //     definition and re-verifies by projecting it back to inert and hashing
+  //     (`computeLiveDefinitionHash`); a divergent closure fails closed.
+  //   - live-authored: read the inert `workflow.json` off the deploy tree and
+  //     re-verify the on-disk bytes' hash, unchanged.
+  // Extracted source-ref onTrigger bodies, keyed by ref, for the in-memory
+  // suspendable-child resolver below (empty on the live-authored arm, which
+  // resolves bodies from disk instead).
+  let bodiesMap = new Map<string, WorkflowDefinition>();
+  let definition: WorkflowDefinition;
+  if (opts.env.lineage === "source-ref") {
+    // The `SpawnTimeEnv` union guarantees a source-ref env carries
+    // `closurePackageDir`; no presence check is needed here.
+    definition = await loadVerifiedWorkflowDefinitionFromClosure({
+      packageDir: opts.env.closurePackageDir,
+      approvedHash: opts.env.definitionHash,
+    });
+    // Post-verify structural rewrite: the re-verify above hashed the closure's
+    // INLINE onTrigger bodies (matching the frozen approval); now lift each to
+    // a `{ ref }` so the runtime dispatches to the body child, and keep the
+    // extracted body definitions in an in-memory map. The source-ref
+    // suspendable-child resolver runs each body from THIS map -- the parent's
+    // already-re-verified closure -- with no disk read and no separate per-body
+    // re-verify. The rewrite MUST follow the re-verify: rewriting first would
+    // diverge from the frozen inline-body hash.
+    const { workflow, bodies } = rewriteInlineOnTriggerBodies(definition);
+    definition = workflow;
+    bodiesMap = new Map(bodies.map((b) => [b.ref, b.definition]));
+  } else {
+    definition = await loadVerifiedWorkflowDefinition({
+      substrate: opts.bindings.substrate,
+      repoId: opts.bindings.workflowDefinitionRepoId,
+      workflowPath: WORKFLOW_JSON_PATH,
+      approvedHash: opts.env.definitionHash,
+    });
+  }
+
+  // Directors resolve from the pinned closure on the source-ref arm so a
+  // custom director authored in the workflow's own package runs; the
+  // live-authored arm keeps the injected-or-default registry. Loading
+  // directors OUTSIDE the definition-hash re-verify is safe: the approved
+  // hash pins each director's id + config (which director runs cannot change
+  // post-approval) and the closure's SRI pins its module bytes. Folding
+  // directors into the hash would be redundant, so it is deliberately not
+  // done -- see `loadWorkflowDirectorRegistryFromClosure`.
+  const directors =
+    opts.env.lineage === "source-ref"
+      ? await loadWorkflowDirectorRegistryFromClosure({
+          packageDir: opts.env.closurePackageDir,
+        })
+      : (opts.bindings.directors ?? createDefaultDirectorRegistry());
+
+  // Suspendable-child (onTrigger body) resolver, selected ONCE per deployment:
+  // the bodies map is immutable and the per-run `onEvent` is injected later in
+  // `buildRuntimeEnv`. On source-ref, resolve each body from the parent's
+  // in-memory closure (already re-verified above) via the raw executor binding;
+  // the live-authored arm keeps the injected disk-backed binding. A source-ref
+  // deployment that carries bodies but whose host wired no executor is a
+  // misconfiguration -- fail loud at startup rather than silently falling back
+  // to a disk read (the exact behaviour this arm exists to avoid).
+  let suspendableChildHost: HostSpawnSuspendableChild | undefined;
+  if (bodiesMap.size > 0) {
+    const executor = opts.bindings.runSuspendableChild;
+    if (executor === undefined) {
+      throw new Error(
+        "workflow-child: source-ref deployment carries onTrigger bodies but " +
+          "the host wired no runSuspendableChild executor; cannot resolve " +
+          "bodies in-memory",
+      );
+    }
+    suspendableChildHost = createInMemorySpawnSuspendableChild({
+      bodies: bodiesMap,
+      runSuspendableChild: executor,
+    });
+  } else {
+    suspendableChildHost = opts.bindings.spawnSuspendableChild;
+  }
 
   const authorize = createCredentialsBackedAuthorize(
     credentialsRef,
@@ -660,6 +757,7 @@ export async function runWorkflowChild(
       runtimeRepoStore,
       authorize,
       directors,
+      suspendableChildHost,
       clock,
       newId,
       drainController,
@@ -752,6 +850,7 @@ export async function runWorkflowChild(
           definition,
           authorize,
           directors,
+          suspendableChildHost,
           clock,
           newId,
           eventSender,
@@ -828,6 +927,7 @@ async function handleControlPayload(
     definition: WorkflowDefinition;
     authorize: WorkflowAuthorizeFn;
     directors: DirectorRegistry;
+    suspendableChildHost: HostSpawnSuspendableChild | undefined;
     clock: () => Date;
     newId: (prefix: string) => string;
     eventSender: ReturnType<typeof createEventChannelSender>;
@@ -847,17 +947,16 @@ async function handleControlPayload(
     case "trigger.fire": {
       // One driver per runId. If this child is already driving this
       // runId -- self-discovery resumed it, or an earlier trigger opened
-      // it -- the supervisor's re-fire (which carries the deployment's
-      // mail address as the runId and no resumeFromEvents) must NOT spawn
-      // a second `runtimeRun`. A
+      // it -- a duplicate/stale trigger frame (which carries the local part
+      // of the deployment's mail address as the runId and no resumeFromEvents)
+      // must NOT spawn a second `runtimeRun`. A
       // second concurrent driver would race the live one to settle the
       // same residual and the loser throws an uncaught TransitionError,
       // and even a driver that avoided the throw would double-emit the
       // terminal. The live driver's completion continuation owns the
       // single terminal emission; the supervisor's terminal-event-driven
-      // `markConsumed` consumes the message off that one terminal, so no
-      // work is dropped by declining here. Record the runId (the
-      // supervisor did fire a trigger and it was accepted) and signal
+      // `markConsumed` consumes the original message off that one terminal,
+      // so no work is dropped by declining here. Record the runId and signal
       // "handled, not shutdown" the same way the normal trigger case
       // returns, without awaiting the live handle's `complete` inline
       // (that would block the control loop).
@@ -888,6 +987,7 @@ async function handleControlPayload(
         runtimeRepoStore: ctx.runtimeRepoStore,
         authorize: ctx.authorize,
         directors: ctx.directors,
+        suspendableChildHost: ctx.suspendableChildHost,
         clock: ctx.clock,
         newId: ctx.newId,
         drainController: ctx.drainController,
@@ -1246,6 +1346,7 @@ function buildRuntimeEnv(args: {
   runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
   authorize: WorkflowAuthorizeFn;
   directors: DirectorRegistry;
+  suspendableChildHost: HostSpawnSuspendableChild | undefined;
   clock: () => Date;
   newId: (prefix: string) => string;
   drainController: DrainController;
@@ -1295,7 +1396,7 @@ function buildRuntimeEnv(args: {
   // inference events ride the parent run's event channel to the hub stream
   // (and inherit its loud-on-failure logging), while the runtime env keeps the
   // narrow contract with no event slot.
-  const hostSuspendable = args.bindings.spawnSuspendableChild;
+  const hostSuspendable = args.suspendableChildHost;
   const spawnSuspendableChild: SpawnSuspendableChild | undefined =
     hostSuspendable === undefined
       ? undefined
@@ -1540,52 +1641,6 @@ async function resolveTriggerPayload(args: {
   }
   const raw = base64Decode(rawMessageBase64);
   return extractConversationText(raw, args.messageId);
-}
-
-/**
- * Load the `WorkflowDefinition` from the workflow asset repo's deploy
- * ref. Mirrors the sibling `spawn-child` adapter's working-tree-read
- * pattern -- the deploy orchestrator's `writeTree` materializes
- * `workflow.json` under the substrate's repo dir, so a flat
- * `fs.readFile` returns the bytes without round-tripping through git.
- */
-async function loadWorkflowDefinition(
-  bindings: RunWorkflowChildBindings,
-): Promise<WorkflowDefinition> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const dir = bindings.substrate.getRepoDir(bindings.workflowDefinitionRepoId);
-  const workflowPath = path.join(dir, WORKFLOW_JSON_PATH);
-  let raw: string;
-  try {
-    raw = await fs.readFile(workflowPath, "utf8");
-  } catch (cause) {
-    throw new Error(
-      `workflow-child: cannot read ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef}`,
-      { cause },
-    );
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(
-      `workflow-child: ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef} is not valid JSON`,
-      { cause },
-    );
-  }
-  const validated = workflowDefinitionEnvelopeSchema(parsed);
-  if (validated instanceof type.errors) {
-    throw new Error(
-      `workflow-child: ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef} failed envelope validation: ${validated.summary}`,
-    );
-  }
-  // The envelope schema enforces the structural shape; the
-  // discriminated narrow over every primitive variant lives downstream
-  // in the runtime body. The sibling `spawn-child` adapter follows the
-  // same pattern at the same boundary.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- envelope schema enforces structural shape; primitive narrows live downstream in the runtime body
-  return validated as unknown as WorkflowDefinition;
 }
 
 function defaultClock(): Date {

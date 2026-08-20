@@ -4,6 +4,7 @@
 // Nothing platform-side is mocked; when a hop cannot be exercised for
 // real the suite fails and says which hop, it never fakes the result.
 
+import { afterAll } from "bun:test";
 import { spawn } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -71,6 +72,66 @@ export async function hop<T>(name: string, run: () => Promise<T>): Promise<T> {
       { cause: error },
     );
   }
+}
+
+// --- shared cleanup registry -------------------------------------------
+
+/**
+ * One `afterAll`-backed cleanup registry per suite: `tempDir` mkdtemps
+ * under the OS temp dir and queues its removal, `track` queues a
+ * spawned app's `stop()`. Registered cleanups run last-in-first-out
+ * once the suite's tests finish, whether they passed or failed — the
+ * same guarantee every e2e suite used to hand-roll with its own
+ * `cleanups` array and `try`/`finally`.
+ */
+/**
+ * LIFO sweep over registered cleanups. Every cleanup runs even when an
+ * earlier one throws — a failing hub.stop() must not leak the temp dirs
+ * registered before it. The first failure still surfaces (rethrown after
+ * the sweep).
+ */
+export async function runCleanups(
+  cleanups: (() => Promise<void> | void)[],
+): Promise<void> {
+  let firstFailure: unknown;
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (cause) {
+      firstFailure ??= cause;
+    }
+  }
+  if (firstFailure !== undefined) throw firstFailure;
+}
+
+export function createCleanupHarness(): {
+  tempDir(prefix: string): Promise<string>;
+  track(app: SpawnedApp): void;
+} {
+  const cleanups: (() => Promise<void>)[] = [];
+
+  // Each tracked app's own `stop()` can take up to 5s (SIGTERM, then
+  // SIGKILL after a 5s timeout) before it resolves; a suite that tracks
+  // more than one — e.g. a restart-shaped suite stopping an old hub, a
+  // fresh hub, and a sidecar — can exceed bun's own 5s default hook
+  // timeout purely on cleanup, never on the suite's own assertions.
+  // Generous enough for a handful of tracked apps stopping in the worst
+  // case (every one hitting its own SIGKILL fallback) without becoming
+  // the outer suite timeout itself.
+  afterAll(async () => {
+    await runCleanups(cleanups);
+  }, 30_000);
+
+  return {
+    async tempDir(prefix) {
+      const dir = await mkdtemp(path.join(tmpdir(), prefix));
+      cleanups.push(() => rm(dir, { recursive: true, force: true }));
+      return dir;
+    },
+    track(app) {
+      cleanups.push(() => app.stop());
+    },
+  };
 }
 
 // --- hub-resolved postgres client ------------------------------------
@@ -219,12 +280,32 @@ export async function startHub(options: {
   const baseUrl = `http://localhost:${options.port}`;
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
+    // e2e hubs always allow signup, serve apps/hub/public, and advertise
+    // BASE_URL as their own listen address by default; a caller's
+    // extraEnv can still override any of these (e.g. a real web build's
+    // dist dir, or a public BASE_URL that differs from the actual listen
+    // port — see PORT below — for a browser-driven suite fronted by a
+    // dev-server proxy).
+    WORKBENCH_SIGNUP: "open",
+    HUB_STATIC_DIR: "public",
+    BASE_URL: baseUrl,
     ...options.extraEnv,
     DATABASE_URL: options.databaseUrl,
-    BASE_URL: baseUrl,
+    // Always the real bind port, independent of whatever port BASE_URL's
+    // own origin names — this is the same PORT/BASE_URL split the hub's
+    // own config already documents for a reverse proxy in front of it
+    // (config.ts's PORT field); it is what lets a caller's extraEnv
+    // point BASE_URL at a fronting dev server without also moving where
+    // the hub actually listens.
+    PORT: String(options.port),
     SESSION_SECRET: options.sessionSecret,
     HUB_DATA_DIR: options.dataDir,
-    HUB_STATIC_DIR: "public",
+    // The e2e suite never configures CREDENTIAL_ENCRYPTION_KEY; opt into
+    // the hub's dev/test fallback so boot doesn't hard-fail here.
+    ALLOW_PLAINTEXT_SECRETS: "1",
+    // e2e accounts sign up over the wire with no mail delivery, so their
+    // emails can never verify; opt into the dev/test escape hatch.
+    ALLOW_UNVERIFIED_EMAILS: "1",
   });
   const deadline = Date.now() + 30_000;
   for (;;) {
@@ -337,6 +418,54 @@ export function expectStatus(
     throw new Error(
       `${what}: expected HTTP ${expected}, got ${result.status}: ` +
         JSON.stringify(result.data),
+    );
+  }
+}
+
+// --- keyless-by-construction guard -------------------------------------
+
+/**
+ * Real inference provider hosts. This is not a repo-wide invariant —
+ * each e2e suite chooses per file whether it stays zero-network: a
+ * suite that pins every inference source at the hub's own
+ * noop-inference endpoint or an unreachable placeholder host imports
+ * this guard and calls it at every baseURL/apiKey it constructs, so an
+ * accidental live-provider reference fails immediately instead of
+ * silently attempting a real call. A suite that deliberately does dial
+ * a real provider host (`chat.test.ts`'s echo-invite test, and
+ * `local-rip.test.ts`'s task leg — see each file's own header comment
+ * for why) skips this guard on purpose and says so inline, rather than
+ * importing it and then routing around it. `startHub` only forwards an
+ * explicit env allowlist (see `osEnv`), so a real ANTHROPIC_API_KEY
+ * sitting in a developer's shell never reaches the spawned hub either
+ * way; this guard is the second, explicit line of defense for the
+ * suites that opt into it.
+ */
+const REAL_PROVIDER_HOSTS = [
+  "api.anthropic.com",
+  "api.openai.com",
+  "openrouter.ai",
+  "api-inference.huggingface.co",
+  "huggingface.co",
+];
+
+/**
+ * Fails loudly if `value` (a baseURL, apiKey, or any other string a
+ * test is about to hand the hub as an inference source) names a real
+ * provider host. Call this at every point a smoke test builds a
+ * catalog/credential/deployment source, so an accidental live-provider
+ * reference fails the test immediately instead of silently attempting
+ * a real network call.
+ */
+export function assertNeverRealProvider(value: string, what: string): void {
+  const lower = value.toLowerCase();
+  const hit = REAL_PROVIDER_HOSTS.find((host) => lower.includes(host));
+  if (hit !== undefined) {
+    throw new Error(
+      `${what} references a real inference provider host ("${hit}"); ` +
+        "the e2e suite must never reach a live provider — use the hub's " +
+        "own noop-inference endpoint or an unreachable placeholder host " +
+        "instead.",
     );
   }
 }

@@ -1,0 +1,270 @@
+/**
+ * The sanctioned path for a workflow run to persist and read Library
+ * artifacts (CL-6000). Mounted OUTSIDE the tenant-session prefix
+ * (`TENANT_PREFIX`) `createArtifactRoutes` lives under: a workflow-process
+ * child has no browser session, so every request here authenticates via
+ * `WorkflowRunAuthenticator` instead of `resolveTenant` + `requireGrant`.
+ *
+ * `POST /` is the write side `pain-point-collateral`'s and
+ * `collateral-generation`'s finalize tools call once approved. `GET
+ * /recent` is the read side `@corbits/artifact-tools`' `artifact_list_recent`
+ * calls. Both scope every read/write to the authenticated run's own
+ * tenant + principal — a run can never see or write another tenant's
+ * artifacts, and the child process itself never holds a database handle.
+ */
+import { type } from "arktype";
+import {
+  anonymousIdentity,
+  createArtifact,
+  listArtifacts,
+  serializeArtifactListItem,
+  type ArtifactDb,
+  type SerializedArtifactListItem,
+} from "@corbits/artifacts";
+import { Hono } from "hono";
+
+import type {
+  ResolvedWorkflowRunScope,
+  WorkflowRunAuthenticator,
+} from "./workflow-auth";
+
+const DEFAULT_RECENT_LIMIT = 10;
+const MAX_RECENT_LIMIT = 50;
+
+// Mirrors `@corbits/memory-hub`'s `MAX_ADD_TEXT_CHARS`: 64k characters is
+// generous for any honest artifact body while still catching a model
+// that pastes an entire tool result or file verbatim instead of the
+// artifact it was asked to persist.
+const MAX_ARTIFACT_CONTENT_CHARS = 64_000;
+
+// A finalized turn can legitimately persist a handful of artifacts in
+// one burst; 30/minute per run comfortably covers that while still
+// catching a runaway loop before it floods Library storage.
+const MAX_CREATES_PER_RUN_PER_MINUTE = 30;
+const RATE_WINDOW_MS = 60_000;
+
+/**
+ * In-process sliding-window rate limiter, closed over per
+ * `createWorkflowArtifactRoutes` call — resets on hub restart, which is
+ * fine: unlike a durable redelivery-dedup claim, a rate bound only
+ * needs to hold within one process's uptime, never across it. Per-process
+ * also means per-replica: N hub replicas give one run an effective
+ * N × `MAX_CREATES_PER_RUN_PER_MINUTE` budget, since each replica counts
+ * only what it personally handled — a known fail-open gap, not a
+ * fail-closed one, so it under-limits rather than wrongly rejecting a
+ * caller a sibling replica hasn't seen yet.
+ */
+function createRunCreateRateLimiter(maxPerWindow: number) {
+  const timestampsByRunId = new Map<string, number[]>();
+  return {
+    allow(runId: string): boolean {
+      const now = Date.now();
+      const cutoff = now - RATE_WINDOW_MS;
+      const recent = (timestampsByRunId.get(runId) ?? []).filter(
+        (timestamp) => timestamp > cutoff,
+      );
+      if (recent.length >= maxPerWindow) {
+        timestampsByRunId.set(runId, recent);
+        return false;
+      }
+      recent.push(now);
+      timestampsByRunId.set(runId, recent);
+      return true;
+    },
+  };
+}
+
+export type WorkflowArtifactEnv = {
+  Variables: { workflowRunScope: ResolvedWorkflowRunScope };
+};
+
+export type CreateWorkflowArtifactInput = {
+  readonly title: string;
+  readonly kind: string;
+  readonly content: string;
+};
+
+export type CreatedWorkflowArtifact = {
+  readonly id: string;
+  readonly version: number;
+};
+
+/** Minimal port the routes need — production wraps the artifacts engine db. */
+export type WorkflowArtifactRoutesStore = {
+  create(
+    scope: ResolvedWorkflowRunScope,
+    input: CreateWorkflowArtifactInput,
+  ): Promise<CreatedWorkflowArtifact>;
+  listRecent(
+    scope: ResolvedWorkflowRunScope,
+    limit: number,
+  ): Promise<readonly SerializedArtifactListItem[]>;
+};
+
+const CreateWorkflowArtifactBody = type({
+  title: "string > 0",
+  kind: "string > 0",
+  content: "string > 0",
+});
+
+function parseLimit(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return DEFAULT_RECENT_LIMIT;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_RECENT_LIMIT;
+  return Math.min(n, MAX_RECENT_LIMIT);
+}
+
+/** Production store over an artifacts engine db handle. */
+export function createWorkflowArtifactDbStore(
+  db: ArtifactDb,
+): WorkflowArtifactRoutesStore {
+  return {
+    async create(scope, input) {
+      const row = await db.transaction((tx) =>
+        createArtifact(tx, {
+          scope: { tenantId: scope.tenantId, principalId: scope.principalId },
+          // Workflow-authored artifacts have no human owner-member by
+          // default; a human only enters the picture as the approver
+          // who let the finalize tool call through, not as an owner.
+          ownerPrincipalId: null,
+          kind: input.kind,
+          title: input.title,
+          content: input.content,
+          source: { origin: "workflow", runId: scope.runId },
+        }),
+      );
+      return { id: row.id, version: row.version };
+    },
+    async listRecent(scope, limit) {
+      const result = await listArtifacts(
+        db,
+        anonymousIdentity,
+        scope.tenantId,
+        {
+          limit,
+        },
+      );
+      return result.rows.map(serializeArtifactListItem);
+    },
+  };
+}
+
+export type CreateWorkflowArtifactRoutesDeps = {
+  authenticator: WorkflowRunAuthenticator;
+  store: WorkflowArtifactRoutesStore;
+};
+
+export function createWorkflowArtifactRoutes(
+  deps: CreateWorkflowArtifactRoutesDeps,
+): Hono<WorkflowArtifactEnv> {
+  const app = new Hono<WorkflowArtifactEnv>();
+  const createRateLimiter = createRunCreateRateLimiter(
+    MAX_CREATES_PER_RUN_PER_MINUTE,
+  );
+
+  app.use("*", async (c, next) => {
+    const authHeader = c.req.header("authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : "";
+    const address = c.req.header("x-workflow-run-address") ?? "";
+    const scope = await deps.authenticator.resolve(token, address);
+    if (scope === null) {
+      return c.json(
+        {
+          error: {
+            code: "unauthorized",
+            message:
+              "Missing or unrecognized sidecar bearer token / run address",
+          },
+        },
+        401,
+      );
+    }
+    c.set("workflowRunScope", scope);
+    await next();
+  });
+
+  app.post("/", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(
+        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        400,
+      );
+    }
+    const parsed = CreateWorkflowArtifactBody(body);
+    if (parsed instanceof type.errors) {
+      return c.json(
+        { error: { code: "bad_request", message: parsed.summary } },
+        400,
+      );
+    }
+    if (parsed.content.length > MAX_ARTIFACT_CONTENT_CHARS) {
+      return c.json(
+        {
+          error: {
+            code: "content_too_large",
+            message:
+              `content is ${parsed.content.length} characters, over the ` +
+              `${MAX_ARTIFACT_CONTENT_CHARS}-character limit — shorten it ` +
+              "or split it into multiple artifacts and try again.",
+          },
+        },
+        413,
+      );
+    }
+
+    const scope = c.get("workflowRunScope");
+    if (!createRateLimiter.allow(scope.runId)) {
+      return c.json(
+        {
+          error: {
+            code: "rate_limited",
+            message:
+              `too many artifact writes for this run in the last minute ` +
+              `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
+              "moment before creating more.",
+          },
+        },
+        429,
+      );
+    }
+
+    const created = await deps.store.create(scope, parsed);
+    return c.json({ data: created }, 201);
+  });
+
+  app.get("/recent", async (c) => {
+    const limit = parseLimit(c.req.query("limit"));
+    const data = await deps.store.listRecent(c.get("workflowRunScope"), limit);
+    return c.json({ data });
+  });
+
+  return app;
+}
+
+/**
+ * Honest degraded surface when the artifacts plane is not mounted — same
+ * convention as `createUnavailableArtifactRoutes`.
+ */
+export function createUnavailableWorkflowArtifactRoutes(): Hono<WorkflowArtifactEnv> {
+  const app = new Hono<WorkflowArtifactEnv>();
+  const unavailable = (c: {
+    json: (body: unknown, status: 503) => Response | Promise<Response>;
+  }) =>
+    c.json(
+      {
+        error: {
+          code: "unavailable",
+          message: "Artifacts plane is not configured on this hub",
+        },
+      },
+      503,
+    );
+  app.post("/", unavailable);
+  app.get("/recent", unavailable);
+  return app;
+}

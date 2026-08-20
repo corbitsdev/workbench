@@ -3,7 +3,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { principalLabel } from "../src/identity";
+import {
+  PRINCIPAL_KIND_LABEL,
+  PRINCIPAL_KIND_ORDER,
+  principalLabel,
+} from "../src/identity";
 
 describe("principalLabel", () => {
   test("passes through an already-humane display name unchanged", () => {
@@ -28,5 +32,31 @@ describe("principalLabel", () => {
   test("falls back to a plain label when nothing recognizable survives", () => {
     const result = principalLabel("agt_------");
     expect(result.label).toBe("Unnamed agent");
+  });
+
+  // CL-6075: a workflow principal's vendor-formatted display name is
+  // `Workflow (<runId>@<slug>.localhost)` — the derivation strips the
+  // scheme/host down to the last segment, which drags the wrapper's
+  // trailing ")" along for the ride unless parens are stripped too.
+  test("strips a trailing paren from a workflow principal's wrapped address", () => {
+    const result = principalLabel(
+      "Workflow (run_9f3a7c2e@alice-0ufqkxuy.localhost)",
+    );
+    expect(result.label).not.toContain("(");
+    expect(result.label).not.toContain(")");
+    expect(result.label).toBe("Alice 0ufqkxuy Localhost");
+  });
+});
+
+// CL-6077: a principal picker that shows only a name, never its kind, is
+// kind-blind — a workflow's machine principal can read identically to a
+// person's account. Every picker groups or annotates by this shared label.
+describe("PRINCIPAL_KIND_LABEL", () => {
+  test("covers every kind in PRINCIPAL_KIND_ORDER with a distinct, honest label", () => {
+    const labels = PRINCIPAL_KIND_ORDER.map(
+      (kind) => PRINCIPAL_KIND_LABEL[kind],
+    );
+    expect(labels).toEqual(["user", "agent", "workflow"]);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });

@@ -3,7 +3,7 @@
 // from `@intx/hub-api`'s `run-grant-materialization.ts` (the reference
 // `POST /workflows/runs` route's own helper): that module is
 // hub-api-internal, not part of its published surface — the same
-// module-privacy reason `@corbits/chat`'s `channel-workflow.ts`
+// module-privacy reason `@corbits/chat`'s `workbench-workflow.ts`
 // reimplements `assertJsonPortable` rather than reaching into another
 // package's internals.
 import type { AssetService } from "@intx/hub-sessions";

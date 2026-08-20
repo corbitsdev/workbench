@@ -31,7 +31,7 @@ export function parseSlashCommand(text: string): ParsedCommand | undefined {
 }
 
 /** Parses `@NAME( ARGS)?` — the same grammar, `@`-prefixed, used to
- * decide whether a channel message's leading mention names a workflow
+ * decide whether a workbench message's leading mention names a workflow
  * command rather than an already-invited agent participant. */
 export function parseAtCommand(text: string): ParsedCommand | undefined {
   return parseWithPrefix(text, "@");

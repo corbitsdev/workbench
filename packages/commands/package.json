@@ -3,7 +3,7 @@
   "private": true,
   "description": "The global \"/\" and \"@\" command system: a name/description/handler registry, slash grammar, dispatch, and the Hono route factory that lists and executes commands for a tenant",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

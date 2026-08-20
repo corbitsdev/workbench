@@ -1,15 +1,18 @@
 // Re-deploys a folded run's instance when the sidecar no longer has it
 // resident — either it slept (an idle-sleep sweep) or the stack
 // restarted and never relaunched it. The caller reads its own
-// launch-body persistence (e.g. `@corbits/chat`'s `channel_launch`
-// row) and passes the resulting `foldedBody` in — a channel host's
+// launch-body persistence (e.g. `@corbits/chat`'s `workbench_launch`
+// row) and passes the resulting `foldedBody` in — a workbench host's
 // asset never materializes a workflow.json, so the definition's asset
 // cannot be the wake source, and `folded-runs` has no launch-body
 // table of its own to read.
+import { eq } from "drizzle-orm";
+import { sessionAsset } from "@intx/db/schema";
 import { deployAtHead, type SourcesOverride } from "./launch";
 import { resolveFoldedRunSessionId } from "./runs";
 import type { FoldedRunsDeps } from "./types";
 import type { FoldedBody } from "@intx/workflow-deploy";
+import type { Selector } from "@intx/workflow";
 
 export type WakeFoldedRunParams = {
   tenantId: string;
@@ -21,10 +24,27 @@ export type WakeFoldedRunParams = {
    * When present, used verbatim in place of catalog resolution — see
    * `deployAtHead`'s own doc on the same field. A wake re-deploys with
    * whatever pin the caller decided at launch time (e.g.
-   * `@corbits/chat`'s `channel_launch.noopInference` column), never
+   * `@corbits/chat`'s `workbench_launch.noopInference` column), never
    * re-derives it.
    */
   sources?: SourcesOverride;
+  /**
+   * See `deployAtHead`'s own doc on the same field. A wake must repin
+   * whatever the original launch pinned — the workbench host's literal
+   * input is a property of what the run IS, not of how it was deployed
+   * this particular time, so re-deploying it on the default
+   * `trigger.payload` selector would silently restore the CL-6164 crash
+   * on the very next mail this occurrence receives.
+   */
+  stepInput?: Selector;
+  /**
+   * See `deployAtHead`'s own doc on the same field. A definition that
+   * declares no model of its own resolves a catalog default at every
+   * deploy; the caller re-derives it fresh here the same way the
+   * original launch did, so a wake of such a run never fails on
+   * "declares no model requirements".
+   */
+  fallbackModel?: string;
 };
 
 export async function wakeFoldedRun(
@@ -38,7 +58,20 @@ export async function wakeFoldedRun(
     principalId: params.principalId,
   });
 
-  await deployAtHead(deps, {
+  // A wake redeploys the same instance id the settled occurrence used.
+  // The platform's ordinary launch reserves one `session_asset` manifest
+  // row per (instance, mount path) with no conflict handling — a
+  // duplicate-launch guard that is right for one-shot deployments and
+  // wrong for a folded run, whose whole lifecycle is "settle, then
+  // redeploy this very id". The undeploy that precedes every wake tears
+  // the sidecar workspace down, so the previous occurrence's manifest
+  // rows are stale by construction: clear them here, or the redeploy
+  // dies on the primary key and the conversation goes silent.
+  await deps.db
+    .delete(sessionAsset)
+    .where(eq(sessionAsset.runId, params.instanceId));
+
+  const deployAtHeadParams = {
     tenantId: params.tenantId,
     instanceId: params.instanceId,
     triggerAddress: params.triggerAddress,
@@ -46,6 +79,20 @@ export async function wakeFoldedRun(
     sessionId,
     foldedBody: params.foldedBody,
     launchLabel: "the woken instance",
-    ...(params.sources !== undefined ? { sources: params.sources } : {}),
-  });
+  };
+  try {
+    await deployAtHead(deps, {
+      ...deployAtHeadParams,
+      ...(params.sources !== undefined ? { sources: params.sources } : {}),
+      ...(params.stepInput !== undefined
+        ? { stepInput: params.stepInput }
+        : {}),
+      ...(params.fallbackModel !== undefined
+        ? { fallbackModel: params.fallbackModel }
+        : {}),
+    });
+  } catch (error) {
+    deps.eventCollectors.abandon(params.triggerAddress);
+    throw error;
+  }
 }

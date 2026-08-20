@@ -12,345 +12,19 @@
 
 import { describe, test, expect } from "bun:test";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
-import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
-import { hexEncode } from "@intx/types";
-import { createInMemoryTransport } from "@intx/mail-memory";
-import type { RepoId, RepoStore } from "@intx/hub-sessions";
+import { deriveDeploymentId } from "../src/workflow-host-wiring";
 import {
-  createControlChannelSender,
-  type FrameReader,
-  type NdjsonReader,
-  type NdjsonWriter,
-  type SubprocessHandle,
-  type SubprocessSpawner,
-} from "@intx/workflow-host";
-import type { AgentDeployFrame } from "@intx/types/sidecar";
-
-import {
-  createSidecarDeployRouter,
-  deriveDeploymentId,
-  type SidecarDeployRouter,
-} from "../src/workflow-host-wiring";
-import {
-  createMultistepDrainRouter,
-  createMultistepMailRouter,
-  createMultistepSignalRouter,
-} from "../src/workflow-run-pack-client";
-
-function createMemoryNdjsonStream() {
-  const buffer: string[] = [];
-  let waiter: (() => void) | null = null;
-  let done = false;
-  function wake() {
-    const w = waiter;
-    waiter = null;
-    if (w) w();
-  }
-  const reader: NdjsonReader = {
-    read(): AsyncIterableIterator<string> {
-      return (async function* () {
-        while (true) {
-          if (buffer.length > 0) {
-            const next = buffer.shift();
-            if (next === undefined) {
-              throw new Error("buffer shift returned undefined");
-            }
-            yield next;
-            continue;
-          }
-          if (done) return;
-          await new Promise<void>((resolve) => {
-            waiter = resolve;
-          });
-        }
-      })();
-    },
-  };
-  const writer: NdjsonWriter = {
-    write(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
-      wake();
-      return Promise.resolve();
-    },
-  };
-  return {
-    writer,
-    reader,
-    inject(line: string) {
-      buffer.push(line.replace(/\n$/, ""));
-      wake();
-    },
-    close() {
-      done = true;
-      wake();
-    },
-  };
-}
-
-function createMemoryFrameStream() {
-  const buffer: Uint8Array[] = [];
-  let waiter: (() => void) | null = null;
-  let done = false;
-  function wake() {
-    const w = waiter;
-    waiter = null;
-    if (w) w();
-  }
-  const reader: FrameReader = {
-    read(): AsyncIterableIterator<Uint8Array> {
-      return (async function* () {
-        while (true) {
-          if (buffer.length > 0) {
-            const next = buffer.shift();
-            if (next === undefined) {
-              throw new Error("frame buffer shift returned undefined");
-            }
-            yield next;
-            continue;
-          }
-          if (done) return;
-          await new Promise<void>((resolve) => {
-            waiter = resolve;
-          });
-        }
-      })();
-    },
-  };
-  return {
-    reader,
-    close() {
-      done = true;
-      wake();
-    },
-  };
-}
-
-function createSpawnTestRepoStore(tempBase: string): RepoStore {
-  const stub: Partial<RepoStore> = {
-    getRepoDir(repoId: RepoId): string {
-      return path.join(tempBase, repoId.kind, repoId.id);
-    },
-    async writeTreePreservingPrefix(_p, _id, _ref, args) {
-      await args.merge(new Map());
-      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
-    },
-    // The deploy router's grants bridge writes `state/grants.json` to
-    // each step's agent-state repo before `spawn()`. Mirror the
-    // `getRepoDir` layout so the write lands where the subsequent
-    // `assembleCredentialsSnapshot` working-tree read looks for it.
-    async writeTree(_p, repoId, _ref, content) {
-      const dir = path.join(tempBase, repoId.kind, repoId.id);
-      for (const [relPath, contents] of Object.entries(content.files)) {
-        const full = path.join(dir, relPath);
-        await fs.mkdir(path.dirname(full), { recursive: true });
-        await fs.writeFile(full, contents);
-      }
-      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
-    },
-  };
-  // Boundary type assertion: test stub
-  return new Proxy(stub as RepoStore, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-      if (value !== undefined) return value;
-      return () => {
-        throw new Error(
-          `stub RepoStore: ${String(prop)} not implemented for this test`,
-        );
-      };
-    },
-  });
-}
-
-// Per-spawn tracking the mock spawner records.
-type Spawn = {
-  handle: SubprocessHandle;
-  childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
-  supervisorToChild: ReturnType<typeof createMemoryNdjsonStream>;
-  eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
-  env: Record<string, string>;
-  killed: boolean;
-  exitedResolved: boolean;
-  resolveExited: (code: number) => void;
-};
-
-type Fixture = {
-  router: SidecarDeployRouter;
-  spawns: Spawn[];
-  dataDir: string;
-};
-
-async function makeLifecycleFixture(): Promise<Fixture> {
-  const spawns: Spawn[] = [];
-  const spawner: SubprocessSpawner = ({ env }) => {
-    const supervisorToChild = createMemoryNdjsonStream();
-    const childToSupervisor = createMemoryNdjsonStream();
-    const eventChildToSupervisor = createMemoryFrameStream();
-    let resolveExit: ((code: number) => void) | undefined;
-    const exited = new Promise<number>((resolve) => {
-      resolveExit = resolve;
-    });
-    const entry: Spawn = {
-      // Boundary type assertion: assigned below
-      handle: undefined as unknown as SubprocessHandle,
-      supervisorToChild,
-      childToSupervisor,
-      eventChildToSupervisor,
-      env,
-      killed: false,
-      exitedResolved: false,
-      resolveExited: (code) => {
-        entry.exitedResolved = true;
-        resolveExit?.(code);
-      },
-    };
-    const handle: SubprocessHandle = {
-      pid: 5100 + spawns.length,
-      controlWriter: supervisorToChild.writer,
-      controlReader: childToSupervisor.reader,
-      eventReader: eventChildToSupervisor.reader,
-      kill: () => {
-        entry.killed = true;
-        childToSupervisor.close();
-        eventChildToSupervisor.close();
-        entry.resolveExited(0);
-      },
-      exited,
-    };
-    entry.handle = handle;
-    spawns.push(entry);
-    return handle;
-  };
-
-  const transport = createInMemoryTransport();
-  const keyPair = await generateKeyPair();
-  const tempBase = await fs.mkdtemp(
-    path.join(os.tmpdir(), "sidecar-lifecycle-repos-"),
-  );
-  const dataDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "sidecar-lifecycle-data-"),
-  );
-  const repoStore = createSpawnTestRepoStore(tempBase);
-
-  const router = createSidecarDeployRouter({
-    // Boundary type assertion: the single-step branch invokes only initRepo (head deploy-tree repo); provisionAgent/persistHubPublicKey stay unused (the supervised child mints its own key and persists no hub-agent config)
-    sessions: {
-      provisionAgent: async () => {
-        throw new Error("single-step branch must not invoke provisionAgent");
-      },
-      persistHubPublicKey: async () => {
-        throw new Error(
-          "single-step branch must not invoke persistHubPublicKey",
-        );
-      },
-      initRepo: async () => undefined,
-    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"],
-    // Boundary type assertion: the single-step branch registers the agent's signing key (loadOrGenerateKey) and records the hub key (recordHubKey) at the head before spawn
-    keyStore: {
-      recordHubKey: () => undefined,
-      loadOrGenerateKey: async () => ({
-        keyPair: await generateKeyPair(),
-        isNew: false,
-      }),
-    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
-    transport,
-    repoStore,
-    signingKeySeed: keyPair.privateKey,
-    createAgentCrypto: createEd25519Crypto,
-    assertSourceBuildable: () => undefined,
-    registerDeployment: () => {
-      /* no-op */
-    },
-    unregisterDeployment: () => {
-      /* no-op */
-    },
-    multistepSubprocessSpawner: spawner,
-    multistepSubstrateEnv: {
-      SIDECAR_DATA_DIR: dataDir,
-    },
-    multistepMailRouter: createMultistepMailRouter(),
-    multistepSignalRouter: createMultistepSignalRouter(),
-    multistepDrainRouter: createMultistepDrainRouter(),
-  });
-  return { router, spawns, dataDir };
-}
-
-function makeWorkflowFrame(agentAddress: string): AgentDeployFrame {
-  return {
-    type: "agent.deploy",
-    // Single-step projection: the deploy router derives the sole
-    // step's agent-state repo from `parseAgentId(agentAddress)`, which
-    // requires the canonical `ins_<id>@<domain>` instance shape.
-    agentAddress,
-    agentId: "lifecycle-agent",
-    hubPublicKey: "hub-pk",
-    // Boundary type assertion: the multi-step branch does not read config
-    config: {} as AgentDeployFrame["config"],
-    workflow: {
-      definition: {
-        id: "wf-lifecycle",
-        triggers: [{ type: "manual" }],
-        stepOrder: ["step-1"],
-        steps: { "step-1": { kind: "step" } },
-      },
-      sources: {
-        "step-1": [
-          {
-            id: "step-1",
-            provider: "anthropic",
-            baseURL: "https://api.anthropic.com",
-            apiKey: "sk-step-1",
-            model: "claude-3-5",
-          },
-        ],
-      },
-    },
-  };
-}
-
-/**
- * Drive the mock child's half of the supervisor's spawn handshake: wait
- * for the spawner to fire, then send a signed `ready` envelope over the
- * recorded control channel so `supervisor.spawn()` resolves.
- */
-async function answerReadyHandshake(spawns: Spawn[], at: number) {
-  while (spawns.length <= at) {
-    await new Promise((r) => setTimeout(r, 1));
-  }
-  const spawn = spawns[at];
-  if (spawn === undefined) throw new Error("unreachable");
-  const channelId = spawn.env.IPC_CHANNEL_ID;
-  if (channelId === undefined) {
-    throw new Error("IPC_CHANNEL_ID missing from spawn env");
-  }
-  const childIpcKeyPair = await generateKeyPair();
-  const childSender = createControlChannelSender({
-    privateKeySeed: childIpcKeyPair.privateKey,
-    channelId,
-    writer: {
-      write(line: string) {
-        spawn.childToSupervisor.inject(line);
-        return Promise.resolve();
-      },
-    },
-  });
-  await childSender.send({
-    type: "ready",
-    data: {
-      childPid: spawn.handle.pid,
-      childPublicKey: hexEncode(childIpcKeyPair.publicKey),
-    },
-  });
-  return spawn;
-}
+  answerReadyHandshake,
+  makeLifecycleFixture,
+  makeWorkflowFrame,
+} from "./support/workflow-lifecycle-fixture";
 
 describe("workflow deployment lifecycle through the deploy router", () => {
   test("a deploy frame carrying referencedDefinitions materializes each body's workflow.json and sources.json", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-bodies@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-bodies@example.com");
     if (frame.workflow === undefined) throw new Error("unreachable");
     const bodySources = {
       "body-step": [
@@ -403,9 +77,80 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     ).toEqual(bodySources);
   });
 
+  test("a deploy frame carrying a referenced body's approvedWireHash threads REFERENCED_DEFINITION_HASHES to the spawned child and persists it for restore", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_lifecycle-hashes@example.com");
+    if (frame.workflow === undefined) throw new Error("unreachable");
+    const bodyDefinition = {
+      id: "wf-lifecycle-hashed-body",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["body-step"],
+      steps: { "body-step": { kind: "step" } },
+    };
+    const bodySources = {
+      "body-step": [
+        {
+          id: "body-step",
+          provider: "anthropic",
+          baseURL: "https://api.anthropic.com",
+          apiKey: "sk-body",
+          model: "claude-3-5",
+        },
+      ],
+    };
+    frame.workflow.referencedDefinitions = [
+      {
+        definition: bodyDefinition,
+        sources: bodySources,
+        approvedWireHash: "sha256-approved-body-hash",
+      },
+    ];
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    // The spawned child's env carries the approved hash keyed by the body's
+    // definition id -- what `resolveVerifiedBody` in the workflow-host's
+    // spawn-child adapter re-verifies a body spawn's recompute against.
+    const referencedHashes = JSON.parse(
+      spawn.env.REFERENCED_DEFINITION_HASHES ?? "{}",
+    );
+    expect(referencedHashes).toEqual({
+      [bodyDefinition.id]: "sha256-approved-body-hash",
+    });
+
+    // ...and it survives a restart: the durable deployment record carries
+    // the same map so a boot-time restore rebuilds the identical spawn env
+    // without a hub round-trip.
+    const recordFile = path.join(
+      dataDir,
+      "workflow-runs",
+      deriveDeploymentId(frame.agentAddress),
+      "deployment.json",
+    );
+    const record = JSON.parse(await fs.readFile(recordFile, "utf8"));
+    expect(record.referencedDefinitionHashes).toEqual({
+      [bodyDefinition.id]: "sha256-approved-body-hash",
+    });
+  });
+
+  test("a deploy frame with no referenced bodies threads an empty REFERENCED_DEFINITION_HASHES map", async () => {
+    const { router, spawns } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_lifecycle-no-bodies@example.com");
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    expect(JSON.parse(spawn.env.REFERENCED_DEFINITION_HASHES ?? "")).toEqual(
+      {},
+    );
+  });
+
   test("a workflow frame is accepted: the child spawns, the address goes live, and a durable record lands", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-accept@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-accept@example.com");
 
     const deployPromise = router.deploy(frame);
     await answerReadyHandshake(spawns, 0);
@@ -429,7 +174,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
 
   test("shutdownAll drains the child but preserves the deployment record and conversation root", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-drain@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-drain@example.com");
     const deployPromise = router.deploy(frame);
     const spawn = await answerReadyHandshake(spawns, 0);
     await deployPromise;
@@ -466,7 +211,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
 
   test("undeploy kills the child, reclaims scratch and record, and never deletes the conversation root", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-undeploy@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-undeploy@example.com");
     const deployPromise = router.deploy(frame);
     const spawn = await answerReadyHandshake(spawns, 0);
     await deployPromise;
@@ -561,5 +306,59 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     // The durable conversation lives under a DIFFERENT root and must
     // survive so a re-deploy restores the prior conversation.
     expect(await fs.readFile(durableConversationFile, "utf8")).toBe("x");
+  });
+
+  // CL-6192: the hub's `credentials.update` frame (a rotation, or a
+  // revocation) must reach the resident workflow-process child. Before this
+  // port, no `MultistepCredentialsRouter` handler was ever installed, so an
+  // inbound `credentials.update` frame was unrouted for every deployment.
+  test("a hub credentials.update frame reaches the child as a credentials-updated control frame", async () => {
+    const { router, spawns, multistepCredentialsRouter } =
+      await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_lifecycle-credentials@example.com");
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    const delivery = {
+      bindings: [
+        {
+          handle: "mcp:exa",
+          credentialId: "cred_1",
+          consumer: "tool:@corbits/mcp-tools",
+        },
+      ],
+      materials: [
+        {
+          credentialId: "cred_1",
+          providerKey: "http",
+          origin: "https://mcp.exa.ai/mcp",
+          secret: "rotated-secret",
+        },
+      ],
+    };
+
+    const routed = await multistepCredentialsRouter.tryRoute({
+      type: "credentials.update",
+      agentAddress: frame.agentAddress,
+      delivery,
+    });
+
+    expect(routed).toBe(true);
+    const credentialsUpdatedLine = spawn.sentControlLines.find(
+      (line) =>
+        (JSON.parse(line) as { envelope: { payload: { type: string } } })
+          .envelope.payload.type === "credentials-updated",
+    );
+    if (credentialsUpdatedLine === undefined) {
+      throw new Error(
+        "expected a credentials-updated control frame after routing credentials.update",
+      );
+    }
+    const parsed = JSON.parse(credentialsUpdatedLine) as {
+      envelope: { payload: { type: string; data: { delivery: unknown } } };
+    };
+    expect(parsed.envelope.payload.data.delivery).toEqual(delivery);
   });
 });

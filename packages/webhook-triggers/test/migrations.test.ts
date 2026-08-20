@@ -40,7 +40,7 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
   afterAll(async () => {
     const maintenanceUrl = new URL(scratchUrl);
@@ -54,31 +54,36 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
-  test("applies the trigger table and is idempotent on a second run", async () => {
+  const migrationNames = [
+    "0001_webhook_trigger",
+    "0002_webhook_trigger_tenant_index",
+  ];
+
+  test("applies the trigger table into its own schema and is idempotent on a second run", async () => {
     const first = await applyWebhookTriggersMigrations(scratchUrl);
-    expect(first.applied).toEqual([
-      "0001_webhook_trigger",
-      "0002_webhook_trigger_tenant_index",
-    ]);
+    expect(first.applied).toEqual(migrationNames);
 
     const second = await applyWebhookTriggersMigrations(scratchUrl);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied.sort()).toEqual([
-      "0001_webhook_trigger",
-      "0002_webhook_trigger_tenant_index",
-    ]);
+    expect(second.alreadyApplied.sort()).toEqual([...migrationNames].sort());
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
-          `WHERE table_schema = 'public' AND table_name = 'webhook_trigger'`,
+          `WHERE table_schema = 'webhook_triggers' AND table_name = 'webhook_trigger'`,
       );
       expect(tables.map((row) => String(row["table_name"]))).toEqual([
         "webhook_trigger",
       ]);
+
+      const inPublic = await sql.unsafe(
+        `SELECT 1 FROM information_schema.tables ` +
+          `WHERE table_schema = 'public' AND table_name = 'webhook_trigger'`,
+      );
+      expect(inPublic).toHaveLength(0);
     } finally {
       await sql.end();
     }

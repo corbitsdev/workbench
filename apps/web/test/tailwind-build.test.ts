@@ -14,11 +14,17 @@ function builtCss(): string {
       "apps/web/dist/assets missing — run `bun run build` in apps/web first",
     );
   }
-  const file = readdirSync(DIST_ASSETS).find((name) => name.endsWith(".css"));
-  if (file === undefined) {
+  // Code splitting emits one CSS file per chunk; a utility may land in
+  // any of them, so assert against all of them together.
+  const files = readdirSync(DIST_ASSETS).filter((name) =>
+    name.endsWith(".css"),
+  );
+  if (files.length === 0) {
     throw new Error("no CSS asset under apps/web/dist/assets");
   }
-  return readFileSync(path.join(DIST_ASSETS, file), "utf8");
+  return files
+    .map((file) => readFileSync(path.join(DIST_ASSETS, file), "utf8"))
+    .join("\n");
 }
 
 describe("Tailwind production CSS", () => {
@@ -28,18 +34,12 @@ describe("Tailwind production CSS", () => {
     expect(css).toContain("sm\\:px-7");
   });
 
-  test("emits artifact kind palette classes", () => {
+  // The kind-color palette classes died with artifact-ui's unused
+  // `artifactKindColor` export (fleet cleanup) — kind is conveyed by
+  // `artifactKindLabel` text, so only the still-used neutral survives.
+  test("emits the artifact card's neutral background", () => {
     const css = builtCss();
-    for (const color of [
-      "bg-\\[var\\(--chart-1\\)\\]",
-      "bg-\\[var\\(--chart-2\\)\\]",
-      "bg-\\[var\\(--chart-3\\)\\]",
-      "bg-\\[var\\(--chart-4\\)\\]",
-      "bg-\\[var\\(--chart-5\\)\\]",
-      "bg-muted",
-    ]) {
-      expect(css).toContain(color);
-    }
+    expect(css).toContain("bg-muted");
   });
 
   test("emits sizing utilities used on agent cards", () => {

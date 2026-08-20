@@ -13,24 +13,28 @@
 # node_modules excluded). check:killdates recomputes it and fails on
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
-vendor/intx/agent | sawyer | 2026-09-05 | 05b37bea943d4b4e0ccc70c224ddd275534ae3edb50c35067e114aaf2241ab8a
-vendor/intx/authz | sawyer | 2026-09-05 | 4ca5cccee098b878431c4b9c36443a3df67c418a20187110b3c552d232fec58e
-vendor/intx/crypto | sawyer | 2026-09-05 | 9184d45767850e99083f3e84609b732e6e03ab45a51fde3f2e0a2226aed04aba
-vendor/intx/db | sawyer | 2026-09-05 | 98a43537571287aa74f4b8b7e3cca63a11a77072a073e7a5b7a166f898b00c8b
-vendor/intx/harness | sawyer | 2026-09-05 | 0fa6b38fc8ce6084f2c8a55d9afb2a0912a3081a46b1a17a1bf3fa5af2e04d36
-vendor/intx/hub-agent | sawyer | 2026-09-05 | 7c032e067f61059f623294ccbc48f4c7e720151609eac72f18441d71fcff2bee
-vendor/intx/hub-api | sawyer | 2026-09-05 | 3a4026f7159de9a19a0fe6f81ebc45e40b5b2a41b454b0871dd48f2ff9d26bcb
-vendor/intx/hub-common | sawyer | 2026-09-05 | bb0786ebf03cd0a6df71ca54f7e2bb845983bd406a7dac39190fb6601349f6af
-vendor/intx/hub-sessions | sawyer | 2026-09-05 | 5fbb566918a7d6147b6ba833277bf627ddbb45d2158c0400e88ed25dd70be66c
-vendor/intx/inference | sawyer | 2026-09-05 | 4fe554131a34b3d3a427648de16e0680b08548f95ebe9623a51818c55b9d19d2
-vendor/intx/log | sawyer | 2026-09-05 | eda0b157097221cf03f286e226832e0607e9b12d2057b8d719b092ede05d6ee2
-vendor/intx/mail-memory | sawyer | 2026-09-05 | dbc44f9812f59516f3660a9f9a7a14c7f9405c0c649f95bd10aff2823f32f58e
-vendor/intx/mime | sawyer | 2026-09-05 | 713e4e287f3916ce7f78a38b830da571eb6f8d70c03de0a6d7a84377fbbc0afd
-vendor/intx/pack-transport | sawyer | 2026-09-05 | 48dd13ca00a5dc2b6132738ed4d1c4984bebbfdacbd553231afb43a8b4942a50
-vendor/intx/storage-isogit | sawyer | 2026-09-05 | a24777e4398361daf7c36928441fd93b1e0bf4cdde614eaf3dda9409e376494d
-vendor/intx/tool-packaging | sawyer | 2026-09-05 | 4ea41aa04776cdf77210aad9c06acbb99499030d5c6a5f5d06cba8a8c9ac59a7
-vendor/intx/types | sawyer | 2026-09-05 | 0b580264bdc08d77c6765c778e29bb5ae4226b23216bcbd27bdba1ef87e5eded
-vendor/intx/workflow | sawyer | 2026-09-05 | 321435a4a492e93e7d0a10d2403c61a15a6f297d4db81126a3601c32452fad9c
-vendor/intx/workflow-deploy | sawyer | 2026-09-05 | b6743bcdd0a070db347510244fc399b31581ee60f8432f9e6e0d3f533c3575ab
-vendor/intx/workflow-host | sawyer | 2026-09-05 | d5f61380132ff67f826038a11449d22d09574ee87df2d36781f0086a7c4ddb22
+apps/sidecar | sawyer | 2026-09-14
+vendor/intx/agent | sawyer | 2026-09-14 | 478b17dfc4e71da8c7b15b51bdf74d6476459e58c7a251aa3eaabfdda6276d45
+vendor/intx/authz | sawyer | 2026-09-14 | 38d6760b35a9ce4ccbadc07b1d4d1d24fbe50dbde2200179009035b7c08bf2ec
+vendor/intx/crypto | sawyer | 2026-09-14 | 98cec0405dec9eadc8daeae161231b9bc980cb076daf43ef4f617a3b1c1d7096
+vendor/intx/db | sawyer | 2026-09-14 | 0841456d5d983773847e442af0813db12705978e866adebe6d3dceed1a6952a8
+vendor/intx/harness | sawyer | 2026-09-14 | 70e6b3dccca2d596c3992911e4515da7f08c2d5df8815c582ea970671c9424ce
+vendor/intx/hub-agent | sawyer | 2026-09-14 | 4426f2436a79e98e29f9ba562895e7d909cb685117af16f0fdb7eaa6a2bfcdbb
+vendor/intx/hub-api | sawyer | 2026-09-14 | f821fb1204ba73892d9f0b5f40fcd4ccdbf14b33ce52f077031f053efd31189b
+vendor/intx/hub-common | sawyer | 2026-09-14 | adf9027bab1c7ebfb627b739c22fd1ce1aeec826ba12c4288564f843bee788f1
+vendor/intx/hub-sessions | sawyer | 2026-09-05 | e3c2e39bfbb8d483271bf2030ecf8c920927a3a3a0ac32b6f25fb47795abab1a
+vendor/intx/inference | sawyer | 2026-09-14 | a4092dc6a43afb1870fe1e47fa6d27433cab25f7ab857ce386c37c71c5610717
+vendor/intx/inference-catalog | sawyer | 2026-09-14 | 7b8fdcc0357d40f265609ddd8b75f517d94d4e0662617e9f9c59aba6e5bfe5cd
+vendor/intx/log | sawyer | 2026-09-14 | b91343965c0feea11051c7f62a7b71e218330c299ef78ba9ef35e663527e6bc3
+vendor/intx/mail-memory | sawyer | 2026-09-14 | 7cd5416cec904d904cf3f8e183b7417cd1bfee85f800031d85fc0d302ce3d744
+vendor/intx/mime | sawyer | 2026-09-14 | 28fbfaf77bd90eeaa2c58735dc8583df7a7fd85327d6489c153b93cdb56b5b76
+vendor/intx/pack-transport | sawyer | 2026-09-14 | 81f230269ae916111bd7242698f4e40c4eb49934cebea47fb16d80dd78e13348
+vendor/intx/storage-isogit | sawyer | 2026-09-14 | 26f30a4fd27645a620bded1e9359fbb8d87d20f759b9e02c52e213efb459ca73
+vendor/intx/tool-packaging | sawyer | 2026-09-14 | 47f29256729105eebab38b23b7326ec9fadc9ebcb9ab460eeba44f94a86d7e45
+vendor/intx/types | sawyer | 2026-09-14 | 29d8a7b2589979a04a38706e40e14491a4c57856d6368f74e944c386afed2ef7
+vendor/intx/workflow | sawyer | 2026-09-14 | 81af2a4cb3669540b98d31a9a530908fb701a2a19da94ae69dcbe55a58f8f73b
+vendor/intx/workflow-deploy | sawyer | 2026-09-14 | de72de087e7b499d42b69b7eae6185a4c5448c34a02d3c21badf7c6d0ad3b66d
+vendor/intx/workflow-host | sawyer | 2026-09-14 | 418ffc162cec5de706fcb8082f0afea6318e89c8ffe71ff010bce1da060bcc59
+
 packages/folded-runs | sawyer | 2026-11-01
+

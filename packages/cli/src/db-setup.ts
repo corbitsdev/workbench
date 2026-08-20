@@ -8,13 +8,18 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { CliError } from "@workbench/hub-client";
 
-export function createDbSetupRunner(repoRoot: string): () => Promise<void> {
+function createScriptRunner(
+  repoRoot: string,
+  scriptRelativePath: string,
+  verb: string,
+  failureHint: string,
+): () => Promise<void> {
   return async () => {
-    const script = join(repoRoot, "scripts", "db-setup.ts");
+    const script = join(repoRoot, ...scriptRelativePath.split("/"));
     if (!existsSync(script)) {
       throw new CliError(
-        `the database setup script is missing: ${script}`,
-        "restore it from version control (`git checkout -- scripts/db-setup.ts`), then re-run: workbench setup",
+        `the ${verb} script is missing: ${script}`,
+        `restore it from version control (\`git checkout -- ${scriptRelativePath}\`), then re-run: workbench ${verb}`,
       );
     }
     const child = Bun.spawn(["bun", script], {
@@ -25,9 +30,27 @@ export function createDbSetupRunner(repoRoot: string): () => Promise<void> {
     const code = await child.exited;
     if (code !== 0) {
       throw new CliError(
-        `database initialization failed: scripts/db-setup.ts exited with code ${code}`,
-        "fix the problem it reported above (is Postgres running and DATABASE_URL correct?), then re-run: workbench setup",
+        `${verb} failed: ${scriptRelativePath} exited with code ${code}`,
+        `${failureHint}, then re-run: workbench ${verb}`,
       );
     }
   };
+}
+
+export function createDbSetupRunner(repoRoot: string): () => Promise<void> {
+  return createScriptRunner(
+    repoRoot,
+    "scripts/db-setup.ts",
+    "setup",
+    "fix the problem it reported above (is Postgres running and DATABASE_URL correct?)",
+  );
+}
+
+export function createResetRunner(repoRoot: string): () => Promise<void> {
+  return createScriptRunner(
+    repoRoot,
+    "scripts/reset.ts",
+    "reset",
+    "fix the problem it reported above (is Postgres running, and does DATABASE_URL point at your local database?)",
+  );
 }

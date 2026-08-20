@@ -13,6 +13,18 @@ import type { getLogger } from "@intx/log";
 
 type Logger = ReturnType<typeof getLogger>;
 
+/**
+ * The `reason` this package's sweep passes to `undeploy` for every idle
+ * eviction. A host's `undeploy` port (e.g. the sidecar's `agent.undeploy`
+ * handler) matches on this exact string to choose a STATE-PRESERVING
+ * teardown (keep the deployment record, step-state scratch, and slug so a
+ * later relaunch resumes the same run) rather than the destructive default
+ * a caller-initiated undeploy (channel deletion, member removal, ...) gets.
+ * Exported so every `undeploy` port this package's sweep calls can agree on
+ * the same tag without each host inventing its own string.
+ */
+export const IDLE_HIBERNATE_UNDEPLOY_REASON = "idle-hibernate";
+
 export type CreateAgentLifecycleOptions = {
   /** How long an address may sit idle (no `recordActivity`) before the sweep sleeps it. Required — no default hidden in here. */
   idleSleepMs: number;
@@ -102,7 +114,7 @@ export function createAgentLifecycle(
       if (isBusy(address)) continue;
 
       try {
-        await undeploy(address, "idle");
+        await undeploy(address, IDLE_HIBERNATE_UNDEPLOY_REASON);
         log.info`sleeping idle instance ${address} after ${String(idleSleepMs)}ms of inactivity`;
       } catch (err) {
         log.error`lifecycle sweep failed to undeploy ${address}: ${

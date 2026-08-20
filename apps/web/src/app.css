@@ -9,6 +9,53 @@
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
+@import "@corbits/tasks-ui/styles.css";
+@import "@corbits/plugins-ui/styles.css";
+
+/* Mock chrome: 15px root so rem-based density matches the interactive mock. */
+html {
+  font-size: 15px;
+}
+
+/* Brand type: Red Hat Display is loaded in index.html but nothing applied
+   it — without this the whole app silently renders in the system fallback.
+   Space Mono covers the places code/mono content asks for monospace. */
+body {
+  font-family:
+    "Red Hat Display",
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+code,
+pre,
+kbd {
+  font-family: "Space Mono", ui-monospace, monospace;
+}
+
+/* Interactive means pointer. Tailwind's preflight leaves buttons on the
+   default arrow cursor, so every clickable control in the app (react-ui
+   buttons included) needs this said once, globally. Disabled controls
+   say so with the cursor too. */
+button,
+a,
+[role="button"],
+[role="option"],
+[role="menuitem"],
+[role="tab"],
+label[for],
+select,
+summary,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+button:disabled,
+input:disabled,
+select:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
 
 .app-mark {
   height: 1.375rem;
@@ -25,20 +72,196 @@
   height: 100dvh;
 }
 
-/* The four-column app shell: rail, contextual panel, main pane, canvas.
-   Percentages in the comments below are against a 1440px desktop, the
-   spec's reference width — the actual columns are sized in rem/vw so they
-   hold roughly those proportions across viewports instead of clipping at a
-   fixed pixel width. */
+/* The app shell: one sidebar, the main pane, and the optional canvas.
+   Columns are sized in rem/vw so they hold their proportions across
+   viewports instead of clipping at a fixed pixel width. */
 .shell-frame {
   display: flex;
   height: 100dvh;
   overflow: hidden;
 }
 
-/* ~7-15% of a desktop viewport, narrowing gracefully at laptop widths. */
+/* Shell chrome only: pointer when enabled, not-allowed when disabled.
+   Scoped to the sidebar so stage content keeps library defaults. */
+.shell-sidebar button:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  button:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+.shell-sidebar button:disabled,
+.shell-sidebar button[aria-disabled="true"],
+.shell-sidebar [data-slot="button"]:disabled,
+.shell-sidebar [data-slot="button"][aria-disabled="true"],
+.shell-sidebar [data-slot="sidebar-item-row"] button:disabled,
+.shell-sidebar [data-slot="sidebar-item-row"] button[aria-disabled="true"],
+.shell-sidebar .shell-ch-row:disabled,
+.shell-sidebar .shell-ch-row[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Sidebar widths: 16.5rem base, tightening to 14rem while the canvas is
+   open. Values are owner-iterated; keep them unless a new Linear decision
+   changes them. */
 :root {
-  --shell-contextual-width: clamp(12rem, 11vw, 16rem);
+  /* Mock's zero-radius rule is app-wide, not per-component: react-ui's
+     theme.css sets --radius: 0.5rem on :root, and this is the only place
+     that token is ever redefined. Loading after react-ui/styles.css in
+     main.tsx, this wins the cascade and zeroes every consumer at once
+     (Dialog, Button, Input, …) instead of chasing rounded corners
+     component by component. */
+  --radius: 0;
+  /* Brand rule: zero radius everywhere, not just on --radius consumers.
+     --ui-radius-* is workbench's own token family (dialog close button,
+     header tool buttons, the artifact cursor label) — zeroed here so
+     nothing outside react-ui's --radius cascade can still render rounded. */
+  --ui-radius-sm: 0;
+  --ui-radius-md: 0;
+  --ui-radius-lg: 0;
+  /* Workbench panels still name --ui-* surface tokens; map them onto
+     react-ui's semantic palette so borders/fills resolve instead of
+     falling through as invalid custom properties. */
+  --ui-bg: var(--background);
+  --ui-bg-subtle: var(--muted);
+  --ui-fg: var(--foreground);
+  --ui-fg-muted: var(--muted-foreground);
+  --ui-border: var(--border);
+  --ui-accent: var(--primary);
+  --ui-danger: var(--destructive);
+  --shell-sidebar-width: 17.5rem;
+  --shell-sidebar-width-tight: 15rem;
+  --shell-canvas-width: min(36rem, 42vw);
+  /* Mock --accent / --faint: same idea across themes, but each still
+     resolves through a react-ui token so dark mode gets its own correct
+     value instead of inheriting the light hex verbatim (see the .dark
+     override below). */
+  --shell-accent: #e98428;
+  --shell-panel-faint: #8a8080;
+  /* Shared dialog craft tokens (react-ui data slots). */
+  --dialog-content-max-width: 32rem;
+  --dialog-content-max-height: min(90dvh, 42rem);
+  --dialog-gutter: 1rem;
+  /* Status accents the react-ui theme doesn't define: success and caution. */
+  --ok: #37904a;
+  --warn: #b7791f;
+}
+
+.dark {
+  --ok: #5cb573;
+  --warn: #d9a441;
+  /* --shell-panel-faint at a constant #8a8080 clears AA (5.1:1 on black)
+     but reads washed out next to react-ui's own dark --muted-foreground
+     (7.74:1); route it there instead of leaving faint text pinned to the
+     light-mode value. --shell-accent already equals dark's
+     --primary-emphasis, so pointing it at the token is a no-op in color
+     but keeps it sourced correctly if the brand orange ever moves. */
+  --shell-accent: var(--primary-emphasis);
+  --shell-panel-faint: var(--muted-foreground);
+}
+
+/* Mock .app[data-canvas="on"]: an open canvas tightens the sidebar. */
+.shell-frame:has(.shell-canvas-column[data-open="true"]) {
+  --shell-sidebar-width: var(--shell-sidebar-width-tight);
+}
+
+/* Shared dialog craft — layout/scroll/chrome on react-ui data slots only.
+   Feature forms and dialog body content keep their own styles. */
+[data-slot="dialog-content"][data-side="center"] {
+  width: min(
+    calc(100vw - (var(--dialog-gutter) * 2)),
+    var(--dialog-content-max-width)
+  );
+  max-height: var(--dialog-content-max-height);
+  overflow: hidden;
+}
+
+[data-slot="dialog-header"] {
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+[data-slot="dialog-header"] h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+[data-slot="dialog-header"] p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+[data-slot="dialog-body"] {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+[data-slot="dialog-footer"] {
+  flex-shrink: 0;
+  margin-top: auto;
+  gap: 0.5rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* Close control: shell-density hit area with hover/focus chrome. */
+[data-slot="dialog-content"] > button[aria-label="Close"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  top: 0.85rem;
+  right: 0.85rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border-radius: var(--ui-radius-lg);
+  opacity: 1;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+[data-slot="dialog-content"] > button[aria-label="Close"]:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+  opacity: 1;
+}
+
+[data-slot="dialog-content"] > button[aria-label="Close"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--foreground);
+  color: var(--foreground);
+}
+
+@media (max-width: 40rem) {
+  [data-slot="dialog-content"][data-side="center"] {
+    width: min(calc(100vw - 1.25rem), var(--dialog-content-max-width));
+    max-height: min(92dvh, 42rem);
+  }
+
+  [data-slot="dialog-footer"] {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  [data-slot="dialog-footer"] > * {
+    width: 100%;
+  }
 }
 
 .shell-main {
@@ -58,16 +281,134 @@
   flex-direction: column;
 }
 
-/* Column 2: three-band contextual panel. */
-.shell-contextual-panel {
-  display: flex;
-  width: var(--shell-contextual-width);
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 0;
+/* CL-6092: the guided-fix banner, above the stage's own top bar — quiet
+   until there is something to act on, then a clear (not alarming) nudge
+   toward the fix. */
+/* Mount/unmount collapse (CL-6092): a grid-rows 0fr/1fr toggle so the
+   banner's entrance/exit eases the stage's height rather than snapping it
+   open or shut. `theme.css` (react-ui) already collapses every
+   transition duration under `prefers-reduced-motion`, so this needs no
+   media query of its own. */
+.provider-health-banner-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.provider-health-banner-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+
+.provider-health-banner-collapse-inner {
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.provider-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border);
   background: var(--card);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.provider-health-banner-collapse.is-open .provider-health-banner {
+  opacity: 1;
+}
+
+.provider-health-banner-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--destructive);
+}
+
+.provider-health-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--card-foreground);
+}
+
+/* The Plugins gallery's own "couldn't find that connection" notice
+   (CL-6092): a deep link from the shell banner that names a provider the
+   gallery has no card for. */
+.plugins-connect-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.plugins-connect-notice-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--destructive);
+}
+
+.plugins-connect-notice-text {
+  font-size: 0.8125rem;
+  color: var(--card-foreground);
+}
+
+/* Column 2: SidebarPanel root; width overrides the library default (w-72).
+   Mock sidebar geometry: pure ground, light right border. */
+.shell-sidebar {
+  width: var(--shell-sidebar-width);
+  min-width: var(--shell-sidebar-width);
+  background: var(--background);
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  transition:
+    width 200ms ease,
+    min-width 200ms ease;
+}
+
+/* Mock v2 sidebar head: padding 0.7/0.75/0.4, title 0.8125rem/600. */
+.shell-sidebar [data-slot="sidebar-panel-header"] {
+  min-height: 0;
+  height: auto;
+  padding: 0.7rem 0.75rem 0.4rem;
+  border-bottom: none;
+  gap: 0.4rem;
+}
+
+.shell-sidebar [data-slot="sidebar-panel-header"] h2 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shell-sidebar [data-slot="sidebar-panel-body"] {
+  padding: 0.1rem 0.55rem 0.5rem;
+  scrollbar-width: thin;
+}
+
+/* Mock sidebar foot: full-width bench dock padding. */
+.shell-sidebar [data-slot="sidebar-panel-footer"] {
+  padding: 0.45rem 0.7rem 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+}
+
+/* Mock .section labels in sidebar lists — always 0.65rem / 0.07em. */
+.shell-sidebar .panel-band-heading,
+.shell-sidebar .panel-band-subheading {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  padding: 0.65rem 0.45rem 0.3rem;
+  margin: 0;
 }
 
 .panel-band {
@@ -79,10 +420,30 @@
   min-height: 0;
 }
 
+/* Kill heavy band chrome inside the sidebar — lists sit flush in the scroll body. */
+.shell-sidebar .panel-band {
+  gap: 0.15rem;
+  padding: 0;
+  border-bottom: none;
+}
+
+.panel-band-inset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0 0.7rem 0.55rem;
+  border-bottom: none;
+}
+
 .panel-band-page-specific {
   flex: 1;
   overflow-y: auto;
   border-bottom: none;
+}
+
+/* Header already prints the page title — never re-title the body band. */
+.shell-sidebar .panel-band-page-specific > .panel-band-heading {
+  display: none;
 }
 
 .panel-page-header {
@@ -104,13 +465,6 @@
   color: var(--foreground);
 }
 
-.panel-page-subtitle {
-  margin: 0.125rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--muted-foreground);
-}
-
 .panel-page-tools {
   display: flex;
   flex-shrink: 0;
@@ -118,17 +472,60 @@
   gap: 0.125rem;
 }
 
+/* Mock .icon-sm: compact muted header tools (settings, canvas). */
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"],
+.shell-sidebar .panel-page-tools [data-slot="button"] {
+  width: 1.8rem;
+  height: 1.8rem;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--ui-radius-lg);
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"]:hover,
+.shell-sidebar .panel-page-tools [data-slot="button"]:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+}
+
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"] svg,
+.shell-sidebar .panel-page-tools [data-slot="button"] svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
 .panel-page-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: 0.3rem;
+}
+
+/* Mock .qa-chip: quiet bordered chip on the ground, faint until hover. */
+.panel-page-actions [data-slot="button"] {
+  height: 1.7rem;
+  min-height: 0;
+  padding: 0 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 550;
+  box-shadow: none;
+}
+
+.panel-page-actions [data-slot="button"]:hover {
+  background: var(--background);
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  color: var(--foreground);
 }
 
 .panel-band-heading {
   margin: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
@@ -136,9 +533,9 @@
 .panel-band-subheading {
   margin: 0;
   padding: 0.25rem 0.5rem 0.125rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
@@ -162,51 +559,237 @@
   gap: 0.125rem;
 }
 
-/* Page-local toolbars replace TopBar action clusters (search, view toggle)
-   that still need component state on the page. Identity lives in the panel. */
-.page-toolbar {
+.panel-filter-row {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
+  row-gap: 0.375rem;
+  column-gap: 0.375rem;
+  padding: 0 0.15rem 0.55rem;
+}
+
+/* Mock .qa-chip for FilterChip pills: square, bordered, faint; the pressed
+   chip carries the accent wash instead of react-ui's card treatment. */
+.shell-sidebar .panel-filter-row > button {
+  height: 1.7rem;
+  padding: 0 0.55rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 550;
+  box-shadow: none;
+}
+
+.shell-sidebar .panel-filter-row > button:hover {
+  background: var(--background);
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  color: var(--foreground);
+}
+
+.shell-sidebar .panel-filter-row > button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--shell-accent) 12%, transparent);
+  border-color: transparent;
+  color: var(--shell-accent);
+}
+
+.panel-filter-row > button {
+  white-space: nowrap;
+}
+
+/* A recent-run row that deep-links to its routine's delivery workbench. */
+.routine-run-row-linked {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.routine-run-row-linked:hover,
+.routine-run-row-linked:focus-visible {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* Workbench rows in the panel band. One-line title + ellipsis; dense to match
+   the mock chrome. Classnames kept under the historical chat-sidebar- prefix
+   so package-level row helpers stay reusable without owning layout CSS. */
+.chat-sidebar-row {
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem 0;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.chat-sidebar-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-sidebar-row-menu-trigger {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.chat-sidebar-row:hover .chat-sidebar-row-menu-trigger,
+.chat-sidebar-row:focus-within .chat-sidebar-row-menu-trigger,
+.chat-sidebar-row-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* Shared stage top bar — mock `.top`: a fixed 3rem row on every stage
+   surface. Title · dot · subtitle, then per-page actions right-align.
+   Matches `.chat-workbench-header` geometry so conversations and pages read
+   as one chrome. */
+.stage-top-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  height: 3rem;
+  min-width: 0;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background, transparent);
+}
+
+.stage-top-bar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 640;
+}
+
+.stage-top-bar-dot {
+  width: 3px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 0;
+  background: var(--muted-foreground);
+}
+
+/* A New Routine / Edit dialog owns the page while open — its own overlay
+   only dims (50% black, 2px blur), not enough to hide a bordered card
+   like RichEmptyState whose center falls outside the dialog's own
+   footprint. `inert` already pulls this content out of focus and
+   assistive tech; fading it here removes the leftover visual "ghost"
+   rather than trusting the overlay to cover it. */
+.stage-content[inert] {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.stage-top-bar-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: var(--muted-foreground);
+}
+
+.stage-top-bar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+/* Breadcrumb trails live in the title slot, always top-left. */
+.stage-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.stage-crumbs button {
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 640;
+}
+
+.stage-crumbs button:hover {
+  color: var(--foreground);
+}
+
+.stage-crumbs [aria-current="page"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stage-crumbs-sep {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
 }
 
 /* Column 4: collapses to zero width rather than being merely hidden, so the
    main pane reclaims the space instead of leaving a gap. `overflow: hidden`
    keeps the collapsing content clipped instead of reflowing the page while
    the width animates; the inner wrapper's own transform/opacity transition
-   is what actually reads as "sliding" rather than "shrinking". */
+   is what actually reads as "sliding" rather than "shrinking". Same ground
+   surface and soft divider language as the sidebar — peer column, not a
+   card-tinted foreign sheet. */
 .shell-canvas-column {
   overflow: hidden;
   width: 0;
   flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  background: var(--card);
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
   transition:
     width 200ms ease,
     border-color 200ms ease;
 }
 
 .shell-canvas-column[data-open="true"] {
-  width: min(24rem, 28vw);
+  width: var(--shell-canvas-width);
+}
+
+/* Focus mode (mock's `data-canvas="focus"`): canvas is the only
+   stage-width changer, so widening it here — on top of the sidebar
+   tightening — is what reads as "canvas dominant, conversation as slim
+   context" without a grid rewrite. */
+.shell-canvas-column[data-open="true"][data-focus="true"] {
+  width: min(64rem, 68vw);
 }
 
 .shell-canvas-column:not([data-open="true"]) {
   border-left-color: transparent;
 }
 
+/* react-ui Input/Textarea default to bg-card; inside the canvas that
+   reintroduces the grey slab we just removed from the column ground.
+   Sit controls on the same ground as the stage so the pane stays one
+   continuous surface. */
+.shell-canvas-column [data-slot="input"],
+.shell-canvas-column [data-slot="textarea"],
+.shell-canvas-column textarea {
+  background: var(--background);
+}
+
 .shell-canvas-inner {
   display: flex;
   height: 100%;
-  width: min(24rem, 28vw);
+  width: var(--shell-canvas-width);
   flex-direction: column;
   justify-content: center;
   opacity: 0;
   transform: translateX(0.75rem);
   transition:
     opacity 160ms ease,
-    transform 200ms ease;
+    transform 200ms ease,
+    width 200ms ease;
+}
+
+.shell-canvas-column[data-open="true"][data-focus="true"] .shell-canvas-inner {
+  width: min(64rem, 68vw);
 }
 
 .shell-canvas-column[data-open="true"] .shell-canvas-inner {
@@ -214,130 +797,847 @@
   transform: translateX(0);
 }
 
+/* Routine canvas pane: peer of the sidebar — soft dividers, list density,
+   quiet status, no admin-form chrome. */
+.shell-routine-pane {
+  background: var(--background);
+}
+
+.shell-routine-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-routine-new {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-routine-new:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.shell-routine-row,
+.shell-routine-task-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.shell-routine-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.shell-routine-row-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.shell-routine-row-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+.shell-routine-row-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  padding-top: 0.1rem;
+}
+
+.shell-routine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+}
+
+.shell-routine-status-label {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 450;
+}
+
+.shell-routine-status-label.is-danger {
+  color: var(--destructive);
+}
+
+.shell-routine-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.shell-routine-section {
+  margin-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-routine-section-head {
+  padding: 0.55rem 0.75rem 0.25rem;
+}
+
+.shell-routine-section-label {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-quiet-empty {
+  margin: 0;
+  padding: 0.15rem 0.75rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.shell-routine-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-routine-run-row:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.shell-profile-pane,
+.shell-artifact-pane {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  overflow: auto;
+  justify-content: flex-start;
+}
+
+/* Shared by every canvas pane (profile, artifact, routine): an optional
+   back control and title on the left, pane-specific actions on the
+   right — the focus-cycle/close controls for profile and artifact, a
+   "Runs" shortcut or save-state label for the routine pane. A hairline
+   divider closes off the header the same way every other row boundary
+   in this column does. */
+.shell-canvas-pane-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.shell-canvas-pane-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.shell-canvas-pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.shell-canvas-pane-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+.shell-profile-pane-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.shell-artifact-pane-body {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+/* Co-viewer cursors (CL-5958): positioned in the pane's own fractional
+   coordinate space (see `PresenceCursor` in canvas-column.tsx), never
+   intercepting pointer events — they are a read-only presence signal, not
+   an interactive layer. */
+.shell-artifact-cursor-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.shell-artifact-cursor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transform: translate(-2px, -2px);
+  transition:
+    left 0.12s ease-out,
+    top 0.12s ease-out;
+}
+
+.shell-artifact-cursor-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1.5px var(--background);
+}
+
+.shell-artifact-cursor-label {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  background: currentColor;
+  color: var(--background);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Reduced motion needs no rule here: the component library collapses every
    animation and transition to a single frame at the foundation (see
    `prefers-reduced-motion` in its theme.css), and these transitions inherit
    that like any other. */
 
-/* Narrow mode: the contextual column leaves the flow and becomes an overlay
-   drawer that slides in from the left, so it never permanently steals width
-   from the main pane. The backdrop dims and dismisses on click. The trigger
-   is a small floating button pinned to the main pane's top-left corner,
-   rendered only when the shell is in "narrow" layout (gated in JSX). */
-.shell-drawer-trigger {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 20;
-  display: grid;
-  height: 2rem;
-  width: 2rem;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
+/* Sidebar header: the brand mark, small and quiet — the mark is the brand
+   moment now (CL-6089 dropped the orange-rail era), not the switcher this
+   dock replaced. */
+.shell-sidebar-brand-mark {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  margin: 0.3rem 0 0.1rem;
+  box-sizing: border-box;
+}
+
+.shell-sidebar-brand-mark-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--primary);
+}
+
+/* Footer (reference shape): a Plugins row, then the account row that
+   anchors the pop-up menu. Both are full-width quiet rows; the account
+   row has no top margin of its own so the two never read as separate
+   stacked bands. */
+.shell-sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--foreground);
+  font: inherit;
   cursor: pointer;
-  transition: background 150ms ease;
+  text-align: left;
+}
+.shell-sidebar-footer-row svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--muted-foreground);
+}
+.shell-sidebar-footer-row:hover,
+.shell-sidebar-footer-row[data-active="true"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.shell-sidebar-footer-row[data-active="true"] {
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+.shell-sidebar-footer-row:focus-visible {
+  outline: 1px solid var(--foreground);
+  outline-offset: -1px;
+}
+/* Brand row: the mark left, "+ New workbench" right — the sidebar's first
+   line, above the search box and the Workbenches label. */
+.shell-sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 0.35rem;
+}
+.shell-sidebar-brand-row .shell-sidebar-brand-mark {
+  width: auto;
 }
 
-.shell-drawer-trigger:hover {
-  background: var(--muted);
+.shell-sidebar-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--foreground);
+  text-align: left;
 }
 
-.shell-drawer-trigger svg {
-  height: 1rem;
-  width: 1rem;
+.shell-sidebar-account-btn:hover,
+.shell-sidebar-account-btn[data-state="open"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
-/* When the drawer trigger is present, the main content needs top padding so
-   it doesn't collide with the button. */
-.shell-main:has(.shell-drawer-trigger) > .shell-main-content {
-  padding-top: 2.75rem;
+.shell-sidebar-account-btn:focus-visible {
+  outline: 1px solid var(--foreground);
+  outline-offset: -1px;
 }
 
-.shell-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 200ms ease;
+.shell-sidebar-account-btn [data-slot="avatar"] {
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
-.shell-drawer-backdrop[data-open="true"] {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.shell-drawer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  z-index: 40;
-  width: min(18rem, 85vw);
-  transform: translateX(-100%);
-  transition: transform 200ms ease;
+.shell-sidebar-account-name {
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.shell-drawer[data-open="true"] {
-  transform: translateX(0);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
+/* The "Weekly usage" menu item: label on the left, the honest summary (or
+   nothing, when there is no cheap number yet) plus a chevron on the right. */
+.shell-sidebar-account-menu-usage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.shell-drawer .shell-contextual-panel {
-  width: 100%;
-  height: 100%;
-  border-right: none;
+.shell-sidebar-account-menu-usage-value {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
-/* Column 1's footer docks: the bench switcher and identity row. The rail
-   itself is `@corbits/react-ui`'s `SidebarRail` (showLabels), styled in its
-   own stylesheet; only the footer parts composed into its `footer` slot
-   carry local CSS here. */
-.shell-bench-dock {
-  width: 100%;
-  padding: 0.25rem 0.5rem 0.5rem;
+.shell-sidebar-account-menu-usage-value svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
-.shell-rail-identity {
+/* Settings master-detail inside the stage: fixed-width section nav beside
+   the scrolling section panel. */
+.settings-layout {
+  display: flex;
+  min-height: 0;
+}
+
+.settings-nav {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  padding-bottom: 0.25rem;
+  gap: 0.8rem;
+  width: 13rem;
+  flex-shrink: 0;
+  padding: 0.75rem 0.5rem;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
 }
 
-.shell-rail-identity-avatar {
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.settings-nav-heading {
+  margin: 0 0 0.2rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--shell-panel-faint);
+}
+
+.settings-nav-advanced {
+  margin-top: 0.15rem;
+}
+
+.settings-nav-advanced > summary {
+  padding: 0 0.42rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--shell-panel-faint);
+  list-style: none;
+}
+
+.settings-nav-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-nav-advanced-hint {
+  margin: 0.2rem 0 0.3rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  color: var(--shell-panel-faint);
+}
+
+/* Mock .ch rows in the sidebar: pad 0.32/0.42, square. */
+.shell-ch-row {
   display: grid;
-  height: 28px;
-  width: 28px;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.32rem 0.42rem;
+  border-radius: 0;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shell-ch-row:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground, var(--ui-fg));
+}
+
+/* Brand rule: grey is for text/structure, not container fills — the active
+   row stays on ground and reads through a 2px orange left edge instead of a
+   band. */
+.shell-ch-row[aria-current="true"],
+.shell-ch-row[data-active="true"] {
+  background: var(--background);
+  color: var(--shell-accent);
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+
+.shell-ch-row[aria-current="true"] .shell-ch-name,
+.shell-ch-row[data-active="true"] .shell-ch-name {
+  font-weight: 650;
+}
+
+/* A 5% foreground tint is a much quieter cue on a near-black row than the
+   same percentage on a near-white one perceptually, so dark mode's hover
+   gets a stronger mix to read at the same visible weight. */
+.dark .shell-ch-row:hover {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+}
+
+.shell-ch-stack {
+  display: flex;
+  width: 1.35rem;
+  height: 1.4rem;
+  position: relative;
   flex-shrink: 0;
+}
+
+.shell-ch-stack span {
+  position: absolute;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--background);
+  display: grid;
   place-items: center;
-  border-radius: 9999px;
-  background: var(--primary);
-  font-size: 10px;
+  font-size: 0.55rem;
   font-weight: 700;
+  /* --muted sits within ~1.2:1 of --background in dark (near-black on
+     pure black), leaving the chip indistinguishable from the page. A
+     foreground tint reads at the same visible strength in both themes
+     since the page it's mixed against is pure white/black either way. */
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.shell-ch-stack span:nth-child(1) {
+  left: 0;
+  top: 0.2rem;
+  z-index: 3;
+}
+
+.shell-ch-stack span:nth-child(2) {
+  left: 0.45rem;
+  top: 0.2rem;
+  z-index: 2;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.shell-ch-stack span:nth-child(3) {
+  left: 0.9rem;
+  top: 0.2rem;
+  z-index: 1;
+}
+
+.shell-ch-stack span[data-agent="true"] {
+  background: var(--primary);
   color: var(--primary-foreground);
 }
 
-.shell-rail-identity-settings {
-  display: grid;
-  height: 28px;
-  width: 28px;
-  place-items: center;
-  border-radius: 10px;
-  color: var(--muted-foreground);
-  transition: color 150ms;
+/* Agent-DM identity avatar: zero radius per brand rule, distinct from the
+   round workbench-participant stack above — a small, deterministic,
+   brand-compatible palette hashed off the agent's own name (see
+   `identityColorClass` in `./shell/sidebar-rows.ts`), never a per-agent
+   custom color. */
+.shell-agent-avatar {
+  border-radius: 0;
 }
 
-.shell-rail-identity-settings:hover,
-.shell-rail-identity-settings[aria-current="page"] {
+.shell-agent-color-0 {
+  background: color-mix(in srgb, var(--shell-accent) 22%, transparent);
+  color: var(--shell-accent);
+}
+
+.shell-agent-color-1 {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  color: var(--ok);
+}
+
+.shell-agent-color-2 {
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  color: var(--warn);
+}
+
+.shell-agent-color-3 {
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
   color: var(--foreground);
+}
+
+.shell-agent-color-4 {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+}
+
+.shell-ch-meta {
+  min-width: 0;
+}
+
+.shell-ch-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.shell-ch-name {
+  font-weight: 580;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mock .live — activity pulse; only when live signal exists and no unread. */
+.shell-ch-live {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 0;
+  background: var(--ok);
+  flex-shrink: 0;
+  animation: shell-ch-pulse 2s ease infinite;
+}
+
+@keyframes shell-ch-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.shell-ch-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.shell-ch-time {
+  font-size: 0.66rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+}
+
+/* Bounded last-message/last-known-status line under the row name — a
+   workbench's message preview, or an unreachable agent's join caption. */
+.shell-ch-preview {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-ch-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.shell-ch-row-wrap .shell-ch-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-ch-row-menu {
+  opacity: 0;
+  flex-shrink: 0;
+  align-self: center;
+  transition: opacity 120ms ease;
+}
+
+.shell-ch-row-wrap:hover .shell-ch-row-menu,
+.shell-ch-row-wrap:focus-within .shell-ch-row-menu {
+  opacity: 1;
+}
+
+/* Mock v2 .search: 2rem, square, on the ground — shared by every band. */
+.shell-panel-search {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0.15rem 0.55rem;
+  height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: var(--shell-panel-faint);
+}
+
+.shell-panel-search > svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+}
+
+/* Bare inputs in the sidebar body (inline rename fields). */
+.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"] {
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+.shell-sidebar .shell-panel-search [data-slot="input"] {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.shell-sidebar .shell-panel-search [data-slot="input"]::placeholder,
+.shell-sidebar
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]::placeholder {
+  color: var(--shell-panel-faint);
+}
+
+.shell-panel-search:focus-within {
+  outline: none;
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+
+.shell-sidebar .shell-panel-search [data-slot="input"]:focus-visible {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.shell-sidebar
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]:focus-visible {
+  outline: none;
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+
+/* Mock v2 .filter-item / .list-item: square rows, pad 0.4/0.45, faint idle
+   ink; hover lifts to foreground; the current row reads in accent. */
+.shell-sidebar [data-slot="sidebar-item-row"] {
+  list-style: none;
+}
+
+.shell-sidebar [data-slot="sidebar-item-row"] > div {
+  gap: 0.35rem;
+  padding-right: 0.2rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shell-sidebar [data-slot="sidebar-item-row"] > div:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+}
+
+/* Brand rule: no grey band on the selected row — ground plus a 2px orange
+   left edge. Selector doubles as the kill for react-ui's bg-primary/10
+   selected wash. */
+.shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10,
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"]) {
+  background-color: var(--background);
+  color: var(--shell-accent);
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+
+.shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10 > button,
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"])
+  > button {
+  font-weight: 600;
+}
+
+.shell-sidebar [data-slot="sidebar-item-row"] > div > button {
+  gap: 0.55rem;
+  padding: 0.4rem 0.45rem;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.45;
+  color: inherit;
+}
+
+/* Mock v2 .list-item .ico: bordered square holding the row's lucide glyph.
+   Only the decorative leading slot — a row without one leads with its name. */
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span:first-child[aria-hidden="true"] {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: transparent;
+}
+
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span:first-child[aria-hidden="true"]
+  svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* Mock .count: the trailing meta slot when it is plain text. */
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span
+  + span:last-child {
+  font-size: 0.72rem;
+  color: var(--shell-panel-faint);
+}
+
+/* Square chrome everywhere in the sidebar — EmptyState ships a round icon bubble. */
+.shell-sidebar [data-slot="empty-state"] > span {
+  border-radius: 0;
 }
 
 .shell-activity-skeleton {
@@ -520,6 +1820,329 @@
   white-space: nowrap;
 }
 
+/* Onboarding: full-screen guided wizard, gated above the shell entirely
+   (see app.tsx) so nothing implying an existing workbench — sidebar,
+   bench dock — is ever on screen while it runs. Same two-column shape as
+   `.auth-shell` for continuity with the sign-in screen, but its own scale:
+   zero border radius, brand-orange accents, generous whitespace, one large
+   question per phase. Deliberately does not reuse `--radius` — this chrome
+   commits to square corners everywhere, the rest of the app does not. */
+.onboarding-shell {
+  display: grid;
+  min-height: 100svh;
+  background: var(--background);
+}
+
+.onboarding-form-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.onboarding-brand-chip {
+  display: grid;
+  height: 1.75rem;
+  width: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 0;
+  background: var(--shell-accent);
+  color: var(--primary-foreground);
+}
+
+.onboarding-brand-mark {
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+.onboarding-form-slot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 2rem 4rem;
+}
+
+.onboarding-form {
+  width: 100%;
+  max-width: 30rem;
+}
+
+.onboarding-panel {
+  position: relative;
+  display: none;
+  overflow: hidden;
+  background: var(--foreground);
+}
+
+.dark .onboarding-panel {
+  background: var(--card);
+}
+
+.onboarding-panel-fallback {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.onboarding-panel-dither {
+  position: absolute;
+  inset: 0;
+}
+
+@media (min-width: 64rem) {
+  .onboarding-shell {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .onboarding-panel {
+    display: block;
+  }
+}
+
+/* One focused question per phase, large type, no card chrome around it —
+   the whitespace of the form column does the framing. */
+.onboarding-title {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.onboarding-subtitle {
+  margin: 0 0 2rem;
+  max-width: 32rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.onboarding-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* The provider chooser (one-click connects + the paste-a-key form) is
+   the tallest single step in the wizard — small square cards and a
+   tighter vertical rhythm here keep the whole step inside one viewport,
+   no scrolling, without shrinking any other phase. */
+.onboarding-phase--credential .onboarding-title {
+  margin-bottom: 0.375rem;
+  font-size: 1.5rem;
+}
+
+.onboarding-phase--credential .onboarding-subtitle {
+  margin-bottom: 1.125rem;
+}
+
+.onboarding-phase--credential .onboarding-content {
+  gap: 0.875rem;
+}
+
+/* Square corners throughout the wizard's own inputs and buttons — the one
+   deliberate departure from the app's default `--radius`. */
+.onboarding-content input,
+.onboarding-content textarea,
+.onboarding-content button,
+.onboarding-content [role="radiogroup"] button {
+  border-radius: 0;
+}
+
+/* The one-click paths sit above the key forms, side by side in a
+   two-column row so both fit without stacking the page tall — each card
+   stays square-cornered like the rest of the wizard, with the shell
+   accent marking the row as the primary suggestion rather than
+   button-shouting. */
+.onboarding-connect-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+
+@media (min-width: 30rem) {
+  .onboarding-connect-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.onboarding-connect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--shell-accent);
+  border-radius: 0;
+}
+
+.onboarding-connect-card h2 {
+  margin: 0 0 0.125rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.onboarding-connect-card p {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.onboarding-connect-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.onboarding-connect-divider::before,
+.onboarding-connect-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+
+.onboarding-name-form,
+.onboarding-credential-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.onboarding-name-form label,
+.onboarding-credential-form label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.onboarding-name-form p,
+.onboarding-credential-form p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.onboarding-name-form button[type="submit"],
+.onboarding-credential-form button[type="submit"] {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+
+.onboarding-provider-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.onboarding-provider-description {
+  margin: -0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+/* The secondary three providers, tucked behind a subtle expander so the
+   primary six-card row is what a person sees first — same square-cornered
+   chrome as the rest of the wizard, not a popover. Full-width so it reads
+   as part of the picker rather than a separate control. */
+.onboarding-provider-more {
+  width: 100%;
+  margin-top: 0.25rem;
+  border-radius: 0;
+}
+
+.onboarding-provider-more-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  list-style: none;
+}
+
+.onboarding-provider-more-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.onboarding-provider-more-trigger:hover {
+  color: var(--foreground);
+}
+
+.onboarding-provider-more-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* Tasteful motion only: a soft entrance on phase change, no looping or
+   attention-seeking animation, fully off under reduced motion. */
+.onboarding-phase {
+  animation: onboarding-phase-in 0.32s ease both;
+}
+
+@keyframes onboarding-phase-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-phase {
+    animation: none;
+  }
+}
+
+.onboarding-spinner {
+  height: 1.75rem;
+  width: 1.75rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--shell-accent);
+  border-radius: 50%;
+  animation: onboarding-spin 0.8s linear infinite;
+}
+
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-spinner {
+    animation: none;
+  }
+}
+
 .page-fill {
   height: auto;
   flex: 1;
@@ -610,6 +2233,39 @@
   width: 100%;
 }
 
+.query-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.query-skeleton-row {
+  height: 2.75rem;
+  width: 100%;
+}
+
+.query-skeleton-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.query-skeleton-detail-header {
+  height: 2rem;
+  width: 40%;
+}
+
+.query-skeleton-detail-line {
+  height: 1rem;
+  width: 100%;
+}
+
+.query-skeleton-detail-line--short {
+  width: 60%;
+}
+
 .stat-skeleton {
   height: 1.75rem;
   width: 3rem;
@@ -619,16 +2275,6 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.approvals-reject-message {
-  width: 100%;
-  border-radius: var(--radius, 0.375rem);
-  border: 1px solid var(--input);
-  background: var(--card);
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  resize: vertical;
 }
 
 .flex-col-gap {
@@ -672,7 +2318,214 @@
    packages/chat-ui/src/styles.css) — imported in main.tsx alongside
    this file, mirroring how @corbits/react-ui/styles.css is consumed. */
 
-/* Insights I2 day-bucket strip */
+/* Insights stage — mock hierarchy: KPI row, panel grid, recent runs. */
+.insights-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.insights-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* Insights landing scope switcher: "All workbenches" vs one pill per
+   sibling workbench. Hidden entirely (renders nothing) when the current
+   workbench has no parent — see InsightsScopeSwitcher. */
+.insights-scope-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.insights-scope-switcher-option {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 0;
+  background: var(--card, var(--background));
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.insights-scope-switcher-option[data-active="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--foreground);
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+  gap: 0.8rem;
+}
+
+.insights-panel {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--card, var(--background));
+  min-width: 0;
+}
+
+.insights-panel h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* BarChart's own figcaption title (ChartFrame) doesn't share .insights-panel
+   h3's small-caps treatment — re-assert it here instead of carrying two
+   different section-title styles side by side in the same grid. */
+.insights-panel figcaption > span:first-child {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* react-ui's StatGridItem hardcodes rounded-[12px] (stat-grid.tsx) instead
+   of consuming var(--radius), so it never picks up the app-wide zero-radius
+   re-assertion above — every KPI tile renders rounded while every
+   neighboring panel is square. Re-assert zero radius here, scoped to the
+   insights stat grids, until StatGridItem consumes var(--radius) upstream. */
+.insights-layout [data-slot="stat-grid-item"] {
+  border-radius: 0;
+}
+
+/* react-ui's Table/TableRow ships one row treatment for every row, clickable
+   or not (unconditional hover:bg-muted). The house distinction — an
+   orange-tinted hover only on rows that actually navigate, and no hover cue
+   at all on inert data rows — lived in the deleted bespoke CSS and has to be
+   re-asserted here. */
+tr.insights-row-clickable:hover {
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.insights-table-inert tr:hover {
+  background-color: transparent;
+}
+
+/* Dashboard-density header/cell treatment for the insights data tables —
+   scoped to this wrapper class so react-ui's roomier Table defaults stand
+   everywhere else. */
+.insights-data-table th {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  padding: 0.55rem 0.7rem;
+}
+
+/* Global landing's "activity by workbench" mini bars — zero radius and a
+   hairline track match the rest of this stage; the fill uses the shell
+   accent sparingly (one thin bar per row), not as a wash. */
+.insights-workbench-bar-track {
+  height: 4px;
+  width: 100%;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 0;
+}
+
+.insights-workbench-bar-fill {
+  height: 100%;
+  background: var(--shell-accent);
+  border-radius: 0;
+}
+
+.insights-data-table td {
+  padding: 0.55rem 0.7rem;
+}
+
+.insights-section {
+  padding-top: 0.25rem;
+}
+
+.insights-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.insights-section h2 {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.insights-chain-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.insights-chain-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 0.375rem;
+  background: var(--card, var(--background));
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+.insights-chain-step-clickable {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.insights-chain-step-clickable:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* The current step is the one deliberate orange accent in the strip —
+   every other step stays the neutral card border. */
+.insights-chain-step[data-current="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.insights-chain-step-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.insights-chain-step-agent {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.insights-chain-step-duration {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legacy I2 day-bucket strip (still used by insights-timeline helpers). */
 .insights-timeline {
   display: flex;
   align-items: flex-end;
@@ -692,15 +2545,488 @@
 .insights-timeline-fill {
   width: 70%;
   min-height: 2px;
-  background: var(--color-accent, #5b8def);
+  background: var(--shell-accent);
   border-radius: 2px 2px 0 0;
 }
 .insights-timeline-label {
   margin-top: 0.25rem;
   font-size: 0.65rem;
-  color: var(--color-muted, #888);
+  color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+/* Mock v2 .list-item .meta: two-line row copy — name over a faint detail. */
+.panel-row-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.05rem;
+  line-height: 1.2;
+}
+
+.panel-row-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.panel-row-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--shell-panel-faint);
+}
+
+/* The current row's copy follows the row's accent ink. */
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  button[aria-current="true"]
+  .panel-row-copy
+  strong {
+  color: inherit;
+}
+
+/* Mock v2 .status: bordered uppercase state chip (on / warn / off). */
+.panel-status {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: transparent;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.panel-status.is-ok {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+
+.panel-status.is-muted {
+  color: var(--shell-panel-faint);
+}
+
+/* A working-task row's meta slot (`@corbits/tasks-ui`'s `WorkingTaskRow`):
+   elapsed time beside the optional needs-you badge. */
+.panel-task-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--shell-panel-faint);
+}
+
+/* Global context menu (`shell/context-menu`): the keyboard shortcut hint
+   right-aligned in a menu row. Everything else about the menu's look is
+   react-ui's Menu component. */
+.context-menu-shortcut {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+/* Create-agent panel's identity row (`create-agent-panel.tsx`): a live
+   Avatar preview beside a row of tone swatches. Preview-only — see the
+   component's own doc comment on why no color is persisted today. */
+.create-agent-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.create-agent-tone-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.create-agent-tone-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.create-agent-tone-swatch[aria-pressed="true"] {
+  border-color: var(--foreground);
+}
+
+.create-agent-tone-neutral {
+  background: var(--muted);
+}
+
+.create-agent-tone-agent {
+  background: var(--primary);
+}
+
+.create-agent-tone-agent2 {
+  background: var(--accent);
+}
+
+.create-agent-tone-agent3 {
+  background: var(--success);
+}
+
+/* The optional "what should this agent do?" field: visually quieter than
+   the required Name field above it — a smaller label, no bold-required
+   asterisk, since a name alone is the supported happy path. */
+.create-agent-quiet-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+}
+
+.create-agent-quiet-field > span {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.create-agent-quiet-field > textarea {
+  width: 100%;
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--background);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  resize: vertical;
+}
+
+/* The Suggestions row: template cards that prefill name+purpose and run
+   the same drafting flow as a typed name — see the component's own
+   `SUGGESTIONS` doc comment on why each one is real. */
+.create-agent-suggestions {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.create-agent-suggestions-label {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.create-agent-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.create-agent-suggestion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.create-agent-suggestion-card:hover {
+  border-color: var(--primary);
+}
+
+.create-agent-suggestion-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.create-agent-suggestion-desc {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.35;
+}
+
+/* Create-agent panel's "Advanced" disclosure (`create-agent-panel.tsx`):
+   handle/model/skills, collapsed by default — same `<details>` escape-
+   hatch convention `.settings-connections-advanced` established
+   (`packages/settings-ui/src/styles.css`). */
+.create-agent-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+}
+
+.create-agent-advanced > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.create-agent-advanced-body {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* CL-6124: the in-shell first-workbench screen — a chat, not a form. One
+   prompt box, centered both ways in the stage; the stage owns the full
+   width, no decorative panel. */
+.describe-first-workbench {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  overflow-y: auto;
+  height: 100%;
+}
+
+/* The list's own section label, below the search box (owner's order:
+   logo · search · Workbenches · rows). Quiet, matching the panel-band
+   subheading rhythm. */
+.shell-panel-list-label {
+  margin: 0.55rem 0 0.2rem;
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* CL-6224: per-workbench Timeline — one wall-clock spine (chat messages,
+   thread forks, routine runs, tasks, approvals), day dividers, and a right
+   rail of per-day KPI counts. Matches the Insights stage's own visual
+   language (hairline dividers, uppercase section labels, --shell-accent
+   left-edge, tabular-nums) rather than inventing a second one. */
+.workbench-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.workbench-timeline-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.workbench-timeline-filter-option {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 0;
+  background: var(--card, var(--background));
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.workbench-timeline-filter-option[data-active="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.workbench-timeline-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  gap: 1rem;
+  align-items: start;
+}
+
+.workbench-timeline-day + .workbench-timeline-day {
+  margin-top: 0.75rem;
+}
+
+.workbench-timeline-day-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.workbench-timeline-day-divider span {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.workbench-timeline-day-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.workbench-timeline-rail {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  list-style: none;
+}
+
+.workbench-timeline-rail::before {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.workbench-timeline-entry {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.workbench-timeline-entry[data-indented="true"] {
+  margin-left: 1.4rem;
+}
+
+.workbench-timeline-marker {
+  position: absolute;
+  left: -1.1rem;
+  top: 0.65rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.workbench-timeline-entry[data-indented="true"] .workbench-timeline-marker {
+  border-radius: 2px;
+  transform: rotate(45deg);
+  width: 7px;
+  height: 7px;
+}
+
+.workbench-timeline-marker-neutral {
+  background: var(--muted-foreground);
+}
+
+.workbench-timeline-marker-primary {
+  background: var(--shell-accent);
+}
+
+.workbench-timeline-marker-success {
+  background: var(--ok);
+}
+
+.workbench-timeline-marker-danger {
+  background: var(--destructive);
+}
+
+.workbench-timeline-marker-warn {
+  background: var(--warn);
+}
+
+.workbench-timeline-marker-info {
+  background: var(--chart-1);
+}
+
+.workbench-timeline-entry-time {
+  flex: 0 0 auto;
+  min-width: 3.5rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-entry-body {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.workbench-timeline-entry-body strong {
+  font-weight: 650;
+}
+
+.workbench-timeline-entry-excerpt {
+  min-width: 0;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.workbench-timeline-kpis {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--card, var(--background));
+}
+
+.workbench-timeline-kpis h3 {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-kpi-day {
+  padding-top: 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.workbench-timeline-kpi-day:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.workbench-timeline-kpi-day h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.workbench-timeline-kpi-day dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.workbench-timeline-kpi-day dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.workbench-timeline-kpi-day dt {
+  color: var(--muted-foreground);
+}
+
+.workbench-timeline-kpi-day dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
 }

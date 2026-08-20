@@ -3,7 +3,11 @@
   "private": true,
   "description": "Single-page interface for the workbench: every page and route lives here, composed from the published component library, and builds to a static bundle the hub serves from its own origin (point HUB_STATIC_DIR at apps/web/dist)",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "SEE LICENSE IN ../../LICENSE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,16 +17,28 @@
     "test": "bun test ./src ./test"
   },
   "dependencies": {
+    "@corbits/agent-directory": "workspace:*",
+    "@corbits/api-query": "workspace:*",
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
     "@corbits/command-palette": "workspace:*",
+    "@corbits/context-menu": "workspace:*",
+    "@corbits/inbox": "workspace:*",
+    "@corbits/insights": "workspace:*",
+    "@corbits/plugins-ui": "workspace:*",
+    "@corbits/preferences": "workspace:*",
+    "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#bd5057b0f740947ad117fc2c9cbe82bf992423d2",
+    "@corbits/shell-layout": "workspace:*",
+    "@corbits/tasks-ui": "workspace:*",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
     "@intx/types": "workspace:*",
+    "@workbench/connections": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "catalog:",
@@ -30,7 +46,8 @@
     "lucide-react": "^1.27.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.2",

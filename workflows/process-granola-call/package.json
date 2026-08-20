@@ -1,0 +1,32 @@
+{
+  "name": "@corbits/process-granola-call-workflow",
+  "private": true,
+  "description": "Processes one Granola call end to end: raw transcript artifact, extracted working notes, then a verified, published call-notes artifact",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "process-granola-call",
+      "displayName": "Process Granola call",
+      "automatable": false
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

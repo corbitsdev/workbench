@@ -4,20 +4,30 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   ChatApiError,
-  createChannel,
+  createWorkbench,
   runDisplayName,
   inviteAgent,
-  listChannels,
+  listWorkbenches,
+  listAllWorkbenches,
   listRuns,
   listInvitableDefinitions,
+  listTenantInvitableDefinitions,
+  listVisibleAgentDefinitions,
+  openAgentDm,
   listMessages,
+  listPinnedMessages,
   sendMessage,
-  getChannelSettings,
-  patchChannelSettings,
+  fetchWorkbenchBlob,
+  getWorkbenchSettings,
+  patchWorkbenchSettings,
   getBenchChatSettings,
   patchBenchChatSettings,
+  pinMessage,
+  toggleReaction,
+  unpinMessage,
 } from "../src/api";
 
 const realFetch = globalThis.fetch;
@@ -45,76 +55,135 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-describe("listChannels", () => {
-  test("fetches the tenant's channels filtered by kind and parses the envelope", async () => {
+describe("listWorkbenches", () => {
+  test("fetches the tenant's workbenches filtered by kind and parses the envelope", async () => {
     const calls = stubFetch(() =>
       json({
         items: [
           {
             id: "c1",
             title: "General",
-            kind: "channel",
+            kind: "workbench",
             pinned: true,
             participants: [],
           },
         ],
       }),
     );
-    const channels = await listChannels("tenant_1", "channel");
+    const workbenches = await listWorkbenches("tenant_1", "workbench");
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels?kind=channel",
+      "/api/tenants/tenant_1/chat/workbenches?kind=workbench",
     );
-    expect(channels).toEqual([
+    expect(workbenches).toEqual([
       {
         id: "c1",
         title: "General",
-        kind: "channel",
+        kind: "workbench",
         pinned: true,
         participants: [],
       },
     ]);
   });
 
+  test("parses a row's own workbench tenancy, and a legacy row's null", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "c1",
+            title: "General",
+            kind: "workbench",
+            pinned: true,
+            participants: [],
+            tenancy: { tenantId: "tnt_1" },
+          },
+          {
+            id: "c2",
+            title: "Legacy",
+            kind: "workbench",
+            pinned: false,
+            participants: [],
+            tenancy: null,
+          },
+        ],
+      }),
+    );
+    const workbenches = await listWorkbenches("tenant_1", "workbench");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches?kind=workbench",
+    );
+    expect(workbenches[0]?.tenancy).toEqual({ tenantId: "tnt_1" });
+    expect(workbenches[1]?.tenancy).toBeNull();
+  });
+
   test("throws a ChatApiError on a malformed response", async () => {
     stubFetch(() => json({ items: [{ id: "c1" }] }));
-    await expect(listChannels("tenant_1", "chat")).rejects.toBeInstanceOf(
+    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(
       ChatApiError,
     );
   });
 
-  test("throws a ChatApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(listChannels("tenant_1", "chat")).rejects.toThrow(
-      /Not signed in/,
+    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
     );
   });
 });
 
-describe("createChannel", () => {
-  test("posts the name and kind and returns the created channel", async () => {
+describe("listAllWorkbenches", () => {
+  test("fetches every workbench kind with no kind query param", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "c1",
+            title: "General",
+            kind: "workbench",
+            pinned: true,
+            participants: [],
+          },
+          {
+            id: "c2",
+            title: "echo",
+            kind: "chat",
+            pinned: false,
+            participants: [],
+          },
+        ],
+      }),
+    );
+    const workbenches = await listAllWorkbenches("tenant_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches");
+    expect(workbenches.map((c) => c.id)).toEqual(["c1", "c2"]);
+  });
+});
+
+describe("createWorkbench", () => {
+  test("posts the name and kind and returns the created workbench", async () => {
     const calls = stubFetch(() =>
       json(
         {
           id: "c2",
           title: "Ops",
-          kind: "channel",
+          kind: "workbench",
           pinned: true,
           participants: [],
         },
         201,
       ),
     );
-    const channel = await createChannel("tenant_1", {
-      kind: "channel",
+    const workbench = await createWorkbench("tenant_1", {
+      kind: "workbench",
       name: "Ops",
     });
-    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/channels");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
-      kind: "channel",
+      kind: "workbench",
       name: "Ops",
     });
-    expect(channel.id).toBe("c2");
+    expect(workbench.id).toBe("c2");
   });
 
   test("posts the definitionId (and no name) for a chat with no explicit name", async () => {
@@ -130,18 +199,18 @@ describe("createChannel", () => {
         201,
       ),
     );
-    const channel = await createChannel("tenant_1", {
+    const workbench = await createWorkbench("tenant_1", {
       kind: "chat",
       definitionId: "wfd_echo",
     });
-    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/channels");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_echo",
     });
     // With no explicit name, the server titles the chat by the agent's
     // handle — the client sends no name at all rather than guessing one.
-    expect(channel.title).toBe("echo");
+    expect(workbench.title).toBe("echo");
   });
 
   test("posts the definitionId alongside an explicit name for a chat", async () => {
@@ -157,7 +226,7 @@ describe("createChannel", () => {
         201,
       ),
     );
-    await createChannel("tenant_1", {
+    await createWorkbench("tenant_1", {
       kind: "chat",
       definitionId: "wfd_echo",
       name: "My research chat",
@@ -171,18 +240,38 @@ describe("createChannel", () => {
 });
 
 describe("sendMessage", () => {
-  test("posts a single-element Part array containing the TextPart", async () => {
+  test("posts { parts } with the TextPart payload", async () => {
     const calls = stubFetch(() =>
       json({ id: "m1", createdAt: "2026-01-01T00:00:00.000Z" }, 201),
     );
     await sendMessage("tenant_1", "chan_1", [{ kind: "text", text: "hello" }]);
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels/chan_1/messages",
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/messages",
     );
     expect(calls[0]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual([
-      { kind: "text", text: "hello" },
-    ]);
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "hello" }],
+    });
+  });
+
+  test("includes threadId when posting into a thread", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "m1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId: "thr_1",
+        },
+        201,
+      ),
+    );
+    await sendMessage("tenant_1", "chan_1", [{ kind: "text", text: "reply" }], {
+      threadId: "thr_1",
+    });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "reply" }],
+      threadId: "thr_1",
+    });
   });
 });
 
@@ -246,6 +335,24 @@ describe("listMessages", () => {
   });
 });
 
+describe("fetchWorkbenchBlob", () => {
+  test("requests the workbench's blob route and returns the base64 body", async () => {
+    const calls = stubFetch(() => json({ contentBase64: "aGVsbG8=" }));
+    const content = await fetchWorkbenchBlob("tenant_1", "chan_1", "blob_m1_1");
+    expect(content).toBe("aGVsbG8=");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/blobs/blob_m1_1",
+    );
+  });
+
+  test("throws a ChatApiError on a non-2xx response", async () => {
+    stubFetch(() => json({ error: { code: "not_found" } }, 404));
+    await expect(
+      fetchWorkbenchBlob("tenant_1", "chan_1", "blob_missing"),
+    ).rejects.toBeInstanceOf(ChatApiError);
+  });
+});
+
 describe("listRuns", () => {
   test("parses the runs listing", async () => {
     stubFetch(() =>
@@ -266,14 +373,27 @@ describe("listRuns", () => {
   });
 });
 
+describe("listTenantInvitableDefinitions", () => {
+  test("fetches the tenant-wide listing with no workbench id", async () => {
+    const calls = stubFetch(() =>
+      json({ items: [{ id: "wfd_echo", name: "echo" }] }),
+    );
+    const items = await listTenantInvitableDefinitions("tenant_1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/invitable-definitions",
+    );
+    expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
+  });
+});
+
 describe("listInvitableDefinitions", () => {
-  test("fetches the channel's invitable definitions", async () => {
+  test("fetches the workbench's invitable definitions", async () => {
     const calls = stubFetch(() =>
       json({ items: [{ id: "wfd_echo", name: "echo" }] }),
     );
     const items = await listInvitableDefinitions("tenant_1", "chan_1");
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels/chan_1/invitable",
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/invitable",
     );
     expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
@@ -283,6 +403,81 @@ describe("listInvitableDefinitions", () => {
     await expect(
       listInvitableDefinitions("tenant_1", "chan_1"),
     ).rejects.toBeInstanceOf(ChatApiError);
+  });
+});
+
+describe("listVisibleAgentDefinitions", () => {
+  test("fetches the tenant's visible agent definitions, own and inherited", async () => {
+    const calls = stubFetch(() =>
+      json({
+        definitions: [
+          {
+            id: "wfd_outreach",
+            name: "Outreach",
+            tenantId: "tnt_root",
+            tenantName: "Acme",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "wfd_local",
+            name: "Local Agent",
+            tenantId: "tnt_1",
+            tenantName: "Acme / Engineering",
+            createdAt: "2026-01-02T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    const definitions = await listVisibleAgentDefinitions("tnt_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/agent-definitions/visible");
+    expect(definitions).toEqual([
+      {
+        id: "wfd_outreach",
+        name: "Outreach",
+        tenantId: "tnt_root",
+        tenantName: "Acme",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "wfd_local",
+        name: "Local Agent",
+        tenantId: "tnt_1",
+        tenantName: "Acme / Engineering",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("throws a ChatApiError on a malformed response", async () => {
+    stubFetch(() => json({ definitions: [{ id: "wfd_outreach" }] }));
+    await expect(listVisibleAgentDefinitions("tnt_1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
+  });
+});
+
+describe("openAgentDm", () => {
+  test("creates a chat workbench with reuseExisting so a second open finds the same workbench", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "c_dm",
+          title: "Outreach",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        },
+        201,
+      ),
+    );
+    const workbench = await openAgentDm("tnt_root", "wfd_outreach");
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_root/chat/workbenches");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      kind: "chat",
+      definitionId: "wfd_outreach",
+      reuseExisting: true,
+    });
+    expect(workbench.id).toBe("c_dm");
   });
 });
 
@@ -296,7 +491,7 @@ describe("inviteAgent", () => {
     );
     const invited = await inviteAgent("tenant_1", "chan_1", "wfd_echo");
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels/chan_1/invite",
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/invite",
     );
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
@@ -309,35 +504,35 @@ describe("inviteAgent", () => {
   });
 });
 
-describe("getChannelSettings", () => {
-  test("fetches a channel's settings by tenant and channel id", async () => {
+describe("getWorkbenchSettings", () => {
+  test("fetches a workbench's settings by tenant and workbench id", async () => {
     const calls = stubFetch(() =>
       json({
         id: "c1",
         title: "General",
-        kind: "channel",
+        kind: "workbench",
         pinned: true,
         participants: [],
         settings: { "chat/contextWindow": 5 },
         contextWindow: { value: 5, source: "override" },
       }),
     );
-    const settings = await getChannelSettings("tenant_1", "c1");
+    const settings = await getWorkbenchSettings("tenant_1", "c1");
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels/c1/settings",
+      "/api/tenants/tenant_1/chat/workbenches/c1/settings",
     );
     expect(settings.settings["chat/contextWindow"]).toBe(5);
     expect(settings.contextWindow).toEqual({ value: 5, source: "override" });
   });
 });
 
-describe("patchChannelSettings", () => {
+describe("patchWorkbenchSettings", () => {
   test("PATCHes the given chat/* keys and returns the updated settings", async () => {
     const calls = stubFetch(() =>
       json({
         id: "c1",
         title: "Renamed",
-        kind: "channel",
+        kind: "workbench",
         pinned: false,
         participants: [],
         settings: {
@@ -348,13 +543,13 @@ describe("patchChannelSettings", () => {
         contextWindow: { value: 0, source: "override" },
       }),
     );
-    const settings = await patchChannelSettings("tenant_1", "c1", {
+    const settings = await patchWorkbenchSettings("tenant_1", "c1", {
       "chat/name": "Renamed",
       "chat/pinned": false,
       "chat/contextWindow": 0,
     });
     expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/channels/c1/settings",
+      "/api/tenants/tenant_1/chat/workbenches/c1/settings",
     );
     expect(calls[0]?.init?.method).toBe("PATCH");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
@@ -391,6 +586,91 @@ describe("patchBenchChatSettings", () => {
       "chat/contextWindow": 42,
     });
     expect(settings.contextWindow).toBe(42);
+  });
+});
+
+describe("toggleReaction", () => {
+  test("POSTs the emoji and parses the fresh per-emoji summary", async () => {
+    const calls = stubFetch(() =>
+      json({ emoji: "👍", count: 3, reactedByMe: true }),
+    );
+    const summary = await toggleReaction("tenant_1", "c1", "m1", "👍");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/c1/messages/m1/reactions/toggle",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ emoji: "👍" });
+    expect(summary).toEqual({ emoji: "👍", count: 3, reactedByMe: true });
+  });
+});
+
+describe("pinMessage / unpinMessage", () => {
+  test("pinMessage POSTs to the pin route and parses who/when", async () => {
+    const calls = stubFetch(() =>
+      json({
+        messageId: "m1",
+        pinnedBy: "prn_alice",
+        pinnedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const pinned = await pinMessage("tenant_1", "c1", "m1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/c1/messages/m1/pin",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(pinned).toEqual({
+      messageId: "m1",
+      pinnedBy: "prn_alice",
+      pinnedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  test("unpinMessage DELETEs the same route and resolves on a 204", async () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }));
+    await unpinMessage("tenant_1", "c1", "m1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/c1/messages/m1/pin",
+    );
+    expect(calls[0]?.init?.method).toBe("DELETE");
+  });
+
+  test("unpinMessage throws a ChatApiError on a non-ok response", async () => {
+    stubFetch(() => new Response(null, { status: 404 }));
+    await expect(unpinMessage("tenant_1", "c1", "m1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
+  });
+
+  test("unpinMessage throws an UnauthenticatedError on 401", async () => {
+    stubFetch(() => new Response(null, { status: 401 }));
+    await expect(unpinMessage("tenant_1", "c1", "m1")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
+  });
+});
+
+describe("listPinnedMessages", () => {
+  test("fetches the workbench's pins and parses each item's content plus who pinned it", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "m1",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            parts: [{ kind: "text", text: "important" }],
+            sender: { name: null, address: "prn_alice@acme.example" },
+            pinnedBy: "prn_alice",
+            pinnedAt: "2026-01-01T00:01:00.000Z",
+          },
+        ],
+      }),
+    );
+    const pins = await listPinnedMessages("tenant_1", "c1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/c1/pins",
+    );
+    expect(pins).toHaveLength(1);
+    expect(pins[0]).toMatchObject({ id: "m1", pinnedBy: "prn_alice" });
   });
 });
 

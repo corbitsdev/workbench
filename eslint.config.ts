@@ -11,6 +11,7 @@ export default defineConfig(
   globalIgnores([
     "**/node_modules/**",
     "**/dist/**",
+    ".data/**",
     "coverage/**",
     "tmp/**",
     "vendor/**",

@@ -29,7 +29,80 @@ describe("readHubConfig", () => {
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
       socialProviders: {},
+      signupMode: "closed",
+      allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
+      allowPlaintextSecrets: false,
+      allowUnverifiedEmails: false,
+      sidecarProvisioners: [],
+      envProviderKeys: {},
+      envProviderBaseUrls: {},
+      envCredentialPlantAdmin: {
+        email: "alice@example.com",
+        password: "password123",
+        orgSlug: "workbench",
+      },
+      chatIdleReapMs: 30 * 60_000,
+    });
+  });
+
+  describe("envProviderKeys", () => {
+    test("empty when no provider key env vars are set", () => {
+      expect(readHubConfig(validEnv).envProviderKeys).toEqual({});
+    });
+
+    test("collects every curated provider's key under its conventional env var", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        ANTHROPIC_API_KEY: "sk-ant-test",
+        OPENROUTER_API_KEY: "sk-or-test",
+      });
+      expect(config.envProviderKeys).toEqual({
+        anthropic: "sk-ant-test",
+        openrouter: "sk-or-test",
+      });
+    });
+
+    test("GEMINI_API_KEY wins over GOOGLE_API_KEY for google-genai", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        GEMINI_API_KEY: "gemini-key",
+        GOOGLE_API_KEY: "google-key",
+      });
+      expect(config.envProviderKeys["google-genai"]).toBe("gemini-key");
+    });
+
+    test("OLLAMA_BASE_URL plants the fixed placeholder secret and its own base URL", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        OLLAMA_BASE_URL: "http://localhost:11434",
+      });
+      expect(config.envProviderKeys.ollama).toBe("ollama");
+      expect(config.envProviderBaseUrls.ollama).toBe("http://localhost:11434");
+    });
+  });
+
+  describe("envCredentialPlantAdmin", () => {
+    test("defaults to the same identity workbench setup/seed use", () => {
+      expect(readHubConfig(validEnv).envCredentialPlantAdmin).toEqual({
+        email: "alice@example.com",
+        password: "password123",
+        orgSlug: "workbench",
+      });
+    });
+
+    test("honors HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD/ORG_SLUG when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        HUB_ADMIN_EMAIL: "owner@acme.example",
+        HUB_ADMIN_PASSWORD: "correct-horse-battery",
+        ORG_SLUG: "acme",
+      });
+      expect(config.envCredentialPlantAdmin).toEqual({
+        email: "owner@acme.example",
+        password: "correct-horse-battery",
+        orgSlug: "acme",
+      });
     });
   });
 
@@ -110,6 +183,22 @@ describe("readHubConfig", () => {
     expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
   });
 
+  test("WORKBENCH_SIGNUP defaults closed and accepts open", () => {
+    expect(readHubConfig(validEnv).signupMode).toBe("closed");
+    expect(
+      readHubConfig({ ...validEnv, WORKBENCH_SIGNUP: "open" }).signupMode,
+    ).toBe("open");
+  });
+
+  test("WORKBENCH_ALLOWED_EMAIL_DOMAINS parses a comma list", () => {
+    expect(
+      readHubConfig({
+        ...validEnv,
+        WORKBENCH_ALLOWED_EMAIL_DOMAINS: "acme.example, corp.example",
+      }).allowedEmailDomains,
+    ).toEqual(["acme.example", "corp.example"]);
+  });
+
   test("the seed model is absent when ANTHROPIC_API_KEY is not set", () => {
     const config = readHubConfig(validEnv);
     expect(config.seedModel).toBeUndefined();
@@ -128,6 +217,77 @@ describe("readHubConfig", () => {
     });
   });
 
+  test("huggingfaceOAuthClientId is absent by default", () => {
+    expect(readHubConfig(validEnv).huggingfaceOAuthClientId).toBeUndefined();
+  });
+
+  test("HUGGINGFACE_OAUTH_CLIENT_ID enables the connect card's client id", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      HUGGINGFACE_OAUTH_CLIENT_ID: "hf-client-1",
+    });
+    expect(config.huggingfaceOAuthClientId).toBe("hf-client-1");
+  });
+
+  test("CREDENTIAL_ENCRYPTION_KEY absent by default", () => {
+    expect(readHubConfig(validEnv).credentialEncryptionKeyHex).toBeUndefined();
+  });
+
+  test("CREDENTIAL_ENCRYPTION_KEY accepts a 64-char hex key", () => {
+    const key = "a".repeat(64);
+    const config = readHubConfig({
+      ...validEnv,
+      CREDENTIAL_ENCRYPTION_KEY: key,
+    });
+    expect(config.credentialEncryptionKeyHex).toBe(key);
+  });
+
+  test("CREDENTIAL_ENCRYPTION_KEY rejects a key of the wrong length or shape", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      CREDENTIAL_ENCRYPTION_KEY: "not-hex-and-too-short",
+    });
+    expect(message).toContain("CREDENTIAL_ENCRYPTION_KEY");
+  });
+
+  test("allowPlaintextSecrets is false by default", () => {
+    expect(readHubConfig(validEnv).allowPlaintextSecrets).toBe(false);
+  });
+
+  test("allowUnverifiedEmails is false by default", () => {
+    expect(readHubConfig(validEnv).allowUnverifiedEmails).toBe(false);
+  });
+
+  test("ALLOW_UNVERIFIED_EMAILS='1' or 'true' opts in", () => {
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "1" })
+        .allowUnverifiedEmails,
+    ).toBe(true);
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "true" })
+        .allowUnverifiedEmails,
+    ).toBe(true);
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS='1' or 'true' opts in", () => {
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "1" })
+        .allowPlaintextSecrets,
+    ).toBe(true);
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "true" })
+        .allowPlaintextSecrets,
+    ).toBe(true);
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS rejects any other value", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      ALLOW_PLAINTEXT_SECRETS: "yes",
+    });
+    expect(message).toContain("ALLOW_PLAINTEXT_SECRETS");
+  });
+
   test("accepts postgresql:// and https:// URL forms", () => {
     const config = readHubConfig({
       ...validEnv,
@@ -136,6 +296,135 @@ describe("readHubConfig", () => {
     });
     expect(config.databaseUrl).toStartWith("postgresql://");
     expect(config.baseUrl).toStartWith("https://");
+  });
+
+  describe("sidecarProvisioners", () => {
+    test("defaults to empty with no default id, matching the current static-sidecar behavior", () => {
+      const config = readHubConfig(validEnv);
+      expect(config.sidecarProvisioners).toEqual([]);
+      expect(config.defaultSidecarProvisionerId).toBeUndefined();
+    });
+
+    test("SIDECAR_PROVISIONERS=docker with an image is wired and becomes the default", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(config.sidecarProvisioners).toEqual([
+        { id: "docker", image: "ghcr.io/corbits/sidecar:latest" },
+      ]);
+      expect(config.defaultSidecarProvisionerId).toBe("docker");
+    });
+
+    test("SIDECAR_PROVISIONERS=docker without DOCKER_PROVISIONER_IMAGE fails loudly at boot", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+      });
+      expect(message).toContain("DOCKER_PROVISIONER_IMAGE");
+      expect(message).toContain("SIDECAR_PROVISIONERS includes docker");
+    });
+
+    test("rejects a provisioner id no backend implements", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "firecracker",
+      });
+      expect(message).toContain("unknown backend firecracker");
+    });
+
+    test("rejects a duplicate id", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker,docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(message).toContain("more than once");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER selects the default among several ids", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+        SIDECAR_DEFAULT_PROVISIONER: "docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(config.defaultSidecarProvisionerId).toBe("docker");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER naming an unlisted id fails loudly", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONERS: "docker",
+        SIDECAR_DEFAULT_PROVISIONER: "e2b",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(message).toContain("is not listed in SIDECAR_PROVISIONERS");
+    });
+
+    test("SIDECAR_DEFAULT_PROVISIONER set with SIDECAR_PROVISIONERS unset fails loudly", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_DEFAULT_PROVISIONER: "docker",
+      });
+      expect(message).toContain("SIDECAR_PROVISIONERS is unset");
+    });
+  });
+
+  describe("sidecarWebSocketUrl", () => {
+    test("is undefined when HUB_SIDECAR_WEBSOCKET_URL is unset", () => {
+      expect(readHubConfig(validEnv).sidecarWebSocketUrl).toBeUndefined();
+    });
+
+    test("is read from HUB_SIDECAR_WEBSOCKET_URL when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL:
+          "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      });
+      expect(config.sidecarWebSocketUrl).toBe(
+        "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      );
+    });
+
+    test("rejects a value that is not a ws(s):// URL", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL: "http://not-a-websocket-url",
+      });
+      expect(message).toContain("HUB_SIDECAR_WEBSOCKET_URL");
+    });
+  });
+
+  describe("chatIdleReapMs", () => {
+    test("defaults to 30 minutes when WORKBENCH_CHAT_IDLE_REAP_MS is unset", () => {
+      expect(readHubConfig(validEnv).chatIdleReapMs).toBe(30 * 60_000);
+    });
+
+    test("is read from WORKBENCH_CHAT_IDLE_REAP_MS when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "5000",
+      });
+      expect(config.chatIdleReapMs).toBe(5000);
+    });
+
+    test("rejects zero", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "0",
+      });
+      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
+    });
+
+    test("rejects a non-integer value", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        WORKBENCH_CHAT_IDLE_REAP_MS: "not-a-number",
+      });
+      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
+    });
   });
 
   test("an empty environment reports every variable in one error", () => {

@@ -2,11 +2,17 @@
 
 Thanks for your interest in Corbits Workbench.
 
+> **`vendor/intx` is read-only vendored code.** Never open a PR that
+> changes anything under `vendor/intx` — it is hand-copied, ledgered
+> `@intx/*` source, not code this repo owns. See [VENDORED.md](VENDORED.md)
+> for the ledger and how to propose a change upstream instead.
+
 ## Before you start
 
 - Contributions are accepted under the terms of the
-  [Contributor License Agreement](CLA.md) and the project license
-  ([GPLv2 with AI Exception](LICENSE.md)).
+  [Contributor License Agreement](CLA.md) and the project license: the
+  application ([GPLv2 with AI Exception](LICENSE.md)), or LGPL-2.1-or-later
+  for contributions to a library under `packages/` or `workflows/`.
 - Read [AGENTS.md](AGENTS.md) — the ground rules there apply to human and
   agent contributors alike.
 
@@ -19,7 +25,10 @@ Thanks for your interest in Corbits Workbench.
 4. Never commit secrets. `.env.example` is the only tracked env file.
 5. Never vendor code without a ledger row and kill date in
    [VENDORED.md](VENDORED.md).
-6. Security issues go through [SECURITY.md](SECURITY.md), never a public
+6. A package that owns its own product tables follows
+   [docs/package-migrations.md](docs/package-migrations.md): literal SQL,
+   a package-owned ledger table, applied transactionally.
+7. Security issues go through [SECURITY.md](SECURITY.md), never a public
    issue.
 
 This document will grow as the project does.

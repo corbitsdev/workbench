@@ -3,7 +3,7 @@
   "private": true,
   "description": "Curated setup and seed commands that take a fresh checkout to a provisioned organization with the default workflows deployed and confirmed",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "bin": {
     "workbench": "./src/index.ts"

@@ -4,16 +4,16 @@
 // operator approval, then routes by step count.
 //
 // A one-step workflow has no distinct step address: the lone step IS the
-// deployment head. It deploys once at the head (`deriveDeploymentAddress`)
+// deployment head. It deploys once at the head (`deriveRunAddress`)
 // through the single-step hand-off -- the tree staging and the
 // `agent.deploy` frame collapse onto one head deploy, with no per-step
 // provisioning loop.
 //
-// A workflow with more than one step derives per-step agent addresses of
-// the form `ins_<deploymentId>-<stepId>@<deploymentDomain>`, instantiates
+// A workflow with more than one step derives per-step run addresses of
+// the form `<runId>-<stepId>@<domain>`, instantiates
 // one agent-state repo per step keyed by the derived address, and writes
 // each step's deploy tree onto its own repo. The derivation is a pure
-// function of `(deploymentId, stepId, deploymentDomain)`, so the
+// function of `(runId, stepId, domain)`, so the
 // supervisor reconstructs the same addresses at spawn time without any
 // per-deploy state.
 //
@@ -36,12 +36,13 @@ import type {
 } from "@intx/types/runtime";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialDelivery } from "@intx/types/sidecar";
-import { parseAgentAddress } from "@intx/types";
+import { formatRunAddress } from "@intx/types";
 import {
   STEP_ID_PATTERN,
   type Primitive,
   type WorkflowDefinition,
 } from "@intx/workflow/definition";
+import { rewriteInlineOnTriggerBodies } from "@intx/workflow";
 
 import {
   createApprovalSetGate,
@@ -72,7 +73,7 @@ export interface DeployContent {
 export type LaunchSessionFn = (params: {
   agentAddress: string;
   agentId: string;
-  instanceId: string;
+  runId: string;
   config: HarnessConfig;
   deployContent: DeployContent;
   toolPackagePins?: readonly ToolPackagePin[];
@@ -109,8 +110,8 @@ export interface ReferencedBodyDefinition {
  * The orchestrator does not synthesize the deployment-level address;
  * the caller passes the bus-registered address the sidecar's
  * supervisor will accept on the frame's `agentAddress` field. The
- * orchestrator computes `agentAddress` via `deriveDeploymentAddress`
- * and `agentId` via `deriveDeploymentAgentId`.
+ * orchestrator computes `agentAddress` via `deriveRunAddress`
+ * and `agentId` via `deriveRunAgentId`.
  *
  * `sources` is keyed by step id (matching `definition.stepOrder`);
  * every step id must have a matching entry, per the wire validator's
@@ -150,7 +151,7 @@ export type SendMultiStepDeployFn = (params: {
 export type DeploySingleStepFn = (params: {
   agentAddress: string;
   agentId: string;
-  instanceId: string;
+  runId: string;
   config: HarnessConfig;
   deployContent: DeployContent;
   definition: WorkflowDefinition;
@@ -251,12 +252,12 @@ export interface DeployWorkflowArgs {
    * Stable identifier the branch concatenates into derived agent
    * addresses. Required.
    */
-  readonly deploymentId?: string;
+  readonly runId?: string;
   /**
    * Mail-domain for the deployment. Required. The multi-step branch
    * derives per-step addresses as
-   * `ins_<deploymentId>-<stepId>@<deploymentDomain>`; the single-step
-   * branch deploys the lone step at `ins_<deploymentId>@<deploymentDomain>`.
+   * `<runId>-<stepId>@<deploymentDomain>`; the single-step
+   * branch deploys the lone step at `<runId>@<deploymentDomain>`.
    */
   readonly deploymentDomain?: string;
   /**
@@ -310,13 +311,11 @@ export class WorkflowDefinitionInvalidError extends Error {
 
 /**
  * Error thrown when the orchestrator must derive a per-step address but
- * the caller did not supply both `deploymentId` and `deploymentDomain`.
+ * the caller did not supply both `runId` and `deploymentDomain`.
  */
 export class MultiStepDeploymentArgsMissingError extends Error {
   constructor(missing: string) {
-    super(
-      `deploy requires ${missing}; supply both deploymentId and deploymentDomain`,
-    );
+    super(`deploy requires ${missing}; supply both runId and deploymentDomain`);
     this.name = "MultiStepDeploymentArgsMissingError";
   }
 }
@@ -474,7 +473,7 @@ export function createWorkflowDeployOrchestrator(
 
 /**
  * Deploy a one-step workflow once at the head. The lone step has no
- * distinct per-step address -- it IS the head (`deriveDeploymentAddress`)
+ * distinct per-step address -- it IS the head (`deriveRunAddress`)
  * -- so this pins the sole step's inference source, builds the head
  * config + deploy content, and hands the whole thing to
  * `deploySingleStepAtHead` in a single call. There is no per-step
@@ -489,10 +488,10 @@ async function runSingleStepAtHead(args: {
   referencedDefinitions: readonly ReferencedBodyDefinition[];
 }): Promise<MultiStepDeployResult> {
   const { args: deploy, deploySingleStepAtHead, referencedDefinitions } = args;
-  const deploymentId = deploy.deploymentId;
+  const runId = deploy.runId;
   const deploymentDomain = deploy.deploymentDomain;
-  if (deploymentId === undefined) {
-    throw new MultiStepDeploymentArgsMissingError("deploymentId");
+  if (runId === undefined) {
+    throw new MultiStepDeploymentArgsMissingError("runId");
   }
   if (deploymentDomain === undefined) {
     throw new MultiStepDeploymentArgsMissingError("deploymentDomain");
@@ -545,13 +544,13 @@ async function runSingleStepAtHead(args: {
   }
 
   // The lone step IS the head: one deploy at the deployment address, no
-  // per-step derivation. The head's agentId and instanceId are the same
-  // `ins_<deploymentId>` identity.
-  const headAddress = deriveDeploymentAddress({
-    deploymentId,
-    deploymentDomain,
+  // per-step derivation. The head's agentId and runId are the same
+  // `<runId>` (the minted run id) identity.
+  const headAddress = deriveRunAddress({
+    runId,
+    domain: deploymentDomain,
   });
-  const headId = deriveDeploymentAgentId({ deploymentId });
+  const headId = deriveRunAgentId({ runId });
   const headConfig: HarnessConfig = {
     ...deploy.config,
     agentAddress: headAddress,
@@ -574,7 +573,7 @@ async function runSingleStepAtHead(args: {
   return deploySingleStepAtHead({
     agentAddress: headAddress,
     agentId: headId,
-    instanceId: headId,
+    runId: headId,
     config: headConfig,
     deployContent: headDeployContent,
     definition: deploy.workflow,
@@ -601,10 +600,10 @@ async function runMultiStepBranch(args: {
     sendMultiStepDeploy,
     referencedDefinitions,
   } = args;
-  const deploymentId = deploy.deploymentId;
+  const runId = deploy.runId;
   const deploymentDomain = deploy.deploymentDomain;
-  if (deploymentId === undefined) {
-    throw new MultiStepDeploymentArgsMissingError("deploymentId");
+  if (runId === undefined) {
+    throw new MultiStepDeploymentArgsMissingError("runId");
   }
   if (deploymentDomain === undefined) {
     throw new MultiStepDeploymentArgsMissingError("deploymentDomain");
@@ -626,7 +625,7 @@ async function runMultiStepBranch(args: {
     stepId: string;
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    stepRunId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
   };
@@ -646,7 +645,7 @@ async function runMultiStepBranch(args: {
     // concern; this preserves prior workflow-step behavior.
     sources[stepId] = [
       pickStepInferenceSource({
-        stepAgent,
+        preferred: stepAgent?.inference.sources[0] ?? null,
         stepId,
         workflowId: deploy.workflow.id,
         config: deploy.config,
@@ -654,12 +653,12 @@ async function runMultiStepBranch(args: {
       }),
     ];
     const agentAddress = deriveStepAddress({
-      deploymentId,
+      runId,
       stepId,
-      deploymentDomain,
+      domain: deploymentDomain,
     });
-    const agentId = deriveStepAgentId({ deploymentId, stepId });
-    const instanceId = deriveStepInstanceId({ deploymentId, stepId });
+    const agentId = deriveStepAgentId({ runId, stepId });
+    const stepRunId = deriveStepRunId({ runId, stepId });
     const stepConfig: HarnessConfig = {
       ...deploy.config,
       agentAddress,
@@ -674,7 +673,7 @@ async function runMultiStepBranch(args: {
       stepId,
       agentAddress,
       agentId,
-      instanceId,
+      stepRunId,
       config: stepConfig,
       deployContent: stepDeployContent,
     });
@@ -683,7 +682,7 @@ async function runMultiStepBranch(args: {
     await launchSession({
       agentAddress: step.agentAddress,
       agentId: step.agentId,
-      instanceId: step.instanceId,
+      runId: step.stepRunId,
       config: step.config,
       deployContent: step.deployContent,
       ...(deploy.toolPackagePins !== undefined
@@ -692,11 +691,11 @@ async function runMultiStepBranch(args: {
     });
   }
 
-  const deploymentAddress = deriveDeploymentAddress({
-    deploymentId,
-    deploymentDomain,
+  const deploymentAddress = deriveRunAddress({
+    runId,
+    domain: deploymentDomain,
   });
-  const deploymentAgentId = deriveDeploymentAgentId({ deploymentId });
+  const deploymentAgentId = deriveRunAgentId({ runId });
   const deploymentConfig: HarnessConfig = {
     ...deploy.config,
     agentAddress: deploymentAddress,
@@ -766,26 +765,35 @@ export function isSourceApproved(
  * `HarnessConfig.sources`, cross-checked against the operator-approved
  * grant set.
  *
+ * The caller passes the step's preferred `(provider, model)` -- the step
+ * agent's first declared source, or `null` for a step that declares none
+ * (a non-agent step such as sleep/gate/awaitSignal, or an agent with no
+ * declared source). The identity is all this needs, so both the live path
+ * (from an `AgentDefinition`) and the source-ref hub path (from the frozen
+ * inert projection's `modelSources`) feed the same resolver.
+ *
  * The capability walk emits `inference.source:<provider>:<model>`
  * grants only for the (provider, model) pairs the agent declared. The
  * pinning pass here can otherwise resolve a source the walk never
- * surfaced -- the `HarnessConfig.defaultSource` fallback path for an
- * agent whose preference is unresolvable, or the same fallback for a
- * non-agent step (sleep, gate, awaitSignal, ...) whose primitive
+ * surfaced -- the `HarnessConfig.defaultSource` fallback path for a step
+ * whose preference is unresolvable, or the same fallback for a step that
  * carries no preference at all. In both cases the orchestrator must
  * refuse to pin a `(provider, model)` the operator never approved;
  * silently shipping an unapproved source would defeat the capability-
  * walk gate the deploy just passed.
+ *
+ * Exported so the source-ref hub deploy can pin its inert onTrigger body
+ * steps through the exact same resolver the live-authored path uses.
  */
-function pickStepInferenceSource(args: {
-  stepAgent: AgentDefinition<BaseEnv> | null;
+export function pickStepInferenceSource(args: {
+  preferred: { provider: string; model: string } | null;
   stepId: string;
   workflowId: string;
   config: HarnessConfig;
   operatorApprovals: ApprovalSet;
 }): InferenceSource {
-  const preferred = args.stepAgent?.inference.sources[0];
-  if (preferred !== undefined) {
+  const preferred = args.preferred;
+  if (preferred !== null) {
     const match = args.config.sources.find(
       (s) => s.provider === preferred.provider && s.model === preferred.model,
     );
@@ -801,9 +809,9 @@ function pickStepInferenceSource(args: {
   )
     return fallback;
   const preferredDesc =
-    preferred !== undefined
-      ? `agent preferred ${preferred.provider}:${preferred.model}`
-      : `the step's agent declared no preferred source`;
+    preferred !== null
+      ? `preferred ${preferred.provider}:${preferred.model}`
+      : `the step declared no preferred source`;
   const fallbackDesc =
     args.config.defaultSource !== undefined
       ? `the deploy's defaultSource ${JSON.stringify(args.config.defaultSource)} does not resolve to an operator-approved source`
@@ -815,60 +823,59 @@ function pickStepInferenceSource(args: {
 }
 
 /**
- * Pure function: derive a step's agent address from
- * `(deploymentId, stepId, deploymentDomain)`. Exported so the
- * supervisor can reconstruct the same addresses at spawn time without
- * sharing storage with the orchestrator.
+ * Pure function: derive a step's run address from
+ * `(runId, stepId, domain)`. Exported so the supervisor can reconstruct
+ * the same addresses at spawn time without sharing storage with the
+ * orchestrator.
  *
- * The `ins_` prefix is required by `parseAgentAddress` at the substrate
- * boundary; the per-step local-part is concat-only because `stepId` is
- * already constrained to `[a-zA-Z0-9_-]+` by the workflow definition
- * validator.
+ * The local part IS the run id with the step suffix appended; the runId is
+ * already a minted `run_<hex>` carrying the `run_` marker `parseRunAddress`
+ * requires at the substrate boundary. The per-step local-part is concat-only
+ * because `stepId` is already constrained to `[a-zA-Z0-9_-]+` by the workflow
+ * definition validator.
  */
 export function deriveStepAddress(args: {
-  deploymentId: string;
+  runId: string;
   stepId: string;
-  deploymentDomain: string;
+  domain: string;
 }): string {
-  return `ins_${args.deploymentId}-${args.stepId}@${args.deploymentDomain}`;
+  return formatRunAddress(`${args.runId}-${args.stepId}`, args.domain);
 }
 
 /**
  * Derive the per-step agent id (the `agent-state` repo's id and the
- * `HarnessConfig.agentId`). Pure function of `(deploymentId, stepId)`.
+ * `HarnessConfig.agentId`). Pure function of `(runId, stepId)`.
  */
 export function deriveStepAgentId(args: {
-  deploymentId: string;
+  runId: string;
   stepId: string;
 }): string {
-  return `ins_${args.deploymentId}-${args.stepId}`;
+  return `${args.runId}-${args.stepId}`;
 }
 
 /**
- * Derive the per-step session instance id. Pure function of
- * `(deploymentId, stepId)`.
+ * Derive the per-step run id. Pure function of `(runId, stepId)`.
  */
-export function deriveStepInstanceId(args: {
-  deploymentId: string;
+export function deriveStepRunId(args: {
+  runId: string;
   stepId: string;
 }): string {
-  return `ins_${args.deploymentId}-${args.stepId}`;
+  return `${args.runId}-${args.stepId}`;
 }
 
 /**
  * Derive the deployment-level mail address the supervisor registers on
- * the bus. The shape mirrors `deriveStepAddress` minus the per-step
- * suffix; pure function of `(deploymentId, deploymentDomain)`.
+ * the bus. It is the run id `@` the domain; pure function of `(runId, domain)`.
  *
  * The supervisor uses this address as the inbound mail address for the
  * deployment as a whole; per-step bindings carry their own
  * derived-step addresses.
  */
-export function deriveDeploymentAddress(args: {
-  deploymentId: string;
-  deploymentDomain: string;
+export function deriveRunAddress(args: {
+  runId: string;
+  domain: string;
 }): string {
-  return `ins_${args.deploymentId}@${args.deploymentDomain}`;
+  return formatRunAddress(args.runId, args.domain);
 }
 
 /**
@@ -876,7 +883,7 @@ export function deriveDeploymentAddress(args: {
  * count. This is the single owner of the head/step collapse DECISION for
  * a consumer that must choose the address without knowing the deploy
  * shape: a one-step workflow has no distinct steps, so its lone step IS
- * the head (`deriveDeploymentAddress`); a multi-step deployment keeps the
+ * the head (`deriveRunAddress`); a multi-step deployment keeps the
  * head distinct from its per-step addresses (`deriveStepAddress`). The
  * sidecar child reads its deploy tree from the address this returns,
  * keyed only off the deployment mailbox and the host-sourced `stepCount`.
@@ -889,84 +896,51 @@ export function deriveDeploymentAddress(args: {
  * the tree; the two processes never derive divergent addresses.
  */
 export function resolveStepAddress(args: {
-  deploymentId: string;
+  runId: string;
   stepId: string;
-  deploymentDomain: string;
+  domain: string;
   stepCount: number;
 }): string {
   return args.stepCount === 1
-    ? deriveDeploymentAddress({
-        deploymentId: args.deploymentId,
-        deploymentDomain: args.deploymentDomain,
+    ? deriveRunAddress({
+        runId: args.runId,
+        domain: args.domain,
       })
     : deriveStepAddress(args);
 }
 
 /**
  * Derive the deployment-level agent id used on the `agent.deploy`
- * frame's `agentId` field. Pure function of `(deploymentId)`.
+ * frame's `agentId` field. Pure function of `(runId)`.
  */
-export function deriveDeploymentAgentId(args: {
-  deploymentId: string;
-}): string {
-  return `ins_${args.deploymentId}`;
+export function deriveRunAgentId(args: { runId: string }): string {
+  return args.runId;
 }
 
 /**
- * Project a workflow-deployment agent address into the substrate-safe
+ * Project a workflow-deployment run address into the substrate-safe
  * id of its workflow-run repo (`{ kind: "workflow-run", id }`). Pure
- * function of the deployment's agent address.
+ * function of the deployment's run address.
  *
  * The workflow-run repo's `repoId.id` must match `SAFE_REPO_ID`
  * (`/^[a-zA-Z0-9_-]+$/`, the substrate's repo-path-safety contract in
  * `packages/hub-sessions/src/repo-store/types.ts`), and the supervisor
- * principal's `deploymentId` must equal `workflowRunRepoId.id` for the
+ * principal's `runId` must equal `workflowRunRepoId.id` for the
  * workflow-run kind handler's authz check to pass. That regex rejects
- * `@` and `.`, both of which appear in every agent address, so the
+ * `@` and `.`, both of which appear in every run address, so the
  * address is sanitized by substituting every disallowed character with
  * `-`.
  *
  * The mapping is lossy (two distinct addresses can collapse to the same
  * slug) but deterministic. The sidecar's deploy router keys the
  * workflow-run repo by this slug at write time; the hub's read routes
- * reconstruct the deployment address via `deriveDeploymentAddress` and
+ * reconstruct the deployment address via `deriveRunAddress` and
  * apply this same derivation so read and write address the same repo.
  * A collision implies two deployments are claiming the same workflow-run
  * surface, which the sidecar's deploy router rejects at deploy time.
  */
 export function deriveWorkflowRunRepoId(agentAddress: string): string {
   return agentAddress.replaceAll(/[^a-zA-Z0-9_-]/g, "-");
-}
-
-/**
- * The id prefix `generateId("deployment")` stamps on every deployment
- * id (mirrors `@intx/hub-common`'s `PREFIXES.deployment`). Every
- * workflow-derived address — both the deployment-level address from
- * `deriveDeploymentAddress` (`ins_dep_<...>`) and the per-step
- * addresses from `deriveStepAddress` (`ins_dep_<...>-<stepId>`) — wraps
- * a deployment id in the `ins_` instance prefix, so its instance id
- * begins with `ins_dep_`. A plain agent-launch instance id is `ins_` +
- * 32 hex characters, which can never produce that segment, so the
- * prefix is an exact discriminator between the two address families.
- */
-const DEPLOYMENT_ID_PREFIX = "dep_";
-
-/**
- * True when `address` is a workflow-derived agent address — either the
- * deployment-level address from `deriveDeploymentAddress` or a per-step
- * address from `deriveStepAddress`. Both wrap a deployment id in the
- * `ins_` instance prefix, so both are recognized here.
- *
- * Used by host-side reactions that must treat workflow-derived
- * addresses (which never carry an `agent_instance` row) differently
- * from launched-agent instance addresses.
- */
-export function isWorkflowDerivedAddress(address: string): boolean {
-  const parsed = parseAgentAddress(address);
-  if (parsed === null) {
-    return false;
-  }
-  return parsed.instanceId.startsWith(`ins_${DEPLOYMENT_ID_PREFIX}`);
 }
 
 /**
@@ -1045,20 +1019,19 @@ export async function extractOnTriggerBodies(args: {
   workflow: WorkflowDefinition;
   referencedDefinitions: readonly ReferencedBodyDefinition[];
 }> {
-  const steps: Record<string, Primitive> = { ...args.workflow.steps };
+  // Structural rewrite (shared with the source-ref run child and sidecar
+  // deploy router). The orchestrator then layers the live-authored deploy
+  // machinery -- capability walk, hub write, and source-pinning -- onto each
+  // extracted body.
+  const { workflow, bodies } = rewriteInlineOnTriggerBodies(args.workflow);
+  if (bodies.length === 0) {
+    return { workflow: args.workflow, referencedDefinitions: [] };
+  }
   const referencedDefinitions: ReferencedBodyDefinition[] = [];
-  let rewritten = false;
-  for (const [stepId, primitive] of Object.entries(steps)) {
-    if (primitive.kind !== "onTrigger") continue;
-    if (!("inline" in primitive.body)) continue;
-    const bodyRef = `${args.workflow.id}__${stepId}`;
-    const bodyDefinition: WorkflowDefinition = {
-      ...primitive.body.inline,
-      id: bodyRef,
-    };
-    const bodyWalk = walkCapabilities(bodyDefinition, args.registry);
+  for (const { definition } of bodies) {
+    const bodyWalk = walkCapabilities(definition, args.registry);
     await writeWorkflowRepoTree({
-      workflow: bodyDefinition,
+      workflow: definition,
       walk: bodyWalk,
       workflowRepo: args.workflowRepo,
     });
@@ -1067,21 +1040,13 @@ export async function extractOnTriggerBodies(args: {
     // `pinBodySources`. The pins ride inline so the body child resolves
     // inference off disk, durably across a restart.
     const bodySources = pinBodySources({
-      body: bodyDefinition,
+      body: definition,
       config: args.config,
       operatorApprovals: args.operatorApprovals,
     });
-    referencedDefinitions.push({
-      definition: bodyDefinition,
-      sources: bodySources,
-    });
-    steps[stepId] = { ...primitive, body: { ref: bodyRef } };
-    rewritten = true;
+    referencedDefinitions.push({ definition, sources: bodySources });
   }
-  if (!rewritten) {
-    return { workflow: args.workflow, referencedDefinitions: [] };
-  }
-  return { workflow: { ...args.workflow, steps }, referencedDefinitions };
+  return { workflow, referencedDefinitions };
 }
 
 /**
@@ -1119,7 +1084,7 @@ function pinBodySources(args: {
     assertBodyAgentToolless(stepAgent, args.body.id, stepId);
     sources[stepId] = [
       pickStepInferenceSource({
-        stepAgent,
+        preferred: stepAgent?.inference.sources[0] ?? null,
         stepId,
         workflowId: args.body.id,
         config: args.config,
@@ -1198,7 +1163,7 @@ function serializeWalk(walk: CapabilityWalkResult): unknown {
 /**
  * Build an `AgentDefinition` from a `HarnessConfig` and a
  * `DeployContent`. `SessionService.deployInstanceAtHead` uses it to wrap
- * a single-agent instance's harness as a one-step workflow and deploy it
+ * a single agent's harness as a one-step workflow and deploy it
  * at the head. The deploy tree itself (`deployContent.systemPrompt`, the
  * harness's `tools` and `grants` arrays) is the source of truth for
  * runtime behaviour; the wrap synthesizes only the surfaces the

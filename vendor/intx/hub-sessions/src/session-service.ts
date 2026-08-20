@@ -12,13 +12,20 @@ import {
   createDetachedSignatureFromProvider,
   type MessageHeaders,
 } from "@intx/mime";
-import { listAssetsForTenant, type DB } from "@intx/db";
+import {
+  buildCredentialDelivery,
+  listAssetsForTenant,
+  type DB,
+} from "@intx/db";
 import {
   grant as grantTable,
+  sidecarAllocation as sidecarAllocationTable,
+  workflowDefinition as workflowDefinitionTable,
   workflowRun as workflowRunTable,
 } from "@intx/db/schema";
 import { base64Encode, hexEncode } from "@intx/types";
 import type { CredentialDelivery } from "@intx/types/sidecar";
+import type { CredentialCipher } from "@intx/types";
 import { generateId } from "@intx/hub-common";
 import { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
 import { sessionAsset as sessionAssetTable } from "@intx/db/schema";
@@ -41,6 +48,18 @@ import {
   ToolPackageManifest,
   type ToolPackagePin,
 } from "@intx/types/tool-packages";
+import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
+import type {
+  SourceRefPin,
+  WorkflowProjectionDefinition,
+  WorkflowProjectionWithSources,
+  WorkflowSourceAssetMount,
+} from "@intx/types/sidecar";
+import type {
+  WorkflowDefinitionAssetSource,
+  WorkflowDefinitionRegistrySource,
+} from "@intx/types/workflow-sources";
+import { computeLiveDefinitionHash } from "@intx/workflow";
 import {
   defineWorkflow,
   type WorkflowDefinition,
@@ -48,7 +67,9 @@ import {
 import {
   assertChainHeadIsDefault,
   createWorkflowDeployOrchestrator,
-  deriveDeploymentAddress,
+  deriveRunAddress,
+  enumerateInertOnTriggerBodies,
+  pickStepInferenceSource,
   walkCapabilities,
   wrapHarnessAsSingleStepWorkflow,
   type ApprovalSet,
@@ -68,8 +89,18 @@ import {
   type Asset,
   type AssetService,
 } from "./asset-service";
-import type { SidecarRouter } from "./ws/sidecar-handler";
+import type {
+  AllocatedSidecarTarget,
+  SidecarAllocationRouter,
+  SidecarRouter,
+} from "./ws/sidecar-handler";
 import type { Principal, RepoId } from "./repo-store";
+import {
+  buildSourceAssetMounts,
+  type ResolveAssetAttachmentFn,
+} from "./workflow-closure-resolution";
+import { restoreWorkflowRunToAllocation } from "./workflow-run-restore";
+import type { InstallAndApproveResult } from "./workflow-probe-gate";
 
 const logger = getLogger(["interchange", "hub", "session-service"]);
 
@@ -102,17 +133,18 @@ export type SessionService = {
   stageWorkflowStep(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
+    allocationTarget?: AllocatedSidecarTarget;
   }): Promise<void>;
 
   /**
-   * Deploy a single-agent instance through the single-step-at-head path,
+   * Deploy a single agent through the single-step-at-head path,
    * wrapping the harness as a one-step workflow and routing it through the
-   * deploy core with the instance's real identity. Replaces `launchSession`
-   * as the production instance-deploy entry point: the instance runs as a
+   * deploy core with the run's real identity. Replaces `launchSession`
+   * as the production single-agent deploy entry point: the run executes as a
    * supervised workflow-process child. Records no deployment anchor run.
    * Returns the head's agent-key ack (the key the head signs its
    * reconnect challenges with).
@@ -120,7 +152,7 @@ export type SessionService = {
   deployInstanceAtHead(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -144,12 +176,12 @@ export type SessionService = {
    * deploy entry point: it is not coupled to a single agent's
    * credential/session model the way `launchSession` is. The
    * orchestrator derives every per-step address
-   * from `deploymentId` + `deploymentDomain`, provisions each step's
+   * from `anchorRunId` + `deploymentDomain`, provisions each step's
    * agent-state repo via the shared per-agent deploy phases, writes the
    * workflow repo, and fires the deployment-level `agent.deploy` frame.
    *
    * Persists the deployment's anchor run -- the `workflow_run` whose id is
-   * `deploymentId` -- carrying its routing identity and definition, so the
+   * `anchorRunId` -- carrying its routing identity and definition, so the
    * deployment is listable per tenant off its runs; the RepoStore substrate
    * has no by-kind listing API of its own.
    *
@@ -181,11 +213,11 @@ export type DeployWorkflowDefinitionParams = {
    * every derived per-step address and the deployment-level address, and
    * it is the deployment's anchor-run id. The caller owns its generation.
    */
-  deploymentId: string;
+  anchorRunId: string;
   /**
    * Mail domain the deployment's derived addresses live under. The
-   * orchestrator derives `ins_<deploymentId>-<stepId>@<deploymentDomain>`
-   * per step and `ins_<deploymentId>@<deploymentDomain>` for the
+   * orchestrator derives `<anchorRunId>-<stepId>@<deploymentDomain>`
+   * per step and `<anchorRunId>@<deploymentDomain>` for the
    * deployment-level supervisor address.
    */
   deploymentDomain: string;
@@ -209,13 +241,27 @@ export type DeployWorkflowDefinitionParams = {
   toolPackagePins?: readonly ToolPackagePin[];
 };
 
+export type DeployPreparedWorkflowDefinitionParams = Omit<
+  DeployWorkflowDefinitionParams,
+  "definitionAssetId"
+> & {
+  allocationTarget: AllocatedSidecarTarget;
+};
+
 export type DeployWorkflowDefinitionResult = {
   /** Echoes the deployment id recorded on the projection row. */
-  deploymentId: string;
+  anchorRunId: string;
   /** Deployment-level mail address the supervisor registers on the bus. */
   deploymentAddress: string;
   /** Supervisor principal public key from the sidecar's deploy ack. */
   publicKey: string;
+};
+
+export type PreparedWorkflowDeployer = {
+  /** Deploy an anchor that was durably prepared before capacity was requested. */
+  deployPreparedWorkflowDefinition(
+    params: DeployPreparedWorkflowDefinitionParams,
+  ): Promise<DeployWorkflowDefinitionResult>;
 };
 
 export type UserMessageParams = {
@@ -234,6 +280,8 @@ export type UserMessageParams = {
 
 export type SessionServiceDeps = {
   sidecarRouter: SidecarRouter;
+  /** Present when this Hub can route deploy phases to exclusive allocations. */
+  sidecarAllocationRouter?: SidecarAllocationRouter;
   agentRepoStore: AgentRepoStore;
   /**
    * Optional asset attachment integration. When set, the deploy flow
@@ -293,6 +341,13 @@ type ResolvedAttachment = {
   repoId: RepoId;
   pack: Uint8Array;
   ref: string;
+};
+
+type SessionAssetRecord = {
+  runId: string;
+  mountPath: string;
+  assetPackSha: string;
+  sourceCommitSha: string;
 };
 
 async function createPackSha(pack: Uint8Array): Promise<string> {
@@ -369,6 +424,11 @@ function toWireWorkflowDefinition(definition: WorkflowDefinition): {
   stepOrder: string[];
   steps: Record<string, unknown>;
   state?: Record<string, unknown>;
+  grantRequirements?: unknown[];
+  sidecarPlacement?: {
+    sharing: "exclusive";
+    reuse?: "never" | "same-deployment";
+  };
 } {
   return {
     id: definition.id,
@@ -376,8 +436,105 @@ function toWireWorkflowDefinition(definition: WorkflowDefinition): {
     stepOrder: [...definition.stepOrder],
     steps: definition.steps as Record<string, unknown>,
     ...(definition.state !== undefined ? { state: definition.state } : {}),
+    ...(definition.grantRequirements !== undefined
+      ? { grantRequirements: [...definition.grantRequirements] }
+      : {}),
+    ...(definition.sidecarPlacement !== undefined
+      ? { sidecarPlacement: definition.sidecarPlacement }
+      : {}),
   };
 }
+
+/** Fields both deploy-frame arms carry onto `sendAgentDeploy`, independent of
+ * whether the definition is live-authored or code-sourced. */
+type DeployFrameCommonArgs = {
+  sidecarRouter: SidecarRouter;
+  sidecarAllocationRouter?: SidecarAllocationRouter;
+  allocationTarget?: AllocatedSidecarTarget;
+  agentAddress: string;
+  config: HarnessConfig;
+  sources: Record<string, InferenceSource[]>;
+};
+
+/**
+ * Live-authored arm: the hub holds the live `WorkflowDefinition` and is the
+ * authority for the deployment's content hash. It projects the definition onto
+ * the wire envelope and recomputes the wire hash the frame carries.
+ */
+export type LiveAuthoredDeployFrameArgs = DeployFrameCommonArgs & {
+  lineage: "live-authored";
+  definition: WorkflowDefinition;
+  /**
+   * Extracted onTrigger section bodies to carry inline so the sidecar
+   * materializes each as its own `assets/workflow/<bodyRef>/workflow.json`
+   * plus a co-located `sources.json`; a body child then resolves both the ref
+   * and its inference sources off disk without a hub round-trip.
+   */
+  referencedDefinitions?: readonly ReferencedBodyDefinition[];
+  credentials?: CredentialDelivery;
+};
+
+/**
+ * Source-ref arm: for a code-sourced (npm) deploy the hub never holds the live
+ * `WorkflowDefinition` -- it lives only in the airlocked child. The gate/freeze
+ * layer already projected the definition to its inert `WorkflowProjectionDefinition`
+ * and hashed THAT; this arm carries both verbatim. The content hash is owned by
+ * the gate, so this arm never recomputes it -- recomputing over the live wire
+ * lineage would diverge from the inert projection the child re-verifies against.
+ */
+export type SourceRefDeployFrameArgs = DeployFrameCommonArgs & {
+  lineage: "source-ref";
+  /**
+   * The inert wire projection the gate froze -- the same closed
+   * `WorkflowProjectionDefinition` a `workflow.probe.result` carries. Placed on
+   * the frame's `definition` field verbatim; it is already that field's type,
+   * so no coercion is needed.
+   */
+  projection: WorkflowProjectionDefinition;
+  /**
+   * The gate-frozen wire hash of `projection` -- stamped onto the frame VERBATIM.
+   * This arm does not recompute it: the freeze layer owns the content hash, and
+   * the child re-verifies its recompute over the inert projection against this
+   * exact value.
+   */
+  approvedWireHash: string;
+  /**
+   * The source-ref pin: where the definition's bytes come from plus the frozen
+   * dependency closure the hub resolved for it. The two co-travel, so they are
+   * one required object on this arm (see `SourceRefPin`) -- the sidecar
+   * re-materializes the exact tree from the pin at apply time.
+   */
+  sourceRef: SourceRefPin;
+  /**
+   * Resolved credential material for the definition's credential bindings,
+   * delivered to the child on the frame (mirrors the live-authored arm). The
+   * hub resolves + decrypts here; the source-ref child decrypts nothing. The
+   * grant that AUTHORIZES a credential's use is minted per-run by run-grant
+   * materialization, not carried on this frame.
+   */
+  credentials?: CredentialDelivery;
+  /**
+   * The projection's inline onTrigger section bodies, each already in inert wire
+   * form with its per-step inference sources pinned and its own wire hash --
+   * built by `deployCodeSourcedWorkflow` from the frozen projection. Carried
+   * verbatim on the SAME `referencedDefinitions` wire field the live-authored
+   * arm uses, so the sidecar stages each body's `sources.json` (and re-verify
+   * hash) with no lineage-specific handling. Absent when the projection has no
+   * inline onTrigger body.
+   */
+  referencedDefinitions?: readonly WorkflowProjectionWithSources[];
+  /**
+   * Source assets the pin's `kind:"asset"` closure entries read from, delivered
+   * inline on the frame so the sidecar checks them out into its durable
+   * per-deployment source store. Absent for a registry-sourced pin (its tarballs
+   * are fetched over HTTP).
+   */
+  assets?: readonly WorkflowSourceAssetMount[];
+};
+
+export type SendMultiStepDeployFrameArgs =
+  | LiveAuthoredDeployFrameArgs
+  | SourceRefDeployFrameArgs;
 
 /**
  * Wire the workflow-deploy orchestrator's `sendMultiStepDeploy`
@@ -388,43 +545,347 @@ function toWireWorkflowDefinition(definition: WorkflowDefinition): {
  * sidecar's `agent.deploy.ack` is threaded back as the
  * `MultiStepDeployResult.publicKey`.
  *
+ * The `lineage` discriminant selects who owns the content hash. On the
+ * `source-ref` arm the gate/freeze layer already hashed the inert projection,
+ * so the frozen hash and the inert projection ride the frame verbatim. On the
+ * `live-authored` arm the hub holds the live definition and recomputes the
+ * wire hash.
+ * The two arms are mutually exclusive at the type level: a source-ref deploy
+ * cannot pass a live definition and cannot omit its frozen hash.
+ *
  * Exported so the co-located caller-site test can assert that the
  * closure constructed in `launchSession` reaches the wire surface via
  * `sendAgentDeploy` with a `workflow` field structurally matching the
  * `AgentDeployFrame.workflow` schema.
  */
-export async function sendMultiStepDeployFrame(args: {
-  sidecarRouter: SidecarRouter;
-  agentAddress: string;
-  config: HarnessConfig;
-  definition: WorkflowDefinition;
-  sources: Record<string, InferenceSource[]>;
-  /**
-   * Extracted onTrigger section bodies to carry inline so the sidecar
-   * materializes each as its own `assets/workflow/<bodyRef>/workflow.json`
-   * plus a co-located `sources.json`; a body child then resolves both the ref
-   * and its inference sources off disk without a hub round-trip.
-   */
-  referencedDefinitions?: readonly ReferencedBodyDefinition[];
-  credentials?: CredentialDelivery;
-}): Promise<{ publicKey: string }> {
+export async function sendMultiStepDeployFrame(
+  args: SendMultiStepDeployFrameArgs,
+): Promise<{ publicKey: string }> {
+  if (args.lineage === "source-ref") {
+    return args.sidecarRouter.sendAgentDeploy(args.agentAddress, args.config, {
+      // The inert projection and its gate-frozen hash ride the frame verbatim;
+      // neither is re-derived here. `projection` is already the frame's
+      // `definition` type, so it is assigned with no coercion.
+      definition: args.projection,
+      sources: args.sources,
+      approvedWireHash: args.approvedWireHash,
+      sourceRef: args.sourceRef,
+      ...(args.credentials !== undefined
+        ? { credentials: args.credentials }
+        : {}),
+      ...(args.referencedDefinitions !== undefined &&
+      args.referencedDefinitions.length > 0
+        ? { referencedDefinitions: [...args.referencedDefinitions] }
+        : {}),
+      ...(args.assets !== undefined && args.assets.length > 0
+        ? { assets: [...args.assets] }
+        : {}),
+    });
+  }
+
   const wireDefinition = toWireWorkflowDefinition(args.definition);
-  return args.sidecarRouter.sendAgentDeploy(args.agentAddress, args.config, {
+  // The hub is the authority for the deployment's content hash: recompute the
+  // wire hash here so the frame carries the hub-approved value the sidecar
+  // feeds the child as `DEFINITION_HASH`. The freeze stored exactly this hash,
+  // so recomputing it at the hub reproduces the frozen approval's anchor; the
+  // sidecar never recomputes.
+  const approvedWireHash = await computeWireDefinitionHash(wireDefinition);
+  const workflow = {
     definition: wireDefinition,
     sources: args.sources,
+    approvedWireHash,
     ...(args.referencedDefinitions !== undefined &&
     args.referencedDefinitions.length > 0
       ? {
-          referencedDefinitions: args.referencedDefinitions.map((body) => ({
-            definition: toWireWorkflowDefinition(body.definition),
-            sources: body.sources,
-          })),
+          referencedDefinitions: await Promise.all(
+            args.referencedDefinitions.map(async (body) => {
+              const bodyWire = toWireWorkflowDefinition(body.definition);
+              return {
+                definition: bodyWire,
+                sources: body.sources,
+                // Per-body freeze anchor: the hub recomputes each referenced
+                // body's wire hash so a body child re-verifies its recompute
+                // against the hub authority.
+                approvedWireHash: await computeWireDefinitionHash(bodyWire),
+              };
+            }),
+          ),
         }
       : {}),
     ...(args.credentials !== undefined
       ? { credentials: args.credentials }
       : {}),
+  };
+  if (args.allocationTarget !== undefined) {
+    if (args.sidecarAllocationRouter === undefined) {
+      throw new Error("Exclusive deployment routing is not configured");
+    }
+    return args.sidecarAllocationRouter.sendAgentDeployToAllocation(
+      args.allocationTarget,
+      args.agentAddress,
+      args.config,
+      workflow,
+    );
+  }
+  return args.sidecarRouter.sendAgentDeploy(
+    args.agentAddress,
+    args.config,
+    workflow,
+  );
+}
+
+/**
+ * Arguments for `deployCodeSourcedWorkflow`. The `approved` bundle is the
+ * `installAndApproveWorkflowDefinition` output verbatim -- the frozen hash,
+ * inert projection, and closure travel together inside it so no caller can pair
+ * a hash with a mismatched projection or closure. The remaining fields are the
+ * operator/asset config the approve step never sees: the per-step inference
+ * `sources`, the deploy `config`, the target `agentAddress`, and the `source`
+ * ref that names where the definition's bytes are published.
+ */
+type DeployCodeSourcedCommonArgs = DeployFrameCommonArgs & {
+  approved: InstallAndApproveResult;
+  /**
+   * The hub DB handle, the definition's OWN tenant, the deployment's anchor run
+   * id, and the mail domain its run address lives under. REQUIRED: this function
+   * writes the deployment's anchor `workflow_run` row, and run-grant
+   * materialization keys off it. `tenantId` is the definition's own tenant
+   * (tenant-owned credential resolution walks up from it); do not pass a
+   * request/config tenant that may differ. `anchorRunId` is caller-supplied: the
+   * deployment mail address is frozen into the approved package bytes at
+   * authoring time, so the run id it derives from is fixed before this runs and
+   * cannot be minted here. `deploymentDomain` pairs with `anchorRunId` to
+   * re-derive the run address and assert it matches `agentAddress`, failing
+   * closed on an incoherent pair.
+   */
+  db: DB["db"];
+  tenantId: string;
+  anchorRunId: string;
+  deploymentDomain: string;
+  /**
+   * Credential cipher, REQUIRED only when the definition carries credential
+   * bindings (resolution fails closed without it); omit for a binding-free
+   * deployment.
+   */
+  credentialCipher?: CredentialCipher;
+};
+
+/** Deploy a definition published to an npm registry: the sidecar fetches its
+ * tarballs over HTTP, so no source asset is delivered. */
+export type DeployCodeSourcedRegistryArgs = DeployCodeSourcedCommonArgs & {
+  source: WorkflowDefinitionRegistrySource;
+};
+
+/** Deploy a definition sourced from a hub `package-registry` asset: the caller
+ * mints `resolveAttachment` so this glue delivers the asset packs the sidecar
+ * checks out, without importing the asset service. */
+export type DeployCodeSourcedAssetArgs = DeployCodeSourcedCommonArgs & {
+  source: WorkflowDefinitionAssetSource;
+  resolveAttachment: ResolveAssetAttachmentFn;
+};
+
+export type DeployCodeSourcedWorkflowArgs =
+  | DeployCodeSourcedRegistryArgs
+  | DeployCodeSourcedAssetArgs;
+
+function isAssetDeployArgs(
+  args: DeployCodeSourcedWorkflowArgs,
+): args is DeployCodeSourcedAssetArgs {
+  return args.source.kind === "asset";
+}
+
+/**
+ * The single public composition entrypoint for a code-sourced (npm) deploy. It
+ * consumes the approve output and builds the source-ref deploy frame internally,
+ * so the security-load-bearing hand-off -- frozen wire hash, inert projection,
+ * frozen closure -- is assembled in one place from one cohesive object rather
+ * than reassembled by each caller. The frozen approval's hash and projection
+ * ride the frame verbatim: nothing here recomputes the hash or re-resolves the
+ * closure, so the child re-verify over the inert projection matches the gate's
+ * freeze.
+ *
+ * Credential MATERIAL for the definition's tenant-owned bindings is resolved
+ * here (`buildCredentialDelivery`) and delivered to the child on the frame.
+ * Credential GRANT enforcement is a SEPARATE layer: the `credential:{id}` /
+ * `use` grant the runtime gate checks is minted per-run by run-grant
+ * materialization into `runs/<runId>/grants.json`, not carried on this frame --
+ * the deploy-time `config.grants` spawn-time snapshot is suppressed once the
+ * sidecar wires per-run grant pushes, so it is not the enforcement transport.
+ *
+ * A gate outcome that did not approve cannot deploy: an unapproved `approval`
+ * fails closed here rather than shipping an unfrozen definition.
+ */
+export async function deployCodeSourcedWorkflow(
+  args: DeployCodeSourcedWorkflowArgs,
+): Promise<{ publicKey: string }> {
+  const { approval, projection, closure } = args.approved;
+  if (!approval.ok) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: refusing to deploy an unapproved workflow (gate reason: ${approval.reason})`,
+    );
+  }
+
+  // Fail-closed persisted-definition guard. The anchor row this writes carries
+  // an FK to `workflow_definition`, so a phantom `definitionId` would otherwise
+  // reach the INSERT and fail with a raw constraint violation. A mis-wired
+  // caller -- or a test double that skips the approve step's DB writer -- could
+  // pass an approval whose definition was never persisted; verify it exists and
+  // fail with a domain error before deploying, rather than deploying and then
+  // failing the anchor insert into a deployed-but-unanchored state.
+  const persistedDefinition = await args.db.query.workflowDefinition.findFirst({
+    where: eq(workflowDefinitionTable.id, approval.definitionId),
+    columns: { id: true },
   });
+  if (persistedDefinition === undefined) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: approval.definitionId ${approval.definitionId} does not reference a persisted workflow_definition row`,
+    );
+  }
+
+  // Coherence guard, run BEFORE the deploy frame: the anchor row's id and its
+  // routing address must name the same run. The deployment mail address is
+  // frozen into the approved package bytes at authoring time, so its run id is
+  // fixed before this runs and the caller owns `anchorRunId`. A mismatched
+  // (anchorRunId, agentAddress) pair would let run-grant materialization find
+  // the anchor by `address` while `deriveRunAddress` from `anchorRunId` names a
+  // different run -- a silent grant-identity split. Fail closed here, before the
+  // frame is sent or any row is persisted, rather than deploying an incoherent
+  // pair.
+  const derivedAddress = deriveRunAddress({
+    runId: args.anchorRunId,
+    domain: args.deploymentDomain,
+  });
+  if (derivedAddress !== args.agentAddress) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: anchorRunId ${args.anchorRunId} derives address ${derivedAddress} but agentAddress is ${args.agentAddress}`,
+    );
+  }
+
+  // Resolve the operator-approved credential bindings into delivered material.
+  // Tenant-owned resolution keys off the definition's tenant and walks up the
+  // hierarchy; it does not consult creator/invoker (the only locator today is
+  // `tenant`). A code-sourced deployment has no single authenticated invoker,
+  // so invoker is null; when principal-owned locators arrive, the asset creator
+  // must be resolved and passed here. A resolution failure is fail-closed.
+  const bindings = projection.credentialBindings ?? [];
+  let credentials: CredentialDelivery | undefined;
+  if (bindings.length > 0) {
+    if (args.credentialCipher === undefined) {
+      throw new Error(
+        "deployCodeSourcedWorkflow: definition carries credential bindings but " +
+          "no credentialCipher was supplied; cannot resolve credential material",
+      );
+    }
+    const delivery = await buildCredentialDelivery({
+      db: args.db,
+      tenantId: args.tenantId,
+      bindings,
+      creatorPrincipalId: null,
+      invokerPrincipalId: null,
+      credentialCipher: args.credentialCipher,
+    });
+    if (!delivery.ok) {
+      throw new Error(
+        `deployCodeSourcedWorkflow: credential binding resolution failed: ${delivery.reason.message}`,
+      );
+    }
+    credentials = delivery.delivery;
+  }
+
+  // Pin per-step inference sources for the projection's inline onTrigger bodies.
+  // The live-authored path pins these off the live AgentDefinition; the
+  // source-ref hub holds only the frozen inert projection, so it enumerates the
+  // inline bodies from the wire form and resolves each body step's source
+  // through the SAME resolver + operator-approval gate the live path uses
+  // (`pickStepInferenceSource` against `approval.approvedGrants`). Each body's
+  // wire hash is recomputed from the inert body verbatim, so a body child's
+  // re-verify over the re-evaluated closure clears the same barrier a top-level
+  // re-verify does. The pinned sources ride OUTSIDE the hash (as on the live
+  // path); their trust comes from being resolved here under the approval gate,
+  // which is why the pin stays hub-side and is never caller-supplied.
+  //
+  // These entries reuse the live-authored `referencedDefinitions` wire field, so
+  // the sidecar stages them through its one lineage-agnostic loop with no
+  // source-ref-specific handling. Each entry's `definition` is the approved
+  // inert body def straight from the frozen, hash-covered projection (id set to
+  // the ref). On source-ref the sidecar stages that as a body workflow.json that
+  // is written REDUNDANTLY and NEVER read: the run child resolves bodies
+  // in-memory from the re-verified closure and hard-fails rather than reading a
+  // body workflow.json off disk (see the staging loop in workflow-host-wiring.ts
+  // and the anti-fallback guard in workflow-host run-child.ts). Only the
+  // co-staged sources.json is read on this path. Reuse is chosen over a
+  // dedicated sources-only field so the two lineages share one staging path and
+  // cannot drift; the redundant file is inert and approval-covered, not
+  // authoritative.
+  const referencedDefinitions: WorkflowProjectionWithSources[] =
+    await Promise.all(
+      enumerateInertOnTriggerBodies(projection).map(async (body) => {
+        const sources: Record<string, InferenceSource[]> = {};
+        for (const bodyStepId of body.definition.stepOrder) {
+          sources[bodyStepId] = [
+            pickStepInferenceSource({
+              preferred: body.preferredByStep[bodyStepId] ?? null,
+              stepId: bodyStepId,
+              workflowId: body.ref,
+              config: args.config,
+              operatorApprovals: approval.approvedGrants,
+            }),
+          ];
+        }
+        return {
+          definition: body.definition,
+          sources,
+          approvedWireHash: await computeWireDefinitionHash(body.definition),
+        };
+      }),
+    );
+
+  // An asset-sourced pin's `kind:"asset"` closure entries read from source
+  // assets the sidecar cannot fetch itself; deliver them inline on the frame so
+  // the sidecar checks them out into its durable per-deployment source store. A
+  // registry pin fetches its tarballs over HTTP and delivers none.
+  const assets: WorkflowSourceAssetMount[] = isAssetDeployArgs(args)
+    ? await buildSourceAssetMounts(closure, args.resolveAttachment)
+    : [];
+
+  const result = await sendMultiStepDeployFrame({
+    lineage: "source-ref",
+    sidecarRouter: args.sidecarRouter,
+    agentAddress: args.agentAddress,
+    config: args.config,
+    sources: args.sources,
+    projection,
+    approvedWireHash: approval.approvedWireHash,
+    sourceRef: { source: args.source, closure },
+    ...(credentials !== undefined ? { credentials } : {}),
+    ...(referencedDefinitions.length > 0 ? { referencedDefinitions } : {}),
+    ...(assets.length > 0 ? { assets } : {}),
+  });
+
+  // Write the deployment's anchor `workflow_run` row -- the deployment's
+  // first-class record that owns its routing address and public key, mirroring
+  // the live-authored `deployWorkflowDefinition`. Run-grant materialization keys
+  // off this row (address + live status), so WITHOUT it no per-run grants (tool,
+  // capability, OR credential) ever materialize for a source-ref deployment.
+  // Born "deployed" (live but pre-trigger): the first trigger's materialization
+  // flips it to "running" via `anchorWithPrincipal`'s guarded update, which a
+  // row born "running" would skip. Its `anchorRunId` equals its own id, so the
+  // anchor references itself. The deployer read grant the live-authored path
+  // also seeds is deferred to the production route, which carries the
+  // authenticated deployer principal; this stays a single insert with no grant
+  // row to pair atomically.
+  await args.db.insert(workflowRunTable).values({
+    id: args.anchorRunId,
+    tenantId: args.tenantId,
+    anchorRunId: args.anchorRunId,
+    definitionId: approval.definitionId,
+    address: args.agentAddress,
+    publicKey: result.publicKey,
+    status: "deployed",
+    createdAt: new Date(),
+  });
+
+  return result;
 }
 
 /**
@@ -455,9 +916,12 @@ function createHubWorkflowRepoWriter(
   };
 }
 
-export function createSessionService(deps: SessionServiceDeps): SessionService {
+export function createSessionService(
+  deps: SessionServiceDeps,
+): SessionService & PreparedWorkflowDeployer {
   const {
     sidecarRouter,
+    sidecarAllocationRouter,
     agentRepoStore,
     assetService,
     db,
@@ -473,6 +937,13 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     throw new Error(
       "createSessionService: db is required when toolPackageRegistries is set",
     );
+  }
+
+  function requireAllocationRouter(): SidecarAllocationRouter {
+    if (sidecarAllocationRouter === undefined) {
+      throw new Error("Exclusive deployment routing is not configured");
+    }
+    return sidecarAllocationRouter;
   }
 
   /**
@@ -492,7 +963,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function executeLaunchPhases(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -522,8 +993,9 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
      * Mutually exclusive with `workflowFrame`.
      */
     stageOnly?: boolean;
+    allocationTarget?: AllocatedSidecarTarget;
   }): Promise<{ publicKey: string } | undefined> {
-    const { agentAddress, agentId, instanceId, config, deployContent } = params;
+    const { agentAddress, agentId, runId, config, deployContent } = params;
     const toolPackagePins = params.toolPackagePins ?? [];
     const stageOnly = params.stageOnly ?? false;
     if (params.workflowFrame !== undefined && stageOnly) {
@@ -638,7 +1110,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     // route is held only for the pack window and dropped in the `finally`.
     if (stageOnly) {
       try {
-        sidecarRouter.bindStepRoute(agentAddress);
+        if (params.allocationTarget === undefined) {
+          sidecarRouter.bindStepRoute(agentAddress);
+        } else {
+          await requireAllocationRouter().bindAllocatedStepRoute(
+            params.allocationTarget,
+            agentAddress,
+          );
+        }
       } catch (err) {
         throw new SessionLaunchError("provision", err, false);
       }
@@ -658,7 +1137,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         if (workflowFrame !== undefined) {
           const ack = await sendMultiStepDeployFrame({
+            lineage: "live-authored",
             sidecarRouter,
+            ...(sidecarAllocationRouter !== undefined
+              ? { sidecarAllocationRouter }
+              : {}),
+            ...(params.allocationTarget !== undefined
+              ? { allocationTarget: params.allocationTarget }
+              : {}),
             agentAddress,
             config,
             definition: workflowFrame.definition,
@@ -672,7 +1158,15 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
           });
           deployAckPublicKey = ack.publicKey;
         } else if (stageOnly) {
-          await sidecarRouter.sendProvisionStep(agentAddress, config);
+          if (params.allocationTarget === undefined) {
+            await sidecarRouter.sendProvisionStep(agentAddress, config);
+          } else {
+            await requireAllocationRouter().sendProvisionStepToAllocation(
+              params.allocationTarget,
+              agentAddress,
+              config,
+            );
+          }
         } else {
           // Every caller supplies `workflowFrame` (single-step head) or
           // `stageOnly` (multi-step per-step). A deploy with neither has no
@@ -696,18 +1190,35 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       // deployment overwrites the orphaned repo. This is an acceptable minor
       // leak on the exceptional staging-failure path, not a live-path cost.
       try {
-        await sidecarRouter.sendPack(agentAddress, pack, ref, commitSha);
+        if (params.allocationTarget === undefined) {
+          await sidecarRouter.sendPack(agentAddress, pack, ref, commitSha);
+        } else {
+          await requireAllocationRouter().sendPackToAllocation(
+            params.allocationTarget,
+            agentAddress,
+            pack,
+            ref,
+            commitSha,
+          );
+        }
       } catch (err) {
-        if (!stageOnly) await attemptCleanup(agentAddress, "pack", err);
-        throw new SessionLaunchError("pack", err, false);
+        if (!stageOnly && params.allocationTarget === undefined) {
+          await attemptCleanup(agentAddress, "pack", err);
+        }
+        throw new SessionLaunchError(
+          "pack",
+          err,
+          !stageOnly && params.allocationTarget !== undefined,
+        );
       }
 
       // Phase 2b: Asset-pack fan-out. For each attached asset, build a
-      // pack, insert the manifest row, then send the pack. The manifest
-      // insert MUST happen before the pack send: if the sidecar acks
+      // pack, reserve the manifest row, then send the pack. The manifest
+      // reservation MUST happen before the pack send: if the sidecar acks
       // but the row is missing, the session has materialization without
-      // a recorded manifest. If the row insert fails, the pack send
-      // must not happen.
+      // a recorded manifest. An allocated replacement may reuse the exact
+      // row its predecessor recorded; ordinary launches still require a new
+      // row. If reservation fails, the pack send must not happen.
       //
       // The fan-out materializes the package-registry assets the
       // tool-package resolver picked. They live behind tenant
@@ -716,22 +1227,30 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       // `manifestAssetAttachments`.
       const fanOut: ResolvedAttachment[] = manifestAssetAttachments;
       if (assetService !== undefined && fanOut.length > 0) {
-        // Track every successfully committed attachment so a later
-        // fan-out failure can roll back the earlier rows in lockstep
-        // with the sidecar undeploy. Without this, fan-out[0] succeeds,
-        // fan-out[1] fails, attemptCleanup tears down the sidecar — but
-        // fan-out[0]'s session_asset row survives and a future
-        // materialization query reads a manifest the sidecar no longer
-        // honors.
-        const committed: ResolvedAttachment[] = [];
+        // Track the rows this attempt owns so a later fan-out failure can roll
+        // them back in lockstep with the sidecar undeploy. Allocated rows are
+        // durable recovery intent, not attempt-owned materialization state, so
+        // replacement failures must leave them in place for the next worker.
+        const committed: SessionAssetRecord[] = [];
         for (const att of fanOut) {
           try {
-            await sendAttachmentPack(instanceId, agentAddress, att);
-            committed.push(att);
+            const committedRecord = await sendAttachmentPack(
+              runId,
+              agentAddress,
+              att,
+              params.allocationTarget,
+            );
+            if (committedRecord !== null) committed.push(committedRecord);
           } catch (err) {
-            await rollbackCommittedAttachments(instanceId, committed);
-            if (!stageOnly) await attemptCleanup(agentAddress, "pack", err);
-            throw new SessionLaunchError("pack", err, false);
+            await rollbackCommittedAttachments(committed);
+            if (!stageOnly && params.allocationTarget === undefined) {
+              await attemptCleanup(agentAddress, "pack", err);
+            }
+            throw new SessionLaunchError(
+              "pack",
+              err,
+              !stageOnly && params.allocationTarget !== undefined,
+            );
           }
         }
       }
@@ -741,7 +1260,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         : { publicKey: deployAckPublicKey };
     } finally {
       if (stageOnly) {
-        sidecarRouter.unbindStepRoute(agentAddress);
+        if (params.allocationTarget === undefined) {
+          sidecarRouter.unbindStepRoute(agentAddress);
+        } else {
+          requireAllocationRouter().unbindAllocatedStepRoute(
+            params.allocationTarget,
+            agentAddress,
+          );
+        }
       }
     }
   }
@@ -757,11 +1283,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
    * yields a deploy-ack key; its absence is a wiring bug, not a
    * tolerable case.
    */
-  const deploySingleStepAtHead: DeploySingleStepFn = async (deployParams) => {
+  async function deploySingleStepAtHeadForRoute(
+    deployParams: Parameters<DeploySingleStepFn>[0],
+    allocationTarget?: AllocatedSidecarTarget,
+  ): Promise<{ publicKey: string }> {
     const result = await executeLaunchPhases({
       agentAddress: deployParams.agentAddress,
       agentId: deployParams.agentId,
-      instanceId: deployParams.instanceId,
+      runId: deployParams.runId,
       config: deployParams.config,
       deployContent: bridgeOrchestratorDeployContent(
         deployParams.deployContent,
@@ -779,6 +1308,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       ...(deployParams.toolPackagePins !== undefined
         ? { toolPackagePins: deployParams.toolPackagePins }
         : {}),
+      ...(allocationTarget !== undefined ? { allocationTarget } : {}),
     });
     if (result === undefined) {
       throw new Error(
@@ -786,7 +1316,10 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       );
     }
     return result;
-  };
+  }
+
+  const deploySingleStepAtHead: DeploySingleStepFn = (deployParams) =>
+    deploySingleStepAtHeadForRoute(deployParams);
 
   /**
    * Build the workflow-deploy orchestrator (with its launch-session and
@@ -798,6 +1331,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     workflowRepo: WorkflowRepoWriter;
     directorRegistry: DirectorRegistry;
     deployArgs: DeployWorkflowArgs;
+    allocationTarget?: AllocatedSidecarTarget;
   }): Promise<DeployWorkflowResult> {
     // The per-step launcher: stage each step's deploy tree WITHOUT a warm
     // harness (the supervised child runs the step), with the orchestrator's
@@ -807,7 +1341,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       stageWorkflowStep({
         agentAddress: orchestratorParams.agentAddress,
         agentId: orchestratorParams.agentId,
-        instanceId: orchestratorParams.instanceId,
+        runId: orchestratorParams.runId,
         config: orchestratorParams.config,
         deployContent: bridgeOrchestratorDeployContent(
           orchestratorParams.deployContent,
@@ -815,11 +1349,21 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         ...(orchestratorParams.toolPackagePins !== undefined
           ? { toolPackagePins: orchestratorParams.toolPackagePins }
           : {}),
+        ...(args.allocationTarget !== undefined
+          ? { allocationTarget: args.allocationTarget }
+          : {}),
       });
 
     const sendMultiStepDeployCallback: SendMultiStepDeployFn = (deployParams) =>
       sendMultiStepDeployFrame({
+        lineage: "live-authored",
         sidecarRouter,
+        ...(sidecarAllocationRouter !== undefined
+          ? { sidecarAllocationRouter }
+          : {}),
+        ...(args.allocationTarget !== undefined
+          ? { allocationTarget: args.allocationTarget }
+          : {}),
         agentAddress: deployParams.agentAddress,
         config: deployParams.config,
         definition: deployParams.definition,
@@ -834,7 +1378,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       workflowRepo: args.workflowRepo,
       launchSession: launchSessionCallback,
       sendMultiStepDeploy: sendMultiStepDeployCallback,
-      deploySingleStepAtHead,
+      deploySingleStepAtHead: (deployParams) =>
+        deploySingleStepAtHeadForRoute(deployParams, args.allocationTarget),
     });
 
     return orchestrator.deployWorkflow(args.deployArgs);
@@ -853,28 +1398,32 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function stageWorkflowStep(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
+    allocationTarget?: AllocatedSidecarTarget;
   }): Promise<void> {
     await executeLaunchPhases({
       agentAddress: params.agentAddress,
       agentId: params.agentId,
-      instanceId: params.instanceId,
+      runId: params.runId,
       config: params.config,
       deployContent: params.deployContent,
       stageOnly: true,
       ...(params.toolPackagePins !== undefined
         ? { toolPackagePins: params.toolPackagePins }
         : {}),
+      ...(params.allocationTarget !== undefined
+        ? { allocationTarget: params.allocationTarget }
+        : {}),
     });
   }
 
   /**
-   * Deploy a single-agent instance through the single-step-at-head path: wrap
+   * Deploy a single agent through the single-step-at-head path: wrap
    * the harness as a one-step workflow (the same wrap `launchSession` uses) and
-   * route it through `deploySingleStepAtHead` with the instance's REAL identity
+   * route it through `deploySingleStepAtHead` with the run's REAL identity
    * -- so the head address IS the instance address and the deploy runs as a
    * supervised workflow-process child.
    *
@@ -890,13 +1439,13 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function deployInstanceAtHead(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
     credentials?: CredentialDelivery;
   }): Promise<{ publicKey: string }> {
-    const { agentAddress, agentId, instanceId, config, deployContent } = params;
+    const { agentAddress, agentId, runId, config, deployContent } = params;
 
     const singleStepAgent = wrapHarnessAsSingleStepWorkflow({
       config,
@@ -933,7 +1482,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return deploySingleStepAtHead({
       agentAddress,
       agentId,
-      instanceId,
+      runId,
       config,
       deployContent,
       definition: workflow,
@@ -948,26 +1497,18 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     });
   }
 
-  async function deployWorkflowDefinition(
-    params: DeployWorkflowDefinitionParams,
+  async function executeWorkflowDefinitionDeploy(
+    params: Omit<DeployWorkflowDefinitionParams, "definitionAssetId"> & {
+      allocationTarget?: AllocatedSidecarTarget;
+    },
   ): Promise<DeployWorkflowDefinitionResult> {
-    const {
-      tenantId,
-      deploymentId,
-      deploymentDomain,
-      definition,
-      definitionAssetId,
-      config,
-      deployContent,
-    } = params;
-
     // The deploy is initiated by an authorized tenant operator against a
     // workflow asset they authored; approve exactly the grant surface the
     // definition declares. The same director registry feeds both this
     // approval-set derivation and the orchestrator's gate so the walk the
     // route approves and the walk the orchestrator enforces are identical.
     const directorRegistry = createDefaultDirectorRegistry();
-    const walk = walkCapabilities(definition, directorRegistry);
+    const walk = walkCapabilities(params.definition, directorRegistry);
     const operatorApprovals: ApprovalSet = new Set<string>(
       [...walk.perStep.values()].flatMap((declarations) => [
         ...declarations.grants,
@@ -978,24 +1519,53 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       workflowRepo: createHubWorkflowRepoWriter(agentRepoStore),
       directorRegistry,
       deployArgs: {
-        workflow: definition,
-        deploymentId,
-        deploymentDomain,
-        config,
-        deployContent,
+        workflow: params.definition,
+        runId: params.anchorRunId,
+        deploymentDomain: params.deploymentDomain,
+        config: params.config,
+        deployContent: params.deployContent,
         operatorApprovals,
         hubPublicKey: hexEncode(agentRepoStore.getSigningPublicKey()),
         ...(params.toolPackagePins !== undefined
           ? { toolPackagePins: params.toolPackagePins }
           : {}),
       },
+      ...(params.allocationTarget !== undefined
+        ? { allocationTarget: params.allocationTarget }
+        : {}),
     });
+
+    return {
+      anchorRunId: params.anchorRunId,
+      deploymentAddress: deriveRunAddress({
+        runId: params.anchorRunId,
+        domain: params.deploymentDomain,
+      }),
+      publicKey: result.publicKey,
+    };
+  }
+
+  async function deployWorkflowDefinition(
+    params: DeployWorkflowDefinitionParams,
+  ): Promise<DeployWorkflowDefinitionResult> {
+    const {
+      tenantId,
+      anchorRunId,
+      deploymentDomain,
+      definition,
+      definitionAssetId,
+      config,
+    } = params;
+    const result = await executeWorkflowDefinitionDeploy(params);
 
     if (db === undefined) {
       throw new Error(
         "deployWorkflowDefinition requires a db handle to record the deployment's anchor run",
       );
     }
+    // The wire-projection hash keys the definition's selector-keyed identity:
+    // one asset backs many definitions, distinguished by this content handle.
+    const wireHash = await computeLiveDefinitionHash(definition);
     const now = new Date();
     await db.transaction(async (tx) => {
       // Project the workflow asset into a first-class definition (create-if-
@@ -1003,30 +1573,34 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       // is otherwise born only in the one-time backfill; creating it here makes
       // every deploy yield a definition, so the run's `definitionId` is
       // populated at birth rather than only for the rows the backfill reached.
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(
-        tx,
-        definitionAssetId,
-      );
+      const { definitionId } = await ensureWorkflowDefinitionForAsset(tx, {
+        assetId: definitionAssetId,
+        wireHash,
+      });
 
       // The deployment's anchor run: the one workflow_run that carries the
       // deployment's routing identity, 1:1 with the deployment (id and address
-      // both derived from `deploymentId`). It is the deployment's sole
+      // both derived from `anchorRunId`). It is the deployment's sole
       // first-class record -- the row that owns the address and public key the
       // reconnect ownership challenge verifies: deploy-ack writes the key here
-      // and the key lookup reads it off this row. It is born running with no key
-      // yet (deploy-ack fills it), carrying its definition. Its `deploymentId`
-      // equals its own id, so the anchor row references itself. Child runs of
-      // this deployment are separate address-less rows. `principalId` is null --
-      // the workflow-derived key path reads `publicKey` directly and never
-      // consults it, and the `workflow-run:<deploymentId>` grant seeded below
-      // already covers reads.
+      // and the key lookup reads it off this row. It is born "deployed" -- live
+      // but pre-trigger; the first trigger flips it to "running" -- carrying its
+      // definition. Its `anchorRunId` equals its own id, so the anchor row
+      // references itself. Child runs of this deployment are separate
+      // address-less rows. `principalId` is null -- the workflow-derived key
+      // path reads `publicKey` directly and never consults it, and the
+      // `workflow-run:<anchorRunId>` grant seeded below already covers reads.
       await tx.insert(workflowRunTable).values({
-        id: deploymentId,
+        id: anchorRunId,
         tenantId,
-        deploymentId,
+        anchorRunId,
         definitionId,
-        address: deriveDeploymentAddress({ deploymentId, deploymentDomain }),
-        status: "running",
+        address: deriveRunAddress({
+          runId: anchorRunId,
+          domain: deploymentDomain,
+        }),
+        publicKey: result.publicKey,
+        status: "deployed",
         createdAt: now,
       });
 
@@ -1039,7 +1613,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         id: generateId("grant"),
         tenantId,
         principalId: config.principalId,
-        resource: `workflow-run:${deploymentId}`,
+        resource: `workflow-run:${anchorRunId}`,
         action: "read",
         effect: "allow",
         origin: "creator",
@@ -1048,46 +1622,110 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       });
     });
 
-    return {
-      deploymentId,
-      deploymentAddress: deriveDeploymentAddress({
-        deploymentId,
-        deploymentDomain,
+    return result;
+  }
+
+  async function deployPreparedWorkflowDefinition(
+    params: DeployPreparedWorkflowDefinitionParams,
+  ): Promise<DeployWorkflowDefinitionResult> {
+    if (db === undefined) {
+      throw new Error(
+        "deployPreparedWorkflowDefinition requires a db handle to update the prepared anchor run",
+      );
+    }
+    await restoreWorkflowRunToAllocation({
+      agentRepoStore,
+      allocationRouter: requireAllocationRouter(),
+      allocationTarget: params.allocationTarget,
+      agentAddress: deriveRunAddress({
+        runId: params.anchorRunId,
+        domain: params.deploymentDomain,
       }),
-      publicKey: result.publicKey,
-    };
+    });
+    const result = await executeWorkflowDefinitionDeploy(params);
+    try {
+      const updated = await db.transaction(async (tx) => {
+        const [allocation] = await tx
+          .select({
+            id: sidecarAllocationTable.id,
+            anchorRunId: sidecarAllocationTable.anchorRunId,
+            status: sidecarAllocationTable.status,
+            generation: sidecarAllocationTable.generation,
+            ensureAcceptedGeneration:
+              sidecarAllocationTable.ensureAcceptedGeneration,
+          })
+          .from(sidecarAllocationTable)
+          .where(
+            eq(sidecarAllocationTable.id, params.allocationTarget.allocationId),
+          )
+          .limit(1)
+          .for("update");
+        if (
+          allocation === undefined ||
+          allocation.anchorRunId !== params.anchorRunId ||
+          allocation.status !== "allocated" ||
+          allocation.generation !== params.allocationTarget.generation ||
+          allocation.ensureAcceptedGeneration !==
+            params.allocationTarget.generation
+        ) {
+          return null;
+        }
+        const [anchor] = await tx
+          .update(workflowRunTable)
+          .set({ publicKey: result.publicKey })
+          .where(
+            and(
+              eq(workflowRunTable.id, params.anchorRunId),
+              eq(workflowRunTable.anchorRunId, params.anchorRunId),
+              eq(workflowRunTable.tenantId, params.tenantId),
+            ),
+          )
+          .returning({ id: workflowRunTable.id });
+        return anchor ?? null;
+      });
+      if (updated === null) {
+        throw new Error(
+          `Prepared anchor run ${params.anchorRunId} lost allocation ownership before initialization completed`,
+        );
+      }
+    } catch (error) {
+      throw new SessionLaunchError("start", error, true);
+    }
+    return result;
   }
 
   async function rollbackCommittedAttachments(
-    instanceId: string,
-    committed: readonly ResolvedAttachment[],
+    committed: readonly SessionAssetRecord[],
   ): Promise<void> {
     if (db === undefined) return;
     if (committed.length === 0) return;
     // Per-row try/catch so a single rollback failure does not stop the
     // sweep — every committed row needs to come off the books before
     // the caller emits the original sendPack error.
-    for (const att of committed) {
+    for (const record of committed) {
       try {
         await db
           .delete(sessionAssetTable)
           .where(
             and(
-              eq(sessionAssetTable.instanceId, instanceId),
-              eq(sessionAssetTable.mountPath, att.mountPath),
+              eq(sessionAssetTable.runId, record.runId),
+              eq(sessionAssetTable.mountPath, record.mountPath),
+              eq(sessionAssetTable.assetPackSha, record.assetPackSha),
+              eq(sessionAssetTable.sourceCommitSha, record.sourceCommitSha),
             ),
           );
       } catch (err) {
-        logger.warn`session_asset rollback failed for earlier-committed instance=${instanceId} mountPath=${att.mountPath}: ${err instanceof Error ? err.message : String(err)}`;
+        logger.warn`session_asset rollback failed for earlier-committed instance=${record.runId} mountPath=${record.mountPath}: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
   }
 
   async function sendAttachmentPack(
-    instanceId: string,
+    runId: string,
     agentAddress: string,
     attachment: ResolvedAttachment,
-  ): Promise<void> {
+    allocationTarget?: AllocatedSidecarTarget,
+  ): Promise<SessionAssetRecord | null> {
     if (db === undefined) {
       // Guarded at construction; reassert defensively so the
       // narrowing is visible to readers and a future refactor cannot
@@ -1098,49 +1736,114 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const { mountPath, sourceCommitSha, repoId, pack, ref } = attachment;
 
     const assetPackSha = await createPackSha(pack);
-
-    // Insert manifest row before the pack send so we never end up in
-    // the materialized-without-manifest state.
-    await db.insert(sessionAssetTable).values({
-      instanceId,
+    const record: SessionAssetRecord = {
+      runId,
       mountPath,
       assetPackSha,
       sourceCommitSha,
-      materializedAt: new Date(),
-    });
+    };
+
+    // Reserve the manifest row before the pack send so we never end up in the
+    // materialized-without-manifest state. Only an allocated launch may reuse
+    // an identical row: replacement workers keep the stable instance id and
+    // mount path, while the shared path retains its duplicate-launch guard.
+    const rollbackRecord = allocationTarget === undefined ? record : null;
+    if (allocationTarget === undefined) {
+      await db
+        .insert(sessionAssetTable)
+        .values({ ...record, materializedAt: new Date() });
+    } else {
+      const inserted = await db
+        .insert(sessionAssetTable)
+        .values({ ...record, materializedAt: new Date() })
+        .onConflictDoNothing({
+          target: [sessionAssetTable.runId, sessionAssetTable.mountPath],
+        })
+        .returning({ runId: sessionAssetTable.runId });
+      if (inserted.length === 0) {
+        const existing = await db.query.sessionAsset.findFirst({
+          where: and(
+            eq(sessionAssetTable.runId, runId),
+            eq(sessionAssetTable.mountPath, mountPath),
+          ),
+          columns: {
+            assetPackSha: true,
+            sourceCommitSha: true,
+          },
+        });
+        if (existing === undefined) {
+          throw new Error(
+            `session_asset ${runId}/${mountPath} disappeared after its insert conflicted`,
+          );
+        }
+        if (
+          existing.assetPackSha !== assetPackSha ||
+          existing.sourceCommitSha !== sourceCommitSha
+        ) {
+          throw new Error(
+            `session_asset ${runId}/${mountPath} conflicts with the allocated workflow's restored asset`,
+          );
+        }
+      }
+    }
 
     try {
-      await sidecarRouter.sendPack(agentAddress, pack, ref, sourceCommitSha, {
-        mountPath,
-        repoId,
-      });
+      const options = { mountPath, repoId };
+      if (allocationTarget === undefined) {
+        await sidecarRouter.sendPack(
+          agentAddress,
+          pack,
+          ref,
+          sourceCommitSha,
+          options,
+        );
+      } else {
+        await requireAllocationRouter().sendPackToAllocation(
+          allocationTarget,
+          agentAddress,
+          pack,
+          ref,
+          sourceCommitSha,
+          options,
+        );
+      }
     } catch (err) {
-      // Roll back the manifest row when the send fails so the manifest
-      // and the materialized state on the sidecar can never disagree.
+      // Shared launches own the row they just created and roll it back when
+      // the send fails. Allocated rows are durable recovery intent: even a row
+      // first inserted by this attempt can already be reused by another
+      // reconciler, so no replacement attempt may delete it.
       // The forensic value of a manifest-without-materialization row is
       // negligible because no agent will read against it. Wrap the
       // rollback in its own try/catch so a rollback failure (DB gone,
       // connection killed mid-launch) is logged rather than masking the
       // primary sendPack error — the caller needs to see the original
       // failure, not the secondary one.
-      try {
-        await db
-          .delete(sessionAssetTable)
-          .where(
-            and(
-              eq(sessionAssetTable.instanceId, instanceId),
-              eq(sessionAssetTable.mountPath, mountPath),
-            ),
-          );
-      } catch (rollbackErr) {
-        const msg =
-          rollbackErr instanceof Error
-            ? rollbackErr.message
-            : String(rollbackErr);
-        logger.warn`session_asset rollback failed for instance=${instanceId} mountPath=${mountPath}: ${msg}`;
+      if (rollbackRecord !== null) {
+        try {
+          await db
+            .delete(sessionAssetTable)
+            .where(
+              and(
+                eq(sessionAssetTable.runId, rollbackRecord.runId),
+                eq(sessionAssetTable.mountPath, rollbackRecord.mountPath),
+                eq(sessionAssetTable.assetPackSha, rollbackRecord.assetPackSha),
+                eq(
+                  sessionAssetTable.sourceCommitSha,
+                  rollbackRecord.sourceCommitSha,
+                ),
+              ),
+            );
+        } catch (rollbackErr) {
+          const msg =
+            rollbackErr instanceof Error
+              ? rollbackErr.message
+              : String(rollbackErr);
+          logger.warn`session_asset rollback failed for instance=${runId} mountPath=${mountPath}: ${msg}`;
+        }
       }
       throw err;
     }
+    return rollbackRecord;
   }
 
   /**
@@ -1365,6 +2068,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     deployInstanceAtHead,
     deploySingleStepAtHead,
     deployWorkflowDefinition,
+    deployPreparedWorkflowDefinition,
     sendUserMessage,
     endSession,
   };

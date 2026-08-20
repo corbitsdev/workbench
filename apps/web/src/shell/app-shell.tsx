@@ -1,36 +1,68 @@
-// The four-column app shell: the global rail, the contextual panel, the
-// main pane a route renders into, and the optional canvas. Every route in
-// `../routes.tsx` mounts inside this same frame — there is no per-route
-// shell variant. The canvas hosts the channel chat surface; its toggle
-// lives in the panel page band, never as an absolute overlay over page
-// actions. Deep links (`/c/:channelId`) open the canvas onto that channel.
+// The app frame: one sidebar (the workbench list and shared chrome — see
+// `sidebar.tsx`), the main pane a route renders into, and the optional
+// canvas. Every route in `../routes.tsx` mounts inside this same frame —
+// there is no per-route shell variant and no sidebar collapse. The
+// conversation lives in the main stage; the canvas is auxiliary (profiles
+// and similar) and opens on use, then closes internally.
+//
+// Canvas state is NOT owned here — it has to be visible to the command
+// palette too (a sibling of this component, not a descendant — see
+// `shell-chrome-provider.tsx`), so `ShellChromeProvider` owns it above both
+// and this component only reads it through the same hooks page code
+// already uses.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelLeft } from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import * as Y from "yjs";
+import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
-import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
+import { usePresenceRoom } from "../presence/use-presence-room";
+import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
+import { StageTopBar } from "./stage-top-bar";
+import { useScrollReset } from "@corbits/shell-layout";
 import {
-  canvasColumnAllowed,
-  contextualPanelIsDrawer,
-  contextualPanelVisible,
-  railShowLabels,
-} from "./breakpoints";
-import { useShellFocusRescue } from "./focus-rescue";
-import { useScrollReset } from "./use-scroll-reset";
-import {
-  applyChannelPathToCanvas,
-  initialCanvasColumnState,
-  openChannelInCanvas,
-  resolveCanvasVisibility,
-  toggleCanvasColumn,
-} from "./canvas-column-state";
-import { CanvasAvailabilityProvider } from "./canvas-availability";
-import { CanvasColumn } from "./canvas-column";
-import { ContextualPanel } from "./contextual-panel";
-import { Rail } from "./rail";
-import { useShellLayoutMode } from "./use-shell-layout";
+  useCanvasColumnArtifact,
+  useCanvasColumnAvailable,
+  useCanvasColumnFocus,
+  useCanvasColumnOpen,
+  useCanvasColumnProfile,
+  useCanvasColumnRoutine,
+  useCloseCanvas,
+  useToggleCanvasFocus,
+} from "./canvas-availability";
+import { ProviderHealthBanner } from "./provider-health-banner";
+import { Sidebar } from "./sidebar";
+import { ShellContextMenu } from "./context-menu/shell-context-menu";
+
+const CanvasColumn = lazy(async () => ({
+  default: (await import("./canvas-column")).CanvasColumn,
+}));
+
+/** True only for the one route that never renders its own `StageTopBar`
+ * (see `AppRoute.hasStageTopBar`'s doc) — everything else titles its own
+ * stage, so this stays false for the rest. */
+function routeHasNoStageTopBar(path: string): boolean {
+  const route = APP_ROUTES.find((candidate) =>
+    matchesRoute(candidate.path, path),
+  );
+  return route?.hasStageTopBar === false;
+}
+
+function routeLabel(path: string): string {
+  const route = APP_ROUTES.find((candidate) =>
+    matchesRoute(candidate.path, path),
+  );
+  return route?.label ?? "Workbench";
+}
 
 export function AppShell({
   path,
@@ -44,111 +76,125 @@ export function AppShell({
   readonly children: ReactNode;
 }) {
   const navigate = useNavigate();
-  const layoutMode = useShellLayoutMode();
-  // Deep links seed canvas state on first paint (SSR and client) so a `/c/:id`
-  // URL is not effect-only. Later path changes re-apply through the effect.
-  const [canvasState, setCanvasState] = useState(() =>
-    applyChannelPathToCanvas(initialCanvasColumnState(), path),
+  const canvasAllowed = useCanvasColumnAvailable();
+  const canvasOpen = useCanvasColumnOpen();
+  const canvasProfile = useCanvasColumnProfile();
+  const canvasArtifact = useCanvasColumnArtifact();
+  const canvasRoutine = useCanvasColumnRoutine();
+  const canvasFocus = useCanvasColumnFocus();
+  const { selectedTenantId: tenantId, selectedPrincipalId: viewerPrincipalId } =
+    useBench();
+
+  // A text-kind artifact's shared `Y.Doc` (CL-5958 phase 2): one instance
+  // per artifact id, torn down and replaced the moment the open artifact
+  // changes so a stale doc from a previous artifact can never leak into a
+  // newly opened one. Non-"doc" kinds never get one — there's nothing to
+  // co-edit, so `usePresenceRoom` connects awareness-only for them, same
+  // as phase 1.
+  const [artifactDoc, setArtifactDoc] = useState<Y.Doc | null>(null);
+  const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>(
+    { kind: "read-only" },
   );
-  const canvasAllowed = canvasColumnAllowed(layoutMode);
-  const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
-  const showContextualColumn = contextualPanelVisible(layoutMode);
-  const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
-  const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
-  const frameRef = useRef<HTMLDivElement>(null);
+  const artifactDocForId = useRef<string | null>(null);
+  useEffect(() => {
+    if (canvasArtifact === null || canvasArtifact.rendererKind !== "doc") {
+      artifactDocForId.current = null;
+      setArtifactDoc(null);
+      setArtifactSaveState({ kind: "read-only" });
+      return;
+    }
+    if (artifactDocForId.current === canvasArtifact.id) return;
+    artifactDocForId.current = canvasArtifact.id;
+    setArtifactDoc(new Y.Doc());
+    setArtifactSaveState(
+      canvasArtifact.canEdit === true
+        ? { kind: "unsaved" }
+        : { kind: "read-only" },
+    );
+  }, [canvasArtifact]);
+
+  // Co-viewers of the open artifact, if any — see canvas-column.tsx's own
+  // `PresenceCursor` doc for why this stays plain data across the
+  // package boundary.
+  const artifactPresence = usePresenceRoom(
+    tenantId,
+    canvasArtifact === null ? null : `artifact:${canvasArtifact.id}`,
+    undefined,
+    artifactDoc === null
+      ? undefined
+      : {
+          doc: artifactDoc,
+          onSaved: (info) =>
+            setArtifactSaveState({
+              kind: "saved",
+              version: info.version,
+              savedAt: info.savedAt,
+            }),
+        },
+  );
+  const editingCoworkers = artifactPresence.members
+    .filter(
+      (member) =>
+        member.typing === true && member.principalId !== viewerPrincipalId,
+    )
+    .map((member) => member.displayName);
+  const artifactSaveStateWithEditors: ArtifactSaveState =
+    canvasArtifact?.canEdit === true && editingCoworkers.length > 0
+      ? { kind: "editing", by: editingCoworkers }
+      : artifactSaveState;
+  const closeCanvas = useCloseCanvas();
+  const toggleCanvasFocus = useToggleCanvasFocus();
   const mainRef = useRef<HTMLDivElement>(null);
-  useShellFocusRescue(layoutMode, frameRef);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
 
-  // A deep link or in-app channel navigation feeds the canvas the same
-  // channel id the URL carries. Closing the canvas does not clear the URL
-  // here — the toggle only flips open/closed so reopening lands on the
-  // same conversation.
-  useEffect(() => {
-    setCanvasState((state) => applyChannelPathToCanvas(state, path));
-  }, [path]);
-
-  const handleChannelChange = (channelId: string) => {
-    setCanvasState(openChannelInCanvas(channelId));
-    if (!isChannelPath(path) || channelIdFromPath(path) !== channelId) {
-      navigate(channelPath(channelId));
-    }
-  };
-
-  // Open a channel into the canvas without leaving the current page. Unlike
-  // handleChannelChange, this never touches the URL — a channel row click in
-  // col2 should pop the conversation open in col4 and keep the user on /library
-  // (or wherever they are). Deep-link navigation is reserved for the URL.
-  const handleOpenInCanvas = (channelId: string) => {
-    setCanvasState(openChannelInCanvas(channelId));
-  };
-
   return (
-    <CanvasAvailabilityProvider allowed={canvasAllowed}>
-      <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
-        <Rail
-          path={path}
-          onNavigate={navigate}
-          user={user}
-          onSignOut={onSignOut}
-          showLabels={railShowLabels(layoutMode)}
-        />
-        {showContextualColumn && (
-          <ContextualPanel
-            path={path}
-            onNavigate={navigate}
-            canvasOpen={canvasState.open}
-            onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
-            canvasAllowed={canvasAllowed}
-            onOpenInCanvas={handleOpenInCanvas}
-          />
-        )}
-        <div className="shell-main" ref={mainRef}>
-          {contextualAsDrawer && (
-            <button
-              type="button"
-              className="shell-drawer-trigger"
-              aria-label="Open panel"
-              aria-expanded={narrowPanelOpen}
-              onClick={() => setNarrowPanelOpen(true)}
-            >
-              <PanelLeft />
-            </button>
-          )}
-          <div className="shell-main-content">{children}</div>
+    <div className="shell-frame">
+      <Sidebar
+        path={path}
+        user={user}
+        onNavigate={navigate}
+        onSignOut={onSignOut}
+      />
+      <div className="shell-main" ref={mainRef}>
+        <div className="shell-main-content">
+          <ProviderHealthBanner />
+          {routeHasNoStageTopBar(path) ? (
+            <StageTopBar title={routeLabel(path)} />
+          ) : null}
+          <Suspense fallback={<div className="page-fill" aria-busy="true" />}>
+            {children}
+          </Suspense>
         </div>
-        {canvasAllowed && (
+      </div>
+      {canvasAllowed ? (
+        <Suspense fallback={null}>
           <CanvasColumn
             open={canvasOpen}
-            channelId={canvasState.channelId}
-            onChannelChange={handleChannelChange}
+            profile={canvasProfile}
+            artifact={canvasArtifact}
+            routine={canvasRoutine}
+            focus={canvasFocus}
+            onClose={closeCanvas}
+            onToggleFocus={toggleCanvasFocus}
+            onNavigate={navigate}
+            presenceCursors={artifactPresence.members
+              .filter((member) => member.cursor !== undefined)
+              .map((member) => ({
+                principalId: member.principalId,
+                displayName: member.displayName,
+                color: member.color,
+                x: member.cursor?.x ?? 0,
+                y: member.cursor?.y ?? 0,
+              }))}
+            onCursorMove={artifactPresence.publishCursor}
+            {...(artifactDoc !== null ? { artifactDoc } : {})}
+            artifactSaveState={artifactSaveStateWithEditors}
+            onArtifactTyping={artifactPresence.publishTyping}
           />
-        )}
-        {contextualAsDrawer && (
-          <>
-            <div
-              className="shell-drawer-backdrop"
-              data-open={narrowPanelOpen}
-              onClick={() => setNarrowPanelOpen(false)}
-            />
-            <div
-              className="shell-drawer"
-              data-open={narrowPanelOpen}
-              inert={!narrowPanelOpen}
-            >
-              <ContextualPanel
-                path={path}
-                onNavigate={navigate}
-                canvasOpen={canvasState.open}
-                onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
-                canvasAllowed={canvasAllowed}
-                onOpenInCanvas={handleOpenInCanvas}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    </CanvasAvailabilityProvider>
+        </Suspense>
+      ) : null}
+      <ShellContextMenu onSignOut={onSignOut} />
+    </div>
   );
 }

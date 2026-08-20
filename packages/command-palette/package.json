@@ -3,7 +3,7 @@
   "private": true,
   "description": "The global command-palette registry: static navigation commands and debounced, paginated entity search, so any surface can render them",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
 import { resolveRunSessionId } from "@intx/hub-sessions";
+import { foldedRun } from "./schema";
 
 export function domainOf(address: string): string {
   const at = address.indexOf("@");
@@ -25,6 +26,35 @@ export async function findFoldedRunByAddress(db: DB["db"], address: string) {
   return db.query.workflowRun.findFirst({
     where: eq(workflowRun.address, address),
   });
+}
+
+/**
+ * A folded run's `workflow_run.status` settles to "completed" after
+ * every handled mail (see `./reconnect.ts`'s header comment) — for a
+ * folded run that means only "idle until its next message", never
+ * done forever. A settled occurrence is still resident on the sidecar
+ * (routable) until the idle-sleep sweep tears it down, so anything
+ * that decides whether to wake before sending mail purely off
+ * routability sends straight into a terminal occurrence, which
+ * `vendor/intx/workflow-host/src/supervisor/supervisor.ts` rejects as
+ * `workflow_run_terminal`. This is the folded-run-aware half of that
+ * decision: "completed" alone is not enough (a one-shot deployment's
+ * own genuine "done forever" also reads as "completed"), so this only
+ * returns true once a `folded_run` marker row confirms the run is one
+ * of this package's own occurrence-per-message runs, mirroring
+ * `./reconnect.ts`'s `lookupFoldedRunReconnectKey` gate exactly.
+ */
+export async function isFoldedRunSettled(
+  db: DB["db"],
+  run: { id: string; status: string },
+): Promise<boolean> {
+  if (run.status !== "completed") return false;
+  const marker = await db
+    .select({ id: foldedRun.id })
+    .from(foldedRun)
+    .where(eq(foldedRun.id, run.id))
+    .limit(1);
+  return marker.length > 0;
 }
 
 /**

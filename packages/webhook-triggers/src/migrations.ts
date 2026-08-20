@@ -24,7 +24,7 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
   {
     name: "0001_webhook_trigger",
     sql: `
-      CREATE TABLE IF NOT EXISTS "webhook_trigger" (
+      CREATE TABLE IF NOT EXISTS "webhook_triggers"."webhook_trigger" (
         "id" text PRIMARY KEY,
         "tenant_id" text NOT NULL,
         "name" text NOT NULL,
@@ -42,7 +42,7 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
     name: "0002_webhook_trigger_tenant_index",
     sql: `
       CREATE INDEX IF NOT EXISTS "webhook_trigger_tenant_id_idx"
-        ON "webhook_trigger" ("tenant_id");
+        ON "webhook_triggers"."webhook_trigger" ("tenant_id");
     `,
   },
 ];
@@ -50,11 +50,17 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
 // Bookkeeping table for this package's own migrations. Named
 // distinctly from the platform's setup ledger and from any drizzle
 // journal, so extracting `@corbits/webhook-triggers` out of this repo
-// never has to disentangle its history from the platform's.
+// never has to disentangle its history from the platform's. Lives in
+// the package's own `webhook_triggers` schema, like the table it owns.
+const SCHEMA = "webhook_triggers";
 const LEDGER_TABLE = "webhook_triggers_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyWebhookTriggersMigrationsReport {
@@ -74,23 +80,27 @@ export async function applyWebhookTriggersMigrations(
 ): Promise<ApplyWebhookTriggersMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
     for (const migration of webhookTriggersMigrations) {
       if (alreadyApplied.has(migration.name)) continue;
       try {
-        await sql.unsafe(migration.sql);
-        await sql.unsafe(
-          `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
-          [migration.name],
-        );
+        await sql.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
         applied.push(migration.name);
       } catch (error) {
         throw new Error(

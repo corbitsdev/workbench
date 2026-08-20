@@ -27,8 +27,10 @@ import type { AgentDeployFrame } from "@intx/types/sidecar";
 import type { SubprocessSpawner } from "@intx/workflow-host";
 import {
   createSidecarDeployRouter,
+  deriveDeploymentId,
   type SidecarDeployRouter,
 } from "../src/workflow-host-wiring";
+import { assembleRunCredentialsSnapshot } from "../src/workflow-host-wiring/supervisor";
 
 const tempDirs: string[] = [];
 
@@ -203,4 +205,64 @@ test("a malformed workflow projection is refused at the router edge", async () =
 
   await expect(router.deploy(frame)).rejects.toThrow(/stepOrder/);
   expect(spawnedBinaries).toEqual([]);
+});
+
+// `spawn` replays any mail already sitting in the deployment's inbox, which
+// births the self-anchored run immediately -- before the hub's own
+// `run.grants` frame can arrive, since that is only sent once the deploy
+// acks. The deploy must therefore put the run's grants on disk itself, or
+// every wake with mail pending fails its `onRunStart` barrier closed and the
+// agent goes silent. The spawner here throws, so reaching the assertion at
+// all proves the write lands BEFORE the spawn.
+test("a single-step deploy writes the self-anchored run's grants before spawning", async () => {
+  const dataDir = await makeDataDir();
+  const { router } = await makeRouter(dataDir);
+  const hubKey = await generateKeyPair();
+  const agentAddress = `run_${"a1".repeat(16)}@example.com`;
+  const runId = `run_${"a1".repeat(16)}`;
+  const grant = {
+    id: "grant_1",
+    resource: "tool:@corbits/memory-tools:memory_search",
+    action: "invoke",
+    effect: "allow" as const,
+    origin: "system" as const,
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: "principal-1",
+  };
+  const frame: AgentDeployFrame = {
+    type: "agent.deploy",
+    agentAddress,
+    agentId: "agent-1",
+    config: { ...makeHarnessConfig(agentAddress), grants: [grant] },
+    hubPublicKey: hexEncode(hubKey.publicKey),
+    workflow: {
+      definition: {
+        id: "definition-1",
+        triggers: [],
+        stepOrder: ["step-1"],
+        steps: { "step-1": {} },
+      },
+      sources: { "step-1": [makeSource("openai")] },
+    },
+  };
+
+  await expect(router.deploy(frame)).rejects.toThrow(
+    /refuses to launch a real child/,
+  );
+
+  const substrate = createAgentRepoStore({
+    dataDir,
+    signingKey: await generateKeyPair(),
+  });
+  const snapshot = await assembleRunCredentialsSnapshot({
+    repoStore: substrate.repoStore,
+    deploymentId: deriveDeploymentId(agentAddress),
+    runId,
+    stepOrder: ["step-1"],
+    deriveStepAddress: () => agentAddress,
+  });
+  expect(snapshot.steps).toHaveLength(1);
+  expect(snapshot.steps[0]?.grants).toEqual([grant]);
 });

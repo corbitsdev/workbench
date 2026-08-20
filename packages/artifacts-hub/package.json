@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/artifacts-hub",
+  "private": true,
+  "description": "Tenant-scoped Library HTTP surface over the mounted @corbits/artifacts engine: list, get-by-id, multipart upload, and per-kind-segment counts for the Library nav",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/artifact-ui": "workspace:*",
+    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+    "@corbits/folded-runs": "workspace:*",
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

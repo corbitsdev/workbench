@@ -5,10 +5,12 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   BenchApiError,
   createBench,
   inviteMember,
+  listWorkbenchTenantIds,
   listMembers,
   listMyMemberships,
 } from "../src/api";
@@ -67,9 +69,11 @@ describe("listMyMemberships", () => {
     await expect(listMyMemberships()).rejects.toBeInstanceOf(BenchApiError);
   });
 
-  test("throws a BenchApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(listMyMemberships()).rejects.toThrow(/Not signed in/);
+    await expect(listMyMemberships()).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
   });
 });
 
@@ -170,5 +174,25 @@ describe("inviteMember", () => {
     await expect(
       inviteMember("tnt_1", "nobody@example.com"),
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("listWorkbenchTenantIds", () => {
+  test("posts the tenant ids and returns them as a set", async () => {
+    const calls = stubFetch(() => json({ workbenchTenantIds: ["tnt_2"] }));
+    const result = await listWorkbenchTenantIds(["tnt_1", "tnt_2"]);
+    expect(calls[0]?.path).toBe("/api/workbench-tenancies/kinds");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      tenantIds: ["tnt_1", "tnt_2"],
+    });
+    expect(result).toEqual(new Set(["tnt_2"]));
+  });
+
+  test("never round-trips for an empty request", async () => {
+    const calls = stubFetch(() => json({ workbenchTenantIds: [] }));
+    const result = await listWorkbenchTenantIds([]);
+    expect(calls).toHaveLength(0);
+    expect(result).toEqual(new Set());
   });
 });

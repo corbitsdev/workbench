@@ -1,16 +1,21 @@
 // Exercises the hub's own wiring: platform routes answering at boot,
 // the echo extension mounted inside the native tenant middleware, and
 // same-origin static serving. Platform behavior behind the mounted
-// routes belongs to its own packages and is not re-proven here. No test
-// needs a database: every asserted path fails or answers before a query
-// would run.
+// routes belongs to its own packages and is not re-proven here. Booting
+// the hub runs package migrations, so a reachable DATABASE_URL is
+// required and the suite skips without one.
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
+
+// DB-gated: skipped when DATABASE_URL is unset, matching this repo's
+// convention for tests that talk to a real Postgres.
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const describeIfDb = databaseUrl === "" ? describe.skip : describe;
 
 const root = mkdtempSync(path.join(tmpdir(), "hub-composition-"));
 const staticDir = path.join(root, "static");
@@ -20,13 +25,28 @@ writeFileSync(path.join(staticDir, "assets", "app.css"), "body{}");
 mkdirSync(path.join(root, "data"), { recursive: true });
 
 const config: HubConfig = {
-  databaseUrl: "postgres://workbench:workbench@localhost:5432/workbench",
+  databaseUrl,
   baseUrl: "http://localhost:3000",
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
+  signupMode: "closed",
+  allowedEmailDomains: [],
+  // No CREDENTIAL_ENCRYPTION_KEY here: this suite never touches the
+  // credential-cipher seam, so the dev opt-in keeps boot working.
+  allowPlaintextSecrets: true,
+  allowUnverifiedEmails: true,
+  sidecarProvisioners: [],
+  envProviderKeys: {},
+  envProviderBaseUrls: {},
+  envCredentialPlantAdmin: {
+    email: "alice@example.com",
+    password: "password123",
+    orgSlug: "workbench",
+  },
+  chatIdleReapMs: 30 * 60_000,
 };
 
 const closers: (() => Promise<void>)[] = [];
@@ -42,7 +62,7 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("boot", () => {
+describeIfDb("boot", () => {
   test("serves platform health, auth-gated routes, and the interface", async () => {
     const hub = await bootHub();
 
@@ -70,7 +90,35 @@ describe("boot", () => {
   });
 });
 
-describe("extension mounting", () => {
+describeIfDb("shutdown", () => {
+  test("close() cancels the pending sidecar allocation reconciliation timer", async () => {
+    const setTimeoutSpy = spyOn(global, "setTimeout");
+    const clearTimeoutSpy = spyOn(global, "clearTimeout");
+
+    const hub = await createHub(config);
+    // index.ts schedules its reconciliation loop with setTimeout(fn,
+    // 1000) — the one 1000ms setTimeout call site in the module — so
+    // this is the pending timer close() must cancel.
+    const reconciliationCallIndex = setTimeoutSpy.mock.calls.findIndex(
+      (call) => call[1] === 1000,
+    );
+    expect(reconciliationCallIndex).toBeGreaterThanOrEqual(0);
+    const reconciliationTimerId = setTimeoutSpy.mock.results[
+      reconciliationCallIndex
+    ]?.value as ReturnType<typeof setTimeout>;
+
+    await hub.close();
+
+    expect(clearTimeoutSpy.mock.calls.map((call) => call[0])).toContain(
+      reconciliationTimerId,
+    );
+
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
+  });
+});
+
+describeIfDb("extension mounting", () => {
   test("echo mounts inside the native tenant middleware", async () => {
     const hub = await bootHub();
 
@@ -96,6 +144,20 @@ describe("extension mounting", () => {
 
     const gated = await hub.app.request("/api/onboarding/provision", {
       method: "POST",
+    });
+    expect(gated.status).toBe(401);
+    expect(await gated.json()).toEqual({
+      error: { code: "unauthorized", message: "Authentication required" },
+    });
+  });
+
+  test("the workbench-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
+    const hub = await bootHub();
+
+    const gated = await hub.app.request("/api/workbench-tenancies/kinds", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantIds: [] }),
     });
     expect(gated.status).toBe(401);
     expect(await gated.json()).toEqual({

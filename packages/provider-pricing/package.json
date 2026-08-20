@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/provider-pricing",
+  "private": true,
+  "description": "Static (provider, model) token rates and cost math for the catalog seed set. Insights looks up a turn here when the provider did not report a dollar cost.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/inference-catalog": "workspace:*",
+    "@workbench/hub-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

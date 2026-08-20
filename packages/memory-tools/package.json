@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/memory-tools",
+  "private": true,
+  "description": "Firm-memory search/add/list as an @intx/agent tool bundle for workflow definitions: calls the sanctioned workflow-memory HTTP surface (@corbits/memory-hub) with the sidecar's own bearer token and the run's own address, never a database handle or model-supplied identity",
+  "version": "0.0.4",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

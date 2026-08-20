@@ -7,7 +7,7 @@ export type EntitySearchResult = {
   readonly id: string;
   readonly title: string;
   /** Which source the result came from — a free-form label the consumer
-   * defines (e.g. `"channels"`, `"routines"`, `"agents"`). The package
+   * defines (e.g. `"workbenches"`, `"routines"`, `"agents"`). The package
    * never interprets it; it only carries it through so the app shell can
    * group results and map a selection back to the right route. */
   readonly category: string;
@@ -19,7 +19,7 @@ export type EntitySearchPage = {
 };
 
 /** The bare shape entity search needs from an already-fetched, already-typed
- * list — channels, routines, agents, etc. all already come off
+ * list — workbenches, routines, agents, etc. all already come off
  * arktype-validated API responses before they reach here, so this module
  * trusts the shape it is handed. */
 export type SearchableEntity = {
@@ -44,7 +44,7 @@ export type SearchEntitiesInput = {
 
 /**
  * Client-side search over entities the app has already fetched for its own
- * pages — channels, routines, agents, whatever the consumer hands in. There
+ * pages — workbenches, routines, agents, whatever the consumer hands in. There
  * is no cross-tenant search endpoint yet, so every source is an
  * already-fetched list matched here.
  *
@@ -53,8 +53,8 @@ export type SearchEntitiesInput = {
  * the list the instant the palette opens would make the static commands
  * compete with noise for the first keystroke.
  *
- * Results preserve source order: if the consumer passes channels before
- * routines, channel matches appear first within a page.
+ * Results preserve source order: if the consumer passes workbenches before
+ * routines, workbench matches appear first within a page.
  */
 export function searchEntities({
   query,

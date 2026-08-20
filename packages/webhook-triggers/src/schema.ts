@@ -1,16 +1,17 @@
 // The one product table `@corbits/webhook-triggers` owns: a trigger
-// row per external-webhook-to-workflow binding. Tenancy semantics
-// (membership, principals, grants) stay native platform schema under
-// vendor/intx/db; this table holds only this package's own state,
-// keyed by tenant.
+// row per external-webhook-to-workflow binding. It lives in its own
+// `webhook_triggers` Postgres schema, fully siloed from the platform's
+// `public` schema — see docs/package-migrations.md.
 //
-// The signing secret is stored in plaintext for v1 (see
-// `./signature.ts` for the security-model note this trades off) —
-// flagged here rather than hidden, since it is the one property of
-// this table a security review needs to know first.
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+// The signing secret is encrypted at rest via Interchange's
+// `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
+// wiring and `./signature.ts` for the security-model note on what that
+// does and does not close.
+import { boolean, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
-export const webhookTrigger = pgTable("webhook_trigger", {
+export const webhookTriggersSchema = pgSchema("webhook_triggers");
+
+export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
@@ -25,9 +26,9 @@ export const webhookTrigger = pgTable("webhook_trigger", {
   inputTemplate: text("input_template").notNull(),
   /**
    * The HMAC-SHA256 secret verified against the inbound signature
-   * header. Plaintext at rest for v1 — see the module doc on
-   * `./signature.ts` — never returned by any route after creation
-   * except a rotate response.
+   * header, stored as a `CredentialCipher`-encrypted blob (see
+   * `./store.ts`) — never returned by any route after creation except
+   * a rotate response, and never in this encrypted form even then.
    */
   secret: text("secret").notNull(),
   enabled: boolean("enabled").notNull().default(true),

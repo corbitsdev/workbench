@@ -23,7 +23,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0001_channel_settings",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_settings" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_settings" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "settings" jsonb NOT NULL,
@@ -36,7 +36,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0002_channel_read_state",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_read_state" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_read_state" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "principal_id" text NOT NULL,
@@ -49,7 +49,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0003_channel_launch",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_launch" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_launch" (
         "tenant_id" text NOT NULL,
         "instance_id" text NOT NULL,
         "folded_body" jsonb NOT NULL,
@@ -61,14 +61,14 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0004_channel_launch_noop_inference",
     sql: `
-      ALTER TABLE "channel_launch"
+      ALTER TABLE "chat"."channel_launch"
         ADD COLUMN IF NOT EXISTS "noop_inference" boolean NOT NULL DEFAULT false;
     `,
   },
   {
     name: "0005_channel_tenancy",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_tenancy" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_tenancy" (
         "channel_id" text NOT NULL,
         "tenant_id" text NOT NULL,
         "parent_tenant_id" text NOT NULL,
@@ -83,13 +83,13 @@ export const chatMigrations: readonly ChatMigration[] = [
     name: "0006_channel_tenancy_parent_index",
     sql: `
       CREATE INDEX IF NOT EXISTS "channel_tenancy_parent_tenant_id_idx"
-        ON "channel_tenancy" ("parent_tenant_id");
+        ON "chat"."channel_tenancy" ("parent_tenant_id");
     `,
   },
   {
     name: "0007_chat_bench_settings",
     sql: `
-      CREATE TABLE IF NOT EXISTS "chat_bench_settings" (
+      CREATE TABLE IF NOT EXISTS "chat"."chat_bench_settings" (
         "tenant_id" text NOT NULL,
         "settings" jsonb NOT NULL,
         "updated_by" text NOT NULL,
@@ -115,22 +115,248 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0008_channel_context_window_explicit_inherit",
     sql: `
-      UPDATE "channel_settings"
+      UPDATE "chat"."channel_settings"
       SET "settings" = jsonb_set("settings", '{chat/contextWindow}', 'null'::jsonb)
       WHERE NOT ("settings" ? 'chat/contextWindow');
     `,
   },
+  {
+    name: "0009_channel_threads",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."channel_threads" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "kind" text NOT NULL,
+        "parent_message_id" text,
+        "run_ref" text,
+        "title" text,
+        "created_at" timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS "channel_threads_channel_idx"
+        ON "chat"."channel_threads" ("tenant_id", "channel_id");
+      CREATE TABLE IF NOT EXISTS "chat"."channel_thread_messages" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "thread_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+      CREATE INDEX IF NOT EXISTS "channel_thread_messages_thread_idx"
+        ON "chat"."channel_thread_messages" ("tenant_id", "thread_id");
+    `,
+  },
+  {
+    name: "0010_block_responses",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."block_responses" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "block_id" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "payload" jsonb NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id", "block_id", "principal_id")
+      );
+      CREATE INDEX IF NOT EXISTS "block_responses_block_idx"
+        ON "chat"."block_responses" ("tenant_id", "channel_id", "message_id", "block_id");
+    `,
+  },
+  {
+    name: "0011_channel_threads_parent_thread_id",
+    sql: `
+      ALTER TABLE "chat"."channel_threads"
+        ADD COLUMN IF NOT EXISTS "parent_thread_id" text;
+      CREATE INDEX IF NOT EXISTS "channel_threads_parent_thread_idx"
+        ON "chat"."channel_threads" ("tenant_id", "parent_thread_id");
+    `,
+  },
+  {
+    name: "0012_message_reactions",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."message_reactions" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "emoji" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id", "emoji", "principal_id")
+      );
+      CREATE INDEX IF NOT EXISTS "message_reactions_message_idx"
+        ON "chat"."message_reactions" ("tenant_id", "channel_id", "message_id");
+    `,
+  },
+  {
+    name: "0013_pinned_messages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."pinned_messages" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "pinned_by" text NOT NULL,
+        "pinned_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+      CREATE INDEX IF NOT EXISTS "pinned_messages_channel_idx"
+        ON "chat"."pinned_messages" ("tenant_id", "channel_id");
+    `,
+  },
+  {
+    name: "0014_channel_share",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."channel_share" (
+        "owning_tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "projected_tenant_id" text NOT NULL,
+        "created_by" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("channel_id", "projected_tenant_id")
+      );
+      CREATE INDEX IF NOT EXISTS "channel_share_projected_idx"
+        ON "chat"."channel_share" ("projected_tenant_id");
+    `,
+  },
+  {
+    name: "0015_channel_share_member",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."channel_share_member" (
+        "projected_tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "added_by" text NOT NULL,
+        "added_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("projected_tenant_id", "channel_id", "principal_id")
+      );
+    `,
+  },
+  {
+    name: "0016_finalized_turn_write_claim",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."finalized_turn_write_claim" (
+        "tenant_id" text NOT NULL,
+        "surface" text NOT NULL,
+        "claim_key" text NOT NULL,
+        "claimed_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "surface", "claim_key")
+      );
+    `,
+  },
+  {
+    name: "0017_message_client_ids",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."message_client_ids" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "client_id" text NOT NULL,
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+    `,
+  },
+  // Product rename (CL-6260): "channel" is retired as this package's own
+  // vocabulary in favor of "workbench" — every table and column above was
+  // named at creation time under the old word, so this migration is the
+  // one place that carries them forward. Plain renames only: no data
+  // moves, no column ever changes type, so this is a metadata-only
+  // operation on Postgres and safe to run against a live table.
+  {
+    name: "0018_rename_channel_to_workbench",
+    sql: `
+      ALTER TABLE "chat"."channel_settings" RENAME TO "workbench_settings";
+      ALTER TABLE "chat"."workbench_settings" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."channel_read_state" RENAME TO "workbench_read_state";
+      ALTER TABLE "chat"."workbench_read_state" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."channel_launch" RENAME TO "workbench_launch";
+
+      ALTER TABLE "chat"."channel_tenancy" RENAME TO "workbench_tenancy";
+      ALTER TABLE "chat"."workbench_tenancy" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_tenancy_parent_tenant_id_idx" RENAME TO "workbench_tenancy_parent_tenant_id_idx";
+
+      ALTER TABLE "chat"."channel_threads" RENAME TO "workbench_threads";
+      ALTER TABLE "chat"."workbench_threads" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_threads_channel_idx" RENAME TO "workbench_threads_workbench_idx";
+      ALTER INDEX "chat"."channel_threads_parent_thread_idx" RENAME TO "workbench_threads_parent_thread_idx";
+
+      ALTER TABLE "chat"."channel_thread_messages" RENAME TO "workbench_thread_messages";
+      ALTER TABLE "chat"."workbench_thread_messages" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_thread_messages_thread_idx" RENAME TO "workbench_thread_messages_thread_idx";
+
+      ALTER TABLE "chat"."block_responses" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."message_reactions" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."pinned_messages" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."pinned_messages_channel_idx" RENAME TO "pinned_messages_workbench_idx";
+
+      ALTER TABLE "chat"."channel_share" RENAME TO "workbench_share";
+      ALTER TABLE "chat"."workbench_share" RENAME COLUMN "channel_id" TO "workbench_id";
+      ALTER INDEX "chat"."channel_share_projected_idx" RENAME TO "workbench_share_projected_idx";
+
+      ALTER TABLE "chat"."channel_share_member" RENAME TO "workbench_share_member";
+      ALTER TABLE "chat"."workbench_share_member" RENAME COLUMN "channel_id" TO "workbench_id";
+
+      ALTER TABLE "chat"."message_client_ids" RENAME COLUMN "channel_id" TO "workbench_id";
+    `,
+  },
 ];
+
+/**
+ * Every folded run this package's own launches recorded in
+ * `workbench_launch` (created as `channel_launch`; see the rename
+ * migration below) — one row per workbench host or invited agent (see
+ * `workbenchLaunch`'s own doc comment in `./schema.ts`). Exists for
+ * `@corbits/folded-runs`' one-time backfill (CL-6061): before its own
+ * `folded_run` marker table existed, this table was the only durable
+ * record that a given run was folded. This package never writes to
+ * `folded_runs.folded_run` itself — that would make it depend on a
+ * package that already depends on it — so it only ever reads its own
+ * schema and hands the ids back; the caller (scripts/db-setup.ts, the
+ * one place that already knows every installed package) is the one
+ * that inserts them as markers via `@corbits/folded-runs`' own export.
+ */
+export interface WorkbenchLaunchFoldedRunSeed {
+  readonly id: string;
+  readonly tenantId: string;
+}
+
+export async function listWorkbenchLaunchFoldedRunIds(
+  databaseUrl: string,
+): Promise<WorkbenchLaunchFoldedRunSeed[]> {
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    const rows = await sql.unsafe(
+      `SELECT "instance_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."workbench_launch"`,
+    );
+    return rows.map((row) => ({
+      id: String(row["id"]),
+      tenantId: String(row["tenantId"]),
+    }));
+  } finally {
+    await sql.end();
+  }
+}
 
 // Bookkeeping table for this package's own migrations. Named
 // distinctly from the platform's setup ledger (`workbench_setup_migration`,
 // in scripts/db-setup.ts) and from any drizzle journal, so extracting
 // @corbits/chat out of this repo never has to disentangle its history
-// from the platform's.
+// from the platform's. Lives in the package's own `chat` schema, like
+// every other table it owns.
+const SCHEMA = "chat";
 const LEDGER_TABLE = "chat_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyChatMigrationsReport {
@@ -150,23 +376,27 @@ export async function applyChatMigrations(
 ): Promise<ApplyChatMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
     for (const migration of chatMigrations) {
       if (alreadyApplied.has(migration.name)) continue;
       try {
-        await sql.unsafe(migration.sql);
-        await sql.unsafe(
-          `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
-          [migration.name],
-        );
+        await sql.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
         applied.push(migration.name);
       } catch (error) {
         throw new Error(

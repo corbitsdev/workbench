@@ -1,0 +1,27 @@
+{
+  "name": "@corbits/context-menu",
+  "private": true,
+  "description": "The global right-click context-menu system: resolving a DOM event to a typed target, deciding whether a modal overlay should suppress it, and the open/position state a react-ui Menu renders from",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "react-dom": "^19.2.0",
+    "typescript": "catalog:"
+  }
+}

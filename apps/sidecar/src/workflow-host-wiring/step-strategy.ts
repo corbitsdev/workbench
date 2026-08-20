@@ -16,6 +16,9 @@ import {
 } from "@intx/workflow-host";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
+import { getLogger } from "@intx/log";
+import { runGrantsPath } from "../run-grants";
+
 /**
  * Project an agent address into the substrate-safe id of its
  * workflow-run repo. Both deploy branches key `{ kind: "workflow-run",
@@ -103,12 +106,14 @@ export function createStepStrategy(args: {
   }
   return {
     deriveStepAddress: args.multistepDeriveStepAddress,
-    deriveStepRepoId: ({ deploymentId, stepId }) => ({
+    deriveStepRepoId: ({ runId, stepId }) => ({
       kind: "agent-state",
-      id: `${deploymentId}-${stepId}`,
+      id: `${runId}-${stepId}`,
     }),
   };
 }
+
+const logger = getLogger(["sidecar", "step-grants"]);
 
 /**
  * Write every step's grants into its agent-state repo so the
@@ -130,6 +135,14 @@ export async function writeStepGrants(args: {
   stepOrder: readonly string[];
   deriveStepRepoId: DeriveStepRepoId;
   grants: readonly unknown[] | undefined;
+  /**
+   * When present, selects the per-run mode: one write of
+   * `runs/<runId>/grants.json` into the deployment's `workflow-run` repo
+   * (the destination the hub's `run.grants` frame targets) instead of the
+   * per-step agent-state fan-out. The step fan-out fields are inert in
+   * that mode but the shared write machinery still takes them.
+   */
+  runId?: string;
 }): Promise<void> {
   // The deploy frame's validated HarnessConfig always carries a `grants`
   // array (possibly empty); an absent array means "no grants", which
@@ -138,9 +151,22 @@ export async function writeStepGrants(args: {
   // rather than `{}` (which the snapshot's validator rejects).
   const grants = args.grants ?? [];
   const serialized = JSON.stringify({ grants }, null, 2);
+  if (args.runId !== undefined) {
+    await args.repoStore.writeTree(
+      GRANTS_WRITE_PRINCIPAL,
+      { kind: "workflow-run", id: args.deploymentId },
+      STEP_GRANTS_REF,
+      {
+        files: { [runGrantsPath(args.runId)]: serialized },
+        message: `Write run grants for ${args.runId}`,
+      },
+    );
+    logger.info`Wrote run grants for run ${args.runId} at ${runGrantsPath(args.runId)} in workflow-run repo ${args.deploymentId}`;
+    return;
+  }
   for (const stepId of args.stepOrder) {
     const repoId = args.deriveStepRepoId({
-      deploymentId: args.deploymentId,
+      runId: args.deploymentId,
       stepId,
     });
     await args.repoStore.writeTree(

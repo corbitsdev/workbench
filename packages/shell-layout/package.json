@@ -1,0 +1,26 @@
+{
+  "name": "@corbits/shell-layout",
+  "private": true,
+  "description": "The generic shell layout mechanics a second Interchange deployment needs: responsive breakpoints, the canvas column state machine, per-route scroll reset, and the pending-dialog-request pattern. Composition (routes, sidebar content, app policy) stays in the consuming app.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "react-dom": "^19.2.0",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/config-profiles-ui",
+  "private": true,
+  "description": "UI for @corbits/config-profiles: the workbench Inference section's 'Apply a profile' affordance, and the workspace-level profile management list in the global settings Everyone group.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/api-query": "workspace:*",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
+    "arktype": "catalog:",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "typescript": "catalog:"
+  }
+}

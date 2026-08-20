@@ -1,9 +1,28 @@
-export { SettingsShell, resolveActiveSection } from "./shell";
-export type { SettingsContext, SettingsSection } from "./shell";
+export {
+  SettingsShell,
+  resolveActiveSection,
+  flattenSettingsSections,
+} from "./shell";
+export type {
+  SettingsContext,
+  SettingsSection,
+  SettingsSectionGroup,
+} from "./shell";
 
-export { BenchSection, BenchSectionView } from "./bench-section";
-export { ChatSection, ChatSectionView } from "./chat-section";
-export { AccountSection, AccountSectionView } from "./account-section";
+export {
+  resolveSettingsSectionGroups,
+  insertEveryoneSections,
+} from "./section-registry";
+
+export {
+  AccountSection,
+  AccountSectionView,
+  AppearanceSection,
+  AgentGeneralSection,
+} from "./account-section";
+export { NotificationsSection } from "./notifications-section";
+export { AuditSection } from "./audit-section";
+export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";
 export {
   PeopleSection,
   PeopleTable,
@@ -25,6 +44,29 @@ export {
   CredentialsTable,
   CreateCredentialDialog,
 } from "./credentials-section";
+export {
+  ConnectionsSection,
+  ConnectorRowList,
+  ConnectorCredentialDialog,
+  oauthStartHref,
+} from "./connections-section";
+
+export { GranolaWebhookCard } from "./granola-webhook-card";
+
+export {
+  CopyButton,
+  CopyableCodeRow,
+  WebhookSecretPanel,
+} from "./webhook-secret-panel";
+
+export {
+  grantPreviewSentence,
+  expiryIsoFromPreset,
+  expiryLabelFromPreset,
+} from "./grant-preview";
+export type { GrantPreviewInput } from "./grant-preview";
+export { KindCards } from "./kind-cards";
+export type { KindCardOption } from "./kind-cards";
 
 export { principalLabel } from "./identity";
 export type { PrincipalLabel } from "./identity";
@@ -74,13 +116,26 @@ export type {
 } from "./credentials-api";
 
 export {
-  contextWindowLabel,
-  parseContextWindowInput,
-  CONTEXT_WINDOW_MIN,
-  CONTEXT_WINDOW_MAX,
-} from "./context-window";
+  ConnectionsApiError,
+  testConnectorCredential,
+  completeConnectorCredential,
+  disconnectConnector,
+} from "./connections-api";
+
+export { connectorStatus } from "./connections-status";
+export type {
+  ConnectorStatus,
+  ConnectorStatusResult,
+} from "./connections-status";
+
+export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 
 export { SETTINGS_STRINGS } from "./strings";
 
-export { SettingsApiError, getAccount, renameBench } from "./api";
-export type { Account, Bench } from "./api";
+export {
+  SettingsApiError,
+  getAccount,
+  getAuthConfig,
+  renameBench,
+} from "./api";
+export type { Account, AuthConfig, Bench } from "./api";

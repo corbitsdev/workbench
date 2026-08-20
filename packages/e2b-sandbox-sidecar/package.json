@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/e2b-sandbox-sidecar",
+  "private": true,
+  "description": "SidecarProvisioner plugin that runs sidecar sandboxes on E2B",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/sandbox-sidecar": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "arktype": "catalog:",
+    "e2b": "^2.36.1"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

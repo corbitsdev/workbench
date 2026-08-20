@@ -1,13 +1,15 @@
 // A seam for `@corbits/routines`, which is not on `main` yet: the second
 // column's "Running" section depends only on `RoutineActivityItem` and
 // `listRoutineActivity`, never on where the data actually comes from. Today
-// it is filled from `@corbits/chat-ui`'s `listRuns` — the workflow-instance
-// listing every routine run already executes as — so the section shows real,
-// bench-scoped activity rather than nothing. Once `@corbits/routines`
-// publishes its own richer listing, only this file's body changes.
+// it is filled from `./agents-api.ts`'s `listTopLevelRuns` — the tenant's
+// genuine top-level deployment runs, folded runs already excluded
+// server-side (see `@corbits/folded-runs`'s `scope-routes.ts`) — so the
+// section shows real, bench-scoped activity rather than nothing. Once
+// `@corbits/routines` publishes its own richer listing, only this file's
+// body changes.
 
-import { listRuns, runDisplayName } from "@corbits/chat-ui";
-import type { Run } from "@corbits/chat-ui";
+import { listTopLevelRuns } from "../agents-api";
+import type { AgentInstance } from "../agents-api";
 
 export type RoutineActivityItem = {
   readonly id: string;
@@ -16,10 +18,10 @@ export type RoutineActivityItem = {
   readonly startedAt: string;
 };
 
-function toRoutineActivityItem(run: Run): RoutineActivityItem {
+function toRoutineActivityItem(run: AgentInstance): RoutineActivityItem {
   return {
     id: run.id,
-    name: runDisplayName(run),
+    name: run.definitionName,
     status: run.status,
     startedAt: run.createdAt,
   };
@@ -28,5 +30,7 @@ function toRoutineActivityItem(run: Run): RoutineActivityItem {
 export function listRoutineActivity(
   tenantId: string,
 ): Promise<readonly RoutineActivityItem[]> {
-  return listRuns(tenantId).then((runs) => runs.map(toRoutineActivityItem));
+  return listTopLevelRuns(tenantId).then((runs) =>
+    runs.map(toRoutineActivityItem),
+  );
 }

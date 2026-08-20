@@ -6,59 +6,59 @@
 import { expect, test } from "bun:test";
 import { createInMemoryChatStore } from "../src/store";
 
-test("createChannelSettings then getChannelSettings round-trips the row", async () => {
+test("createWorkbenchSettings then getWorkbenchSettings round-trips the row", async () => {
   const store = createInMemoryChatStore();
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: "tnt_1",
-    channelId: "chn_1",
+    workbenchId: "chn_1",
     settings: { "chat/kind": "chat" },
     updatedBy: "prn_1",
   });
 
-  const row = await store.getChannelSettings("tnt_1", "chn_1");
+  const row = await store.getWorkbenchSettings("tnt_1", "chn_1");
   expect(row?.settings["chat/kind"]).toBe("chat");
 });
 
-test("listChannelSettings scopes to tenant and filters by kind", async () => {
+test("listWorkbenchSettings scopes to tenant and filters by kind", async () => {
   const store = createInMemoryChatStore();
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: "tnt_1",
-    channelId: "chn_1",
-    settings: { "chat/kind": "channel" },
+    workbenchId: "chn_1",
+    settings: { "chat/kind": "workbench" },
     updatedBy: "prn_1",
   });
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: "tnt_1",
-    channelId: "chn_2",
+    workbenchId: "chn_2",
     settings: { "chat/kind": "chat" },
     updatedBy: "prn_1",
   });
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: "tnt_2",
-    channelId: "chn_3",
-    settings: { "chat/kind": "channel" },
+    workbenchId: "chn_3",
+    settings: { "chat/kind": "workbench" },
     updatedBy: "prn_1",
   });
 
-  const tenant1Channels = await store.listChannelSettings("tnt_1");
-  expect(tenant1Channels).toHaveLength(2);
+  const tenant1Workbenches = await store.listWorkbenchSettings("tnt_1");
+  expect(tenant1Workbenches).toHaveLength(2);
 
-  const filtered = await store.listChannelSettings("tnt_1", "channel");
-  expect(filtered.map((row) => row.channelId)).toEqual(["chn_1"]);
+  const filtered = await store.listWorkbenchSettings("tnt_1", "workbench");
+  expect(filtered.map((row) => row.workbenchId)).toEqual(["chn_1"]);
 });
 
-test("updateChannelSettings replaces the settings blob and rejects a missing channel", async () => {
+test("updateWorkbenchSettings replaces the settings blob and rejects a missing workbench", async () => {
   const store = createInMemoryChatStore();
-  await store.createChannelSettings({
+  await store.createWorkbenchSettings({
     tenantId: "tnt_1",
-    channelId: "chn_1",
+    workbenchId: "chn_1",
     settings: { "chat/pinned": false },
     updatedBy: "prn_1",
   });
 
-  const updated = await store.updateChannelSettings({
+  const updated = await store.updateWorkbenchSettings({
     tenantId: "tnt_1",
-    channelId: "chn_1",
+    workbenchId: "chn_1",
     settings: { "chat/pinned": true },
     updatedBy: "prn_2",
   });
@@ -66,9 +66,9 @@ test("updateChannelSettings replaces the settings blob and rejects a missing cha
   expect(updated.updatedBy).toBe("prn_2");
 
   await expect(
-    store.updateChannelSettings({
+    store.updateWorkbenchSettings({
       tenantId: "tnt_1",
-      channelId: "chn_missing",
+      workbenchId: "chn_missing",
       settings: {},
       updatedBy: "prn_1",
     }),
@@ -103,14 +103,14 @@ test("putReadState upserts a per-principal cursor without disturbing other princ
   const store = createInMemoryChatStore();
   await store.putReadState({
     tenantId: "tnt_1",
-    channelId: "chn_1",
+    workbenchId: "chn_1",
     principalId: "prn_alice",
     lastSeenCreatedAt: new Date("2026-01-01T00:00:00.000Z"),
     lastSeenId: "mail_1",
   });
   await store.putReadState({
     tenantId: "tnt_1",
-    channelId: "chn_1",
+    workbenchId: "chn_1",
     principalId: "prn_alice",
     lastSeenCreatedAt: new Date("2026-01-02T00:00:00.000Z"),
     lastSeenId: "mail_2",

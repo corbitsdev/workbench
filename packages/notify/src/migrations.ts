@@ -14,7 +14,7 @@ export const notifyMigrations: readonly NotifyMigration[] = [
   {
     name: "0001_notify_dispatch",
     sql: `
-      CREATE TABLE IF NOT EXISTS "notify_dispatch" (
+      CREATE TABLE IF NOT EXISTS "notify"."notify_dispatch" (
         "id" text PRIMARY KEY,
         "mailbox_row_id" text NOT NULL,
         "tenant_id" text NOT NULL,
@@ -30,15 +30,20 @@ export const notifyMigrations: readonly NotifyMigration[] = [
           UNIQUE ("mailbox_row_id", "sink_name")
       );
       CREATE INDEX IF NOT EXISTS "notify_dispatch_due_idx"
-        ON "notify_dispatch" ("status", "next_attempt_at");
+        ON "notify"."notify_dispatch" ("status", "next_attempt_at");
     `,
   },
 ];
 
+const SCHEMA = "notify";
 const LEDGER_TABLE = "notify_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyNotifyMigrationsReport {
@@ -56,23 +61,27 @@ export async function applyNotifyMigrations(
 ): Promise<ApplyNotifyMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
     for (const migration of notifyMigrations) {
       if (alreadyApplied.has(migration.name)) continue;
       try {
-        await sql.unsafe(migration.sql);
-        await sql.unsafe(
-          `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
-          [migration.name],
-        );
+        await sql.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
         applied.push(migration.name);
       } catch (error) {
         throw new Error(

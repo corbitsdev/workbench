@@ -1,0 +1,26 @@
+{
+  "name": "@corbits/inference-settings",
+  "private": true,
+  "description": "Per-workbench inference settings: the effective ordered model/provider catalog with inherited-vs-set-here provenance, and the native catalog writes (priority reorder, restrict, bring-your-own-key shadowing) a workbench tenant can make against it.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api": "./src/api.ts",
+    "./effective-list": "./src/effective-list.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/types": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

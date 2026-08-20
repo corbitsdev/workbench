@@ -6,6 +6,8 @@ import {
   computeNextFireAt,
   cronExpressionForTrigger,
   isValidCronExpression,
+  routineMatchesModeFilter,
+  routineTriggerCategory,
   timezoneForTrigger,
 } from "../src/trigger";
 
@@ -145,6 +147,19 @@ describe("RoutineTrigger", () => {
     const result = RoutineTrigger(null);
     expect(result instanceof type.errors).toBe(false);
   });
+
+  test("accepts a webhook trigger referencing a webhook-triggers row", () => {
+    const result = RoutineTrigger({
+      kind: "webhook",
+      webhookTriggerId: "wht_1",
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test("rejects a webhook trigger missing its webhookTriggerId", () => {
+    const result = RoutineTrigger({ kind: "webhook" });
+    expect(result instanceof type.errors).toBe(true);
+  });
 });
 
 describe("cronExpressionForTrigger", () => {
@@ -190,6 +205,15 @@ describe("computeNextFireAt", () => {
     expect(computeNextFireAt(null, new Date())).toBeNull();
   });
 
+  test("is null for a webhook routine — it fires on delivery, never a clock", () => {
+    expect(
+      computeNextFireAt(
+        { kind: "webhook", webhookTriggerId: "wht_1" },
+        new Date(),
+      ),
+    ).toBeNull();
+  });
+
   test("finds the next matching minute for an interval preset", () => {
     const after = new Date("2026-01-01T00:07:00Z");
     const next = computeNextFireAt(
@@ -231,5 +255,82 @@ describe("computeNextFireAt", () => {
       timezoneForTrigger({ kind: "interval", unit: "hours", every: 1 }),
     ).toBe("UTC");
     expect(timezoneForTrigger(null)).toBe("UTC");
+    expect(
+      timezoneForTrigger({ kind: "webhook", webhookTriggerId: "wht_1" }),
+    ).toBe("UTC");
+  });
+});
+
+describe("routineTriggerCategory", () => {
+  test("a manual (null) trigger is on demand", () => {
+    expect(routineTriggerCategory(null)).toBe("demand");
+  });
+
+  test("every preset and raw cron is scheduled", () => {
+    expect(
+      routineTriggerCategory({ kind: "interval", unit: "minutes", every: 5 }),
+    ).toBe("schedule");
+    expect(routineTriggerCategory({ kind: "daily", hour: 9, minute: 0 })).toBe(
+      "schedule",
+    );
+    expect(
+      routineTriggerCategory({
+        kind: "weekly",
+        dayOfWeek: 1,
+        hour: 9,
+        minute: 0,
+      }),
+    ).toBe("schedule");
+    expect(
+      routineTriggerCategory({ kind: "cron", expression: "0 9 * * *" }),
+    ).toBe("schedule");
+  });
+
+  test("a webhook trigger is event-driven ('trigger')", () => {
+    expect(
+      routineTriggerCategory({ kind: "webhook", webhookTriggerId: "wht_1" }),
+    ).toBe("trigger");
+  });
+});
+
+describe("routineMatchesModeFilter", () => {
+  test('"all" matches every trigger shape', () => {
+    expect(routineMatchesModeFilter(null, "all")).toBe(true);
+    expect(
+      routineMatchesModeFilter({ kind: "daily", hour: 9, minute: 0 }, "all"),
+    ).toBe(true);
+  });
+
+  test('"schedule" matches presets and cron, not manual', () => {
+    expect(
+      routineMatchesModeFilter(
+        { kind: "daily", hour: 9, minute: 0 },
+        "schedule",
+      ),
+    ).toBe(true);
+    expect(routineMatchesModeFilter(null, "schedule")).toBe(false);
+  });
+
+  test('"demand" matches only manual (null) triggers', () => {
+    expect(routineMatchesModeFilter(null, "demand")).toBe(true);
+    expect(
+      routineMatchesModeFilter({ kind: "daily", hour: 9, minute: 0 }, "demand"),
+    ).toBe(false);
+  });
+
+  test('"trigger" matches only webhook-bound routines', () => {
+    expect(
+      routineMatchesModeFilter(
+        { kind: "webhook", webhookTriggerId: "wht_1" },
+        "trigger",
+      ),
+    ).toBe(true);
+    expect(routineMatchesModeFilter(null, "trigger")).toBe(false);
+    expect(
+      routineMatchesModeFilter(
+        { kind: "cron", expression: "0 9 * * *" },
+        "trigger",
+      ),
+    ).toBe(false);
   });
 });

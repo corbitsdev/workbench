@@ -28,10 +28,31 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
-import { applyChatMigrations } from "../packages/chat/src/migrations";
+import {
+  applyFoldedRunsMigrations,
+  backfillFoldedRunMarkers,
+} from "../packages/folded-runs/src/migrations";
+import {
+  applyChatMigrations,
+  listWorkbenchLaunchFoldedRunIds,
+} from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
+import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
+import { applyInsightsMigrations } from "../packages/insights/src/migrations";
+import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
+import { applyConfigProfilesMigrations } from "../packages/config-profiles/src/migrations";
+import { applyBenchMigrations } from "../packages/bench/src/migrations";
+import { applySkillsMigrations } from "../packages/skills/src/migrations";
+import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
+import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
+import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
+import {
+  applyTasksMigrations,
+  listTaskFoldedRunIds,
+} from "../packages/tasks/src/migrations";
+import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -40,16 +61,34 @@ const HUB_DIR = path.join(repoRoot, "apps", "hub");
  * Installed packages that ship their own product-table migrations,
  * applied after the platform's. Explicit and literal on purpose: no
  * discovery magic, no globbing for migrations. @corbits/chat is the
- * first installed package to need this seam.
+ * first installed package to need this seam. See
+ * docs/package-migrations.md for the convention each package's
+ * migration runner follows (literal SQL, package-owned ledger,
+ * transactional apply) and which shape to pick for a new package.
  */
 const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
+  // Ahead of @corbits/chat and @corbits/tasks: both launch runs
+  // through @corbits/folded-runs' `launchFoldedRun`, which writes into
+  // its `folded_run` marker table unconditionally on every launch.
+  { name: "@corbits/folded-runs", apply: applyFoldedRunsMigrations },
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/routines", apply: applyRoutineMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
+  { name: "@corbits/mailbox", apply: applyMailboxMigrations },
+  { name: "@corbits/insights", apply: applyInsightsMigrations },
+  { name: "@corbits/preferences", apply: applyPreferencesMigrations },
+  { name: "@corbits/config-profiles", apply: applyConfigProfilesMigrations },
+  { name: "@corbits/bench", apply: applyBenchMigrations },
+  { name: "@corbits/skills", apply: applySkillsMigrations },
+  { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
+  { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
+  { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
+  { name: "@corbits/tasks", apply: applyTasksMigrations },
+  { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
 ];
 
 /**
@@ -77,6 +116,41 @@ async function applyInstalledPackageMigrations(
         { cause: error },
       );
     }
+  }
+  await backfillFoldedRunsFromInstalledPackages(databaseUrl);
+}
+
+/**
+ * One-time cross-package backfill for every folded run launched
+ * before @corbits/folded-runs' own `folded_run` marker table existed
+ * (CL-6061). Neither @corbits/folded-runs nor this script reads
+ * another package's tables directly to do this — @corbits/chat and
+ * @corbits/tasks already depend on @corbits/folded-runs, so having it
+ * read back their schemas would close that into a cycle. Instead each
+ * launching package exposes its own read-only lister over its own
+ * schema (listWorkbenchLaunchFoldedRunIds, listTaskFoldedRunIds), this
+ * script — the one place that already knows and sequences every
+ * installed package — combines their output, and
+ * @corbits/folded-runs' own backfillFoldedRunMarkers is the only thing
+ * that ever writes to its table. Ledgered by that function under its
+ * own migration name, so every run after the first is a fast no-op.
+ */
+async function backfillFoldedRunsFromInstalledPackages(
+  databaseUrl: string,
+): Promise<void> {
+  const [workbenchLaunchSeeds, taskSeeds] = await Promise.all([
+    listWorkbenchLaunchFoldedRunIds(databaseUrl),
+    listTaskFoldedRunIds(databaseUrl),
+  ]);
+  const { applied, inserted } = await backfillFoldedRunMarkers(databaseUrl, [
+    ...workbenchLaunchSeeds,
+    ...taskSeeds,
+  ]);
+  if (applied) {
+    console.log(
+      `db-setup: backfilled ${inserted} folded_run marker(s) from ` +
+        "@corbits/chat and @corbits/tasks",
+    );
   }
 }
 
@@ -486,11 +560,40 @@ export async function setupDatabase(
   }
 }
 
+// Every installed package that owns a named schema of its own (see
+// docs/package-migrations.md) rather than the platform's `public`, so a
+// reset that only drops `schema` would leave those tables behind: the next
+// `bun run dev`/`workbench reset` would boot against fresh `tenant`/
+// `principal` rows while e.g. `mailbox.principal_mail` or
+// `chat.workbench_settings` still held the old ones (and, once the old FKs
+// are cascaded away, orphaned rows no package's `CREATE TABLE IF NOT
+// EXISTS` migration would ever revisit). Always dropped alongside the
+// target schema so a reset is a true clean slate for every installed
+// package's tables, not only the platform's.
+const PACKAGE_SCHEMAS = [
+  "mailbox",
+  "folded_runs",
+  "chat",
+  "routines",
+  "insights",
+  "notify",
+  "webhook_triggers",
+  "onboarding",
+  "access_policy",
+  "bench",
+  "preferences",
+  "skills",
+  "slack_tag",
+  "tasks",
+  "agent_directory",
+] as const;
+
 /**
  * Drop the target schema and everything in it (platform tables, auth
- * tables, and the setup ledger). A missing database is a no-op: there
- * is nothing to drop. Pair with setupDatabase for a from-scratch
- * rebuild; the e2e harness does exactly that.
+ * tables, and the setup ledger), plus every installed package's own named
+ * schema. A missing database is a no-op: there is nothing to drop. Pair
+ * with setupDatabase for a from-scratch rebuild; the e2e harness does
+ * exactly that.
  */
 export async function resetSchema(
   databaseUrl: string,
@@ -519,6 +622,9 @@ export async function resetSchema(
   }
   await probe.end();
   await intxDb.dropSchema(target, { schema });
+  for (const packageSchema of PACKAGE_SCHEMAS) {
+    await intxDb.dropSchema(target, { schema: packageSchema });
+  }
 }
 
 // --- command-line entry ----------------------------------------------

@@ -4,9 +4,11 @@ import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
   deliverApprovalMail,
+  deliverCredentialMail,
   deliverMentionMail,
   deliverNotification,
   deliverRunFailureMail,
+  deliverTaskResultMail,
   InvalidNotificationEventError,
   NOTIFY_MAIL_SOURCE,
   type MailboxDelivery,
@@ -167,7 +169,7 @@ describe("deliverNotification", () => {
       tenantId: "tnt_1",
       threadId: "thr_3",
       threadLabel: "Launch plan",
-      mentionedBy: "Sawyer",
+      mentionedBy: "Noor",
       excerpt: "can you take this one?",
       recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
       createdAt: "2026-08-08T12:00:00.000Z",
@@ -175,9 +177,204 @@ describe("deliverNotification", () => {
 
     expect(written[0]?.subject).toBe("“Nightly digest” failed");
     expect(written[0]?.externalId).toBe("run_9:2026-08-08T11:00:00.000Z");
-    expect(written[1]?.subject).toBe("Sawyer mentioned you in “Launch plan”");
+    expect(written[1]?.subject).toBe("Noor mentioned you in “Launch plan”");
     for (const item of written) {
       expect(item.subject).not.toContain("_");
     }
+  });
+
+  test("a credential-expired event mails a reconnect nudge naming the durable PAT alternative", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverCredentialMail(deps, {
+      kind: "credential-expired",
+      tenantId: "tnt_1",
+      credentialId: "cred_hf_1",
+      providerId: "huggingface",
+      providerLabel: "Hugging Face",
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-13T09:00:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe(
+      "Reconnect Hugging Face — your token expired",
+    );
+    expect(written[0]?.body).toContain("personal access token");
+    expect(written[0]?.externalId).toBe("cred_hf_1");
+    expect(written[0]?.refs).toContainEqual({
+      kind: "credential",
+      id: "cred_hf_1",
+    });
+  });
+
+  test("a task-result event mails the reply, elapsed time, and artifact refs", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_1",
+      runIds: ["run_1"],
+      stepCount: 1,
+      agentName: "Incident Summarizer",
+      status: "done",
+      replyText: "All clear, no action needed.",
+      elapsedMs: 192_000,
+      artifacts: [{ id: "art_1", title: "Postmortem draft" }],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T10:00:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe(
+      "“Incident Summarizer” finished your task",
+    );
+    expect(written[0]?.body).toContain("All clear, no action needed.");
+    expect(written[0]?.body).toContain("3m 12s");
+    expect(written[0]?.body).toContain("Postmortem draft");
+    expect(written[0]?.externalId).toBe("task-result:task_1");
+    expect(written[0]?.refs).toContainEqual({ kind: "task", id: "task_1" });
+    expect(written[0]?.refs).toContainEqual({ kind: "run", id: "run_1" });
+    expect(written[0]?.refs).toContainEqual({
+      kind: "artifact",
+      id: "art_1",
+      label: "Postmortem draft",
+    });
+  });
+
+  test("a failed task-result event mails the error, never a placeholder", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_2",
+      runIds: ["run_2"],
+      stepCount: 1,
+      agentName: "Incident Summarizer",
+      status: "failed",
+      errorMessage: "tool call exploded",
+      elapsedMs: 4_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T10:05:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe("“Incident Summarizer” failed your task");
+    expect(written[0]?.body).toContain("tool call exploded");
+    expect(written[0]?.body).not.toContain("Artifacts:");
+  });
+
+  test("a task carried through several agents refs every run it spanned", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_3",
+      runIds: ["run_3a", "run_3b", "run_3c"],
+      stepCount: 3,
+      agentName: "Release Notes Writer",
+      status: "done",
+      replyText: "Notes are ready.",
+      elapsedMs: 60_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:00:00.000Z",
+    });
+
+    for (const runId of ["run_3a", "run_3b", "run_3c"]) {
+      expect(written[0]?.refs).toContainEqual({ kind: "run", id: runId });
+    }
+    expect(written[0]?.body).toContain("passed through 3 agents in turn");
+  });
+
+  test("a chained task that stopped early says which agent it stopped at", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_4",
+      runIds: ["run_4a", "run_4b"],
+      stepCount: 3,
+      agentName: "Release Notes Writer",
+      status: "failed",
+      errorMessage: "the model refused the request",
+      elapsedMs: 20_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:05:00.000Z",
+    });
+
+    expect(written[0]?.body).toContain("it stopped at agent 2");
+    expect(written[0]?.body).toContain("the model refused the request");
+    expect(written[0]?.refs).toContainEqual({ kind: "run", id: "run_4b" });
+  });
+
+  test("a single-agent task's copy is unchanged by chains existing", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_5",
+      runIds: ["run_5"],
+      stepCount: 1,
+      agentName: "Incident Summarizer",
+      status: "done",
+      replyText: "All clear.",
+      elapsedMs: 1_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:10:00.000Z",
+    });
+
+    expect(written[0]?.body).not.toContain("agents in turn");
+    expect(written[0]?.refs).toHaveLength(2);
+  });
+
+  test("re-notifying the same still-expired credential dedupes on the credential, not the tick", async () => {
+    const dispatch = createInMemoryNotifyDispatchStore();
+    const sinks = createSinkRegistry();
+    const seen = new Set<string>();
+    const mail: MailboxDelivery = async (items, opts) =>
+      items.map((item) => {
+        if (seen.has(item.externalId)) {
+          return { messageKey: item.externalId, id: null };
+        }
+        seen.add(item.externalId);
+        const id = `mail-${item.externalId}`;
+        opts?.enqueue?.({ id, item });
+        return { messageKey: item.externalId, id };
+      });
+
+    const first = await deliverCredentialMail(
+      { mail, addressing, dispatch, sinks },
+      {
+        kind: "credential-expired",
+        tenantId: "tnt_1",
+        credentialId: "cred_hf_1",
+        providerId: "huggingface",
+        providerLabel: "Hugging Face",
+        recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+        createdAt: "2026-08-13T09:00:00.000Z",
+      },
+    );
+    const second = await deliverCredentialMail(
+      { mail, addressing, dispatch, sinks },
+      {
+        kind: "credential-expired",
+        tenantId: "tnt_1",
+        credentialId: "cred_hf_1",
+        providerId: "huggingface",
+        providerLabel: "Hugging Face",
+        // A later sweep tick, same still-unfixed credential.
+        recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+        createdAt: "2026-08-13T09:30:00.000Z",
+      },
+    );
+
+    expect(first.deliveredMailboxRowIds).toEqual(["mail-cred_hf_1"]);
+    expect(second.deliveredMailboxRowIds).toEqual([]);
   });
 });

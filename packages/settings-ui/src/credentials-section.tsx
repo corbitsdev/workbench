@@ -16,19 +16,25 @@ import {
   EmptyState,
   Input,
   SettingsPanel,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import { credentialTypes } from "@intx/types";
 import type { CredentialType } from "@intx/types";
-import { CircleAlert, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   createCredential,
   deleteCredential,
@@ -37,7 +43,7 @@ import {
   type Credential,
   type Provider,
 } from "./credentials-api";
-import { errorMessage, type LoadState } from "./load-state";
+import { KindCards } from "./kind-cards";
 import { SETTINGS_STRINGS } from "./strings";
 
 const STATUS_TONE: Record<
@@ -50,6 +56,13 @@ const STATUS_TONE: Record<
   error: "danger",
 };
 
+const CREDENTIAL_TYPE_LABEL: Record<CredentialType, string> = {
+  api_key: "API key",
+  oauth_token: "OAuth token",
+  certificate: "Certificate",
+  other: "Other",
+};
+
 type CredentialsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
@@ -60,7 +73,7 @@ export function CredentialsSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<CredentialsData>>({
+  const [query, setQuery] = useState<APIQuery<CredentialsData>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -68,23 +81,39 @@ export function CredentialsSection({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
 
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     Promise.all([listCredentials(tenantId), listProviders(tenantId)])
       .then(([credentials, providers]) => {
         if (!cancelled)
-          setState({ kind: "ready", data: { credentials, providers } });
+          setQuery({ kind: "ready", data: { credentials, providers } });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -94,20 +123,6 @@ export function CredentialsSection({
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.credentialsLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  function reload() {
-    setReloadKey((value) => value + 1);
   }
 
   function handleCreate(input: {
@@ -120,18 +135,22 @@ export function CredentialsSection({
     if (tenantId === null) return;
     setCreating(true);
     setCreateError(null);
-    createCredential(tenantId, {
+    const base = {
       providerId: input.providerId,
       name: input.name,
       type: input.type,
       secret: input.secret,
-      ...(input.description.trim() !== ""
-        ? { description: input.description.trim() }
-        : {}),
-    })
+    };
+    createCredential(
+      tenantId,
+      input.description.trim() !== ""
+        ? { ...base, description: input.description.trim() }
+        : base,
+    )
       .then(() => {
         setCreateOpen(false);
         reload();
+        toast(SETTINGS_STRINGS.credentialSavedToast);
       })
       .catch(() => setCreateError(SETTINGS_STRINGS.credentialsCreateError))
       .finally(() => setCreating(false));
@@ -139,45 +158,63 @@ export function CredentialsSection({
 
   function handleDelete(credential: Credential) {
     if (tenantId === null) return;
+    if (deletingIds.has(credential.id)) return;
     setRowError(null);
+    setDeletingIds((current) => new Set(current).add(credential.id));
     deleteCredential(tenantId, credential.id)
-      .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError));
+      .then(() => {
+        reload();
+        toast(SETTINGS_STRINGS.credentialRevokedToast);
+      })
+      .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError))
+      .finally(() => {
+        setDeletingIds((current) => {
+          const next = new Set(current);
+          next.delete(credential.id);
+          return next;
+        });
+      });
   }
 
-  const providerNameById = new Map(
-    state.data.providers.map((provider) => [provider.id, provider.name]),
-  );
-
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.credentialsSectionTitle}
-      description={SETTINGS_STRINGS.credentialsSectionDescription}
-    >
-      <div className="settings-section-toolbar">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          {SETTINGS_STRINGS.credentialsCreateAction}
-        </Button>
-      </div>
-      {rowError !== null && (
-        <p className="settings-inline-error" role="alert">
-          {rowError}
-        </p>
-      )}
-      <CredentialsTable
-        credentials={state.data.credentials}
-        providerNameById={providerNameById}
-        onDelete={handleDelete}
-      />
-      <CreateCredentialDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        providers={state.data.providers}
-        onCreate={handleCreate}
-        submitting={creating}
-        error={createError}
-      />
-    </SettingsPanel>
+    <QueryView query={query} label={SETTINGS_STRINGS.credentialsLoadError}>
+      {({ credentials, providers }) => {
+        const providerNameById = new Map(
+          providers.map((provider) => [provider.id, provider.name]),
+        );
+        return (
+          <SettingsPanel
+            title={SETTINGS_STRINGS.credentialsSectionTitle}
+            description={SETTINGS_STRINGS.credentialsSectionDescription}
+          >
+            <div className="settings-section-toolbar">
+              <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                {SETTINGS_STRINGS.credentialsCreateAction}
+              </Button>
+            </div>
+            {rowError !== null && (
+              <p className="settings-inline-error" role="alert">
+                {rowError}
+              </p>
+            )}
+            <CredentialsTable
+              credentials={credentials}
+              providerNameById={providerNameById}
+              onDelete={handleDelete}
+              deletingIds={deletingIds}
+            />
+            <CreateCredentialDialog
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              providers={providers}
+              onCreate={handleCreate}
+              submitting={creating}
+              error={createError}
+            />
+          </SettingsPanel>
+        );
+      }}
+    </QueryView>
   );
 }
 
@@ -185,10 +222,12 @@ export function CredentialsTable({
   credentials,
   providerNameById,
   onDelete,
+  deletingIds = new Set(),
 }: {
   readonly credentials: readonly Credential[];
   readonly providerNameById: ReadonlyMap<string, string>;
   readonly onDelete: (credential: Credential) => void;
+  readonly deletingIds?: ReadonlySet<string>;
 }) {
   if (credentials.length === 0) {
     return (
@@ -216,10 +255,12 @@ export function CredentialsTable({
             <TableCell>{credential.name}</TableCell>
             <TableCell>
               {providerNameById.get(credential.providerId) ??
-                credential.providerId}
+                SETTINGS_STRINGS.credentialsRemovedProvider}
             </TableCell>
             <TableCell>
-              <code>{credential.type}</code>
+              <span title={credential.type}>
+                {CREDENTIAL_TYPE_LABEL[credential.type]}
+              </span>
             </TableCell>
             <TableCell>
               <Badge tone={STATUS_TONE[credential.status]}>
@@ -232,8 +273,11 @@ export function CredentialsTable({
                 size="sm"
                 confirmLabel={SETTINGS_STRINGS.credentialsDeleteConfirm}
                 onConfirm={() => onDelete(credential)}
+                disabled={deletingIds.has(credential.id)}
               >
-                {SETTINGS_STRINGS.credentialsDelete}
+                {deletingIds.has(credential.id)
+                  ? SETTINGS_STRINGS.credentialsDeleting
+                  : SETTINGS_STRINGS.credentialsDelete}
               </ConfirmButton>
             </TableCell>
           </TableRow>
@@ -242,7 +286,6 @@ export function CredentialsTable({
     </Table>
   );
 }
-
 export function CreateCredentialDialog({
   open,
   onOpenChange,
@@ -269,6 +312,7 @@ export function CreateCredentialDialog({
   const [type, setType] = useState<CredentialType>("api_key");
   const [secret, setSecret] = useState("");
   const [description, setDescription] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -277,6 +321,7 @@ export function CreateCredentialDialog({
     setType("api_key");
     setSecret("");
     setDescription("");
+    setShowSecret(false);
   }, [open, providers]);
 
   const canSubmit =
@@ -297,27 +342,27 @@ export function CreateCredentialDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="settings-form-stack">
-          <label className="settings-field">
+          <div className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsProviderLabel}</span>
-            <select
-              value={providerId}
-              onChange={(event) => setProviderId(event.target.value)}
-              disabled={providers.length === 0}
-            >
-              {providers.length === 0 ? (
-                <option value="">
-                  {SETTINGS_STRINGS.credentialsNoProviders}
-                </option>
-              ) : (
-                providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-          <label className="settings-field">
+            {providers.length === 0 ? (
+              <p className="settings-field-hint">
+                {SETTINGS_STRINGS.credentialsNoProviders}
+              </p>
+            ) : (
+              <KindCards
+                label={SETTINGS_STRINGS.credentialsProviderLabel}
+                columns={2}
+                value={providerId}
+                onChange={setProviderId}
+                options={providers.map((provider) => ({
+                  id: provider.id,
+                  title: provider.name,
+                  description: provider.id,
+                }))}
+              />
+            )}
+          </div>
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsNameLabel}</span>
             <Input
               value={name}
@@ -325,9 +370,10 @@ export function CreateCredentialDialog({
               placeholder={SETTINGS_STRINGS.credentialsNamePlaceholder}
             />
           </label>
-          <label className="settings-field">
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsTypeLabel}</span>
             <select
+              className="settings-select"
               value={type}
               onChange={(event) =>
                 setType(event.target.value as CredentialType)
@@ -335,27 +381,44 @@ export function CreateCredentialDialog({
             >
               {credentialTypes.map((credType) => (
                 <option key={credType} value={credType}>
-                  {credType}
+                  {CREDENTIAL_TYPE_LABEL[credType]}
                 </option>
               ))}
             </select>
           </label>
-          <label className="settings-field">
+          <div className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsSecretLabel}</span>
-            <Input
-              type="password"
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              autoComplete="off"
-            />
-          </label>
-          <label className="settings-field">
+            <div className="settings-secret-row">
+              <Input
+                type={showSecret ? "text" : "password"}
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSecret((value) => !value)}
+              >
+                {showSecret ? "Hide" : "Show"}
+              </Button>
+            </div>
+            <p className="settings-field-hint">
+              Sealed on save — this secret is never shown again after create.
+            </p>
+          </div>
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsDescriptionLabel}</span>
             <Input
               value={description}
               onChange={(event) => setDescription(event.target.value)}
             />
           </label>
+          <p className="settings-field-hint">
+            Who can use it defaults to this workbench&apos;s agents and tools
+            that hold a grant for the provider.
+          </p>
           {error !== null && (
             <p className="settings-inline-error" role="alert">
               {error}

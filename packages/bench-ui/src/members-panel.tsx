@@ -4,20 +4,21 @@
 // against `./api`; hosts (the Settings bench section today) only pass
 // which bench is current.
 
-import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
-import { CircleAlert, UserPlus } from "lucide-react";
+import { Button } from "@corbits/react-ui";
+import { UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { BenchApiError, inviteMember, listMembers } from "./api";
 import type { BenchMember } from "./api";
 import { InviteMemberDialog } from "./invite-member-dialog";
 import { MemberList } from "./member-list";
 import { BENCH_STRINGS } from "./strings";
-
-type MembersState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly items: readonly BenchMember[] };
 
 export function inviteMemberErrorMessage(cause: unknown): string {
   if (cause instanceof BenchApiError) {
@@ -28,37 +29,45 @@ export function inviteMemberErrorMessage(cause: unknown): string {
 }
 
 function useMembers(tenantId: string): {
-  readonly state: MembersState;
+  readonly query: APIQuery<readonly BenchMember[]>;
   readonly refresh: () => void;
 } {
-  const [state, setState] = useState<MembersState>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<readonly BenchMember[]>>({
+    kind: "loading",
+  });
   const [generation, setGeneration] = useState(0);
+  const refresh = () => setGeneration((value) => value + 1);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     listMembers(tenantId)
       .then((items) => {
-        if (!cancelled) setState({ kind: "ready", items });
+        if (!cancelled) setQuery({ kind: "ready", data: items });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({
-            kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
-          });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
         }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: refresh,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, generation]);
 
-  return { state, refresh: () => setGeneration((value) => value + 1) };
+  return { query, refresh };
 }
 
 export function MembersPanel({ tenantId }: { readonly tenantId: string }) {
-  const { state, refresh } = useMembers(tenantId);
+  const { query, refresh } = useMembers(tenantId);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
@@ -89,17 +98,9 @@ export function MembersPanel({ tenantId }: { readonly tenantId: string }) {
           {BENCH_STRINGS.inviteMemberAction}
         </Button>
       </header>
-      {state.kind === "loading" ? (
-        <Skeleton className="query-skeleton" />
-      ) : state.kind === "error" ? (
-        <EmptyState
-          icon={<CircleAlert />}
-          title={`Couldn't load ${BENCH_STRINGS.membersLoadError}`}
-          description={state.message}
-        />
-      ) : (
-        <MemberList members={state.items} />
-      )}
+      <QueryView query={query} label={BENCH_STRINGS.membersLoadError}>
+        {(members) => <MemberList members={members} />}
+      </QueryView>
       <InviteMemberDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}

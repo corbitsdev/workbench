@@ -97,9 +97,9 @@ export async function prepareDatabase(databaseUrl: string): Promise<void> {
 /**
  * Boots the real hub and a real sidecar as spawned processes, exactly
  * as `scripts/e2e/harness.ts` does for the walking skeleton — a
- * chat-channel create launches a real agent instance over the
+ * chat-workbench create launches a real agent instance over the
  * sidecar's WebSocket dial-in, so an in-process hub with no sidecar
- * attached cannot exercise the "chat channel move" block below; it
+ * attached cannot exercise the "chat workbench move" block below; it
  * would fail every one of those cases with "no sidecar available"
  * rather than proving isolation. `AppLike.request` wraps `fetch`
  * against the hub's real port, matching how a client actually reaches
@@ -125,6 +125,12 @@ export async function bootIsolationHub(
     sessionSecret: "insecure-isolation-suite-secret-0000",
     dataDir: hubDataDir,
     extraEnv: {
+      // Isolation suite mints throwaway accounts over the public signup
+      // surface; production default is closed, so open it only for this boot.
+      WORKBENCH_SIGNUP: "open",
+      // Throwaway accounts have no mail delivery, so their emails can
+      // never verify; opt into the dev/test escape hatch.
+      ALLOW_UNVERIFIED_EMAILS: "1",
       SIGNUP_RATE_LIMIT_MAX: String(ISOLATION_SIGNUP_RATE_LIMIT_MAX),
       SIGNUP_RATE_LIMIT_WINDOW_SECONDS: String(
         ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS,
@@ -156,11 +162,11 @@ export async function bootIsolationHub(
 }
 
 /**
- * A channel-launching route has no "not yet connected" contract the
+ * A workbench-launching route has no "not yet connected" contract the
  * way the native workflow-deploy route does (which answers 502 while
  * the sidecar's dial-in is in flight, see `scripts/e2e/harness.ts`) —
  * it fails outright. So this probes readiness itself: sign up a
- * throwaway account, create a throwaway tenant, and retry a channel
+ * throwaway account, create a throwaway tenant, and retry a workbench
  * create until it succeeds or the sidecar visibly died or too much
  * time passed. The probe tenant is left behind, same as every other
  * tenant this suite mints — it is not the database under test's
@@ -198,20 +204,20 @@ async function waitForSidecarDialIn(
         `sidecar exited before dialing in; output:\n${sidecar.output()}`,
       );
     }
-    const channelResponse = await app.request(
-      `/api/tenants/${tenant.id}/chat/channels`,
+    const workbenchResponse = await app.request(
+      `/api/tenants/${tenant.id}/chat/workbenches`,
       {
         method: "POST",
         headers: { "content-type": "application/json", cookie },
-        body: JSON.stringify({ kind: "channel", name: "sidecar-probe" }),
+        body: JSON.stringify({ kind: "workbench", name: "sidecar-probe" }),
       },
     );
-    if (channelResponse.status === 201) return;
+    if (workbenchResponse.status === 201) return;
     if (Date.now() > deadline) {
       throw new Error(
-        `sidecar never dialed in within 30s (channel create kept ` +
-          `failing with ${channelResponse.status}): ` +
-          `${await channelResponse.text()}\nsidecar output:\n${sidecar.output()}`,
+        `sidecar never dialed in within 30s (workbench create kept ` +
+          `failing with ${workbenchResponse.status}): ` +
+          `${await workbenchResponse.text()}\nsidecar output:\n${sidecar.output()}`,
       );
     }
     await Bun.sleep(500);

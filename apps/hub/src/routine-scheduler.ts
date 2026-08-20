@@ -4,6 +4,10 @@
 // that package's routes.ts doc comment). This mirrors
 // `@corbits/agent-lifecycle`'s own `setInterval` sweep (the only other
 // periodic loop in this repo) rather than pulling in a new dependency.
+// The vendor's own `ScheduleTrigger` (`@intx/workflow`'s
+// `definition/triggers.ts`) is declared upstream but has no runtime
+// consumer at our pin — `live-inert-projector.ts` only projects it
+// structurally — which is exactly why this poller exists.
 //
 // Three guarantees, precisely stated:
 //
@@ -32,6 +36,13 @@ import { getLogger } from "@intx/log";
 export type RoutineSchedulerDeps = {
   store: RoutineStore;
   launcher: RoutineLauncher;
+  /** See `@corbits/routines`' `fireScheduledRoutine` — passed straight
+   * through so a scheduled fire enforces the same honest
+   * workbench-required-or-not rule a manual "run now" does. */
+  deliveryWorkbenchRequired?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
   now?: () => Date;
 };
@@ -46,7 +57,10 @@ const log = getLogger(["hub", "routine-scheduler"]);
  * waiting on `setInterval`.
  */
 export async function tickRoutineScheduler(
-  deps: Pick<RoutineSchedulerDeps, "store" | "launcher">,
+  deps: Pick<
+    RoutineSchedulerDeps,
+    "store" | "launcher" | "deliveryWorkbenchRequired"
+  >,
   at: Date,
 ): Promise<void> {
   const dueRoutines = await deps.store.listDueRoutines(at);
@@ -57,10 +71,17 @@ export async function tickRoutineScheduler(
     // error, just the atomic claim doing its job.
     if (claimed === undefined) continue;
     try {
-      await fireScheduledRoutine(
-        { store: deps.store, launcher: deps.launcher },
-        { tenantId: claimed.tenantId, routine: claimed },
-      );
+      const fireDeps: Parameters<typeof fireScheduledRoutine>[0] = {
+        store: deps.store,
+        launcher: deps.launcher,
+      };
+      if (deps.deliveryWorkbenchRequired !== undefined) {
+        fireDeps.deliveryWorkbenchRequired = deps.deliveryWorkbenchRequired;
+      }
+      await fireScheduledRoutine(fireDeps, {
+        tenantId: claimed.tenantId,
+        routine: claimed,
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       log.error`scheduled fire of routine ${claimed.id} failed: ${reason}`;
@@ -101,6 +122,10 @@ export function createRoutineScheduler(deps: RoutineSchedulerDeps) {
     tickInFlight = true;
     try {
       await tickRoutineScheduler(deps, now());
+    } catch (error) {
+      log.error`routine scheduler tick failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     } finally {
       tickInFlight = false;
     }

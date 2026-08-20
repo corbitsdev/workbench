@@ -2,7 +2,7 @@ import "@corbits/react-ui/styles.css";
 import "./app.css";
 import "./tailwind.css";
 
-import { ThemeProvider } from "@corbits/react-ui";
+import { ThemeProvider, Toaster, toast } from "@corbits/react-ui";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -71,18 +71,26 @@ function Root() {
   }, [runProvisioning]);
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
-    void signOut();
+    void signOut().then((ok) => {
+      if (ok) return;
+      console.error("Sign-out request to the server failed");
+      toast("Couldn't fully sign out on the server — you're signed out here.");
+    });
   }, []);
 
   // Per-user storage when signed in so theme preference follows the account;
-  // signed-out / loading share the anonymous host key.
+  // signed-out / loading share the anonymous host key. Not synced to the
+  // preferences store (CL-5922): @corbits/react-ui's ThemeProvider owns mode
+  // entirely internally (localStorage read/write on setMode/cycleMode) and
+  // exposes no onChange hook or externally-supplied initial value a host
+  // could observe or override without forking the component.
   const themeStorageKey =
     session.kind === "signed-in"
       ? `corbits-theme:${session.user.id}`
       : "corbits-theme";
 
   return (
-    <ThemeProvider storageKey={themeStorageKey}>
+    <ThemeProvider storageKey={themeStorageKey} defaultMode="light">
       <App
         path={path}
         navigate={navigate}
@@ -93,6 +101,7 @@ function Root() {
         provisioningError={provisioningError}
         onRetryProvisioning={handleRetryProvisioning}
       />
+      <Toaster />
     </ThemeProvider>
   );
 }

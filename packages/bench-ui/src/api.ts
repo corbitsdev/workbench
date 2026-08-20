@@ -12,6 +12,19 @@ import {
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
+import { UnauthenticatedError } from "@corbits/api-query";
+import { getBenchSettings, patchBenchSettings } from "@corbits/bench/client";
+import type {
+  BenchSettingsPatch,
+  BenchSettingsResponse,
+} from "@corbits/bench/client";
+
+// Purpose and type aren't part of Interchange's native tenant shape (see
+// this file's header note), so they come from `@corbits/bench`'s own
+// side-table client — re-exported here rather than imported directly by
+// components, so `bench-ui`'s components keep this one seam.
+export { getBenchSettings, patchBenchSettings };
+export type { BenchSettingsPatch, BenchSettingsResponse };
 
 export type BenchMembership = typeof PrincipalSummary.infer;
 export type BenchMember = typeof PrincipalResponse.infer;
@@ -48,7 +61,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new BenchApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new BenchApiError(
@@ -82,7 +95,25 @@ export type CreateBenchInput = {
   readonly parentId?: string;
 };
 
+/**
+ * Creates a bench. A `parentId` (creating a sub-workbench under an
+ * existing one) routes through `@workbench/access-policy`'s gated
+ * surface instead of the native route directly — that surface checks
+ * the parent's own `tenancyCreation` policy against the caller's roles
+ * before ever calling `POST /api/tenants` itself. A bare top-level
+ * bench (no `parentId`) is unaffected and still hits the native route.
+ */
 export function createBench(input: CreateBenchInput): Promise<Bench> {
+  if (input.parentId !== undefined) {
+    return request(
+      `/api/tenants/${input.parentId}/access-policy/child-tenants`,
+      TenantResponse,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: input.name, slug: input.slug }),
+      },
+    );
+  }
   return request("/api/tenants", TenantResponse, {
     method: "POST",
     body: JSON.stringify(input),
@@ -105,4 +136,22 @@ export function inviteMember(
     method: "POST",
     body: JSON.stringify({ email }),
   });
+}
+
+const WorkbenchTenantIds = type({
+  workbenchTenantIds: "string[]",
+});
+
+/** Which of `tenantIds` are workbench child tenancies rather than
+ * workbenches — the one fact `/api/me/principals` cannot answer, since
+ * a native tenant row carries no kind marker (see `./tenancy-kind.ts`).
+ * An empty input never round-trips: there is nothing to ask. */
+export function listWorkbenchTenantIds(
+  tenantIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (tenantIds.length === 0) return Promise.resolve(new Set());
+  return request("/api/workbench-tenancies/kinds", WorkbenchTenantIds, {
+    method: "POST",
+    body: JSON.stringify({ tenantIds }),
+  }).then((body) => new Set(body.workbenchTenantIds));
 }

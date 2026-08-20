@@ -1,97 +1,113 @@
-// Thin mount of `@corbits/settings-ui`'s shell: this file only supplies the
-// literal section registry and adapts the app's bench-selection state (see
-// ../bench-context.tsx) into the shape the package expects. Every section's
-// data-fetching, form state, and save logic lives in the package. People,
-// Roles, and Grants are gated by `useTenancyAccess` — a section stays out
-// of the registry entirely until its permission probe resolves `allowed`,
-// never rendered and disabled.
+// Thin mount of `@corbits/settings-ui`'s shell: the package owns the section
+// registry (Account / Everyone groups, icons, tenancy gates — see
+// `resolveSettingsSectionGroups`); this file only adapts the app's
+// bench-selection state (see ../bench-context.tsx) and the URL into the
+// shape the package expects. `/settings` defaults to the first allowed
+// section; `/settings/:section` deep-links directly to it. The section nav
+// renders here in the stage, beside the active section (`settings-nav.tsx`)
+// — master-detail, the list is never repeated in the section panel.
 
 import {
-  AccountSection,
-  BenchSection,
-  ChatSection,
-  CredentialsSection,
-  GrantsSection,
-  PeopleSection,
-  RolesSection,
+  flattenSettingsSections,
+  resolveActiveSection,
   SettingsShell,
-  useTenancyAccess,
 } from "@corbits/settings-ui";
-import type { SettingsContext, SettingsSection } from "@corbits/settings-ui";
 import { PageShell } from "@corbits/react-ui";
+import { useEffect } from "react";
 
 import { useBench } from "../bench-context";
+import { useSignOut } from "../navigation";
+import {
+  SETTINGS_PATH_PREFIX,
+  settingsEntityIdFromPath,
+  settingsSectionIdFromPath,
+} from "../path-ids";
+import { resolveAppSettingsSectionGroups } from "../settings-groups";
+import { SettingsNav } from "./settings-nav";
+import { StageTopBar } from "../shell/stage-top-bar";
+import { useSettingsAccess } from "../settings-access";
 
-export function SettingsRoute() {
+export function SettingsRoute({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
-  const access = useTenancyAccess(selectedTenantId, selectedPrincipalId);
+  const onSignOut = useSignOut();
+  const access = useSettingsAccess(selectedTenantId, selectedPrincipalId);
+  const groups = resolveAppSettingsSectionGroups(access);
+  const sections = flattenSettingsSections(groups);
+  const requestedId = settingsSectionIdFromPath(path);
+  const activeSection = resolveActiveSection(sections, requestedId);
+  const entityId =
+    activeSection === undefined
+      ? null
+      : settingsEntityIdFromPath(path, activeSection.id);
+  const requestedSectionExists =
+    requestedId !== null &&
+    sections.some((section) => section.id === requestedId);
+  // A gated section (People/Roles/Grants/Credentials) is absent from
+  // `sections` while its probe is still resolving, same as when it's
+  // genuinely denied — wait for every gate to settle before treating a
+  // miss as final, or a deep link to an about-to-be-allowed section would
+  // bounce away before its probe finishes.
+  const accessSettled =
+    access.people !== "loading" &&
+    access.roles !== "loading" &&
+    access.grants !== "loading" &&
+    access.credentials !== "loading";
 
-  const sections: SettingsSection[] = [
-    {
-      id: "bench",
-      title: "Bench",
-      render: (ctx: SettingsContext) => (
-        <BenchSection tenantId={ctx.tenantId} />
-      ),
-    },
-    {
-      id: "chat",
-      title: "Chats & channels",
-      render: (ctx: SettingsContext) => <ChatSection tenantId={ctx.tenantId} />,
-    },
-    {
-      id: "account",
-      title: "Account",
-      render: () => <AccountSection />,
-    },
-  ];
+  const activeSectionId = activeSection?.id ?? null;
 
-  if (access.people === "allowed") {
-    sections.push({
-      id: "people",
-      title: "People",
-      render: (ctx: SettingsContext) => (
-        <PeopleSection tenantId={ctx.tenantId} />
-      ),
-    });
-  }
-  if (access.roles === "allowed") {
-    sections.push({
-      id: "roles",
-      title: "Roles",
-      render: (ctx: SettingsContext) => (
-        <RolesSection tenantId={ctx.tenantId} />
-      ),
-    });
-  }
-  if (access.grants === "allowed") {
-    sections.push({
-      id: "grants",
-      title: "Grants",
-      render: (ctx: SettingsContext) => (
-        <GrantsSection tenantId={ctx.tenantId} />
-      ),
-    });
-  }
-  if (access.credentials === "allowed") {
-    sections.push({
-      id: "credentials",
-      title: "Credentials",
-      render: (ctx: SettingsContext) => (
-        <CredentialsSection tenantId={ctx.tenantId} />
-      ),
-    });
-  }
+  // Bare /settings, and an unknown or gate-denied /settings/:section, both
+  // correct to the first allowed section's own URL — never a fallback
+  // rendered under a URL the section nav disagrees with. Depends on
+  // `activeSectionId` (a primitive), not `activeSection` (a fresh object
+  // every render, since `resolveSettingsSectionGroups` isn't memoized) —
+  // otherwise an unrelated re-render (e.g. BenchProvider persisting the
+  // resolved tenant id) would refire this and double-navigate.
+  useEffect(() => {
+    if (activeSectionId === null) return;
+    if (requestedId !== null && requestedSectionExists) return;
+    if (requestedId !== null && !accessSettled) return;
+    navigate(`${SETTINGS_PATH_PREFIX}/${activeSectionId}`);
+  }, [
+    requestedId,
+    requestedSectionExists,
+    accessSettled,
+    activeSectionId,
+    navigate,
+  ]);
 
   return (
-    <PageShell width="full" className="page-fill">
-      <SettingsShell
-        sections={sections}
-        context={{
-          tenantId: selectedTenantId,
-          principalId: selectedPrincipalId,
-        }}
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={
+          activeSection === undefined
+            ? "Settings"
+            : `Settings · ${activeSection.title}`
+        }
       />
-    </PageShell>
+      <div className="settings-layout min-h-0 flex-1">
+        <SettingsNav path={path} onNavigate={navigate} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PageShell width="full" className="page-fill">
+            <SettingsShell
+              sections={sections}
+              activeId={activeSection?.id ?? null}
+              context={{
+                tenantId: selectedTenantId,
+                principalId: selectedPrincipalId,
+                navigate,
+                entityId,
+                ...(onSignOut !== undefined ? { onSignOut } : {}),
+              }}
+            />
+          </PageShell>
+        </div>
+      </div>
+    </div>
   );
 }

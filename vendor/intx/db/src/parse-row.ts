@@ -12,10 +12,13 @@ import {
   principalKinds,
   principalStatuses,
   signalKinds,
+  TenantConfig,
   workflowDefinitionStatuses,
   workflowDefinitionVersionStatuses,
 } from "@intx/types";
+import { WireGrantRule } from "@intx/types/grant-wire";
 import { RepoAction } from "@intx/types/sidecar";
+import { ToolPackagePinArray } from "@intx/types/tool-packages";
 
 import type {
   approval,
@@ -36,9 +39,13 @@ import type {
   workflowDefinition,
   workflowDefinitionVersion,
   workflowRun,
+  workflowRunDispatch,
+  workflowRunLaunchSpec,
 } from "./schema";
 
 const JSONObject = type("Record<string, unknown>");
+const StringArray = type("string[]");
+const WireGrantRuleArray = WireGrantRule.array();
 
 const GrantEffectValidator = type.enumerated(...grantEffects);
 const GrantOriginValidator = type.enumerated(...grantOrigins);
@@ -58,12 +65,20 @@ const ApprovalStatusValidator = type.enumerated(...approvalStatuses);
 const SignalKindValidator = type.enumerated(...signalKinds);
 
 const workflowRunStatuses = [
+  "deployed",
   "running",
   "completed",
   "failed",
   "cancelled",
 ] as const;
 const WorkflowRunStatusValidator = type.enumerated(...workflowRunStatuses);
+const WorkflowRunDispatchStatusValidator = type.enumerated(
+  "pending",
+  "acknowledged",
+  "settled",
+  "failed",
+);
+const WorkflowRunDispatchKindValidator = type.enumerated("mail", "signal");
 
 const WorkflowDefinitionStatusValidator = type.enumerated(
   ...workflowDefinitionStatuses,
@@ -195,6 +210,53 @@ export function parseWorkflowRunRow(row: typeof workflowRun.$inferSelect) {
   };
 }
 
+export function parseWorkflowRunLaunchSpecRow(
+  row: typeof workflowRunLaunchSpec.$inferSelect,
+) {
+  const sourceOfferingIds = StringArray.assert(row.sourceOfferingIds);
+  assertLaunchSpecSources(sourceOfferingIds, row.defaultSourceOfferingId);
+  return {
+    ...row,
+    definitionSnapshot: JSONObject.assert(row.definitionSnapshot),
+    sourceOfferingIds,
+    deployContent: JSONObject.assert(row.deployContent),
+    toolPackagePins:
+      row.toolPackagePins !== null
+        ? ToolPackagePinArray.assert(row.toolPackagePins)
+        : null,
+  };
+}
+
+export function parseWorkflowRunDispatchRow(
+  row: typeof workflowRunDispatch.$inferSelect,
+) {
+  return {
+    ...row,
+    kind: WorkflowRunDispatchKindValidator.assert(row.kind),
+    status: WorkflowRunDispatchStatusValidator.assert(row.status),
+    stepGrants: WireGrantRuleArray.assert(row.stepGrants),
+  };
+}
+
+function assertLaunchSpecSources(
+  sourceOfferingIds: readonly string[],
+  defaultSourceOfferingId: string,
+): void {
+  if (sourceOfferingIds.length === 0) {
+    throw new Error(
+      "workflow launch spec requires at least one source offering",
+    );
+  }
+  if (new Set(sourceOfferingIds).size !== sourceOfferingIds.length) {
+    throw new Error("workflow launch spec source offering ids must be unique");
+  }
+  if (!sourceOfferingIds.includes(defaultSourceOfferingId)) {
+    throw new Error(
+      `workflow launch spec default source ${defaultSourceOfferingId} is not in its source offering ids`,
+    );
+  }
+}
+
 export function parseOfferingRow(row: typeof offering.$inferSelect) {
   return {
     ...row,
@@ -237,7 +299,7 @@ export function parseModelOfferingRow(row: typeof modelOffering.$inferSelect) {
 export function parseTenantRow(row: typeof tenant.$inferSelect) {
   return {
     ...row,
-    config: row.config !== null ? JSONObject.assert(row.config) : null,
+    config: row.config !== null ? TenantConfig.assert(row.config) : null,
   };
 }
 

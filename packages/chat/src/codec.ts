@@ -22,9 +22,9 @@ export type MailContent = {
   }[];
   /**
    * Set when this mail is a mention fan-out copy: the id of the
-   * channel the message originated in, carried as a reply-to
+   * workbench the message originated in, carried as a reply-to
    * reference rather than a relay hop. Absent on ordinary mail,
-   * including everything sent directly to a channel's own anchor.
+   * including everything sent directly to a workbench's own anchor.
    */
   replyTo?: string;
 };
@@ -54,10 +54,8 @@ export function encodeParts(
   const replyTo = opts?.replyTo;
 
   if (parts.length === 1 && parts[0]?.kind === "text") {
-    return {
-      content: parts[0].text,
-      ...(replyTo !== undefined ? { replyTo } : {}),
-    };
+    const base = { content: parts[0].text };
+    return replyTo !== undefined ? { ...base, replyTo } : base;
   }
 
   const attachments = parts.map((part, index) => {
@@ -75,11 +73,8 @@ export function encodeParts(
     };
   });
 
-  return {
-    content: "",
-    attachments,
-    ...(replyTo !== undefined ? { replyTo } : {}),
-  };
+  const base = { content: "", attachments };
+  return replyTo !== undefined ? { ...base, replyTo } : base;
 }
 
 /**
@@ -165,6 +160,36 @@ export function senderOf(mail: unknown): MailSender {
     throw new Error('mail carries no envelope "from" to derive a sender from');
   }
   return { name: from.name, address: from.email };
+}
+
+const PREVIEW_MAX_LENGTH = 80;
+
+/**
+ * A bounded, best-effort preview snippet for a workbench-list row: the
+ * message's plain text, whitespace-collapsed and truncated to
+ * `PREVIEW_MAX_LENGTH` characters. Text parts only — an attachment-only
+ * message (a file, a structured block) previews as empty rather than a
+ * fabricated "[attachment]" placeholder, and a mail shape this can't
+ * parse previews as empty too, since this is list-row decoration, never
+ * the message content path itself (that's `decodeMail`, which throws
+ * loudly on the same malformed input).
+ */
+export function extractTextPreview(mail: unknown): string {
+  const parsed = MailReadContent(mail);
+  if (parsed instanceof type.errors) return "";
+
+  const segments: string[] = [];
+  for (const body of parsed.textBody) {
+    const value = BodyValue(parsed.bodyValues[body.partId]);
+    if (!(value instanceof type.errors) && value.value.length > 0) {
+      segments.push(value.value);
+    }
+  }
+
+  const text = segments.join(" ").replace(/\s+/g, " ").trim();
+  return text.length > PREVIEW_MAX_LENGTH
+    ? `${text.slice(0, PREVIEW_MAX_LENGTH).trimEnd()}…`
+    : text;
 }
 
 const BodyValue = type({ value: "string" });

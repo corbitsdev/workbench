@@ -1,0 +1,530 @@
+// CL-6137: proves the unprompted greeting (CL-6126) actually lands in
+// a chat's timeline on a real mint — not merely that the mint request
+// itself succeeds. `postCannedGreeting` fires fire-and-forget right
+// after `launchAndJoinAgent` in `POST /workbenches`
+// (`packages/chat/src/routes.ts`), posting a canned opener onto the
+// chat's timeline under the agent's own run with no inference turn;
+// this suite is the only coverage that proves that post actually
+// turns into an agent-authored workbench message on real machinery,
+// not merely that the route returns 201.
+//
+// Mirrors `local-rip.test.ts`'s phase A (onboard → connect a real
+// credential through the key path) rather than `chat.test.ts`'s
+// zero-credential `seedCatalog` setup: the greeting mail rides the
+// same host-session delivery path as every real reply, so it landing
+// with zero user messages sent — on a mint wired to a genuine (stub)
+// credential — proves the whole delivery chain without a paid key.
+
+import { describe, expect, test } from "bun:test";
+
+import { resetSchema, setupDatabase } from "../db-setup.ts";
+import {
+  createGitWorkflowPusher,
+  createHubAPI,
+  DEFAULT_WORKFLOWS,
+  seedTenant,
+  type ApiCall,
+} from "../../packages/hub-client/src/index.ts";
+import {
+  findPersonalTenant,
+  testAndPersistCredential,
+  ensureSeeded,
+  modelSourceFor,
+} from "../../packages/onboarding/src/complete-credential.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/hub-client/src/credential-test.ts";
+import {
+  api,
+  createCleanupHarness,
+  e2eDatabaseUrl,
+  expectStatus,
+  freePort,
+  hop,
+  provisionSidecar,
+  startHub,
+  startSidecar,
+  type ApiResult,
+  type HubHandle,
+  type SpawnedApp,
+} from "./harness.ts";
+
+const { tempDir, track } = createCleanupHarness();
+
+const databaseUrl = e2eDatabaseUrl();
+if (databaseUrl === undefined) {
+  console.warn(
+    "greeting-delivery: DATABASE_URL is not set; suite skipped. Set " +
+      "DATABASE_URL (see .env.example) to run it; CI sets E2E_REQUIRED=1 " +
+      "so this skip can never pass silently there.",
+  );
+}
+
+// Never sent anywhere for real: onboarding never probes it (CL-6123),
+// the deployments it seeds carry it as a stored, never-triggered
+// source, and the canned opening greeting never dials a model — only
+// the Ollama rapid-turn leg ever runs real inference.
+const STUB_API_KEY = "e2e-greeting-delivery-stub-key-not-real";
+
+// E2E_PROVIDER=ollama + OLLAMA_BASE_URL turns this suite into a live
+// acceptance gate the same way `walkthrough.ts`'s E2E_PROVIDER_API_KEY
+// does for Anthropic: the rapid-turn leg below then exercises real
+// inference. The opening greeting itself is canned either way — it
+// never dials a model.
+const OLLAMA_BASE_URL = process.env["OLLAMA_BASE_URL"];
+const USE_OLLAMA =
+  process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
+const CONNECT_PROVIDER = USE_OLLAMA
+  ? ("ollama" as const)
+  : ("anthropic" as const);
+const CONNECT_API_KEY = USE_OLLAMA ? OLLAMA_PLACEHOLDER_SECRET : STUB_API_KEY;
+
+function stringField(data: unknown, field: string, what: string): string {
+  if (typeof data === "object" && data !== null && field in data) {
+    const value = (data as Record<string, unknown>)[field];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  throw new Error(
+    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
+  );
+}
+
+function arrayField(data: unknown, field: string, what: string): unknown[] {
+  if (typeof data === "object" && data !== null && field in data) {
+    const value = (data as Record<string, unknown>)[field];
+    if (Array.isArray(value)) return value;
+  }
+  throw new Error(
+    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
+  );
+}
+
+async function signUp(
+  baseUrl: string,
+  name: string,
+): Promise<{ userId: string; email: string; cookies: string[] }> {
+  const email = `greeting-delivery-${crypto.randomUUID()}@example.invalid`;
+  const password = `pw-${crypto.randomUUID()}`;
+  const res = await api(baseUrl, "POST", "/api/auth/sign-up/email", {
+    name,
+    email,
+    password,
+  });
+  expectStatus(`sign-up for ${name}`, res, 200);
+  if (res.cookies.length === 0) {
+    throw new Error(`sign-up for ${name} returned no session cookie`);
+  }
+  const userId = stringField(
+    (res.data as { user: unknown }).user,
+    "id",
+    `sign-up user field for ${name}`,
+  );
+  return { userId, email, cookies: res.cookies };
+}
+
+describe.skipIf(databaseUrl === undefined)(
+  "greeting delivery: a real mint's agent speaks first with no human message",
+  () => {
+    test("POST /workbenches kind=chat delivers an agent-authored message with zero user sends", async () => {
+      const url = databaseUrl;
+      if (url === undefined) throw new Error("unreachable: suite is skipped");
+
+      await hop("database setup", async () => {
+        await resetSchema(url);
+        const report = await setupDatabase(url);
+        expect(report.action).toBe("migrated");
+      });
+
+      const sidecarId = "greeting-delivery-sidecar";
+      const sidecarToken = crypto.randomUUID();
+      await provisionSidecar(url, sidecarId, sidecarToken);
+
+      const hub: HubHandle = await hop("hub boot", async () =>
+        startHub({
+          databaseUrl: url,
+          port: freePort(),
+          sessionSecret: Buffer.from(
+            crypto.getRandomValues(new Uint8Array(32)),
+          ).toString("hex"),
+          dataDir: await tempDir("e2e-greeting-delivery-hub-data-"),
+        }),
+      );
+      track(hub);
+
+      const sidecar: SpawnedApp = startSidecar({
+        hubPort: new URL(hub.baseUrl).port
+          ? Number(new URL(hub.baseUrl).port)
+          : 80,
+        sidecarId,
+        token: sidecarToken,
+        dataDir: await tempDir("e2e-greeting-delivery-sidecar-data-"),
+      });
+      track(sidecar);
+
+      const hubApi: ApiCall = createHubAPI(hub.baseUrl);
+
+      const user = await hop("sign-up", () =>
+        signUp(hub.baseUrl, "Greeting Delivery Tester"),
+      );
+
+      const provisioned = await hop(
+        "first-login provisioning mints a personal bench, unseeded",
+        async () => {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            "/api/onboarding/provision",
+            { name: "Greeting Delivery Tester's Bench" },
+            user.cookies,
+          );
+          expectStatus("provision", res, 200);
+          const data = res.data as { kind: string; tenantSlug: string };
+          expect(data.kind).toBe("provisioned");
+          return data;
+        },
+      );
+
+      const tenant = await hop(
+        "the freshly provisioned bench resolves through findPersonalTenant",
+        async () => {
+          const found = await findPersonalTenant(
+            hubApi,
+            user.cookies,
+            provisioned.tenantSlug,
+          );
+          if (found === undefined) {
+            throw new Error(
+              `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
+            );
+          }
+          return found;
+        },
+      );
+
+      const pushWorkflow = createGitWorkflowPusher();
+
+      const connected = await hop(
+        "connecting a real inference credential via the key path (no provider probe — CL-6123)",
+        async () => {
+          const testArgs = {
+            api: hubApi,
+            cookies: user.cookies,
+            hubUrl: hub.baseUrl,
+            userId: user.userId,
+            userEmail: user.email,
+            provider: CONNECT_PROVIDER,
+            apiKey: CONNECT_API_KEY,
+            pushWorkflow,
+            log: () => undefined,
+          };
+          const result = await testAndPersistCredential(
+            USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+              ? { ...testArgs, baseURLOverride: OLLAMA_BASE_URL }
+              : testArgs,
+          );
+          if (result.kind !== "connected") {
+            throw new Error(
+              `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
+            );
+          }
+          return result;
+        },
+      );
+
+      await hop(
+        "the real, unmodified connect flow fully seeds every default workflow, including 'assistant'",
+        async () => {
+          const deadline = Date.now() + 60_000;
+          for (;;) {
+            if (sidecar.exited()) {
+              throw new Error(
+                `sidecar exited before ensureSeeded could run; output:\n${sidecar.output()}`,
+              );
+            }
+            try {
+              const seedArgs = {
+                api: hubApi,
+                cookies: user.cookies,
+                hubUrl: hub.baseUrl,
+                pushWorkflow,
+                log: () => undefined,
+                tenant: connected,
+                provider: CONNECT_PROVIDER,
+                apiKey: CONNECT_API_KEY,
+              };
+              await ensureSeeded(
+                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+                  ? { ...seedArgs, baseURLOverride: OLLAMA_BASE_URL }
+                  : seedArgs,
+              );
+              break;
+            } catch (cause) {
+              if (Date.now() > deadline) throw cause;
+              await Bun.sleep(1000);
+            }
+          }
+        },
+      );
+
+      async function deploySeededWorkflows(): Promise<void> {
+        const deadline = Date.now() + 60_000;
+        for (;;) {
+          if (sidecar.exited()) {
+            throw new Error(
+              `sidecar exited before default workflows could deploy; output:\n${sidecar.output()}`,
+            );
+          }
+          try {
+            await seedTenant({
+              api: hubApi,
+              cookies: user.cookies,
+              hubUrl: hub.baseUrl,
+              tenant: {
+                tenantId: tenant.tenantId,
+                principalId: tenant.principalId,
+                domain: tenant.tenantDomain,
+              },
+              model:
+                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
+                  ? modelSourceFor(
+                      CONNECT_PROVIDER,
+                      CONNECT_API_KEY,
+                      OLLAMA_BASE_URL,
+                    )
+                  : modelSourceFor(CONNECT_PROVIDER, CONNECT_API_KEY),
+              pushWorkflow,
+              log: () => undefined,
+              workflows: DEFAULT_WORKFLOWS,
+              confirmDeployments: false,
+            });
+            return;
+          } catch (cause) {
+            if (Date.now() > deadline) throw cause;
+            await Bun.sleep(1000);
+          }
+        }
+      }
+
+      await hop(
+        "every default workflow deploys and goes live",
+        deploySeededWorkflows,
+      );
+
+      const assistantDefinitionId = await hop(
+        "the 'assistant' default workflow is invitable tenant-wide",
+        async () => {
+          const deadline = Date.now() + 60_000;
+          for (;;) {
+            const res = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
+              undefined,
+              user.cookies,
+            );
+            if (res.status === 200) {
+              const items = arrayField(
+                res.data,
+                "items",
+                "list invitable definitions",
+              ) as { id: string; name: string }[];
+              const assistant = items.find((item) => item.name === "assistant");
+              if (assistant !== undefined) return assistant.id;
+            }
+            if (Date.now() > deadline) {
+              throw new Error(
+                `"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`,
+              );
+            }
+            await Bun.sleep(1000);
+          }
+        },
+      );
+
+      const { chatId, agentAddress } = await hop(
+        "POST /workbenches kind=chat definitionId=assistant mints a chat with its one agent already joined",
+        async () => {
+          const deadline = Date.now() + 60_000;
+          let res: ApiResult;
+          for (;;) {
+            if (sidecar.exited()) {
+              throw new Error(
+                `sidecar exited before chat creation; output:\n${sidecar.output()}`,
+              );
+            }
+            res = await api(
+              hub.baseUrl,
+              "POST",
+              `/api/tenants/${tenant.tenantId}/chat/workbenches`,
+              { kind: "chat", definitionId: assistantDefinitionId },
+              user.cookies,
+            );
+            if (res.status !== 500) break;
+            if (Date.now() > deadline) {
+              throw new Error(
+                `chat never became mintable (hub kept answering 500): ` +
+                  `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+              );
+            }
+            await Bun.sleep(1000);
+          }
+          expectStatus("create chat", res, 201);
+          const id = stringField(res.data, "id", "create chat");
+          const participants = arrayField(
+            res.data,
+            "participants",
+            "create chat",
+          ) as { address: string; handle: string }[];
+          const agent = participants.find((p) => p.handle === "myra");
+          if (agent === undefined) {
+            throw new Error(
+              `chat has no "myra" agent participant: ${JSON.stringify(participants)}`,
+            );
+          }
+          return { chatId: id, agentAddress: agent.address };
+        },
+      );
+
+      // The proof: poll the freshly minted chat's own timeline for an
+      // agent-authored message, sending no user message at any point.
+      // The greeting is canned (`packages/chat`'s `GREETING_VARIATIONS`)
+      // and posts with no inference turn, so in both provider modes the
+      // first agent-authored message is deterministic prose naming the
+      // agent and asking a question — never a credential error.
+      await hop(
+        "an agent-authored message lands in the chat with no user message ever sent",
+        async () => {
+          const deadline = Date.now() + 60_000;
+          for (;;) {
+            const res = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
+              undefined,
+              user.cookies,
+            );
+            expectStatus("list chat messages", res, 200);
+            const items = arrayField(
+              res.data,
+              "items",
+              "list chat messages",
+            ) as {
+              sender: { address: string };
+              parts: { kind: string; text?: string }[];
+            }[];
+            const agentMessage = items.find(
+              (item) =>
+                item.sender.address === agentAddress &&
+                item.parts.some((p) => p.kind === "text"),
+            );
+            if (agentMessage !== undefined) {
+              const text = agentMessage.parts
+                .filter((p) => p.kind === "text")
+                .map((p) => p.text ?? "")
+                .join("");
+              if (
+                !/Myra/.test(text) ||
+                !text.trimEnd().endsWith("?") ||
+                /credential error/i.test(text)
+              ) {
+                throw new Error(
+                  `expected the canned opener naming Myra and asking a ` +
+                    `question, got: ${JSON.stringify(agentMessage)}`,
+                );
+              }
+              console.log(`  Myra's canned opener: ${text}`);
+              return;
+            }
+            if (Date.now() > deadline) {
+              throw new Error(
+                `no agent-authored message landed in chat ${chatId} within ` +
+                  `60s of mint with zero user messages sent; messages seen: ` +
+                  `${JSON.stringify(items)}\nsidecar output:\n${sidecar.output()}`,
+              );
+            }
+            await Bun.sleep(1000);
+          }
+        },
+      );
+
+      if (USE_OLLAMA) {
+        // The conversation must continue past the greeting, across
+        // several rapid-fire turns: N=6 sequential messages, each sent
+        // the instant the previous reply lands (zero settle delay,
+        // overridable only for local debugging via
+        // E2E_TURN2_DELAY_MS) — the real user pattern that a run
+        // settling to "completed" between turns (see
+        // `@corbits/folded-runs`' `isFoldedRunSettled`) and a chat
+        // orchestrator that only re-arms its silent-turn notice on a
+        // real reply (see `chat-orchestrator.ts`'s
+        // `notifiedDropAddresses`) can both go silently wrong under.
+        // This is where a run that ends after its opening turn, a
+        // mail rejected as terminal, or two consecutive silent turns
+        // swallowing each other's notice, all show.
+        const RAPID_TURN_COUNT = 6;
+        for (let turn = 1; turn <= RAPID_TURN_COUNT; turn++) {
+          await hop(`rapid turn ${turn} gets a real answer`, async () => {
+            const settleMs = Number(process.env["E2E_TURN2_DELAY_MS"] ?? "0");
+            if (settleMs > 0) await Bun.sleep(settleMs);
+            const sent = await api(
+              hub.baseUrl,
+              "POST",
+              `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
+              {
+                parts: [
+                  {
+                    kind: "text",
+                    text: `turn ${turn}: say the number ${turn}`,
+                  },
+                ],
+              },
+              user.cookies,
+            );
+            expectStatus(`send turn ${turn}`, sent, 201);
+            const sentAt = Date.now();
+            const deadline = Date.now() + 180_000;
+            for (;;) {
+              const res = await api(
+                hub.baseUrl,
+                "GET",
+                `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
+                undefined,
+                user.cookies,
+              );
+              const items = arrayField(
+                res.data,
+                "items",
+                "list chat messages",
+              ) as {
+                sender: { address: string };
+                createdAt: string;
+                parts: { kind: string; text?: string }[];
+              }[];
+              const agentTexts = items
+                .filter(
+                  (item) =>
+                    item.sender.address === agentAddress &&
+                    item.parts.some((p) => p.kind === "text") &&
+                    new Date(item.createdAt).getTime() > sentAt,
+                )
+                .map((item) => item.parts.map((p) => p.text ?? "").join(""));
+              if (agentTexts.length >= 1) {
+                console.log(
+                  `  Myra's answer to turn ${turn} (ollama): ${agentTexts.join(" ||| ")}`,
+                );
+                return;
+              }
+              if (Date.now() > deadline) {
+                throw new Error(
+                  `no answer to turn ${turn} within 180s; agent messages: ` +
+                    `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
+                    `${hub.output().slice(-60000)}\nsidecar output (tail):\n` +
+                    `${sidecar.output().slice(-6000)}`,
+                );
+              }
+              await Bun.sleep(2000);
+            }
+          });
+        }
+      }
+    }, 900_000);
+  },
+);

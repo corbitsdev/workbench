@@ -1,0 +1,41 @@
+export type PreferencesStore = {
+  /** Returns the stored preferences object, or `{}` if no row exists yet. */
+  getPreferences(
+    tenantId: string,
+    principalId: string,
+  ): Promise<Record<string, unknown>>;
+  /**
+   * Shallow-merges `patch` into the existing preferences object (creating a
+   * row if absent) and returns the merged object. Keys not present in
+   * `patch` are preserved; keys in `patch` overwrite the existing value.
+   */
+  patchPreferences(
+    tenantId: string,
+    principalId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>;
+};
+
+function key(tenantId: string, principalId: string): string {
+  return `${tenantId}\u0000${principalId}`;
+}
+
+/**
+ * In-memory store for unit tests and local smoke. Production wiring uses a
+ * drizzle-backed implementation against the same interface (see pg-store.ts).
+ */
+export function createMemoryPreferencesStore(): PreferencesStore {
+  const rows = new Map<string, Record<string, unknown>>();
+
+  return {
+    async getPreferences(tenantId, principalId) {
+      return { ...(rows.get(key(tenantId, principalId)) ?? {}) };
+    },
+    async patchPreferences(tenantId, principalId, patch) {
+      const existing = rows.get(key(tenantId, principalId)) ?? {};
+      const merged = { ...existing, ...patch };
+      rows.set(key(tenantId, principalId), merged);
+      return { ...merged };
+    },
+  };
+}

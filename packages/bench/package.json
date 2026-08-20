@@ -1,0 +1,29 @@
+{
+  "name": "@corbits/bench",
+  "private": true,
+  "description": "Per-bench purpose and type: a small side-table keyed by tenant id, since benches are Interchange tenants and the native tenant route carries neither field.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/api-query": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -38,7 +38,35 @@ const SidecarEnv = type({
   // workflow-process child's spawn env so per-step tool
   // materialization resolves the exact registries the operator pinned.
   "SIDECAR_TOOL_REGISTRIES?": "string",
+  // Operator overrides for two workflow-supervisor timing bindings,
+  // threaded verbatim to every deployment's supervisor
+  // (`createSidecarWorkflowSupervisor`'s `consumedRetentionMs` /
+  // `readyTimeoutMs`). Unset leaves each supervisor on the vendor's own
+  // default (`DEFAULT_CONSUMED_RETENTION_MS` / `DEFAULT_READY_TIMEOUT_MS`).
+  // Validated as positive-finite-number strings, matching the
+  // `SIDECAR_CACHE_MAX_BYTES`-style numeric env keys.
+  "CONSUMED_RETENTION_MS?": "string",
+  "CHILD_READY_TIMEOUT_MS?": "string",
 });
+
+/**
+ * Parse an optional positive-finite-number env value. Returns `undefined`
+ * for an unset key so the caller's binding falls back to the vendor's own
+ * default rather than this boundary inventing one.
+ */
+function parsePositiveMsEnv(
+  raw: string | undefined,
+  name: string,
+): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      `invalid sidecar environment: ${name} must be a positive finite number; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return n;
+}
 
 export type SidecarConfig = {
   readonly dataDir: string;
@@ -55,6 +83,19 @@ export type SidecarConfig = {
    * default).
    */
   readonly toolRegistries: string | undefined;
+  /**
+   * Consumed-dedup retention horizon (ms), forwarded verbatim to every
+   * deployment's supervisor. `undefined` means the operator did not
+   * override it; the supervisor applies `DEFAULT_CONSUMED_RETENTION_MS`
+   * (24h).
+   */
+  readonly consumedRetentionMs: number | undefined;
+  /**
+   * Spawn ready-handshake timeout (ms), forwarded verbatim to every
+   * deployment's supervisor. `undefined` means the operator did not
+   * override it; the supervisor applies `DEFAULT_READY_TIMEOUT_MS` (30s).
+   */
+  readonly readyTimeoutMs: number | undefined;
 };
 
 /**
@@ -85,5 +126,13 @@ export function readSidecarConfig(
     home: parsed.HOME,
     tmpdir: parsed.TMPDIR,
     toolRegistries: parsed.SIDECAR_TOOL_REGISTRIES,
+    consumedRetentionMs: parsePositiveMsEnv(
+      parsed.CONSUMED_RETENTION_MS,
+      "CONSUMED_RETENTION_MS",
+    ),
+    readyTimeoutMs: parsePositiveMsEnv(
+      parsed.CHILD_READY_TIMEOUT_MS,
+      "CHILD_READY_TIMEOUT_MS",
+    ),
   };
 }

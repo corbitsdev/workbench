@@ -3,7 +3,7 @@
   "private": true,
   "description": "Launch, wake, and mail machinery for folded interactive workflow runs, hosted-service-agnostic",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -13,16 +13,21 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-lifecycle": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*",
     "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

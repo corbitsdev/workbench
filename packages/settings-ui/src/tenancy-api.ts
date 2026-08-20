@@ -16,6 +16,7 @@ import {
   type GrantOrigin,
   type UpdatablePrincipalStatus,
 } from "@intx/types";
+import { UnauthenticatedError } from "@corbits/api-query";
 
 export type Principal = typeof PrincipalResponse.infer;
 export type Role = typeof RoleResponse.infer;
@@ -53,7 +54,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new TenancyApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (response.status === 403) {
     throw new TenancyApiError(`Not permitted to view ${path}.`, 403);

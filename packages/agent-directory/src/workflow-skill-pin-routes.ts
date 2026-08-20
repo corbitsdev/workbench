@@ -1,0 +1,179 @@
+// Gives a running workflow (Myra) a way to pin a skill onto ANY
+// definition in its own tenant — the execution half of a `pin_skill`
+// tool the workbench-tools side wires up, mirroring
+// `@corbits/task-planner`'s `createWorkflowDispatchRoutes` and this
+// package's own `createWorkflowCapabilityRoutes`: a workflow child has
+// no browser session, only its sidecar bearer token and its own run
+// address, so it authenticates through a `WorkflowRunAuthenticator`
+// rather than the tenant-session pipeline `./routes.ts` uses. Mounted
+// OUTSIDE tenant-session middleware.
+//
+// Unlike `workflow-capability-routes.ts` (self-DEFINITION scoped: a run
+// may only touch its own agent definition), this surface is
+// self-TENANT scoped: the caller may pin a skill onto any definition
+// that belongs to its own tenant, including a definition someone else
+// authored. That is deliberately wider, for the same reason
+// `workflow-dispatch-routes.ts`'s file header gives for skipping
+// `requireGrant`: `@corbits/skills-tools`' `pin_skill` tool declares
+// `approval: "ask"`, so the reactor suspends every call as a pending
+// approval and renders it in-chat before this route ever runs — a
+// human already approved this exact pin. The human is the authorizer
+// here, not a grant row; this route still enforces, unconditionally,
+// that the target definition belongs to the authenticated run's own
+// tenant and is never a workbench host (the same host guard
+// `workflow-capability-routes.ts` applies).
+import { type } from "arktype";
+import { and, eq } from "drizzle-orm";
+import { Hono } from "hono";
+
+import type { DB } from "@intx/db";
+import { workflowDefinition } from "@intx/db/schema";
+import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
+import type { AssetService } from "@intx/hub-sessions";
+
+import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+
+import { reindexPinnedSkills } from "./agent-workflow";
+import type { PinnedSkillIndexResolver } from "./routes";
+import type { DefinitionSkillsStore } from "./skills-store";
+import type {
+  WorkflowCapabilityRunScope,
+  WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
+} from "./workflow-capability-routes";
+
+/** Where a definition's serialized `WorkflowDefinition` lives in its
+ * asset tree — same path `./routes.ts`/`./workflow-capability-routes.ts`
+ * read/write. */
+const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
+
+/** Structurally the same run scope `workflow-capability-routes.ts`
+ * resolves — reused by type alias rather than a fresh declaration, since
+ * this route lives in the same package and there is no cycle risk to
+ * avoid (contrast `workflow-dispatch-routes.ts`, which is in a different
+ * package and redeclares the shape for that reason). */
+export type WorkflowSkillPinRunScope = WorkflowCapabilityRunScope;
+export type WorkflowRunAuthenticator = WorkflowCapabilityRunAuthenticator;
+
+export type WorkflowSkillPinEnv = {
+  Variables: { workflowSkillPinScope: WorkflowSkillPinRunScope };
+};
+
+function errorEnvelope(code: string, message: string) {
+  return { error: { code, message } };
+}
+
+function definitionNotFound(definitionId: string) {
+  return errorEnvelope(
+    "not_found",
+    `No agent definition "${definitionId}" in this workbench`,
+  );
+}
+
+/** Same host-guard `./routes.ts`/`./workflow-capability-routes.ts`
+ * apply: a workbench host is never a target a workflow run may mutate
+ * through this surface either. Duplicated rather than imported since
+ * `workflow-capability-routes.ts` does not export its own copy. */
+function hostGuardedRow(
+  row: { readonly name: string; readonly assetId: string | null } | undefined,
+): row is { readonly name: string; readonly assetId: string } {
+  return (
+    row !== undefined &&
+    row.assetId !== null &&
+    !isWorkbenchHostDefinitionName(row.name)
+  );
+}
+
+const PinBody = type({
+  definitionId: "string > 0",
+  skillName: "string > 0",
+});
+
+export type CreateWorkflowSkillPinRoutesDeps = {
+  db: DB["db"];
+  assetService: AssetService;
+  skillIndex: PinnedSkillIndexResolver;
+  skillsStore: DefinitionSkillsStore;
+  authenticator: WorkflowRunAuthenticator;
+};
+
+export function createWorkflowSkillPinRoutes(
+  deps: CreateWorkflowSkillPinRoutesDeps,
+): Hono<WorkflowSkillPinEnv> {
+  const app = new Hono<WorkflowSkillPinEnv>();
+
+  app.use("*", async (c, next) => {
+    const authHeader = c.req.header("authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : "";
+    const address = c.req.header("x-workflow-run-address") ?? "";
+    const scope = await deps.authenticator.resolve(token, address);
+    if (scope === null) {
+      return c.json(
+        errorEnvelope(
+          "unauthorized",
+          "Missing or unrecognized sidecar bearer token / run address",
+        ),
+        401,
+      );
+    }
+    c.set("workflowSkillPinScope", scope);
+    await next();
+  });
+
+  app.post("/pin", async (c) => {
+    const scope = c.get("workflowSkillPinScope");
+    const body = PinBody(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        errorEnvelope("bad_request", `invalid pin: ${body.summary}`),
+        400,
+      );
+    }
+
+    const row = await deps.db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, body.definitionId),
+        eq(workflowDefinition.tenantId, scope.tenantId),
+      ),
+    });
+    if (!hostGuardedRow(row)) {
+      return c.json(definitionNotFound(body.definitionId), 404);
+    }
+
+    const workflowJson = new TextDecoder().decode(
+      await deps.assetService.readAssetBlob({
+        assetId: row.assetId,
+        path: AGENT_DEFINITION_ASSET_PATH,
+      }),
+    );
+
+    const skills = await deps.skillsStore.getSkills(row.assetId);
+    const nextSkills = skills.includes(body.skillName)
+      ? skills
+      : [...skills, body.skillName];
+    const nextWorkflowJson = reindexPinnedSkills(
+      workflowJson,
+      await deps.skillIndex.resolve(
+        scope.tenantId,
+        scope.principalId,
+        nextSkills,
+      ),
+    );
+
+    await deps.assetService.populateAsset({
+      assetId: row.assetId,
+      ref: DEFAULT_ASSET_REF,
+      principal: { kind: "hub" },
+      tree: {
+        files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
+        message: `Pin ${body.skillName} skill to ${row.name}`,
+      },
+    });
+    await deps.skillsStore.setSkills(row.assetId, nextSkills);
+
+    return c.json({ skills: nextSkills });
+  });
+
+  return app;
+}

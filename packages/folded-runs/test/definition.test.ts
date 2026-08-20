@@ -15,7 +15,7 @@ function foldedDefinition(overrides: Partial<Record<string, unknown>> = {}) {
       host: {
         kind: "step",
         agent: {
-          systemPrompt: "you are a channel host",
+          systemPrompt: "you are a workbench host",
           toolPackagePins: [],
           inference: { sources: [{ model: "claude-sonnet-5" }] },
         },
@@ -31,7 +31,7 @@ describe("readFoldedBody", () => {
   test("extracts the launch-relevant subset of a valid single-step definition", () => {
     const body = readFoldedBody(foldedDefinition());
     expect(body).toEqual({
-      systemPrompt: "you are a channel host",
+      systemPrompt: "you are a workbench host",
       toolPackagePins: [],
       grantRequirements: [],
       credentialBindings: [],

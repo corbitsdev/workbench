@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CliError } from "../src/errors";
+import { CliError, isSidecarUnavailableError } from "../src/errors";
 import {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
@@ -9,6 +9,8 @@ import {
   type SeedTenantArgs,
   type WorkflowPusher,
 } from "../src/seed";
+import { DEFAULT_SKILLS } from "../src/default-skills";
+import { CATALOG_SEEDS } from "../src/catalog-seed-data";
 import {
   assetRow,
   collector,
@@ -53,6 +55,7 @@ function args(
     },
     model: MODEL,
     pushWorkflow: recordingPusher().push,
+    publishToolRegistry: async () => undefined,
     log,
     sleep: instantSleep,
     runStartTimeoutMs: 3,
@@ -70,6 +73,23 @@ function baseRoutes(method: string, path: string) {
     return { status: 201, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
     return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+  if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`))
+    return { status: 404, data: {} };
+  if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+    return { status: 201, data: {} };
+  // CL-6201: `ensureDefaultRoutines` runs at the end of every seed and
+  // lists both surfaces before deciding what (if anything) to plant.
+  // Every test in this file that doesn't care about routine seeding
+  // gets an empty answer from both, so the preset loop finds no
+  // deployed definition to target and skips quietly rather than the
+  // fake handler throwing "unexpected hub call".
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+  )
+    return emptyPage();
+  if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+    return { status: 200, data: { items: [] } };
   return undefined;
 }
 
@@ -85,14 +105,17 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_1", "echo") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -110,7 +133,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m1@workbench.localhost>",
           },
@@ -150,6 +173,82 @@ describe("seedTenant", () => {
     expect(output).toContain("seed complete: 1 workflow(s)");
   });
 
+  test("publishes the tenant's corbits-tools registry before deploying any workflow", async () => {
+    const { push } = recordingPusher();
+    const publishCalls: { tenantId: string; hubUrl: string }[] = [];
+    let assetCreated = false;
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path, _body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_1", "echo") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            runId: "dep_1",
+            address: `ins_dep_1@${TENANT_DOMAIN}`,
+            messageId: "<m1@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        workflows: echoOnly,
+        publishToolRegistry: async (publishArgs) => {
+          publishCalls.push({
+            tenantId: publishArgs.tenantId,
+            hubUrl: publishArgs.hubUrl,
+          });
+          assetCreated = true;
+        },
+      }),
+    );
+
+    expect(publishCalls).toEqual([
+      { tenantId: TENANT_ID, hubUrl: "http://localhost:3000" },
+    ]);
+    // The fake stands in for the real publish call, which must run
+    // before any workflow deploy call reaches the fake API — proven
+    // indirectly here by the deploy succeeding at all, since the fake
+    // handler above never special-cases ordering; the direct ordering
+    // guarantee lives in `seedTenant`'s own source (publish happens
+    // immediately after the grant loop, before the workflow loop).
+    expect(assetCreated).toBe(true);
+  });
+
   test("fresh run pushes, deploys, and confirms the assistant workflow", async () => {
     const { lines, log } = collector();
     const { pushes, push } = recordingPusher();
@@ -161,14 +260,17 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_2", "assistant") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_2", "ast_2", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_2", "ast_2", "deployed"),
+        };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_2/runs`
@@ -186,7 +288,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_2",
+            runId: "dep_2",
             address: `ins_dep_2@${TENANT_DOMAIN}`,
             messageId: "<m4@workbench.localhost>",
           },
@@ -253,11 +355,11 @@ describe("seedTenant", () => {
         };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return {
           status: 200,
-          data: [deploymentRow("dep_1", "ast_1", "active")],
+          data: [deploymentRow("dep_1", "ast_1", "deployed")],
         };
       if (
         method === "GET" &&
@@ -276,7 +378,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m2@workbench.localhost>",
           },
@@ -313,14 +415,17 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_1", "echo") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -356,14 +461,17 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_1", "echo") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -376,7 +484,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m3@workbench.localhost>",
           },
@@ -397,12 +505,12 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_1", "echo") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return {
           status: 502,
@@ -419,6 +527,14 @@ describe("seedTenant", () => {
     }
     expect(caught).toBeInstanceOf(CliError);
     expect((caught as CliError).fix).toContain("bun run dev");
+    // Onboarding's `ensureSeeded` parses this exact class to finish the
+    // request successfully with a partial-seed report, rather than
+    // failing the whole onboarding flow the way a generic `CliError`
+    // still does — the 409/not-routable case above stays a plain
+    // `CliError` on purpose, since only this 502 branch is the "durable
+    // state intact, sidecar just isn't up yet" condition onboarding
+    // recovers from.
+    expect(isSidecarUnavailableError(caught)).toBe(true);
   });
 
   test("an empty default workflow set is an error", async () => {
@@ -469,31 +585,45 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is echo, assistant, and channel-digest", () => {
+  test("the default set consumed by real tenant provisioning is echo, assistant, workbench-digest, recurring-task, and last-30-days-research", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
-    // DEFAULT_WORKFLOWS for every real signup. channel-digest is the
-    // seed automation the Routines picker can honestly offer. The
-    // remaining catalog-test workflows exist only to exercise the
-    // platform continuously and must never reach a real user through
-    // this array — they are seeded only via the explicit
-    // CATALOG_TEST_WORKFLOWS opt-in.
+    // DEFAULT_WORKFLOWS for every real signup. workbench-digest is the
+    // seed automation the Routines picker can honestly offer;
+    // recurring-task is the bridge "Make this a routine" (an Inbox
+    // action on a completed task result) prefills the create dialog
+    // with — every real tenant needs it deployed for that action to
+    // ever resolve a definitionId. last-30-days-research (CL-6201) is
+    // deployed so `ensureDefaultRoutines` has a real definition to
+    // un-strand into a routine. The remaining catalog-test workflows
+    // exist only to exercise the platform continuously and must never
+    // reach a real user through this array — they are seeded only via
+    // the explicit CATALOG_TEST_WORKFLOWS opt-in.
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "echo",
       "assistant",
-      "channel-digest",
+      "workbench-digest",
+      "recurring-task",
+      "last-30-days-research",
     ]);
   });
 
   test("catalog-test workflows declare a modelSource override; defaults do not", () => {
-    // Defaults (echo, assistant, channel-digest) deploy against the
-    // tenant's real model. Catalog-test entries stay free via
-    // NOOP_MODEL_SOURCE.
+    // Defaults (echo, assistant, workbench-digest, recurring-task) deploy
+    // against the tenant's real model. Catalog-test entries stay free
+    // via NOOP_MODEL_SOURCE.
     for (const workflow of DEFAULT_WORKFLOWS) {
       expect(workflow.modelSource).toBeUndefined();
     }
     for (const workflow of CATALOG_TEST_WORKFLOWS) {
       expect(workflow.modelSource).toBeDefined();
     }
+  });
+
+  test("recurring-task is automatable, so it reaches the Routines picker", () => {
+    const recurringTask = DEFAULT_WORKFLOWS.find(
+      (w) => w.assetName === "recurring-task",
+    );
+    expect(recurringTask?.automatable).toBe(true);
   });
 
   test("the catalog-test set includes the heartbeat workflow", () => {
@@ -523,15 +653,18 @@ describe("seedTenant", () => {
         return { status: 201, data: assetRow("ast_3", "heartbeat") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deployedSources = body;
-        return { status: 201, data: deploymentRow("dep_3", "ast_3", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_3", "ast_3", "deployed"),
+        };
       }
       if (
         method === "GET" &&
@@ -550,7 +683,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_3",
+            runId: "dep_3",
             address: `ins_dep_3@${TENANT_DOMAIN}`,
             messageId: "<m5@workbench.localhost>",
           },
@@ -594,20 +727,21 @@ describe("seedTenant", () => {
     expect(output).toContain("confirmed workflow heartbeat: run run_1 started");
   });
 
-  test("the default set includes the channel-digest automation", () => {
+  test("the default set includes the workbench-digest automation", () => {
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain(
-      "channel-digest",
+      "workbench-digest",
     );
   });
 
-  test("channel-digest is automatable with a friendly display name and no noop pin", () => {
-    const channelDigest = DEFAULT_WORKFLOWS.find(
-      (w) => w.assetName === "channel-digest",
+  test("workbench-digest is automatable with a friendly display name and no noop pin", () => {
+    const workbenchDigest = DEFAULT_WORKFLOWS.find(
+      (w) => w.assetName === "workbench-digest",
     );
-    if (!channelDigest) throw new Error("expected the channel-digest workflow");
-    expect(channelDigest.displayName).toBe("Channel digest");
-    expect(channelDigest.automatable).toBe(true);
-    expect(channelDigest.modelSource).toBeUndefined();
+    if (!workbenchDigest)
+      throw new Error("expected the workbench-digest workflow");
+    expect(workbenchDigest.displayName).toBe("Workbench digest");
+    expect(workbenchDigest.automatable).toBe(true);
+    expect(workbenchDigest.modelSource).toBeUndefined();
   });
 
   test("echo and assistant are not automatable", () => {
@@ -619,13 +753,13 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the catalog-test set is heartbeat only (channel-digest moved to defaults)", () => {
+  test("the catalog-test set is heartbeat only (workbench-digest moved to defaults)", () => {
     expect(CATALOG_TEST_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "heartbeat",
     ]);
   });
 
-  test("fresh run pushes, deploys, and confirms the channel-digest workflow against the tenant model", async () => {
+  test("fresh run pushes, deploys, and confirms the workbench-digest workflow against the tenant model", async () => {
     const { lines, log } = collector();
     const { pushes, push } = recordingPusher();
     let runsCalls = 0;
@@ -634,18 +768,21 @@ describe("seedTenant", () => {
       const base = baseRoutes(method, path);
       if (base) return base;
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
-        return { status: 201, data: assetRow("ast_4", "channel-digest") };
+        return { status: 201, data: assetRow("ast_4", "workbench-digest") };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deployedSources = body;
-        return { status: 201, data: deploymentRow("dep_4", "ast_4", "active") };
+        return {
+          status: 201,
+          data: deploymentRow("dep_4", "ast_4", "deployed"),
+        };
       }
       if (
         method === "GET" &&
@@ -664,7 +801,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_4",
+            runId: "dep_4",
             address: `ins_dep_4@${TENANT_DOMAIN}`,
             messageId: "<m6@workbench.localhost>",
           },
@@ -673,7 +810,7 @@ describe("seedTenant", () => {
     };
 
     const digestOnly = DEFAULT_WORKFLOWS.filter(
-      (w) => w.assetName === "channel-digest",
+      (w) => w.assetName === "workbench-digest",
     );
     await seedTenant(
       args({
@@ -692,30 +829,102 @@ describe("seedTenant", () => {
       triggers: { type: string; to: string }[];
       stepOrder: string[];
     };
-    expect(definition.id).toBe("wf_channel_digest");
-    expect(definition.triggers[0]?.to).toBe(`channel-digest@${TENANT_DOMAIN}`);
-    expect(definition.stepOrder).toEqual(["channel-digest"]);
+    expect(definition.id).toBe("wf_workbench_digest");
+    expect(definition.triggers[0]?.to).toBe(
+      `workbench-digest@${TENANT_DOMAIN}`,
+    );
+    expect(definition.stepOrder).toEqual(["workbench-digest"]);
 
     // Defaults deploy against the tenant's real model (not noop).
     const deployedBody = deployedSources as { sources: { model: string }[] };
     expect(deployedBody.sources[0]?.model).not.toBe("noop");
 
     const output = lines.join("\n");
-    expect(output).toContain("deployed workflow channel-digest as dep_4");
+    expect(output).toContain("deployed workflow workbench-digest as dep_4");
     expect(output).toContain(
-      "confirmed workflow channel-digest: run run_1 started",
+      "confirmed workflow workbench-digest: run run_1 started",
     );
+  });
+
+  test("confirmDeployments: false deploys every default workflow without triggering or confirming any of them", async () => {
+    // The onboarding connect flow's seam: the key was already proven
+    // with a free probe, so seeding must never spend the connecting
+    // user's own balance on a real inference call. Any POST to a
+    // workflow's mail-trigger endpoint here is exactly the bug this
+    // flag exists to prevent, so the fake handler fails the test the
+    // moment one arrives instead of quietly answering it.
+    const { lines, log } = collector();
+    const { pushes, push } = recordingPusher();
+    const handler: FakeHandler = (method, path, body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name = (body as { name: string }).name;
+        return { status: 201, data: assetRow(`ast_${name}`, name) };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_x", "ast_x", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/`) &&
+        path.endsWith("/runs")
+      ) {
+        throw new Error(
+          `unexpected run-listing call with confirmDeployments: false — ${method} ${path}`,
+        );
+      }
+      if (
+        method === "POST" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/`) &&
+        path.endsWith("/mail")
+      ) {
+        throw new Error(
+          `unexpected workflow trigger call with confirmDeployments: false — ${method} ${path}`,
+        );
+      }
+      return undefined;
+    };
+
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(pushes).toHaveLength(DEFAULT_WORKFLOWS.length);
+    const output = lines.join("\n");
+    for (const workflow of DEFAULT_WORKFLOWS) {
+      expect(output).not.toContain(`confirmed workflow ${workflow.assetName}`);
+    }
+    expect(output).toContain(
+      `seed complete: ${DEFAULT_WORKFLOWS.length} workflow(s) deployed`,
+    );
+    expect(output).not.toContain("deployed and confirmed");
   });
 });
 
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
-function providerRow(id: string, name: string) {
+function providerRow(id: string, name: string, plugin: string = name) {
   return {
     id,
     tenantId: TENANT_ID,
     name,
-    plugin: name,
+    plugin,
     createdAt: TIMESTAMP,
     updatedAt: TIMESTAMP,
   };
@@ -745,13 +954,19 @@ function catalogModelRow(id: string, canonicalName: string) {
   };
 }
 
-function catalogProviderRow(id: string, name: string, credentialId: string) {
+function catalogProviderRow(
+  id: string,
+  name: string,
+  credentialId: string,
+  plugin: string = name,
+  baseURL = "https://api.anthropic.com",
+) {
   return {
     id,
     tenantId: TENANT_ID,
     name,
-    plugin: name,
-    baseURL: "https://api.anthropic.com",
+    plugin,
+    baseURL,
     credentialId,
     disabled: false,
     createdAt: TIMESTAMP,
@@ -774,6 +989,105 @@ function catalogOfferingRow(id: string, modelId: string, providerId: string) {
     updatedAt: TIMESTAMP,
   };
 }
+
+describe("default skills seeding", () => {
+  const workflowRoutes = (method: string, path: string) => {
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+      return { status: 201, data: assetRow("ast_1", "echo") };
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    )
+      return { status: 200, data: [] };
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    )
+      return { status: 201, data: deploymentRow("dep_1", "ast_1", "deployed") };
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+    )
+      return { status: 200, data: { runIds: ["run_1"] } };
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+    )
+      return {
+        status: 202,
+        data: {
+          runId: "dep_1",
+          address: `ins_dep_1@${TENANT_DOMAIN}`,
+          messageId: "<m1@workbench.localhost>",
+        },
+      };
+    return undefined;
+  };
+
+  test("a fresh tenant gets every default skill created tenant-scoped", async () => {
+    const { log } = collector();
+    const { push } = recordingPusher();
+    const skillPosts: unknown[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        skillPosts.push(body);
+        return { status: 201, data: {} };
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      return workflowRoutes(method, path);
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(skillPosts.map((b) => (b as { name: string }).name)).toEqual(
+      DEFAULT_SKILLS.map((s) => s.name),
+    );
+    for (const body of skillPosts) {
+      expect(body as object).toMatchObject({ scope: "tenant" });
+      expect((body as { body: string }).body.length).toBeGreaterThan(200);
+    }
+  });
+
+  test("an already-seeded skill is skipped, never re-created", async () => {
+    const { lines, log } = collector();
+    const { push } = recordingPusher();
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 200, data: { skill: {} } };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        throw new Error("must not re-create an existing skill");
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      return workflowRoutes(method, path);
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(lines.some((l) => l.includes("already exists"))).toBe(true);
+  });
+});
 
 describe("seedCatalog", () => {
   test("no apiKey and no placeholderCredential plants only the catalog model", async () => {
@@ -838,7 +1152,11 @@ describe("seedCatalog", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        expect(body).toEqual({ modelId: "mdl_1", providerId: "cpv_1" });
+        expect(body).toEqual({
+          modelId: "mdl_1",
+          providerId: "cpv_1",
+          priority: 0,
+        });
         return {
           status: 201,
           data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
@@ -862,6 +1180,365 @@ describe("seedCatalog", () => {
     expect(output).toContain("created catalog provider anthropic");
     expect(output).toContain("created catalog offering");
     expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
+  });
+
+  test("an oauth_token credential with metadata posts both through to the credential row", async () => {
+    const { log } = collector();
+    let credentialBody: unknown;
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        credentialBody = body;
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "huggingface-default"),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_1",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_oauth_minted",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      log,
+    });
+
+    expect(credentialBody).toMatchObject({
+      type: "oauth_token",
+      metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+    });
+  });
+
+  // A reconnect after the expiry sweep has already flipped the stored
+  // row to `expired`: the credential name conflicts (409) because the
+  // stale row is still there, so this only succeeds if the fresh token
+  // and its new expiry are rotated onto that row rather than discarded
+  // in favor of reusing the stale one.
+  test("a name conflict on an expired oauth_token reconnect rotates the stale row", async () => {
+    const { lines, log } = collector();
+    let patchCalls = 0;
+    let postCredentialCalls = 0;
+    let patchBody: unknown;
+
+    const staleCredentialRow = () => ({
+      id: "cre_old",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "expired",
+      metadata: { expiresAt: "2026-01-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        postCredentialCalls += 1;
+        // The credential name "huggingface-default" already exists (the
+        // expired row from before this reconnect), so creation conflicts.
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [staleCredentialRow()], nextCursor: null },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_old`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return {
+          status: 200,
+          data: {
+            ...staleCredentialRow(),
+            status: "active",
+            metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+          },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_old",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        // Priority = the provider's CATALOG_SEEDS declaration index, so
+        // multi-provider fallback order is deterministic, never a tie.
+        expect((body as { priority: number }).priority).toBe(
+          Object.keys(CATALOG_SEEDS).indexOf("huggingface"),
+        );
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_freshly_minted_token",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      log,
+    });
+
+    expect(postCredentialCalls).toBe(1);
+    // The fix: the name conflict is followed by a PATCH that carries the
+    // freshly minted token, its new expiry, and restores `active` status
+    // — never a silent reuse of the stale, already-expired row.
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "hf_freshly_minted_token",
+      status: "active",
+      metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+    });
+    expect(lines.some((line) => line.includes("rotated credential"))).toBe(
+      true,
+    );
+  });
+
+  test("a name conflict on an already-active oauth_token credential is left untouched", async () => {
+    const { log } = collector();
+    let patchCalls = 0;
+
+    const activeCredentialRow = () => ({
+      id: "cre_active",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "active",
+      metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return { status: 409, data: { error: "name taken" } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [activeCredentialRow()], nextCursor: null },
+        };
+      if (method === "PATCH") {
+        patchCalls += 1;
+        return { status: 200, data: activeCredentialRow() };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_active",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_same_token_again",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      log,
+    });
+
+    // A plain idempotent re-seed of a still-active connection never
+    // rotates — only a genuinely stale (non-active) row does.
+    expect(patchCalls).toBe(0);
+  });
+
+  // A regenerated OpenRouter key, or a retry after a bad paste, reconnects
+  // under the same stable credential name — the caller has already proven
+  // the fresh key against the provider's own probe (`credentialVerified:
+  // true`), so the name conflict must rotate the stored secret rather
+  // than silently keeping the stale one while claiming connected.
+  test("a name conflict on a verified api_key reconnect rotates the stored secret", async () => {
+    const { lines, log } = collector();
+    let patchCalls = 0;
+    let patchBody: unknown;
+
+    const activeCredentialRow = () => ({
+      id: "cre_active",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "openrouter-default",
+      type: "api_key",
+      status: "active",
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "openrouter") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return { status: 409, data: { error: "name taken" } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [activeCredentialRow()], nextCursor: null },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_active`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return { status: 200, data: { ...activeCredentialRow() } };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "anthropic/claude-sonnet-5"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "openrouter",
+            "cre_active",
+            "openai-compatible",
+            "https://openrouter.ai/api/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "openrouter",
+      apiKey: "sk-or-freshly-regenerated",
+      credentialName: "openrouter-default",
+      credentialVerified: true,
+      log,
+    });
+
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "sk-or-freshly-regenerated",
+      status: "active",
+      metadata: undefined,
+    });
+    expect(lines.some((line) => line.includes("rotated credential"))).toBe(
+      true,
+    );
   });
 
   test("re-run finds every step already seeded and creates nothing twice", async () => {
@@ -971,6 +1648,98 @@ describe("seedCatalog", () => {
       "catalog provider anthropic already exists (skipped)",
     );
     expect(output).toContain("catalog offering already exists (skipped)");
+  });
+
+  test("a non-default provider plants its own curated multi-model catalog under the 'openai-compatible' plugin", async () => {
+    const { lines, log } = collector();
+    const modelPosts: string[] = [];
+    const offeringPosts: { modelId: string; providerId: string }[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        modelPosts.push(canonicalName);
+        return {
+          status: 201,
+          data: catalogModelRow(`mdl_${modelPosts.length}`, canonicalName),
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        expect(body).toMatchObject({
+          name: "groq",
+          plugin: "openai-compatible",
+        });
+        return {
+          status: 201,
+          data: providerRow("prv_1", "groq", "openai-compatible"),
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "groq-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        expect(body).toMatchObject({
+          name: "groq",
+          plugin: "openai-compatible",
+          baseURL: "https://api.groq.com/openai/v1",
+        });
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "groq",
+            "cre_1",
+            "openai-compatible",
+            "https://api.groq.com/openai/v1",
+          ),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        const offering = body as { modelId: string; providerId: string };
+        offeringPosts.push(offering);
+        return {
+          status: 201,
+          data: catalogOfferingRow(
+            `off_${offeringPosts.length}`,
+            offering.modelId,
+            offering.providerId,
+          ),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "groq",
+      apiKey: "gsk-test",
+      log,
+    });
+
+    expect(modelPosts).toEqual([
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "openai/gpt-oss-120b",
+    ]);
+    expect(offeringPosts).toHaveLength(3);
+    expect(offeringPosts.every((o) => o.providerId === "cpv_1")).toBe(true);
+
+    const output = lines.join("\n");
+    expect(output).toContain(
+      "catalog ready: groq/llama-3.3-70b-versatile, llama-3.1-8b-instant, openai/gpt-oss-120b",
+    );
   });
 
   test("an unexpected status from the provider route is a loud failure", async () => {

@@ -67,3 +67,20 @@ export function extractConversationText(
     : part1.body;
   return new TextDecoder("utf-8", { fatal: false }).decode(bodyBytes);
 }
+
+/**
+ * Does an extracted conversation body carry text an agent can actually be
+ * sent? Whitespace-only counts as empty.
+ *
+ * Workbench-local (CL-6164). Mail whose `text/plain` body is empty is
+ * legitimate on the bus: an attachments-only `conversation.message` — a
+ * structured event send such as `workbench.agent-joined`, whose payload is a
+ * JSON part — extracts to `""`. Handing that `""` to `agent.send` is a
+ * guaranteed throw (`createInboundMessage: content, when provided, must be a
+ * non-empty string`), and on the turn-2 resume path that throw surfaces as a
+ * `StepFailed` with `retriesExhausted` and kills the run. So callers gate on
+ * this and drop such mail instead of delivering it.
+ */
+export function hasConversationText(text: string): boolean {
+  return text.trim() !== "";
+}

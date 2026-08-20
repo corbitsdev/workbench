@@ -7,6 +7,7 @@ import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import { useMemo } from "react";
+import { Toaster } from "sonner";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
@@ -19,6 +20,29 @@ import { createAppQueryClient } from "./query-client";
 import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
+import { ComposerInsertionProvider } from "./shell/composer-insertion";
+import { ProviderHealthProvider } from "./shell/provider-health-context";
+import { ShellChromeProvider } from "./shell/shell-chrome-provider";
+
+/**
+ * Onboarding renders above the shell entirely — no rail, no col2, no bench
+ * dock, nothing that implies a workbench already exists. A signed-in
+ * account with no completed onboarding must never see "Select a workbench";
+ * the wizard is the only thing on screen until it hands off to `/`.
+ */
+function OnboardingGate({
+  navigate,
+  user,
+}: {
+  readonly navigate: Navigate;
+  readonly user: SessionUser;
+}) {
+  return (
+    <NavigationProvider navigate={navigate}>
+      <OnboardingPage user={user} />
+    </NavigationProvider>
+  );
+}
 
 function Brand() {
   return (
@@ -41,25 +65,38 @@ function Shell({
   readonly onSignOut: () => void;
 }) {
   // One client per signed-in shell mount — above BenchProvider so principals
-  // and every tenant-scoped page share the same cache.
-  const queryClient = useMemo(() => createAppQueryClient(), []);
+  // and every tenant-scoped page share the same cache. Wired to the same
+  // `onSignOut` the account menu uses: any query or mutation that
+  // discovers the session is no longer valid (a hub restarted on an empty
+  // DB, a cookie for a deleted user, an expired session) routes the whole
+  // shell back to login instead of leaving one panel stuck showing "sign
+  // in required" beside chrome that still renders as if signed in.
+  const queryClient = useMemo(
+    () => createAppQueryClient(onSignOut),
+    [onSignOut],
+  );
   const route = APP_ROUTES.find((candidate) =>
     matchesRoute(candidate.path, path),
   );
   return (
     <QueryClientProvider client={queryClient}>
-      <NavigationProvider navigate={navigate}>
+      <NavigationProvider navigate={navigate} onSignOut={onSignOut}>
         <BenchProvider>
-          <CommandPaletteProvider navigate={navigate} />
-          <AppShell path={path} user={user} onSignOut={onSignOut}>
-            {path === ONBOARDING_PATH ? (
-              <OnboardingPage />
-            ) : route === undefined ? (
-              <NotFoundPage path={path} />
-            ) : (
-              route.render(path, navigate)
-            )}
-          </AppShell>
+          <ProviderHealthProvider>
+            <ComposerInsertionProvider>
+              <ShellChromeProvider path={path} navigate={navigate}>
+                <CommandPaletteProvider path={path} navigate={navigate} />
+                <AppShell path={path} user={user} onSignOut={onSignOut}>
+                  {route === undefined ? (
+                    <NotFoundPage />
+                  ) : (
+                    route.render(path, navigate)
+                  )}
+                </AppShell>
+              </ShellChromeProvider>
+              <Toaster />
+            </ComposerInsertionProvider>
+          </ProviderHealthProvider>
         </BenchProvider>
       </NavigationProvider>
     </QueryClientProvider>
@@ -113,7 +150,7 @@ export function App({
         <div className="app-boot-frame">
           <EmptyState
             icon={<CircleAlert />}
-            title="Couldn't reach the hub"
+            title="Connection lost"
             description={session.message}
             action={
               <Button variant="outline" onClick={onRetry}>
@@ -124,6 +161,9 @@ export function App({
         </div>
       );
     case "signed-in":
+      if (path === ONBOARDING_PATH) {
+        return <OnboardingGate navigate={navigate} user={session.user} />;
+      }
       return (
         <Shell
           path={path}

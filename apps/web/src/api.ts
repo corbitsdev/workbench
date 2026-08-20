@@ -15,7 +15,13 @@ import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import { UnauthenticatedError, pathToQueryKey } from "./query-client";
+import type { APIQuery } from "@corbits/api-query";
+import {
+  ApiQueryError,
+  UnauthenticatedError,
+  toAPIQuery,
+} from "@corbits/api-query";
+import { pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
@@ -56,6 +62,17 @@ export const ArtifactUploadResponseSchema = type({
   data: ArtifactDetailSchema.array(),
 });
 
+// GET /api/tenants/:id/artifacts/counts — honest per-kind-segment counts
+// over the tenant's full artifact list, computed by the hub so the Library
+// nav never shows a number the page itself couldn't otherwise prove.
+export const ArtifactCountsSchema = type({
+  all: "number",
+  document: "number",
+  sheet: "number",
+  pdf: "number",
+  routine: "number",
+});
+
 // `@corbits/approvals`'s "needs you" read: the same pending approvals as
 // `TenantApprovalsSchema`, but with the agent and bench names already
 // resolved server-side, so nothing here ever needs a raw id to render.
@@ -71,6 +88,21 @@ export const NeedsYouSchema = type({
   }).array(),
 });
 
+// The single-approval sibling of `NeedsYouSchema` (`@corbits/approvals`'s
+// `GET .../approvals/needs-you/:approvalId`): the same display-safe
+// hydration, for one id, in any status -- not just pending. This is the
+// chat approve card's live status read; see `approval-actions.ts`.
+export const NeedsYouDetailSchema = type({
+  id: "string",
+  agentName: "string",
+  benchName: "string",
+  headline: "string",
+  arguments: "object",
+  status: "'pending' | 'approved' | 'rejected' | 'timeout' | 'expired'",
+  createdAt: "string.date.iso",
+});
+export type NeedsYouDetail = typeof NeedsYouDetailSchema.infer;
+
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
@@ -79,6 +111,7 @@ export type AssetRow = typeof AssetWithOriginResponse.infer;
 export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
 export type ArtifactDetail = typeof ArtifactDetailSchema.infer;
+export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
 export type NeedsYou = typeof NeedsYouSchema.infer;
 export type NeedsYouItem = NeedsYou["items"][number];
 
@@ -105,46 +138,8 @@ type Paginated<T> = { data: T[]; nextCursor: string | null };
 export type PrincipalsPage = Paginated<Principal>;
 export type RunsPage = Paginated<WorkflowRun>;
 
-export type APIQuery<T> =
-  | { readonly kind: "loading" }
-  | { readonly kind: "unauthenticated" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly data: T };
-
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
-
-/**
- * Map a TanStack Query result onto the APIQuery discriminant pages already
- * render through QueryView. `isLoading` (pending + fetching) is the loading
- * state — bare `isPending` would flash skeletons when cached data exists.
- */
-export function toAPIQuery<T>(result: {
-  readonly isLoading: boolean;
-  readonly isError: boolean;
-  readonly error: unknown;
-  readonly data: T | undefined;
-  readonly isPending: boolean;
-  readonly fetchStatus: "fetching" | "paused" | "idle";
-}): APIQuery<T> {
-  if (result.isLoading) return { kind: "loading" };
-  if (result.isError) {
-    if (result.error instanceof UnauthenticatedError) {
-      return { kind: "unauthenticated" };
-    }
-    return {
-      kind: "error",
-      message:
-        result.error instanceof Error
-          ? result.error.message
-          : String(result.error),
-    };
-  }
-  if (result.data !== undefined) return { kind: "ready", data: result.data };
-  // Disabled queries (empty path, unresolved tenant) have no data and are not
-  // fetching — still report loading so callers that gate on "ready" stay quiet.
-  return { kind: "loading" };
-}
 
 /**
  * Fetches one hub endpoint and reports exactly what happened: loading, no
@@ -171,27 +166,24 @@ export function useAPIQuery<T>(
         throw new UnauthenticatedError();
       }
       if (!response.ok) {
-        throw new Error(`The hub answered ${response.status} for ${path}.`);
+        throw new ApiQueryError(
+          `The server answered ${response.status}.`,
+          response.status,
+          path,
+        );
       }
       const parsed = schema(await response.json());
       if (parsed instanceof type.errors) {
-        throw new Error(
-          `Unexpected response shape from ${path}: ${parsed.summary}`,
+        throw new ApiQueryError(
+          `Unexpected response shape: ${parsed.summary}`,
+          undefined,
+          path,
         );
       }
       return parsed;
     },
   });
   return toAPIQuery(result);
-}
-
-export class APIMutationError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
 }
 
 /**
@@ -212,20 +204,25 @@ async function postJSON<T>(
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   if (!response.ok) {
-    throw new APIMutationError(
-      `The hub answered ${response.status} for ${path}.`,
+    throw new ApiQueryError(
+      `The server answered ${response.status}.`,
       response.status,
+      path,
     );
   }
   const parsed = schema(await response.json());
   if (parsed instanceof type.errors) {
-    throw new APIMutationError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
+    throw new ApiQueryError(
+      `Unexpected response shape: ${parsed.summary}`,
+      undefined,
+      path,
     );
   }
   return parsed;
@@ -255,4 +252,85 @@ export function rejectApproval(
     ApprovalResponse,
     message === undefined ? {} : { message },
   );
+}
+
+/**
+ * Sandboxed HTML preview URL for a Library artifact (CL-5879) — the same
+ * path an `<iframe sandbox>` in the canvas or Library detail pane loads,
+ * and the "Open in new tab" affordance's `href`. Server-side (`GET
+ * .../artifacts/:id/preview` in `@corbits/artifacts-hub`) answers 415 for
+ * a non-HTML artifact.
+ */
+export function artifactPreviewPath(
+  tenantId: string,
+  artifactId: string,
+): string {
+  return `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}/preview`;
+}
+
+/**
+ * One-shot fetch of a Library artifact's detail — the same
+ * `GET /api/tenants/:id/artifacts/:artifactId` read `LibraryRoute` uses via
+ * `useAPIQuery`, but as a plain promise for callers that aren't a mounted
+ * component (a chat artifact chip's open handler). Never falls back to
+ * blob bytes: an `artifactId` always resolves through this Library read.
+ */
+export async function fetchArtifactDetail(
+  tenantId: string,
+  artifactId: string,
+): Promise<ArtifactDetail> {
+  const response = await fetch(
+    `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new ApiQueryError(
+      `The server answered ${response.status}.`,
+      response.status,
+      `artifact ${artifactId}`,
+    );
+  }
+  const parsed = ArtifactDetailSchema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(
+      `Unexpected artifact response shape: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+export type NeedsYouDetailResult =
+  | { readonly kind: "ready"; readonly item: NeedsYouDetail }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "not-found" }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The chat approve card's live status read: `@corbits/approvals`'s
+ * single-approval "needs you" detail, in any status. A 403 here means the
+ * tenant-wide read grant was refused -- deliberately coarser than the
+ * native approve/reject routes' per-deployment grant, so it is not proof
+ * the viewer cannot resolve this approval (see `approval-actions.ts`).
+ */
+export async function getApprovalNeedsYou(
+  tenantId: string,
+  approvalId: string,
+): Promise<NeedsYouDetailResult> {
+  const response = await fetch(
+    `/api/tenants/${tenantId}/approvals/needs-you/${approvalId}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (response.status === 403) return { kind: "forbidden" };
+  if (response.status === 404) return { kind: "not-found" };
+  if (!response.ok) {
+    return {
+      kind: "error",
+      message: `The server answered ${response.status} for this approval.`,
+    };
+  }
+  const parsed = NeedsYouDetailSchema(await response.json());
+  if (parsed instanceof type.errors) {
+    return { kind: "error", message: parsed.summary };
+  }
+  return { kind: "ready", item: parsed };
 }

@@ -1,133 +1,232 @@
-// Rendering here uses react-dom/server, so effects never run and every
-// screen shows its pre-fetch state — which is exactly what these tests
-// assert: each route mounts, names itself in the contextual panel, and
-// rail-listed pages mark themselves in the rail. Page identity lives in the
-// panel page band (h2.panel-page-title), not a per-page TopBar.
+// Pages load through `React.lazy`, so these tests client-render and wait
+// for the suspended route (SSR would only see the Suspense fallback). The
+// one route with no stage bar of its own (`/`, see `AppRoute.hasStageTopBar`)
+// gets one from `AppShell` itself, so every route ends up titled the same
+// way - except the conversation route (`/w`), whose own conversation header
+// IS its page identity (CL-6089): it renders no generic `StageTopBar` at
+// all.
 
 import { ThemeProvider } from "@corbits/react-ui";
-import { describe, expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 
 import { App } from "../src/app";
-import {
-  APP_ROUTES,
-  matchesRoute,
-  NAV_ROUTES,
-  SETTINGS_PATH,
-} from "../src/routes";
+import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
+
+/** Legacy routes that only redirect - `/agents` and `/skills` bounce to
+ * their Settings section (`pages/legacy-settings-redirects.tsx`), `/inbox`
+ * bounces home (the Inbox page is gone, CL-6151) - none has a stable panel
+ * title to assert via the generic render loop below. */
+const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills", "/inbox"]);
 
 const noNavigate = () => undefined;
 const noop = () => undefined;
+const realFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
 
 const signedIn: SessionState = {
   kind: "signed-in",
   user: { id: "user_1", name: "Ada", email: "ada@example.com" },
 };
 
-function renderApp(path: string, session: SessionState = signedIn): string {
-  return renderToStaticMarkup(
-    <ThemeProvider>
-      <App
-        path={path}
-        navigate={noNavigate}
-        session={session}
-        onSignedIn={noop}
-        onSignOut={noop}
-        onRetry={noop}
-      />
-    </ThemeProvider>,
-  );
+function stubEmptyFetch(): void {
+  globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
+    Promise.resolve(
+      new Response(JSON.stringify({ data: [], nextCursor: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )) as typeof fetch;
 }
 
-/** Page name from the contextual panel's page band (TopBars are gone). */
-function panelPageTitle(markup: string): string | undefined {
-  return /class="panel-page-title"[^>]*>(.*?)<\/h2>/.exec(markup)?.[1];
+async function flushLazyImports(): Promise<void> {
+  for (let count = 0; count < 5; count += 1) {
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
-/** The rail marks exactly one page active at a time (an icon+label button,
- * not a link — see `shell/rail.tsx`); this resolves its visible caption so a
- * test can confirm it is the *right* page, not merely that some page is
- * active. The caption lives in `SidebarRail`'s `sidebar-rail-item-label`
- * slot (its `showLabels` mode), keyed off the active item's `data-slot`. */
-function activeRailLabel(markup: string): string | undefined {
-  const active =
-    /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*>[\s\S]*?<\/button>/.exec(
+async function renderApp(
+  path: string,
+  session: SessionState = signedIn,
+): Promise<string> {
+  stubEmptyFetch();
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <App
+            path={path}
+            navigate={noNavigate}
+            session={session}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />
+        </ThemeProvider>,
+      );
+    });
+    await flushLazyImports();
+    return container.innerHTML;
+  } finally {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  }
+}
+
+/** Page identity: every route titles its stage's own `StageTopBar` (the
+ * one bar-less route, `/`, gets one from `AppShell` itself). */
+function stagePageTitle(markup: string): string | undefined {
+  return /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1];
+}
+
+/** The sidebar footer marks its own destination current: Plugins and
+ * Insights are text rows with `aria-current="page"` on the lit one.
+ * Settings lives in the account menu, so its route lights nothing in the
+ * chrome - the stage title carries it. Returns the active row's label so
+ * tests confirm the *right* footer affordance lights, and nothing else
+ * does. */
+function activeFooterLabel(markup: string): string | undefined {
+  const lit =
+    /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
       markup,
     );
-  if (active === null) return undefined;
-  const label = /data-slot="sidebar-rail-item-label"[^>]*>([^<]*)<\/span>/.exec(
-    active[0],
-  );
-  return label?.[1];
+  if (lit === null) return undefined;
+  return /<span>([^<]+)<\/span>/.exec(lit[1] ?? "")?.[1];
 }
 
-const NAV_PATHS = new Set(NAV_ROUTES.map((route) => route.path));
+const FOOTER_LABELS: Record<string, string> = {
+  "/plugins": "Plugins",
+  "/insights": "Insights",
+};
 
 describe("route table", () => {
   test("covers every screen the app can route to", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
-      "/c",
+      "/w",
+      "/inbox",
       "/routines",
       "/library",
       "/agents",
       "/skills",
       "/insights",
+      "/plugins",
       "/settings",
     ]);
   });
 
-  test("rail nav is Routines, Library, Agents, Skills, Insights (no Home)", () => {
+  test("palette pages are Workbenches, Routines, Library, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
+      "Workbenches",
       "Routines",
       "Library",
-      "Agents",
-      "Skills",
       "Insights",
+      "Settings",
     ]);
   });
 
-  test("legacy /chat paths still match the channels route", () => {
-    expect(matchesRoute("/c", "/chat")).toBe(true);
-    expect(matchesRoute("/c", "/chat/ch_1")).toBe(true);
-    expect(matchesRoute("/c", "/c/ch_1")).toBe(true);
+  test("legacy /chat paths still match the workbenches route", () => {
+    expect(matchesRoute("/w", "/chat")).toBe(true);
+    expect(matchesRoute("/w", "/chat/ch_1")).toBe(true);
+    expect(matchesRoute("/w", "/w/ch_1")).toBe(true);
+  });
+
+  test("/settings/:section stays on the settings route", () => {
+    expect(matchesRoute("/settings", "/settings")).toBe(true);
+    expect(matchesRoute("/settings", "/settings/people")).toBe(true);
+    expect(matchesRoute("/settings", "/settings-lookalike")).toBe(false);
+  });
+
+  test("legacy /agents and /skills stay routable (redirect-only, off the palette pages)", () => {
+    expect(matchesRoute("/agents", "/agents/wfd_1")).toBe(true);
+    expect(matchesRoute("/skills", "/skills/skill_1")).toBe(true);
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/agents");
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/skills");
+  });
+
+  test("/inbox stays routable (redirect-only) but is off the palette pages", () => {
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/inbox");
+  });
+});
+
+describe("/inbox redirect", () => {
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    if (root !== null) {
+      act(() => {
+        root?.unmount();
+      });
+      root = null;
+    }
+    container?.remove();
+    container = null;
+  });
+
+  test("bounces old /inbox links home - the Inbox page is gone (CL-6151)", async () => {
+    const inboxRoute = APP_ROUTES.find((route) => route.path === "/inbox");
+    if (inboxRoute === undefined) throw new Error("no /inbox route entry");
+    const navigated: string[] = [];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(inboxRoute.render("/inbox", (to) => navigated.push(to)));
+    });
+    expect(navigated).toEqual(["/"]);
   });
 });
 
 describe("routes render", () => {
   for (const route of APP_ROUTES) {
-    test(`${route.path} renders the ${route.label} screen`, () => {
-      const markup = renderApp(route.path);
-      expect(panelPageTitle(markup)).toBe(route.label);
-      if (route.path === SETTINGS_PATH) {
-        // Settings has no page-nav entry in the rail — it is reached from
-        // the rail's own identity dock instead.
-        expect(markup).toMatch(/aria-current="page"[^>]*href="\/settings"/);
-      } else if (NAV_PATHS.has(route.path)) {
-        expect(activeRailLabel(markup)).toBe(route.label);
+    if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
+    test(`${route.path} renders the ${route.label} screen`, async () => {
+      const markup = await renderApp(route.path);
+      expect(markup).toContain('data-testid="shell-sidebar"');
+      if (route.path === "/") {
+        expect(stagePageTitle(markup)).toBe("New Workbench");
+        return;
+      }
+      if (route.path === "/w") {
+        expect(stagePageTitle(markup)).toBeUndefined();
+        expect(markup).toContain('data-testid="shell-sidebar"');
+        return;
+      }
+      if (route.path === "/settings") {
+        expect(stagePageTitle(markup)).toBe("Settings · General");
       } else {
-        // Chat stays deep-linkable but leaves the rail. Approvals has no route.
-        expect(activeRailLabel(markup)).toBeUndefined();
-        expect(markup).not.toMatch(
-          new RegExp(
-            `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
-          ),
-        );
+        expect(stagePageTitle(markup)).toBe(route.label);
+      }
+      const footerLabel = FOOTER_LABELS[route.path];
+      if (footerLabel !== undefined) {
+        expect(activeFooterLabel(markup)).toBe(footerLabel);
+      } else {
+        expect(activeFooterLabel(markup)).toBeUndefined();
       }
     });
   }
 
-  test("an unknown path renders the not-found screen", () => {
-    const markup = renderApp("/no-such-screen");
+  test("an unknown path renders the not-found screen", async () => {
+    const markup = await renderApp("/no-such-screen");
     expect(markup).toContain("Page not found");
-    expect(markup).not.toContain('aria-current="page"');
+    expect(activeFooterLabel(markup)).toBeUndefined();
   });
 
-  test("a /c/:channelId deep link opens the canvas on first paint", () => {
-    // Canvas state is seeded from the path (not effect-only), so static
-    // markup sees the open column without running useEffect.
-    const markup = renderApp("/c/ch_deep");
-    expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="true"/);
+  test("a /w/:workbenchId deep link waits for tenant resolution", async () => {
+    const markup = await renderApp("/w/ch_deep");
+    expect(markup).not.toContain('data-open="true"');
   });
 });

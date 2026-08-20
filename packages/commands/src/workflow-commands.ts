@@ -1,10 +1,10 @@
 // The built-in registrar that exposes every workflow definition a
 // tenant can invite as a command: `/echo do the thing` or
 // `@echo do the thing` both resolve to the same handler. This module
-// knows nothing about folded runs, channels, or chat's own storage —
+// knows nothing about folded runs, workbenches, or chat's own storage —
 // it depends only on the two narrow seams a host (today, only
 // `@corbits/chat`) already has: listing invitable definitions, and
-// starting one against a channel with a raw argument string. That
+// starting one against a workbench with a raw argument string. That
 // keeps `@corbits/commands` itself host-agnostic, matching "apps stay
 // generic; packages own the domain" one level down — this package
 // owns the command *grammar and dispatch*, not workflow invocation.
@@ -16,7 +16,7 @@ export interface WorkflowCommandTarget {
 }
 
 export interface StartedWorkflowCommand {
-  /** The channel-facing handle the started workflow now answers to. */
+  /** The workbench-facing handle the started workflow now answers to. */
   readonly handle: string;
   readonly address: string;
 }
@@ -28,7 +28,7 @@ export interface WorkflowCommandDeps {
   startWorkflow(input: {
     readonly tenantId: string;
     readonly principalId: string;
-    readonly channelId: string;
+    readonly workbenchId: string;
     readonly definitionId: string;
     readonly args: string;
   }): Promise<StartedWorkflowCommand>;
@@ -55,7 +55,7 @@ export function createWorkflowCommandPlugin(
         const started = await deps.startWorkflow({
           tenantId: ctx.tenantId,
           principalId: ctx.principalId,
-          channelId: ctx.channelId,
+          workbenchId: ctx.workbenchId,
           definitionId: definition.id,
           args,
         });

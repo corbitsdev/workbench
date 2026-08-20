@@ -13,12 +13,25 @@ export const BENCH_STRINGS = {
   memberUnnamed: "Unnamed member",
   memberRoleNone: "none",
 
-  createBenchAction: "New bench",
-  createBenchDialogTitle: "New bench",
+  createBenchAction: "New workbench",
+  createBenchDialogTitle: "New workbench",
+
   createBenchDialogDescription:
-    "Give it a name. The bench's address is derived from the name.",
+    "Name the workbench and choose how it relates to others.",
   createBenchNameLabel: "Name",
   createBenchNamePlaceholder: "e.g. Launch team",
+  createBenchPurposeLabel: "Purpose (optional)",
+  createBenchPurposePlaceholder: "What will this workbench be used for?",
+  createBenchTypeLabel: "Type",
+  createBenchTypeGlobal: "Global",
+  createBenchTypeGlobalDesc: "A top-level workbench with its own membership.",
+  createBenchTypeSub: "Sub-workbench",
+  createBenchTypeSubDesc:
+    "Inherits people and policy from a parent (inheritance wiring lands later).",
+  createBenchJoinPolicyLabel: "Join policy",
+  createBenchJoinPolicyClosed:
+    "Closed — invites only (matches operator signup defaults).",
+  createBenchJoinPolicyOpen: "Open to allowed domains when signup is open.",
   createBenchSlugPreviewLabel: "Address",
   createBenchSubmit: "Create",
   createBenchCancel: "Cancel",

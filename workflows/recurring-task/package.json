@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/recurring-task-workflow",
+  "private": true,
+  "description": "Deploy-layer placeholder workflow for a scheduled task: its routine fire is intercepted by the hub's routine launcher and dispatched through @corbits/tasks' launchTask instead of running this definition's own step",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "recurring-task",
+      "displayName": "Recurring task",
+      "automatable": true
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

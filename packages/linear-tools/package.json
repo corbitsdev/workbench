@@ -1,0 +1,36 @@
+{
+  "name": "@corbits/linear-tools",
+  "private": true,
+  "description": "Linear integration: a minimal client and an @intx/agent tool bundle for listing a user's recently updated issues",
+  "version": "0.0.2",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "linear"
+      }
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@corbits/credential-providers": "workspace:*",
+    "@intx/authz": "workspace:*",
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/harness": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

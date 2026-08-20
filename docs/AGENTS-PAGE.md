@@ -1,8 +1,11 @@
-# The Agents page
+# Settings · Agents
 
-The Agents page (`apps/web/src/pages/agents-page.tsx`) is a bench's one
-surface for its agents: the definitions a person can launch from, and the
-instances currently running from them.
+Settings · Agents (`apps/web/src/pages/agents-settings-section.tsx`) is a
+bench's one surface for its agents: the definitions a person can launch
+from, and the instances currently running from them. It is a Settings
+section, not a rail destination (CL-5990) — agent definitions are the only
+thing this surface manages; talking to an agent is a chat (Start chat), and
+looping one into a conversation is a workbench mention.
 
 ## Definitions and instances
 
@@ -22,9 +25,9 @@ against the tenant's own definitions listing is marked **Unlinked
 definition** rather than hidden — the page never silently drops a row it
 cannot fully explain.
 
-Every list excludes the chat surface's channel-host machinery
-(`@corbits/chat/channel-host-naming`'s `isChannelHostDefinitionName`): a
-channel's anchor run is internal plumbing, not an agent a person created.
+Every list excludes the chat surface's workbench-host machinery
+(`@corbits/chat/workbench-host-naming`'s `isWorkbenchHostDefinitionName`): a
+workbench's anchor run is internal plumbing, not an agent a person created.
 
 ## Creating an agent
 
@@ -35,7 +38,7 @@ description) and definition (system prompt, model) and posts to
 
 1. Builds a single-step, folded `workflow.json` from the submitted fields
    (`buildAgentDefinitionWorkflow`) — the same shape
-   `@corbits/assistant-workflow` and `@corbits/chat`'s channel host produce,
+   `@corbits/assistant-workflow` and `@corbits/chat`'s workbench host produce,
    parametrized instead of fixed.
 2. Creates a `workflow`-kind asset and writes that JSON into it in-process
    (`AssetService.populateAsset` — no git subprocess).
@@ -49,10 +52,15 @@ separate deploy step, and no page reload needed to see it appear.
 **Tools and a model provider are not exposed on the create form.** The
 platform's wire contract for a workflow definition
 (`WorkflowDefinitionResponse` in `@intx/types`) carries no tool-package
-field, and `@intx/agent`'s `defineAgent` does not thread a caller-supplied
-`toolPackagePins` onto the built definition — no production builder in this
-codebase sets one today. A model is accepted as a bare canonical name only;
-the provider is resolved fresh against the tenant's catalog at launch time
+field, and `@intx/agent`'s `defineAgent` does not accept a caller-supplied
+`toolPackagePins` on its authoring-time config — it is vendored, read-only
+source. The five catalog workflow packages (`granola-call`,
+`process-granola-call`, `morning-brief`, `pain-point-collateral`,
+`collateral-generation`) build their `AgentDefinition`s directly against
+that type instead, and do set `toolPackagePins` (CL-5999) — but this
+create-form path is unrelated to those packages and still has no field to
+carry one. A model is accepted as a bare canonical name only; the provider
+is resolved fresh against the tenant's catalog at launch time
 (`resolveDefinitionSources`), never baked into the definition.
 
 ## The mailbox address

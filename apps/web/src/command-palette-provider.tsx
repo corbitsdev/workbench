@@ -1,17 +1,48 @@
-import { CommandPalette, useCommandShortcut } from "@corbits/react-ui";
-import type { CommandPaletteGroup } from "@corbits/react-ui";
-import { listChannels } from "@corbits/chat-ui";
 import {
+  CommandPalette,
+  artifactKindLabel,
+  useCommandShortcut,
+  useTheme,
+} from "@corbits/react-ui";
+import type { CommandPaletteGroup } from "@corbits/react-ui";
+import { listWorkbenches } from "@corbits/chat-ui";
+import {
+  filterBenchMemberships,
+  listWorkbenchTenantIds,
+} from "@corbits/bench-ui";
+import { useQuery } from "@tanstack/react-query";
+import {
+  buildCommandPaletteGroups,
   buildStaticCommands,
-  matchesQuery,
+  isBareScopeQuery,
+  parsePaletteQuery,
   useEntitySearch,
+  type PaletteResultItem,
+  type PaletteSource,
+  type RecentEntry,
 } from "@corbits/command-palette";
-import { useCallback, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
+import {
+  ACTION_COMMANDS,
+  runActionCommand,
+  type ActionCommandId,
+} from "./command-palette-actions";
+import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
+import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
+import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
-import { RunsSchema, useAPIQuery } from "./api";
+import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
+import {
+  useCloseCanvas,
+  useOpenRoutineInCanvas,
+} from "./shell/canvas-availability";
+import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
+import { listSkills } from "./skills-api";
+import { meKeys, tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
 
 const STATIC_COMMANDS = buildStaticCommands(
@@ -21,29 +52,101 @@ const STATIC_COMMANDS = buildStaticCommands(
 /**
  * Wires the data-driven react-ui command palette into the app shell.
  *
- * Static commands come from the routes the shell already renders; entity
- * results come from the same listChannels / workflow-runs / agent-definitions
- * calls the product pages already use — this file adds no new fetch of its
- * own beyond those. Sources are free-form labels the package carries through
- * so this provider can group results and map a selection to a real route.
- * Ranking, matching, and the "no raw identifier on screen" floor all live in
- * `@corbits/command-palette` and `@corbits/react-ui`.
+ * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
+ * `@corbits/command-palette` (`buildCommandPaletteGroups`) — this file only
+ * assembles the app's own sources (routes, workbenches, agents, routines,
+ * skills, library artifacts) and maps a selection back to a real route or
+ * action. Entity results for workbenches/runs/agents still come off the same
+ * `useEntitySearch` paging this provider already used; routines, skills and
+ * library artifacts are small per-bench catalogs fetched once and filtered
+ * client-side, the same way the static route list already is.
+ *
+ * react-ui's `CommandPalette` has no slot for a scope-chip badge or the
+ * footer prefix legend the mock shows next to the input — see the PR
+ * description for that flag; this provider ships everything its `groups` /
+ * `items` API can express.
  */
 export function CommandPaletteProvider({
+  path,
   navigate,
 }: {
+  readonly path: string;
   readonly navigate: Navigate;
 }) {
-  const { selectedTenantId } = useBench();
+  const { memberships, selectedTenantId, selectTenant } = useBench();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  const { cycleMode } = useTheme();
+  const closeCanvas = useCloseCanvas();
+  const openRoutine = useOpenRoutineInCanvas();
 
-  const listChannelsForSearch = useCallback(async () => {
+  const recentsStore = useMemo(
+    () =>
+      selectedTenantId === null ? null : recentsStoreForBench(selectedTenantId),
+    [selectedTenantId],
+  );
+
+  useEffect(() => {
+    setRecents(recentsStore?.load() ?? []);
+  }, [recentsStore]);
+
+  const pushRecent = useCallback(
+    (entry: RecentEntry) => {
+      if (recentsStore === null) return;
+      setRecents(recentsStore.push(entry));
+    },
+    [recentsStore],
+  );
+
+  const removeRecent = useCallback(
+    (entry: Pick<RecentEntry, "kind" | "id">) => {
+      if (recentsStore === null) return;
+      setRecents(recentsStore.remove(entry));
+    },
+    [recentsStore],
+  );
+
+  // A workbench-level 404 (`chat-page.tsx`, via `ChatWorkspace`'s
+  // `onWorkbenchNotFound`) means a Recents entry outlived the workbench it
+  // points at — drop it so re-opening the palette never offers a dead end
+  // again. See `workbench-not-found-event.ts` for why this is an event
+  // rather than a prop: the chat route and this provider are siblings.
+  useEffect(() => {
+    function onWorkbenchNotFound(event: Event) {
+      const workbenchId = (event as CustomEvent<string>).detail;
+      removeRecent({
+        kind: "workbenches",
+        id: `entity:workbenches:${workbenchId}`,
+      });
+    }
+    window.addEventListener(WORKBENCH_NOT_FOUND_EVENT, onWorkbenchNotFound);
+    return () => {
+      window.removeEventListener(
+        WORKBENCH_NOT_FOUND_EVENT,
+        onWorkbenchNotFound,
+      );
+    };
+  }, [removeRecent]);
+
+  // Reads through `queryClient` at the shared `tenantKeys.workbenches` key
+  // (rather than calling `listWorkbenches` directly) so a re-search — every
+  // debounced keystroke re-invokes this — and the bare `#` scope view below
+  // both reuse one cached fetch with every other workbench-listing surface in
+  // the shell, instead of each one issuing its own request.
+  const listWorkbenchesForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
-    const result = await listChannels(selectedTenantId, "channel");
-    return result.map((channel) => ({ id: channel.id, name: channel.title }));
-  }, [selectedTenantId]);
+    const result = await queryClient.ensureQueryData({
+      queryKey: tenantKeys.workbenches(selectedTenantId, "workbench"),
+      queryFn: () => listWorkbenches(selectedTenantId, "workbench"),
+    });
+    return result.map((workbench) => ({
+      id: workbench.id,
+      name: workbench.title,
+    }));
+  }, [selectedTenantId, queryClient]);
 
   // Workflow runs are what the Routines page lists today. The group is labeled
   // "Runs" (truthful source) and navigates to `/routines/:id` — never the dead
@@ -65,93 +168,396 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId]);
 
-  const sources = useMemo(
+  const entitySearchSources = useMemo(
     () => [
-      { category: "channels", fetch: listChannelsForSearch },
+      { category: "workbenches", fetch: listWorkbenchesForSearch },
       { category: "runs", fetch: listRunsForSearch },
       { category: "agents", fetch: listAgentsForSearch },
     ],
-    [listChannelsForSearch, listRunsForSearch, listAgentsForSearch],
+    [listWorkbenchesForSearch, listRunsForSearch, listAgentsForSearch],
   );
 
+  const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
+  const bareScopeKind = useMemo(() => {
+    if (!isBareScopeQuery(query)) return null;
+    return parsePaletteQuery(query).scope?.kind ?? null;
+  }, [query]);
+
   const { results, loading, error, hasMore, loadMore } = useEntitySearch({
-    query,
+    query: strippedQuery,
     enabled: open,
-    sources,
+    sources: entitySearchSources,
   });
+
+  // A bare `#` or `@` strips to an empty query, which useEntitySearch never
+  // fetches for (by design — the unscoped default view should not dump
+  // every entity on open). The mock shows every item in an active scope for
+  // this input, so fetch that scope's raw list directly instead.
+  const [bareWorkbenches, setBareWorkbenches] = useState<
+    readonly PaletteResultItem[]
+  >([]);
+  const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>(
+    [],
+  );
+
+  useEffect(() => {
+    if (bareScopeKind !== "workbenches" || !open) {
+      setBareWorkbenches([]);
+      return;
+    }
+    let cancelled = false;
+    void listWorkbenchesForSearch().then((rows) => {
+      if (cancelled) return;
+      setBareWorkbenches(
+        rows.map((row) => ({
+          id: `entity:workbenches:${row.id}`,
+          title: row.name,
+        })),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bareScopeKind, open, listWorkbenchesForSearch]);
+
+  useEffect(() => {
+    if (bareScopeKind !== "people" || !open) {
+      setBareAgents([]);
+      return;
+    }
+    let cancelled = false;
+    void listAgentsForSearch().then((rows) => {
+      if (cancelled) return;
+      setBareAgents(
+        rows.map((row) => ({
+          id: `entity:agents:${row.id}`,
+          title: row.name,
+          subtitle: "Agent",
+        })),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bareScopeKind, open, listAgentsForSearch]);
+
+  const routinesQuery = useTenantQuery(
+    tenantKeys.routines(selectedTenantId ?? ""),
+    open && selectedTenantId !== null,
+    () => listRoutines(selectedTenantId ?? ""),
+  );
+  const skillsQuery = useTenantQuery(
+    tenantKeys.skills(selectedTenantId ?? ""),
+    open && selectedTenantId !== null,
+    () => listSkills(selectedTenantId ?? ""),
+  );
+  const artifactsQuery = useAPIQuery(
+    selectedTenantId === null || !open
+      ? ""
+      : `/api/tenants/${selectedTenantId}/artifacts`,
+    ArtifactListPageSchema,
+  );
+
+  // CL-6089's hidden escape hatch: the sidebar dropped its bench switcher
+  // (a workbench IS a conversation now, one per account in the common
+  // case), but a multi-bench install still needs a way in. Plainly
+  // labeled, cycling to the next workbench in membership order — the
+  // simplest honest thing a single command-palette entry can do without
+  // reinventing a picker. Absent entirely for the common one-workbench
+  // account, same principle the old dock used to hide itself by.
+  const workbenchMembershipTenantIds =
+    memberships.kind === "ready"
+      ? memberships.data.data.map((membership) => membership.tenantId)
+      : [];
+  const workbenchTenancyKinds = useQuery({
+    queryKey: meKeys.workbenchTenancyKinds(workbenchMembershipTenantIds),
+    queryFn: () => listWorkbenchTenantIds(workbenchMembershipTenantIds),
+    enabled: workbenchMembershipTenantIds.length > 0,
+  });
+  const workbenchMemberships =
+    memberships.kind === "ready"
+      ? filterBenchMemberships(
+          memberships.data.data,
+          workbenchTenancyKinds.data ?? new Set(),
+        )
+      : [];
+  const nextWorkbench =
+    workbenchMemberships.length > 1
+      ? workbenchMemberships[
+          (workbenchMemberships.findIndex(
+            (membership) => membership.tenantId === selectedTenantId,
+          ) +
+            1) %
+            workbenchMemberships.length
+        ]
+      : undefined;
 
   useCommandShortcut(() => setOpen((current) => !current));
 
-  const groups = useMemo<readonly CommandPaletteGroup[]>(() => {
-    // Pages are matched here, client-side: they are a tiny fixed list, so
-    // there is no debounce or fetch to wait on — show the matches the moment
-    // the query changes (and all of them when it is empty).
-    const pages = STATIC_COMMANDS.filter((command) =>
-      matchesQuery(command.title, query),
-    );
-    const channels = results.filter((result) => result.category === "channels");
-    const runs = results.filter((result) => result.category === "runs");
-    const agents = results.filter((result) => result.category === "agents");
+  useEffect(() => {
+    function onOpenRequest() {
+      setOpen(true);
+    }
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+    };
+  }, []);
 
-    const groups: CommandPaletteGroup[] = [];
-    if (pages.length > 0) {
-      groups.push({
-        id: "pages",
-        heading: "Pages",
-        items: pages.map((command) => ({
-          id: command.id,
-          title: command.title,
-        })),
-      });
-    }
-    if (channels.length > 0) {
-      groups.push({
-        id: "channels",
-        heading: "Channels",
-        items: channels.map((channel) => ({
-          id: `entity:channels:${channel.id}`,
-          title: channel.title,
-        })),
-      });
-    }
-    if (runs.length > 0) {
-      groups.push({
-        id: "runs",
-        heading: "Runs",
-        items: runs.map((run) => ({
+  const pageItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      STATIC_COMMANDS.map((command) => ({
+        id: command.id,
+        title: command.title,
+      })),
+    [],
+  );
+
+  const actionItems = useMemo<readonly PaletteResultItem[]>(() => {
+    const commands = ACTION_COMMANDS.map((command) => ({
+      id: `action:${command.id}`,
+      title: command.title,
+      subtitle: command.subtitle,
+    }));
+    const runNow =
+      routinesQuery.kind === "ready"
+        ? routinesQuery.data.map((routine) => ({
+            id: `action:run-routine:${routine.id}`,
+            title: `Run · ${routine.name}`,
+            subtitle: "Run this routine now",
+          }))
+        : [];
+    const switchWorkbench =
+      nextWorkbench !== undefined
+        ? [
+            {
+              id: "action:switch-workbench",
+              title: "Switch workbench",
+              subtitle: `Next: ${nextWorkbench.tenantName}`,
+            },
+          ]
+        : [];
+    return [...commands, ...runNow, ...switchWorkbench];
+  }, [routinesQuery, nextWorkbench]);
+
+  const workbenchItems = useMemo<readonly PaletteResultItem[]>(() => {
+    if (bareScopeKind === "workbenches") return bareWorkbenches;
+    return results
+      .filter((result) => result.category === "workbenches")
+      .map((workbench) => ({
+        id: `entity:workbenches:${workbench.id}`,
+        title: workbench.title,
+      }));
+  }, [results, bareScopeKind, bareWorkbenches]);
+
+  const agentItems = useMemo<readonly PaletteResultItem[]>(() => {
+    if (bareScopeKind === "people") return bareAgents;
+    return results
+      .filter((result) => result.category === "agents")
+      .map((agent) => ({
+        id: `entity:agents:${agent.id}`,
+        title: agent.title,
+        subtitle: "Agent",
+      }));
+  }, [results, bareScopeKind, bareAgents]);
+
+  const runItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      results
+        .filter((result) => result.category === "runs")
+        .map((run) => ({
           id: `entity:runs:${run.id}`,
           title: run.title,
         })),
-      });
-    }
-    if (agents.length > 0) {
-      groups.push({
-        id: "agents",
-        heading: "Agents",
-        items: agents.map((agent) => ({
-          id: `entity:agents:${agent.id}`,
-          title: agent.title,
-        })),
-      });
-    }
-    return groups;
-  }, [results, query]);
+    [results],
+  );
+
+  const routineItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      routinesQuery.kind === "ready"
+        ? routinesQuery.data.map((routine) => ({
+            id: `entity:routines:${routine.id}`,
+            title: routine.name,
+            subtitle:
+              routine.scope === "personal"
+                ? "Personal routine"
+                : "Workbench routine",
+          }))
+        : [],
+    [routinesQuery],
+  );
+
+  const skillItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      skillsQuery.kind === "ready"
+        ? skillsQuery.data.map((skill) => ({
+            id: `entity:skills:${skill.name}`,
+            title: skill.name,
+            subtitle: skill.description,
+          }))
+        : [],
+    [skillsQuery],
+  );
+
+  const libraryItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      artifactsQuery.kind === "ready"
+        ? artifactsQuery.data.data.map((artifact) => ({
+            id: `entity:library:${artifact.id}`,
+            title: artifact.title,
+            subtitle: artifactKindLabel(artifact.kind),
+          }))
+        : [],
+    [artifactsQuery],
+  );
+
+  // Order matches the mock's buildCmdkEntries: Commands, Workbenches,
+  // Pages, then the unscoped catalogs (Runs, Routines, Skills, Library),
+  // with People & agents last among the palette's groups.
+  const sources = useMemo<readonly PaletteSource[]>(
+    () => [
+      {
+        id: "actions",
+        heading: "Commands",
+        kind: "actions",
+        items: actionItems,
+      },
+      {
+        id: "workbenches",
+        heading: "Workbenches",
+        kind: "workbenches",
+        items: workbenchItems,
+      },
+      { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
+      { id: "runs", heading: "Runs", items: runItems },
+      { id: "routines", heading: "Routines", items: routineItems },
+      { id: "skills", heading: "Skills", items: skillItems },
+      { id: "library", heading: "Library", items: libraryItems },
+      {
+        id: "people",
+        heading: "People & agents",
+        kind: "people",
+        items: agentItems,
+      },
+    ],
+    [
+      actionItems,
+      workbenchItems,
+      pageItems,
+      runItems,
+      routineItems,
+      skillItems,
+      libraryItems,
+      agentItems,
+    ],
+  );
+
+  const recentItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      recents.map((entry) =>
+        entry.subtitle === undefined
+          ? { id: entry.id, title: entry.title }
+          : { id: entry.id, title: entry.title, subtitle: entry.subtitle },
+      ),
+    [recents],
+  );
+
+  const groups = useMemo<readonly CommandPaletteGroup[]>(() => {
+    const built = buildCommandPaletteGroups({
+      query,
+      recents: recentItems,
+      sources,
+    });
+    return built.map((group) => ({
+      id: group.id,
+      heading: group.heading,
+      items: group.items,
+    }));
+  }, [query, recentItems, sources]);
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (id.startsWith("route:")) {
-        navigate(id.slice("route:".length));
-      } else if (id.startsWith("entity:channels:")) {
-        navigate(`/c/${id.slice("entity:channels:".length)}`);
+      if (id === "action:switch-workbench") {
+        if (nextWorkbench !== undefined) selectTenant(nextWorkbench.tenantId);
+      } else if (id.startsWith("action:run-routine:")) {
+        const routineId = id.slice("action:run-routine:".length);
+        if (selectedTenantId !== null) {
+          void runRoutineNow(selectedTenantId, routineId);
+        }
+        navigate(`/routines/${encodeURIComponent(routineId)}`);
+      } else if (id.startsWith("action:")) {
+        void runActionCommand(id.slice("action:".length) as ActionCommandId, {
+          path,
+          navigate,
+          tenantId: selectedTenantId,
+          cycleTheme: cycleMode,
+          closeCanvas,
+          openRoutine,
+        });
+      } else if (id.startsWith("route:")) {
+        const routePath = id.slice("route:".length);
+        const label =
+          STATIC_COMMANDS.find((command) => command.id === id)?.title ??
+          routePath;
+        navigate(routePath);
+        pushRecent({ kind: "route", id, title: label });
+      } else if (id.startsWith("entity:workbenches:")) {
+        const workbenchId = id.slice("entity:workbenches:".length);
+        const title =
+          workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
+        navigate(`/w/${workbenchId}`);
+        pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
-        navigate(`/routines/${id.slice("entity:runs:".length)}`);
+        const runId = id.slice("entity:runs:".length);
+        const title = runItems.find((item) => item.id === id)?.title ?? runId;
+        navigate(`/routines/${runId}`);
+        pushRecent({ kind: "runs", id, title, subtitle: "Run" });
       } else if (id.startsWith("entity:agents:")) {
-        navigate("/agents");
+        const agentId = id.slice("entity:agents:".length);
+        const title =
+          agentItems.find((item) => item.id === id)?.title ?? agentId;
+        navigate(`/settings/agents/${encodeURIComponent(agentId)}`);
+        pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
+      } else if (id.startsWith("entity:routines:")) {
+        const routineId = id.slice("entity:routines:".length);
+        const title =
+          routineItems.find((item) => item.id === id)?.title ?? routineId;
+        navigate(`/routines/${encodeURIComponent(routineId)}`);
+        pushRecent({ kind: "routines", id, title, subtitle: "Routine" });
+      } else if (id.startsWith("entity:skills:")) {
+        const skillId = id.slice("entity:skills:".length);
+        const title =
+          skillItems.find((item) => item.id === id)?.title ?? skillId;
+        navigate(`/settings/skills/${encodeURIComponent(skillId)}`);
+        pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
+      } else if (id.startsWith("entity:library:")) {
+        // Library detail is local page state, not a route — see the PR
+        // description flag. This opens the Library list.
+        const title =
+          libraryItems.find((item) => item.id === id)?.title ?? "Library";
+        navigate("/library");
+        pushRecent({ kind: "library", id, title, subtitle: "Library" });
       }
       setOpen(false);
     },
-    [navigate],
+    [
+      navigate,
+      path,
+      selectedTenantId,
+      cycleMode,
+      closeCanvas,
+      openRoutine,
+      pushRecent,
+      workbenchItems,
+      runItems,
+      agentItems,
+      routineItems,
+      skillItems,
+      libraryItems,
+      nextWorkbench,
+      selectTenant,
+    ],
   );
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
@@ -171,7 +577,7 @@ export function CommandPaletteProvider({
       error={error ? "Search failed. Try again." : undefined}
       hasMore={hasMore}
       onLoadMore={loadMore}
-      placeholder="Search or jump to…"
+      placeholder="Search or jump to… (# workbenches · @ people · > actions · / pages)"
     />
   );
 }

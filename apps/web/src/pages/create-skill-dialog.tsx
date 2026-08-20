@@ -1,8 +1,16 @@
 // The create-skill form: identity (name, description) and the skill
-// body itself (the instructions/tools text). There is no skill
-// registry in the hub yet, so this dialog never POSTs — it collects
-// the values a future registry will expect and hands them to
-// `onCreated` so the page can decide what to do once a seam is real.
+// body itself (the instructions/tools text). Submitting hands the
+// values to `onCreate`, which the Skills section turns directly into a
+// native `kind:"skill"` asset in the workbench's registry
+// (`../skills-api.ts`) — there is no intermediate draft. A rejection
+// from that call (a name conflict, or SKILL.md frontmatter the registry
+// refuses) surfaces inline here rather than closing the dialog, so the
+// person never loses what they typed.
+//
+// The name field is bound by the registry's own rule — lowercase
+// letters, digits, and hyphens — because that is what a SKILL.md's
+// frontmatter must carry. Rejecting it here beats a server error after
+// the person has typed a whole skill body.
 
 import {
   Button,
@@ -19,11 +27,14 @@ import {
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 
-export type SkillDraft = {
+export type SkillCreateInput = {
   readonly name: string;
   readonly description: string;
   readonly body: string;
 };
+
+/** Mirrors `@corbits/skills`' `skillNameSchema` — kebab-case, `<=64`. */
+const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 type FormValues = {
   readonly name: string;
@@ -43,13 +54,16 @@ const FIELDS: readonly IntakeField[] = [
     label: "Name",
     type: "text",
     required: true,
-    placeholder: "Summarize transcript",
+    placeholder: "summarize-transcript",
+    help: "Lowercase letters, digits, and hyphens — this becomes the skill's name in the registry.",
   },
   {
     name: "description",
     label: "Description",
     type: "textarea",
+    required: true,
     placeholder: "What this skill does and when to use it",
+    help: "Agents see this line — and only this line — when deciding whether to load the skill.",
   },
   {
     name: "body",
@@ -57,17 +71,27 @@ const FIELDS: readonly IntakeField[] = [
     type: "textarea",
     required: true,
     placeholder: "Instructions, tools, and guardrails this skill packages…",
-    help: "The instructions an agent definition can declare and a bench can install.",
+    help: "The instructions an agent can declare and this workbench can share.",
   },
 ];
 
 /** Every reason a submission is not yet valid, in plain language — never
  * a generic "invalid form". Exported so the create flow can be proven
- * without SSR-rendering the portal-based dialog (see chat-ui's
- * NewChannelDialog note: Radix portals yield no static markup). */
+ * without SSR-rendering the portal-based dialog (Radix portals yield no
+ * static markup). */
 export function validationIssues(values: FormValues): readonly string[] {
   const issues: string[] = [];
-  if (values.name.trim() === "") issues.push("Name is required.");
+  const name = values.name.trim();
+  if (name === "") {
+    issues.push("Name is required.");
+  } else if (!SKILL_NAME_PATTERN.test(name)) {
+    issues.push(
+      "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
+    );
+  } else if (name.length > 64) {
+    issues.push("Name must be at most 64 characters.");
+  }
+  if (values.description.trim() === "") issues.push("Description is required.");
   if (values.body.trim() === "") issues.push("Skill body is required.");
   return issues;
 }
@@ -75,20 +99,23 @@ export function validationIssues(values: FormValues): readonly string[] {
 export function CreateSkillDialog({
   open,
   onOpenChange,
-  onCreated,
+  onCreate,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Receives the drafted values; the page owns what (if anything) happens
-   * with them. No backend is wired up at this stage. */
-  readonly onCreated: (draft: SkillDraft) => void;
+  /** Creates the skill directly on the registry. A rejection's message is
+   * shown inline and the form is left as typed. */
+  readonly onCreate: (input: SkillCreateInput) => Promise<void>;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [showIssues, setShowIssues] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function reset() {
     setValues(EMPTY_VALUES);
     setShowIssues(false);
+    setServerError(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -106,19 +133,25 @@ export function CreateSkillDialog({
 
   const issues = validationIssues(values);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (issues.length > 0) {
       setShowIssues(true);
       return;
     }
-    const draft: SkillDraft = {
-      name: values.name.trim(),
-      description: values.description.trim(),
-      body: values.body.trim(),
-    };
-    reset();
-    onOpenChange(false);
-    onCreated(draft);
+    setServerError(null);
+    setSubmitting(true);
+    try {
+      await onCreate({
+        name: values.name.trim(),
+        description: values.description.trim(),
+        body: values.body.trim(),
+      });
+      reset();
+    } catch (cause) {
+      setServerError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -127,8 +160,8 @@ export function CreateSkillDialog({
         <DialogHeader>
           <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
-            Define a reusable capability an agent can declare and a bench can
-            install.
+            Define a reusable capability an agent can declare and this workbench
+            can share.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -141,6 +174,11 @@ export function CreateSkillDialog({
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
+          )}
+          {serverError !== null && (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {serverError}
+            </p>
           )}
           <IntakeForm
             fields={FIELDS}
@@ -159,8 +197,8 @@ export function CreateSkillDialog({
           </Button>
           <Button
             type="button"
-            onClick={handleSubmit}
-            disabled={!intakeFieldsComplete(FIELDS, values)}
+            onClick={() => void handleSubmit()}
+            disabled={submitting || !intakeFieldsComplete(FIELDS, values)}
           >
             Create skill
           </Button>

@@ -44,13 +44,16 @@ import {
 } from "./workflow-host-wiring";
 import {
   createDeploymentAddressRegistry,
+  createMultistepCredentialsRouter,
   createMultistepDrainRouter,
+  createMultistepGrantsRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
   createMultistepSourcesRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
 } from "./workflow-run-pack-client";
+import { createWorkflowRunPackRestorer } from "./workflow-run-pack-restore";
 
 await setup();
 
@@ -104,7 +107,9 @@ const deploymentAddressRegistry = createDeploymentAddressRegistry();
 const multistepMailRouter = createMultistepMailRouter();
 const multistepSignalRouter = createMultistepSignalRouter();
 const multistepDrainRouter = createMultistepDrainRouter();
+const multistepGrantsRouter = createMultistepGrantsRouter();
 const multistepSourcesRouter = createMultistepSourcesRouter();
+const multistepCredentialsRouter = createMultistepCredentialsRouter();
 
 const transport = createInMemoryTransport();
 
@@ -126,6 +131,14 @@ const workflowRunPackClient = createWorkflowRunPackClient({
       return resolvedHubLink.pushWorkflowRunPack(opts);
     },
   },
+});
+
+const restoreWorkflowRunPack = createWorkflowRunPackRestorer({
+  // Restore into the unwrapped substrate. Running Hub-authored history
+  // through the push facade would echo the same pack straight back to the
+  // Hub and incorrectly present it as a new supervisor write.
+  substrate: agentRepoStore.repoStore,
+  markRestored: workflowRunPackClient.markRestored,
 });
 
 const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
@@ -197,7 +210,13 @@ const orchestrator = createSidecarOrchestrator({
   mailInboundRouter: multistepMailRouter,
   signalInboundRouter: multistepSignalRouter,
   drainInboundRouter: multistepDrainRouter,
+  grantsInboundRouter: multistepGrantsRouter,
   sourcesInboundRouter: multistepSourcesRouter,
+  credentialsInboundRouter: multistepCredentialsRouter,
+  // Install Hub-authoritative workflow-run history before a replacement
+  // supervisor spawns, against the unwrapped substrate so the restore is
+  // never echoed back to the Hub as a new sidecar-authored update.
+  applyWorkflowRunPack: restoreWorkflowRunPack,
   // Called from every connection's open handler -- the watchdog's
   // aliveness signal -- and from the close path, which immediately
   // re-schedules a reconnect that re-arms the deadline.
@@ -230,7 +249,9 @@ const orchestrator = createSidecarOrchestrator({
     keyStore,
     publishWorkflowInferenceEvent,
   }) => {
-    const router = createSidecarDeployRouter({
+    const deployRouterConfigBase: Parameters<
+      typeof createSidecarDeployRouter
+    >[0] = {
       sessions,
       keyStore,
       transport,
@@ -244,13 +265,47 @@ const orchestrator = createSidecarOrchestrator({
       unregisterDeployment: ({ deploymentId }) => {
         deploymentAddressRegistry.unregister(deploymentId);
       },
+      // Lazy-bound the same way as `workflowRunPackClient.hubLink` above:
+      // `createDeployRouter` runs synchronously during `createSidecarOrchestrator`
+      // construction, before `orchestrator.hubLink` exists, so `resolvedHubLink`
+      // is consulted at call time rather than captured now. Without this, a
+      // workflow-child's ask-rail suspension never reaches the hub as a
+      // `signal.correlation.register` frame and its approval is never
+      // registered.
+      registerSuspension: (registration) => {
+        if (resolvedHubLink === null) {
+          throw new Error(
+            "sidecar boot: suspension register attempted before hub link was constructed",
+          );
+        }
+        resolvedHubLink.sendSignalCorrelationRegister(registration);
+      },
       multistepMailRouter,
       multistepSignalRouter,
       multistepDrainRouter,
+      multistepGrantsRouter,
       multistepSourcesRouter,
+      multistepCredentialsRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent,
-    });
+    };
+    const deployRouterConfigWithConsumedRetentionMs =
+      config.consumedRetentionMs !== undefined
+        ? {
+            ...deployRouterConfigBase,
+            consumedRetentionMs: config.consumedRetentionMs,
+          }
+        : deployRouterConfigBase;
+    const deployRouterConfigWithReadyTimeoutMs =
+      config.readyTimeoutMs !== undefined
+        ? {
+            ...deployRouterConfigWithConsumedRetentionMs,
+            readyTimeoutMs: config.readyTimeoutMs,
+          }
+        : deployRouterConfigWithConsumedRetentionMs;
+    const router = createSidecarDeployRouter(
+      deployRouterConfigWithReadyTimeoutMs,
+    );
     capturedRouter = router;
     return router;
   },

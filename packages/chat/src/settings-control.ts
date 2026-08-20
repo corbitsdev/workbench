@@ -1,4 +1,4 @@
-// Pure control/settings logic for a channel: recognizing a control
+// Pure control/settings logic for a workbench: recognizing a control
 // message structurally, parsing its payload, and folding it onto
 // participant state as timeline events. Isolated from `@intx/workflow`
 // and from any transport so it stays unit-testable without a runtime.
@@ -7,7 +7,7 @@
 // uses it to turn a validated settings patch into the event parts it
 // posts onto the anchor's timeline as the audit trail. There is no
 // relay workflow anymore for this logic to be reached from otherwise
-// (see `channel-workflow.ts`).
+// (see `workbench-workflow.ts`).
 
 import { type } from "arktype";
 import type { EventPart, Part } from "./parts";
@@ -15,21 +15,21 @@ import type { EventPart, Part } from "./parts";
 // A control mail is structurally distinguished (never by a magic
 // subject string): exactly one `BlockPart` whose `block.type` is this
 // namespace. Every other inbound message is an ordinary chat message.
-export const CHANNEL_CONTROL_NAMESPACE = "chat/channel-settings";
+export const WORKBENCH_CONTROL_NAMESPACE = "chat/workbench-settings";
 
-export const ChannelControlPayload = type({
-  namespace: `"${CHANNEL_CONTROL_NAMESPACE}"`,
+export const WorkbenchControlPayload = type({
+  namespace: `"${WORKBENCH_CONTROL_NAMESPACE}"`,
   "participants?": "string[]",
   "settings?": "Record<string, unknown>",
 });
-export type ChannelControlPayload = typeof ChannelControlPayload.infer;
+export type WorkbenchControlPayload = typeof WorkbenchControlPayload.infer;
 
-export interface ChannelParticipantState {
+export interface WorkbenchParticipantState {
   readonly participants: readonly string[];
   readonly settings: Readonly<Record<string, unknown>>;
 }
 
-export const EMPTY_CHANNEL_STATE: ChannelParticipantState = {
+export const EMPTY_WORKBENCH_STATE: WorkbenchParticipantState = {
   participants: [],
   settings: {},
 };
@@ -46,7 +46,7 @@ export function isControlMessage(parts: readonly Part[]): boolean {
   return (
     part !== undefined &&
     part.kind === "block" &&
-    part.block.type === CHANNEL_CONTROL_NAMESPACE
+    part.block.type === WORKBENCH_CONTROL_NAMESPACE
   );
 }
 
@@ -57,7 +57,7 @@ export function isControlMessage(parts: readonly Part[]): boolean {
  */
 export function parseControlPayload(
   parts: readonly Part[],
-): ChannelControlPayload {
+): WorkbenchControlPayload {
   if (!isControlMessage(parts)) {
     throw new Error(
       "parseControlPayload requires a message that isControlMessage accepts",
@@ -66,15 +66,15 @@ export function parseControlPayload(
   const [part] = parts;
   // isControlMessage already narrowed this to a single BlockPart.
   const block = (part as Extract<Part, { kind: "block" }>).block;
-  const result = ChannelControlPayload(block.data);
+  const result = WorkbenchControlPayload(block.data);
   if (result instanceof type.errors) {
-    throw new Error(`invalid channel control payload: ${result.summary}`);
+    throw new Error(`invalid workbench control payload: ${result.summary}`);
   }
   return result;
 }
 
 export interface ControlApplyResult {
-  readonly state: ChannelParticipantState;
+  readonly state: WorkbenchParticipantState;
   readonly events: readonly EventPart[];
 }
 
@@ -84,13 +84,13 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * Apply a parsed control payload to the current participant state.
- * Emits one event part per kind of change so readers of the channel's
+ * Emits one event part per kind of change so readers of the workbench's
  * timeline see "membership changed" and "settings changed" as
  * distinguishable events; a payload that changes neither emits none.
  */
 export function applyControlPayload(
-  state: ChannelParticipantState,
-  payload: ChannelControlPayload,
+  state: WorkbenchParticipantState,
+  payload: WorkbenchControlPayload,
   updatedBy: string,
 ): ControlApplyResult {
   const events: EventPart[] = [];
@@ -102,18 +102,26 @@ export function applyControlPayload(
     participants = payload.participants;
     events.push({
       kind: "event",
-      event: "channel.membership-changed",
+      event: "workbench.membership-changed",
       data: { updatedBy, participants },
     });
   }
 
   let settings = state.settings;
   if (payload.settings !== undefined) {
+    // The event carries the delta and the prior values of the touched
+    // keys so timeline readers can say what changed ("Renamed A to B"),
+    // not just that something did.
+    const previous = Object.fromEntries(
+      Object.keys(payload.settings)
+        .filter((key) => key in state.settings)
+        .map((key) => [key, state.settings[key]]),
+    );
     settings = { ...settings, ...payload.settings };
     events.push({
       kind: "event",
-      event: "channel.settings-changed",
-      data: { updatedBy, settings },
+      event: "workbench.settings-changed",
+      data: { updatedBy, settings, changed: payload.settings, previous },
     });
   }
 

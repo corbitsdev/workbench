@@ -1,25 +1,106 @@
 export { ChatWorkspace } from "./chat-workspace";
-export type { TenantResolution } from "./chat-workspace";
+export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
-export { ChannelTimeline } from "./timeline";
-export type { CurrentUser } from "./timeline";
-export { Composer } from "./composer";
-export { ChatSidebar } from "./sidebar";
-export { NewChannelDialog } from "./new-channel-dialog";
+export { WorkbenchTimeline, messageDomId } from "./timeline";
+export type {
+  CurrentUser,
+  ReactionActions,
+  PinActions,
+  PendingActions,
+  PendingMessageStatus,
+  TimelineMessageItem,
+} from "./timeline";
+
+export { PinnedStrip } from "./pinned-strip";
+export {
+  Composer,
+  draftAfterSend,
+  attachmentsAfterSend,
+  partsForSend,
+  canSendComposer,
+  canSendComposerAction,
+  canAttachComposer,
+  COMPOSER_ATTACHMENT_LIMITS,
+  validateAttachmentPick,
+  attachmentValidationMessage,
+  attachmentBytesOnComposer,
+  base64DecodedByteLength,
+  insertTextAtCaret,
+  composerSendVisualState,
+} from "./composer";
+export type {
+  ComposerAttachment,
+  ComposerSendPayload,
+  ComposerAttachmentLimits,
+  AttachmentPickCandidate,
+  AttachmentValidationError,
+  ComposerHandle,
+  ComposerSendVisualState,
+} from "./composer";
+export { renamePayload, rowMenuLabels } from "./sidebar";
+
 export { InviteAgentDialog } from "./invite-agent-dialog";
+export { DialogStepper, DialogStepAccordion } from "./dialog-stepper";
+export type {
+  DialogStepperStep,
+  DialogStepStatus,
+  DialogStepAccordionStep,
+} from "./dialog-stepper";
 
-export { useChannelStream } from "./use-channel-stream";
-export type { ChannelStreamState } from "./use-channel-stream";
+export { useWorkbenchStream } from "./use-workbench-stream";
+export type { WorkbenchStreamState } from "./use-workbench-stream";
 
 export {
   activeMentionQuery,
+  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
+  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
+  mentionOptionsFromWorkbench,
 } from "./mentions";
-export type { MentionCandidate, MentionQuery } from "./mentions";
+export type {
+  BringInAgentDefinition,
+  BringInMember,
+  MentionCandidate,
+  MentionInviteIntent,
+  MentionOption,
+  MentionQuery,
+  MentionSection,
+} from "./mentions";
+
+export {
+  SLASH_COMMANDS,
+  activeSlashQuery,
+  filterSlashCommands,
+} from "./slash-commands";
+export type {
+  SlashCommandId,
+  SlashCommandSpec,
+  SlashQuery,
+} from "./slash-commands";
 
 export { CHAT_STRINGS } from "./strings";
+export { displayWorkbenchTitle } from "./workbench-display-title";
+
+export { BlockPartView } from "./blocks/registry";
+export { BlockCard, RiskBadge } from "./blocks/block-card";
+export type {
+  ApprovalActions,
+  ApprovalLiveStatus,
+  ApprovalStatusQuery,
+  ApprovalDecisionResult,
+  PlatformApprovalDetail,
+} from "./blocks/approval-actions";
+export type {
+  BlockResponseActions,
+  BlockResponseQuery,
+  BlockResponseSubmitResult,
+  BlockResponsePayload,
+  PollResponsePayload,
+  FormResponsePayload,
+  QuestionResponsePayload,
+} from "./blocks/block-responses";
 
 export {
   TextPart,
@@ -29,37 +110,108 @@ export {
   FilePart,
   EventPart,
   Part,
-  ChannelKind,
-  isKnownChannelKind,
+  WorkbenchKind,
+  isKnownWorkbenchKind,
   MessageSender,
   ChatApiError,
-  listChannels,
-  createChannel,
+  listWorkbenches,
+  listAllWorkbenches,
+  workbenchesQueryKey,
+  workbenchesQueryKeyPrefix,
+  WORKBENCHES_MUTATED_EVENT,
+  createWorkbench,
   listMessages,
   sendMessage,
+  fetchWorkbenchBlob,
+  listThreads,
+  listThreadMessages,
   putReadState,
   listRuns,
   listInvitableDefinitions,
+  listTenantInvitableDefinitions,
+  listVisibleAgentDefinitions,
+  openAgentDm,
   inviteAgent,
-  channelStreamUrl,
+  workbenchStreamUrl,
   runDisplayName,
-  getChannelSettings,
-  patchChannelSettings,
+  getWorkbenchSettings,
+  patchWorkbenchSettings,
   getBenchChatSettings,
   patchBenchChatSettings,
+  getBlockResponses,
+  submitPollResponse,
+  submitFormResponse,
+  submitQuestionResponse,
+  REACTION_EMOJI,
+  toggleReaction,
+  pinMessage,
+  unpinMessage,
+  listPinnedMessages,
+  listWorkbenchAgents,
 } from "./api";
 export type {
-  Channel,
+  Workbench,
+  CreateWorkbenchInput,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,
+  WorkbenchThread,
+  ThreadMessagesResponse,
   Run,
   InvitableDefinition,
   InvitedAgent,
-  ChannelSettings,
-  ChannelSettingsPatch,
+  VisibleAgentDefinition,
+  WorkbenchSettings,
+  WorkbenchSettingsPatch,
   ResolvedContextWindow,
   BenchChatSettings,
   BenchChatSettingsPatch,
+  BlockResponses,
+  BlockResponsePayload as BlockResponsePayloadWire,
+  ReactionEmoji,
+  ReactionSummary,
+  Pinned,
+  PinnedMessage,
+  WorkbenchAgent,
 } from "./api";
-export { ChannelSettingsPanel } from "./channel-settings-panel";
+export { WorkbenchSettingsSurface } from "./workbench-settings";
+export {
+  workbenchSettingsSections,
+  contextWindowControlState,
+  contextWindowPatchValue,
+} from "./workbench-settings";
+export type {
+  WorkbenchSettingsSection,
+  WorkbenchSettingsSectionGroup,
+  WorkbenchSettingsSectionId,
+  ContextWindowMode,
+} from "./workbench-settings";
+export { profileSubjectFromParticipant } from "./profile-subject";
+export type { ProfileSubject } from "./profile-subject";
+
+export { sharedWorkbenchesWith } from "./shared-workbenches";
+export type { SharedWorkbenchSummary } from "./shared-workbenches";
+export { findDirectWorkbenchWith } from "./direct-workbench";
+
+export {
+  createDefaultAgentWorkbench,
+  findWorkbenchByTitle,
+  findDefinitionByAssetName,
+  isWorkbenchTitleMatch,
+} from "./default-agent-workbench";
+export type {
+  DefaultAgentWorkbench,
+  DefaultAgentWorkbenchConfig,
+  EnsureDefaultAgentWorkbenchResult,
+} from "./default-agent-workbench";
+
+export { ArtifactChip } from "./artifact-chip";
+
+export {
+  TypingIndicator,
+  parseTypingEvent,
+  nextTypingState,
+  isTypingStateExpired,
+  typingLabel,
+} from "./typing-indicator";
+export type { TypingEvent, TypingState } from "./typing-indicator";

@@ -27,9 +27,9 @@ import {
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
 import {
-  buildChannelDigestWorkflow,
-  serializeChannelDigestWorkflow,
-} from "@corbits/channel-digest-workflow";
+  buildWorkbenchDigestWorkflow,
+  serializeWorkbenchDigestWorkflow,
+} from "@corbits/workbench-digest-workflow";
 import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
@@ -38,10 +38,29 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "@corbits/heartbeat-workflow";
+import {
+  buildLast30DaysResearchWorkflow,
+  serializeLast30DaysResearchWorkflow,
+} from "@corbits/last-30-days-research-workflow";
+import {
+  buildRecurringTaskWorkflow,
+  serializeRecurringTaskWorkflow,
+} from "@corbits/recurring-task-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
-import { CliError } from "./errors";
+import {
+  publishCorbitsToolsRegistry,
+  type PublishCorbitsToolsRegistryArgs,
+} from "@corbits/tool-registry-publish";
+import { CliError, SidecarUnavailableError } from "./errors";
+import { DEFAULT_SKILLS } from "./default-skills";
+import { ensureDefaultRoutines } from "./default-routines";
 import { parseAs, type ApiCall } from "./hub";
-import { catalogModel, catalogProvider } from "./catalog-seed-data";
+import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
+import {
+  fetchOllamaModelCatalog,
+  ollamaOpenAICompatBaseURL,
+  type SupportedCredentialProvider,
+} from "./credential-test";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -51,7 +70,17 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 // fast rather than tie up a run slot for the full two minutes the
 // conversational workflows above allow.
 const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
-const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
+const WORKBENCH_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
+// Never actually runs (its routine fire is intercepted and dispatched
+// as a task instead — see @corbits/recurring-task-workflow's own doc),
+// so this timeout only bounds the deploy-time definition, never a real
+// turn.
+const RECURRING_TASK_TURN_TIMEOUT_MS = 30 * 1000;
+// A research turn fans out across multiple source tools and writes a
+// long-form report, so it gets the same generous allowance as the
+// other conversational workflows above, not the short catalog-test
+// budget.
+const LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -73,7 +102,7 @@ const NOOP_MODEL = "noop";
  * A `ModelSource` pointed at the hub's own `noop-inference` endpoint
  * instead of a real provider — the same substitution
  * `packages/chat/src/platform-adapter.ts`'s `noopSourcesOverride` makes
- * for channel-host launches, reused here so a workflow deployed with
+ * for workbench-host launches, reused here so a workflow deployed with
  * this source resolves every turn instantly against a constant,
  * locally served reply and never reaches a real model. `hubUrl` is the
  * same base URL `seedTenant` already receives, so no new configuration
@@ -97,8 +126,10 @@ const WorkflowDeploymentResponse = type({
   createdAt: "string",
 });
 const WorkflowRunListResponse = type({ runIds: "string[]" });
+// Post-deployment-dissolution wire shape: the trigger answers with the
+// (self-anchored) run id, not a deployment id.
 const WorkflowRunTriggerResponse = type({
-  deploymentId: "string",
+  runId: "string",
   address: "string",
   messageId: "string",
 });
@@ -109,6 +140,16 @@ export type ModelSource = {
   readonly baseURL: string;
   readonly apiKey: string;
 };
+
+/**
+ * Whether a deployments-API row counts as live. The wire vocabulary is
+ * "deployed" / "pending" / failure states (vendor hub-api
+ * formatAllocationStatus) — there is no "active". This is the ONE
+ * definition of "already deployed"; every seeded/skip check imports it.
+ */
+export function isLiveDeploymentStatus(status: string): boolean {
+  return status === "deployed" || status === "pending";
+}
 
 export type PushOutcome = "pushed" | "unchanged";
 
@@ -135,7 +176,7 @@ export type DefaultWorkflow = {
    * `heartbeat`, which must stay free to run continuously: it names
    * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
    * Absent on every conversational workflow and on the seeded
-   * channel-digest automation, which deploy against the tenant's real
+   * workbench-digest automation, which deploy against the tenant's real
    * model.
    */
   modelSource?: (hubUrl: string) => ModelSource;
@@ -157,7 +198,7 @@ function catalogAutomatable(assetName: string): boolean {
 
 /**
  * The workflow set every real tenant starts with: the echo
- * walking-skeleton, the general-purpose assistant, and the channel-digest
+ * walking-skeleton, the general-purpose assistant, and the workbench-digest
  * automation the Routines picker can honestly offer. This is what
  * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
  * on first login for every real user — growing it is adding an entry
@@ -165,7 +206,7 @@ function catalogAutomatable(assetName: string): boolean {
  * never the place for a workflow that exists only to exercise the
  * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
  *
- * channel-digest is the seed automation: schedulable, not a chat host,
+ * workbench-digest is the seed automation: schedulable, not a chat host,
  * friendly display name. It uses the tenant's real model so a scheduled
  * run can produce a real digest line.
  */
@@ -201,17 +242,57 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
       ),
   },
   {
-    assetName: "channel-digest",
-    displayName: catalogDisplayName("channel-digest"),
-    automatable: catalogAutomatable("channel-digest"),
+    assetName: "workbench-digest",
+    displayName: catalogDisplayName("workbench-digest"),
+    automatable: catalogAutomatable("workbench-digest"),
     buildJson: (tenantDomain, model) =>
-      serializeChannelDigestWorkflow(
-        buildChannelDigestWorkflow({
-          triggerAddress: `channel-digest@${tenantDomain}`,
+      serializeWorkbenchDigestWorkflow(
+        buildWorkbenchDigestWorkflow({
+          triggerAddress: `workbench-digest@${tenantDomain}`,
           inferencePreferences: [
             { provider: model.provider, model: model.model },
           ],
-          turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
+          turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "recurring-task",
+    displayName: catalogDisplayName("recurring-task"),
+    automatable: catalogAutomatable("recurring-task"),
+    // Every real tenant needs a deployed "recurring-task" definition for
+    // the Routines picker to offer — "Make this a routine" (an Inbox
+    // action on a completed task result) prefills the create dialog
+    // with this definition's id. Its own step is never actually run
+    // (see @corbits/recurring-task-workflow's module doc), so the real
+    // model here costs nothing extra to seed.
+    buildJson: (tenantDomain, model) =>
+      serializeRecurringTaskWorkflow(
+        buildRecurringTaskWorkflow({
+          triggerAddress: `recurring-task@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: RECURRING_TASK_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "last-30-days-research",
+    displayName: catalogDisplayName("last-30-days-research"),
+    automatable: catalogAutomatable("last-30-days-research"),
+    // CL-6201: deployed so `ensureDefaultRoutines` (default-routines.ts)
+    // has a real definition to un-strand into a routine row. It was
+    // never in this array before that ticket, which is exactly why the
+    // routine could never appear: nothing deployed its definition.
+    buildJson: (tenantDomain, model) =>
+      serializeLast30DaysResearchWorkflow(
+        buildLast30DaysResearchWorkflow({
+          triggerAddress: `last-30-days-research@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS,
         }),
       ),
   },
@@ -227,7 +308,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
  * explicit, dev/CI-specific caller (`workbench seed` with
  * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
  *
- * channel-digest used to live here as a platform exercise; it is now the
+ * workbench-digest used to live here as a platform exercise; it is now the
  * seed automation in `DEFAULT_WORKFLOWS` so every personal bench has an
  * honest Routines-picker option.
  */
@@ -259,6 +340,13 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
   { resource: "workflow-run:*", action: "read" },
+  // CL-6201: `ensureDefaultRoutines` lists deployed definitions (GET
+  // .../workflows/definitions) and creates/disables preset routines
+  // (POST/PATCH .../routines) — none of the grants above cover those
+  // routes, which gate on their own resource/action pairs.
+  { resource: "workflow-definition:*", action: "read" },
+  { resource: "workflow-run:*", action: "create" },
+  { resource: "workflow-run:*", action: "write" },
 ];
 
 // The grants table has no unique constraint and the create route is a
@@ -316,6 +404,44 @@ async function plantGrant(
     );
   }
   log(`granted ${args.resource}/${args.action}`);
+}
+
+async function plantDefaultSkills(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  log: (line: string) => void,
+): Promise<void> {
+  for (const skill of DEFAULT_SKILLS) {
+    const existing = await api(
+      "GET",
+      `/api/tenants/${tenantId}/skills/${encodeURIComponent(skill.name)}`,
+      undefined,
+      cookies,
+    );
+    if (existing.status === 200) {
+      log(`skill ${skill.name} already exists (skipped)`);
+      continue;
+    }
+    const created = await api(
+      "POST",
+      `/api/tenants/${tenantId}/skills`,
+      {
+        name: skill.name,
+        description: skill.description,
+        body: skill.body,
+        scope: "tenant",
+      },
+      cookies,
+    );
+    if (created.status !== 201) {
+      throw new CliError(
+        `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    log(`seeded skill ${skill.name}`);
+  }
 }
 
 async function ensureWorkflowAsset(
@@ -426,7 +552,7 @@ async function ensureDeployment(
 ): Promise<string> {
   const listed = await api(
     "GET",
-    `/api/tenants/${args.tenantId}/workflows/instances`,
+    `/api/tenants/${args.tenantId}/workflows/deployments`,
     undefined,
     cookies,
   );
@@ -436,7 +562,8 @@ async function ensureDeployment(
     "deployments response",
   );
   const active = deployments.find(
-    (d) => d.definitionAssetId === args.assetId && d.status === "active",
+    (d) =>
+      d.definitionAssetId === args.assetId && isLiveDeploymentStatus(d.status),
   );
   if (active) {
     log(
@@ -447,7 +574,7 @@ async function ensureDeployment(
 
   const deployed = await api(
     "POST",
-    `/api/tenants/${args.tenantId}/workflows/instances`,
+    `/api/tenants/${args.tenantId}/workflows/deployments`,
     {
       assetId: args.assetId,
       sources: [
@@ -464,7 +591,7 @@ async function ensureDeployment(
     cookies,
   );
   if (deployed.status === 502) {
-    throw new CliError(
+    throw new SidecarUnavailableError(
       `the hub could not deploy workflow ${args.assetName}: the sidecar is unavailable (${JSON.stringify(deployed.data)})`,
       "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
     );
@@ -553,6 +680,17 @@ export type SeedTenant = {
   domain: string;
 };
 
+/**
+ * Publishes the tenant's `corbits-tools` package-registry asset ahead
+ * of any workflow deploy. Defaults to the real
+ * `publishCorbitsToolsRegistry`; a test double can replace it so a
+ * unit test never bundles a real tarball or dials the hub's tarball
+ * REST routes, the same way `pushWorkflow` replaces the real git push.
+ */
+export type ToolRegistryPublisher = (
+  args: Omit<PublishCorbitsToolsRegistryArgs, "fetchImpl">,
+) => Promise<unknown>;
+
 export type SeedTenantArgs = {
   api: ApiCall;
   cookies: string[];
@@ -560,19 +698,34 @@ export type SeedTenantArgs = {
   tenant: SeedTenant;
   model: ModelSource;
   pushWorkflow: WorkflowPusher;
+  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
   workflows?: readonly DefaultWorkflow[];
   sleep?: (ms: number) => Promise<void>;
   runStartTimeoutMs?: number;
   runPollIntervalMs?: number;
+  /**
+   * Whether each deployment is confirmed by triggering a real mail
+   * message and waiting for a run to start. Defaults to `true` — the
+   * behavior `workbench seed` and the operator-key first-login hook
+   * rely on, where a deployment nothing ever confirmed is treated as a
+   * seed failure. A self-served connect flow (`@workbench/onboarding`'s
+   * `completeCredentialSetup`) passes `false`: the key was already
+   * proven with a free, auth-only probe before seeding started, so
+   * spending the connecting user's own (possibly credit-less) balance
+   * on a real inference call here would only re-litigate a question
+   * already answered, at the user's expense.
+   */
+  confirmDeployments?: boolean;
 };
 
 /**
- * Plants the seed grants and deploys and confirms every default
- * workflow for one already-known tenant. A caller that already holds
- * an authenticated session and a freshly created tenant (the
- * first-login provisioning hook, in particular) seeds it without
- * re-authenticating or re-resolving the tenant by slug.
+ * Plants the seed grants and deploys — and, unless told not to,
+ * confirms — every default workflow for one already-known tenant. A
+ * caller that already holds an authenticated session and a freshly
+ * created tenant (the first-login provisioning hook, in particular)
+ * seeds it without re-authenticating or re-resolving the tenant by
+ * slug.
  */
 export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   const {
@@ -583,6 +736,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     model,
     log,
     workflows = DEFAULT_WORKFLOWS,
+    confirmDeployments = true,
   } = args;
   const sleep =
     args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -607,6 +761,35 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         action: grant.action,
       },
       log,
+    );
+  }
+
+  await plantDefaultSkills(api, cookies, tenant.tenantId, log);
+
+  // Deploying any workflow that pins a `@corbits/*` tool package (the
+  // "assistant" default workflow pins `@corbits/memory-tools`) needs
+  // the tenant's `corbits-tools` package-registry asset to already
+  // carry that package's tarball, or the closure resolver fails the
+  // launch with "unknown registry". Publishing ahead of the deploy
+  // loop below — idempotent, and cheap relative to a workflow deploy —
+  // means every seed run is a full seed, not one that skips whichever
+  // workflow happens to pin an unresolved package.
+  const publishToolRegistry =
+    args.publishToolRegistry ?? publishCorbitsToolsRegistry;
+  try {
+    await publishToolRegistry({
+      api,
+      cookies,
+      hubUrl,
+      tenantId: tenant.tenantId,
+      log,
+    });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new CliError(
+      `publishing the corbits-tools package-registry asset failed: ${message}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+      { cause },
     );
   }
 
@@ -648,19 +831,21 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       log,
     );
 
-    await confirmDeploymentAnswers(
-      api,
-      cookies,
-      {
-        tenantId: tenant.tenantId,
-        deploymentId,
-        assetName: workflow.assetName,
-        sleep,
-        timeoutMs,
-        intervalMs,
-      },
-      log,
-    );
+    if (confirmDeployments) {
+      await confirmDeploymentAnswers(
+        api,
+        cookies,
+        {
+          tenantId: tenant.tenantId,
+          deploymentId,
+          assetName: workflow.assetName,
+          sleep,
+          timeoutMs,
+          intervalMs,
+        },
+        log,
+      );
+    }
     confirmed += 1;
   }
 
@@ -670,26 +855,55 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
   }
-  log(`seed complete: ${confirmed} workflow(s) deployed and confirmed`);
+
+  // CL-6201: every default workflow above is now deployed, so any
+  // preset routine whose definition just landed can be planted. Runs
+  // after the deploy loop (never before) — a preset targeting a
+  // workflow this call didn't deploy is skipped with a log line rather
+  // than failing seeding outright, which keeps a narrowed `workflows`
+  // list (as several tests here pass) a partial-but-valid seed.
+  await ensureDefaultRoutines(api, cookies, tenant.tenantId, log);
+
+  log(
+    confirmDeployments
+      ? `seed complete: ${confirmed} workflow(s) deployed and confirmed`
+      : `seed complete: ${confirmed} workflow(s) deployed`,
+  );
 }
 
 // The credential name a seeded inference source stores its secret
 // under; distinct from the provider name so re-runs and manual
-// inspection are never ambiguous about which is which.
-function inferenceCredentialName(providerName: string): string {
+// inspection are never ambiguous about which is which. Exported so a
+// caller that needs to find that same row later (e.g. checking whether
+// a just-connected provider's credential already exists) names it the
+// same way `seedCatalog` did, rather than re-deriving the convention.
+export function inferenceCredentialName(providerName: string): string {
   return `${providerName}-default`;
 }
 
-async function ensureProvider(
+export type EnsureProviderArgs = {
+  tenantId: string;
+  name: string;
+  plugin: string;
+  /** The API origin an `http`-plugin credential from this provider pins
+   * its requests to (`CreateProvider`'s own field, `@intx/types`).
+   * Every fixed connector today (GitHub, Exa, ...) lets the hub-side
+   * plugin default this; a dynamic-origin connector — a tenant-supplied
+   * MCP server URL — must set it explicitly, or credential resolution
+   * fails closed with `no_origin`. */
+  apiBaseUrl?: string;
+};
+
+export async function ensureProvider(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; name: string; plugin: string },
+  args: EnsureProviderArgs,
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/providers`,
-    { name: args.name, plugin: args.plugin },
+    { name: args.name, plugin: args.plugin, apiBaseUrl: args.apiBaseUrl },
     cookies,
   );
   if (created.status === 201) {
@@ -730,10 +944,40 @@ async function ensureProvider(
   return existing.id;
 }
 
-async function ensureCredential(
+export type EnsureCredentialArgs = {
+  tenantId: string;
+  providerId: string;
+  name: string;
+  secret: string;
+  type: "api_key" | "oauth_token";
+  /** An `oauth_token` credential from a provider whose grant issues a
+   * refresh token — absent for a provider that never does (Hugging
+   * Face's PKCE flow), never a coerced empty string. */
+  refreshSecret?: string;
+  /** ISO instant the access token expires, when the provider reports one. */
+  expiresAt?: string;
+  metadata?: Record<string, unknown>;
+  /**
+   * Set by a caller that received `secret` as an explicit user
+   * submission through a connect UI (a pasted key, a completed OAuth
+   * exchange) before reaching `ensureCredential` — never inferred here,
+   * and never conditioned on a probe (CL-6123 dropped the onboarding
+   * probe that used to gate this). Gates whether an `api_key` name
+   * conflict rotates the stored secret (see the 409 branch below); an
+   * `oauth_token` conflict decides rotation from the stored row's
+   * `status` instead and ignores this flag. Left unset by a plain
+   * `workbench seed` or the hub-owned env auto-plant (CL-6101's
+   * `plantEnvProviderCredentials`, which keeps its own boot-time probe
+   * but never sets this — its rule is never-overwrite, not rotate), so
+   * a routine re-seed with an unchanged key still just skips.
+   */
+  verified?: boolean;
+};
+
+export async function ensureCredential(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; providerId: string; name: string; secret: string },
+  args: EnsureCredentialArgs,
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(
@@ -742,8 +986,11 @@ async function ensureCredential(
     {
       providerId: args.providerId,
       name: args.name,
-      type: "api_key",
+      type: args.type,
       secret: args.secret,
+      refreshSecret: args.refreshSecret,
+      expiresAt: args.expiresAt,
+      metadata: args.metadata,
     },
     cookies,
   );
@@ -781,6 +1028,67 @@ async function ensureCredential(
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
+
+  // An `oauth_token` credential (Hugging Face today) can reconnect under
+  // its same stable name with a fresh secret and a fresh `expiresAt`
+  // once the stored one has gone stale — reusing the stale row instead
+  // of rotating it would silently strand the reconnect on the old,
+  // already-expired secret, and since the row's `status` is already
+  // non-`active`, the expiry sweep would never see it again to re-notify.
+  // Scoped to exactly that case: an `active` row (the common idempotent
+  // re-seed) is left untouched, so a routine re-seed with an unchanged
+  // token never turns into a rotation.
+  //
+  // An `api_key` credential (OpenRouter, an onboarding-picked provider)
+  // has no such staleness signal — its row stays `active` whether or not
+  // the person reconnecting regenerated the key or is retrying after a
+  // bad paste — so `status` can't gate it the way it gates `oauth_token`.
+  // It rotates on a name conflict only when `args.verified` is set,
+  // which a caller sets only for an explicit user submission through a
+  // connect UI: `testAndPersistCredential`
+  // (`@workbench/onboarding`'s `complete-credential.ts`) sets it
+  // unconditionally for a pasted key or a completed OAuth exchange
+  // (CL-6123 dropped the probe that used to gate this), and
+  // `connections`' `POST /:connectorId/complete` (`routes.ts`) still
+  // sets it only after `descriptor.probe` passes, since that surface
+  // (Settings > Connections) is allowed to block on a real check. A
+  // plain `workbench seed` never sets `verified` — its key comes
+  // straight from env with no probe of its own — so that idempotent
+  // re-seed still just skips, exactly as before.
+  const shouldRotate =
+    args.type === "oauth_token"
+      ? existing.status !== "active"
+      : args.verified === true;
+  if (shouldRotate) {
+    const rotated = await api(
+      "PATCH",
+      `/api/tenants/${args.tenantId}/credentials/${existing.id}`,
+      {
+        secret: args.secret,
+        refreshSecret: args.refreshSecret,
+        expiresAt: args.expiresAt,
+        status: "active",
+        metadata: args.metadata,
+      },
+      cookies,
+    );
+    if (rotated.status !== 200) {
+      throw new CliError(
+        `the hub rejected rotating credential ${args.name} with status ${rotated.status}: ${JSON.stringify(rotated.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    const credential = parseAs(
+      CredentialResponse,
+      rotated.data,
+      "credential response",
+    );
+    log(
+      `rotated credential ${args.name} (reconnect refreshed the stored secret)`,
+    );
+    return credential.id;
+  }
+
   log(
     `credential ${args.name} already exists (skipped; its secret is not updated by seeding)`,
   );
@@ -901,13 +1209,22 @@ async function ensureCatalogProvider(
 async function ensureCatalogOffering(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; modelId: string; providerId: string },
+  args: {
+    tenantId: string;
+    modelId: string;
+    providerId: string;
+    priority: number;
+  },
   log: (line: string) => void,
 ): Promise<void> {
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/catalog/offerings`,
-    { modelId: args.modelId, providerId: args.providerId },
+    {
+      modelId: args.modelId,
+      providerId: args.providerId,
+      priority: args.priority,
+    },
     cookies,
   );
   if (created.status === 201) {
@@ -935,40 +1252,113 @@ export type SeedCatalogArgs = {
   tenantId: string;
   log: (line: string) => void;
   /**
-   * A real Anthropic API key. When set, `seedCatalog` plants a
+   * Which provider's curated catalog seed (`CATALOG_SEEDS`) to plant.
+   * Defaults to `"anthropic"` — the operator-configured provider a plain
+   * `workbench seed` plants — so every existing caller that seeds a
+   * single hub-owned key keeps working unchanged. Onboarding's
+   * self-served credential flow always passes the provider the person
+   * actually connected.
+   */
+  provider?: SupportedCredentialProvider;
+  /**
+   * A real API key for `provider`. When set, `seedCatalog` plants a
    * credential row alongside the catalog data, making the seeded
-   * offering launchable.
+   * offerings launchable.
    */
   apiKey?: string;
   /**
    * Explicit opt-in to plant a placeholder credential when `apiKey` is
-   * not set, so a keyless dev or CI run can still launch channel
+   * not set, so a keyless dev or CI run can still launch workbench
    * anchors. Plain `workbench seed` never sets this — only callers that
    * need a launchable chain without a real key (the local dev
    * bootstrap, the e2e harness) pass it.
    */
   placeholderCredential?: boolean;
+  /**
+   * The credential type the seeded row is stored as. Defaults to
+   * `"api_key"` for a pasted secret; a connect flow that mints an
+   * expiring OAuth access token (Hugging Face) passes `"oauth_token"`
+   * so the row is honestly typed.
+   */
+  credentialType?: "api_key" | "oauth_token";
+  /**
+   * Overrides the seeded credential row's name — defaults to
+   * `inferenceCredentialName(seed.provider.name)`. A caller whose
+   * credential must also resolve by name elsewhere (the Plugins
+   * gallery's `GET .../credentials/resolve/:name`, which looks up a
+   * connector's `descriptor.displayName`) passes that same name here,
+   * so the one row satisfies both readers instead of leaving a
+   * connect flow's credential invisible to a reader that expects the
+   * other naming convention.
+   */
+  credentialName?: string;
+  /**
+   * Free-form data attached to the seeded credential's `metadata`
+   * field — the extension point a token's expiry timestamp lives in
+   * (see `complete-credential.ts`), never interpreted by this function.
+   */
+  credentialMetadata?: Record<string, unknown>;
+  /**
+   * Passed straight through to `ensureCredential`'s own `verified` — set
+   * only by a caller that already proved `apiKey` against the provider's
+   * own probe before calling `seedCatalog` (onboarding's
+   * `testAndPersistCredential`). A plain `workbench seed` never sets
+   * this, since its key comes straight from env with no probe of its
+   * own.
+   */
+  credentialVerified?: boolean;
+  /**
+   * Overrides `CATALOG_SEEDS[provider].provider.baseURL` for this seed
+   * run — the configurable-base-URL seam every other curated provider
+   * ignores (a fixed origin) and `ollama` uses (the root a person
+   * actually pointed their instance at). Accepted in any shape
+   * `ollamaOpenAICompatBaseURL` normalizes (plain root or `/v1` form);
+   * normalized here before it reaches `ensureProvider`/`ensureCatalogProvider`.
+   * Ignored for every provider except `ollama`.
+   */
+  baseURLOverride?: string;
 };
 
 /**
- * Plants the workbench dev catalog (see `catalog-seed-data.ts`) in a
- * tenant's catalog. The catalog model row is always planted — data
+ * Plants one provider's curated catalog (see `catalog-seed-data.ts`) in a
+ * tenant's catalog. The catalog model rows are always planted — data
  * only, viewable before any credential exists. The credential, catalog
- * provider, and offering are planted only when a real `apiKey` is
- * given or `placeholderCredential` is explicitly set; without either,
- * the model is listable but nothing is launchable, and the caller is
- * told so. Idempotent: an already seeded chain is detected by name and
+ * provider, and offerings are planted only when a real `apiKey` is given
+ * or `placeholderCredential` is explicitly set; without either, the
+ * models are listable but nothing is launchable, and the caller is told
+ * so. Idempotent: an already seeded chain is detected by name and
  * skipped, never duplicated.
  */
 export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
-  const { api, cookies, tenantId, log } = args;
+  const { api, cookies, tenantId, log, provider = "anthropic" } = args;
+  const seed = CATALOG_SEEDS[provider];
 
-  const modelId = await ensureCatalogModel(
-    api,
-    cookies,
-    { tenantId, canonicalName: catalogModel.canonicalName },
-    log,
-  );
+  const providerBaseURL =
+    provider === "ollama"
+      ? ollamaOpenAICompatBaseURL(args.baseURLOverride ?? seed.provider.baseURL)
+      : seed.provider.baseURL;
+
+  // Ollama's whole catalog is whatever the instance actually has loaded
+  // right now — the curated static seed (two names, kept in sync by
+  // hand) is only the fallback for an unreachable instance. Every other
+  // provider's model list is fixed, so this never runs for them.
+  const dynamicModels: readonly CatalogModelSpec[] | undefined =
+    provider === "ollama"
+      ? await fetchOllamaModelCatalog(providerBaseURL)
+      : undefined;
+  const models = dynamicModels ?? seed.models;
+
+  const modelIds: string[] = [];
+  for (const model of models) {
+    modelIds.push(
+      await ensureCatalogModel(
+        api,
+        cookies,
+        { tenantId, canonicalName: model.canonicalName },
+        log,
+      ),
+    );
+  }
 
   const credentialSecret =
     args.apiKey ??
@@ -977,27 +1367,36 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       : undefined);
   if (credentialSecret === undefined) {
     log(
-      `catalog model ${catalogModel.canonicalName} seeded without a credential; ` +
-        "no channel or workflow can launch against it until ANTHROPIC_API_KEY is set and `workbench seed` is re-run",
+      `catalog models for ${seed.provider.name} seeded without a credential; ` +
+        `no workbench or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
     );
     return;
   }
 
-  const providerId = await ensureProvider(
-    api,
-    cookies,
-    { tenantId, name: catalogProvider.name, plugin: catalogProvider.plugin },
-    log,
-  );
+  const providerArgs =
+    provider === "ollama"
+      ? {
+          tenantId,
+          name: seed.provider.name,
+          plugin: seed.provider.plugin,
+          apiBaseUrl: providerBaseURL,
+        }
+      : { tenantId, name: seed.provider.name, plugin: seed.provider.plugin };
+  const providerId = await ensureProvider(api, cookies, providerArgs, log);
+  const baseCredentialArgs = {
+    tenantId,
+    providerId,
+    name: args.credentialName ?? inferenceCredentialName(seed.provider.name),
+    secret: credentialSecret,
+    type: args.credentialType ?? ("api_key" as const),
+    verified: args.credentialVerified ?? false,
+  };
   const credentialId = await ensureCredential(
     api,
     cookies,
-    {
-      tenantId,
-      providerId,
-      name: inferenceCredentialName(catalogProvider.name),
-      secret: credentialSecret,
-    },
+    args.credentialMetadata !== undefined
+      ? { ...baseCredentialArgs, metadata: args.credentialMetadata }
+      : baseCredentialArgs,
     log,
   );
   const catalogProviderId = await ensureCatalogProvider(
@@ -1005,19 +1404,36 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     cookies,
     {
       tenantId,
-      name: catalogProvider.name,
-      plugin: catalogProvider.plugin,
-      baseURL: catalogProvider.baseURL,
+      name: seed.provider.name,
+      plugin: seed.provider.plugin,
+      baseURL: providerBaseURL,
       credentialId,
     },
     log,
   );
-  await ensureCatalogOffering(
-    api,
-    cookies,
-    { tenantId, modelId, providerId: catalogProviderId },
-    log,
+  // Priority = the provider's CATALOG_SEEDS declaration index (anthropic
+  // first), so when several connected providers serve the same model the
+  // fallback order is deterministic instead of an all-zeroes tie broken
+  // by insertion accident.
+  const offeringPriority = Math.max(
+    0,
+    Object.keys(CATALOG_SEEDS).indexOf(provider),
   );
+  for (const modelId of modelIds) {
+    await ensureCatalogOffering(
+      api,
+      cookies,
+      {
+        tenantId,
+        modelId,
+        providerId: catalogProviderId,
+        priority: offeringPriority,
+      },
+      log,
+    );
+  }
 
-  log(`catalog ready: ${catalogProvider.name}/${catalogModel.canonicalName}`);
+  log(
+    `catalog ready: ${seed.provider.name}/${models.map((m) => m.canonicalName).join(", ")}`,
+  );
 }

@@ -98,10 +98,10 @@ export function parseToolRegistries(
         `SIDECAR_TOOL_REGISTRIES has duplicate registry name ${JSON.stringify(entry.name)}`,
       );
     }
-    const config: RegistryConfig = {
-      url: entry.url,
-      ...(entry.auth !== undefined ? { auth: entry.auth } : {}),
-    };
+    const config: RegistryConfig =
+      entry.auth !== undefined
+        ? { url: entry.url, auth: entry.auth }
+        : { url: entry.url };
     out.set(entry.name, config);
   }
   return out;
@@ -342,6 +342,9 @@ export async function materializeToolPackages(args: {
     instanceDir,
     assetRoot: args.assetRoot ?? path.join(args.storeDir, "workspace"),
     assetMounts: args.assetMounts,
+    // Step tool packages never source from git; only workflow-definition
+    // closures carry git entries.
+    gitDirs: new Map(),
     attemptId,
     previousDeployId,
     newDeployId,

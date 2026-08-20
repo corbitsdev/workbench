@@ -1,29 +1,33 @@
-// The two tables `@corbits/routines` owns: the routine itself (the
-// named, product-facing entity) and the link table correlating each
-// launched run back to the routine that launched it. Tenancy,
-// principals, and the run/session rows a launch writes stay native
-// platform schema under vendor/intx/db — this package only adds its
-// own state, keyed by tenant.
+// The three tables `@corbits/routines` owns: the routine itself (the
+// named, product-facing entity), the link table correlating each
+// launched run back to the routine that launched it, and the drafting
+// table. These tables live in their own `routines` Postgres schema,
+// fully siloed from the platform's `public` schema — see
+// docs/package-migrations.md. `tenantId` is a plain text identifier,
+// not a foreign key, so referencing platform tenant ids works
+// identically from a named schema.
 import {
   boolean,
   integer,
   jsonb,
-  pgTable,
+  pgSchema,
   primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
 
+export const routinesSchema = pgSchema("routines");
+
 /**
  * A Routine: the named parent entity over workflow runs. `trigger` and
  * `input` are jsonb — record-as-truth, the same convention
- * `@corbits/chat`'s `channel_settings` uses — so new trigger shapes or
+ * `@corbits/chat`'s `workbench_settings` uses — so new trigger shapes or
  * input fields never require a migration. `trigger` holds the arktype-
  * validated shape from `./trigger.ts`, or `null` for a manual,
- * run-now-only routine. `deliveryChannelId` is nullable: a routine
+ * run-now-only routine. `deliveryWorkbenchId` is nullable: a routine
  * need not post its results anywhere.
  */
-export const routine = pgTable("routine", {
+export const routine = routinesSchema.table("routine", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
@@ -32,7 +36,7 @@ export const routine = pgTable("routine", {
   scope: text("scope").notNull(),
   input: jsonb("input").notNull(),
   enabled: boolean("enabled").notNull().default(true),
-  deliveryChannelId: text("delivery_channel_id"),
+  deliveryWorkbenchId: text("delivery_workbench_id"),
   createdBy: text("created_by").notNull(),
   // The due-fire clock: the next minute this routine's trigger matches,
   // recomputed on create, on every trigger/enabled change, and on each
@@ -77,7 +81,7 @@ export const routine = pgTable("routine", {
  * the history surface can show the failure without inventing a second
  * bookkeeping path.
  */
-export const routineRun = pgTable(
+export const routineRun = routinesSchema.table(
   "routine_run",
   {
     tenantId: text("tenant_id").notNull(),
@@ -91,3 +95,30 @@ export const routineRun = pgTable(
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.runId] })],
 );
+
+/**
+ * Free-text drafting path for routines. Only an approved draft creates
+ * a `routine` row; until then nothing is schedulable.
+ */
+export const routineDraft = routinesSchema.table("routine_draft", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  prompt: text("prompt").notNull(),
+  /** draft | reviewed | approved | discarded */
+  status: text("status").notNull(),
+  proposedSteps: jsonb("proposed_steps").notNull().default([]),
+  proposedTrigger: jsonb("proposed_trigger"),
+  proposedName: text("proposed_name"),
+  definitionId: text("definition_id"),
+  deliveryWorkbenchId: text("delivery_workbench_id").notNull(),
+  scope: text("scope").notNull(),
+  autonomy: jsonb("autonomy"),
+  createdBy: text("created_by").notNull(),
+  approvedRoutineId: text("approved_routine_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

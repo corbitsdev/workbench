@@ -1,40 +1,95 @@
-// Default land: open (or create) the Myra channel in the canvas. Home as a
-// dashboard does not earn its keep — `/` only exists as the ensure+redirect
-// hop. Deep links to other pages are unchanged.
+// Default land: a brand-new bench with zero workbenches auto-mints its
+// first Myra workbench and lands straight in it (CL-6138, superseding the
+// CL-6104 describe-screen step) — the same one-creation-verb mint
+// `instant-agent-create.ts` gives every other "+ New workbench" control, so
+// a fresh bench's very first workbench comes from the exact same path as
+// every one after it. A bench that already has one or more lands in (or
+// creates) the Myra workbench in the main stage, unchanged. Home as a
+// dashboard does not earn its keep — `/` only exists as this hop onto
+// `/w/:workbenchId`. Deep links to other pages are unchanged.
 
-import { BootScreen, EmptyState, PageShell } from "@corbits/react-ui";
+import { BootScreen, Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { listAllWorkbenches } from "@corbits/chat-ui";
+
 import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
-import { ensureMyraChannel } from "../myra-channel";
+import { workbenchPath } from "../workbench-path";
+import { createAgentAndLaunch } from "../instant-agent-create";
+import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
+
+type LandState =
+  | { readonly kind: "checking" }
+  | { readonly kind: "error"; readonly message: string };
 
 export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<LandState>({ kind: "checking" });
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (selectedTenantId === null) return;
     let cancelled = false;
-    setError(null);
-    void ensureMyraChannel(selectedTenantId).then((result) => {
-      if (cancelled) return;
-      if (result.kind === "ready") {
-        navigate(channelPath(result.channelId));
-        return;
-      }
-      setError(result.message);
-    });
+    setState({ kind: "checking" });
+    void listAllWorkbenches(selectedTenantId).then(
+      (workbenches) => {
+        if (cancelled) return;
+        if (workbenches.length === 0) {
+          createAgentAndLaunch(selectedTenantId, navigate).catch(
+            (cause: unknown) => {
+              if (cancelled) return;
+              setState({
+                kind: "error",
+                message: cause instanceof Error ? cause.message : String(cause),
+              });
+            },
+          );
+          return;
+        }
+        void ensureMyraWorkbench(selectedTenantId).then((result) => {
+          if (cancelled) return;
+          if (result.kind === "ready") {
+            navigate(workbenchPath(result.workbenchId));
+            return;
+          }
+          setState({ kind: "error", message: result.message });
+        });
+      },
+      (cause: unknown) => {
+        if (cancelled) return;
+        setState({
+          kind: "error",
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, [selectedTenantId, navigate]);
+  }, [selectedTenantId, navigate, retryCount]);
 
   if (memberships.kind === "loading") {
     return <BootScreen message="Opening Myra" />;
+  }
+
+  if (memberships.kind === "error") {
+    return (
+      <PageShell width="full" className="page-fill">
+        <EmptyState
+          icon={<CircleAlert />}
+          title="Couldn't load your workbenches"
+          description={memberships.message}
+          action={
+            <Button variant="outline" onClick={memberships.retry}>
+              Retry
+            </Button>
+          }
+        />
+      </PageShell>
+    );
   }
 
   if (selectedTenantId === null) {
@@ -49,13 +104,21 @@ export function HomeRoute() {
     );
   }
 
-  if (error !== null) {
+  if (state.kind === "error") {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={<CircleAlert />}
           title="Couldn't open Myra"
-          description={error}
+          description={state.message}
+          action={
+            <Button
+              variant="outline"
+              onClick={() => setRetryCount((count) => count + 1)}
+            >
+              Retry
+            </Button>
+          }
         />
       </PageShell>
     );

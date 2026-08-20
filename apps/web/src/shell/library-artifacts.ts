@@ -1,12 +1,14 @@
 // The Library page's one seam to the hub's real artifacts plane:
 // `GET /api/tenants/:tenantId/artifacts` (list) and
 // `GET /api/tenants/:tenantId/artifacts/:id` (detail), plus
-// `POST .../artifacts/upload` for file ingest.
+// `POST .../artifacts/upload` for file ingest and
+// `GET .../artifacts/counts` for the kind nav's counts.
 //
 // This module owns pure mapping + upload helper so the page stays thin and
 // the shape contract has its own tests. The old asset-shim path is gone.
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 
 /** List row from the hub artifacts surface (content omitted). */
 export type ArtifactListRow = {
@@ -45,6 +47,11 @@ export function mapArtifactListToSummaries(
   return rows.map(artifactListRowToSummary);
 }
 
+/** `GET /api/tenants/:id/artifacts/counts` — the Library kind nav's counts. */
+export function artifactCountsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/artifacts/counts`;
+}
+
 /**
  * POST multipart upload against the tenant artifacts surface. Returns the
  * created detail rows on 201; throws with status on non-2xx so the page can
@@ -65,13 +72,16 @@ export async function uploadArtifactFiles(
       body: form,
     });
   } catch (cause) {
-    throw new ArtifactUploadError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
+  }
   if (!response.ok) {
-    throw new ArtifactUploadError(
-      `The hub answered ${response.status} for artifact upload.`,
+    throw new ApiQueryError(
+      `The server answered ${response.status} for artifact upload.`,
       response.status,
     );
   }
@@ -79,26 +89,24 @@ export async function uploadArtifactFiles(
     data?: readonly ArtifactDetail[];
   };
   if (!Array.isArray(body.data)) {
-    throw new ArtifactUploadError(
-      "Unexpected response shape from artifact upload.",
-    );
+    throw new ApiQueryError("Unexpected response shape from artifact upload.");
   }
   return body.data;
 }
 
-export class ArtifactUploadError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
+/** True when the hub answered "artifacts plane not configured" (503) —
+ * read off the query's own status field, never string-matched out of a
+ * rendered message (that copy is display-boundary plain by design and
+ * carries no status text to match against). */
+export function isArtifactsUnavailableStatus(
+  status: number | undefined,
+): boolean {
+  return status === 503;
 }
 
-/** True when the hub answered "artifacts plane not configured". */
-export function isArtifactsUnavailableMessage(message: string): boolean {
-  return (
-    message.includes(" answered 503 ") ||
-    message.toLowerCase().includes("not configured")
-  );
+export function artifactUploadToast(names: readonly string[]): string {
+  const [only] = names;
+  return only !== undefined && names.length === 1
+    ? `Uploaded · ${only}`
+    : `Uploaded ${names.length} files`;
 }

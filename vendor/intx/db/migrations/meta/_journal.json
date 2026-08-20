@@ -519,6 +519,55 @@
       "when": 1785884353793,
       "tag": "0074_add_provider_api_base_url",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1786055554289,
+      "tag": "0075_workflow_run_launch_spec",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1786055582673,
+      "tag": "0076_sidecar_allocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1786055601046,
+      "tag": "0077_workflow_run_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1786055642946,
+      "tag": "0078_workflow_run_dispatch_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1786480852752,
+      "tag": "0079_rename_workflow_run_deployment_id_to_anchor_run_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1786481000000,
+      "tag": "0080_rename_correlation_approval_deployment_id_to_anchor_run_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1786665226312,
+      "tag": "0081_workflow_definition_content_hash_and_approved_wire_hash",
+      "breakpoints": true
     }
   ]
 }

@@ -1,139 +1,99 @@
-// First-run wizard in three steps: name your workbench, add an
-// inference credential, then get oriented. The heavy lifting — proving
-// the key with a real call, seeding the bench, deploying and confirming
-// every default workflow — happens server-side in `@workbench/onboarding`;
-// this page is the guided shell around it. The credential step is always
-// part of the flow: when the server already has a usable seed (an
-// operator-configured key, or a returning member) it renders
-// pre-satisfied with a skip option rather than branching into a
-// different tree that hides the step entirely.
+// First-run wizard: provision the account's one workbench under a
+// default name derived from the account, then add an inference
+// credential. There is no naming step — CL-6089 collapsed the
+// multi-bench model down to one workbench per account, so nothing is
+// left to name. The heavy lifting — storing the key immediately (no
+// probe gates this, CL-6123), seeding the bench, and deploying every
+// default workflow — happens server-side in `@workbench/onboarding`;
+// this page is the guided shell around it. The credential step is
+// skipped entirely
+// (straight to `navigate("/")`) only once this page has independently
+// confirmed (`hasActiveCredential`, a cheap credentials read) that the
+// bench actually has a working credential — a hub-owned key (env-key
+// auto-plant, CL-6101, or the older ANTHROPIC_API_KEY path) for a fresh
+// bench, or a real working credential for a returning member. The
+// server's own `seeded: true` is not enough on its own to hard-skip on:
+// for an existing member it means every default workflow has an active
+// deployment, never that a credential was checked; for a freshly
+// provisioned bench it means the seed run's validation trigger started a
+// workflow run, never that the run actually succeeded against a real
+// credential. Either shape with no confirmed credential falls through to
+// the credential step, same as an unseeded bench.
+//
+// Once a credential is confirmed working, this page's job is done — it
+// hands off to `/` (`HomeRoute`), which is where the guided
+// first-workbench creation and the drafted agent's greeting actually
+// happen (CL-6104): a brand-new account has no workbench yet, so `/`
+// itself renders the describe-it screen rather than this wizard growing
+// a third step.
 
-import {
-  Button,
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  EmptyState,
-  HorizontalStepper,
-  Input,
-  PageShell,
-  ProgressChecklist,
-  ProviderMark,
-  Section,
-} from "@corbits/react-ui";
-import type { ChecklistStep, WorkflowStep } from "@corbits/react-ui";
-import {
-  AtSign,
-  Bot,
-  CircleAlert,
-  CircleCheck,
-  KeyRound,
-  MessageSquare,
-} from "lucide-react";
-import { useCallback, useState } from "react";
+import { Button, EmptyState, Input, ProviderMark } from "@corbits/react-ui";
+import { CircleAlert, KeyRound } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test";
 
-import { Link, useNavigate } from "../navigation";
+import { useNavigate } from "../navigation";
 import {
+  completeSetup,
   CREDENTIAL_PROVIDERS,
+  hasActiveCredential,
+  HUGGINGFACE_CONNECT_START_PATH,
+  OPENROUTER_CONNECT_START_PATH,
+  PRIMARY_CREDENTIAL_PROVIDERS,
+  readHuggingFaceConnectReturn,
+  readOpenRouterConnectReturn,
+  SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
   triggerFirstLoginProvisioning,
 } from "../onboarding";
-import type { CredentialProvider } from "../onboarding";
+import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
+import { OnboardingLayout } from "../onboarding/onboarding-layout";
+import type { SessionUser } from "../session";
 
-const GUIDANCE_CARDS = [
-  {
-    icon: <MessageSquare />,
-    title: "Channels",
-    description:
-      "Conversations with your team and your agents live in channels. Your starter channel is ready — head there to send your first message.",
-  },
-  {
-    icon: <Bot />,
-    title: "Routines",
-    description:
-      "A routine is a workflow an agent runs on your behalf — scheduled, triggered, or kicked off right from a channel. Your bench ships with a couple of starter routines already running.",
-  },
-  {
-    icon: <AtSign />,
-    title: "@mention an agent",
-    description:
-      "Type @ in any channel to bring an agent into the conversation — it reads the thread and replies inline, just like a teammate would.",
-  },
-] as const;
-
-const ROUTINE_LABELS: Readonly<Record<string, string>> = {
-  echo: "Echo routine",
-  assistant: "Myra routine",
-};
-
-function routineLabel(assetName: string): string {
-  return ROUTINE_LABELS[assetName] ?? assetName;
+/** No naming step means provisioning always needs a name to send — this
+ * derives one from the account so `/api/onboarding/provision` never gets
+ * called bare. Prefers the account's display name; an account with no
+ * usable name falls back to the email's local part. Editable later from
+ * Settings, same as any other display name. */
+function defaultWorkbenchName(user: SessionUser): string {
+  const source =
+    user.name.trim().length > 0 ? user.name.trim() : user.email.split("@")[0];
+  return `${source || "Your"}'s workbench`;
 }
 
 type WizardState =
-  | { readonly phase: "naming" }
   | { readonly phase: "provisioning" }
   | { readonly phase: "provisioning-error"; readonly message: string }
   | { readonly phase: "credential"; readonly error: string | null }
   | { readonly phase: "submitting" }
-  | {
-      readonly phase: "seeded";
-      readonly tenantSlug: string;
-      readonly workflows: readonly string[];
-    }
-  | { readonly phase: "guidance" };
+  | { readonly phase: "finishing-setup" };
 
-function GuidanceCards() {
+function ProviderCardButton({
+  provider,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  readonly provider: CredentialProviderCard;
+  readonly selected: CredentialProvider;
+  readonly disabled: boolean;
+  readonly onSelect: (provider: CredentialProvider) => void;
+}) {
   return (
-    <div className="card-grid">
-      {GUIDANCE_CARDS.map((card) => (
-        <Card key={card.title}>
-          <CardHeader>
-            {card.icon}
-            <CardTitle>{card.title}</CardTitle>
-            <CardDescription>{card.description}</CardDescription>
-          </CardHeader>
-        </Card>
-      ))}
-    </div>
+    <Button
+      type="button"
+      role="radio"
+      title={provider.description}
+      aria-checked={provider.id === selected}
+      variant={provider.id === selected ? "primary" : "outline"}
+      disabled={disabled}
+      onClick={() => onSelect(provider.id)}
+    >
+      <ProviderMark provider={provider.id} size="sm" />
+      {provider.label}
+    </Button>
   );
-}
-
-function wizardSteps(phase: WizardState["phase"]): WorkflowStep[] {
-  const nameDone = phase !== "naming";
-  const credentialDone = phase === "seeded" || phase === "guidance";
-  const credentialCurrent =
-    phase === "credential" ||
-    phase === "submitting" ||
-    phase === "provisioning";
-  return [
-    {
-      number: 1,
-      label: "Name your workbench",
-      status: nameDone ? "completed" : "current",
-    },
-    {
-      number: 2,
-      label: "Add a credential",
-      status: credentialDone
-        ? "completed"
-        : credentialCurrent
-          ? "current"
-          : "pending",
-    },
-    {
-      number: 3,
-      label: "Run your first routine",
-      status:
-        phase === "seeded"
-          ? "completed"
-          : phase === "guidance"
-            ? "completed"
-            : "pending",
-    },
-  ];
 }
 
 function ProviderPicker({
@@ -145,274 +105,421 @@ function ProviderPicker({
   readonly onSelect: (provider: CredentialProvider) => void;
   readonly disabled: boolean;
 }) {
+  // The six providers most people reach for lead the row; the rest stay
+  // fully functional but tucked behind "More providers" so the primary
+  // choice never has to compete with a wall of cards. A secondary pick
+  // (e.g. returning to the flow with Groq already selected) opens the
+  // expander automatically rather than hiding the active choice.
+  const secondaryHasSelection = SECONDARY_CREDENTIAL_PROVIDERS.some(
+    (provider) => provider.id === selected,
+  );
   return (
     <div
       role="radiogroup"
       aria-label="Inference provider"
       className="onboarding-provider-picker"
     >
-      {CREDENTIAL_PROVIDERS.map((provider) => (
-        <Button
+      {PRIMARY_CREDENTIAL_PROVIDERS.map((provider) => (
+        <ProviderCardButton
           key={provider.id}
-          type="button"
-          role="radio"
-          aria-checked={provider.id === selected}
-          variant={provider.id === selected ? "primary" : "outline"}
+          provider={provider}
+          selected={selected}
           disabled={disabled}
-          onClick={() => onSelect(provider.id)}
-        >
-          <ProviderMark provider={provider.id} size="sm" />
-          {provider.label}
-        </Button>
+          onSelect={onSelect}
+        />
       ))}
+      <details
+        className="onboarding-provider-more"
+        open={secondaryHasSelection}
+      >
+        <summary className="onboarding-provider-more-trigger">
+          More providers
+        </summary>
+        <div className="onboarding-provider-more-panel">
+          {SECONDARY_CREDENTIAL_PROVIDERS.map((provider) => (
+            <ProviderCardButton
+              key={provider.id}
+              provider={provider}
+              selected={selected}
+              disabled={disabled}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
 
-export function OnboardingPage() {
+/** Where the wizard starts: at the top, unless the URL carries a connect
+ * round-trip's outcome (OpenRouter or Hugging Face) — a fresh connect
+ * lands on the finishing-setup phase (the OAuth callback only stored
+ * the key; this page's own follow-up call is what actually deploys the
+ * default workflows and their preset routines), and a failed round trip lands on the
+ * credential step with the failure spelled out. Either way, the mount
+ * effect below re-checks the account's real state before trusting a
+ * connect outcome carried in the URL — see its own comment. */
+function initialWizardState(): WizardState {
+  if (typeof window === "undefined") return { phase: "provisioning" };
+  const returned =
+    readOpenRouterConnectReturn(window.location.search) ??
+    readHuggingFaceConnectReturn(window.location.search);
+  if (returned === null) return { phase: "provisioning" };
+  if (returned.kind === "connected") return { phase: "finishing-setup" };
+  return { phase: "credential", error: returned.message };
+}
+
+export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
-  const [state, setState] = useState<WizardState>({ phase: "naming" });
-  const [workbenchName, setWorkbenchName] = useState("");
+  const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
-  // Whether the server already had a usable seed when we provisioned.
-  // Kept out of WizardState so a failed own-key submit doesn't wipe the
-  // skip option — the credential step stays in place either way.
-  const [preSatisfied, setPreSatisfied] = useState(false);
-  const [skipReason, setSkipReason] = useState<string | null>(null);
+  // Ollama's card collects a URL, not a key — its own field, defaulted
+  // to its card's `urlDefaultValue` the moment that card is picked (see
+  // `handleSelectProvider` below), so the field is never blank the
+  // first time a person lands on it.
+  const [urlValue, setUrlValue] = useState("");
+  // True for a returning user whose workbench already exists but is
+  // still missing a working credential (`existing-member` with
+  // `seeded: false`) — the copy below tells them connecting one now
+  // finishes setup, instead of the first-run pitch.
+  const [resumingUnseeded, setResumingUnseeded] = useState(false);
 
-  const runProvisioning = useCallback((name: string) => {
-    setState({ phase: "provisioning" });
-    void triggerFirstLoginProvisioning(name).then((result) => {
-      if (result.kind === "error") {
-        setState({ phase: "provisioning-error", message: result.message });
-      } else if (result.kind === "existing-member") {
-        setPreSatisfied(true);
-        setSkipReason(null);
-        setState({ phase: "credential", error: null });
-      } else if (result.kind === "provisioned" && result.seeded) {
-        setPreSatisfied(true);
-        setSkipReason(result.seedSkipReason ?? null);
-        setState({ phase: "credential", error: null });
-      } else if (result.kind === "provisioned") {
-        setPreSatisfied(false);
-        setSkipReason(null);
-        setState({ phase: "credential", error: null });
-      } else {
-        // needs-onboarding after an explicit name should not happen; treat
-        // as a soft error so the user can retry naming.
-        setState({
-          phase: "provisioning-error",
-          message:
-            "The hub did not create your workbench. Try a different name.",
-        });
-      }
-    });
+  const runProvisioning = useCallback(
+    (name: string) => {
+      setState({ phase: "provisioning" });
+      void triggerFirstLoginProvisioning(name).then(async (result) => {
+        if (result.kind === "error") {
+          setState({ phase: "provisioning-error", message: result.message });
+        } else if (
+          result.kind === "existing-member" &&
+          result.seeded === true
+        ) {
+          // `seeded: true` only means every default workflow has an
+          // active deployment — never that a credential was checked.
+          // Confirm one independently (a cheap credentials read) before
+          // handing off; no tenantId (should not happen alongside
+          // seeded: true) falls through to the credential step too.
+          const confirmed =
+            result.tenantId !== undefined &&
+            (await hasActiveCredential(result.tenantId));
+          if (confirmed) {
+            navigate("/");
+          } else {
+            setResumingUnseeded(false);
+            setState({ phase: "credential", error: null });
+          }
+        } else if (result.kind === "existing-member") {
+          // `seeded === false` is the bench_unseeded condition: this
+          // account's own workbench exists but never got a working
+          // credential (no operator key configured, and none connected
+          // yet). `undefined` (membership on some other tenant) also lands
+          // here rather than handing off — there is nothing to skip ahead to.
+          const unseeded = result.seeded === false;
+          setResumingUnseeded(unseeded);
+          setState({ phase: "credential", error: null });
+        } else if (result.kind === "provisioned" && result.seeded) {
+          // The seed run's validation trigger only proves a workflow run
+          // started, never that it succeeded against a real credential.
+          // Confirm one independently before handing off.
+          const confirmed = await hasActiveCredential(result.tenantId);
+          if (confirmed) {
+            setResumingUnseeded(false);
+            navigate("/");
+          } else {
+            setResumingUnseeded(false);
+            setState({ phase: "credential", error: null });
+          }
+        } else if (result.kind === "provisioned") {
+          setResumingUnseeded(false);
+          setState({ phase: "credential", error: null });
+        } else {
+          // needs-onboarding after an explicit name should not happen — a
+          // default name is always sent — so this reads as a soft error.
+          setState({
+            phase: "provisioning-error",
+            message: "Setup couldn't create your workbench. Try again.",
+          });
+        }
+      });
+    },
+    [navigate],
+  );
+
+  // A connect round-trip's outcome is consumed into the initial wizard
+  // state above; dropping it from the URL keeps a reload or a shared
+  // link from replaying a stale ending.
+  useEffect(() => {
+    if (
+      readOpenRouterConnectReturn(window.location.search) !== null ||
+      readHuggingFaceConnectReturn(window.location.search) !== null
+    ) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
   }, []);
 
-  const handleNameSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      runProvisioning(workbenchName);
+  // Two jobs, split by what landed the wizard here. A fresh connect
+  // (`finishing-setup`) actually finishes the job the OAuth callback
+  // deferred: `completeSetup` runs the workflow deploy the callback
+  // never ran inline. Everything else — the ordinary first-run landing,
+  // or a stale connect error from a duplicate callback this page never
+  // saw resolved — provisions with a default name derived from the
+  // account: there is no naming step to gate this on, so it must always
+  // send a name (see `defaultWorkbenchName`). A returning member's
+  // already-provisioned workbench is unaffected — the hub route only
+  // creates one the first time an account has none.
+  useEffect(() => {
+    if (state.phase === "finishing-setup") {
+      void completeSetup().then((outcome) => {
+        if (outcome.kind === "seeded") {
+          navigate("/");
+        } else if (outcome.kind === "unseeded") {
+          setResumingUnseeded(true);
+          setState({ phase: "credential", error: null });
+        } else {
+          setState({ phase: "credential", error: outcome.message });
+        }
+      });
+      return;
+    }
+    runProvisioning(defaultWorkbenchName(user));
+    // Mount-only: this reads `state.phase` exactly once, at the value
+    // `initialWizardState` produced, to decide which of the two checks
+    // above applies to this landing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
+  const isUrlProvider = activeProvider?.fieldKind === "url";
+
+  const handleSelectProvider = useCallback(
+    (nextId: CredentialProvider) => {
+      setProvider(nextId);
+      const nextCard = CREDENTIAL_PROVIDERS.find((p) => p.id === nextId);
+      if (nextCard?.fieldKind === "url" && urlValue === "") {
+        setUrlValue(nextCard.urlDefaultValue ?? "");
+      }
     },
-    [runProvisioning, workbenchName],
+    [urlValue],
   );
 
   const handleSubmitCredential = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       setState({ phase: "submitting" });
-      void submitCredential(provider, apiKey).then((outcome) => {
+      const submission = isUrlProvider
+        ? submitCredential(provider, OLLAMA_PLACEHOLDER_SECRET, urlValue)
+        : submitCredential(provider, apiKey);
+      void submission.then((outcome) => {
         if (outcome.kind === "seeded") {
-          setState({
-            phase: "seeded",
-            tenantSlug: outcome.tenantSlug,
-            workflows: outcome.workflows,
-          });
+          navigate("/");
         } else {
-          // preSatisfied is intentionally preserved: a bad own-key
-          // submit must not remove the skip path the server seed gave.
           setState({ phase: "credential", error: outcome.message });
         }
       });
     },
-    [provider, apiKey],
+    [provider, apiKey, urlValue, isUrlProvider, navigate],
   );
-
-  if (state.phase === "naming") {
-    return (
-      <PageShell width="full" className="page-fill">
-        <Section
-          title="Create your workbench"
-          description="Give your workbench a name. This labels your personal bench across the app — you can change it later."
-        >
-          <HorizontalStepper steps={wizardSteps(state.phase)} />
-          <form onSubmit={handleNameSubmit} className="onboarding-name-form">
-            <label htmlFor="onboarding-workbench-name">Workbench name</label>
-            <Input
-              id="onboarding-workbench-name"
-              type="text"
-              placeholder="e.g. Ada's bench"
-              value={workbenchName}
-              onChange={(event) => setWorkbenchName(event.target.value)}
-              required
-              aria-describedby="onboarding-workbench-name-help"
-              autoFocus
-            />
-            <p id="onboarding-workbench-name-help">
-              Used as the display name for your bench.
-            </p>
-            <Button type="submit" disabled={workbenchName.trim().length === 0}>
-              Continue
-            </Button>
-          </form>
-        </Section>
-      </PageShell>
-    );
-  }
 
   if (state.phase === "provisioning") {
     return (
-      <PageShell width="full" className="page-fill">
-        <Section title="Setting up your workbench" description="One moment.">
-          <div />
-        </Section>
-      </PageShell>
+      <OnboardingLayout>
+        <div className="onboarding-phase" key="provisioning">
+          <h1 className="onboarding-title">Setting up your workbench</h1>
+          <p className="onboarding-subtitle">One moment.</p>
+          <div className="onboarding-content">
+            <div className="onboarding-spinner" aria-hidden="true" />
+          </div>
+        </div>
+      </OnboardingLayout>
+    );
+  }
+
+  if (state.phase === "finishing-setup") {
+    return (
+      <OnboardingLayout>
+        <div className="onboarding-phase" key="finishing-setup">
+          <h1 className="onboarding-title">Setting up your workbench…</h1>
+          <p className="onboarding-subtitle">
+            Key added — setting up your workbench.
+          </p>
+          <div className="onboarding-content">
+            <div className="onboarding-spinner" aria-hidden="true" />
+          </div>
+        </div>
+      </OnboardingLayout>
     );
   }
 
   if (state.phase === "provisioning-error") {
     return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<CircleAlert />}
-          title="Couldn't set up your workbench"
-          description={state.message}
-          action={
-            <Button
-              variant="outline"
-              onClick={() => runProvisioning(workbenchName)}
-            >
-              Try again
-            </Button>
-          }
-        />
-      </PageShell>
-    );
-  }
-
-  if (state.phase === "guidance") {
-    return (
-      <PageShell width="full" className="page-fill">
-        <Section
-          title="Your workbench is ready"
-          description="We've set up a personal bench for you with a starter channel and the default workflows deployed. Here's what to expect."
-        >
-          <GuidanceCards />
-          <Button asChild>
-            <Link to="/">Meet Myra</Link>
-          </Button>
-        </Section>
-      </PageShell>
-    );
-  }
-
-  if (state.phase === "seeded") {
-    const checklist: ChecklistStep[] = state.workflows.map((assetName) => ({
-      id: assetName,
-      label: routineLabel(assetName),
-      status: "done",
-      detail: "confirmed running with your credential",
-    }));
-    return (
-      <PageShell width="full" className="page-fill">
-        <Section
-          title="Your first routines are running"
-          description="Your key checked out, and every default routine on your bench has already fired and answered."
-        >
-          <HorizontalStepper steps={wizardSteps(state.phase)} />
-          <ProgressChecklist steps={checklist} label="Default routines" />
-          <Button onClick={() => navigate("/")}>Meet Myra</Button>
-        </Section>
-      </PageShell>
+      <OnboardingLayout>
+        <div className="onboarding-phase" key="provisioning-error">
+          <h1 className="onboarding-title">Couldn't set up your workbench</h1>
+          <div className="onboarding-content">
+            <EmptyState
+              icon={<CircleAlert />}
+              title="Couldn't set up your workbench"
+              description={state.message}
+              action={
+                <Button
+                  variant="outline"
+                  onClick={() => runProvisioning(defaultWorkbenchName(user))}
+                >
+                  Try again
+                </Button>
+              }
+            />
+          </div>
+        </div>
+      </OnboardingLayout>
     );
   }
 
   const submitting = state.phase === "submitting";
   const error = state.phase === "credential" ? state.error : null;
-  const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
 
   return (
-    <PageShell width="full" className="page-fill">
-      <Section
-        title="Add an inference credential"
-        description="Your workbench needs an inference credential before any agent or routine can run. Pick a provider and paste your own key — it's used only for this bench."
+    <OnboardingLayout>
+      <div
+        className="onboarding-phase onboarding-phase--credential"
+        key={resumingUnseeded ? "resuming" : "credential"}
       >
-        <HorizontalStepper steps={wizardSteps(state.phase)} />
-        {preSatisfied && (
-          <EmptyState
-            icon={<CircleCheck />}
-            title="A working key is already in place"
-            description={
-              skipReason ??
-              "An operator-configured credential is set, so agents and routines can run right away. Add your own key below to use it instead, or skip ahead to your channel."
-            }
-            action={
-              <Button
-                variant="outline"
-                onClick={() => setState({ phase: "guidance" })}
-              >
-                Skip — use the default key
-              </Button>
-            }
-          />
-        )}
-        <form
-          onSubmit={handleSubmitCredential}
-          className="onboarding-credential-form"
-        >
-          <ProviderPicker
-            selected={provider}
-            onSelect={setProvider}
-            disabled={submitting}
-          />
-          <label htmlFor="onboarding-api-key">
-            {activeProvider?.label} API key
-          </label>
-          <Input
-            id="onboarding-api-key"
-            type="text"
-            placeholder={`${activeProvider?.keyHint}...`}
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            required
-            disabled={submitting}
-            aria-describedby="onboarding-api-key-help"
-          />
-          <p id="onboarding-api-key-help">
-            <a
-              href={activeProvider?.keyConsoleUrl}
-              target="_blank"
-              rel="noreferrer"
+        <h1 className="onboarding-title">
+          {resumingUnseeded
+            ? "Finish setting up your workbench"
+            : "Add an inference credential"}
+        </h1>
+        <p className="onboarding-subtitle">
+          {resumingUnseeded
+            ? "Connect a provider below to finish setup."
+            : "Connect OpenRouter in one click, or pick a provider and paste your own key."}
+        </p>
+        <div className="onboarding-content">
+          <div className="onboarding-connect-row">
+            <section
+              className="onboarding-connect-card"
+              aria-label="Connect with OpenRouter"
             >
-              Get a key from the {activeProvider?.label} console
-            </a>{" "}
-            — it starts with <code>{activeProvider?.keyHint}</code>.
-          </p>
-          {error !== null && (
-            <EmptyState
-              icon={<KeyRound />}
-              title="That key didn't work"
-              description={error}
+              <div>
+                <h2>OpenRouter</h2>
+                <p>One click, ~50 models, pay-as-you-go.</p>
+              </div>
+              <Button asChild>
+                <a href={OPENROUTER_CONNECT_START_PATH}>Connect</a>
+              </Button>
+            </section>
+            <section
+              className="onboarding-connect-card"
+              aria-label="Sign in with Hugging Face"
+            >
+              <div>
+                <h2>Hugging Face</h2>
+                <p>Groq, Together, Fireworks &amp; more, one sign-in.</p>
+              </div>
+              <Button asChild>
+                <a href={HUGGINGFACE_CONNECT_START_PATH}>Connect</a>
+              </Button>
+            </section>
+          </div>
+          <div className="onboarding-connect-divider" role="separator">
+            or paste a provider API key
+          </div>
+          <form
+            onSubmit={handleSubmitCredential}
+            className="onboarding-credential-form"
+          >
+            <ProviderPicker
+              selected={provider}
+              onSelect={handleSelectProvider}
+              disabled={submitting}
             />
-          )}
-          <Button type="submit" disabled={submitting || apiKey.length === 0}>
-            {submitting
-              ? "Testing your key…"
-              : "Test key and run my first routine"}
-          </Button>
-        </form>
-      </Section>
-    </PageShell>
+            {activeProvider !== undefined && (
+              <p className="onboarding-provider-description">
+                {activeProvider.description}
+              </p>
+            )}
+            {isUrlProvider ? (
+              <>
+                <label htmlFor="onboarding-provider-url">
+                  {activeProvider?.label} URL
+                </label>
+                <Input
+                  id="onboarding-provider-url"
+                  type="text"
+                  placeholder={activeProvider?.urlDefaultValue}
+                  value={urlValue}
+                  onChange={(event) => setUrlValue(event.target.value)}
+                  required
+                  disabled={submitting}
+                  aria-describedby="onboarding-provider-url-help"
+                />
+                <p id="onboarding-provider-url-help">
+                  The origin your Ollama instance listens on — local, or reached
+                  through a tunnel.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="onboarding-api-key">
+                  {activeProvider?.label} API key
+                </label>
+                <Input
+                  id="onboarding-api-key"
+                  type="text"
+                  placeholder={
+                    activeProvider?.keyHint
+                      ? `${activeProvider.keyHint}...`
+                      : "Paste your key"
+                  }
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  required
+                  disabled={submitting}
+                  aria-describedby="onboarding-api-key-help"
+                />
+                <p id="onboarding-api-key-help">
+                  <a
+                    href={activeProvider?.keyConsoleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Get a key from the {activeProvider?.label} console
+                  </a>
+                  {activeProvider?.keyHint ? (
+                    <>
+                      {" "}
+                      — it starts with <code>{activeProvider.keyHint}</code>.
+                    </>
+                  ) : (
+                    "."
+                  )}
+                </p>
+              </>
+            )}
+            {error !== null && (
+              <EmptyState
+                icon={<KeyRound />}
+                title="That key didn't work"
+                description={error}
+              />
+            )}
+            <Button
+              type="submit"
+              disabled={
+                submitting ||
+                (isUrlProvider ? urlValue.length === 0 : apiKey.length === 0)
+              }
+            >
+              {submitting
+                ? "Connecting…"
+                : isUrlProvider
+                  ? "Connect this address"
+                  : "Connect this key"}
+            </Button>
+          </form>
+        </div>
+      </div>
+    </OnboardingLayout>
   );
 }

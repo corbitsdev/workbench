@@ -4,7 +4,11 @@
 // insert / `dispatchAgentEvent`.
 import { describe, expect, test } from "bun:test";
 import { sessionMail } from "@intx/db/schema";
-import { listFoldedMail, sendFoldedMail } from "../src/mail";
+import {
+  listFoldedMail,
+  sendFoldedMail,
+  sendFoldedMailWithRetry,
+} from "../src/mail";
 
 type SelectChain = {
   where(...args: unknown[]): SelectChain;
@@ -178,10 +182,10 @@ describe("sendFoldedMail", () => {
       {
         tenantId: "ten_1",
         sessionId: "ses_1",
-        agentAddress: "ins_channel1@ten1.workbench.test",
+        agentAddress: "ins_workbench1@ten1.workbench.test",
         from: "prn_sender@ten1.workbench.test",
         domain: "ten1.workbench.test",
-        content: "hello channel",
+        content: "hello workbench",
         cryptoProvider: {} as never,
       },
     );
@@ -194,8 +198,8 @@ describe("sendFoldedMail", () => {
       sessionId: string;
       from: string;
     };
-    expect(call.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-    expect(call.content).toBe("hello channel");
+    expect(call.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
+    expect(call.content).toBe("hello workbench");
     expect(call.sessionId).toBe("ses_1");
     expect(call.from).toBe("prn_sender@ten1.workbench.test");
 
@@ -209,7 +213,105 @@ describe("sendFoldedMail", () => {
 
     expect(dispatchAgentEventCalls).toHaveLength(1);
     expect(dispatchAgentEventCalls[0]?.address).toBe(
-      "ins_channel1@ten1.workbench.test",
+      "ins_workbench1@ten1.workbench.test",
     );
+  });
+});
+
+function fakeMailDeps(sendUserMessage: () => Promise<Uint8Array>) {
+  return {
+    db: {
+      insert() {
+        return { values: async () => undefined };
+      },
+    } as never,
+    sessionService: { sendUserMessage } as never,
+    sidecarRouter: { dispatchAgentEvent() {} } as never,
+  };
+}
+
+const SEND_PARAMS = {
+  tenantId: "ten_1",
+  sessionId: "ses_1",
+  agentAddress: "ins_workbench1@ten1.workbench.test",
+  from: "prn_sender@ten1.workbench.test",
+  domain: "ten1.workbench.test",
+  content: "hello workbench",
+  cryptoProvider: {} as never,
+};
+
+describe("sendFoldedMailWithRetry", () => {
+  test("returns ok on the first attempt without retrying", async () => {
+    let calls = 0;
+    const deps = fakeMailDeps(async () => {
+      calls += 1;
+      return new TextEncoder().encode("raw-mime-bytes");
+    });
+
+    const result = await sendFoldedMailWithRetry(deps, SEND_PARAMS);
+
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  test("recovers after a transient failure, within the attempt bound", async () => {
+    let calls = 0;
+    const deps = fakeMailDeps(async () => {
+      calls += 1;
+      if (calls < 2) throw new Error("sidecar unreachable");
+      return new TextEncoder().encode("raw-mime-bytes");
+    });
+
+    const result = await sendFoldedMailWithRetry(deps, SEND_PARAMS, 3);
+
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  test("never throws: reports failure after exhausting the bounded attempts", async () => {
+    let calls = 0;
+    const deps = fakeMailDeps(async () => {
+      calls += 1;
+      throw new Error("sidecar unreachable");
+    });
+
+    const result = await sendFoldedMailWithRetry(deps, SEND_PARAMS, 3);
+
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(3);
+    if (result.ok) throw new Error("unreachable: asserted false above");
+    expect(result.attempts).toBe(3);
+    expect(result.error).toBeInstanceOf(Error);
+  });
+
+  test("never re-delivers: a successful send followed by a record-write failure is not retried", async () => {
+    let sendUserMessageCalls = 0;
+    const db = {
+      insert() {
+        return {
+          values: async () => {
+            throw new Error("db blip");
+          },
+        };
+      },
+    };
+    const deps = {
+      db: db as never,
+      sessionService: {
+        async sendUserMessage() {
+          sendUserMessageCalls += 1;
+          return new TextEncoder().encode("raw-mime-bytes");
+        },
+      } as never,
+      sidecarRouter: { dispatchAgentEvent() {} } as never,
+    };
+
+    const result = await sendFoldedMailWithRetry(deps, SEND_PARAMS, 3);
+
+    expect(sendUserMessageCalls).toBe(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable: asserted false above");
+    expect(result.attempts).toBe(1);
+    expect(result.error).toBeInstanceOf(Error);
   });
 });

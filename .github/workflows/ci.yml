@@ -33,8 +33,13 @@ jobs:
       - run: bun run check:deletion
       - run: bun run check:killdates
       - run: bun run check:packages
+      - run: bun run check:licenses
       - run: bun run check:no-product-tenancy
+      - run: bun run check:browser-safe-subpaths
       - run: bun run check:web-utilities
+      - run: bun run check:ui-vocabulary
+      - run: bun run check:react-ui-drift
+      - run: bun run check:react-ui-pin
 
   walking-skeleton:
     runs-on: ubuntu-latest

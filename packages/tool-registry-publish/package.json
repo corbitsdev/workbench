@@ -1,0 +1,26 @@
+{
+  "name": "@corbits/tool-registry-publish",
+  "private": true,
+  "description": "Packs workbench @corbits/*-tools packages into self-contained npm-style tarballs and publishes them into a tenant's corbits-tools package-registry asset, so tool-package pins under the @corbits scope resolve at agent launch",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check:freshness": "bun src/freshness-check.ts"
+  },
+  "dependencies": {
+    "@intx/inference": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "tar": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -96,7 +96,7 @@ export function createWebhookTriggerRoutes(
     const secret = generateWebhookSecret();
 
     const row = await deps.store.create({
-      id: generateId("instance"),
+      id: generateId("workflowRun"),
       tenantId: tenant.id,
       name: body.name,
       workflowDefinitionId: body.workflowDefinitionId,

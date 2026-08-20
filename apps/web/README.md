@@ -1,9 +1,14 @@
 # `@workbench/web`
 
 The workbench's single-page interface: every screen and route lives here,
-composed from `@corbits/react-ui`, and builds to a static bundle the hub
-serves from its own origin (`vite build`, then point `HUB_STATIC_DIR` at
-`apps/web/dist`).
+composed from the published `@corbits/react-ui` component library, and
+builds to a static bundle the hub serves from its own origin (`vite
+build`, then point `HUB_STATIC_DIR` at `apps/web/dist`). It is a Vite SPA
+over the hub's `/api` — every product rule (what a screen may show, how
+data is shaped) lives in a package; this app stays a generic composition
+of package UI and routing, per [AGENTS.md](../../AGENTS.md). In dev,
+`vite dev` proxies `/api` to a locally running hub so the interface is
+developed against real data without a build step.
 
 ## Layout
 
@@ -18,7 +23,7 @@ workbench-composed rail:
    in the product, and which bench am I in". Fixed width at every
    breakpoint — it never joins the columns that withdraw as the viewport
    narrows.
-2. **Contextual column** — bench-scoped and live: channels, chats, running
+2. **Contextual column** — bench-scoped and live: workbenches, chats, running
    routines, and notifications for the _currently selected_ bench. It
    refetches when the bench changes, not when the route does, so its
    contents can persist or travel across page navigation rather than being
@@ -48,19 +53,21 @@ in a real `@corbits/routines` listing later touches nothing else.
 
 ## Screens
 
-| Path         | What it shows                                                                                                                                                              |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`          | Home — a welcome summary of the signed-in account's benches and runs.                                                                                                      |
-| `/c`         | Channel deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
-| `/workflows` | Workflow runs executing across your benches.                                                                                                                               |
-| `/library`   | The artifact gallery. See "Library" below.                                                                                                                                 |
-| `/agents`    | Agent definitions you can invite into a channel, and each channel's participants.                                                                                          |
-| `/skills`    | A stub: skills have no registry in the hub yet, so this describes what's coming.                                                                                           |
-| `/settings`  | Account and bench membership settings.                                                                                                                                     |
+| Path         | What it shows                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Home — a welcome summary of the signed-in account's benches and runs.                                                                                                        |
+| `/c`         | Workbench deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
+| `/workflows` | Workflow runs executing across your benches.                                                                                                                                 |
+| `/library`   | The artifact gallery. See "Library" below.                                                                                                                                   |
+| `/settings`  | Account, bench membership, and (CL-5990) Agents/Skills. See "Agents" and "Skills" below.                                                                                     |
+
+Agents and Skills are Settings sections, not rail destinations — old
+`/agents[/:id]` and `/skills[/:id]` links still resolve, redirecting to
+`/settings/agents[/:id]` and `/settings/skills[/:id]`.
 
 Approvals are not a page: pending permission requests land as actionable
-cards in the contextual panel's Notifications band (and, when a channel is
-open, inline in that channel). The `/approvals` route is gone.
+cards in the contextual panel's Notifications band (and, when a workbench is
+open, inline in that workbench). The `/approvals` route is gone.
 
 ## Tests
 
@@ -72,24 +79,24 @@ open, inline in that channel). The `/approvals` route is gone.
 ## Library
 
 `/library` (`src/pages/library-page.tsx`) is the artifact gallery: search,
-sort, a grid/rows view toggle, and kind-colored cards, built against the
-`ArtifactSummary` type from `@corbits/artifact-ui`. The presentation layer is
-fully wired and tested — what isn't real yet is the data underneath it: the
-hub does not expose a cross-tenant artifact store, so `LibraryRoute` passes
-an honestly empty list rather than fetching a route that doesn't exist. Once
-a `/api/.../artifacts` endpoint lands, only `LibraryRoute` needs to change;
-`LibraryPage` needs nothing.
+sort, a grid/rows view toggle, kind-colored cards, and upload, built
+against the `ArtifactSummary` type from `@corbits/artifact-ui`.
+`LibraryRoute` reads and searches the tenant's artifacts from the real
+`/api/tenants/:id/artifacts` (list/detail) endpoint; a chat artifact
+chip's "Open in Library" link (`/library/a/:id`) deep-links into the same
+route.
 
 ## Agents
 
-`/agents` (`src/pages/agents-page.tsx`) lists the signed-in account's
-channels and each one's participants (by mention handle — raw addresses are
-tooltip-only, never printed on screen). "Invite agent" on a channel opens
-`@corbits/chat-ui`'s `InviteAgentDialog`, the same invitable-definitions list
-and invite call the chat surface's own invite flow uses.
+Settings · Agents (`src/pages/agents-settings-section.tsx`, registered via
+`src/settings-workspace-sections.tsx`) is definitions only — a bench's
+directory of agent definitions and their deployed instances, with Start
+chat / Open in workbench as its only reach into chat. Talking to an agent is a
+chat; looping one into a conversation is a workbench mention — neither lives
+here. See `docs/AGENTS-PAGE.md`.
 
 ## Skills
 
-`/skills` (`src/pages/skills-page.tsx`) is an honest stub: there is no skill
-registry in the hub yet, so the page states what a skill will be instead of
-rendering invented rows.
+Settings · Skills (`src/pages/skills-settings-section.tsx`) is an honest
+stub: there is no skill registry in the hub yet, so the section states what
+a skill will be instead of rendering invented rows.

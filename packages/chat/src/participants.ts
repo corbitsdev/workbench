@@ -1,7 +1,7 @@
-// Channel participant records: the settings-backed source of mention
+// Workbench participant records: the settings-backed source of mention
 // handles. `chat/participants` (see `routes.ts`'s `ChatNamespaceSchemas`)
 // holds `ParticipantRecord[]` — an address plus the short,
-// unique-within-channel handle a mention actually types (`@echo`), never
+// unique-within-workbench handle a mention actually types (`@echo`), never
 // the unusable instance-id local part (`@ins_cd03d8e3...`). Reading
 // tolerates a bare address string too — a participant seeded before this
 // record shape existed, or a caller PATCHing `chat/participants` with
@@ -42,7 +42,7 @@ function parseParticipantEntry(entry: unknown): ParticipantRecord {
 
 /**
  * Parses a whole `chat/participants` setting value into records,
- * tolerant of the mixed shape a channel written before and after this
+ * tolerant of the mixed shape a workbench written before and after this
  * rollout might carry: some entries bare strings, some already records.
  * Anything other than an array is treated as no participants at all.
  */
@@ -69,7 +69,7 @@ export function handleFromName(name: string, fallbackAddress: string): string {
 
 /**
  * De-duplicates a candidate handle against the handles already in use in
- * a channel: "echo" becomes "echo-2", then "echo-3", etc. — the first
+ * a workbench: "echo" becomes "echo-2", then "echo-3", etc. — the first
  * suffix not already taken.
  */
 export function dedupeHandle(
@@ -84,7 +84,7 @@ export function dedupeHandle(
 
 /**
  * Appends a new participant to an existing record list, de-duplicating
- * the desired handle against every handle already in the channel.
+ * the desired handle against every handle already in the workbench.
  */
 export function addParticipant(
   existing: readonly ParticipantRecord[],
@@ -94,4 +94,20 @@ export function addParticipant(
   const taken = new Set(existing.map((participant) => participant.handle));
   const handle = dedupeHandle(desiredHandle, taken);
   return [...existing, { address, handle }];
+}
+
+/**
+ * Drops a participant from an existing record list by address — the
+ * inverse of `addParticipant`. Returns the same array reference when
+ * the address names no participant, so a caller can tell "nothing
+ * changed" apart from "removed the last matching entry" by identity.
+ */
+export function removeParticipant(
+  existing: readonly ParticipantRecord[],
+  address: string,
+): ParticipantRecord[] {
+  if (!existing.some((participant) => participant.address === address)) {
+    return existing as ParticipantRecord[];
+  }
+  return existing.filter((participant) => participant.address !== address);
 }

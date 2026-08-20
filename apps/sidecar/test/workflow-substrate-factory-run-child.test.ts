@@ -48,7 +48,7 @@ const WORKFLOW_RUN_REPO_ID: RepoId = {
 const allowAll: AuthorizeFn = () => ({ allowed: true });
 const PRINCIPAL: WorkflowRunWorkflowProcessPrincipal = {
   kind: "workflow-process",
-  deploymentId: DEPLOYMENT_ID,
+  anchorRunId: DEPLOYMENT_ID,
 };
 
 const tempDirs: string[] = [];

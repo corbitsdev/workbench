@@ -1,7 +1,7 @@
 // One `CryptoProvider` per cache key, minted once and reused for the
 // cache's lifetime — mirroring the per-instance signing-key cache the
 // platform's own mail route keeps. A caller picks its own key (a
-// channel id, an instance id, ...); this module knows nothing about
+// workbench id, an instance id, ...); this module knows nothing about
 // what the key means.
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import type { CryptoProvider } from "@intx/types/runtime";

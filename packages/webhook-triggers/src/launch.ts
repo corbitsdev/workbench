@@ -5,23 +5,38 @@
 // package never talks to `sessionService`/`sidecarRouter` directly —
 // only through `folded-runs`, the shared launch core the platform's
 // own `POST /workflows/runs` route is mirrored from.
+//
+// The post-launch mail send is hardened the same way
+// `apps/hub/src/routine-launcher.ts` hardens its own identical shape
+// (both call the one shared `sendFoldedMailWithRetry` seam in
+// `@corbits/folded-runs`, so this is one behavior, not two copies of
+// it): a delivery already accepted (202) has already committed a real
+// run by the time this function's own `sendFoldedMailWithRetry` call
+// runs, so a delivery-failed mail must not throw past
+// `createWebhookIngressRoutes` — that would both hide the run (no
+// `store.recordFired` call) and, if the sender's webhook client retries
+// the same delivery on a 5xx, mint a second, duplicate run for one
+// event. On exhausted retries this only logs, naming the run.
 import { and, eq } from "drizzle-orm";
 import {
   domainOf,
   launchFoldedRun,
   readDefinitionJSON,
   readFoldedBody,
-  sendFoldedMail,
+  sendFoldedMailWithRetry,
   type FoldedRunsDeps,
   type CryptoProviderCache,
 } from "@corbits/folded-runs";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
-import { formatAgentAddress } from "@intx/types";
+import { getLogger } from "@intx/log";
+import { formatRunAddress } from "@intx/types";
 
 import { renderInputTemplate } from "./mapping";
 import type { WebhookTriggerRow } from "./schema";
+
+const log = getLogger(["webhook-triggers", "launch"]);
 
 export type LaunchWebhookTriggerDeps = FoldedRunsDeps & {
   db: DB["db"];
@@ -38,10 +53,11 @@ export type LaunchedWebhookTrigger = {
  * deployed and materialized, same precondition `@corbits/chat`'s
  * `launchInvite` enforces), launches it via `launchFoldedRun`, then
  * delivers the rendered input mapping as the run's first inbound
- * message via `sendFoldedMail` — the same mail primitive a chat
- * message send uses. The webhook sender itself is never a principal
- * on the platform, so the mail's `from` names the trigger, not a
- * person.
+ * message via `sendFoldedMailWithRetry` — the same mail primitive a
+ * chat message send uses, bounded-retried rather than a bare send (see
+ * the module doc comment). The webhook sender itself is never a
+ * principal on the platform, so the mail's `from` names the trigger,
+ * not a person.
  */
 export async function launchWebhookTrigger(
   deps: LaunchWebhookTriggerDeps,
@@ -92,8 +108,8 @@ export async function launchWebhookTrigger(
     );
   }
 
-  const instanceId = generateId("instance");
-  const triggerAddress = formatAgentAddress(instanceId, tenantRow.domain);
+  const instanceId = generateId("workflowRun");
+  const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
   const launched = await launchFoldedRun(deps, {
     tenantId: trigger.tenantId,
@@ -106,7 +122,7 @@ export async function launchWebhookTrigger(
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);
   const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
-  await sendFoldedMail(deps, {
+  const result = await sendFoldedMailWithRetry(deps, {
     tenantId: trigger.tenantId,
     sessionId: launched.sessionId,
     agentAddress: triggerAddress,
@@ -115,6 +131,13 @@ export async function launchWebhookTrigger(
     content,
     cryptoProvider,
   });
+  if (!result.ok) {
+    const reason =
+      result.error instanceof Error
+        ? result.error.message
+        : String(result.error);
+    log.error`run ${instanceId} launched from webhook trigger "${trigger.id}" but its input failed to deliver after ${result.attempts} attempts: ${reason}`;
+  }
 
   return { instanceId, triggerAddress };
 }

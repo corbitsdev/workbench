@@ -9,6 +9,13 @@ import type { BenchMember, BenchMembership } from "./api";
  * same floor `packages/chat-ui` enforces over its own fixture surface. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_|role_|grant_)[a-z0-9]/i;
 
+/** True when `name` is (or contains) a raw platform id rather than a
+ * human-assigned one — the shape a tenant falls back to server-side when
+ * nothing ever named it. */
+export function isRawIdentifier(name: string): boolean {
+  return RAW_ID_PATTERN.test(name);
+}
+
 /**
  * A lowercase-kebab slug derived from a bench name, e.g. "Launch Team!" →
  * "launch-team". Empty or entirely-punctuation input has no derivable slug,
@@ -58,7 +65,7 @@ export function membershipDisplay(membership: BenchMembership): {
  * friendly placeholder copy.
  */
 export function memberDisplayName(member: BenchMember): string {
-  return RAW_ID_PATTERN.test(member.displayName)
+  return isRawIdentifier(member.displayName)
     ? BENCH_STRINGS.memberUnnamed
     : member.displayName;
 }

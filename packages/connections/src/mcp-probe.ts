@@ -1,0 +1,111 @@
+// The MCP-server connector's own "probe": not a single authenticated GET
+// (the api-key connectors' `probes.ts` shape) but a real MCP handshake —
+// `initialize` then `tools/list` — over the URL a person just pasted into
+// Plugins. Reuses `@corbits/mcp-tools`' own client wrapper rather than a
+// second hand-rolled MCP client: the exact transport/session mechanics
+// `mcp_list_tools` uses at call time, run once at connect time to prove
+// the URL is a real MCP server before it is ever stored.
+import { withMcpConnection, listMcpTools } from "@corbits/mcp-tools";
+import { discoverOAuthServerInfo } from "@modelcontextprotocol/sdk/client/auth.js";
+
+export type McpProbeResult =
+  | { readonly ok: true; readonly toolCount: number }
+  | {
+      readonly ok: false;
+      readonly message: string;
+      readonly requiresOAuth?: false;
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+      readonly requiresOAuth: true;
+      readonly authorizationServerUrl: string;
+    };
+
+/** True for the message shape the SDK's fetch-based transport throws when
+ * the server answers 401/403 to the initial request -- the only signal
+ * available before any MCP-level response body exists to inspect. */
+function looksUnauthorized(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return /\b401\b|\b403\b|unauthorized|forbidden/i.test(message);
+}
+
+/** Runs the official SDK's RFC 9728 discovery against a server that just
+ * answered 401 -- if it advertises a real authorization server metadata
+ * document, this is an OAuth-gated MCP server per the MCP authorization
+ * spec, not a broken URL or a plain rejected token. `discoverOAuthServerInfo`
+ * always returns *some* `authorizationServerUrl` (it falls back to the MCP
+ * server's own origin when RFC 9728/8414 discovery finds nothing), so this
+ * only reports `requiresOAuth` when real `authorizationServerMetadata` was
+ * actually found -- otherwise every plain 401 would misreport as OAuth. */
+async function discoverOAuthRequirement(
+  url: string,
+): Promise<{ authorizationServerUrl: string } | undefined> {
+  try {
+    const info = await discoverOAuthServerInfo(url);
+    return info.authorizationServerMetadata !== undefined
+      ? { authorizationServerUrl: info.authorizationServerUrl }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Builds the bearer-authenticated fetch the probe (and nothing durable)
+ * uses: a plain `fetch` injecting `authorization` when a token was
+ * pasted, with no origin pinning — this is the one-shot pre-storage
+ * check, before a provider row (and its pinned origin) exists at all. */
+function probeFetch(token: string | undefined): typeof fetch {
+  if (token === undefined || token.length === 0) return fetch;
+  return ((input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    return fetch(input as string | URL, { ...init, headers });
+  }) as typeof fetch;
+}
+
+/** Proves `url` is a reachable Streamable HTTP MCP server: connect,
+ * `initialize`, `tools/list`, disconnect. Never throws — every failure
+ * (bad URL, network error, non-MCP endpoint, a rejected token) degrades
+ * to `{ ok: false, message }`, mirroring every other connector probe in
+ * this package. */
+export async function probeMcpServer(
+  url: string,
+  token: string | undefined,
+): Promise<McpProbeResult> {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return { ok: false, message: `"${url}" is not a valid URL.` };
+  }
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return { ok: false, message: "The MCP server URL must be http or https." };
+  }
+
+  try {
+    const tools = await withMcpConnection(
+      { url, fetchImpl: probeFetch(token) },
+      (client) => listMcpTools(client),
+    );
+    return { ok: true, toolCount: tools.length };
+  } catch (cause) {
+    const message =
+      cause instanceof Error
+        ? `Could not connect to that MCP server: ${cause.message}`
+        : `Could not connect to that MCP server: ${String(cause)}`;
+    if (looksUnauthorized(cause)) {
+      const discovered = await discoverOAuthRequirement(url);
+      if (discovered !== undefined) {
+        return {
+          ok: false,
+          message:
+            "This MCP server requires signing in via OAuth before it can be connected.",
+          requiresOAuth: true,
+          authorizationServerUrl: discovered.authorizationServerUrl,
+        };
+      }
+    }
+    return { ok: false, message };
+  }
+}

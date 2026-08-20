@@ -1,10 +1,9 @@
 // The "invite agent" affordance: a small dialog listing the tenant's
-// deployed, launchable workflow definitions (never the channel's own
+// deployed, launchable workflow definitions (never the workbench's own
 // host — the server-side list already excludes it), each with an
-// "Invite" action that launches it into the current channel. Modeled on
-// `NewChannelDialog`'s shape, but the list itself carries its own
-// loading/empty/error states since it is fetched fresh every time the
-// dialog opens.
+// "Invite" action that launches it into the current workbench. The list
+// itself carries its own loading/empty/error states since it is fetched
+// fresh every time the dialog opens.
 
 import {
   Button,
@@ -20,7 +19,11 @@ import {
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ChatApiError, listInvitableDefinitions } from "./api";
+import {
+  ChatApiError,
+  describeChatError,
+  listInvitableDefinitions,
+} from "./api";
 import type { InvitableDefinition } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
@@ -33,13 +36,13 @@ export function InviteAgentDialog({
   open,
   onOpenChange,
   tenantId,
-  channelId,
+  workbenchId,
   onInvite,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly onInvite: (definitionId: string) => Promise<void>;
 }) {
   const [state, setState] = useState<ListState>({ kind: "loading" });
@@ -51,7 +54,7 @@ export function InviteAgentDialog({
     let cancelled = false;
     setState({ kind: "loading" });
     setInviteError(null);
-    listInvitableDefinitions(tenantId, channelId)
+    listInvitableDefinitions(tenantId, workbenchId)
       .then((items) => {
         if (!cancelled) setState({ kind: "ready", items });
       })
@@ -59,14 +62,14 @@ export function InviteAgentDialog({
         if (!cancelled) {
           setState({
             kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: describeChatError(cause, "Couldn't load agents."),
           });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId, channelId]);
+  }, [open, tenantId, workbenchId]);
 
   async function handleInvite(definitionId: string) {
     setInvitingId(definitionId);
@@ -87,7 +90,7 @@ export function InviteAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>{CHAT_STRINGS.inviteAgentDialogTitle}</DialogTitle>
           <DialogDescription>
@@ -122,7 +125,7 @@ export function InviteAgentDialog({
                   className="chat-invitable-item"
                   data-testid="invitable-definition"
                 >
-                  <span>{definition.name}</span>
+                  <span>{definition.description ?? definition.name}</span>
                   <Button
                     variant="outline"
                     size="sm"

@@ -91,6 +91,39 @@ describe("Part schemas", () => {
     expect(result instanceof type.errors).toBe(true);
   });
 
+  test("FilePart accepts an artifactId with neither blobId nor data — the artifact's bytes live in the Library row, not chat's blob store", () => {
+    const result = FilePart({
+      kind: "file",
+      name: "Notes",
+      mediaType: "text/plain",
+      artifactId: "art_1",
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test("FilePart accepts an artifactId alongside a blobId", () => {
+    const result = FilePart({
+      kind: "file",
+      name: "Notes",
+      mediaType: "text/plain",
+      blobId: "blob_1",
+      artifactId: "art_1",
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test("FilePart rejects an artifactId set alongside both blobId and data", () => {
+    const result = FilePart({
+      kind: "file",
+      name: "Notes",
+      mediaType: "text/plain",
+      blobId: "blob_1",
+      data: "aGVsbG8=",
+      artifactId: "art_1",
+    });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
   test("EventPart accepts a timeline event", () => {
     const result = EventPart({
       kind: "event",

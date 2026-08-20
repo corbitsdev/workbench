@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
 import type { ApiCall } from "@workbench/hub-client";
-import type { WorkflowPusher } from "@workbench/hub-client";
+import type {
+  WorkflowPusher,
+  ToolRegistryPublisher,
+} from "@workbench/hub-client";
 import {
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
@@ -19,6 +23,7 @@ const MODEL = {
 };
 
 const noopPush: WorkflowPusher = async () => "pushed";
+const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {
   const lines: string[] = [];
@@ -74,7 +79,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -131,8 +138,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       displayName: "Alice's Lab",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -165,8 +174,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
         hubUrl: "http://localhost:3000",
         userId: "user_1",
         userEmail: "alice@example.com",
+        userEmailVerified: true,
         displayName: "Alice's Lab",
         pushWorkflow: noopPush,
+        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
       }),
     ).rejects.toThrow(/slug conflict/);
@@ -234,8 +245,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       displayName: "Alice's Lab",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -271,7 +284,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -374,13 +389,35 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,
@@ -388,7 +425,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
             id: DEPLOYMENT_ID,
             tenantId: TENANT_ID,
             definitionAssetId: "ast_1",
-            status: "active",
+            status: "deployed",
             createdAt: "2026-01-01T00:00:00.000Z",
           },
           cookies: [],
@@ -413,7 +450,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
@@ -430,10 +467,12 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -563,13 +602,35 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,
@@ -577,7 +638,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
             id: DEPLOYMENT_ID,
             tenantId: TENANT_ID,
             definitionAssetId: "ast_1",
-            status: "active",
+            status: "deployed",
             createdAt: "2026-01-01T00:00:00.000Z",
           },
           cookies: [],
@@ -602,7 +663,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
@@ -618,9 +679,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
     await expect(firstAttempt).rejects.toThrow(/asset service unavailable/);
@@ -633,16 +696,106 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
-    expect(retry).toEqual({ kind: "existing-member", seeded: true });
+    expect(retry).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
-    // channel-digest — on top of the one failed attempt.
-    expect(assetCreateAttempts).toBe(4);
+    // workbench-digest, recurring-task, last-30-days-research — on top of
+    // the one failed attempt.
+    expect(assetCreateAttempts).toBe(6);
+  });
+
+  test("a fully seeded personal bench reports existing-member with seeded: true", async () => {
+    // Every default workflow already has an active deployment — nothing
+    // for this hook to do, but the caller must be able to tell "already
+    // seeded" apart from "seeded and unseeded look identical," which is
+    // exactly the ambiguity that hid the bench_unseeded defect.
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
+            id: `ast_${index}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: workflow.assetName,
+            displayName: workflow.displayName,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+            definitionAssetId: `ast_${index}`,
+            status: "deployed",
+          })),
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      // No seedModel needed: nothing left to seed.
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+    });
+
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
   });
 
   test("half-provisioned personal bench without a seed model returns existing-member (not stuck)", async () => {
@@ -683,7 +836,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
@@ -696,12 +849,21 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       // No seedModel — hub without ANTHROPIC_API_KEY.
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
-    expect(result).toEqual({ kind: "existing-member" });
+    // seeded: false is the typed bench_unseeded condition — the caller
+    // has a real membership, but the onboarding UI must keep the
+    // credential step open rather than read this as finished setup.
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: false,
+      tenantId: "ten_new",
+    });
     // Completeness was checked (tenant-local assets listed) even without a
     // seed model — membership recovery does not short-circuit before that.
     expect(assetListCalls).toBe(1);
@@ -813,13 +975,35 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,
@@ -827,7 +1011,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
             id: DEPLOYMENT_ID,
             tenantId: TENANT_ID,
             definitionAssetId: `ast_${assetCreateCount}`,
-            status: "active",
+            status: "deployed",
             createdAt: "2026-01-01T00:00:00.000Z",
           },
           cookies: [],
@@ -852,7 +1036,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
@@ -868,8 +1052,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      userEmailVerified: true,
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -877,7 +1063,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(listedInherited).toBe(false);
     // Empty tenant-local assets must re-seed, not claim "already seeded"
     // from an ancestor's inherited catalog.
-    expect(result).toEqual({ kind: "existing-member", seeded: true });
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
     expect(assetCreateCount).toBeGreaterThan(0);
   });
 });

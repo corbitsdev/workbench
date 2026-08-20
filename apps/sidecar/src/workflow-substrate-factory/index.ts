@@ -28,6 +28,15 @@ import { type } from "arktype";
 
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
+import {
+  builtinCredentialProviders,
+  createCredentialProviderRegistry,
+} from "@intx/harness";
+import {
+  createHttpRawAuthorizationCredentialProvider,
+  createHttpXApiKeyCredentialProvider,
+  createMcpStreamableHttpCredentialProvider,
+} from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { createSSHSignature } from "@intx/crypto";
 import {
@@ -43,11 +52,12 @@ import {
   createWorkflowSpawnSuspendableChild,
   createWorkflowStepInvoker,
   type GrantEvaluator,
+  type LoadParkedApproval,
   type RunWorkflowChildBindings,
   type SubstrateFactory,
   type SubstrateFactoryEnv,
 } from "@intx/workflow-host";
-import { type StepInvoker } from "@intx/workflow";
+import { type ReadParkedApprovalOps, type StepInvoker } from "@intx/workflow";
 
 import {
   createToolBearingAgentFactory,
@@ -59,6 +69,7 @@ import {
 } from "../conversation-state";
 import { parseToolRegistries } from "../tool-materialization";
 import {
+  deriveHubHttpUrl,
   parseAdapterManifest,
   parseByteCap,
   parseStepInferenceSources,
@@ -66,6 +77,13 @@ import {
   SubstrateConfig,
 } from "./config";
 import { runStepStorageRoot } from "./storage-paths";
+import {
+  readColdParkedApprovalSnapshot,
+  readColdParkedPendingOperations,
+  readWarmParkedApprovalSnapshot,
+  readWarmParkedPendingOperations,
+  toParkedApprovalOps,
+} from "./parked-approvals";
 import { createSidecarStepBuildEnv } from "./step-env";
 
 export { createSidecarStepBuildEnv };
@@ -259,7 +277,7 @@ export function createSidecarSubstrateFactory(
     };
     const principal: WorkflowRunWorkflowProcessPrincipal = {
       kind: "workflow-process",
-      deploymentId: env.spawn.deploymentId,
+      anchorRunId: env.spawn.anchorRunId,
     };
 
     // Proxy substrate: writes are forwarded over IPC into the
@@ -334,7 +352,7 @@ export function createSidecarSubstrateFactory(
         })
       : undefined;
 
-    const buildStepEnv = createSidecarStepBuildEnv({
+    const buildStepEnvBaseOpts = {
       dataDir: validated.SIDECAR_DATA_DIR,
       workflowRunRepoId,
       signer: conversationSigner,
@@ -345,8 +363,34 @@ export function createSidecarSubstrateFactory(
       cache: stepToolCache,
       adapters: childAdapterRegistry,
       toolless: false,
-      ...(durableConversation !== undefined ? { durableConversation } : {}),
-    });
+      hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
+      sidecarToken: validated.SIDECAR_TOKEN,
+      definitionId: workflowDefinitionRepoId.id,
+    };
+    const buildStepEnv = createSidecarStepBuildEnv(
+      durableConversation !== undefined
+        ? { ...buildStepEnvBaseOpts, durableConversation }
+        : buildStepEnvBaseOpts,
+    );
+
+    // Credential provider registry: the platform's built-in `http`
+    // (Bearer) provider (`@intx/harness`'s `builtinCredentialProviders`)
+    // plus this workbench's own `http-raw-authorization` plugin (for a
+    // provider row whose API expects the raw secret in `authorization`
+    // with no `Bearer ` prefix -- Linear's convention) and
+    // `http-x-api-key` plugin (for a provider row whose API expects the
+    // secret in an `x-api-key` header -- Exa's and ScrapeCreators'
+    // convention), both from `@corbits/credential-providers` rather than
+    // forking or reaching around the vendored plugin. Fixed for the
+    // child's lifetime -- unlike the per-step wiring below, the set of
+    // provider plugins is not something a rotation or
+    // `credentials-updated` frame changes.
+    const credentialProviders = createCredentialProviderRegistry([
+      ...builtinCredentialProviders(),
+      createHttpRawAuthorizationCredentialProvider(),
+      createHttpXApiKeyCredentialProvider(),
+      createMcpStreamableHttpCredentialProvider(),
+    ]);
 
     // The tool-bearing agent factory reads the materialized tool
     // runtime off the per-step env (set by `buildStepEnv` via
@@ -354,10 +398,15 @@ export function createSidecarSubstrateFactory(
     // step's `AgentDefinition`, builds the plugin chain on
     // `env.plugins`, and wraps `agent.close()` so every plugin (the LSP
     // subprocess included) and tool bundle is torn down with the agent
-    // on every exit path. The factory is stateless across steps, so it
-    // is pinned once here and shared by every per-step invoker built
-    // below.
-    const stepAgentFactory = createToolBearingAgentFactory();
+    // on every exit path. It also shapes a consumer-scoped `credentials`
+    // capability for any tool package that declares one, reading the
+    // per-step `CredentialWiring` `buildStepEnv` attached to the env
+    // (see `attachStepCredentials`). The factory is stateless across
+    // steps, so it is pinned once here and shared by every per-step
+    // invoker built below.
+    const stepAgentFactory = createToolBearingAgentFactory({
+      providers: credentialProviders,
+    });
 
     // Child-runtime step invoker. The in-process `runChild` (see
     // `createSidecarRunChild` below) runs a separate WorkflowDefinition
@@ -407,6 +456,9 @@ export function createSidecarSubstrateFactory(
       cache: stepToolCache,
       adapters: childAdapterRegistry,
       toolless: true,
+      hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
+      sidecarToken: validated.SIDECAR_TOKEN,
+      definitionId: workflowDefinitionRepoId.id,
     });
     const bodyInvokeStep: SidecarBodyStepInvoker = (
       req,
@@ -476,16 +528,26 @@ export function createSidecarSubstrateFactory(
       authorize,
       warmCache,
       sourcesRef,
-    ) =>
-      createWorkflowStepInvoker({
+      credentialWiring,
+    ) => {
+      const stepInvokerBaseOpts = {
         workflowAuthorize: authorize,
-        buildEnv: (buildReq) => buildStepEnv(buildReq, sourcesRef),
+        buildEnv: (buildReq: Parameters<typeof buildStepEnv>[0]) =>
+          buildStepEnv(buildReq, sourcesRef, credentialWiring),
         agentFactory: stepAgentFactory,
         onEvent,
         sourcesRef,
-        ...(warmCache !== undefined ? { warmCache } : {}),
-        ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),
-      })(req);
+      };
+      const stepInvokerOptsWithWarmCache =
+        warmCache !== undefined
+          ? { ...stepInvokerBaseOpts, warmCache }
+          : stepInvokerBaseOpts;
+      const stepInvokerOpts =
+        onRunBoundary !== undefined
+          ? { ...stepInvokerOptsWithWarmCache, onRunBoundary }
+          : stepInvokerOptsWithWarmCache;
+      return createWorkflowStepInvoker(stepInvokerOpts)(req);
+    };
 
     const evaluateGrantsAdapter: GrantEvaluator = async ({
       resource,
@@ -541,6 +603,13 @@ export function createSidecarSubstrateFactory(
       principal,
       deployRef: validated.WORKFLOW_DEFINITION_REF,
       runSuspendableChild: createSidecarSpawnSuspendableChild(childRunDeps),
+      // Hub-approved wire hash per referenced onTrigger body id, carried on
+      // the parent's signed deploy frame and threaded here by the sidecar's
+      // deploy router (`REFERENCED_DEFINITION_HASHES` spawn-time env, parsed
+      // into `env.spawn.referencedDefinitionHashes` by the workflow-host
+      // child bootstrap). Not a sidecar recompute -- the hub is the
+      // authority the body path re-verifies against.
+      referencedDefinitionHashes: env.spawn.referencedDefinitionHashes,
     });
 
     // Per-run scratch reclamation for the cold (multi-step) path. The
@@ -569,6 +638,63 @@ export function createSidecarSubstrateFactory(
               { recursive: true, force: true },
             );
 
+    // Recover a parked correlation's approval snapshot for the child's
+    // re-registration enumeration (ported from upstream Interchange's
+    // sidecar at the vendored pin). Wired unconditionally (unlike
+    // `cleanupRunStorage`, which is cold-only): a warm agent parks on
+    // approval just as a cold one does, and the branch on `warmKeep`
+    // selects the durable read — cold reads the per-attempt isogit
+    // store, warm reconstructs the agent's durable conversation state
+    // from the substrate.
+    const loadParkedApproval: LoadParkedApproval = ({
+      runId,
+      stepId,
+      attempt,
+      correlationId,
+    }) =>
+      env.spawn.warmKeep
+        ? readWarmParkedApprovalSnapshot({
+            substrate,
+            workflowRunRepoId,
+            stepId,
+            correlationId,
+          })
+        : readColdParkedApprovalSnapshot({
+            dataDir: validated.SIDECAR_DATA_DIR,
+            workflowRunRepoId,
+            runId,
+            stepId,
+            attempt,
+            correlationId,
+          });
+
+    // Enumerate a crashed step's durable pending approval operations for
+    // the resume classifier, off the same cold/warm durable read as
+    // `loadParkedApproval`. Where that binding is a lookup by a known
+    // correlationId (answering the supervisor's re-registration), this is
+    // the enumeration the classifier needs when the correlationId never
+    // reached the log — the crash-across-park case.
+    const readParkedApprovalOps: ReadParkedApprovalOps = async ({
+      runId,
+      stepId,
+      attempt,
+    }) =>
+      toParkedApprovalOps(
+        env.spawn.warmKeep
+          ? await readWarmParkedPendingOperations({
+              substrate,
+              workflowRunRepoId,
+              stepId,
+            })
+          : await readColdParkedPendingOperations({
+              dataDir: validated.SIDECAR_DATA_DIR,
+              workflowRunRepoId,
+              runId,
+              stepId,
+              attempt,
+            }),
+      );
+
     const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
@@ -582,6 +708,8 @@ export function createSidecarSubstrateFactory(
       spawnSuspendableChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
+      loadParkedApproval,
+      readParkedApprovalOps,
       ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
     return bindings;

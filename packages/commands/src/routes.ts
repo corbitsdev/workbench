@@ -1,11 +1,11 @@
 // The command surface's own HTTP API: listing a tenant's available
 // commands (the data the chat-ui autocomplete dropdown needs — never
 // the dropdown itself, see the package doc comment in `index.ts`) and
-// executing one directly. A channel message that opens with "/" or a
+// executing one directly. A workbench message that opens with "/" or a
 // command-naming "@" is intercepted earlier, inside
 // `@corbits/chat`'s own message route, and never reaches this execute
 // endpoint — this route exists for callers that want a command's
-// result without posting anything into a channel's timeline (a
+// result without posting anything into a workbench's timeline (a
 // pre-send preview, a non-chat integration), and for the autocomplete
 // listing every such caller shares.
 import { Hono } from "hono";
@@ -19,14 +19,14 @@ export type CreateCommandRoutesDeps = {
   registry: CommandRegistry;
   requireGrant: RequireGrant;
   /**
-   * Resolves whether `channelId` is a channel this tenant can see. The
-   * execute body carries a free-form channel id — without this check a
+   * Resolves whether `workbenchId` is a workbench this tenant can see. The
+   * execute body carries a free-form workbench id — without this check a
    * principal with a tenant-wide grant could run commands against
-   * another tenant's channel.
+   * another tenant's workbench.
    */
-  channelBelongsToTenant: (
+  workbenchBelongsToTenant: (
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
   ) => Promise<boolean>;
 };
 
@@ -37,7 +37,7 @@ const ErrorEnvelope = (code: string, message: string) => ({
 const ExecuteCommandBody = type({
   name: "string",
   "args?": "string",
-  channelId: "string",
+  workbenchId: "string",
 });
 
 export function createCommandRoutes(
@@ -51,13 +51,15 @@ export function createCommandRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const commands = await deps.registry.listCommands(tenant.id);
-      const items: CommandListing[] = commands.map((command) => ({
-        name: command.name,
-        description: command.description,
-        ...(command.argumentHint !== undefined
-          ? { argumentHint: command.argumentHint }
-          : {}),
-      }));
+      const items: CommandListing[] = commands.map((command) => {
+        const listing = {
+          name: command.name,
+          description: command.description,
+        };
+        return command.argumentHint !== undefined
+          ? { ...listing, argumentHint: command.argumentHint }
+          : listing;
+      });
       return c.json({ items });
     },
   );
@@ -78,12 +80,12 @@ export function createCommandRoutes(
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const belongs = await deps.channelBelongsToTenant(
+      const belongs = await deps.workbenchBelongsToTenant(
         tenant.id,
-        body.channelId,
+        body.workbenchId,
       );
       if (!belongs) {
-        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
 
       const result = await dispatchSlashCommand(
@@ -92,7 +94,7 @@ export function createCommandRoutes(
         {
           tenantId: tenant.id,
           principalId: principal.id,
-          channelId: body.channelId,
+          workbenchId: body.workbenchId,
         },
       );
       // `dispatchSlashCommand` only returns `undefined` when its input

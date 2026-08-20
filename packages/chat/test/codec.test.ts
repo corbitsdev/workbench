@@ -3,6 +3,7 @@ import {
   decodeMail,
   decodeParts,
   encodeParts,
+  extractTextPreview,
   senderOf,
   type FetchBlob,
   type MailContent,
@@ -360,11 +361,11 @@ describe("senderOf", () => {
       textBody: [{ partId: "1", type: "text/plain" }],
       bodyValues: { "1": { value: "sent from a plain mail client" } },
       attachments: [],
-      from: [{ name: null, email: "channel1@acme.example" }],
+      from: [{ name: null, email: "workbench1@acme.example" }],
     };
     expect(senderOf(mail)).toEqual({
       name: null,
-      address: "channel1@acme.example",
+      address: "workbench1@acme.example",
     });
   });
 
@@ -375,6 +376,57 @@ describe("senderOf", () => {
       attachments: [],
     };
     expect(() => senderOf(mail)).toThrow(/no envelope "from"/);
+  });
+});
+
+describe("extractTextPreview", () => {
+  test("returns a short message's text verbatim", () => {
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "See you at the standup" } },
+      attachments: [],
+    };
+    expect(extractTextPreview(mail)).toBe("See you at the standup");
+  });
+
+  test("truncates past 80 characters with an ellipsis", () => {
+    const long = "a".repeat(120);
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: long } },
+      attachments: [],
+    };
+    const preview = extractTextPreview(mail);
+    expect(preview).toBe(`${"a".repeat(80)}…`);
+  });
+
+  test("collapses internal whitespace", () => {
+    const mail: MailReadContent = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "line one\n\nline two" } },
+      attachments: [],
+    };
+    expect(extractTextPreview(mail)).toBe("line one line two");
+  });
+
+  test("an attachment-only message previews as empty, never a fabricated placeholder", () => {
+    const mail: MailReadContent = {
+      textBody: [],
+      bodyValues: {},
+      attachments: [
+        {
+          blobId: "blob_1",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 1024,
+        },
+      ],
+    };
+    expect(extractTextPreview(mail)).toBe("");
+  });
+
+  test("a mail shape this cannot parse previews as empty rather than throwing", () => {
+    expect(extractTextPreview({ not: "mail" })).toBe("");
   });
 });
 
@@ -389,14 +441,14 @@ describe("decodeMail leaf-header compensation", () => {
 
   test("strips a leaf attachment's own MIME header block before parsing", async () => {
     const raw =
-      'Content-Type: application/json\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{"kind":"event","event":"channel.agent-joined","data":{"address":"a@b"}}';
+      'Content-Type: application/json\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{"kind":"event","event":"workbench.agent-joined","data":{"address":"a@b"}}';
     const parts = await decodeMail(mailWith("blob_x_1.2"), {
       fetchBlob: async () => raw,
     });
     expect(parts).toEqual([
       {
         kind: "event",
-        event: "channel.agent-joined",
+        event: "workbench.agent-joined",
         data: { address: "a@b" },
       },
     ]);

@@ -56,11 +56,14 @@ function parseCronClause(raw: string): CronClause | undefined {
   const match = CLAUSE_PATTERN.exec(raw);
   if (match === null) return undefined;
   const [, base, rangeEnd, step] = match;
-  return {
-    base: base === "*" ? "*" : Number(base),
-    ...(rangeEnd !== undefined ? { rangeEnd: Number(rangeEnd) } : {}),
-    ...(step !== undefined ? { step: Number(step) } : {}),
-  };
+  const clauseBase: CronClause = { base: base === "*" ? "*" : Number(base) };
+  const withRangeEnd =
+    rangeEnd !== undefined
+      ? { ...clauseBase, rangeEnd: Number(rangeEnd) }
+      : clauseBase;
+  return step !== undefined
+    ? { ...withRangeEnd, step: Number(step) }
+    : withRangeEnd;
 }
 
 /**

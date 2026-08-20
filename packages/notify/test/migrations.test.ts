@@ -37,7 +37,7 @@ describeIfDb("applyNotifyMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
   afterAll(async () => {
     const maintenanceUrl = new URL(scratchUrl);
@@ -51,14 +51,33 @@ describeIfDb("applyNotifyMigrations", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, 20000);
 
-  test("creates the dispatch table once and is a no-op on a re-run", async () => {
+  const migrationNames = ["0001_notify_dispatch"];
+
+  test("creates the dispatch table in its own schema once and is a no-op on a re-run", async () => {
     const first = await applyNotifyMigrations(scratchUrl);
-    expect(first.applied).toEqual(["0001_notify_dispatch"]);
+    expect(first.applied).toEqual(migrationNames);
     const second = await applyNotifyMigrations(scratchUrl);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toContain("0001_notify_dispatch");
+    expect(second.alreadyApplied.sort()).toEqual([...migrationNames].sort());
+
+    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const tables = await sql.unsafe(
+        `SELECT table_name FROM information_schema.tables ` +
+          `WHERE table_schema = 'notify' AND table_name = 'notify_dispatch'`,
+      );
+      expect(tables).toHaveLength(1);
+
+      const inPublic = await sql.unsafe(
+        `SELECT 1 FROM information_schema.tables ` +
+          `WHERE table_schema = 'public' AND table_name = 'notify_dispatch'`,
+      );
+      expect(inPublic).toHaveLength(0);
+    } finally {
+      await sql.end();
+    }
   });
 
   test("queues one row per sink, dedupes a redelivery, and settles it", async () => {

@@ -5,23 +5,29 @@ import { describeRoute, resolver, validator } from "hono-openapi";
 
 import { authorize } from "@intx/authz";
 import type { DB, ApprovalStore, SignalCorrelationStore } from "@intx/db";
-import { approval } from "@intx/db/schema";
+import { approval, sidecarAllocation } from "@intx/db/schema";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import { generateId } from "@intx/hub-common";
 import { parseApprovalRow } from "@intx/db";
-import type { SidecarRouter } from "@intx/hub-sessions";
+import type {
+  SidecarRouter,
+  WorkflowDispatchService,
+  WorkflowRunLifecycle,
+} from "@intx/hub-sessions";
 import {
   ApprovalResponse,
   ApprovalDecision,
   ApproveAction,
   RejectAction,
   ErrorResponse,
+  isSidecarAllocationDispatchable,
   paginatedSchema,
   signalName,
 } from "@intx/types";
 
 import type { TenantEnv } from "../context";
 import { ts } from "../format";
+import { lockWorkflowRunState } from "../run-grant-materialization";
 import {
   cursorCondition,
   pageOrder,
@@ -36,7 +42,7 @@ function formatApproval(row: ParsedApproval) {
   return {
     id: row.id,
     tenantId: row.tenantId,
-    deploymentId: row.deploymentId,
+    anchorRunId: row.anchorRunId,
     runId: row.runId,
     agentAddress: row.agentAddress,
     correlationId: row.correlationId,
@@ -54,11 +60,25 @@ function formatApproval(row: ParsedApproval) {
 export type CreateApprovalRoutesDeps = {
   db: DB["db"];
   sidecarRouter: SidecarRouter;
+  workflowDispatchService?: Pick<
+    WorkflowDispatchService,
+    "enqueueSignal" | "wake"
+  >;
+  readRunLifecycles?: ReadRunLifecycles;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
   approvalStore: ApprovalStore;
   signalCorrelationStore: SignalCorrelationStore;
 };
+
+export type ReadRunLifecycles = (
+  agentAddress: string,
+  topLevelRunId: string,
+  targetRunId: string,
+) => Promise<{
+  topLevel: WorkflowRunLifecycle;
+  target: WorkflowRunLifecycle;
+}>;
 
 type ResolveApprovalArgs = {
   approvalId: string;
@@ -73,24 +93,31 @@ type ResolveApprovalResult =
   | { kind: "resolved"; approval: ParsedApproval }
   | { kind: "not_found" }
   | { kind: "forbidden" }
-  | { kind: "already_resolved" };
+  | { kind: "already_resolved" }
+  | { kind: "deployment_unavailable" }
+  | { kind: "run_not_running" }
+  | { kind: "dispatch_unavailable" };
+
+type PendingFailureKind = Extract<
+  ResolveApprovalResult["kind"],
+  "deployment_unavailable" | "run_not_running" | "dispatch_unavailable"
+>;
 
 /**
  * Close the approval round-trip: authorize the approver, claim the correlation
  * so a redelivered decision cannot resolve twice, flip the approval to its
- * terminal status, and hand the decision to the parked run through the sidecar.
+ * terminal status, and hand the decision to the parked run.
  *
  * Cross-tenant existence is masked as `not_found` rather than `forbidden`: a
  * caller in one tenant must not learn that an approval id exists in another.
  *
  * The claim and the resolve happen inside a single transaction so a duplicate
- * delivery cannot observe a claimed-but-unresolved intermediate state. The
- * signal delivery is deliberately outside the transaction: the row transition
- * is the durable record, and delivery is a best-effort push. When delivery
- * throws after the commit, the approval is resolved but the run was not
- * notified; that surfaces as a 5xx so the failure is visible. Redelivery of an
- * already-recorded decision on a failed push is deferred; it is keyed on the
- * persisted signalId.
+ * delivery cannot observe a claimed-but-unresolved intermediate state. For an
+ * exclusive deployment, that transaction also locks the allocation and
+ * enqueues the stable signal id and payload. Delivery then follows the
+ * allocation's durable, generation-fenced dispatch path and remains replayable
+ * until workflow Git records the signal as received. Shared deployments retain
+ * their direct sidecar delivery behavior.
  */
 async function resolveApproval(
   deps: CreateApprovalRoutesDeps,
@@ -99,6 +126,8 @@ async function resolveApproval(
   const {
     db,
     sidecarRouter,
+    workflowDispatchService,
+    readRunLifecycles,
     grantStore,
     conditionRegistry,
     approvalStore,
@@ -114,7 +143,7 @@ async function resolveApproval(
     grantStore,
     args.principalId,
     args.tenantId,
-    `approval:${approval.deploymentId}`,
+    `approval:${approval.anchorRunId}`,
     "resolve",
     conditionRegistry,
   );
@@ -124,8 +153,83 @@ async function resolveApproval(
 
   const resolvedAt = new Date();
   const signalId = generateId("signal");
-
   const claimed = await db.transaction(async (tx) => {
+    const failIfStillPending = async (kind: PendingFailureKind) => {
+      const currentApproval = await approvalStore.findById(args.approvalId, tx);
+      if (
+        currentApproval === null ||
+        currentApproval.tenantId !== args.tenantId ||
+        currentApproval.anchorRunId !== approval.anchorRunId
+      ) {
+        return { kind: "not_found" } as const;
+      }
+      if (currentApproval.status !== "pending") {
+        return { kind: "already_resolved" } as const;
+      }
+      return { kind };
+    };
+
+    const [allocation] = await tx
+      .select({
+        id: sidecarAllocation.id,
+        status: sidecarAllocation.status,
+      })
+      .from(sidecarAllocation)
+      .where(eq(sidecarAllocation.anchorRunId, approval.anchorRunId))
+      .limit(1)
+      .for("update");
+    const allocationUnavailable =
+      allocation !== undefined &&
+      !isSidecarAllocationDispatchable(allocation.status);
+    const dispatchUnavailable =
+      allocation !== undefined &&
+      (workflowDispatchService === undefined ||
+        readRunLifecycles === undefined);
+    if (allocationUnavailable || dispatchUnavailable) {
+      if (allocationUnavailable) {
+        return failIfStillPending("deployment_unavailable");
+      }
+      return failIfStillPending("dispatch_unavailable");
+    }
+    const exclusiveDispatchService =
+      allocation === undefined ? undefined : workflowDispatchService;
+
+    if (exclusiveDispatchService !== undefined) {
+      if (readRunLifecycles === undefined) {
+        throw new Error(
+          "exclusive approval dispatch is missing its durable lifecycle reader",
+        );
+      }
+      // Pack receipt advances the committed Git ref while holding this same
+      // allocation lock. Re-read lifecycle evidence after acquiring the fence
+      // so a terminal pack cannot race between this check and the claim.
+      const lifecycles = await readRunLifecycles(
+        approval.agentAddress,
+        approval.agentAddress,
+        approval.runId,
+      );
+      if (lifecycles.topLevel !== "live" || lifecycles.target !== "live") {
+        return failIfStillPending("run_not_running");
+      }
+
+      const anchorState = await lockWorkflowRunState(
+        tx,
+        approval.anchorRunId,
+        approval.anchorRunId,
+      );
+      const targetState =
+        approval.runId === approval.anchorRunId
+          ? anchorState
+          : await lockWorkflowRunState(
+              tx,
+              approval.anchorRunId,
+              approval.runId,
+            );
+      if (anchorState !== "running" || targetState !== "running") {
+        return failIfStillPending("run_not_running");
+      }
+    }
+
     const claim = await signalCorrelationStore.claimTerminal(
       approval.correlationId,
       resolvedAt,
@@ -133,7 +237,7 @@ async function resolveApproval(
       tx,
     );
     if (claim === null) {
-      return null;
+      return { kind: "already_resolved" } as const;
     }
 
     const resolved = await approvalStore.resolve(
@@ -153,16 +257,43 @@ async function resolveApproval(
         `approval ${approval.id} correlation ${approval.correlationId} claimed but not resolved`,
       );
     }
-    return { claim, resolved };
+
+    if (exclusiveDispatchService !== undefined) {
+      await exclusiveDispatchService.enqueueSignal(
+        {
+          id: `dispatch:${approval.anchorRunId}:${signalId}`,
+          anchorRunId: approval.anchorRunId,
+          signal: {
+            agentAddress: claim.agentAddress,
+            runId: claim.runId,
+            signalName: signalName(approval.correlationId),
+            signalId,
+            payload: args.decisionPayload,
+          },
+          now: resolvedAt,
+        },
+        tx,
+      );
+    }
+    return {
+      kind: "resolved",
+      claim,
+      resolved,
+      exclusiveDispatchService,
+    } as const;
   });
 
-  if (claimed === null) {
-    return { kind: "already_resolved" };
+  if (claimed.kind !== "resolved") {
+    return claimed;
   }
 
-  // Redelivery of an already-recorded decision on a failed push is deferred,
-  // keyed on the persisted signalId; here a delivery failure is surfaced to
-  // the caller, never swallowed.
+  if (claimed.exclusiveDispatchService !== undefined) {
+    // enqueueSignal may wake before its surrounding transaction commits. Wake
+    // once more after commit so the row cannot wait for the periodic sweep.
+    claimed.exclusiveDispatchService.wake();
+    return { kind: "resolved", approval: claimed.resolved };
+  }
+
   sidecarRouter.sendSignalDeliver({
     agentAddress: claimed.claim.agentAddress,
     runId: claimed.claim.runId,
@@ -262,9 +393,6 @@ export function createApprovalRoutes(
     },
   );
 
-  // Param routes exclude the reserved segment `needs-you` so hosts can
-  // mount a sibling display list at `/approvals/needs-you` without this
-  // `/:approvalId` route stealing the path (and returning 404).
   app.get(
     "/:approvalId{^(?!needs-you$)[^/]+}",
     describeRoute({
@@ -316,7 +444,7 @@ export function createApprovalRoutes(
         deps.grantStore,
         principal.id,
         tenant.id,
-        `approval:${row.deploymentId}`,
+        `approval:${row.anchorRunId}`,
         "resolve",
         deps.conditionRegistry,
       );
@@ -369,7 +497,14 @@ export function createApprovalRoutes(
           },
         },
         409: {
-          description: "Approval already resolved",
+          description:
+            "Approval already resolved (takes precedence on retries), workflow run no longer running, or workflow deployment unavailable",
+          content: {
+            "application/json": { schema: resolver(ErrorResponse) },
+          },
+        },
+        503: {
+          description: "Durable workflow dispatch unavailable",
           content: {
             "application/json": { schema: resolver(ErrorResponse) },
           },
@@ -436,7 +571,14 @@ export function createApprovalRoutes(
           },
         },
         409: {
-          description: "Approval already resolved",
+          description:
+            "Approval already resolved (takes precedence on retries), workflow run no longer running, or workflow deployment unavailable",
+          content: {
+            "application/json": { schema: resolver(ErrorResponse) },
+          },
+        },
+        503: {
+          description: "Durable workflow dispatch unavailable",
           content: {
             "application/json": { schema: resolver(ErrorResponse) },
           },
@@ -496,6 +638,37 @@ function respond(c: Context<TenantEnv>, result: ResolveApprovalResult) {
           },
         },
         409,
+      );
+    case "deployment_unavailable":
+      return c.json(
+        {
+          error: {
+            code: "deployment_unreachable",
+            message: "Workflow deployment allocation is no longer active",
+          },
+        },
+        409,
+      );
+    case "run_not_running":
+      return c.json(
+        {
+          error: {
+            code: "workflow_run_not_running",
+            message: "Workflow run is no longer running",
+          },
+        },
+        409,
+      );
+    case "dispatch_unavailable":
+      return c.json(
+        {
+          error: {
+            code: "workflow_dispatch_unavailable",
+            message:
+              "Durable workflow dispatch is unavailable for this exclusive deployment",
+          },
+        },
+        503,
       );
   }
 }

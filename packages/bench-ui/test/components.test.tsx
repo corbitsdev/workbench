@@ -14,6 +14,7 @@ import {
 import { canInviteMember } from "../src/invite-member-dialog";
 import { canCreateBench, deriveBenchSlug } from "../src/membership";
 import { MemberList } from "../src/member-list";
+import { filterBenchMemberships } from "../src/tenancy-kind";
 
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_|role_|grant_)[a-z0-9]/i;
@@ -101,7 +102,7 @@ describe("BenchSwitcherList", () => {
     expect(markup).toContain('aria-selected="true"');
   });
 
-  test("always offers the create-bench affordance", () => {
+  test("always offers the create-bench affordance, with a single plus", () => {
     const markup = renderToStaticMarkup(
       <BenchSwitcherList
         memberships={[]}
@@ -110,7 +111,34 @@ describe("BenchSwitcherList", () => {
         onCreate={noop}
       />,
     );
-    expect(markup).toContain("New bench");
+    expect(markup).toContain("New workbench");
+    expect(markup).not.toContain("+ New workbench");
+    // One plus affordance: the lucide icon's <svg>, not also a "+" glyph
+    // baked into the label text.
+    expect(markup.match(/\+/g) ?? []).toHaveLength(0);
+    expect(markup.match(/<svg/g) ?? []).toHaveLength(1);
+  });
+
+  test("filtering to workbenches keeps a real bench and drops a workbench and a raw-named tenant", () => {
+    const memberships = [
+      membership({ tenantId: "tnt_1", tenantName: "Launch Team" }),
+      membership({ tenantId: "tnt_2", tenantName: "Myra" }),
+      membership({
+        tenantId: "tnt_3",
+        tenantName: "ins_71f5c0c9c30026859014ccd9df8b1",
+      }),
+    ];
+    const markup = renderToStaticMarkup(
+      <BenchSwitcherList
+        memberships={filterBenchMemberships(memberships, new Set(["tnt_2"]))}
+        activeTenantId="tnt_1"
+        onSelect={noop}
+        onCreate={noop}
+      />,
+    );
+    expect(markup).toContain("Launch Team");
+    expect(markup).not.toContain("Myra");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 });
 

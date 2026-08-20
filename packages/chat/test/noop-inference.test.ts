@@ -6,7 +6,7 @@
 // framing and the exact per-event arktype schemas
 // `vendor/intx/inference/src/providers/anthropic.ts` uses to accept
 // real Anthropic traffic — so a drift in this endpoint's shape shows
-// up here, not only when a real channel host tries to use it.
+// up here, not only when a real workbench host tries to use it.
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import { createNoopInferenceRoutes } from "../src/noop-inference";
@@ -109,7 +109,7 @@ describe("createNoopInferenceRoutes", () => {
     expect(delta.delta.type).toBe("text_delta");
     // Deliberately empty — see `noop-inference.ts`'s own doc: a
     // non-empty delta would make `connector.reply` treat this as a
-    // real reply and post it into the channel's mailbox.
+    // real reply and post it into the workbench's mailbox.
     expect(delta.delta.text).toBe("");
 
     const usageDelta = parsed[4] as {

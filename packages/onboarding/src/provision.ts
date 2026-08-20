@@ -20,11 +20,45 @@ import {
   seedTenant,
   type ApiCall,
   type ModelSource,
+  type ToolRegistryPublisher,
   type WorkflowPusher,
+  isLiveDeploymentStatus,
 } from "@workbench/hub-client";
+import {
+  checkSignupGate,
+  resolvePendingInviteOnLogin,
+  type AccessPolicyStore,
+} from "@workbench/access-policy";
 
 export type ProvisionResult =
-  | { readonly kind: "existing-member"; readonly seeded?: true }
+  | {
+      readonly kind: "existing-member";
+      /**
+       * Present only when the caller owns the personal bench this hook
+       * itself provisions: `true` once every default workflow is
+       * deployed, `false` when it is still waiting on a working
+       * credential (the `bench_unseeded` condition the onboarding UI
+       * reads to keep the credential step open instead of declaring
+       * setup finished). Absent when membership belongs to some other
+       * tenant this hook does not own — its seed state is none of this
+       * hook's business.
+       *
+       * `seeded: true` here means every default workflow has an active
+       * deployment (`isFullySeeded`'s own check) — it is not, by itself,
+       * proof of a working inference credential. The onboarding UI must
+       * not hard-skip the credential step on this flag alone; see
+       * `tenantId` below.
+       */
+      readonly seeded?: boolean;
+      /**
+       * Present under the same condition as `seeded`: the caller's own
+       * personal bench. Lets the onboarding UI independently confirm a
+       * working inference credential exists (a cheap credentials read)
+       * before trusting `seeded: true` enough to skip the credential
+       * step entirely.
+       */
+      readonly tenantId?: string;
+    }
   | { readonly kind: "needs-onboarding" }
   | {
       readonly kind: "provisioned";
@@ -60,13 +94,32 @@ export type ProvisionArgs = {
   hubUrl: string;
   userId: string;
   userEmail: string;
+  /** better-auth is configured without `requireEmailVerification` — an
+   * unverified email must never pass a domain-allowlist or redeem a
+   * pending invite meant for someone else. See
+   * `@workbench/access-policy`'s `evaluateSignupGate` doc comment. */
+  userEmailVerified: boolean;
   /** Display name for the personal bench. Required to mint: when omitted
    * (shell membership probe), returns `needs-onboarding` and creates nothing. */
   displayName?: string;
   operatorTenantId?: string;
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
+  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
+  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
+  /** The closed-by-default access-policy gate. Absent means this hub
+   * runs with no access-policy package wired in at all — never a valid
+   * production shape, but some tests exercise provisioning in
+   * isolation from it. */
+  accessPolicy?: {
+    store: AccessPolicyStore;
+    envSignupMode: "open" | "closed";
+    envAllowedDomains: readonly string[];
+    /** Dev/test-only opt-out of the `userEmailVerified` requirement —
+     * mirrors `ALLOW_PLAINTEXT_SECRETS`. Never set for a real deployment. */
+    allowUnverifiedEmails: boolean;
+  };
 };
 
 /** A lowercase-kebab personal-bench slug, unique per user without a
@@ -108,18 +161,16 @@ const WorkflowDeploymentStatus = type({
   status: "string",
 });
 
-/**
- * Whether every default workflow already has an active deployment on
- * this tenant. Read-only: it never creates or deploys anything, it
- * only tells the caller whether `seedTenant` still has work to do —
- * the same asset-then-deployment lookup `seedTenant` itself performs
- * before deciding to skip a step.
- */
-async function isFullySeeded(
+/** Which of `DEFAULT_WORKFLOWS`' asset names already carry an active
+ * deployment on this tenant, split from those that do not — the same
+ * asset-then-deployment lookup `isFullySeeded` and `seedTenant` each
+ * perform before deciding whether a step has already run. Read-only: it
+ * never creates or deploys anything. */
+async function seededWorkflowNames(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-): Promise<boolean> {
+): Promise<{ deployed: string[]; pending: string[] }> {
   const assetsResponse = await api(
     "GET",
     `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
@@ -134,7 +185,7 @@ async function isFullySeeded(
 
   const deploymentsResponse = await api(
     "GET",
-    `/api/tenants/${tenantId}/workflows/instances`,
+    `/api/tenants/${tenantId}/workflows/deployments`,
     undefined,
     cookies,
   );
@@ -144,13 +195,51 @@ async function isFullySeeded(
     "deployments response",
   );
 
-  return DEFAULT_WORKFLOWS.every((workflow) => {
+  const deployed: string[] = [];
+  const pending: string[] = [];
+  for (const workflow of DEFAULT_WORKFLOWS) {
     const asset = assets.find((a) => a.name === workflow.assetName);
-    if (!asset) return false;
-    return deployments.some(
-      (d) => d.definitionAssetId === asset.id && d.status === "active",
-    );
-  });
+    const isDeployed =
+      asset !== undefined &&
+      deployments.some(
+        (d) =>
+          d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
+      );
+    (isDeployed ? deployed : pending).push(workflow.assetName);
+  }
+  return { deployed, pending };
+}
+
+/**
+ * Whether every default workflow already has an active deployment on
+ * this tenant. Read-only: it never creates or deploys anything, it
+ * only tells the caller whether `seedTenant` still has work to do —
+ * the same asset-then-deployment lookup `seedTenant` itself performs
+ * before deciding to skip a step.
+ */
+export async function isFullySeeded(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<boolean> {
+  const { pending } = await seededWorkflowNames(api, cookies, tenantId);
+  return pending.length === 0;
+}
+
+/**
+ * The honest partial-seed report `ensureSeeded` reads after catching a
+ * sidecar-unavailable deploy failure (CL-6264): which default workflows
+ * already deployed before the sidecar dropped out, and which are still
+ * waiting on it. Exported so `@workbench/onboarding`'s
+ * `complete-credential.ts` never re-derives this asset-then-deployment
+ * lookup by hand.
+ */
+export async function seededWorkflowStatus(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<{ deployed: string[]; pending: string[] }> {
+  return seededWorkflowNames(api, cookies, tenantId);
 }
 
 /**
@@ -176,26 +265,29 @@ export async function provisionPersonalTenantIfNeeded(
     // is none of this hook's business. Membership is decided here without
     // depending on a seed credential — recovery of a half-provisioned
     // bench must not hang forever just because no seed model is configured.
-    if (!own) return { kind: "existing-member" };
+    if (own === undefined) return { kind: "existing-member" };
 
     const fullySeeded = await isFullySeeded(
       args.api,
       args.cookies,
       own.tenantId,
     );
-    if (fullySeeded) return { kind: "existing-member" };
+    if (fullySeeded)
+      return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
 
-    // Own bench exists but is not fully seeded. With a seed model we can
-    // re-seed to recover. Without one there is nothing this hook can do
-    // to complete seeding, so we exit as an existing-member rather than
-    // throwing — membership is real even if seeding is incomplete. The
-    // routes layer surfaces this as a typed `bench_unseeded` condition so
-    // the caller can act on it (e.g. prompt credential setup).
-    if (!args.seedModel) {
+    // Own bench exists but is not fully seeded. With a hub-owned seed
+    // model we can re-seed right here to recover. Without one there is
+    // nothing this hook can do — completing seeding from the caller's
+    // own credential is `completeCredentialSetup`'s job (the onboarding
+    // credential step), not this sign-in hook's — so we exit as an
+    // existing-member with `seeded: false`, the typed `bench_unseeded`
+    // condition the onboarding UI reads to keep the credential step open
+    // rather than declaring setup finished.
+    if (args.seedModel === undefined) {
       args.log(
         `personal bench ${own.tenantId} exists but is not fully seeded, and no seed model is configured; returning as existing-member without re-seeding`,
       );
-      return { kind: "existing-member" };
+      return { kind: "existing-member", seeded: false, tenantId: own.tenantId };
     }
 
     const tenantResponse = await args.api(
@@ -209,7 +301,7 @@ export async function provisionPersonalTenantIfNeeded(
       tenantResponse.data,
       "tenant response",
     );
-    await seedTenant({
+    const existingMemberSeedArgs = {
       api: args.api,
       cookies: args.cookies,
       hubUrl: args.hubUrl,
@@ -222,15 +314,66 @@ export async function provisionPersonalTenantIfNeeded(
       pushWorkflow: args.pushWorkflow,
       log: args.log,
       workflows: DEFAULT_WORKFLOWS,
-    });
-    return { kind: "existing-member", seeded: true };
+    };
+    await seedTenant(
+      args.publishToolRegistry !== undefined
+        ? {
+            ...existingMemberSeedArgs,
+            publishToolRegistry: args.publishToolRegistry,
+          }
+        : existingMemberSeedArgs,
+    );
+    return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
   }
 
-  // No membership yet. Creation requires an explicit display name from the
-  // onboarding naming step — a shell membership probe (no name) must not
-  // silently mint a personal bench.
+  // No membership yet. Before any signup decision, check whether this
+  // email was already pre-vetted through a pending invite (an admin
+  // invited an email — or a whole domain — that had no user row yet at
+  // invite time). A match joins the invited tenant directly; the
+  // closed-by-default signup gate below never runs for it. This check
+  // runs on every call, including the bare membership probe, because
+  // resolving an invite is itself the first-login decision, not
+  // something that waits on the naming step.
+  if (args.accessPolicy !== undefined) {
+    const resolved = await resolvePendingInviteOnLogin({
+      store: args.accessPolicy.store,
+      api: args.api,
+      cookies: args.cookies,
+      email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
+    });
+    if (resolved !== undefined) return { kind: "existing-member" };
+  }
+
+  // Creation requires an explicit display name from the onboarding
+  // naming step — a shell membership probe (no name) must not silently
+  // mint a personal bench.
   if (args.displayName === undefined || args.displayName.trim().length === 0) {
     return { kind: "needs-onboarding" };
+  }
+
+  if (args.accessPolicy !== undefined) {
+    const signupGateArgs = {
+      store: args.accessPolicy.store,
+      envSignupMode: args.accessPolicy.envSignupMode,
+      envAllowedDomains: args.accessPolicy.envAllowedDomains,
+      email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
+    };
+    const gate = await checkSignupGate(
+      args.operatorTenantId !== undefined
+        ? { ...signupGateArgs, operatorTenantId: args.operatorTenantId }
+        : signupGateArgs,
+    );
+    if (!gate.allowed) {
+      throw new ProvisionError(
+        "signup_not_allowed",
+        `self-serve signup is not allowed for ${args.userEmail} (${gate.reason})`,
+        "permanent",
+      );
+    }
   }
 
   const tenantCreateBody: { name: string; slug: string; parentId?: string } = {
@@ -271,7 +414,7 @@ export async function provisionPersonalTenantIfNeeded(
 
   const after = await fetchPrincipals(args.api, args.cookies);
   const membership = after.find((p) => p.tenantId === tenant.id);
-  if (!membership) {
+  if (membership === undefined) {
     throw new ProvisionError(
       "tenant_created_no_membership",
       `personal bench ${tenant.id} was created but the caller has no principal in it`,
@@ -292,7 +435,7 @@ export async function provisionPersonalTenantIfNeeded(
     };
   }
 
-  await seedTenant({
+  const provisionedSeedArgs = {
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
@@ -305,7 +448,15 @@ export async function provisionPersonalTenantIfNeeded(
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
-  });
+  };
+  await seedTenant(
+    args.publishToolRegistry !== undefined
+      ? {
+          ...provisionedSeedArgs,
+          publishToolRegistry: args.publishToolRegistry,
+        }
+      : provisionedSeedArgs,
+  );
 
   return {
     kind: "provisioned",

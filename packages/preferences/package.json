@@ -1,0 +1,29 @@
+{
+  "name": "@corbits/preferences",
+  "private": true,
+  "description": "Per-(tenant, principal) UI preference store: a single JSONB bag persisted across reload for small UI choices a surface wants to remember, e.g. col2 collapse or theme.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/api-query": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

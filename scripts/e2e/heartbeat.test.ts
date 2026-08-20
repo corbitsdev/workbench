@@ -11,10 +11,7 @@
 // inference call — against `noop-inference`'s constant, locally
 // served reply, never a real model.
 
-import { afterAll, describe, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { describe, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -24,6 +21,7 @@ import {
 } from "../../workflows/heartbeat/src/index.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   expectStepCompleted,
@@ -36,7 +34,6 @@ import {
   waitForRunCompletion,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -72,23 +69,21 @@ function runIds(data: unknown): string[] {
   throw new Error(`expected a runIds array: ${JSON.stringify(data)}`);
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
+  // Previously skipped (CL-6004): the first mail trigger against a freshly
+  // deployed workflow deterministically failed to complete, with the hub
+  // logging repeated `Workflow-run pack rejected ... source address has no
+  // live deployment anchor` / `path_violation` warnings for the run's own
+  // workflow-run repo and the deployment left durably stuck. Both halves of
+  // that shape are now fixed in the vendored tree (see
+  // `docs/revendor-inventory.md`): `receiveWorkflowRunPack` no longer gates
+  // pack acceptance on a live run status, so a settling run can still land the
+  // bookkeeping that retires its in-flight mail; and the supervisor's turn-2
+  // resume path drops mail with no conversation text instead of delivering an
+  // empty string that throws inside `agent.send` and fails the step with
+  // `retriesExhausted`.
   test("launching heartbeat against the hub's own noop-inference endpoint starts a run", async () => {
     const url = databaseUrl;
     if (url === undefined) throw new Error("unreachable: suite is skipped");
@@ -230,7 +225,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
         res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/workflows/instances`,
+          `/api/tenants/${tenantId}/workflows/deployments`,
           body,
           user.cookies,
         );

@@ -1,5 +1,5 @@
 // The message-path command intercept `routes.ts`'s
-// `dispatchChannelCommand` owns: a leading "/" is always dispatched
+// `dispatchWorkbenchCommand` owns: a leading "/" is always dispatched
 // (and never posted as mail itself, only its result); a leading
 // "@name" is dispatched only when `name` is not an existing agent
 // participant's handle, so an ordinary agent mention is untouched.
@@ -8,19 +8,21 @@ import { createChatRoutes } from "../src/routes";
 import { createCommandRegistry } from "@corbits/commands";
 import {
   buildDeps,
-  createChannel,
+  createWorkbench,
   fakePlatform,
   mountAs,
   sendText,
 } from "./test-support";
 
-describe("channel command dispatch", () => {
+describe("workbench command dispatch", () => {
   test("without an injected registry, a leading slash is posted as an ordinary message", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
 
-    const response = await sendText(app, channel.id, "/echo hello");
+    const response = await sendText(app, workbench.id, "/echo hello");
     expect(response.status).toBe(201);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body["command"]).toBeUndefined();
@@ -30,9 +32,11 @@ describe("channel command dispatch", () => {
     const registry = createCommandRegistry();
     const deps = buildDeps({ commands: registry });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
 
-    const response = await sendText(app, channel.id, "/nope some args");
+    const response = await sendText(app, workbench.id, "/nope some args");
     expect(response.status).toBe(201);
     const body = (await response.json()) as {
       command: { type: string; text: string };
@@ -44,7 +48,7 @@ describe("channel command dispatch", () => {
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const posted = platform.sentMail.find(
-      (mail) => mail.channelId === channel.id,
+      (mail) => mail.workbenchId === workbench.id,
     );
     expect(posted?.content.content).toBe("Unknown command: /nope");
   });
@@ -62,15 +66,17 @@ describe("channel command dispatch", () => {
     });
     const deps = buildDeps({ commands: registry });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
 
-    const response = await sendText(app, channel.id, "/greet world");
+    const response = await sendText(app, workbench.id, "/greet world");
     expect(response.status).toBe(201);
     expect(seenArgs).toBe("world");
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(
-      platform.sentMail.find((mail) => mail.channelId === channel.id)?.content
-        .content,
+      platform.sentMail.find((mail) => mail.workbenchId === workbench.id)
+        ?.content.content,
     ).toBe("hi world");
   });
 
@@ -86,12 +92,12 @@ describe("channel command dispatch", () => {
       platform: fakePlatform(),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, {
-      kind: "channel",
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await sendText(app, channel.id, "@ins_echo1 hi");
+    const response = await sendText(app, workbench.id, "@ins_echo1 hi");
     expect(response.status).toBe(201);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body["command"]).toBeUndefined();
@@ -99,7 +105,7 @@ describe("channel command dispatch", () => {
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     // The ordinary mention fan-out sent a copy to the participant.
     expect(
-      platform.sentMail.some((mail) => mail.channelId === "ins_echo1"),
+      platform.sentMail.some((mail) => mail.workbenchId === "ins_echo1"),
     ).toBe(true);
   });
 
@@ -112,9 +118,15 @@ describe("channel command dispatch", () => {
     });
     const deps = buildDeps({ commands: registry });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
 
-    const response = await sendText(app, channel.id, "@assistant do the thing");
+    const response = await sendText(
+      app,
+      workbench.id,
+      "@assistant do the thing",
+    );
     expect(response.status).toBe(201);
     const body = (await response.json()) as {
       command: { type: string; text: string };

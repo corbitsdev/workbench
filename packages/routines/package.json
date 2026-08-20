@@ -3,20 +3,25 @@
   "private": true,
   "description": "The Routine domain model: named automations over workflow runs, their triggers, and run correlation",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./cron": "./src/cron.ts"
+    "./client": "./src/client.ts",
+    "./cron": "./src/cron.ts",
+    "./trigger": "./src/trigger.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/folded-runs": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
+    "@intx/log": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",

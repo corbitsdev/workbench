@@ -24,6 +24,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: { x: 1 },
+      deliveryWorkbenchId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -47,6 +48,67 @@ describe("tickRoutineScheduler", () => {
     expect(runs[0]?.runId).toBe("run_1");
   });
 
+  test("threads deliveryWorkbenchRequired through to fireScheduledRoutine, firing a workbench-less routine when the port says one isn't needed", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: "t1",
+      name: "recurring task",
+      definitionId: "def_recurring_task",
+      trigger: CRON,
+      scope: "bench",
+      input: { agent: "wfd_agent", prompt: "Do it" },
+      createdBy: "user_1",
+    });
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    const launches: string[] = [];
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async (input) => {
+          launches.push(input.definitionId);
+          return { runId: "run_task_1" };
+        }),
+        deliveryWorkbenchRequired: async () => false,
+      },
+      at,
+    );
+    expect(launches).toEqual(["def_recurring_task"]);
+    const runs = await store.listRunsForRoutine("t1", routine.id);
+    expect(runs).toHaveLength(1);
+  });
+
+  test("a scheduled fire launches with no delivery thread — the run posts to the workbench root", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: "t1",
+      name: "hourly digest",
+      definitionId: "def_1",
+      trigger: CRON,
+      scope: "bench",
+      input: {},
+      deliveryWorkbenchId: "ch_delivery",
+      createdBy: "user_1",
+    });
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    let seenInput:
+      Parameters<RoutineLauncher["launchRoutineRun"]>[0] | undefined;
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async (input) => {
+          seenInput = input;
+          return { runId: "run_1" };
+        }),
+      },
+      at,
+    );
+    expect(seenInput).not.toHaveProperty("deliveryThreadId");
+  });
+
   test("a launch failure backs off and records schedule-failed", async () => {
     const store = createInMemoryRoutineStore();
     const routine = await store.createRoutine({
@@ -56,6 +118,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryWorkbenchId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -95,6 +158,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryWorkbenchId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -139,6 +203,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryWorkbenchId: "ch_delivery",
       createdBy: "user_1",
     });
     let clock = new Date(

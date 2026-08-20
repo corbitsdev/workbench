@@ -1,0 +1,27 @@
+{
+  "name": "@intx/inference-catalog",
+  "description": "Declarative, dependency-free catalog of inference models, providers, and their offering capabilities and quirks",
+  "version": "0.2.2",
+  "license": "LGPL-2.1-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./models": {
+      "types": "./src/models.ts",
+      "default": "./src/models.ts"
+    }
+  },
+  "dependencies": {},
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

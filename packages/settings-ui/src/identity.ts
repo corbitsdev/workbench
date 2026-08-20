@@ -5,6 +5,25 @@
 // showing that raw value as the label a person reads — this derives a
 // humane stand-in from it and keeps the raw value available for a tooltip
 // only, never as visible text.
+//
+// `PRINCIPAL_KIND_LABEL` and `PRINCIPAL_KIND_ORDER` live here too, shared by
+// every picker that lists principals (Grants' target select and filter,
+// Roles' assignment select): Grants/Roles assign to people, agents, *and*
+// workflows (see `people-section.tsx`'s own header comment), and a picker
+// that shows only names with no kind is kind-blind — a workflow's machine
+// principal can look identical to a person's account. Every such picker
+// must show which kind an option is, not just its name.
+
+import { SETTINGS_STRINGS } from "./strings";
+
+export const PRINCIPAL_KIND_ORDER = ["user", "agent", "workflow"] as const;
+export type PrincipalKind = (typeof PRINCIPAL_KIND_ORDER)[number];
+
+export const PRINCIPAL_KIND_LABEL: Record<PrincipalKind, string> = {
+  user: SETTINGS_STRINGS.peopleKindUser,
+  agent: SETTINGS_STRINGS.peopleKindAgent,
+  workflow: SETTINGS_STRINGS.peopleKindWorkflow,
+};
 
 const RAW_LOOKING_PATTERN = /^[a-z]+_[a-z0-9-]{6,}$|:\/\/|@/i;
 
@@ -26,7 +45,7 @@ function derivePrincipalLabel(raw: string): string {
       .pop() ?? raw;
   const cleaned = segment
     .replace(/^[a-z]+_/i, "")
-    .replace(/[-_.]+/g, " ")
+    .replace(/[-_.()]+/g, " ")
     .trim();
   if (cleaned.length === 0) return "Unnamed agent";
   return cleaned

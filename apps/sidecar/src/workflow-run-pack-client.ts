@@ -18,6 +18,7 @@ import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { SourcesUpdatedData } from "@intx/workflow-host";
 import type { InferenceSource } from "@intx/types/runtime";
+import type { CredentialDelivery } from "@intx/types/sidecar";
 import type {
   RepoId,
   RepoStore,
@@ -41,6 +42,12 @@ export type WorkflowRunPackClient = {
     repoId: RepoId;
     ref: string;
   }): Promise<void>;
+  /**
+   * Seed the acknowledged-tip state after the Hub restores a ref into a fresh
+   * worker. This prevents a reconnect from trying to re-send an empty delta at
+   * the restored tip; the next real local commit remains incremental from it.
+   */
+  markRestored(repoId: RepoId, ref: string, commitSha: string): void;
 };
 
 export type CreateWorkflowRunPackClientOpts = {
@@ -79,7 +86,7 @@ export function createWorkflowRunPackClient(
       }
       const principal: WorkflowRunSupervisorPrincipal = {
         kind: "supervisor",
-        deploymentId: repoId.id,
+        anchorRunId: repoId.id,
       };
       // Nothing to ship when the local tip is already the last acked tip:
       // the run's commits landed on a prior push. Return without a wire send
@@ -108,6 +115,15 @@ export function createWorkflowRunPackClient(
       // lets a cancelled transfer be re-shipped: a rejected push throws
       // before this line, so the cursor stays put and the next
       // `createPack` re-includes the un-acked commits.
+      substrate.commitPackedTip(repoId, ref, commitSha);
+      lastAckedSha.set(ackKey(repoId, ref), commitSha);
+    },
+    markRestored(repoId, ref, commitSha) {
+      if (repoId.kind !== "workflow-run") {
+        throw new Error(
+          `workflow-run pack client: restored repoId.kind must be "workflow-run", got ${JSON.stringify(repoId.kind)}`,
+        );
+      }
       substrate.commitPackedTip(repoId, ref, commitSha);
       lastAckedSha.set(ackKey(repoId, ref), commitSha);
     },
@@ -259,6 +275,131 @@ export function createMultistepSignalRouter(): MultistepSignalRouter {
         signalId: frame.signalId,
         payload: frame.payload,
       });
+      return true;
+    },
+  };
+}
+
+/**
+ * Per-deployment grants-write handler the deploy router installs against
+ * the `MultistepGrantsRouter` after a supervisor's `spawn` succeeds. The
+ * handler writes the run's grants to `runs/<runId>/grants.json` inside the
+ * deployment's `workflow-run` repo -- sibling to the run's
+ * `runs/<runId>/events/` subtree. The write is awaited so the frame's FIFO
+ * completion means the grants are durable on disk before the next frame is
+ * processed.
+ */
+export type MultistepGrantsHandler = (args: {
+  runId: string;
+  stepGrants: readonly unknown[];
+}) => Promise<void>;
+
+/**
+ * Per-deployment-address grants handler registry the sidecar hub-link
+ * consults on every inbound `run.grants` frame. The deploy router
+ * registers a handler against the deployment's mail address after
+ * `wired.supervisor.spawn` succeeds, for single-step and multi-step
+ * deployments alike; the handler writes the run's grants into the
+ * deployment's workflow-run repo.
+ *
+ * The registry lives at the sidecar's host layer for the same boundary
+ * reason as `MultistepMailRouter` / `MultistepSignalRouter`: the routing
+ * decision is a concrete sidecar host concern, and the workflow-host
+ * package stays agnostic to which transport surface its supervisor handle
+ * rides on.
+ */
+export type MultistepGrantsRouter = {
+  register(address: string, handler: MultistepGrantsHandler): void;
+  unregister(address: string): void;
+  tryRoute(frame: {
+    type: "run.grants";
+    agentAddress: string;
+    runId: string;
+    stepGrants: readonly unknown[];
+  }): Promise<boolean>;
+};
+
+export function createMultistepGrantsRouter(): MultistepGrantsRouter {
+  const handlers = new Map<string, MultistepGrantsHandler>();
+  return {
+    register(address, handler) {
+      handlers.set(address, handler);
+    },
+    unregister(address) {
+      handlers.delete(address);
+    },
+    async tryRoute(frame) {
+      const handler = handlers.get(frame.agentAddress);
+      if (handler === undefined) {
+        // The run's grants never reach disk, so its `onRunStart` barrier
+        // fails closed and the run dies before its first step. Silence
+        // here made that look like an unexplained run failure.
+        logger.error`run.grants for run ${frame.runId} dropped: no grants handler registered for deployment ${frame.agentAddress}; the run will fail its onRunStart barrier closed`;
+        return false;
+      }
+      await handler({ runId: frame.runId, stepGrants: frame.stepGrants });
+      return true;
+    },
+  };
+}
+
+// The `MultistepCredentialsRouter` family below is ported from upstream
+// Interchange's sidecar (apps/sidecar/src/workflow-host-wiring.ts,
+// `credentials.update` handler), adapted only to
+// this directory's split (the router type lives beside its `Grants` /
+// `Sources` siblings here rather than inline in the wiring module). Before
+// this port, no handler registry existed for `credentials.update`, so an
+// inbound rotation or revocation frame was unrouted for every deployment.
+
+/**
+ * Per-deployment credential-delivery handler the deploy router installs
+ * against the `MultistepCredentialsRouter` after a supervisor's `spawn`
+ * succeeds. The handler hands the delivery to the supervisor's
+ * `deliverCredentials`, which sends a `credentials-updated` control frame to
+ * the child where the material cell is swapped. No durable persist --
+ * credential material never touches disk.
+ */
+export type MultistepCredentialsHandler = (args: {
+  delivery: CredentialDelivery;
+}) => Promise<void>;
+
+/**
+ * Per-deployment-address credential-delivery handler registry the sidecar
+ * hub-link consults on every inbound `credentials.update` frame. Registered
+ * for EVERY deployment (not only warm single-step ones) once
+ * `wired.supervisor.spawn` succeeds: the material cell is per-child and read
+ * by every step's tool capabilities. An inbound `credentials.update` for an
+ * unregistered (torn-down) address is unrouted.
+ *
+ * The registry lives at the sidecar's host layer for the same boundary
+ * reason as `MultistepMailRouter` / `MultistepGrantsRouter`: the routing
+ * decision is a concrete sidecar host concern, and the workflow-host
+ * package stays agnostic to which transport surface its supervisor handle
+ * rides on.
+ */
+export type MultistepCredentialsRouter = {
+  register(address: string, handler: MultistepCredentialsHandler): void;
+  unregister(address: string): void;
+  tryRoute(frame: {
+    type: "credentials.update";
+    agentAddress: string;
+    delivery: CredentialDelivery;
+  }): Promise<boolean>;
+};
+
+export function createMultistepCredentialsRouter(): MultistepCredentialsRouter {
+  const handlers = new Map<string, MultistepCredentialsHandler>();
+  return {
+    register(address, handler) {
+      handlers.set(address, handler);
+    },
+    unregister(address) {
+      handlers.delete(address);
+    },
+    async tryRoute(frame) {
+      const handler = handlers.get(frame.agentAddress);
+      if (handler === undefined) return false;
+      await handler({ delivery: frame.delivery });
       return true;
     },
   };

@@ -6,7 +6,7 @@ import {
   resolveAtCommand,
 } from "../src/dispatch";
 
-const CTX = { tenantId: "t1", principalId: "p1", channelId: "c1" };
+const CTX = { tenantId: "t1", principalId: "p1", workbenchId: "c1" };
 
 describe("dispatchSlashCommand", () => {
   test("returns undefined for text that is not slash-shaped", async () => {

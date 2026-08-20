@@ -1,31 +1,33 @@
 // Tests for the pure control/settings logic: control mail detection
 // and state transitions into timeline events. No `@intx/workflow`
 // runtime involved, and no relay/fan-out logic here anymore — that was
-// deleted along with the relay workflow (see `channel-workflow.ts`).
+// deleted along with the relay workflow (see `workbench-workflow.ts`).
 
 import { expect, test } from "bun:test";
 import type { Part } from "../src/parts";
 import {
-  CHANNEL_CONTROL_NAMESPACE,
-  EMPTY_CHANNEL_STATE,
+  WORKBENCH_CONTROL_NAMESPACE,
+  EMPTY_WORKBENCH_STATE,
   applyControlPayload,
   isControlMessage,
   parseControlPayload,
 } from "../src/settings-control";
-import type { ChannelParticipantState } from "../src/settings-control";
+import type { WorkbenchParticipantState } from "../src/settings-control";
 
-const STATE_ABC: ChannelParticipantState = {
+const STATE_ABC: WorkbenchParticipantState = {
   participants: ["a", "b", "c"],
   settings: {},
 };
 
 function controlMail(data: unknown): Part[] {
-  return [{ kind: "block", block: { type: CHANNEL_CONTROL_NAMESPACE, data } }];
+  return [
+    { kind: "block", block: { type: WORKBENCH_CONTROL_NAMESPACE, data } },
+  ];
 }
 
 test("a control mail is structurally distinguished from an ordinary message", () => {
   expect(
-    isControlMessage(controlMail({ namespace: CHANNEL_CONTROL_NAMESPACE })),
+    isControlMessage(controlMail({ namespace: WORKBENCH_CONTROL_NAMESPACE })),
   ).toBe(true);
   expect(isControlMessage([{ kind: "text", text: "hello" }])).toBe(false);
 });
@@ -42,7 +44,7 @@ test("a control mail bundled with other parts is not a control message", () => {
   expect(
     isControlMessage([
       { kind: "text", text: "hi" },
-      { kind: "block", block: { type: CHANNEL_CONTROL_NAMESPACE, data: {} } },
+      { kind: "block", block: { type: WORKBENCH_CONTROL_NAMESPACE, data: {} } },
     ]),
   ).toBe(false);
 });
@@ -50,16 +52,16 @@ test("a control mail bundled with other parts is not a control message", () => {
 test("control mail updates the participant list and yields a membership event", () => {
   const payload = parseControlPayload(
     controlMail({
-      namespace: CHANNEL_CONTROL_NAMESPACE,
+      namespace: WORKBENCH_CONTROL_NAMESPACE,
       participants: ["a", "b"],
     }),
   );
-  const result = applyControlPayload(EMPTY_CHANNEL_STATE, payload, "a");
+  const result = applyControlPayload(EMPTY_WORKBENCH_STATE, payload, "a");
   expect(result.state.participants).toEqual(["a", "b"]);
   expect(result.events).toEqual([
     {
       kind: "event",
-      event: "channel.membership-changed",
+      event: "workbench.membership-changed",
       data: { updatedBy: "a", participants: ["a", "b"] },
     },
   ]);
@@ -68,7 +70,7 @@ test("control mail updates the participant list and yields a membership event", 
 test("control mail merges settings and yields a settings-changed event", () => {
   const payload = parseControlPayload(
     controlMail({
-      namespace: CHANNEL_CONTROL_NAMESPACE,
+      namespace: WORKBENCH_CONTROL_NAMESPACE,
       settings: { "chat/topic": "launch planning" },
     }),
   );
@@ -78,8 +80,39 @@ test("control mail merges settings and yields a settings-changed event", () => {
   expect(result.events).toEqual([
     {
       kind: "event",
-      event: "channel.settings-changed",
-      data: { updatedBy: "b", settings: { "chat/topic": "launch planning" } },
+      event: "workbench.settings-changed",
+      data: {
+        updatedBy: "b",
+        settings: { "chat/topic": "launch planning" },
+        changed: { "chat/topic": "launch planning" },
+        previous: {},
+      },
+    },
+  ]);
+});
+
+test("a settings-changed event carries the prior values of touched keys", () => {
+  const payload = parseControlPayload(
+    controlMail({
+      namespace: WORKBENCH_CONTROL_NAMESPACE,
+      settings: { "chat/name": "GTM research" },
+    }),
+  );
+  const result = applyControlPayload(
+    { ...STATE_ABC, settings: { "chat/name": "New Workbench" } },
+    payload,
+    "b",
+  );
+  expect(result.events).toEqual([
+    {
+      kind: "event",
+      event: "workbench.settings-changed",
+      data: {
+        updatedBy: "b",
+        settings: { "chat/name": "GTM research" },
+        changed: { "chat/name": "GTM research" },
+        previous: { "chat/name": "New Workbench" },
+      },
     },
   ]);
 });
@@ -87,7 +120,7 @@ test("control mail merges settings and yields a settings-changed event", () => {
 test("re-sending the same participant list emits no membership event", () => {
   const payload = parseControlPayload(
     controlMail({
-      namespace: CHANNEL_CONTROL_NAMESPACE,
+      namespace: WORKBENCH_CONTROL_NAMESPACE,
       participants: [...STATE_ABC.participants],
     }),
   );
@@ -99,7 +132,7 @@ test("malformed control payloads are rejected loudly", () => {
   expect(() =>
     parseControlPayload(
       controlMail({
-        namespace: CHANNEL_CONTROL_NAMESPACE,
+        namespace: WORKBENCH_CONTROL_NAMESPACE,
         participants: "not-an-array",
       }),
     ),

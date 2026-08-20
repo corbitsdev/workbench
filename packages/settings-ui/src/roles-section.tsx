@@ -17,7 +17,6 @@ import {
   EmptyState,
   Input,
   SettingsPanel,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -25,11 +24,19 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { principalLabel } from "./identity";
-import { errorMessage, type LoadState } from "./load-state";
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
+import {
+  PRINCIPAL_KIND_LABEL,
+  PRINCIPAL_KIND_ORDER,
+  principalLabel,
+} from "./identity";
 import { SETTINGS_STRINGS } from "./strings";
 import {
   assignRole,
@@ -53,29 +60,42 @@ export function RolesSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<RolesData>>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<RolesData>>({ kind: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     Promise.all([listRoles(tenantId), listPrincipals(tenantId)])
       .then(([roles, principals]) => {
         if (!cancelled)
-          setState({ kind: "ready", data: { roles, principals } });
+          setQuery({ kind: "ready", data: { roles, principals } });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -85,20 +105,6 @@ export function RolesSection({
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.rolesLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  function reload() {
-    setReloadKey((value) => value + 1);
   }
 
   function handleCreate(name: string, description: string) {
@@ -150,39 +156,43 @@ export function RolesSection({
   }
 
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.rolesSectionTitle}
-      description={SETTINGS_STRINGS.rolesSectionDescription}
-    >
-      <div className="settings-section-toolbar">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          {SETTINGS_STRINGS.rolesCreateAction}
-        </Button>
-      </div>
-      {rowError !== null && (
-        <p className="settings-inline-error" role="alert">
-          {rowError}
-        </p>
+    <QueryView query={query} label={SETTINGS_STRINGS.rolesLoadError}>
+      {({ roles, principals }) => (
+        <SettingsPanel
+          title={SETTINGS_STRINGS.rolesSectionTitle}
+          description={SETTINGS_STRINGS.rolesSectionDescription}
+        >
+          <div className="settings-section-toolbar">
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              {SETTINGS_STRINGS.rolesCreateAction}
+            </Button>
+          </div>
+          {rowError !== null && (
+            <p className="settings-inline-error" role="alert">
+              {rowError}
+            </p>
+          )}
+          <RolesTable
+            roles={roles}
+            onDelete={handleDelete}
+            onRename={handleRename}
+          />
+          <RoleAssignments
+            roles={roles}
+            principals={principals}
+            onAssign={handleAssign}
+            onUnassign={handleUnassign}
+          />
+          <CreateRoleDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreate={handleCreate}
+            submitting={creating}
+            error={createError}
+          />
+        </SettingsPanel>
       )}
-      <RolesTable
-        roles={state.data.roles}
-        onDelete={handleDelete}
-        onRename={handleRename}
-      />
-      <RoleAssignments
-        roles={state.data.roles}
-        principals={state.data.principals}
-        onAssign={handleAssign}
-        onUnassign={handleUnassign}
-      />
-      <CreateRoleDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreate={handleCreate}
-        submitting={creating}
-        error={createError}
-      />
-    </SettingsPanel>
+    </QueryView>
   );
 }
 
@@ -323,11 +333,21 @@ export function RoleAssignments({
             onChange={(event) => setPrincipalId(event.target.value)}
           >
             <option value="">—</option>
-            {principals.map((principal) => (
-              <option key={principal.id} value={principal.id}>
-                {principalLabel(principal.displayName).label}
-              </option>
-            ))}
+            {PRINCIPAL_KIND_ORDER.map((kind) => {
+              const kindPrincipals = principals.filter(
+                (principal) => principal.kind === kind,
+              );
+              if (kindPrincipals.length === 0) return null;
+              return (
+                <optgroup key={kind} label={PRINCIPAL_KIND_LABEL[kind]}>
+                  {kindPrincipals.map((principal) => (
+                    <option key={principal.id} value={principal.id}>
+                      {principalLabel(principal.displayName).label}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
         <label className="settings-form-field">

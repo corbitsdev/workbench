@@ -10,13 +10,14 @@
 // Routing against the interface (rather than a raw drizzle handle) keeps the
 // route layer testable with a plain in-memory fake, with no database and no
 // drizzle SQL-condition internals involved.
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import { participantsOf } from "./workbench-settings";
 import {
-  channelLaunch,
-  channelReadState,
-  channelSettings,
+  workbenchLaunch,
+  workbenchReadState,
+  workbenchSettings,
   chatBenchSettings,
 } from "./schema";
 
@@ -31,24 +32,24 @@ export type ChatDb<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > = PostgresJsDatabase<TSchema>;
 
-export interface ChannelSettingsRow {
+export interface WorkbenchSettingsRow {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly settings: Record<string, unknown>;
   readonly updatedBy: string;
   readonly updatedAt: Date;
 }
 
-export interface CreateChannelSettingsInput {
+export interface CreateWorkbenchSettingsInput {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly settings: Record<string, unknown>;
   readonly updatedBy: string;
 }
 
-export interface UpdateChannelSettingsInput {
+export interface UpdateWorkbenchSettingsInput {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly settings: Record<string, unknown>;
   readonly updatedBy: string;
 }
@@ -68,7 +69,7 @@ export interface UpsertBenchSettingsInput {
 
 export interface ReadStateRow {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly principalId: string;
   readonly lastSeenCreatedAt: Date;
   readonly lastSeenId: string;
@@ -76,118 +77,161 @@ export interface ReadStateRow {
 
 export interface PutReadStateInput {
   readonly tenantId: string;
-  readonly channelId: string;
+  readonly workbenchId: string;
   readonly principalId: string;
   readonly lastSeenCreatedAt: Date;
   readonly lastSeenId: string;
 }
 
+/** A workbench resolved by `findWorkbenchByParticipantAddress` — just
+ * enough to feed `launchAndJoinAgent`'s `existingSettings` without a
+ * second `getWorkbenchSettings` round trip. */
+export interface WorkbenchByParticipantAddress {
+  readonly workbenchId: string;
+  readonly settings: Record<string, unknown>;
+}
+
 export interface ChatStore {
-  createChannelSettings(
-    input: CreateChannelSettingsInput,
-  ): Promise<ChannelSettingsRow>;
-  getChannelSettings(
+  createWorkbenchSettings(
+    input: CreateWorkbenchSettingsInput,
+  ): Promise<WorkbenchSettingsRow>;
+  getWorkbenchSettings(
     tenantId: string,
-    channelId: string,
-  ): Promise<ChannelSettingsRow | undefined>;
+    workbenchId: string,
+  ): Promise<WorkbenchSettingsRow | undefined>;
   /**
-   * Removes a channel's settings row. Used only to compensate a channel
+   * Removes a workbench's settings row. Used only to compensate a workbench
    * whose creation a downstream step (the agent launch) failed to
-   * complete — the channel host, tenant, and settings were all written
-   * before the launch failed, so rolling the channel back means deleting
+   * complete — the workbench host, tenant, and settings were all written
+   * before the launch failed, so rolling the workbench back means deleting
    * each of them in turn (see `routes.ts`'s create handler).
    */
-  deleteChannelSettings(tenantId: string, channelId: string): Promise<void>;
-  listChannelSettings(
+  deleteWorkbenchSettings(tenantId: string, workbenchId: string): Promise<void>;
+  listWorkbenchSettings(
     tenantId: string,
     kind?: string,
-  ): Promise<ChannelSettingsRow[]>;
-  updateChannelSettings(
-    input: UpdateChannelSettingsInput,
-  ): Promise<ChannelSettingsRow>;
+  ): Promise<WorkbenchSettingsRow[]>;
+  updateWorkbenchSettings(
+    input: UpdateWorkbenchSettingsInput,
+  ): Promise<WorkbenchSettingsRow>;
   getBenchSettings(tenantId: string): Promise<ChatBenchSettingsRow | undefined>;
   upsertBenchSettings(
     input: UpsertBenchSettingsInput,
   ): Promise<ChatBenchSettingsRow>;
   getReadState(
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     principalId: string,
   ): Promise<ReadStateRow | undefined>;
   putReadState(input: PutReadStateInput): Promise<ReadStateRow>;
   /**
+   * One caller's read cursors across many workbenches in a single query —
+   * the bulk counterpart `GET /workbenches` needs to compute unread
+   * badges without a `getReadState` round trip per row. A workbench the
+   * caller has never opened is simply absent from the result.
+   */
+  listReadStates(
+    tenantId: string,
+    workbenchIds: readonly string[],
+    principalId: string,
+  ): Promise<ReadStateRow[]>;
+  /**
    * True when `instanceId` is a workflow instance this tenant launched
-   * (channel host or invited agent). Agent mailboxes are addressed by
-   * instance id, not by a `channel_settings` row, so tenancy gates on
-   * message routes must consult this as well as `getChannelSettings`.
+   * (workbench host or invited agent). Agent mailboxes are addressed by
+   * instance id, not by a `workbench_settings` row, so tenancy gates on
+   * message routes must consult this as well as `getWorkbenchSettings`.
    */
   hasLaunchedInstance(tenantId: string, instanceId: string): Promise<boolean>;
+  /**
+   * Resolves a workflow run's own mail address back to the workbench it
+   * is a participant of — a real lookup over EXISTING data (each
+   * workbench's own `chat/participants` list, the same list
+   * `launchAndJoinAgent`/`removeWorkbenchParticipant` already read and
+   * write), never new state of its own.
+   *
+   * [Intx/repo gap]: there is no direct run-address -> workbench index
+   * anywhere in this schema, so this scans every workbench in the
+   * tenant and parses each one's participants looking for a match —
+   * O(workbenches-in-tenant) per call. Fine at today's per-tenant workbench
+   * counts (the same order `listWorkbenchSettings` callers already pay),
+   * but a tenant with very many workbenches would want a proper index
+   * (e.g. a `workbench_participants` join table keyed by address) rather
+   * than this scan. Tracked as a follow-up, not fixed here.
+   *
+   * Returns `undefined` when `address` is not a participant of any
+   * workbench in `tenantId` — a human's bare-principal-id address, a
+   * stale/removed agent, or simply not this tenant's run at all.
+   */
+  findWorkbenchByParticipantAddress(
+    tenantId: string,
+    address: string,
+  ): Promise<WorkbenchByParticipantAddress | undefined>;
 }
 
 /**
- * The production `ChatStore`, backed by the `channel_settings` and
- * `channel_read_state` tables declared in `./schema.ts`.
+ * The production `ChatStore`, backed by the `workbench_settings` and
+ * `workbench_read_state` tables declared in `./schema.ts`.
  */
 export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
   db: ChatDb<TSchema>,
 ): ChatStore {
   return {
-    async createChannelSettings(input) {
+    async createWorkbenchSettings(input) {
       const now = new Date();
       const [row] = await db
-        .insert(channelSettings)
+        .insert(workbenchSettings)
         .values({
           tenantId: input.tenantId,
-          channelId: input.channelId,
+          workbenchId: input.workbenchId,
           settings: input.settings,
           updatedBy: input.updatedBy,
           updatedAt: now,
         })
         .returning();
       if (row === undefined) {
-        throw new Error("createChannelSettings: insert returned no row");
+        throw new Error("createWorkbenchSettings: insert returned no row");
       }
-      return row as ChannelSettingsRow;
+      return row as WorkbenchSettingsRow;
     },
 
-    async getChannelSettings(tenantId, channelId) {
+    async getWorkbenchSettings(tenantId, workbenchId) {
       const [selected] = await db
         .select()
-        .from(channelSettings)
+        .from(workbenchSettings)
         .where(
           and(
-            eq(channelSettings.tenantId, tenantId),
-            eq(channelSettings.channelId, channelId),
+            eq(workbenchSettings.tenantId, tenantId),
+            eq(workbenchSettings.workbenchId, workbenchId),
           ),
         )
         .limit(1);
-      return selected as ChannelSettingsRow | undefined;
+      return selected as WorkbenchSettingsRow | undefined;
     },
 
-    async deleteChannelSettings(tenantId, channelId) {
+    async deleteWorkbenchSettings(tenantId, workbenchId) {
       await db
-        .delete(channelSettings)
+        .delete(workbenchSettings)
         .where(
           and(
-            eq(channelSettings.tenantId, tenantId),
-            eq(channelSettings.channelId, channelId),
+            eq(workbenchSettings.tenantId, tenantId),
+            eq(workbenchSettings.workbenchId, workbenchId),
           ),
         );
     },
 
-    async listChannelSettings(tenantId, kind) {
+    async listWorkbenchSettings(tenantId, kind) {
       const rows = await db
         .select()
-        .from(channelSettings)
-        .where(eq(channelSettings.tenantId, tenantId));
-      const typed = rows as ChannelSettingsRow[];
+        .from(workbenchSettings)
+        .where(eq(workbenchSettings.tenantId, tenantId));
+      const typed = rows as WorkbenchSettingsRow[];
       if (kind === undefined) return typed;
       return typed.filter((row) => row.settings["chat/kind"] === kind);
     },
 
-    async updateChannelSettings(input) {
+    async updateWorkbenchSettings(input) {
       const [row] = await db
-        .update(channelSettings)
+        .update(workbenchSettings)
         .set({
           settings: input.settings,
           updatedBy: input.updatedBy,
@@ -195,17 +239,17 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         })
         .where(
           and(
-            eq(channelSettings.tenantId, input.tenantId),
-            eq(channelSettings.channelId, input.channelId),
+            eq(workbenchSettings.tenantId, input.tenantId),
+            eq(workbenchSettings.workbenchId, input.workbenchId),
           ),
         )
         .returning();
       if (row === undefined) {
         throw new Error(
-          `updateChannelSettings: no channel_settings row for channel ${input.channelId}`,
+          `updateWorkbenchSettings: no workbench_settings row for workbench ${input.workbenchId}`,
         );
       }
-      return row as ChannelSettingsRow;
+      return row as WorkbenchSettingsRow;
     },
 
     async getBenchSettings(tenantId) {
@@ -241,15 +285,15 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       return row as ChatBenchSettingsRow;
     },
 
-    async getReadState(tenantId, channelId, principalId) {
+    async getReadState(tenantId, workbenchId, principalId) {
       const [row] = await db
         .select()
-        .from(channelReadState)
+        .from(workbenchReadState)
         .where(
           and(
-            eq(channelReadState.tenantId, tenantId),
-            eq(channelReadState.channelId, channelId),
-            eq(channelReadState.principalId, principalId),
+            eq(workbenchReadState.tenantId, tenantId),
+            eq(workbenchReadState.workbenchId, workbenchId),
+            eq(workbenchReadState.principalId, principalId),
           ),
         )
         .limit(1);
@@ -258,13 +302,13 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
 
     async putReadState(input) {
       const [row] = await db
-        .insert(channelReadState)
+        .insert(workbenchReadState)
         .values(input)
         .onConflictDoUpdate({
           target: [
-            channelReadState.tenantId,
-            channelReadState.channelId,
-            channelReadState.principalId,
+            workbenchReadState.tenantId,
+            workbenchReadState.workbenchId,
+            workbenchReadState.principalId,
           ],
           set: {
             lastSeenCreatedAt: input.lastSeenCreatedAt,
@@ -278,18 +322,50 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       return row as ReadStateRow;
     },
 
-    async hasLaunchedInstance(tenantId, instanceId) {
-      const [row] = await db
-        .select({ instanceId: channelLaunch.instanceId })
-        .from(channelLaunch)
+    async listReadStates(tenantId, workbenchIds, principalId) {
+      if (workbenchIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(workbenchReadState)
         .where(
           and(
-            eq(channelLaunch.tenantId, tenantId),
-            eq(channelLaunch.instanceId, instanceId),
+            eq(workbenchReadState.tenantId, tenantId),
+            eq(workbenchReadState.principalId, principalId),
+            inArray(workbenchReadState.workbenchId, workbenchIds),
+          ),
+        );
+      return rows as ReadStateRow[];
+    },
+
+    async hasLaunchedInstance(tenantId, instanceId) {
+      const [row] = await db
+        .select({ instanceId: workbenchLaunch.instanceId })
+        .from(workbenchLaunch)
+        .where(
+          and(
+            eq(workbenchLaunch.tenantId, tenantId),
+            eq(workbenchLaunch.instanceId, instanceId),
           ),
         )
         .limit(1);
       return row !== undefined;
+    },
+
+    async findWorkbenchByParticipantAddress(tenantId, address) {
+      const rows = await db
+        .select()
+        .from(workbenchSettings)
+        .where(eq(workbenchSettings.tenantId, tenantId));
+      for (const row of rows as WorkbenchSettingsRow[]) {
+        if (
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          )
+        ) {
+          return { workbenchId: row.workbenchId, settings: row.settings };
+        }
+      }
+      return undefined;
     },
   };
 }
@@ -301,41 +377,41 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
  * target.
  */
 export function createInMemoryChatStore(): ChatStore {
-  const settingsByKey = new Map<string, ChannelSettingsRow>();
+  const settingsByKey = new Map<string, WorkbenchSettingsRow>();
   const readStateByKey = new Map<string, ReadStateRow>();
   const benchSettingsByTenant = new Map<string, ChatBenchSettingsRow>();
   const launchedByKey = new Set<string>();
 
-  const settingsKey = (tenantId: string, channelId: string) =>
-    `${tenantId}:${channelId}`;
+  const settingsKey = (tenantId: string, workbenchId: string) =>
+    `${tenantId}:${workbenchId}`;
   const readStateKey = (
     tenantId: string,
-    channelId: string,
+    workbenchId: string,
     principalId: string,
-  ) => `${tenantId}:${channelId}:${principalId}`;
+  ) => `${tenantId}:${workbenchId}:${principalId}`;
 
   return {
-    async createChannelSettings(input) {
-      const row: ChannelSettingsRow = {
+    async createWorkbenchSettings(input) {
+      const row: WorkbenchSettingsRow = {
         tenantId: input.tenantId,
-        channelId: input.channelId,
+        workbenchId: input.workbenchId,
         settings: input.settings,
         updatedBy: input.updatedBy,
         updatedAt: new Date(),
       };
-      settingsByKey.set(settingsKey(input.tenantId, input.channelId), row);
+      settingsByKey.set(settingsKey(input.tenantId, input.workbenchId), row);
       return row;
     },
 
-    async getChannelSettings(tenantId, channelId) {
-      return settingsByKey.get(settingsKey(tenantId, channelId));
+    async getWorkbenchSettings(tenantId, workbenchId) {
+      return settingsByKey.get(settingsKey(tenantId, workbenchId));
     },
 
-    async deleteChannelSettings(tenantId, channelId) {
-      settingsByKey.delete(settingsKey(tenantId, channelId));
+    async deleteWorkbenchSettings(tenantId, workbenchId) {
+      settingsByKey.delete(settingsKey(tenantId, workbenchId));
     },
 
-    async listChannelSettings(tenantId, kind) {
+    async listWorkbenchSettings(tenantId, kind) {
       const rows = [...settingsByKey.values()].filter(
         (row) => row.tenantId === tenantId,
       );
@@ -343,15 +419,15 @@ export function createInMemoryChatStore(): ChatStore {
       return rows.filter((row) => row.settings["chat/kind"] === kind);
     },
 
-    async updateChannelSettings(input) {
-      const key = settingsKey(input.tenantId, input.channelId);
+    async updateWorkbenchSettings(input) {
+      const key = settingsKey(input.tenantId, input.workbenchId);
       const existing = settingsByKey.get(key);
       if (existing === undefined) {
         throw new Error(
-          `updateChannelSettings: no channel_settings row for channel ${input.channelId}`,
+          `updateWorkbenchSettings: no workbench_settings row for workbench ${input.workbenchId}`,
         );
       }
-      const row: ChannelSettingsRow = {
+      const row: WorkbenchSettingsRow = {
         ...existing,
         settings: input.settings,
         updatedBy: input.updatedBy,
@@ -376,21 +452,46 @@ export function createInMemoryChatStore(): ChatStore {
       return row;
     },
 
-    async getReadState(tenantId, channelId, principalId) {
-      return readStateByKey.get(readStateKey(tenantId, channelId, principalId));
+    async getReadState(tenantId, workbenchId, principalId) {
+      return readStateByKey.get(
+        readStateKey(tenantId, workbenchId, principalId),
+      );
     },
 
     async putReadState(input) {
       const row: ReadStateRow = { ...input };
       readStateByKey.set(
-        readStateKey(input.tenantId, input.channelId, input.principalId),
+        readStateKey(input.tenantId, input.workbenchId, input.principalId),
         row,
       );
       return row;
     },
 
+    async listReadStates(tenantId, workbenchIds, principalId) {
+      return workbenchIds.flatMap((workbenchId) => {
+        const row = readStateByKey.get(
+          readStateKey(tenantId, workbenchId, principalId),
+        );
+        return row === undefined ? [] : [row];
+      });
+    },
+
     async hasLaunchedInstance(tenantId, instanceId) {
       return launchedByKey.has(`${tenantId}:${instanceId}`);
+    },
+
+    async findWorkbenchByParticipantAddress(tenantId, address) {
+      for (const row of settingsByKey.values()) {
+        if (row.tenantId !== tenantId) continue;
+        if (
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          )
+        ) {
+          return { workbenchId: row.workbenchId, settings: row.settings };
+        }
+      }
+      return undefined;
     },
   };
 }

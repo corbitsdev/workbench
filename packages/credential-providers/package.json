@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/credential-providers",
+  "private": true,
+  "description": "Workbench-owned CredentialProvider plugins beyond @intx/harness's built-ins, for auth schemes the vendored http provider doesn't cover",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/harness": "workspace:*",
+    "@intx/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -5,21 +5,46 @@
 // Anything else the hub learns is data in the database, never
 // configuration.
 //
-// ANTHROPIC_API_KEY is the one model-related variable the hub reads,
-// and it is optional: when set, the hub carries a seed model
-// credential (anthropic/claude-sonnet-5) it hands to
-// `@workbench/onboarding` so a freshly self-served personal bench gets
-// the default workflow set deployed at first login. Left unset, that
-// deployment step is skipped — the bench is still provisioned, only
-// the default workflow deployment is skipped, and the skip is logged.
+// ANTHROPIC_API_KEY is the one model-related variable a freshly
+// self-served personal bench needs: when set, the hub carries a seed
+// model credential (anthropic/claude-sonnet-5) it hands to
+// `@workbench/onboarding` so that bench gets the default workflow set
+// deployed at first login. Left unset, that deployment step is skipped
+// — the bench is still provisioned, only the default workflow
+// deployment is skipped, and the skip is logged.
+//
+// ANTHROPIC_API_KEY and every other curated provider's conventional key
+// (`@workbench/onboarding`'s `PROVIDER_ENV_VARS` — OPENAI_API_KEY,
+// GEMINI_API_KEY/GOOGLE_API_KEY, XAI_API_KEY, OPENROUTER_API_KEY,
+// OPENCODE_ZEN_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY,
+// HUGGINGFACE_API_KEY) are also read as an env-key auto-plant (CL-6101):
+// once the hub finds its own operator bench (HUB_ADMIN_EMAIL/PASSWORD
+// signed in, ORG_SLUG resolved — the same identity `workbench setup` /
+// `workbench seed` use), it plants a real, probed credential for every
+// key it finds there, making that bench's catalog launchable with no
+// `workbench seed` re-run. See `../env-credential-plant.ts`. All of
+// these — including HUB_ADMIN_EMAIL/PASSWORD/ORG_SLUG — are optional:
+// the plant is skipped, quietly and non-fatally, whenever the admin
+// identity cannot be resolved or no provider key is set.
 //
 // GOOGLE_CLIENT_ID/SECRET and GITHUB_CLIENT_ID/SECRET are each an
 // optional pair: set both to enable that OAuth provider on the sign-in
 // screen, leave both unset to leave it off — email/password remains
 // available either way. Setting only one half of a pair is a boot-time
 // error, never a silently-disabled provider.
+//
+// HUGGINGFACE_OAUTH_CLIENT_ID is a single optional value, not a pair —
+// Hugging Face's connect flow uses a public OAuth app with no client
+// secret. Set it to enable the onboarding wizard's Hugging Face connect
+// card; leave it unset and Hugging Face stays available only as a
+// paste-a-token provider card.
 
 import { type } from "arktype";
+import {
+  envProviderBaseUrlsFrom,
+  envProviderKeysFrom,
+} from "@workbench/onboarding";
+import type { SupportedCredentialProvider } from "@workbench/hub-client";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
@@ -51,8 +76,56 @@ const HubEnv = type({
   "SIGNUP_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum sign-ups a single IP may make per window, e.g. 5",
   ),
+  "WORKBENCH_SIGNUP?": type("'open' | 'closed'").describe(
+    "open = self-serve email signup allowed; closed (default) = owner adds users or copy-link invite only",
+  ),
+  "WORKBENCH_ALLOWED_EMAIL_DOMAINS?": type("string").describe(
+    "comma-separated email domains allowed when WORKBENCH_SIGNUP=open, e.g. acme.example",
+  ),
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
-    "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches",
+    "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches, and auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "OPENAI_API_KEY?": type("string > 0").describe(
+    "your OpenAI API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "GEMINI_API_KEY?": type("string > 0").describe(
+    "your Google Gemini API key; optional, auto-plants a probed catalog credential on the operator bench at hub start — GOOGLE_API_KEY is used when this is unset",
+  ),
+  "GOOGLE_API_KEY?": type("string > 0").describe(
+    "your Google Gemini API key, under its other common name; only read when GEMINI_API_KEY is unset",
+  ),
+  "XAI_API_KEY?": type("string > 0").describe(
+    "your xAI API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "OPENROUTER_API_KEY?": type("string > 0").describe(
+    "your OpenRouter API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "OPENCODE_ZEN_API_KEY?": type("string > 0").describe(
+    "your Opencode Zen API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "GROQ_API_KEY?": type("string > 0").describe(
+    "your Groq API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "DEEPSEEK_API_KEY?": type("string > 0").describe(
+    "your DeepSeek API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "MISTRAL_API_KEY?": type("string > 0").describe(
+    "your Mistral API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "HUGGINGFACE_API_KEY?": type("string > 0").describe(
+    "your Hugging Face router API token; optional, auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "OLLAMA_BASE_URL?": type("string > 0").describe(
+    "the origin your local (or tailscale-tunneled) Ollama instance listens on, e.g. http://localhost:11434; optional, auto-plants a probed catalog credential (no key required) on the operator bench at hub start",
+  ),
+  "HUB_ADMIN_EMAIL?": type(/^[^@\s]+@[^@\s]+$/).describe(
+    "the administrator account the env-key auto-plant signs in as to find the operator bench; same identity `workbench setup`/`workbench seed` use — unset falls back to alice@example.com, the same default those commands use",
+  ),
+  "HUB_ADMIN_PASSWORD?": type("string >= 8").describe(
+    "the administrator password the env-key auto-plant signs in with; unset falls back to password123, the same default `workbench setup`/`workbench seed` use",
+  ),
+  "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
+    'the operator bench slug the env-key auto-plant resolves; same variable `workbench setup`/`workbench seed` read — unset falls back to "workbench"',
   ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
@@ -66,14 +139,87 @@ const HubEnv = type({
   "GITHUB_CLIENT_SECRET?": type("string > 0").describe(
     "GitHub OAuth client secret; set together with GITHUB_CLIENT_ID to enable GitHub sign-in",
   ),
+  "HUGGINGFACE_OAUTH_CLIENT_ID?": type("string > 0").describe(
+    "Hugging Face public OAuth app client id (huggingface.co/settings/applications, no secret — see docs/onboarding-huggingface-connect.md); optional, enables the onboarding wizard's Hugging Face connect card",
+  ),
+  "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
+    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
+  ),
+  "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
+    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; never set this for a real deployment",
+  ),
+  "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
+    "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
+  ),
+  "SIDECAR_PROVISIONERS?": type("string").describe(
+    "comma-separated sidecar-allocation backend ids to register for workbenches placed on their own exclusive sidecar, e.g. 'docker'; unset or empty (default) keeps the hub on its current single shared sidecar with no exclusive-placement backend available",
+  ),
+  "SIDECAR_DEFAULT_PROVISIONER?": type("string > 0").describe(
+    "which id listed in SIDECAR_PROVISIONERS is the default backend exclusive placements provision on; required when SIDECAR_PROVISIONERS lists more than one id, optional (defaults to that one id) when it lists exactly one",
+  ),
+  "E2B_API_KEY?": type("string > 0").describe(
+    "the E2B API key the e2b sidecar provisioner authenticates with; required when SIDECAR_PROVISIONERS includes 'e2b'",
+  ),
+  "E2B_TEMPLATE?": type("string > 0").describe(
+    "the immutable E2B template id sandboxes are created from; required when SIDECAR_PROVISIONERS includes 'e2b'",
+  ),
+  "E2B_SANDBOX_TIMEOUT_MS?": type("string > 0").describe(
+    "how long an E2B sandbox may live before E2B reclaims it; defaults to 15 minutes",
+  ),
+  "DOCKER_PROVISIONER_IMAGE?": type("string > 0").describe(
+    "the container image the docker sidecar provisioner runs for each exclusive allocation; required when SIDECAR_PROVISIONERS includes 'docker'",
+  ),
+  "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
+    "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
+  ),
+  "WORKBENCH_CHAT_IDLE_REAP_MS?": type("string").describe(
+    "how long a chat resident (workbench host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
 
+/**
+ * Production default for `WORKBENCH_CHAT_IDLE_REAP_MS`: 30 minutes,
+ * matching the old sidecar-side `WORKBENCH_CHILD_IDLE_REAP_MS` default
+ * this replaces for chat.
+ */
+export const DEFAULT_CHAT_IDLE_REAP_MS = 30 * 60_000;
+
+/**
+ * Parse an optional positive-integer-milliseconds env value, defaulting
+ * to `fallback` when unset. Rejects zero and negative values — unlike
+ * the sidecar's now-deleted reap knob, there is no "disable reaping"
+ * mode here.
+ */
+function parsePositiveMsEnv(
+  raw: string | undefined,
+  name: string,
+  fallback: number,
+): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(
+      `invalid hub environment: ${name} must be a positive integer (milliseconds); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return n;
+}
+
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
 const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
+
+// Matches `workbench setup`/`workbench seed`'s own defaults
+// (packages/cli/src/config.ts) exactly, so a zero-.env-edit local
+// checkout that seeds its admin account through `bun run dev` also
+// resolves the same operator bench for the env-key auto-plant with no
+// extra configuration.
+const DEFAULT_PLANT_ADMIN_EMAIL = "alice@example.com";
+const DEFAULT_PLANT_ADMIN_PASSWORD = "password123";
+const DEFAULT_PLANT_ORG_SLUG = "workbench";
 
 export type ModelSource = {
   readonly provider: string;
@@ -81,6 +227,37 @@ export type ModelSource = {
   readonly baseURL: string;
   readonly apiKey: string;
 };
+
+// One member per implemented `SidecarProvisioner` backend. Adding a new
+// backend (e.g. a remote sandbox) is: implement the contract in its own
+// package, add a member here with its settings, add its id to
+// `SIDECAR_PROVISIONER_IDS`, and register it in
+// `sidecarProvisionerFrom`'s per-id parsing below.
+export type DockerSidecarProvisionerConfig = {
+  readonly id: "docker";
+  readonly image: string;
+};
+
+/** The sandbox backend. Its API key and template come from the process
+ * environment; its hub-side state directory is derived from `hubDataDir`,
+ * never configured separately, so it cannot drift from the other backends'
+ * state or be confused with the sandbox's own `SIDECAR_DATA_DIR`. */
+export type E2BSidecarProvisionerConfig = {
+  readonly id: "e2b";
+  readonly apiKey: string;
+  readonly template: string;
+  readonly sandboxTimeoutMs?: string;
+};
+
+export type SidecarProvisionerConfig =
+  DockerSidecarProvisionerConfig | E2BSidecarProvisionerConfig;
+
+const SIDECAR_PROVISIONER_IDS = ["docker", "e2b"] as const;
+type SidecarProvisionerId = (typeof SIDECAR_PROVISIONER_IDS)[number];
+
+function isSidecarProvisionerId(value: string): value is SidecarProvisionerId {
+  return (SIDECAR_PROVISIONER_IDS as readonly string[]).includes(value);
+}
 
 export type SocialProviderId = "google" | "github";
 
@@ -101,10 +278,60 @@ export type HubConfig = {
     readonly windowSeconds: number;
     readonly max: number;
   };
+  /** Self-serve signup. Default closed — see docs/TENANCY.md. */
+  readonly signupMode: "open" | "closed";
+  /** Domains allowed when signupMode is open. Empty = any domain. */
+  readonly allowedEmailDomains: readonly string[];
   readonly seedModel?: ModelSource;
   readonly socialProviders: Readonly<
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
+  readonly huggingfaceOAuthClientId?: string;
+  readonly credentialEncryptionKeyHex?: string;
+  /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
+  readonly allowPlaintextSecrets: boolean;
+  /** Dev/test-only opt-in to skip @workbench/access-policy's email-
+   * verification requirement. */
+  readonly allowUnverifiedEmails: boolean;
+  /** Every sidecar-allocation backend registered for exclusive placement,
+   * zero or more, each addressable by its provisioner id. Empty when
+   * unconfigured — the registry then holds no provisioners and every
+   * exclusive placement fails closed at deployment time. */
+  readonly sidecarProvisioners: readonly SidecarProvisionerConfig[];
+  /** Which registered id exclusive placements provision on. Undefined
+   * exactly when `sidecarProvisioners` is empty. */
+  readonly defaultSidecarProvisionerId?: string;
+  /** Overrides the ws(s):// URL a provisioned sidecar dials back to reach
+   * this hub. Unset derives it from baseUrl instead. */
+  readonly sidecarWebSocketUrl?: string;
+  /** How long an idle chat resident may sit before the hub reaps it via
+   * a state-preserving undeploy. Defaults to `DEFAULT_CHAT_IDLE_REAP_MS`. */
+  readonly chatIdleReapMs: number;
+  /** Every curated provider's key found under its conventional env var
+   * name (`@workbench/onboarding`'s `PROVIDER_ENV_VARS`). Empty when
+   * none are set — the env-key auto-plant then does nothing. */
+  readonly envProviderKeys: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
+  /** The configured base URL for whichever curated providers carry one
+   * (`OLLAMA_BASE_URL` today, the only such provider). Empty when unset
+   * — the env-key auto-plant then probes and seeds ollama, if present in
+   * `envProviderKeys`, against its own default local origin. */
+  readonly envProviderBaseUrls: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
+  /** The identity the env-key auto-plant signs in as to find the
+   * operator bench — the same identity `workbench setup`/`workbench
+   * seed` use, defaulted the same way when unset. Always populated
+   * (never optional): an unset HUB_ADMIN_EMAIL/PASSWORD/ORG_SLUG is a
+   * valid local-dev shape, not a reason to skip the plant outright —
+   * the plant itself degrades to a no-op, logged, when this identity
+   * does not resolve to a real operator bench. */
+  readonly envCredentialPlantAdmin: {
+    readonly email: string;
+    readonly password: string;
+    readonly orgSlug: string;
+  };
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -158,6 +385,133 @@ function socialProvidersFrom(
   return providers;
 }
 
+type SidecarProvisionersConfig = {
+  readonly provisioners: readonly SidecarProvisionerConfig[];
+  readonly defaultProvisionerId?: string;
+};
+
+/**
+ * Resolves every sidecar-provisioner backend named in
+ * `SIDECAR_PROVISIONERS` plus which one is the default. Each named
+ * backend's own required settings (e.g. `DOCKER_PROVISIONER_IMAGE` for
+ * `docker`) must be present, and an unknown id, a duplicate id, or a
+ * `SIDECAR_DEFAULT_PROVISIONER` naming a backend that isn't listed all
+ * fail boot loudly — never silently falling back to the no-provisioner
+ * default. With `SIDECAR_PROVISIONERS` unset or empty, this returns no
+ * provisioners and no default, so every exclusive placement fails
+ * closed at deployment time rather than falling back to the shared
+ * sidecar.
+ */
+function sidecarProvisionersFrom(
+  parsed: ParsedHubEnv,
+): SidecarProvisionersConfig {
+  const ids = (parsed.SIDECAR_PROVISIONERS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+  if (ids.length === 0) {
+    if (parsed.SIDECAR_DEFAULT_PROVISIONER !== undefined) {
+      throw new Error(
+        [
+          `invalid hub environment: SIDECAR_DEFAULT_PROVISIONER=${parsed.SIDECAR_DEFAULT_PROVISIONER} names a backend but SIDECAR_PROVISIONERS is unset`,
+          "List that id in SIDECAR_PROVISIONERS, or unset SIDECAR_DEFAULT_PROVISIONER to leave exclusive sidecar placement disabled; see .env.example.",
+        ].join("\n"),
+      );
+    }
+    return { provisioners: [] };
+  }
+
+  const seen = new Set<string>();
+  const provisioners: SidecarProvisionerConfig[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) {
+      throw new Error(
+        `invalid hub environment: SIDECAR_PROVISIONERS lists ${id} more than once`,
+      );
+    }
+    seen.add(id);
+    if (!isSidecarProvisionerId(id)) {
+      throw new Error(
+        [
+          `invalid hub environment: SIDECAR_PROVISIONERS names unknown backend ${id}`,
+          `Supported ids: ${SIDECAR_PROVISIONER_IDS.join(", ")}.`,
+        ].join("\n"),
+      );
+    }
+    provisioners.push(sidecarProvisionerConfigFor(id, parsed));
+  }
+
+  const defaultProvisionerId = parsed.SIDECAR_DEFAULT_PROVISIONER;
+  if (defaultProvisionerId === undefined) {
+    if (provisioners.length > 1) {
+      throw new Error(
+        [
+          "invalid hub environment: SIDECAR_DEFAULT_PROVISIONER must be set when SIDECAR_PROVISIONERS lists more than one backend",
+          "Set SIDECAR_DEFAULT_PROVISIONER to one of the listed ids; see .env.example.",
+        ].join("\n"),
+      );
+    }
+    const onlyId = provisioners[0]?.id;
+    return onlyId === undefined
+      ? { provisioners }
+      : { provisioners, defaultProvisionerId: onlyId };
+  }
+  if (!seen.has(defaultProvisionerId)) {
+    throw new Error(
+      [
+        `invalid hub environment: SIDECAR_DEFAULT_PROVISIONER=${defaultProvisionerId} is not listed in SIDECAR_PROVISIONERS`,
+        "Add it to SIDECAR_PROVISIONERS, or point SIDECAR_DEFAULT_PROVISIONER at a listed id; see .env.example.",
+      ].join("\n"),
+    );
+  }
+  return { provisioners, defaultProvisionerId };
+}
+
+function sidecarProvisionerConfigFor(
+  id: SidecarProvisionerId,
+  parsed: ParsedHubEnv,
+): SidecarProvisionerConfig {
+  switch (id) {
+    case "docker": {
+      if (parsed.DOCKER_PROVISIONER_IMAGE === undefined) {
+        throw new Error(
+          [
+            "invalid hub environment: DOCKER_PROVISIONER_IMAGE must be set when SIDECAR_PROVISIONERS includes docker",
+            "Set DOCKER_PROVISIONER_IMAGE in .env, or remove docker from SIDECAR_PROVISIONERS; see .env.example.",
+          ].join("\n"),
+        );
+      }
+      return { id: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
+    }
+    case "e2b": {
+      if (
+        parsed.E2B_API_KEY === undefined ||
+        parsed.E2B_TEMPLATE === undefined
+      ) {
+        throw new Error(
+          [
+            "invalid hub environment: E2B_API_KEY and E2B_TEMPLATE must both be set when SIDECAR_PROVISIONERS includes e2b",
+            "Set them in .env (E2B_TEMPLATE is the immutable template id printed by the template build), or remove e2b from SIDECAR_PROVISIONERS; see .env.example.",
+          ].join("\n"),
+        );
+      }
+      return parsed.E2B_SANDBOX_TIMEOUT_MS === undefined
+        ? {
+            id: "e2b",
+            apiKey: parsed.E2B_API_KEY,
+            template: parsed.E2B_TEMPLATE,
+          }
+        : {
+            id: "e2b",
+            apiKey: parsed.E2B_API_KEY,
+            template: parsed.E2B_TEMPLATE,
+            sandboxTimeoutMs: parsed.E2B_SANDBOX_TIMEOUT_MS,
+          };
+    }
+  }
+}
+
 function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
   const apiKey = parsed.ANTHROPIC_API_KEY;
   if (apiKey === undefined) return undefined;
@@ -191,6 +545,15 @@ export function readHubConfig(
 
   const seedModel = seedModelFrom(parsed);
   const socialProviders = socialProvidersFrom(parsed);
+  const sidecarProvisioners = sidecarProvisionersFrom(parsed);
+
+  const allowedEmailDomains =
+    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS === undefined ||
+    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.trim() === ""
+      ? []
+      : parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.split(",")
+          .map((d) => d.trim())
+          .filter((d) => d.length > 0);
 
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
@@ -199,6 +562,11 @@ export function readHubConfig(
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
     socialProviders,
+    signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
+    allowedEmailDomains,
+    allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
+    allowUnverifiedEmails: parsed.ALLOW_UNVERIFIED_EMAILS !== undefined,
+    sidecarProvisioners: sidecarProvisioners.provisioners,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
@@ -207,10 +575,31 @@ export function readHubConfig(
         ? Number(parsed.SIGNUP_RATE_LIMIT_MAX)
         : DEFAULT_SIGNUP_RATE_LIMIT_MAX,
     },
+    envProviderKeys: envProviderKeysFrom(parsed),
+    envProviderBaseUrls: envProviderBaseUrlsFrom(parsed),
+    envCredentialPlantAdmin: {
+      email: parsed.HUB_ADMIN_EMAIL ?? DEFAULT_PLANT_ADMIN_EMAIL,
+      password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,
+      orgSlug: parsed.ORG_SLUG ?? DEFAULT_PLANT_ORG_SLUG,
+    },
+    chatIdleReapMs: parsePositiveMsEnv(
+      parsed.WORKBENCH_CHAT_IDLE_REAP_MS,
+      "WORKBENCH_CHAT_IDLE_REAP_MS",
+      DEFAULT_CHAT_IDLE_REAP_MS,
+    ),
   };
   if (parsed.OPERATOR_TENANT_ID !== undefined)
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
+  if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
+    hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
+  if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
+    hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
+  if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
+    hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
+  if (sidecarProvisioners.defaultProvisionerId !== undefined)
+    hubConfig.defaultSidecarProvisionerId =
+      sidecarProvisioners.defaultProvisionerId;
   return hubConfig;
 }

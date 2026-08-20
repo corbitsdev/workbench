@@ -1,0 +1,38 @@
+{
+  "name": "@corbits/tasks",
+  "private": true,
+  "description": "Spawn-and-return agent tasks: a prompt plus an agent definition launches a one-shot folded run with no workbench, and its finalized reply lands in the Inbox.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/agent-lifecycle": "workspace:*",
+    "@corbits/folded-runs": "workspace:*",
+    "@corbits/notify": "workspace:*",
+    "@corbits/turn-artifacts": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@corbits/chat": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

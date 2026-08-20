@@ -13,6 +13,7 @@ import {
   DEFAULT_WORKFLOWS,
   type ApiCall,
   type DefaultWorkflow,
+  type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { CliError } from "@workbench/hub-client";
@@ -22,6 +23,8 @@ export type SeedDeps = {
   config: SeedConfig;
   api: ApiCall;
   pushWorkflow: WorkflowPusher;
+  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
+  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
   sleep?: (ms: number) => Promise<void>;
   runStartTimeoutMs?: number;
@@ -125,6 +128,8 @@ export async function runSeed(
     log,
     workflows: resolvedWorkflows,
   };
+  if (deps.publishToolRegistry !== undefined)
+    seedArgs.publishToolRegistry = deps.publishToolRegistry;
   if (deps.sleep !== undefined) seedArgs.sleep = deps.sleep;
   if (deps.runStartTimeoutMs !== undefined)
     seedArgs.runStartTimeoutMs = deps.runStartTimeoutMs;
@@ -138,19 +143,18 @@ export async function runSeed(
     deps.placeholderCredential !== true
   ) {
     log(
-      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it and re-run: workbench seed",
+      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it, then either re-run: workbench seed, or set it in the hub's own environment and restart it (the env-key auto-plant, CL-6101, plants it with no other step)",
     );
   }
-  await seedCatalog({
+  const seedCatalogArgs: Parameters<typeof seedCatalog>[0] = {
     api,
     cookies,
     tenantId: tenant.tenantId,
     log,
-    ...(config.anthropicApiKeyConfigured
-      ? { apiKey: config.modelSource.apiKey }
-      : {}),
-    ...(deps.placeholderCredential === true
-      ? { placeholderCredential: true }
-      : {}),
-  });
+  };
+  if (config.anthropicApiKeyConfigured)
+    seedCatalogArgs.apiKey = config.modelSource.apiKey;
+  if (deps.placeholderCredential === true)
+    seedCatalogArgs.placeholderCredential = true;
+  await seedCatalog(seedCatalogArgs);
 }

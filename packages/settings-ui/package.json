@@ -3,8 +3,11 @@
   "private": true,
   "description": "The settings surface's shell: a section-nav layout that packages contribute sections into, plus the Bench, Chats & channels, and Account sections shipped today",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css"
@@ -14,19 +17,25 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/api-query": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#bd5057b0f740947ad117fc2c9cbe82bf992423d2",
+    "@corbits/inference-settings": "workspace:*",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
     "@types/bun": "catalog:",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
+    "react-dom": "^19.2.0",
     "typescript": "catalog:"
   }
 }

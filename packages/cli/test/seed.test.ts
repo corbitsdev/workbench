@@ -6,6 +6,7 @@ import {
   collector,
   fakeAPI,
   principalsResponse,
+  signInMissing,
   signUpResponse,
   tenantRow,
   TENANT_ID,
@@ -33,6 +34,7 @@ function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
   return {
     config: CONFIG,
     pushWorkflow: async () => "pushed",
+    publishToolRegistry: async () => undefined,
     log,
     ...overrides,
   };
@@ -43,14 +45,27 @@ describe("resolveSeedWorkflows", () => {
     const names = resolveSeedWorkflows({
       seedCatalogTestWorkflows: false,
     }).map((w) => w.assetName);
-    expect(names).toEqual(["echo", "assistant", "channel-digest"]);
+    expect(names).toEqual([
+      "echo",
+      "assistant",
+      "workbench-digest",
+      "recurring-task",
+      "last-30-days-research",
+    ]);
   });
 
   test("with the opt-in, the catalog-test workflows are appended", () => {
     const names = resolveSeedWorkflows({
       seedCatalogTestWorkflows: true,
     }).map((w) => w.assetName);
-    expect(names).toEqual(["echo", "assistant", "channel-digest", "heartbeat"]);
+    expect(names).toEqual([
+      "echo",
+      "assistant",
+      "workbench-digest",
+      "recurring-task",
+      "last-30-days-research",
+      "heartbeat",
+    ]);
   });
 });
 
@@ -58,6 +73,8 @@ describe("runSeed", () => {
   test("authenticates, resolves the bench by slug, and starts seeding it", async () => {
     const { lines, log } = collector();
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -89,6 +106,8 @@ describe("runSeed", () => {
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
     const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -104,6 +123,20 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
         return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 404, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        return { status: 201, data: {} };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      )
+        return { status: 200, data: { data: [], nextCursor: null } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+        return { status: 200, data: { items: [] } };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,
@@ -120,12 +153,12 @@ describe("runSeed", () => {
         };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return {
           status: 201,
@@ -155,7 +188,7 @@ describe("runSeed", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
             messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },
@@ -266,6 +299,8 @@ describe("runSeed", () => {
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
     const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -281,6 +316,20 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
         return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 404, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        return { status: 201, data: {} };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      )
+        return { status: 200, data: { data: [], nextCursor: null } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
+        return { status: 200, data: { items: [] } };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,
@@ -297,12 +346,12 @@ describe("runSeed", () => {
         };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return { status: 200, data: [] };
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
         return {
           status: 201,
@@ -332,7 +381,7 @@ describe("runSeed", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
             messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },
@@ -439,6 +488,8 @@ describe("runSeed", () => {
 
   test("a missing bench points at workbench setup", async () => {
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")

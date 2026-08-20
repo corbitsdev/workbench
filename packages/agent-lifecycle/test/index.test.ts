@@ -7,7 +7,10 @@
 // contract under test, not the timer plumbing.
 import { afterEach, describe, expect, test } from "bun:test";
 import { getLogger } from "@intx/log";
-import { createAgentLifecycle } from "../src/index";
+import {
+  createAgentLifecycle,
+  IDLE_HIBERNATE_UNDEPLOY_REASON,
+} from "../src/index";
 
 const log = getLogger(["chat", "lifecycle", "test"]);
 
@@ -66,7 +69,7 @@ describe("createAgentLifecycle", () => {
     await waitForTicks(1);
 
     expect(undeployCalls).toEqual([
-      { address: "agent-1@t.test", reason: "idle" },
+      { address: "agent-1@t.test", reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
     ]);
   });
 
@@ -174,7 +177,7 @@ describe("createAgentLifecycle", () => {
     await new Promise((resolve) => setTimeout(resolve, 15));
     await waitForTicks(1);
     expect(undeployCalls).toEqual([
-      { address: "agent-1@t.test", reason: "idle" },
+      { address: "agent-1@t.test", reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
     ]);
   });
 

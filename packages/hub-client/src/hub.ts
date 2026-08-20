@@ -98,17 +98,60 @@ export type Session = {
   signedUp: boolean;
 };
 
+async function trySignIn(
+  api: ApiCall,
+  args: { email: string; password: string },
+): Promise<Session | { failedStatus: number }> {
+  const signIn = await api("POST", "/api/auth/sign-in/email", {
+    email: args.email,
+    password: args.password,
+  });
+  if (signIn.status === 200) {
+    const parsed = parseAs(AuthResponse, signIn.data, "sign-in response");
+    return {
+      cookies: signIn.cookies,
+      userId: parsed.user?.id ?? "",
+      signedUp: false,
+    };
+  }
+  return { failedStatus: signIn.status };
+}
+
 /**
- * Sign the administrator up, or sign in when the account already
- * exists. better-auth answers 200 on a fresh sign-up and 422 when the
- * address is already registered; anything else is a real fault and is
- * reported instead of being papered over by the sign-in fallback.
+ * Sign the administrator in — sign-in only, never sign-up. For callers
+ * that must never mint an account (e.g. the env-key auto-plant, which
+ * runs unattended at boot and must not self-provision the default
+ * admin credential on a virgin, open-signup database), this is the only
+ * safe entry point.
+ */
+export async function signIn(
+  api: ApiCall,
+  args: { email: string; password: string },
+): Promise<Session> {
+  const result = await trySignIn(api, args);
+  if (!("failedStatus" in result)) return result;
+  throw new CliError(
+    `sign-in failed for ${args.email} (status ${result.failedStatus})`,
+    "verify HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD match an existing admin account",
+  );
+}
+
+/**
+ * Sign the administrator in, or sign up when the account does not exist
+ * yet. Sign-in is tried first so `WORKBENCH_SIGNUP=closed` still works
+ * for an existing admin (the product gate only blocks self-serve
+ * registration). Fresh sign-up is allowed only when the hub is open;
+ * a closed hub with no matching account is reported with the env fix.
  */
 export async function authenticate(
   api: ApiCall,
   args: { email: string; password: string },
 ): Promise<Session> {
   const name = args.email.split("@")[0] ?? args.email;
+
+  const signInAttempt = await trySignIn(api, args);
+  if (!("failedStatus" in signInAttempt)) return signInAttempt;
+
   const signUp = await api("POST", "/api/auth/sign-up/email", {
     name,
     email: args.email,
@@ -122,27 +165,31 @@ export async function authenticate(
       signedUp: true,
     };
   }
-  if (signUp.status !== 422) {
-    throw new CliError(
-      `the hub rejected sign-up for ${args.email} with status ${signUp.status}: ${JSON.stringify(signUp.data)}`,
-      "check the hub logs for the underlying failure, fix it, then re-run the command",
-    );
-  }
 
-  const signIn = await api("POST", "/api/auth/sign-in/email", {
-    email: args.email,
-    password: args.password,
-  });
-  if (signIn.status !== 200) {
+  // better-auth answers 422 when the address is already registered —
+  // that means the password did not match on sign-in above.
+  if (signUp.status === 422) {
     throw new CliError(
-      `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signIn.status})`,
+      `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signInAttempt.failedStatus})`,
       "set HUB_ADMIN_PASSWORD to the password this account was created with, or use a fresh HUB_ADMIN_EMAIL, then re-run the command",
     );
   }
-  const parsed = parseAs(AuthResponse, signIn.data, "sign-in response");
-  return {
-    cookies: signIn.cookies,
-    userId: parsed.user?.id ?? "",
-    signedUp: false,
-  };
+
+  const closed =
+    signUp.status === 403 &&
+    signUp.data !== null &&
+    typeof signUp.data === "object" &&
+    "error" in signUp.data &&
+    (signUp.data as { error: unknown }).error === "signup_closed";
+  if (closed) {
+    throw new CliError(
+      `self-serve signup is closed and ${args.email} does not exist yet`,
+      "set WORKBENCH_SIGNUP=open in .env, restart the hub, re-run this command once to create the admin, then set WORKBENCH_SIGNUP=closed again if you want a closed deploy",
+    );
+  }
+
+  throw new CliError(
+    `the hub rejected sign-up for ${args.email} with status ${signUp.status}: ${JSON.stringify(signUp.data)}`,
+    "check the hub logs for the underlying failure, fix it, then re-run the command",
+  );
 }

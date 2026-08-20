@@ -7,6 +7,11 @@
 export type NotifyMailRef = {
   readonly kind: string;
   readonly id: string;
+  /** A human label for the ref, when the caller already has one to
+   * hand (e.g. an artifact's title) — optional, since most refs are
+   * navigational only (see `render.ts`'s own doc note) and a reader
+   * resolves a display label from the id itself. */
+  readonly label?: string;
 };
 
 export type NotifyInboxItem = {

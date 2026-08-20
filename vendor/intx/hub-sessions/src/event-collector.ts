@@ -8,7 +8,11 @@ import { eq } from "drizzle-orm";
 
 import { inferenceTurn, turnPart } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
-import type { InferenceEvent, ContentBlock } from "@intx/types/runtime";
+import type {
+  InferenceEvent,
+  ContentBlock,
+  TokenUsage,
+} from "@intx/types/runtime";
 import { type DB, parseTurnPartType } from "@intx/db";
 
 import { generateId } from "@intx/hub-common";
@@ -33,6 +37,17 @@ export type TurnFinalized = {
   toolErrors: { name: string; content: string }[];
 };
 
+// Forwarded on every `inference.usage` event so product-side consumers
+// (see @corbits/insights' createUsageSink) can persist tokens without the
+// collector's private turn-accumulation state. Deliberately as narrow as
+// `TokenUsage` + the turn/source identity needed to attribute it.
+export type UsageForwarded = {
+  turnId: string;
+  provider: string;
+  model: string;
+  usage: TokenUsage;
+};
+
 export type EventCollector = {
   onEvent(event: InferenceEvent): Promise<void>;
   abandon(): Promise<void>;
@@ -44,15 +59,16 @@ export type EventCollector = {
 export type EventCollectorConfig = {
   db: DB["db"];
   sessionId: string;
-  instanceId: string;
+  runId: string;
   tenantId: string;
   onTurnFinalized?: (turn: TurnFinalized) => void;
+  onUsage?: (usage: UsageForwarded) => void;
 };
 
 export function createEventCollector(
   config: EventCollectorConfig,
 ): EventCollector {
-  const { db, sessionId, instanceId, tenantId, onTurnFinalized } = config;
+  const { db, sessionId, runId, tenantId, onTurnFinalized, onUsage } = config;
 
   // Current inference turn being accumulated. A new turn is created on each
   // inference.start. Finalized on connector.reply, reactor.done,
@@ -63,6 +79,11 @@ export function createEventCollector(
   // after the turn commits but before the collector is removed.
   let lastTurnId: string | null = null;
   let ordinal = 0;
+  // Model of the currently open turn, stamped by beginTurn. Read by
+  // inference.usage forwarding to attribute tokens without re-deriving it
+  // from the event's own `source.model` (both agree; this is the turn's
+  // system of record).
+  let currentModel = "unknown";
   // Prevents double-finalization when reactor.done and abandon() race.
   let finalized = false;
   // Set when inference.error fires so connector.reply knows to persist its
@@ -103,6 +124,16 @@ export function createEventCollector(
       case "inference.done":
         await handleInferenceDone(event.data.turn.content);
         streamingText = "";
+        break;
+      case "inference.usage":
+        if (currentTurnId !== null && onUsage) {
+          onUsage({
+            turnId: currentTurnId,
+            provider: event.data.source.provider,
+            model: currentModel,
+            usage: event.data.usage,
+          });
+        }
         break;
       case "tool.done": {
         const callId = event.data.result.callId;
@@ -188,8 +219,9 @@ export function createEventCollector(
         }
         break;
       default:
-        // reactor.start, streaming deltas, usage, and other events are
-        // not persisted.
+        // reactor.start, streaming deltas, and other events are not
+        // persisted. inference.usage is handled above (forwarded, not
+        // persisted here — see UsageForwarded).
         break;
     }
   }
@@ -203,6 +235,7 @@ export function createEventCollector(
 
     currentTurnId = generateId("inferenceTurn");
     lastTurnId = currentTurnId;
+    currentModel = model;
     ordinal = 0;
     finalized = false;
     pendingError = false;
@@ -218,7 +251,7 @@ export function createEventCollector(
     await db.insert(inferenceTurn).values({
       id: currentTurnId,
       sessionId,
-      instanceId,
+      runId,
       tenantId,
       model,
       status: "running",

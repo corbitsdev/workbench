@@ -1,35 +1,15 @@
-// The Routines screen: named automations over workflow runs. Follows
-// runs-page.tsx / library-page.tsx's shape (pure `*Page` components fed
-// `APIQuery` props, a `*Route` container that resolves data). The active
-// bench comes from `useBench()` — the shell's one source of truth — never
-// a page-local `/api/me/principals` fetch that ignores the switcher.
-//
-// The create flow's trigger picker is workbench-specific composition
-// (`RoutineTrigger`'s exact shape, including the raw-cron escape hatch)
-// rather than `@corbits/react-ui`'s own `RecurrenceInput`: that
-// component's `Recurrence` type deliberately excludes cron and a
-// minutes unit (see its own doc comment), which a routine's trigger
-// contract requires. Everything else — Table, Card, Badge, Dialog,
-// Button, Input, Switch, RunNowButton — is reused as-is.
+// Routines: named automations over workflow runs.
+// Layout matches the shell mock — col2 search + simple list (name, when,
+// ON/OFF); detail is calm (steps, three recent runs, All runs & traces).
+// Creating and editing a routine happens in the canvas column's routine
+// panel now (CL-6125, see shell/routine-panel.tsx) — this page only lists
+// and links to it via `useOpenRoutineInCanvas`.
 import {
   Badge,
   Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
   EmptyState,
   formatRelativeTime,
-  Input,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-  PageShell,
+  RichEmptyState,
   RunNowButton,
   Switch,
   Table,
@@ -38,35 +18,48 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Clock, Plus } from "lucide-react";
+import type { Workbench } from "@corbits/chat-ui";
+import { listWorkbenches } from "@corbits/chat-ui";
+import { CopyButton, WebhookSecretPanel } from "@corbits/settings-ui";
+import { Clock, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { APIQuery } from "@corbits/api-query";
+import { QueryView } from "@corbits/api-query";
 
-import { RunsSchema, useAPIQuery } from "../api";
-import type { APIQuery, WorkflowRun } from "../api";
+import { useAPIQuery, RunsSchema } from "../api";
+import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
+import { workbenchPath } from "../workbench-path";
 import { tenantKeys } from "../query-client";
-
-import { QueryView } from "../query-view";
-import { approximateNextRun, cadenceLabel } from "../routine-trigger";
+import { cadenceLabel } from "../routine-trigger";
+import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
+import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import {
-  createRoutine,
   listRoutineRuns,
   listRoutines,
   listWorkflowDefinitions,
+  routineRunStartedToast,
   runRoutineNow,
   updateRoutine,
   useTenantQuery,
 } from "../routines-api";
 import type {
-  CreateRoutineInput,
   Routine,
   RoutineRun,
-  RoutineTrigger,
   WorkflowDefinitionSummary,
 } from "../routines-api";
+import {
+  getWebhookTrigger,
+  rotateWebhookTriggerSecret,
+  sampleWebhookPayload,
+  webhookTriggerUrl,
+} from "../webhook-triggers-api";
+import type { WebhookTrigger } from "../webhook-triggers-api";
 
 const ROUTINES_PATH_PREFIX = "/routines";
 
@@ -83,526 +76,451 @@ const RUN_STATUS_TONE: Record<string, BadgeTone> = {
   cancelled: "neutral",
 };
 
-function lastResultLabel(runs: readonly RoutineRun[]): string {
-  const [latest] = runs;
-  if (latest === undefined) return "Never run";
-  const status = latest.run?.status;
-  return typeof status === "string" ? status : "Started";
+/** One calm sentence under the routine name; deliver-to only when known. */
+function routineDetailSentence(
+  routine: Routine,
+  workbenches: readonly Workbench[],
+): string {
+  const when = cadenceLabel(routine.trigger);
+  const workbench = workbenches.find(
+    (c) => c.id === routine.deliveryWorkbenchId,
+  );
+  if (workbench !== undefined) {
+    return `${when}, delivers to ${workbench.title}.`;
+  }
+  return `${when}.`;
 }
 
-type TriggerKind = "manual" | "interval" | "daily" | "weekly" | "cron";
+/** Plain-language state for a routine the scheduler has stopped firing —
+ * `consecutiveFailures` at the moment it dead-lettered equals the
+ * threshold, so it's an honest count, not a guess. `null` for a
+ * healthy routine (never rendered). */
+function routinePausedMessage(routine: Routine): string | null {
+  if (routine.deadLetteredAt === null) return null;
+  return `Paused after ${routine.consecutiveFailures} failed attempt${
+    routine.consecutiveFailures === 1 ? "" : "s"
+  }.`;
+}
+
+/** The most recent recorded failure's own error text, for the honest
+ * "why" next to `routinePausedMessage`'s "that". `undefined` runs
+ * (still loading) and runs with no `error` are skipped. */
+function mostRecentRunError(runs: readonly RoutineRun[]): string | null {
+  const failed = runs.find(
+    (run) => run.error !== undefined && run.error !== null,
+  );
+  return failed?.error ?? null;
+}
+
+function draftedStepsFromInput(
+  input: Record<string, unknown>,
+): readonly { title: string; detail?: string }[] {
+  const raw = input["draftedSteps"];
+  if (!Array.isArray(raw)) return [];
+  const steps: { title: string; detail?: string }[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record["title"] !== "string") continue;
+    const step: { title: string; detail?: string } = {
+      title: record["title"],
+    };
+    if (typeof record["detail"] === "string") step.detail = record["detail"];
+    steps.push(step);
+  }
+  return steps;
+}
 
 /**
- * The create flow's trigger editor, over `RoutineTrigger` directly —
- * every field it renders is exactly one this shape carries, so a save
- * never needs a translation step.
+ * The routine detail view's webhook section: hook URL (built from the
+ * trigger id, matching `POST /api/webhooks/:triggerId`), status, and a
+ * "Rotate secret" action. Secret text only ever appears here right after
+ * a rotate — `GET .../webhook-triggers/:id` never returns it, so between
+ * rotates the panel shows the URL and payload sample with the secret row
+ * masked, exactly like a freshly-loaded page that has never seen it.
  */
-function TriggerPicker({
-  value,
-  onChange,
+export function WebhookTriggerPanel({
+  webhookTrigger,
+  onRotate,
 }: {
-  readonly value: RoutineTrigger;
-  readonly onChange: (next: RoutineTrigger) => void;
+  readonly webhookTrigger: APIQuery<WebhookTrigger>;
+  readonly onRotate: () => Promise<{ secret: string }>;
 }) {
-  const kind: TriggerKind = value === null ? "manual" : value.kind;
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
 
-  const setKind = (next: TriggerKind) => {
-    switch (next) {
-      case "manual":
-        onChange(null);
-        return;
-      case "interval":
-        onChange({ kind: "interval", unit: "minutes", every: 15 });
-        return;
-      case "daily":
-        onChange({ kind: "daily", hour: 9, minute: 0 });
-        return;
-      case "weekly":
-        onChange({ kind: "weekly", dayOfWeek: 1, hour: 9, minute: 0 });
-        return;
-      case "cron":
-        onChange({ kind: "cron", expression: "0 9 * * *" });
-    }
-  };
+  const triggerId =
+    webhookTrigger.kind === "ready" ? webhookTrigger.data.id : null;
+  useEffect(() => {
+    setRotatedSecret(null);
+    setRotateError(null);
+  }, [triggerId]);
 
   return (
-    <div className="flex-col-gap">
-      <span id="routine-cadence-label" className="form-label">
-        Cadence
-      </span>
-      <Menu>
-        <MenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            id="routine-cadence"
-            aria-labelledby="routine-cadence-label"
-          >
-            {
-              {
-                manual: "Manual (run only when triggered)",
-                interval: "Every N minutes/hours",
-                daily: "Daily",
-                weekly: "Weekly",
-                cron: "Raw cron expression",
-              }[kind]
-            }
-          </Button>
-        </MenuTrigger>
-        <MenuContent>
-          {(
-            [
-              ["manual", "Manual (run only when triggered)"],
-              ["interval", "Every N minutes/hours"],
-              ["daily", "Daily"],
-              ["weekly", "Weekly"],
-              ["cron", "Raw cron expression"],
-            ] as const
-          ).map(([value, label]) => (
-            <MenuItem key={value} onSelect={() => setKind(value)}>
-              {label}
-            </MenuItem>
-          ))}
-        </MenuContent>
-      </Menu>
-
-      {value !== null && value.kind === "interval" ? (
-        <div className="form-row">
-          <span>Every</span>
-          <Input
-            type="number"
-            min={1}
-            value={value.every}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                every: Math.max(1, Math.trunc(event.target.valueAsNumber) || 1),
-              })
-            }
-          />
-          <Menu>
-            <MenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                {value.unit}
-              </Button>
-            </MenuTrigger>
-            <MenuContent>
-              <MenuItem
-                onSelect={() => onChange({ ...value, unit: "minutes" })}
-              >
-                minutes
-              </MenuItem>
-              <MenuItem onSelect={() => onChange({ ...value, unit: "hours" })}>
-                hours
-              </MenuItem>
-            </MenuContent>
-          </Menu>
-        </div>
-      ) : null}
-
-      {value !== null && (value.kind === "daily" || value.kind === "weekly") ? (
-        <div className="form-row">
-          {value.kind === "weekly" ? (
-            <Menu>
-              <MenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  {
-                    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                      value.dayOfWeek
-                    ]
-                  }
-                </Button>
-              </MenuTrigger>
-              <MenuContent>
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                  (label, index) => (
-                    <MenuItem
-                      key={label}
-                      onSelect={() => onChange({ ...value, dayOfWeek: index })}
-                    >
-                      {label}
-                    </MenuItem>
-                  ),
-                )}
-              </MenuContent>
-            </Menu>
-          ) : null}
-          <span>At</span>
-          <Input
-            type="time"
-            value={`${value.hour.toString().padStart(2, "0")}:${value.minute.toString().padStart(2, "0")}`}
-            onChange={(event) => {
-              const [hour, minute] = event.target.value.split(":").map(Number);
-              onChange({
-                ...value,
-                hour: hour ?? 0,
-                minute: minute ?? 0,
-              });
-            }}
-          />
-          <span className="form-hint">UTC</span>
-        </div>
-      ) : null}
-
-      {value !== null && value.kind === "cron" ? (
-        <Input
-          value={value.expression}
-          placeholder="0 9 * * *"
-          onChange={(event) =>
-            onChange({ kind: "cron", expression: event.target.value })
-          }
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function CreateRoutineDialog({
-  definitions,
-  onCreate,
-  open: openProp,
-  onOpenChange,
-}: {
-  readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
-  readonly open?: boolean;
-  readonly onOpenChange?: (open: boolean) => void;
-}) {
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
-  const open = openProp ?? uncontrolledOpen;
-  const setOpen = onOpenChange ?? setUncontrolledOpen;
-  const [name, setName] = useState("");
-  const [definitionId, setDefinitionId] = useState(definitions[0]?.id ?? "");
-  const [runMode, setRunMode] = useState<"once" | "schedule">("once");
-  const [trigger, setTrigger] = useState<RoutineTrigger>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const complete = name.trim().length > 0 && definitionId !== "";
-
-  const reset = () => {
-    setName("");
-    setDefinitionId(definitions[0]?.id ?? "");
-    setRunMode("once");
-    setTrigger(null);
-    setError(null);
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) reset();
-      }}
-    >
-      {openProp === undefined ? (
-        <DialogTrigger asChild>
-          <Button size="sm">
-            <Plus /> New routine
-          </Button>
-        </DialogTrigger>
-      ) : null}
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New routine</DialogTitle>
-          <DialogDescription>
-            Pick a workflow, then run it once or put it on a schedule.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex-col-gap"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!complete) return;
-            setBusy(true);
-            setError(null);
-            void onCreate({
-              name: name.trim(),
-              definitionId,
-              scope: "bench",
-              trigger: runMode === "once" ? null : trigger,
-            })
-              .then(() => {
-                setOpen(false);
-                reset();
-              })
+    <section aria-label="Webhook trigger">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+          Webhook
+        </h3>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={rotating || triggerId === null}
+          onClick={() => {
+            setRotating(true);
+            setRotateError(null);
+            void onRotate()
+              .then(({ secret }) => setRotatedSecret(secret))
               .catch((cause: unknown) => {
-                setError(
+                setRotateError(
                   cause instanceof Error ? cause.message : String(cause),
                 );
               })
-              .finally(() => setBusy(false));
+              .finally(() => setRotating(false));
           }}
         >
-          <div className="flex-col-gap">
-            <label htmlFor="routine-name" className="form-label">
-              Name
-            </label>
-            <Input
-              id="routine-name"
-              value={name}
-              placeholder="Morning brief"
-              required
-              disabled={busy}
-              onChange={(event) => setName(event.target.value)}
-            />
+          <RotateCw /> {rotating ? "Rotating…" : "Rotate secret"}
+        </Button>
+      </div>
+      {rotateError !== null ? (
+        <p className="mb-2 text-xs text-[var(--ui-danger)]" role="alert">
+          {rotateError}
+        </p>
+      ) : null}
+      {webhookTrigger.kind !== "ready" || triggerId === null ? (
+        <p className="text-sm text-[var(--ui-fg-muted)]">
+          Loading webhook details…
+        </p>
+      ) : rotatedSecret !== null ? (
+        <WebhookSecretPanel
+          url={webhookTriggerUrl(triggerId)}
+          secret={rotatedSecret}
+          samplePayload={sampleWebhookPayload()}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Hook URL</span>
+            <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
+              <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
+                {webhookTriggerUrl(triggerId)}
+              </code>
+              <CopyButton
+                value={webhookTriggerUrl(triggerId)}
+                label="Copy hook URL"
+              />
+            </div>
           </div>
-
-          <div className="flex-col-gap">
-            <span id="routine-definition-label" className="form-label">
-              Workflow
-            </span>
-            {definitions.length === 0 ? (
-              <p className="form-hint" role="status">
-                No automatable workflows on this bench yet.
-              </p>
-            ) : (
-              <Menu>
-                <MenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    id="routine-definition"
-                    aria-labelledby="routine-definition-label"
-                    disabled={busy}
-                  >
-                    {definitions.find((d) => d.id === definitionId)?.name ??
-                      "Choose a workflow"}
-                  </Button>
-                </MenuTrigger>
-                <MenuContent>
-                  {definitions.map((definition) => (
-                    <MenuItem
-                      key={definition.id}
-                      onSelect={() => setDefinitionId(definition.id)}
-                    >
-                      {definition.name}
-                    </MenuItem>
-                  ))}
-                </MenuContent>
-              </Menu>
-            )}
-          </div>
-
-          <div className="flex-col-gap">
-            <span id="routine-run-mode-label" className="form-label">
-              When
-            </span>
-            <Menu>
-              <MenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  id="routine-run-mode"
-                  aria-labelledby="routine-run-mode-label"
-                  disabled={busy}
-                >
-                  {runMode === "once" ? "Run once, right now" : "On a schedule"}
-                </Button>
-              </MenuTrigger>
-              <MenuContent>
-                <MenuItem onSelect={() => setRunMode("once")}>
-                  Run once, right now
-                </MenuItem>
-                <MenuItem onSelect={() => setRunMode("schedule")}>
-                  On a schedule
-                </MenuItem>
-              </MenuContent>
-            </Menu>
-          </div>
-
-          {runMode === "schedule" ? (
-            <TriggerPicker value={trigger} onChange={setTrigger} />
-          ) : null}
-
-          {error === null ? null : (
-            <p role="alert" className="form-error">
-              {error}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Signing secret</span>
+            <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+              Hidden — shown only once, right after creation or a rotate. Rotate
+              to issue (and reveal) a new one; the old secret stops verifying
+              immediately.
             </p>
-          )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Example payload</span>
+            <pre className="overflow-x-auto rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-2 font-mono text-xs whitespace-pre-wrap text-[var(--ui-fg-muted)]">
+              {sampleWebhookPayload()}
+            </pre>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="sm" disabled={busy}>
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" size="sm" disabled={busy || !complete}>
-              {busy ? "Creating…" : "Create routine"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+/**
+ * Recent-run rows deep-link to the workbench the routine delivers to — a
+ * routine has one `deliveryWorkbenchId`, not a per-run one, so every row in
+ * a given table shares the same destination. Rows render as plain data
+ * when there is nowhere to deep-link (`deliveryWorkbenchId` absent or no
+ * `onOpenWorkbench` handler wired).
+ */
+export function RunsTable({
+  runs,
+  now,
+  emptyTitle,
+  emptyDescription,
+  deliveryWorkbenchId = null,
+  onOpenWorkbench,
+}: {
+  readonly runs: readonly RoutineRun[];
+  readonly now: number;
+  readonly emptyTitle: string;
+  readonly emptyDescription: string;
+  readonly deliveryWorkbenchId?: string | null;
+  readonly onOpenWorkbench?: (workbenchId: string) => void;
+}) {
+  if (runs.length === 0) {
+    return (
+      <EmptyState
+        icon={<Clock />}
+        title={emptyTitle}
+        description={emptyDescription}
+      />
+    );
+  }
+  const workbenchId =
+    deliveryWorkbenchId !== null && onOpenWorkbench !== undefined
+      ? deliveryWorkbenchId
+      : null;
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Triggered by</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>When</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {runs.map((run) => {
+          const status = run.run?.status;
+          const rowProps =
+            workbenchId !== null
+              ? {
+                  role: "link" as const,
+                  tabIndex: 0,
+                  className: "routine-run-row-linked",
+                  onClick: () => onOpenWorkbench?.(workbenchId),
+                  onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onOpenWorkbench?.(workbenchId);
+                  },
+                }
+              : {};
+          const hasError = run.error !== undefined && run.error !== null;
+          return (
+            <TableRow key={run.runId} {...rowProps}>
+              <TableCell>
+                <Badge tone={hasError ? "danger" : "neutral"}>
+                  {run.triggeredBy === "schedule-failed"
+                    ? "Failed to start"
+                    : run.triggeredBy}
+                </Badge>
+                {hasError ? (
+                  <p className="mt-1 max-w-xs text-xs text-[var(--ui-fg-muted)]">
+                    {run.error}
+                  </p>
+                ) : null}
+              </TableCell>
+              <TableCell>
+                {typeof status === "string" ? (
+                  <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>
+                    {status}
+                  </Badge>
+                ) : (
+                  "—"
+                )}
+              </TableCell>
+              <TableCell>{formatRelativeTime(run.createdAt, now)}</TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
 export function RoutinesListPage({
   routines,
   runHistories,
-  liveRuns,
+  liveRuns: _liveRuns,
   now = Date.now(),
   definitions,
-  onOpen,
-  onCreate,
+  workbenches,
+  selectedId,
+  onSelect: _onSelect,
+  webhookTrigger,
+  onRotateWebhookSecret,
   onToggleEnabled,
   onRunNow,
+  onOpenRuns,
+  onOpenWorkbench,
 }: {
   readonly routines: APIQuery<readonly Routine[]>;
-  /** Each routine's own run history, keyed by routine id — used for "last result". */
   readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
   readonly liveRuns: APIQuery<readonly WorkflowRun[]>;
   readonly now?: number;
   readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly onOpen: (routineId: string) => void;
-  readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
+  readonly workbenches: readonly Workbench[];
+  readonly selectedId: string | null;
+  readonly onSelect: (routineId: string | null) => void;
+  readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
+  readonly onRotateWebhookSecret: () => Promise<{ secret: string }>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
+  readonly onOpenRuns: () => void;
+  readonly onOpenWorkbench: (workbenchId: string) => void;
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
+  const openRoutine = useOpenRoutineInCanvas();
 
-  useEffect(() => {
-    const onCreateEvent = () => setCreateOpen(true);
-    window.addEventListener("workbench:routines:create", onCreateEvent);
-    return () =>
-      window.removeEventListener("workbench:routines:create", onCreateEvent);
-  }, []);
+  const selected =
+    routines.kind === "ready" && selectedId !== null
+      ? (routines.data.find((r) => r.id === selectedId) ?? null)
+      : null;
+  const selectedRuns =
+    selectedId !== null ? (runHistories.get(selectedId) ?? []) : [];
+  const recentRuns = selectedRuns.slice(0, 3);
+  const steps = selected !== null ? draftedStepsFromInput(selected.input) : [];
 
   return (
-    <>
-      <CreateRoutineDialog
-        definitions={definitions}
-        onCreate={onCreate}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={selected === null ? "Routines" : selected.name}
+        subtitle={
+          selected === null
+            ? routines.kind === "ready"
+              ? `${routines.data.length} automations`
+              : null
+            : routineDetailSentence(selected, workbenches)
+        }
+        actions={
+          selected === null ? (
+            <Button size="sm" onClick={() => openRoutine({ routineId: null })}>
+              <Plus /> New routine
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openRoutine({ routineId: null })}
+              >
+                New routine
+              </Button>
+              <Switch
+                checked={selected.enabled}
+                label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
+                onCheckedChange={(enabled) =>
+                  onToggleEnabled(selected, enabled)
+                }
+              />
+              <RunNowButton
+                variant="outline"
+                size="sm"
+                onRun={() => onRunNow(selected)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openRoutine({ routineId: selected.id })}
+              >
+                Edit
+              </Button>
+            </>
+          )
+        }
       />
-      <PageShell className="page-fill">
-        <QueryView query={routines} label="your routines">
-          {(items) =>
-            items.length === 0 ? (
-              <EmptyState
+      {selected !== null && routinePausedMessage(selected) !== null ? (
+        <div
+          className="stage-content mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+          role="alert"
+        >
+          <p className="m-0 font-medium text-destructive">
+            {routinePausedMessage(selected)}
+          </p>
+          {mostRecentRunError(recentRuns) !== null ? (
+            <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+              {mostRecentRunError(recentRuns)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* List lives in shell col2; stage is detail only. */}
+      <div className="stage-content flex min-h-0 flex-1 flex-col">
+        {selected === null ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            {routines.kind === "ready" && routines.data.length === 0 ? (
+              <RichEmptyState
                 icon={<Clock />}
                 title="No routines yet"
-                description="Create a routine to run a workflow on a schedule or fire it manually whenever you need it."
+                description="Create one from a workflow or a prompt."
               />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Cadence</TableHead>
-                    <TableHead>Next run</TableHead>
-                    <TableHead>Last result</TableHead>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Enabled</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((routine) => {
-                    const nextRun = routine.enabled
-                      ? approximateNextRun(routine.trigger, new Date(now))
-                      : null;
-                    return (
-                      <TableRow key={routine.id}>
-                        <TableCell>
-                          <button
-                            type="button"
-                            className="link-button"
-                            onClick={() => onOpen(routine.id)}
-                          >
-                            {routine.name}
-                          </button>
-                        </TableCell>
-                        <TableCell>{cadenceLabel(routine.trigger)}</TableCell>
-                        <TableCell>
-                          {nextRun === null
-                            ? "—"
-                            : formatRelativeTime(nextRun.toISOString(), now)}
-                        </TableCell>
-                        <TableCell>
-                          {lastResultLabel(runHistories.get(routine.id) ?? [])}
-                        </TableCell>
-                        <TableCell>
-                          <Badge tone="neutral">{routine.scope}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={routine.enabled}
-                            label={`${routine.enabled ? "Pause" : "Resume"} ${routine.name}`}
-                            onCheckedChange={(enabled) =>
-                              onToggleEnabled(routine, enabled)
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <RunNowButton
-                            variant="outline"
-                            size="sm"
-                            onRun={() => onRunNow(routine)}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryView>
-
-        <section aria-label="Live runs" className="panel-stack">
-          <h3 className="panel-band-heading">Live runs</h3>
-          <p className="panel-muted">
-            Runs currently executing that a routine started.
-          </p>
-          <QueryView query={liveRuns} label="live routine runs">
-            {(runs) =>
-              runs.length === 0 ? (
-                <EmptyState
-                  icon={<Clock />}
-                  title="No routine runs in flight"
-                  description="When a routine fires, its run appears here while it executes."
-                />
+              <EmptyState
+                icon={<Clock />}
+                title="Select a routine"
+                description="Pick a routine from the sidebar to see its steps and recent runs."
+              />
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <section className="border-b border-[var(--ui-border)] px-4 py-3">
+              <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                Steps
+              </h3>
+              {steps.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
+                  Runs workflow{" "}
+                  <span className="font-medium text-[var(--ui-fg)]">
+                    {definitions.find((d) => d.id === selected.definitionId)
+                      ?.name ?? "selected agent"}
+                  </span>
+                  .
+                </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Definition</TableHead>
-                      <TableHead>Bench</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Started</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {runs.map((run) => (
-                      <TableRow key={run.id}>
-                        <TableCell>{run.definitionName}</TableCell>
-                        <TableCell>{run.tenantName}</TableCell>
-                        <TableCell>
-                          <Badge
-                            tone={RUN_STATUS_TONE[run.status] ?? "neutral"}
-                          >
-                            {run.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {formatRelativeTime(run.createdAt, now)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )
-            }
-          </QueryView>
-        </section>
-      </PageShell>
-    </>
+                <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
+                  {steps.map((step, index) => (
+                    <li key={`${step.title}-${index}`}>
+                      <span className="font-medium">{step.title}</span>
+                      {step.detail !== undefined ? (
+                        <span className="text-[var(--ui-fg-muted)]">
+                          {" — "}
+                          {step.detail}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            {selected.trigger !== null &&
+            selected.trigger.kind === "webhook" ? (
+              <section className="border-b border-[var(--ui-border)] px-4 py-3">
+                <WebhookTriggerPanel
+                  webhookTrigger={webhookTrigger ?? { kind: "loading" }}
+                  onRotate={onRotateWebhookSecret}
+                />
+              </section>
+            ) : null}
+
+            <section className="px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                  Recent runs
+                </h3>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onOpenRuns}
+                >
+                  All runs & traces →
+                </Button>
+              </div>
+              <RunsTable
+                runs={recentRuns}
+                now={now}
+                emptyTitle="No runs yet"
+                emptyDescription="This routine has not fired yet — manually or on a schedule."
+                deliveryWorkbenchId={selected.deliveryWorkbenchId}
+                onOpenWorkbench={onOpenWorkbench}
+              />
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -611,105 +529,185 @@ export function RoutineDetailPage({
   runs,
   onBack,
   now = Date.now(),
+  definitions = [],
+  workbenches = [],
+  webhookTrigger = null,
+  onRotateWebhookSecret,
+  onOpenRuns,
+  onOpenWorkbench,
 }: {
   readonly routine: APIQuery<Routine>;
   readonly runs: APIQuery<readonly RoutineRun[]>;
   readonly onBack: () => void;
   readonly now?: number;
+  readonly definitions?: readonly WorkflowDefinitionSummary[];
+  readonly workbenches?: readonly Workbench[];
+  readonly webhookTrigger?: APIQuery<WebhookTrigger> | null;
+  readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
+  readonly onOpenRuns: () => void;
+  readonly onOpenWorkbench: (workbenchId: string) => void;
 }) {
+  const openRoutine = useOpenRoutineInCanvas();
+  const deliveryWorkbenchId =
+    routine.kind === "ready" ? routine.data.deliveryWorkbenchId : null;
   return (
-    <>
-      <div className="page-toolbar">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          Back to routines
-        </Button>
-        <h2 className="panel-page-title">
-          {routine.kind === "ready" ? routine.data.name : "Routine"}
-        </h2>
-      </div>
-      <PageShell width="prose" className="page-fill">
-        <QueryView query={routine} label="this routine">
-          {(data) => (
-            <dl className="detail-list">
-              <dt>Cadence</dt>
-              <dd>{cadenceLabel(data.trigger)}</dd>
-              <dt>Scope</dt>
-              <dd>
-                <Badge tone="neutral">{data.scope}</Badge>
-              </dd>
-              <dt>Status</dt>
-              <dd>
-                <Badge tone={data.enabled ? "success" : "neutral"}>
-                  {data.enabled ? "enabled" : "paused"}
-                </Badge>
-              </dd>
-            </dl>
-          )}
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={
+          <StageCrumbs
+            crumbs={[
+              { label: "Routines", onSelect: onBack },
+              {
+                label: routine.kind === "ready" ? routine.data.name : "Routine",
+              },
+            ]}
+          />
+        }
+        actions={
+          routine.kind === "ready" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                openRoutine({
+                  routineId: routine.kind === "ready" ? routine.data.id : null,
+                })
+              }
+            >
+              Edit
+            </Button>
+          ) : null
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <QueryView query={routine} label="this routine" skeleton="detail">
+          {(data) => {
+            const steps = draftedStepsFromInput(data.input);
+            return (
+              <div className="flex flex-col gap-4">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                  <dt className="text-[var(--ui-fg-muted)]">Cadence</dt>
+                  <dd>{cadenceLabel(data.trigger)}</dd>
+                  <dt className="text-[var(--ui-fg-muted)]">Status</dt>
+                  <dd>
+                    <Badge tone={data.enabled ? "success" : "neutral"}>
+                      {data.enabled ? "On" : "Off"}
+                    </Badge>
+                  </dd>
+                  {data.deliveryWorkbenchId !== null ? (
+                    <>
+                      <dt className="text-[var(--ui-fg-muted)]">Delivers to</dt>
+                      <dd>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-0 font-normal"
+                          onClick={() =>
+                            onOpenWorkbench(data.deliveryWorkbenchId as string)
+                          }
+                        >
+                          {workbenches.find(
+                            (c) => c.id === data.deliveryWorkbenchId,
+                          )?.title ?? "Open workbench"}
+                        </Button>
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+                {routinePausedMessage(data) !== null ? (
+                  <div
+                    className="flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+                    role="alert"
+                  >
+                    <p className="m-0 font-medium text-destructive">
+                      {routinePausedMessage(data)}
+                    </p>
+                    {runs.kind === "ready" &&
+                    mostRecentRunError(runs.data) !== null ? (
+                      <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+                        {mostRecentRunError(runs.data)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                <section>
+                  <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                    Steps
+                  </h3>
+                  {steps.length === 0 ? (
+                    <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
+                      Runs workflow{" "}
+                      {definitions.find((d) => d.id === data.definitionId)
+                        ?.name ?? "selected agent"}
+                      .
+                    </p>
+                  ) : (
+                    <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
+                      {steps.map((step, index) => (
+                        <li key={`${step.title}-${index}`}>
+                          <span className="font-medium">{step.title}</span>
+                          {step.detail !== undefined ? (
+                            <span className="text-[var(--ui-fg-muted)]">
+                              {" — "}
+                              {step.detail}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+                {data.trigger !== null &&
+                data.trigger.kind === "webhook" &&
+                onRotateWebhookSecret !== undefined ? (
+                  <WebhookTriggerPanel
+                    webhookTrigger={webhookTrigger ?? { kind: "loading" }}
+                    onRotate={onRotateWebhookSecret}
+                  />
+                ) : null}
+              </div>
+            );
+          }}
         </QueryView>
 
-        <section aria-label="Run history" className="panel-stack">
-          <h3 className="panel-band-heading">Run history</h3>
-          <p className="panel-muted">Every time this routine fired.</p>
-          <QueryView query={runs} label="this routine's run history">
-            {(items) =>
-              items.length === 0 ? (
-                <EmptyState
-                  icon={<Clock />}
-                  title="No runs yet"
-                  description="This routine has not fired yet — manually or on a schedule."
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Triggered by</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>When</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((run) => {
-                      const status = run.run?.status;
-                      return (
-                        <TableRow key={run.runId}>
-                          <TableCell>
-                            <Badge tone="neutral">{run.triggeredBy}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            {typeof status === "string" ? (
-                              <Badge
-                                tone={RUN_STATUS_TONE[status] ?? "neutral"}
-                              >
-                                {status}
-                              </Badge>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {formatRelativeTime(run.createdAt, now)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )
-            }
+        <section className="mt-6" aria-label="Run history">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+              Recent runs
+            </h3>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenRuns}
+            >
+              All runs & traces →
+            </Button>
+          </div>
+          <QueryView
+            query={runs}
+            label="this routine's run history"
+            skeleton="rows"
+          >
+            {(items) => (
+              <RunsTable
+                runs={items.slice(0, 3)}
+                now={now}
+                emptyTitle="No runs yet"
+                emptyDescription="This routine has not fired yet — manually or on a schedule."
+                deliveryWorkbenchId={deliveryWorkbenchId}
+                onOpenWorkbench={onOpenWorkbench}
+              />
+            )}
           </QueryView>
         </section>
-      </PageShell>
-    </>
+      </div>
+    </div>
   );
 }
 
-/**
- * The union of every routine's own run ids, across the run histories
- * already fetched for "last result" — the correlation that keeps the
- * live-runs section to routine-launched runs only, never a channel
- * host's or another system run leaking in from the same cross-tenant
- * `/api/me/workflows/runs` listing `runs-page.tsx` reads.
- */
 function routineRunIds(
   runHistories: ReadonlyMap<string, readonly RoutineRun[]>,
 ): ReadonlySet<string> {
@@ -727,8 +725,6 @@ export function RoutinesRoute({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  // BenchProvider owns the active tenant. Never re-fetch principals and take
-  // memberships[0] — that ignores the shell's bench switcher.
   const { selectedTenantId } = useBench();
   const queryClient = useQueryClient();
   const allRuns = useAPIQuery("/api/me/workflows/runs", RunsSchema);
@@ -760,6 +756,16 @@ export function RoutinesRoute({
   );
   const definitions =
     definitionsQuery.kind === "ready" ? definitionsQuery.data : [];
+
+  const workbenchesQuery = useTenantQuery(
+    tenantId === null
+      ? tenantKeys.workbenches("none", "workbench")
+      : tenantKeys.workbenches(tenantId, "workbench"),
+    tenantId !== null,
+    () => listWorkbenches(tenantId ?? "", "workbench"),
+  );
+  const workbenches =
+    workbenchesQuery.kind === "ready" ? workbenchesQuery.data : [];
 
   const routineIds =
     routines.kind === "ready" ? routines.data.map((r) => r.id) : [];
@@ -795,8 +801,20 @@ export function RoutinesRoute({
 
   const openRoutineId = routineIdFromPath(path);
 
-  // Client-side selector over the already-loaded list — not a server fetch.
-  // A separate useQuery would race the list load and stick on "not found".
+  // Mock master-detail: bare /routines with a non-empty list opens the first.
+  useEffect(() => {
+    if (openRoutineId !== null) return;
+    if (routines.kind !== "ready" || routines.data.length === 0) return;
+    const first = routines.data[0];
+    if (first === undefined) return;
+    navigate(`${ROUTINES_PATH_PREFIX}/${encodeURIComponent(first.id)}`);
+  }, [openRoutineId, routines, navigate]);
+
+  // Mobile full-page detail when deep-linked; desktop uses the split pane.
+  const isNarrow =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches;
+
   const detailRoutine: APIQuery<Routine> = useMemo(() => {
     if (openRoutineId === null || tenantId === null) {
       return { kind: "loading" };
@@ -805,7 +823,11 @@ export function RoutinesRoute({
     if (routines.kind !== "ready") return routines;
     const found = routines.data.find((r) => r.id === openRoutineId);
     if (found === undefined) {
-      return { kind: "error", message: "Routine not found" };
+      return {
+        kind: "error",
+        message: "Routine not found",
+        retry: invalidateRoutines,
+      };
     }
     return { kind: "ready", data: found };
   }, [openRoutineId, tenantId, routines]);
@@ -818,12 +840,63 @@ export function RoutinesRoute({
     () => listRoutineRuns(tenantId ?? "", openRoutineId ?? ""),
   );
 
-  if (openRoutineId !== null) {
+  // Fetched once per selected routine, not per render of the webhook panel:
+  // `GET .../webhook-triggers/:id` never returns the secret (see
+  // webhook-triggers-api.ts), so this only ever supplies the URL/status
+  // side of the panel — the secret comes from create/rotate responses,
+  // held in the panel's own local state.
+  const selectedWebhookTriggerId =
+    detailRoutine.kind === "ready" &&
+    detailRoutine.data.trigger !== null &&
+    detailRoutine.data.trigger.kind === "webhook"
+      ? detailRoutine.data.trigger.webhookTriggerId
+      : null;
+  const webhookTriggerQuery = useTenantQuery<WebhookTrigger>(
+    tenantId === null || selectedWebhookTriggerId === null
+      ? (["tenant", "none", "webhook-trigger", "none"] as const)
+      : ([
+          "tenant",
+          tenantId,
+          "webhook-trigger",
+          selectedWebhookTriggerId,
+        ] as const),
+    tenantId !== null && selectedWebhookTriggerId !== null,
+    () => getWebhookTrigger(tenantId ?? "", selectedWebhookTriggerId ?? ""),
+  );
+
+  const onRotateWebhookSecret = async () => {
+    if (tenantId === null || selectedWebhookTriggerId === null) {
+      throw new Error("No webhook trigger to rotate");
+    }
+    const rotated = await rotateWebhookTriggerSecret(
+      tenantId,
+      selectedWebhookTriggerId,
+    );
+    void queryClient.invalidateQueries({
+      queryKey: [
+        "tenant",
+        tenantId,
+        "webhook-trigger",
+        selectedWebhookTriggerId,
+      ],
+    });
+    return { secret: rotated.secret };
+  };
+
+  if (openRoutineId !== null && isNarrow) {
     return (
       <RoutineDetailPage
         routine={detailRoutine}
         runs={detailRuns}
+        definitions={definitions}
+        workbenches={workbenches}
+        webhookTrigger={
+          selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
+        }
+        onRotateWebhookSecret={onRotateWebhookSecret}
         onBack={() => navigate(ROUTINES_PATH_PREFIX)}
+        onOpenRuns={() => navigate("/insights/runs")}
+        onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
       />
     );
   }
@@ -838,15 +911,19 @@ export function RoutinesRoute({
       runHistories={runHistories}
       liveRuns={liveRuns}
       definitions={definitions}
-      onOpen={(id) =>
-        navigate(`${ROUTINES_PATH_PREFIX}/${encodeURIComponent(id)}`)
+      workbenches={workbenches}
+      selectedId={openRoutineId}
+      onSelect={(id) =>
+        navigate(
+          id === null
+            ? ROUTINES_PATH_PREFIX
+            : `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(id)}`,
+        )
       }
-      onCreate={async (input) => {
-        if (tenantId === null)
-          throw new Error("No bench to create this in yet");
-        await createRoutine(tenantId, input);
-        invalidateRoutines();
-      }}
+      webhookTrigger={
+        selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
+      }
+      onRotateWebhookSecret={onRotateWebhookSecret}
       onToggleEnabled={(routine, enabled) => {
         if (tenantId === null) return;
         void updateRoutine(tenantId, routine.id, { enabled }).then(
@@ -854,15 +931,14 @@ export function RoutinesRoute({
         );
       }}
       onRunNow={async (routine) => {
-        if (tenantId === null) throw new Error("No bench to run this in yet");
+        if (tenantId === null)
+          throw new Error("No workbench to run this on yet");
         await runRoutineNow(tenantId, routine.id);
-        void queryClient.invalidateQueries({
-          queryKey: tenantKeys.routineRuns(tenantId, routine.id),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: tenantKeys.routineRunHistories(tenantId),
-        });
+        invalidateRoutines();
+        toast(routineRunStartedToast(routine.name));
       }}
+      onOpenRuns={() => navigate("/insights/runs")}
+      onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
     />
   );
 }

@@ -7,15 +7,15 @@
 // The path proven: database setup (chat migrations apply) → hub boot
 // → sidecar boot → two sign-ups in one tenant (an invited principal
 // activated by the owner) → an inference catalog chain seeded with a
-// placeholder key → a channel launched (the anchor instance boots
+// placeholder key → a workbench launched (the anchor instance boots
 // in-process, the go/no-go test) → both users posting messages and
 // reading back the converged, decoded timeline with sender identity →
 // a second message proving the anchor keeps accepting mail with no
 // relaunch → a settings patch that both updates the record and
 // appends an audit event to the timeline → independent per-user
-// read-state cursors → a second channel's address mentioned in the
+// read-state cursors → a second workbench's address mentioned in the
 // first, fanning a copy into the mentioned run's own mailbox → the
-// channel kind filter.
+// workbench kind filter.
 //
 // Structured as one shared-boot stack (`beforeAll`) with a separate
 // `test` per capability, rather than one long test: a real defect
@@ -27,12 +27,9 @@
 // its own sibling `<database>_e2e` database, failures name the
 // capability that broke, and teardown stops every spawned process.
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { beforeAll, describe, expect, test } from "bun:test";
 
-import { formatAgentAddress } from "../../vendor/intx/types/src/index.ts";
+import { formatRunAddress } from "@intx/types";
 import {
   createHubAPI,
   seedCatalog,
@@ -46,6 +43,7 @@ import {
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -103,21 +101,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
   );
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 type SignedUpUser = { userId: string; email: string; cookies: string[] };
 
@@ -161,7 +145,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   let user2: SignedUpUser;
   let tenantId: string;
   let domain: string;
-  let channelId: string;
+  let workbenchId: string;
+  let chatId: string;
 
   beforeAll(async () => {
     const url = databaseUrl;
@@ -264,7 +249,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     await plantGrant(principal2Id, "workflow-run:*", "read");
     await plantGrant(principal2Id, "workflow-run:*", "write");
 
-    // A channel host's folded launch pins a real inference source
+    // A workbench host's folded launch pins a real inference source
     // chain against the tenant catalog before it will launch at all,
     // even though it never performs inference — the placeholder key
     // is never used to call a model.
@@ -328,7 +313,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     });
 
     // Retries while the hub still answers 502 (the sidecar's dial-in
-    // may not have completed yet), matching `createChannel`'s own
+    // may not have completed yet), matching `createWorkbench`'s own
     // retry loop below.
     const echoDeployDeadline = Date.now() + 60_000;
     let echoDeployed: ApiResult;
@@ -340,7 +325,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       }
       echoDeployed = await api(
         "POST",
-        `/api/tenants/${tenantId}/workflows/instances`,
+        `/api/tenants/${tenantId}/workflows/deployments`,
         {
           assetId: echoAssetId,
           sources: [
@@ -368,7 +353,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expectStatus("deploy echo workflow", echoDeployed, 201);
   }, 120_000);
 
-  // Launching a channel is the go/no-go signal for the whole suite: it
+  // Launching a workbench is the go/no-go signal for the whole suite: it
   // launches the anchor instance in-process, which needs the
   // sidecar's dial-in to have completed. `packages/chat/src/routes.ts`
   // has no 502-style retry translation of its own (unlike the native
@@ -376,7 +361,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // connects fails with an uncaught 500 — retried here directly until
   // the sidecar is ready, exactly as the walking skeleton retries a
   // 502 for the native deploy route.
-  async function createChannel(
+  async function createWorkbench(
     body: Record<string, unknown>,
   ): Promise<ApiResult> {
     const deadline = Date.now() + 60_000;
@@ -384,19 +369,19 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     for (;;) {
       if (sidecar.exited()) {
         throw new Error(
-          `sidecar exited before channel creation; output:\n${sidecar.output()}`,
+          `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
         );
       }
       res = await api(
         "POST",
-        `/api/tenants/${tenantId}/chat/channels`,
+        `/api/tenants/${tenantId}/chat/workbenches`,
         body,
         user1.cookies,
       );
       if (res.status !== 500) break;
       if (Date.now() > deadline) {
         throw new Error(
-          `channel never became launchable (hub kept answering 500): ` +
+          `workbench never became launchable (hub kept answering 500): ` +
             `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
         );
       }
@@ -407,13 +392,13 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
   async function postMessage(
     cookies: string[],
-    channel: string,
+    workbench: string,
     text: string,
   ): Promise<string> {
     const res = await api(
       "POST",
-      `/api/tenants/${tenantId}/chat/channels/${channel}/messages`,
-      textPart(text),
+      `/api/tenants/${tenantId}/chat/workbenches/${workbench}/messages`,
+      { parts: textPart(text) },
       cookies,
     );
     expectStatus(`post message "${text}"`, res, 201);
@@ -422,11 +407,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
   async function listMessages(
     cookies: string[],
-    channel: string,
+    workbench: string,
   ): Promise<ListedMessage[]> {
     const res = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channel}/messages`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbench}/messages`,
       undefined,
       cookies,
     );
@@ -438,21 +423,53 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     ) as unknown as ListedMessage[];
   }
 
-  test("channel creation launches the anchor", async () => {
-    const res = await createChannel({ kind: "channel", name: "demo" });
-    expectStatus("create channel", res, 201);
-    expect(stringField(res.data, "kind", "create channel")).toBe("channel");
-    channelId = stringField(res.data, "id", "create channel");
+  /** Flattens a workbench's timeline to its text-part bodies. */
+  function textsOf(items: readonly ListedMessage[]): string[] {
+    return items.flatMap((item) =>
+      item.parts
+        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
+        .map((p) => p.text),
+    );
+  }
+
+  /**
+   * A fan-out copy lands on the recipient run's timeline only after the
+   * mail round-trips through the sidecar, so poll (bounded) until a
+   * text matching `predicate` appears, then re-list once after a short
+   * settle so a redelivered duplicate would still be visible to an
+   * exactly-once assertion.
+   */
+  async function pollForDeliveredTexts(
+    cookies: string[],
+    workbench: string,
+    predicate: (text: string) => boolean,
+  ): Promise<string[]> {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const texts = textsOf(await listMessages(cookies, workbench));
+      if (texts.some(predicate)) break;
+      if (Date.now() > deadline) return texts;
+      await Bun.sleep(1000);
+    }
+    await Bun.sleep(3_000);
+    return textsOf(await listMessages(cookies, workbench));
+  }
+
+  test("workbench creation launches the anchor", async () => {
+    const res = await createWorkbench({ kind: "workbench", name: "demo" });
+    expectStatus("create workbench", res, 201);
+    expect(stringField(res.data, "kind", "create workbench")).toBe("workbench");
+    workbenchId = stringField(res.data, "id", "create workbench");
   }, 90_000);
 
   const firstFromUser1 = `hello from user1 ${crypto.randomUUID()}`;
   const firstFromUser2 = `hello from user2 ${crypto.randomUUID()}`;
 
   test("both users post; the timeline converges with sender identity", async () => {
-    await postMessage(user1.cookies, channelId, firstFromUser1);
-    await postMessage(user2.cookies, channelId, firstFromUser2);
+    await postMessage(user1.cookies, workbenchId, firstFromUser1);
+    await postMessage(user2.cookies, workbenchId, firstFromUser2);
 
-    const items = await listMessages(user1.cookies, channelId);
+    const items = await listMessages(user1.cookies, workbenchId);
     const texts = items.map((item) => ({
       text: (
         item.parts.find((p) => p.kind === "text") as
@@ -482,8 +499,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   test("a second message from user2 proves the anchor keeps accepting mail", async () => {
     const secondFromUser2 = `second message from user2 ${crypto.randomUUID()}`;
     await Bun.sleep(50);
-    await postMessage(user2.cookies, channelId, secondFromUser2);
-    const items = await listMessages(user1.cookies, channelId);
+    await postMessage(user2.cookies, workbenchId, secondFromUser2);
+    const items = await listMessages(user1.cookies, workbenchId);
     const texts = items.flatMap((item) =>
       item.parts
         .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
@@ -495,20 +512,20 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   });
 
   // Read-state is proven ahead of the settings test below: the
-  // settings PATCH appends a non-text event part to this channel's
-  // timeline, and `GET .../messages` on a channel carrying one
+  // settings PATCH appends a non-text event part to this workbench's
+  // timeline, and `GET .../messages` on a workbench carrying one
   // currently 500s (see that test's note) — read-state's own routes
   // never call `listMail`, so ordering it first keeps this test's
   // result honest regardless of that failure.
   test("read-state cursors are independent per user", async () => {
     const seenId = await postMessage(
       user1.cookies,
-      channelId,
+      workbenchId,
       `read-state marker ${crypto.randomUUID()}`,
     );
     const putUser1 = await api(
       "PUT",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/read-state`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`,
       { lastSeenCreatedAt: new Date().toISOString(), lastSeenId: seenId },
       user1.cookies,
     );
@@ -516,7 +533,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const gotUser1 = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/read-state`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`,
       undefined,
       user1.cookies,
     );
@@ -527,7 +544,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const gotUser2 = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/read-state`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`,
       undefined,
       user2.cookies,
     );
@@ -538,36 +555,35 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   });
 
   test("mention fan-out lands a copy in the mentioned run's own mailbox", async () => {
-    const secondChannel = await createChannel({
-      kind: "channel",
+    const secondWorkbench = await createWorkbench({
+      kind: "workbench",
       name: "mentioned",
     });
-    expectStatus("create second channel", secondChannel, 201);
-    const secondChannelId = stringField(
-      secondChannel.data,
+    expectStatus("create second workbench", secondWorkbench, 201);
+    const secondWorkbenchId = stringField(
+      secondWorkbench.data,
       "id",
-      "create second channel",
+      "create second workbench",
     );
-    const secondChannelAddress = formatAgentAddress(secondChannelId, domain);
+    const secondWorkbenchAddress = formatRunAddress(secondWorkbenchId, domain);
 
     const patched = await api(
       "PATCH",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
-      { "chat/participants": [secondChannelAddress] },
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
+      { "chat/participants": [secondWorkbenchAddress] },
       user1.cookies,
     );
     expectStatus("add mentionable participant", patched, 200);
 
-    const mentionText = `hey @${secondChannelId} take a look ${crypto.randomUUID()}`;
-    await postMessage(user1.cookies, channelId, mentionText);
+    const mentionText = `hey @${secondWorkbenchId} take a look ${crypto.randomUUID()}`;
+    await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const mentionedItems = await listMessages(user1.cookies, secondChannelId);
-    const mentionedTexts = mentionedItems.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const mentionedTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      secondWorkbenchId,
+      (text) => text.endsWith(mentionText),
     );
-    // The delivered copy carries the channel-context block merged ahead
+    // The delivered copy carries the workbench-context block merged ahead
     // of the message in one text part, so the mention text is a suffix
     // of the delivered body rather than the whole body.
     expect(mentionedTexts.some((text) => text.endsWith(mentionText))).toBe(
@@ -575,10 +591,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
   }, 90_000);
 
-  test("inviting the echo agent launches its own run, joins the channel, and receives @mentions", async () => {
+  test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
     const invitableRes = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
       undefined,
       user1.cookies,
     );
@@ -597,7 +613,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const invited = await api(
       "POST",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/invite`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
       { definitionId: echoDefinition.id },
       user1.cookies,
     );
@@ -615,14 +631,14 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       throw new Error(`malformed invited agent address: ${invitedAddress}`);
     }
 
-    // The invited agent's own run's address joined this channel's
+    // The invited agent's own run's address joined this workbench's
     // participants — as a record carrying a friendly mention handle
     // derived from the invited definition's name ("echo"), never the
     // unusable raw local part — and the join event landed on this
-    // channel's own timeline.
+    // workbench's own timeline.
     const settingsAfterInvite = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
       undefined,
       user1.cookies,
     );
@@ -642,8 +658,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     }
     expect(invitedParticipant.handle).toBe("echo");
 
-    // The join event itself lands on this channel's timeline as an
-    // `EventPart` (see `POST /channels/:id/invite` in
+    // The join event itself lands on this workbench's timeline as an
+    // `EventPart` (see `POST /workbenches/:id/invite` in
     // packages/chat/src/routes.ts), the same way a settings-changed
     // event does — but this suite cannot read it back via
     // `GET .../messages` any more than the "settings update" test
@@ -651,35 +667,45 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // attachment, and reading any attachment back hits the same
     // pre-existing `@intx/mime` `walkParts` defect that test documents
     // (vendor/intx is out of this suite's file scope to fix). Once this
-    // channel's timeline carries that attachment, `GET .../messages`
+    // workbench's timeline carries that attachment, `GET .../messages`
     // 500s for it for the rest of the suite's run, which is exactly why
-    // this test never calls `listMessages` on `channelId` again below —
-    // only on the invited agent's own, still-clean channel.
+    // this test never calls `listMessages` on `workbenchId` again below —
+    // only on the invited agent's own, still-clean workbench.
 
     // @mentioning the invited agent's friendly handle fans a copy into
     // its own run's mailbox — the same fan-out pattern the earlier
-    // "mention fan-out" test proves for a channel-to-channel mention,
+    // "mention fan-out" test proves for a workbench-to-workbench mention,
     // now proving it reaches an invited agent's run by its handle
     // rather than its raw instance-id local part. The invited agent's
     // reply is never asserted: its inference source is a placeholder
     // key in CI, so its own reply attempt errors, which is expected and
     // irrelevant to this assertion.
     const mentionText = `hey @${invitedParticipant.handle} welcome ${crypto.randomUUID()}`;
-    await postMessage(user1.cookies, channelId, mentionText);
+    await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const invitedMailbox = await listMessages(user1.cookies, invitedLocalPart);
-    const invitedTexts = invitedMailbox.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const invitedTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      invitedLocalPart,
+      (text) => text.endsWith(mentionText),
     );
-    expect(invitedTexts.some((text) => text.endsWith(mentionText))).toBe(true);
+    // Exactly once, not merely "at least once": before CL-6043's
+    // self-anchor fix, an invited agent's own run wrote
+    // `anchorRunId: null` (see `packages/folded-runs/src/launch.ts`),
+    // which `receiveWorkflowRunPack`
+    // (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
+    // permanently rejects — the hub then redelivers the same mail
+    // pack on every retry, so a still-broken anchor would show up
+    // here as a duplicate, not a missing message.
+    const deliveredMentions = invitedTexts.filter((text) =>
+      text.endsWith(mentionText),
+    );
+    expect(deliveredMentions).toHaveLength(1);
   }, 90_000);
 
   async function echoDefinitionId(): Promise<string> {
     const invitableRes = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
       undefined,
       user1.cookies,
     );
@@ -698,57 +724,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     return echoDefinition.id;
   }
 
-  test("kind filter excludes and includes by kind", async () => {
-    const throwaway = await createChannel({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
-    });
-    expectStatus("create throwaway chat", throwaway, 201);
-    const throwawayId = stringField(
-      throwaway.data,
-      "id",
-      "create throwaway chat",
-    );
-
-    const channelKindListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/chat/channels?kind=channel`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list kind=channel", channelKindListed, 200);
-    const channelKindIds = arrayField(
-      channelKindListed.data,
-      "items",
-      "list kind=channel",
-    ).map((item) => (item as { id: string }).id);
-    expect(channelKindIds).not.toContain(throwawayId);
-    expect(channelKindIds).toContain(channelId);
-
-    const chatKindListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/chat/channels?kind=chat`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list kind=chat", chatKindListed, 200);
-    const chatKindIds = arrayField(
-      chatKindListed.data,
-      "items",
-      "list kind=chat",
-    ).map((item) => (item as { id: string }).id);
-    expect(chatKindIds).toContain(throwawayId);
-  }, 90_000);
-
   test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
-    const chatCreated = await createChannel({
+    const chatCreated = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
     });
     expectStatus("create chat", chatCreated, 201);
     expect(stringField(chatCreated.data, "kind", "create chat")).toBe("chat");
     expect(stringField(chatCreated.data, "title", "create chat")).toBe("echo");
-    const chatId = stringField(chatCreated.data, "id", "create chat");
+    chatId = stringField(chatCreated.data, "id", "create chat");
 
     const chatParticipants = arrayField(
       chatCreated.data,
@@ -766,15 +750,16 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       throw new Error(`malformed chat agent address: ${chatAgent.address}`);
     }
 
-    // Inviting into a chat is rejected — a chat's agent is fixed at
-    // creation.
+    // Inviting into a chat now grows its participants like any other
+    // workbench (the single-concept collapse: a workbench IS an agent
+    // conversation) — only participant removal still refuses a chat.
     const secondInvite = await api(
       "POST",
-      `/api/tenants/${tenantId}/chat/channels/${chatId}/invite`,
+      `/api/tenants/${tenantId}/chat/workbenches/${chatId}/invite`,
       { definitionId: await echoDefinitionId() },
       user1.cookies,
     );
-    expectStatus("invite into a chat is rejected", secondInvite, 409);
+    expectStatus("invite into a chat launches a second run", secondInvite, 201);
 
     // No @mention is needed: a chat delivers every message to its one
     // agent unconditionally. The agent's own inference source is a
@@ -784,13 +769,68 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, chatId, unmentionedText);
 
-    const agentMailbox = await listMessages(user1.cookies, chatAgentLocalPart);
-    const agentTexts = agentMailbox.flatMap((item) =>
-      item.parts
-        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
-        .map((p) => p.text),
+    const agentTexts = await pollForDeliveredTexts(
+      user1.cookies,
+      chatAgentLocalPart,
+      (text) => text === unmentionedText,
     );
-    expect(agentTexts).toContain(unmentionedText);
+    // Exactly once — see the same note on the invited-agent mention
+    // assertion above: a redelivered duplicate here would mean this
+    // chat agent's own folded run is still failing the live-anchor
+    // check on its workflow-run mail pack.
+    expect(agentTexts.filter((text) => text === unmentionedText)).toHaveLength(
+      1,
+    );
+  }, 90_000);
+
+  // Runs after the echo chat above so its own create call — same
+  // tenant, same agent — proves the deliberate reuse path (CL-6089):
+  // "+ New Workbench" always creates, so reuse is opt-in via
+  // `reuseExisting: true` (the land-hop `ensureMyraWorkbench` uses),
+  // which reopens the existing chat with 200 and the same id back,
+  // never a fresh 201.
+  test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
+    const reopened = await createWorkbench({
+      kind: "chat",
+      definitionId: await echoDefinitionId(),
+      reuseExisting: true,
+    });
+    expectStatus("re-create existing agent chat", reopened, 200);
+    expect(
+      stringField(reopened.data, "id", "re-create existing agent chat"),
+    ).toBe(chatId);
+
+    const workbenchKindListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/workbenches?kind=workbench`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list kind=workbench", workbenchKindListed, 200);
+    const workbenchKindIds = arrayField(
+      workbenchKindListed.data,
+      "items",
+      "list kind=workbench",
+    ).map((item) => (item as { id: string }).id);
+    expect(workbenchKindIds).not.toContain(chatId);
+    expect(workbenchKindIds).toContain(workbenchId);
+
+    const chatKindListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/workbenches?kind=chat`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list kind=chat", chatKindListed, 200);
+    const chatKindIds = arrayField(
+      chatKindListed.data,
+      "items",
+      "list kind=chat",
+    ).map((item) => (item as { id: string }).id);
+    // Exactly one row for the echo agent chat — not two — is the whole
+    // point of CL-6070: the sidebar never shows a duplicate for an agent
+    // already talked to.
+    expect(chatKindIds.filter((id) => id === chatId)).toHaveLength(1);
   }, 90_000);
 
   // Settings is exercised last: `PATCH .../settings` folds the patch
@@ -810,12 +850,12 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // this event — it is out of this suite's file scope (`vendor/intx`
   // is vendored and read-only) to fix; this test documents the defect
   // precisely rather than working around it, and settings sends last
-  // so no other test depends on listing this channel afterward.
+  // so no other test depends on listing this workbench afterward.
   test("settings update reflects on GET and events the timeline", async () => {
     const newParticipant = `placeholder-participant-${crypto.randomUUID()}`;
     const patched = await api(
       "PATCH",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
       { "chat/participants": [newParticipant] },
       user1.cookies,
     );
@@ -823,7 +863,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const fetched = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
       undefined,
       user1.cookies,
     );
@@ -835,17 +875,56 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     ) as { address: string; handle: string }[];
     expect(participants.some((p) => p.address === newParticipant)).toBe(true);
 
-    const items = await listMessages(user1.cookies, channelId);
+    const items = await listMessages(user1.cookies, workbenchId);
     const events = items.flatMap((item) =>
       item.parts.filter((p) => p.kind === "event"),
     );
     const membershipEvent = events.find(
-      (e) => (e as { event: string }).event === "channel.membership-changed",
+      (e) => (e as { event: string }).event === "workbench.membership-changed",
     );
     if (membershipEvent === undefined) {
       throw new Error(
-        `no channel.membership-changed event on the timeline: ${JSON.stringify(items)}`,
+        `no workbench.membership-changed event on the timeline: ${JSON.stringify(items)}`,
       );
     }
+  });
+
+  // Every chat/folded run above (the workbench anchor, the mentioned
+  // second workbench, the invited echo agent, the auto-invited chat
+  // agent) writes its own `workflow-run` mail pack over the course of
+  // this suite. Before CL-6043's self-anchor fix, every one of those
+  // packs was permanently rejected — `receiveWorkflowRunPack`
+  // (vendor/intx/hub-sessions/src/hub-session-lookups.ts) requires the
+  // live run at the source address to satisfy `anchorRunId === id`,
+  // and a folded run was written with `anchorRunId: null` (see
+  // `packages/folded-runs/src/launch.ts`).
+  //
+  // Asserting on the hub's own log was tried first, as the most direct
+  // proof, but the hub side is not a clean signal: a brand-new run —
+  // folded or a plain top-level deployment alike — can lose a benign,
+  // pre-existing race where its very first pack push reaches the hub
+  // before that run's own DB row has committed, logging the identical
+  // "no live deployment anchor" warning; the hub's redelivery retries
+  // it and it self-heals within a second or two. That race reproduces
+  // for the echo workflow's plain native deployment too (which has
+  // always self-anchored), so it is orthogonal to CL-6043 and made a
+  // hub-log assertion flake (confirmed empirically: 4 such transient
+  // warnings even with the fix applied and every test green).
+  //
+  // The sidecar side is the clean signal instead: a permanently
+  // rejected pack surfaces there as
+  // `enqueueInbox failed, withholding ack` (the hub never acks, so it
+  // keeps redelivering) and, once the run later goes idle and wakes,
+  // `rejecting inbound mail ...: workflow run ... is terminal` (see
+  // `vendor/intx/workflow-host/src/supervisor/supervisor.ts`) — never
+  // logged for a transient, self-healing DB-commit race. Verified by
+  // temporarily reverting the self-anchor fix locally: the sidecar log
+  // then carries ten `enqueueInbox failed, withholding ack` lines, one
+  // per rejected pack, for this same suite; with the fix applied, zero.
+  test("no chat/folded run's workflow-run pack was ever permanently rejected", () => {
+    const sidecarOutput = sidecar.output();
+    expect(sidecarOutput).not.toContain("enqueueInbox failed");
+    expect(sidecarOutput).not.toContain("withholding ack");
+    expect(sidecarOutput).not.toContain("rejecting inbound mail");
   });
 });

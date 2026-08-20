@@ -26,16 +26,22 @@ export {
 } from "./capability-approval";
 export { extractFoldedBody, type FoldedBody } from "./fold-synthesis";
 export {
+  enumerateInertOnTriggerBodies,
+  type EnumeratedInertOnTriggerBody,
+  type InertBodyStepPreference,
+} from "./inert-ontrigger-bodies";
+export {
   assertChainHeadIsDefault,
   isSourceApproved,
+  pickStepInferenceSource,
   buildSingleStepAgentDefinition,
   createWorkflowDeployOrchestrator,
-  deriveDeploymentAddress,
+  deriveRunAddress,
+  deriveRunAgentId,
   deriveStepAddress,
   resolveStepAddress,
   deriveStepAgentId,
   deriveWorkflowRunRepoId,
-  isWorkflowDerivedAddress,
   wrapHarnessAsSingleStepWorkflow,
   CapabilityApprovalDeniedError,
   MultiStepDeployHandoffMissingError,

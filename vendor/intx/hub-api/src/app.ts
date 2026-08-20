@@ -28,6 +28,8 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
+  WorkflowAllocationService,
+  WorkflowDispatchService,
 } from "@intx/hub-sessions";
 
 import { createMeRoutes } from "./routes/me";
@@ -36,10 +38,14 @@ import { createTenantFederationRoutes } from "./routes/tenant-federation";
 import { createPrincipalRoutes, createInviteRoutes } from "./routes/principals";
 import { createRoleRoutes, createRoleAssignRoutes } from "./routes/roles";
 import { createGrantRoutes, createEvaluateRoutes } from "./routes/grants";
-import { createInstanceRoutes } from "./routes/instances";
+import { createRunRoutes } from "./routes/runs";
 import { createWorkflowRoutes } from "./routes/workflows";
 import { createWorkflowDefinitionRoutes } from "./routes/workflow-definitions";
-import { createApprovalRoutes } from "./routes/approvals";
+import {
+  createApprovalRoutes,
+  type ReadRunLifecycles,
+} from "./routes/approvals";
+import { readDurableWorkflowRunLifecycles } from "./workflow-run-lifecycle";
 import { createWalletRoutes } from "./routes/wallets";
 import { createProviderRoutes } from "./routes/providers";
 import { createOAuthClientRoutes } from "./routes/oauth-clients";
@@ -106,6 +112,8 @@ export type MountHubRoutesDeps = {
   db: DB["db"];
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
+  workflowAllocationService?: WorkflowAllocationService;
+  workflowDispatchService?: WorkflowDispatchService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -118,6 +126,7 @@ export type MountHubRoutesDeps = {
   conditionRegistry?: ConditionRegistry;
   approvalStore?: ApprovalStore;
   signalCorrelationStore?: SignalCorrelationStore;
+  readRunLifecycles?: ReadRunLifecycles;
   sidecarWsHandler?: Handler<AppEnv>;
   /**
    * The asset REST endpoint and smart-HTTP route group mount under
@@ -155,10 +164,13 @@ export function mountHubRoutes(
     db,
     sidecarRouter,
     sessionService,
+    workflowAllocationService,
+    workflowDispatchService,
     eventCollectors,
     sidecarWsHandler,
     assetService,
     repoStore,
+    readRunLifecycles,
     maxTarballBytes,
   } = opts;
   if ((assetService === null) !== (repoStore === null)) {
@@ -262,23 +274,26 @@ export function mountHubRoutes(
     "/api/tenants/:tenantId/principals/:principalId/evaluate",
     createEvaluateRoutes({ db, grantStore, conditionRegistry }),
   );
-  // The run management surface -- launch, list, observe, stop, mail a single
-  // run. Mounted as `/workflows/runs` (tenant-wide runs) before the `/workflows`
+  // The run management surface -- list, observe, stop, mail a single run.
+  // Mounted as `/workflows/runs` (tenant-wide runs) before the `/workflows`
   // deploy router below, and its literal `runs` segment out-prioritizes that
-  // router's `:deploymentId`, so `/workflows/runs` never resolves as a
+  // router's `:runId`, so `/workflows/runs` never resolves as a
   // deployment id.
   app.route(
     "/api/tenants/:tenantId/workflows/runs",
-    createInstanceRoutes({
+    createRunRoutes({
       db,
       sessionService,
       sidecarRouter,
       eventCollectors,
+      repoStore,
+      assetService,
+      ...(workflowDispatchService !== undefined
+        ? { workflowDispatchService }
+        : {}),
       grantStore,
       conditionRegistry,
       requireGrant,
-      assetService,
-      credentialCipher,
     }),
   );
 
@@ -287,7 +302,7 @@ export function mountHubRoutes(
   // stays available even when the gated `/workflows` deploy surface is off.
   // Registered before that surface as a defensive measure: the concrete
   // `/workflows/definitions/...` paths do not overlap the deploy router's
-  // `/:deploymentId` patterns, so this ordering is belt-and-suspenders.
+  // `/:runId` patterns, so this ordering is belt-and-suspenders.
   app.route(
     "/api/tenants/:tenantId/workflows/definitions",
     createWorkflowDefinitionRoutes({ db, requireGrant }),
@@ -305,6 +320,12 @@ export function mountHubRoutes(
       createWorkflowRoutes({
         db,
         sessionService,
+        ...(workflowAllocationService !== undefined
+          ? { workflowAllocationService }
+          : {}),
+        ...(workflowDispatchService !== undefined
+          ? { workflowDispatchService }
+          : {}),
         sidecarRouter,
         assetService,
         repoStore,
@@ -319,6 +340,30 @@ export function mountHubRoutes(
     createApprovalRoutes({
       db,
       sidecarRouter,
+      ...(workflowDispatchService !== undefined
+        ? { workflowDispatchService }
+        : {}),
+      ...(readRunLifecycles !== undefined
+        ? { readRunLifecycles }
+        : repoStore !== null
+          ? {
+              readRunLifecycles: async (
+                agentAddress: string,
+                topLevelRunId: string,
+                targetRunId: string,
+              ) => {
+                const lifecycles = await readDurableWorkflowRunLifecycles(
+                  repoStore,
+                  agentAddress,
+                  [topLevelRunId, targetRunId],
+                );
+                return {
+                  topLevel: lifecycles.get(topLevelRunId) ?? "absent",
+                  target: lifecycles.get(targetRunId) ?? "absent",
+                };
+              },
+            }
+          : {}),
       grantStore,
       conditionRegistry,
       approvalStore,
@@ -431,7 +476,7 @@ export function mountHubRoutes(
     // The folded run's agent-state clone surface. Mounts at `/workflows/runs`
     // alongside the run-management routes; the git sub-paths (`:runId/state.git`)
     // are disjoint from the run routes, and the literal `runs` segment
-    // out-ranks the `/workflows/:deploymentId` deploy router.
+    // out-ranks the `/workflows/:runId` deploy router.
     app.route(
       "/api/tenants/:tenantId/workflows/runs",
       createAgentStateRunGitRoutes({
@@ -454,6 +499,8 @@ export type CreateAppOpts = {
   db: DB["db"];
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
+  workflowAllocationService?: WorkflowAllocationService;
+  workflowDispatchService?: WorkflowDispatchService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -465,6 +512,7 @@ export type CreateAppOpts = {
   grantStore?: GrantStore;
   approvalStore?: ApprovalStore;
   signalCorrelationStore?: SignalCorrelationStore;
+  readRunLifecycles?: ReadRunLifecycles;
   sidecarWsHandler?: Handler<AppEnv>;
   assetService: AssetService | null;
   repoStore: RepoStore | null;
@@ -482,11 +530,14 @@ export function createApp({
   db,
   sidecarRouter,
   sessionService,
+  workflowAllocationService,
+  workflowDispatchService,
   eventCollectors,
   credentialCipher,
   grantStore,
   approvalStore,
   signalCorrelationStore,
+  readRunLifecycles,
   sidecarWsHandler,
   assetService,
   repoStore,
@@ -509,6 +560,12 @@ export function createApp({
     db,
     sidecarRouter,
     sessionService,
+    ...(workflowAllocationService !== undefined
+      ? { workflowAllocationService }
+      : {}),
+    ...(workflowDispatchService !== undefined
+      ? { workflowDispatchService }
+      : {}),
     eventCollectors,
     ...(credentialCipher ? { credentialCipher } : {}),
     assetService,
@@ -517,6 +574,7 @@ export function createApp({
     ...(grantStore ? { grantStore } : {}),
     ...(approvalStore ? { approvalStore } : {}),
     ...(signalCorrelationStore ? { signalCorrelationStore } : {}),
+    ...(readRunLifecycles ? { readRunLifecycles } : {}),
     ...(sidecarWsHandler ? { sidecarWsHandler } : {}),
   });
 

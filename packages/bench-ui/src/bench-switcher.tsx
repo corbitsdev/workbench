@@ -10,12 +10,13 @@
 // open state and the create flow, so other sidebar variants can compose
 // the same parts.
 
-import { ChevronDown, LayoutGrid, Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
 
-import { BenchApiError, createBench } from "./api";
+import { BenchApiError, createBench, patchBenchSettings } from "./api";
 import type { Bench, BenchMembership } from "./api";
 import { CreateBenchDialog } from "./create-bench-dialog";
+import type { BenchCreateType } from "./create-bench-dialog";
 import { deriveBenchSlug, membershipDisplay } from "./membership";
 import { BENCH_STRINGS } from "./strings";
 
@@ -24,6 +25,19 @@ export function createBenchErrorMessage(cause: unknown): string {
     return BENCH_STRINGS.createBenchConflictError;
   }
   return BENCH_STRINGS.createBenchError;
+}
+
+/** Square monogram for the trigger — the first letters of up to two words. */
+export function benchMonogram(name: string | null): string {
+  if (name === null) return "··";
+  const initials = name
+    .split(/[\s._-]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return initials.length > 0 ? initials : "··";
 }
 
 export function BenchSwitcherTrigger({
@@ -44,7 +58,9 @@ export function BenchSwitcherTrigger({
       aria-expanded={open}
       aria-label={BENCH_STRINGS.switcherLabel}
     >
-      <LayoutGrid size={17} aria-hidden />
+      <span className="bench-switcher-mark" aria-hidden>
+        {benchMonogram(activeName)}
+      </span>
       <span className="bench-switcher-name">
         {activeName ?? BENCH_STRINGS.switcherEmpty}
       </span>
@@ -70,6 +86,14 @@ export function BenchSwitcherList({
       role="listbox"
       aria-label={BENCH_STRINGS.switcherLabel}
     >
+      <button
+        type="button"
+        className="bench-switcher-create"
+        onClick={onCreate}
+      >
+        <Plus size={14} aria-hidden />
+        {BENCH_STRINGS.createBenchAction}
+      </button>
       {memberships.map((membership) => {
         const display = membershipDisplay(membership);
         const active = display.tenantId === activeTenantId;
@@ -86,14 +110,6 @@ export function BenchSwitcherList({
           </button>
         );
       })}
-      <button
-        type="button"
-        className="bench-switcher-create"
-        onClick={onCreate}
-      >
-        <Plus size={14} aria-hidden />
-        {BENCH_STRINGS.createBenchAction}
-      </button>
     </div>
   );
 }
@@ -123,11 +139,36 @@ export function BenchSwitcher({
   const activeName =
     active !== undefined ? membershipDisplay(active).name : null;
 
-  function handleCreate(name: string) {
+  function handleCreate(
+    name: string,
+    purpose?: string,
+    benchType?: BenchCreateType,
+  ) {
     setCreateSubmitting(true);
     setCreateError(null);
     createBench({ name, slug: deriveBenchSlug(name) })
-      .then((bench) => {
+      .then(async (bench) => {
+        // Purpose/type aren't part of the native tenant-creation route
+        // (see create-bench-dialog.tsx's header note), so they land via a
+        // follow-up PATCH once the bench itself exists. A failure here is
+        // swallowed on purpose: the bench was already created successfully,
+        // and losing the purpose/type it was given is a smaller problem
+        // than reporting a creation failure that didn't happen.
+        if (purpose !== undefined || benchType !== undefined) {
+          try {
+            const patch =
+              purpose !== undefined && benchType !== undefined
+                ? { purpose, type: benchType }
+                : purpose !== undefined
+                  ? { purpose }
+                  : benchType !== undefined
+                    ? { type: benchType }
+                    : {};
+            await patchBenchSettings(bench.id, patch);
+          } catch {
+            // best-effort, see comment above
+          }
+        }
         setCreateSubmitting(false);
         setCreateOpen(false);
         onBenchCreated(bench);

@@ -11,6 +11,11 @@ import path from "node:path";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
 
+// DB-gated: skipped when DATABASE_URL is unset, matching this repo's
+// convention for tests that talk to a real Postgres.
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const describeIfDb = databaseUrl === "" ? describe.skip : describe;
+
 const root = mkdtempSync(path.join(tmpdir(), "hub-chat-mount-"));
 const staticDir = path.join(root, "static");
 mkdirSync(staticDir, { recursive: true });
@@ -18,13 +23,28 @@ writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
 mkdirSync(path.join(root, "data"), { recursive: true });
 
 const config: HubConfig = {
-  databaseUrl: "postgres://workbench:workbench@localhost:5432/workbench",
+  databaseUrl,
   baseUrl: "http://localhost:3000",
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
+  signupMode: "closed",
+  allowedEmailDomains: [],
+  // No CREDENTIAL_ENCRYPTION_KEY here: this suite never touches the
+  // credential-cipher seam, so the dev opt-in keeps boot working.
+  allowPlaintextSecrets: true,
+  allowUnverifiedEmails: true,
+  sidecarProvisioners: [],
+  envProviderKeys: {},
+  envProviderBaseUrls: {},
+  envCredentialPlantAdmin: {
+    email: "alice@example.com",
+    password: "password123",
+    orgSlug: "workbench",
+  },
+  chatIdleReapMs: 30 * 60_000,
 };
 
 const closers: (() => Promise<void>)[] = [];
@@ -34,13 +54,13 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("chat mount", () => {
+describeIfDb("chat mount", () => {
   test("chat routes mount inside the native tenant middleware", async () => {
     const hub = await createHub(config);
     closers.push(hub.close);
 
     const gated = await hub.app.request(
-      "/api/tenants/some-tenant/chat/channels",
+      "/api/tenants/some-tenant/chat/workbenches",
       {
         method: "GET",
       },
@@ -52,7 +72,7 @@ describe("chat mount", () => {
 
     // The route exists only under the tenant scope; outside it the
     // path falls through to the interface shell.
-    const outside = await hub.app.request("/chat/channels");
+    const outside = await hub.app.request("/chat/workbenches");
     expect(await outside.text()).toBe("<html>shell</html>");
   });
 });

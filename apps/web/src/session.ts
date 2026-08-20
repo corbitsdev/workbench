@@ -35,18 +35,19 @@ export async function fetchSession(): Promise<SessionState> {
     if (!response.ok) {
       return {
         kind: "error",
-        message: `The hub answered ${response.status} for the session check.`,
+        message: `The server answered ${response.status} for the session check.`,
       };
     }
     const body: unknown = await response.json();
     if (body === null) return { kind: "signed-out" };
     const parsed = SessionPayload(body);
-    if (parsed instanceof type.errors) {
-      return {
-        kind: "error",
-        message: `Unexpected session shape: ${parsed.summary}`,
-      };
-    }
+    // A session payload that parses but is missing its user (or is
+    // shaped unrecognizably) means the hub answered without a session
+    // this app can use — a restarted hub on an empty DB, or a cookie for
+    // a user that no longer exists. That is "no session", not a genuine
+    // connectivity failure: it routes to the login screen exactly like a
+    // 401 or a `null` body, never to the "connection lost" error state.
+    if (parsed instanceof type.errors) return { kind: "signed-out" };
     return { kind: "signed-in", user: parsed.user };
   } catch (cause) {
     return {
@@ -65,6 +66,7 @@ const FailureBody = type({ message: "string" });
 async function postAuth(
   path: string,
   body: Record<string, string>,
+  doing: string,
 ): Promise<AuthResult> {
   try {
     const response = await fetch(path, {
@@ -79,7 +81,7 @@ async function postAuth(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The hub answered ${response.status} for ${path}.`
+            ? `The server answered ${response.status} ${doing}.`
             : failure.message,
       };
     }
@@ -87,7 +89,7 @@ async function postAuth(
     if (parsed instanceof type.errors) {
       return {
         ok: false,
-        message: `Unexpected response shape from ${path}: ${parsed.summary}`,
+        message: `Unexpected response shape ${doing}: ${parsed.summary}`,
       };
     }
     return { ok: true, user: parsed.user };
@@ -100,7 +102,7 @@ async function postAuth(
 }
 
 export function signIn(email: string, password: string): Promise<AuthResult> {
-  return postAuth("/api/auth/sign-in/email", { email, password });
+  return postAuth("/api/auth/sign-in/email", { email, password }, "signing in");
 }
 
 /**
@@ -110,7 +112,11 @@ export function signIn(email: string, password: string): Promise<AuthResult> {
  */
 export function signUp(email: string, password: string): Promise<AuthResult> {
   const name = email.split("@")[0] ?? email;
-  return postAuth("/api/auth/sign-up/email", { name, email, password });
+  return postAuth(
+    "/api/auth/sign-up/email",
+    { name, email, password },
+    "creating your account",
+  );
 }
 
 const SocialProviderId = type("'google' | 'github'");
@@ -139,7 +145,7 @@ export async function fetchAuthConfig(): Promise<AuthConfigResult> {
     if (!response.ok) {
       return {
         kind: "unavailable",
-        message: `The hub answered ${response.status} for the auth config.`,
+        message: `The server answered ${response.status} for the auth config.`,
       };
     }
     const body: unknown = await response.json();
@@ -191,7 +197,7 @@ export async function signInSocial(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The hub answered ${response.status} starting ${provider} sign-in.`
+            ? `The server answered ${response.status} starting ${provider} sign-in.`
             : failure.message,
       };
     }
@@ -212,10 +218,17 @@ export async function signInSocial(
   }
 }
 
-export async function signOut(): Promise<void> {
-  await fetch("/api/auth/sign-out", {
+/** Fires the server-side sign-out. The UI signs out optimistically
+ * regardless of this call's outcome (see `main.tsx`'s `handleSignOut`) —
+ * returns whether the server actually cleared the session, so the caller
+ * can surface a failure rather than silently leaving a live session
+ * behind on the server. */
+export async function signOut(): Promise<boolean> {
+  return fetch("/api/auth/sign-out", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
-  }).catch(() => undefined);
+  })
+    .then((response) => response.ok)
+    .catch(() => false);
 }

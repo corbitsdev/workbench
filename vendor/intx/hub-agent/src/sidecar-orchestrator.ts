@@ -33,6 +33,8 @@ import {
   type GrantsInboundRouter,
   type SourcesInboundRouter,
   type CredentialsInboundRouter,
+  type WorkflowRunPackApplier,
+  type WorkflowProbeExecutor,
   type ReconnectScheduler,
 } from "./ws/hub-link";
 
@@ -85,7 +87,7 @@ export type CreateDeployRouter = (deps: {
   publishWorkflowSuspension: (registration: {
     correlationId: string;
     runId: string;
-    deploymentId: string;
+    anchorRunId: string;
     agentAddress: string;
     kind: SignalKind;
     approvalSnapshot?: ApprovalSnapshot;
@@ -149,6 +151,8 @@ export type SidecarOrchestratorConfig = {
    * `createHubLink`.
    */
   sourcesInboundRouter?: SourcesInboundRouter;
+  /** Apply Hub-authoritative workflow-run refs before replacement deploy. */
+  applyWorkflowRunPack: WorkflowRunPackApplier;
   /**
    * Optional inbound credential-delivery dispatcher the link consults on every
    * inbound `credentials.update` frame. Production wires this against the
@@ -157,6 +161,14 @@ export type SidecarOrchestratorConfig = {
    * binding unchanged to `createHubLink`.
    */
   credentialsInboundRouter?: CredentialsInboundRouter;
+  /**
+   * Optional workflow-probe executor. The orchestrator forwards it
+   * unchanged to `createHubLink`, where it answers every inbound
+   * `workflow.probe.request`. Production wires the sidecar host's
+   * airlocked executor here; omitted, the link falls back to its rejecting
+   * placeholder so a probe is answered with an error rather than dropped.
+   */
+  workflowProbeExecutor?: WorkflowProbeExecutor;
   /**
    * Returns the workflow-substrate deployment addresses this sidecar
    * currently hosts. Forwarded to the hub link, which announces them on
@@ -216,6 +228,8 @@ export function createSidecarOrchestrator(
     grantsInboundRouter,
     sourcesInboundRouter,
     credentialsInboundRouter,
+    applyWorkflowRunPack,
+    workflowProbeExecutor,
     getWorkflowAddresses,
     onWorkflowAddressesRoutable,
     onWorkflowAddressesUnroutable,
@@ -251,7 +265,7 @@ export function createSidecarOrchestrator(
   let dispatchSuspension: (registration: {
     correlationId: string;
     runId: string;
-    deploymentId: string;
+    anchorRunId: string;
     agentAddress: string;
     kind: SignalKind;
     approvalSnapshot?: ApprovalSnapshot;
@@ -299,6 +313,7 @@ export function createSidecarOrchestrator(
     sessions,
     keyStore,
     deployRouter,
+    applyWorkflowRunPack,
     ...(mailInboundRouter !== undefined ? { mailInboundRouter } : {}),
     ...(signalInboundRouter !== undefined ? { signalInboundRouter } : {}),
     ...(drainInboundRouter !== undefined ? { drainInboundRouter } : {}),
@@ -307,6 +322,7 @@ export function createSidecarOrchestrator(
     ...(credentialsInboundRouter !== undefined
       ? { credentialsInboundRouter }
       : {}),
+    ...(workflowProbeExecutor !== undefined ? { workflowProbeExecutor } : {}),
     ...(getWorkflowAddresses !== undefined ? { getWorkflowAddresses } : {}),
     ...(onWorkflowAddressesRoutable !== undefined
       ? { onWorkflowAddressesRoutable }

@@ -150,6 +150,49 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     }
   });
 
+  test("installed package migrations create the notify and mailbox tables", async () => {
+    const sql = await connectTo(url);
+    try {
+      const notifyDispatch = await sql.unsafe(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'notify' AND table_name = 'notify_dispatch'`,
+      );
+      expect(notifyDispatch).toHaveLength(1);
+
+      const mailboxTables = await sql.unsafe(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'mailbox'
+         ORDER BY table_name`,
+      );
+      expect(mailboxTables.map((r) => String(r["table_name"]))).toEqual([
+        "corbits_mailbox_migrations",
+        "mailbox",
+        "principal_mail",
+      ]);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("resetSchema drops the mailbox package's own schema, not only the platform's", async () => {
+    await resetSchema(url);
+    const sql = await connectTo(url);
+    try {
+      const mailboxSchema = await sql.unsafe(
+        `SELECT 1 FROM information_schema.schemata WHERE schema_name = 'mailbox'`,
+      );
+      expect(mailboxSchema).toHaveLength(0);
+    } finally {
+      await sql.end();
+    }
+
+    // Leave the scratch database migrated again for any later test in this
+    // file (and to prove the installed packages' migrations replay cleanly
+    // after a reset, not only on a first-ever apply).
+    const rebuilt = await setupDatabase(url);
+    expect(rebuilt.action).toBe("migrated");
+  });
+
   test("re-run on a current schema reports unchanged and touches nothing", async () => {
     const first = await setupDatabase(url);
     expect(first.action).toBe("unchanged");

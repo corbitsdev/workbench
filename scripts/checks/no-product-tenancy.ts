@@ -27,7 +27,12 @@ import {
 } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
-const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(/g;
+// Matches the plain `pgTable(...)` builder and `xyzSchema.table(...)` —
+// the form every package now uses to declare tables inside its own named
+// Postgres schema (see docs/package-migrations.md). Both are drizzle table
+// declarations and both count toward a file's allowlisted occurrences;
+// only the declaration style differs.
+const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(|\b\w+Schema\.table\s*\(/g;
 
 const ALLOWLIST: readonly {
   relPath: string;
@@ -36,19 +41,33 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 5,
+    maxOccurrences: 14,
     tables: [
-      "channel_settings",
+      // Created as channel_settings et al.; renamed to workbench_* by
+      // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
+      "workbench_settings",
       "chat_bench_settings",
-      "channel_read_state",
-      "channel_launch",
-      "channel_tenancy",
+      "workbench_read_state",
+      "workbench_launch",
+      "workbench_tenancy",
+      "workbench_threads",
+      "workbench_thread_messages",
+      "workbench_share",
+      "workbench_share_member",
+      "block_responses",
+      "message_reactions",
+      "pinned_messages",
+      // Durable redelivery-dedup claim for the finalized-turn write
+      // surfaces (CL-6039) — see finalizedTurnWriteClaim's doc comment
+      // in schema.ts.
+      "finalized_turn_write_claim",
+      "message_client_ids",
     ],
   },
   {
     relPath: "packages/routines/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["routine", "routine_run"],
+    maxOccurrences: 3,
+    tables: ["routine", "routine_run", "routine_draft"],
   },
   {
     relPath: "packages/webhook-triggers/src/schema.ts",
@@ -59,6 +78,89 @@ const ALLOWLIST: readonly {
     relPath: "packages/notify/src/schema.ts",
     maxOccurrences: 1,
     tables: ["notify_dispatch"],
+  },
+  {
+    // `turn_latency` (CL-6257) records per-message-run latency stages —
+    // product observability the platform's own tables never capture.
+    relPath: "packages/insights/src/schema.ts",
+    maxOccurrences: 3,
+    tables: ["usage_turn", "model_price", "turn_latency"],
+  },
+  {
+    // Append-only record of every public key a workflow run has been
+    // deployed under, in its own `run_key_history` Postgres schema —
+    // identity diagnostics the platform's `workflow_run.public_key`
+    // (a single mutable column) cannot answer.
+    relPath: "packages/run-key-history/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["run_key_history"],
+  },
+  {
+    relPath: "packages/bench/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["bench_settings"],
+  },
+  {
+    relPath: "packages/access-policy/src/schema.ts",
+    maxOccurrences: 2,
+    tables: ["policy", "pending_invite"],
+  },
+  {
+    // `task_leg` records which agent runs make up one task and in what
+    // order — product correlation, not delivery state. The platform's
+    // own `workflow_run_dispatch` stays the authority on whether a
+    // message was delivered; nothing about a workbench task's meaning
+    // belongs in it.
+    relPath: "packages/tasks/src/schema.ts",
+    maxOccurrences: 2,
+    tables: ["task", "task_leg"],
+  },
+  {
+    relPath: "packages/onboarding/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["pending_seed"],
+  },
+  {
+    relPath: "packages/slack-tag/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["slack_channel_binding"],
+  },
+  {
+    relPath: "packages/skills/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["skill_access"],
+  },
+  {
+    relPath: "packages/preferences/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["user_preferences"],
+  },
+  {
+    relPath: "packages/folded-runs/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["folded_run"],
+  },
+  {
+    // Named model/settings presets a bench shares across workbenches —
+    // product-owned configuration, not tenancy or credentials.
+    relPath: "packages/config-profiles/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["config_profiles.profile"],
+  },
+  {
+    // Skills pinned to a workbench's agent definition (CL-6135): the
+    // workflow-kind asset tree forbids skills.json, so this pin list is
+    // package-owned state beside the native definition row.
+    relPath: "packages/agent-directory/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["agent_directory.definition_skills"],
+  },
+  {
+    // Eval-run history (CL-6143): one row per (eval, config) scored
+    // run, product-owned scoring data, never tenancy.
+    relPath: "packages/evals/src/store/schema.ts",
+    maxOccurrences: 1,
+    tables: ["evals.run"],
   },
 ];
 

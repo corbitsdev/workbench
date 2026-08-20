@@ -4,7 +4,13 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { SettingsApiError, getAccount, renameBench } from "../src/api";
+import { UnauthenticatedError } from "@corbits/api-query";
+import {
+  SettingsApiError,
+  getAccount,
+  getAuthConfig,
+  renameBench,
+} from "../src/api";
 
 const realFetch = globalThis.fetch;
 
@@ -48,9 +54,25 @@ describe("getAccount", () => {
     expect(account.name).toBe("Ada Lovelace");
   });
 
-  test("throws a SettingsApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(getAccount()).rejects.toBeInstanceOf(SettingsApiError);
+    await expect(getAccount()).rejects.toBeInstanceOf(UnauthenticatedError);
+  });
+});
+
+describe("getAuthConfig", () => {
+  test("fetches /api/auth-config and returns signup policy", async () => {
+    const calls = stubFetch(() =>
+      json({
+        socialProviders: [],
+        signupMode: "closed",
+        allowedEmailDomains: ["example.com"],
+      }),
+    );
+    const config = await getAuthConfig();
+    expect(calls[0]?.path).toBe("/api/auth-config");
+    expect(config.signupMode).toBe("closed");
+    expect(config.allowedEmailDomains).toEqual(["example.com"]);
   });
 });
 

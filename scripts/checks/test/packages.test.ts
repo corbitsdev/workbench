@@ -46,20 +46,33 @@ test("vendoredLedgerPaths reads backticked paths from ledger rows only", () => {
 });
 
 test("a vendored directory with no ledger row is a violation", () => {
-  const report = auditVendoredLedger(["vendor/intx/log"], []);
+  const report = auditVendoredLedger(["vendor/intx/log"], [], () => true);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("vendor/intx/log");
   expect(report.violations[0]).toContain("no VENDORED.md ledger row");
 });
 
 test("a ledger row whose path no longer exists is a violation", () => {
-  const report = auditVendoredLedger([], ["vendor/intx/log"]);
+  const report = auditVendoredLedger([], ["vendor/intx/log"], () => false);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain('"vendor/intx/log"');
   expect(report.violations[0]).toContain("no longer exists");
 });
 
 test("a vendored directory matched by a ledger row passes", () => {
-  const report = auditVendoredLedger(["vendor/intx/log"], ["vendor/intx/log"]);
+  const report = auditVendoredLedger(
+    ["vendor/intx/log"],
+    ["vendor/intx/log"],
+    (ledgerPath) => ledgerPath === "vendor/intx/log",
+  );
+  expect(report.violations).toEqual([]);
+});
+
+test("a ledger row outside vendor/ passes when its path exists", () => {
+  const report = auditVendoredLedger(
+    [],
+    ["apps/sidecar"],
+    (ledgerPath) => ledgerPath === "apps/sidecar",
+  );
   expect(report.violations).toEqual([]);
 });

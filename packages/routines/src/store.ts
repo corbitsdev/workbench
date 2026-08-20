@@ -44,7 +44,7 @@ export interface RoutineRow {
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
   readonly enabled: boolean;
-  readonly deliveryChannelId: string | null;
+  readonly deliveryWorkbenchId: string | null;
   readonly createdBy: string;
   readonly nextFireAt: Date | null;
   readonly lastFireAt: Date | null;
@@ -62,7 +62,7 @@ export interface CreateRoutineInput {
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
-  readonly deliveryChannelId?: string | null;
+  readonly deliveryWorkbenchId?: string | null;
   readonly createdBy: string;
 }
 
@@ -71,7 +71,7 @@ export interface UpdateRoutineInput {
   readonly trigger?: RoutineTriggerT;
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
-  readonly deliveryChannelId?: string | null;
+  readonly deliveryWorkbenchId?: string | null;
 }
 
 export interface RoutineRunRow {
@@ -187,7 +187,7 @@ function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
     scope: row.scope as RoutineScope,
     input: row.input as Record<string, unknown>,
     enabled: row.enabled,
-    deliveryChannelId: row.deliveryChannelId,
+    deliveryWorkbenchId: row.deliveryWorkbenchId,
     createdBy: row.createdBy,
     nextFireAt: row.nextFireAt,
     lastFireAt: row.lastFireAt,
@@ -219,7 +219,7 @@ export function createDrizzleRoutineStore<
       const [row] = await db
         .insert(routine)
         .values({
-          id: generateId("instance"),
+          id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
           definitionId: input.definitionId,
@@ -227,7 +227,7 @@ export function createDrizzleRoutineStore<
           scope: input.scope,
           input: input.input,
           enabled: true,
-          deliveryChannelId: input.deliveryChannelId ?? null,
+          deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
           createdBy: input.createdBy,
           nextFireAt: computeNextFireAt(input.trigger, now),
           lastFireAt: null,
@@ -302,22 +302,26 @@ export function createDrizzleRoutineStore<
           : (existing.trigger as RoutineTriggerT);
       const mergedEnabled =
         patch.enabled !== undefined ? patch.enabled : existing.enabled;
+      let update: UpdateRoutineInput & {
+        updatedAt: Date;
+        nextFireAt?: Date | null;
+        consecutiveFailures?: number;
+        deadLetteredAt?: Date | null;
+      } = { ...patch, updatedAt: now };
+      if (recomputeNextFire) {
+        update = {
+          ...update,
+          nextFireAt: mergedEnabled
+            ? computeNextFireAt(mergedTrigger, now)
+            : null,
+        };
+      }
+      if (clearFailures) {
+        update = { ...update, consecutiveFailures: 0, deadLetteredAt: null };
+      }
       const [row] = await db
         .update(routine)
-        .set({
-          ...patch,
-          ...(recomputeNextFire
-            ? {
-                nextFireAt: mergedEnabled
-                  ? computeNextFireAt(mergedTrigger, now)
-                  : null,
-              }
-            : {}),
-          ...(clearFailures
-            ? { consecutiveFailures: 0, deadLetteredAt: null }
-            : {}),
-          updatedAt: now,
-        })
+        .set(update)
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
         .returning();
       if (row === undefined) {
@@ -444,7 +448,7 @@ export function createDrizzleRoutineStore<
         await tx.insert(routineRun).values({
           tenantId: input.tenantId,
           routineId: input.routineId,
-          runId: generateId("instance"),
+          runId: generateId("workflowRun"),
           triggeredBy: "schedule-failed",
           error: input.reason,
           createdAt: input.failedAt,
@@ -511,7 +515,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
     async createRoutine(input) {
       const now = new Date();
       const row: RoutineRow = {
-        id: generateId("instance"),
+        id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
         definitionId: input.definitionId,
@@ -519,7 +523,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         scope: input.scope,
         input: input.input,
         enabled: true,
-        deliveryChannelId: input.deliveryChannelId ?? null,
+        deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
         createdBy: input.createdBy,
         nextFireAt: computeNextFireAt(input.trigger, now),
         lastFireAt: null,
@@ -568,21 +572,18 @@ export function createInMemoryRoutineStore(): RoutineStore {
         patch.trigger !== undefined ? patch.trigger : existing.trigger;
       const mergedEnabled =
         patch.enabled !== undefined ? patch.enabled : existing.enabled;
-      const row: RoutineRow = {
-        ...existing,
-        ...patch,
-        ...(recomputeNextFire
-          ? {
-              nextFireAt: mergedEnabled
-                ? computeNextFireAt(mergedTrigger, now)
-                : null,
-            }
-          : {}),
-        ...(clearFailures
-          ? { consecutiveFailures: 0, deadLetteredAt: null }
-          : {}),
-        updatedAt: now,
-      };
+      let row: RoutineRow = { ...existing, ...patch, updatedAt: now };
+      if (recomputeNextFire) {
+        row = {
+          ...row,
+          nextFireAt: mergedEnabled
+            ? computeNextFireAt(mergedTrigger, now)
+            : null,
+        };
+      }
+      if (clearFailures) {
+        row = { ...row, consecutiveFailures: 0, deadLetteredAt: null };
+      }
       routinesById.set(routineId, row);
       return row;
     },
@@ -663,7 +664,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
       runs.push({
         tenantId: input.tenantId,
         routineId: input.routineId,
-        runId: generateId("instance"),
+        runId: generateId("workflowRun"),
         triggeredBy: "schedule-failed",
         error: input.reason,
         createdAt: input.failedAt,

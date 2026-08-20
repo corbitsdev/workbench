@@ -3,12 +3,13 @@
 // an empty registry is its own distinct outcome.
 
 import { describe, expect, test } from "bun:test";
+import { Bell } from "lucide-react";
 
-import { resolveActiveSection } from "../src/shell";
-import type { SettingsSection } from "../src/shell";
+import { flattenSettingsSections, resolveActiveSection } from "../src/shell";
+import type { SettingsSection, SettingsSectionGroup } from "../src/shell";
 
 function section(id: string): SettingsSection {
-  return { id, title: id, render: () => <div>{id}</div> } as SettingsSection;
+  return { id, title: id, icon: Bell, render: () => <div>{id}</div> };
 }
 
 describe("resolveActiveSection", () => {
@@ -29,5 +30,39 @@ describe("resolveActiveSection", () => {
 
   test("returns undefined, not a crash, for an empty registry", () => {
     expect(resolveActiveSection([], "anything")).toBeUndefined();
+  });
+
+  // A mismatched id (unknown, or gate-denied and so absent from `sections`)
+  // resolves to the exact first-section object — the fixed behavior a host
+  // relies on to correct its own URL (see apps/web's SettingsRoute) instead
+  // of silently rendering the fallback under a URL its own nav disagrees
+  // with.
+  test("a mismatched id resolves to the first section itself, for a caller to redirect to", () => {
+    const sections = [section("agent"), section("bench")];
+    const resolved = resolveActiveSection(sections, "people");
+    expect(resolved).toBe(sections[0]);
+  });
+});
+
+describe("flattenSettingsSections", () => {
+  test("walks Personal then Workspace in order", () => {
+    const groups: SettingsSectionGroup[] = [
+      {
+        id: "personal",
+        label: "Personal Settings",
+        sections: [section("agent"), section("account")],
+      },
+      {
+        id: "workspace",
+        label: "Shared Settings",
+        sections: [section("bench"), section("audit")],
+      },
+    ];
+    expect(flattenSettingsSections(groups).map((s) => s.id)).toEqual([
+      "agent",
+      "account",
+      "bench",
+      "audit",
+    ]);
   });
 });

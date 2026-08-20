@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import {
   activeMentionQuery,
+  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
+  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
+  mentionOptionsFromWorkbench,
 } from "../src/mentions";
 
 describe("activeMentionQuery", () => {
@@ -89,6 +92,90 @@ describe("filterMentionCandidates", () => {
 
   test("no match returns an empty list", () => {
     expect(filterMentionCandidates(agents, "zzz")).toEqual([]);
+  });
+});
+
+describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => {
+  const participants = [
+    { address: "researcher@agents.example", handle: "researcher" },
+    { address: "prn_alice", handle: "alice" },
+  ];
+
+  test("a workspace member already in the workbench is excluded", () => {
+    const options = bringInOptionsFromMembersAndAgents(
+      [
+        { id: "prn_alice", displayName: "Alice" },
+        { id: "prn_bob", displayName: "Bob" },
+      ],
+      [],
+      participants,
+    );
+    expect(options).toEqual([
+      {
+        section: "people",
+        candidate: { id: "prn_bob", handle: "bob", label: "Bob" },
+        invite: { kind: "person", principalId: "prn_bob", name: "Bob" },
+      },
+    ]);
+  });
+
+  test("an invitable agent uses its name — never its description — as the label", () => {
+    const options = bringInOptionsFromMembersAndAgents(
+      [],
+      [
+        {
+          id: "wfd_echo",
+          name: "echo",
+          description: "You turn a conversation into a website proposal…",
+        },
+      ],
+      participants,
+    );
+    expect(options).toEqual([
+      {
+        section: "agents",
+        candidate: { id: "wfd_echo", handle: "echo", label: "echo" },
+        invite: { kind: "agent", definitionId: "wfd_echo" },
+      },
+    ]);
+  });
+});
+
+describe("mentionOptionsFromWorkbench and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
+  test("lists Agents then People, in-workbench ahead of bring-in within each section", () => {
+    const options = mentionOptionsFromWorkbench(
+      [
+        { address: "researcher@agents.example", handle: "researcher" },
+        { address: "prn_alice", handle: "alice" },
+      ],
+      [{ id: "prn_bob", displayName: "Bob" }],
+      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+    );
+    expect(options.map((option) => option.section)).toEqual([
+      "agents",
+      "agents",
+      "people",
+      "people",
+    ]);
+    expect(options.map((option) => option.candidate.handle)).toEqual([
+      "researcher",
+      "echo",
+      "alice",
+      "bob",
+    ]);
+  });
+
+  test("filterMentionOptions narrows both sections by the same prefix rule", () => {
+    const options = mentionOptionsFromWorkbench(
+      [{ address: "researcher@agents.example", handle: "researcher" }],
+      [{ id: "prn_reed", displayName: "Reed" }],
+      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+    );
+    const filtered = filterMentionOptions(options, "re");
+    expect(filtered.map((option) => option.candidate.handle)).toEqual([
+      "researcher",
+      "reed",
+    ]);
   });
 });
 

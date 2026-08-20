@@ -1,22 +1,31 @@
 {
   "name": "@corbits/artifact-ui",
   "private": true,
-  "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort, filter, and kind-coloring rules every artifact surface shares",
+  "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort and filter rules every artifact surface shares",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./kind-filter": "./src/kind-filter.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "arktype": "catalog:"
+    "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "react-dom": "^19.2.0",
     "typescript": "catalog:"
   }
 }

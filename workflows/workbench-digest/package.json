@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/workbench-digest-workflow",
+  "private": true,
+  "description": "Minimal mail-triggered workflow that posts a deterministic summary line, exercising the workbench-mail path at zero inference cost",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "workbench-digest",
+      "displayName": "Workbench digest",
+      "automatable": true
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

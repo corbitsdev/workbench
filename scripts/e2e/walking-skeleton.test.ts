@@ -19,10 +19,7 @@
 // its own sibling `<database>_e2e` database, failures name the hop that
 // broke, and teardown stops every spawned process.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -31,6 +28,7 @@ import {
 } from "../../workflows/echo/src/index.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -41,7 +39,6 @@ import {
   startSidecar,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -63,21 +60,7 @@ function stringField(data: unknown, field: string, what: string): string {
   );
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
   test("fresh schema to addressable echo-workflow deployment", async () => {
@@ -265,7 +248,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/workflows/instances`,
+          `/api/tenants/${tenantId}/workflows/deployments`,
           body,
           user.cookies,
         );
@@ -290,7 +273,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       const listed = await api(
         hub.baseUrl,
         "GET",
-        `/api/tenants/${tenantId}/workflows/instances`,
+        `/api/tenants/${tenantId}/workflows/deployments`,
         undefined,
         user.cookies,
       );
@@ -321,7 +304,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       // per-trigger correlation handle is the response's messageId, which
       // this suite does not follow up on (run-completion needs a real
       // inference credential).
-      expect(address).toBe(`ins_${deploymentId}@${slug}.localhost`);
+      expect(address).toBe(`${deploymentId}@${slug}.localhost`);
     });
 
     console.log(

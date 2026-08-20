@@ -3,21 +3,27 @@
   "private": true,
   "description": "First-login provisioning for the hub: the onboarding route and the decision behind it",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@intx/crypto": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/access-policy": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
-    "hono": "^4.11.9"
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

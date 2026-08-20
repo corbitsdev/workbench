@@ -9,11 +9,13 @@
 // `sources` (each step's ordered inference-source failover chain, threaded to
 // the child via the spawn env and durable nowhere else), `sessionId`
 // (inference-event
-// correlation), and `hubPublicKey` (the head's deploy-pack / inbound
-// verification key, recorded only in memory today). The definition itself
-// lives in `assets/workflow/<definitionId>/workflow.json`, referenced by
-// `definitionId`, and each step's grants live in its agent-state repo, so
-// neither is duplicated here.
+// correlation), `hubPublicKey` (the head's deploy-pack / inbound
+// verification key, recorded only in memory today), and
+// `referencedDefinitionHashes` (the hub-approved wire hash per referenced
+// onTrigger body id, threaded to the child via the spawn env). The
+// definition itself lives in `assets/workflow/<definitionId>/workflow.json`,
+// referenced by `definitionId`, and each step's grants live in its
+// agent-state repo, so neither is duplicated here.
 
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join as pathJoin } from "node:path";
@@ -44,11 +46,58 @@ export const WorkflowDeploymentRecord = type({
   },
   "sessionId?": "string > 0",
   "hubPublicKey?": "string > 0",
+  // Hub-approved wire hash per referenced onTrigger body id, carried on the
+  // deploy frame's `referencedDefinitions[*].approvedWireHash`. Durable here
+  // (not re-derivable from the materialized body `workflow.json` alone --
+  // that file has no hash field) so a boot-time restore can rebuild the
+  // spawned child's `REFERENCED_DEFINITION_HASHES` env without a hub
+  // round-trip. Absent for a deployment with no referenced bodies.
+  "referencedDefinitionHashes?": {
+    "[string]": "string > 0",
+  },
+  // Written only on the state-preserving hibernate teardown
+  // (`teardownDeployment({ reclaimDirs: false })`), never on deploy or
+  // rotation. Its presence is the durable answer to "did the hub park this
+  // deployment on purpose", as opposed to a record left behind by a crash
+  // or a bare process exit -- both of which leave no marker at all. Absent
+  // on every record written before this field existed and on every record
+  // for a deployment that has never been hibernated; `readWorkflowDeploymentRecord`
+  // and the boot scan both treat an absent marker as "live", so an old
+  // on-disk record keeps loading and restoring exactly as before.
+  "parkedAt?": "string > 0",
 });
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
 
 function recordPath(dataDir: string, deploymentId: string): string {
   return pathJoin(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
+}
+
+/**
+ * Read one deployment's record by id, for a caller that already knows the
+ * deployment id it needs and has no reason to re-scan the whole
+ * `workflow-runs/` tree. Returns `undefined` for a missing or unparseable
+ * record.
+ */
+export async function readWorkflowDeploymentRecord(
+  dataDir: string,
+  deploymentId: string,
+): Promise<WorkflowDeploymentRecord | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(recordPath(dataDir, deploymentId), "utf8");
+  } catch (cause) {
+    if (isErrnoNotFound(cause)) return undefined;
+    throw cause;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const record = WorkflowDeploymentRecord(parsed);
+  if (record instanceof type.errors) return undefined;
+  return record;
 }
 
 /**
@@ -73,6 +122,29 @@ export async function writeWorkflowDeploymentRecord(
   // sidecar.
   await writeFileAtomicDurable(path, JSON.stringify(record, null, 2), {
     mode: 0o600,
+  });
+}
+
+/**
+ * Mark an existing deployment record as parked: stamp `parkedAt` with the
+ * current time and rewrite the record in place. Called from the
+ * state-preserving hibernate teardown, after the record has already been
+ * confirmed to exist (a hibernate never writes a fresh record, only
+ * annotates the one the original deploy or a later rotation left behind).
+ * A missing record is not an error -- there is nothing to mark, and the
+ * caller's own "record IS the durable state" invariant means this should
+ * not happen outside a race with a concurrent reclaim, which just leaves
+ * the reclaim as the last write.
+ */
+export async function markWorkflowDeploymentRecordParked(
+  dataDir: string,
+  deploymentId: string,
+): Promise<void> {
+  const existing = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+  if (existing === undefined) return;
+  await writeWorkflowDeploymentRecord(dataDir, deploymentId, {
+    ...existing,
+    parkedAt: new Date().toISOString(),
   });
 }
 

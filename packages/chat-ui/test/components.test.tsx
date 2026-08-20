@@ -5,144 +5,32 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { Channel, MessageItem } from "../src/api";
+import type { MessageItem } from "../src/api";
 import { Composer } from "../src/composer";
+import { profileSubjectFromParticipant } from "../src/profile-subject";
+import { renamePayload, rowMenuLabels } from "../src/sidebar";
 import {
-  canSubmitNewChannel,
-  newChannelPayload,
-} from "../src/new-channel-dialog";
-import {
-  contextWindowControlState,
-  contextWindowPatchValue,
-} from "../src/channel-settings-panel";
-import { ChatSidebar, renamePayload, rowMenuLabels } from "../src/sidebar";
-import { ChannelTimeline } from "../src/timeline";
+  isTypingStateExpired,
+  nextTypingState,
+  parseTypingEvent,
+  typingLabel,
+  TypingIndicator,
+} from "../src/typing-indicator";
 
+import { WorkbenchTimeline } from "../src/timeline";
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
 
-const channel = (overrides: Partial<Channel>): Channel => ({
-  id: "c1",
-  title: "General",
-  kind: "channel",
-  pinned: true,
-  participants: [],
-  ...overrides,
-});
+/** The composer's slash-command hops — a no-op stand-in for these
+ * render-only tests, which never trigger them. */
+const composerSlashHandlers = {
+  onInviteAgent: () => {},
+  onOpenAgentsSettings: () => {},
+  onOpenRoutines: () => {},
+  onCreateRoutineInSpace: () => {},
+};
 
-describe("ChatSidebar", () => {
-  test("renders channels and chats under their own sections", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General" })]}
-        chats={[channel({ id: "c2", title: "DM with Ada", kind: "chat" })]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Channels");
-    expect(markup).toContain("Chats");
-    expect(markup).toContain("General");
-    expect(markup).toContain("DM with Ada");
-  });
-
-  test("marks the active channel current", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1" })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain('aria-current="true"');
-  });
-
-  test("hides the Channels heading when there are channels but no pinned channels", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[channel({ id: "c2", title: "DM with Ada", kind: "chat" })]}
-        activeChannelId="c2"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).not.toContain("Channels");
-    expect(markup).toContain("Chats");
-  });
-
-  test("shows the empty state with no channels or chats", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[]}
-        activeChannelId={null}
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("No channels yet");
-  });
-
-  test("badges a chat row by its fixed agent, never a raw address", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[
-          channel({
-            id: "c2",
-            title: "echo",
-            kind: "chat",
-            participants: [
-              { address: "ins_cd03d8e3@agents.example", handle: "echo" },
-            ],
-          }),
-        ]}
-        activeChannelId="c2"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Agent");
-    expect(markup).not.toMatch(RAW_ID_PATTERN);
-  });
-
-  test("shows no agent badge on a channel row", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General" })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).not.toContain("Agent");
-  });
-});
-
-describe("ChannelTimeline", () => {
+describe("WorkbenchTimeline", () => {
   const items: MessageItem[] = [
     {
       id: "m1",
@@ -172,8 +60,57 @@ describe("ChannelTimeline", () => {
   ];
 
   test("renders a text part as a bubble", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
     expect(markup).toContain("hello there");
+  });
+
+  // CL-6318: the timeline used to render text, event, file and block and
+  // drop `reasoning` and `tool-trace` on the floor — the agent's thinking
+  // and every tool call it made were invisible in the product.
+  test("renders a tool call, naming the tool and marking it finished", () => {
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
+    expect(markup).toContain('data-slot="tool-block"');
+    // react-ui presents the raw tool id in human phrasing.
+    expect(markup).toContain("Search");
+    expect(markup).toContain('data-status="output-available"');
+  });
+
+  test("renders reasoning as a disclosure rather than dropping it", () => {
+    const reasoning: MessageItem[] = [
+      {
+        id: "m_reason",
+        createdAt: "2026-01-01T00:03:00.000Z",
+        parts: [{ kind: "reasoning", text: "weighing the options" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={reasoning} />,
+    );
+    expect(markup).toContain("weighing the options");
+    expect(markup).toContain('data-slot="reasoning-part"');
+  });
+
+  test("a tool call still running is not shown as finished", () => {
+    const running: MessageItem[] = [
+      {
+        id: "m_running",
+        createdAt: "2026-01-01T00:04:00.000Z",
+        parts: [
+          {
+            kind: "tool-trace",
+            name: "deploy",
+            input: {},
+            status: "running",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={running} />);
+    expect(markup).toContain("Deploy");
+    expect(markup).toContain('data-status="running"');
+    expect(markup).not.toContain('data-status="output-available"');
   });
 
   test("shows the sender's name when present", () => {
@@ -185,8 +122,47 @@ describe("ChannelTimeline", () => {
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Researcher");
+  });
+
+  test("renders the tenant-monogram badge when the sender carries shared-workbench tenant context", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m4b",
+        createdAt: "2026-01-01T00:03:30.000Z",
+        parts: [{ kind: "text", text: "hi from the other side" }],
+        sender: {
+          name: "Researcher",
+          address: "researcher@agents.example",
+          tenantId: "tnt_2",
+          tenantName: "Beta Co",
+          tenantMonogram: "BC",
+        },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
+    expect(markup).toContain("chat-sender-tenant-badge");
+    expect(markup).toContain("BC");
+  });
+
+  test("shows no tenant-monogram badge when the sender carries no tenant context", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m4c",
+        createdAt: "2026-01-01T00:03:45.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: "Researcher", address: "researcher@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
+    expect(markup).not.toContain("chat-sender-tenant-badge");
   });
 
   test("falls back to a deterministic 'Member' label with no name and no matching participant", () => {
@@ -198,7 +174,9 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_a1b2c3@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -212,7 +190,9 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "ins_unknown1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withSender} />,
+    );
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -227,7 +207,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={withSender}
         participants={[
           { address: "ins_cd03d8e3@agents.example", handle: "echo" },
@@ -236,6 +216,27 @@ describe("ChannelTimeline", () => {
     );
     expect(markup).toContain("@echo");
     expect(markup).toContain("Agent");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("shows a matching participant's display name over its slugified handle", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m6b",
+        createdAt: "2026-01-01T00:05:30.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: "Myra", address: "ins_myra1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={withSender}
+        participants={[{ address: "ins_myra1@agents.example", handle: "myra" }]}
+      />,
+    );
+    expect(markup).toContain(">Myra<");
+    expect(markup).not.toContain(">@myra<");
+    expect(markup).toContain('title="@myra"');
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
@@ -249,19 +250,126 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={withSender}
         currentUser={{ principalId: "prn_self1" }}
       />,
     );
     expect(markup).toContain("You");
+    expect(markup).toContain('data-own="true"');
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
+  test("renders a footer after the last message", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={items}
+        footer={<span className="chat-typing-indicator">typing</span>}
+      />,
+    );
+    const timelineClose = markup.lastIndexOf("</div>");
+    expect(markup.slice(0, timelineClose)).toContain("chat-typing-indicator");
+  });
+
   test("renders an event part as a friendly humanized line", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
     expect(markup).toContain("member joined");
     expect(markup).not.toContain("member.joined");
+  });
+
+  test("renders a file part with name and media type, never base64 or blob ids", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "report.pdf",
+            mediaType: "application/pdf",
+            data: "JVBERi0xLjQK",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withFile} />);
+    expect(markup).toContain("report.pdf");
+    expect(markup).toContain("application/pdf");
+    expect(markup).toContain("Attachment");
+    expect(markup).not.toContain("JVBERi0xLjQK");
+    expect(markup).not.toContain("blob:");
+  });
+
+  test("a data-only file part (not yet persisted) renders its artifact chip inert", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-inline",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: "aGVsbG8=",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part renders its artifact chip clickable when onOpenArtifact is wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toContain("matrix.csv");
+    expect(markup).not.toMatch(
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part stays inert with no onOpenArtifact wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob-unwired",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withFile} />);
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
+    );
   });
 
   test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
@@ -280,7 +388,7 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={bothSenders}
         currentUser={{ principalId: "prn_self1" }}
       />,
@@ -304,11 +412,13 @@ describe("ChannelTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(<ChannelTimeline items={acrossDays} />);
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={acrossDays} />,
+    );
     expect(markup).toContain("chat-day-divider");
   });
 
-  test("renders an agent-joined event by the joining agent's handle, never its address", () => {
+  test("renders an agent-joined event by the joining agent's display name, never its address or bare handle", () => {
     const joinItems: MessageItem[] = [
       {
         id: "m8",
@@ -316,7 +426,7 @@ describe("ChannelTimeline", () => {
         parts: [
           {
             kind: "event",
-            event: "channel.agent-joined",
+            event: "workbench.agent-joined",
             data: {
               address: "ins_newagent1@agents.example",
               definitionId: "wfd_echo",
@@ -328,35 +438,106 @@ describe("ChannelTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <ChannelTimeline
+      <WorkbenchTimeline
         items={joinItems}
         participants={[
           { address: "ins_newagent1@agents.example", handle: "echo" },
         ]}
       />,
     );
-    expect(markup).toContain("@echo joined");
+    expect(markup).toContain("Echo joined");
+    expect(markup).not.toContain("@echo");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("renders any other part kind as a labeled fallback block, never the raw payload", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
-    expect(markup).toContain("[tool-trace]");
+  // Was asserted against `tool-trace` until CL-6318, which is to say it
+  // locked in the defect: a kind the wire really does define was being
+  // shown as unsupported. The fallback is for kinds this build genuinely
+  // does not know, and it must still never leak the raw payload.
+  test("renders an unknown part kind as a labeled fallback block, never the raw payload", () => {
+    const unknown = [
+      {
+        id: "m_unknown",
+        createdAt: "2026-01-01T00:05:00.000Z",
+        parts: [{ kind: "not-a-real-kind", secret: "hunter2" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ] as unknown as MessageItem[];
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={unknown} />);
+    expect(markup).toContain("[not-a-real-kind]");
     expect(markup).toContain("Unsupported content");
-    expect(markup).not.toContain("search");
-    expect(markup).not.toContain('"q"');
+    expect(markup).not.toContain("hunter2");
   });
 
   test("shows the empty timeline state with no messages", () => {
-    const markup = renderToStaticMarkup(<ChannelTimeline items={[]} />);
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={[]} />);
     expect(markup).toContain("No messages yet");
+  });
+
+  // CL-6092: the quiet "Fix this connection" affordance on a classified
+  // inference-failure reply.
+  const classifiedFailureItems: MessageItem[] = [
+    {
+      id: "m_fail",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [
+        {
+          kind: "text",
+          text: "This agent could not complete your request due to a credential error [HTTP 401]: invalid api key",
+        },
+      ],
+      sender: { name: null, address: "prn_fixture1@agents.example" },
+    },
+  ];
+
+  test("offers Fix this connection on a classified failure reply when a handler is wired", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={classifiedFailureItems}
+        onFixConnection={() => {}}
+      />,
+    );
+    expect(markup).toContain("Fix this connection");
+  });
+
+  test("renders Fix this connection as a react-ui outline button, not a bare link", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={classifiedFailureItems}
+        onFixConnection={() => {}}
+      />,
+    );
+    const fixConnectionButton = markup.match(
+      /<button[^>]*chat-bubble-fix-connection[^>]*>/,
+    )?.[0];
+    expect(fixConnectionButton).toBeDefined();
+    expect(fixConnectionButton).toContain('data-slot="button"');
+    expect(fixConnectionButton).toMatch(/\bborder\b/);
+  });
+
+  test("offers nothing when no onFixConnection handler is wired, even on a classified reply", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={classifiedFailureItems} />,
+    );
+    expect(markup).not.toContain("Fix this connection");
+  });
+
+  test("offers nothing on an ordinary reply, even with a handler wired", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline items={items} onFixConnection={() => {}} />,
+    );
+    expect(markup).not.toContain("Fix this connection");
   });
 });
 
 describe("Composer", () => {
   test("disables send while the draft is empty", () => {
     const markup = renderToStaticMarkup(
-      <Composer agents={[]} onSend={() => Promise.resolve(true)} />,
+      <Composer
+        agents={[]}
+        onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
+      />,
     );
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>/);
   });
@@ -372,65 +553,31 @@ describe("Composer", () => {
           },
         ]}
         onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
       />,
     );
     expect(markup).not.toContain("@undefined");
   });
-});
 
-// `NewChannelDialog` itself renders through `@corbits/react-ui`'s Radix
-// `Dialog.Portal`, which needs a real DOM container and produces no markup
-// under `renderToStaticMarkup` — same reason `InviteAgentDialog` has never
-// had a render test here. Its create-eligibility and payload-shaping logic
-// is pulled out as pure functions instead (mirrors `nextMessagesState` and
-// `draftAfterSend`) and tested directly.
-describe("canSubmitNewChannel / newChannelPayload (the new-chat create flow)", () => {
-  test("a channel needs a name", () => {
-    expect(canSubmitNewChannel("channel", "", null)).toBe(false);
-    expect(canSubmitNewChannel("channel", "  ", null)).toBe(false);
-    expect(canSubmitNewChannel("channel", "Ops", null)).toBe(true);
-  });
-
-  test("a chat needs an agent picked, not a name", () => {
-    expect(canSubmitNewChannel("chat", "", null)).toBe(false);
-    expect(canSubmitNewChannel("chat", "", "wfd_echo")).toBe(true);
-    expect(canSubmitNewChannel("chat", "My chat", null)).toBe(false);
-  });
-
-  test("a channel's payload never carries a definitionId", () => {
-    expect(newChannelPayload("channel", "Ops", null)).toEqual({
-      kind: "channel",
-      name: "Ops",
-    });
-    expect(newChannelPayload("channel", "  ", null)).toBeNull();
-  });
-
-  test("a chat's payload includes the picked definitionId with no name when none was typed", () => {
-    expect(newChannelPayload("chat", "", "wfd_echo")).toEqual({
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-  });
-
-  test("a chat's payload includes a typed name alongside the definitionId, never guessing one when blank", () => {
-    expect(newChannelPayload("chat", "My research chat", "wfd_echo")).toEqual({
-      kind: "chat",
-      definitionId: "wfd_echo",
-      name: "My research chat",
-    });
-  });
-
-  test("a chat with no agent picked yields no payload at all", () => {
-    expect(newChannelPayload("chat", "My research chat", null)).toBeNull();
+  test("exposes an attach control, file input, and polite preparing live region", () => {
+    const markup = renderToStaticMarkup(
+      <Composer
+        agents={[]}
+        onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
+      />,
+    );
+    expect(markup).toContain('aria-label="Attach files"');
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain('aria-live="polite"');
+    expect(markup).toContain("chat-composer-status");
+    expect(markup).not.toContain("Preparing attachments");
+    expect(markup).not.toContain('role="alert"');
   });
 });
 
 describe("no raw identifiers on screen", () => {
-  test("across the whole workspace's fixture surface — channels, an agent participant, an unknown sender, and a join event", () => {
-    const channels: Channel[] = [
-      channel({ id: "c1", title: "General" }),
-      channel({ id: "c2", title: "", kind: "chat" }),
-    ];
+  test("across the whole workspace's fixture surface — an agent participant, an unknown sender, and a join event", () => {
     const participants = [
       { address: "ins_cd03d8e3@agents.example", handle: "echo" },
       { address: "prn_teammate1@agents.example", handle: "ada" },
@@ -454,7 +601,7 @@ describe("no raw identifiers on screen", () => {
         parts: [
           {
             kind: "event",
-            event: "channel.agent-joined",
+            event: "workbench.agent-joined",
             data: {
               address: "ins_cd03d8e3@agents.example",
               definitionId: "wfd_echo",
@@ -468,19 +615,7 @@ describe("no raw identifiers on screen", () => {
 
     const markup = [
       renderToStaticMarkup(
-        <ChatSidebar
-          channels={channels}
-          chats={[]}
-          activeChannelId="c1"
-          onSelect={() => undefined}
-          onNewChannel={() => undefined}
-          onRename={() => undefined}
-          onTogglePin={() => undefined}
-          onOpenSettings={() => undefined}
-        />,
-      ),
-      renderToStaticMarkup(
-        <ChannelTimeline
+        <WorkbenchTimeline
           items={messageItems}
           participants={participants}
           currentUser={{ principalId: "prn_teammate1" }}
@@ -496,55 +631,30 @@ describe("no raw identifiers on screen", () => {
             },
           ]}
           onSend={() => Promise.resolve(true)}
+          {...composerSlashHandlers}
         />,
       ),
     ].join("\n");
 
     expect(markup).not.toMatch(RAW_ID_PATTERN);
-    expect(markup).toContain("Untitled channel");
-    expect(markup).toContain("@echo joined");
-  });
-});
-
-describe("ChatSidebar row menu", () => {
-  // Radix's `MenuContent` mounts into a portal only once the menu is open,
-  // so a closed-by-default static render (this package's only test
-  // infrastructure — see AGENTS.md coverage note) never shows the item
-  // labels themselves; the trigger button is the one thing this level of
-  // testing can assert. The item wording itself is covered directly by
-  // `rowMenuLabels` below.
-  test("renders a hidden-until-hover ellipsis trigger per row", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General", pinned: true })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("chat-sidebar-row-menu-trigger");
-    expect(markup).toContain("Channel actions");
+    expect(markup).toContain("Echo joined");
   });
 });
 
 describe("rowMenuLabels", () => {
-  test("offers Unpin for a pinned channel", () => {
+  test("offers Unpin for a pinned workbench", () => {
     expect(rowMenuLabels({ pinned: true })).toEqual([
       "Rename",
       "Unpin",
-      "Channel settings",
+      "Settings",
     ]);
   });
 
-  test("offers Pin for an unpinned channel", () => {
+  test("offers Pin for an unpinned workbench", () => {
     expect(rowMenuLabels({ pinned: false })).toEqual([
       "Rename",
       "Pin",
-      "Channel settings",
+      "Settings",
     ]);
   });
 });
@@ -563,26 +673,161 @@ describe("renamePayload", () => {
   });
 });
 
-describe("contextWindowControlState", () => {
-  test("an inheriting channel renders the bench-default mode with the resolved value", () => {
-    expect(contextWindowControlState({ value: 20, source: "inherit" })).toEqual(
-      { mode: "inherit", displayValue: 20 },
-    );
+describe("profileSubjectFromParticipant", () => {
+  test("agent addresses become agent subjects with @ handle display", () => {
+    expect(
+      profileSubjectFromParticipant({
+        address: "prn_agent@agents.example",
+        handle: "scout",
+      }),
+    ).toEqual({
+      kind: "agent",
+      address: "prn_agent@agents.example",
+      handle: "scout",
+      displayName: "@scout",
+      initials: "SC",
+    });
   });
 
-  test("an overriding channel renders the override mode with its own value", () => {
-    expect(contextWindowControlState({ value: 5, source: "override" })).toEqual(
-      { mode: "override", displayValue: 5 },
-    );
+  test("member addresses become member subjects", () => {
+    // Human participants are bare principal ids (no @); agent addresses carry a domain.
+    const subject = profileSubjectFromParticipant({
+      address: "prn_ada",
+      handle: "Ada Lovelace",
+    });
+    expect(subject.kind).toBe("member");
+    expect(subject.displayName).toBe("Ada Lovelace");
+    expect(subject.initials).toBe("AL");
   });
 });
 
-describe("contextWindowPatchValue", () => {
-  test("switching to inherit always clears the override to null", () => {
-    expect(contextWindowPatchValue("inherit", 5)).toBeNull();
+describe("parseTypingEvent", () => {
+  test("accepts a well-shaped payload", () => {
+    expect(parseTypingEvent({ principalId: "prn_typist1" })).toEqual({
+      principalId: "prn_typist1",
+    });
   });
 
-  test("override mode sends the field's own value", () => {
-    expect(contextWindowPatchValue("override", 7)).toBe(7);
+  test("rejects a missing principalId", () => {
+    expect(parseTypingEvent({})).toBeNull();
+  });
+
+  test("rejects a non-object payload", () => {
+    expect(parseTypingEvent("prn_typist1")).toBeNull();
+    expect(parseTypingEvent(null)).toBeNull();
+  });
+});
+
+describe("nextTypingState", () => {
+  test("a chat.typing event from someone else opens the banner with an expiry", () => {
+    const next = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_other1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    expect(next).toEqual({ principalId: "prn_other1", expiresAt: 5000 });
+  });
+
+  test("a chat.typing event carrying the signed-in user's own id is ignored", () => {
+    const next = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_self1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    expect(next).toBeNull();
+  });
+
+  test("any other event type leaves the current banner untouched", () => {
+    const current = { principalId: "prn_other1", expiresAt: 5000 };
+    const next = nextTypingState(
+      current,
+      { eventType: "chat.agent", data: {} },
+      "prn_self1",
+      1200,
+      4000,
+    );
+    expect(next).toBe(current);
+  });
+
+  test("a malformed chat.typing payload leaves the current banner untouched", () => {
+    const current = { principalId: "prn_other1", expiresAt: 5000 };
+    const next = nextTypingState(
+      current,
+      { eventType: "chat.typing", data: {} },
+      "prn_self1",
+      1200,
+      4000,
+    );
+    expect(next).toBe(current);
+  });
+
+  test("a second typist replaces the first — the banner always shows the latest ping", () => {
+    const afterA = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_a1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    const afterB = nextTypingState(
+      afterA,
+      { eventType: "chat.typing", data: { principalId: "prn_b1" } },
+      "prn_self1",
+      1500,
+      4000,
+    );
+    expect(afterB).toEqual({ principalId: "prn_b1", expiresAt: 5500 });
+  });
+});
+
+describe("isTypingStateExpired", () => {
+  test("is false before the expiry", () => {
+    expect(
+      isTypingStateExpired(
+        { principalId: "prn_other1", expiresAt: 5000 },
+        4000,
+      ),
+    ).toBe(false);
+  });
+
+  test("is true once past the expiry", () => {
+    expect(
+      isTypingStateExpired(
+        { principalId: "prn_other1", expiresAt: 5000 },
+        5000,
+      ),
+    ).toBe(true);
+  });
+
+  test("is false with no active state", () => {
+    expect(isTypingStateExpired(null, 5000)).toBe(false);
+  });
+});
+
+describe("typingLabel", () => {
+  test("uses the matching participant's handle, never the raw principal id", () => {
+    const label = typingLabel("prn_teammate1", [
+      { address: "prn_teammate1@agents.example", handle: "ada" },
+    ]);
+    expect(label).toBe("ada");
+    expect(label).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("falls back to the deterministic Member label with no matching participant", () => {
+    expect(typingLabel("prn_unknown1", [])).toBe("Member");
+  });
+});
+
+describe("TypingIndicator", () => {
+  test("renders the given label as an 'is typing' status", () => {
+    const markup = renderToStaticMarkup(<TypingIndicator label="ada" />);
+    expect(markup).toContain("ada is typing");
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain("chat-typing-row");
+    expect(markup).toContain('data-own="false"');
   });
 });

@@ -6,19 +6,21 @@
   position: relative;
 }
 
+/* Mock .bench: compact monogram dock trigger (col2 foot) on the ground. */
 .bench-switcher-trigger {
   display: flex;
   width: 100%;
-  min-height: 2.75rem;
+  min-height: 0;
   align-items: center;
-  gap: 0.625rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.625rem 0.75rem;
-  background: var(--muted);
+  gap: 0.5rem;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  border-radius: 0;
+  padding: 0.45rem 0.5rem;
+  background: var(--background, #fff);
   font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: 0.84rem;
+  font-weight: 580;
   line-height: 1.25;
   color: var(--foreground);
   cursor: pointer;
@@ -29,9 +31,24 @@
 }
 
 .bench-switcher-trigger:hover {
-  background: var(--background);
-  border-color: var(--foreground);
+  background: var(--background, #fff);
+  border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
   color: var(--foreground);
+}
+
+/* Mock .bench .bm: square monogram avatar. */
+.bench-switcher-mark {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 0;
+  background: var(--muted, #f4f4f4);
+  color: var(--foreground, #2b2627);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .bench-switcher-name {
@@ -105,9 +122,9 @@
 }
 
 .bench-switcher-create {
-  border-top: 1px solid var(--border);
-  margin-top: 0.25rem;
-  padding-top: 0.625rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.625rem;
 }
 
 .bench-panel {
@@ -163,4 +180,56 @@
 .bench-member-email {
   color: var(--muted-foreground);
   font-size: 0.875rem;
+}
+
+.bench-kind-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.bench-kind-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card, var(--background));
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bench-kind-card[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.bench-kind-card-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.bench-kind-card-desc {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.35;
+}
+
+.bench-textarea {
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.bench-join-policy {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  line-height: 1.4;
 }

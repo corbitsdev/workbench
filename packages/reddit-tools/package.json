@@ -1,0 +1,31 @@
+{
+  "name": "@corbits/reddit-tools",
+  "private": true,
+  "description": "Reddit integration (via ScrapeCreators): a minimal client and an @intx/agent tool bundle for searching Reddit sitewide or within one subreddit",
+  "version": "0.0.2",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "scrapecreators"
+      }
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

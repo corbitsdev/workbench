@@ -19,10 +19,10 @@ import { workflowDefinition } from "./workflow-definitions";
 // deployment" a database referent, so approvals and signal correlations anchor
 // to a run row rather than a bare run id string.
 //
-// The id is opaque and heterogeneous: externally-triggered runs use the
-// trigger mail's messageId, while internal (workflow-spawned) runs use a
-// freshly minted run id. Both are just run identifiers, so no format is
-// enforced on the column.
+// The id is opaque and heterogeneous: a deployment's addressable top-level
+// run uses its stable mail address, while internal body-child runs use freshly
+// minted synthetic ids. Both are run identifiers, so no format is enforced on
+// the column.
 export const workflowRun = pgTable(
   "workflow_run",
   {
@@ -30,7 +30,7 @@ export const workflowRun = pgTable(
     // The definition a run belongs to, carried by every run: a folded
     // agent-origin run sets it at launch, and a deployment's anchor run and its
     // child runs carry the deployment's definition. It is the run's anchor to a
-    // first-class definition. `cascade` matches `deploymentId`'s onDelete, so
+    // first-class definition. `cascade` matches `anchorRunId`'s onDelete, so
     // deleting the definition removes its runs.
     definitionId: text("definition_id")
       .notNull()
@@ -42,7 +42,7 @@ export const workflowRun = pgTable(
     // deployment id -- so an anchor row is self-referential. The only runtime
     // read of the column (`resolveWorkflowPrincipalNames`) degrades gracefully
     // when it is null.
-    deploymentId: text("deployment_id").references(
+    anchorRunId: text("anchor_run_id").references(
       (): AnyPgColumn => workflowRun.id,
       { onDelete: "cascade" },
     ),
@@ -58,12 +58,16 @@ export const workflowRun = pgTable(
     principalId: text("principal_id").references(() => principal.id, {
       onDelete: "set null",
     }),
-    // A run is born "running". It settles into a terminal status when its
-    // terminal event lands on the workflow-run ref: the hub's pack-receive path
-    // flips this column under a `status = 'running'` guard so a redelivered
-    // terminal event does not re-terminate the run.
+    // A deployment's anchor run is born "deployed": the deploy->first-trigger
+    // window is live but not yet running. The first trigger reconciles the
+    // anchor and flips this column "deployed" -> "running" (see
+    // `anchorWithPrincipal`). A child run has no such window -- it exists only
+    // once execution spawns it -- so it is born "running". A run settles into a
+    // terminal status when its terminal event lands on the workflow-run ref:
+    // the hub's pack-receive path flips this column under a live-status guard so
+    // a redelivered terminal event does not re-terminate the run.
     status: text("status", {
-      enum: ["running", "completed", "failed", "cancelled"],
+      enum: ["deployed", "running", "completed", "failed", "cancelled"],
     })
       .notNull()
       .default("running"),
@@ -99,3 +103,19 @@ export const workflowRun = pgTable(
       .where(sql`${t.address} is not null`),
   ],
 );
+
+// The statuses a run holds while live -- not yet settled into a terminal state.
+// A deployment anchor is born "deployed" and flips to "running" on its first
+// trigger; a child run is born "running". Every status gate that must treat a
+// live run as live tests membership here, so "which statuses count as live" has
+// a single definition rather than a `status !== "running"` scattered across the
+// workflow-run domain. The `satisfies` bound makes a drift from the column enum
+// a compile error.
+export const liveWorkflowRunStatuses = [
+  "deployed",
+  "running",
+] as const satisfies readonly (typeof workflowRun.$inferSelect)["status"][];
+
+export function isLiveWorkflowRunStatus(status: string): boolean {
+  return liveWorkflowRunStatuses.some((live) => live === status);
+}

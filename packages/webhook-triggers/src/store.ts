@@ -3,8 +3,21 @@
 // HTTP layer never touches drizzle directly, and `WebhookTriggerStore`
 // is the seam both route modules actually depend on, so each is
 // testable with a plain in-memory fake.
+//
+// The signing secret is encrypted at rest through Interchange's
+// `CredentialCipher` seam (`@intx/types`) — the same seam
+// `vendor/intx/hub-api`'s credential/model-provider/oauth-client routes
+// use. `createDrizzleWebhookTriggerStore` encrypts on `create` and
+// `rotateSecret`, and decrypts on `get`/`getById`, so every other
+// module in this package (`management-routes.ts`, `ingress-routes.ts`,
+// their tests) keeps seeing a plaintext `secret` on a `WebhookTriggerRow`
+// exactly as before — only what actually lands on disk changed. The
+// `credentialAad` binding is `["credential-secret", triggerId, "secret"]`,
+// so a ciphertext copied onto a different trigger row fails to decrypt
+// rather than silently decrypting under the wrong identity.
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { credentialAad, type CredentialCipher } from "@intx/types";
 
 import { webhookTrigger, type WebhookTriggerRow } from "./schema";
 
@@ -47,9 +60,24 @@ export interface WebhookTriggerStore {
 
 export function createDrizzleWebhookTriggerStore<
   TSchema extends Record<string, unknown>,
->(db: WebhookTriggersDb<TSchema>): WebhookTriggerStore {
+>(
+  db: WebhookTriggersDb<TSchema>,
+  credentialCipher: CredentialCipher,
+): WebhookTriggerStore {
+  async function decrypted(row: WebhookTriggerRow): Promise<WebhookTriggerRow> {
+    const secret = await credentialCipher.decrypt(
+      row.secret,
+      credentialAad(row.id, "secret"),
+    );
+    return { ...row, secret };
+  }
+
   return {
     async create(input) {
+      const encryptedSecret = await credentialCipher.encrypt(
+        input.secret,
+        credentialAad(input.id, "secret"),
+      );
       const [row] = await db
         .insert(webhookTrigger)
         .values({
@@ -58,7 +86,7 @@ export function createDrizzleWebhookTriggerStore<
           name: input.name,
           workflowDefinitionId: input.workflowDefinitionId,
           inputTemplate: input.inputTemplate,
-          secret: input.secret,
+          secret: encryptedSecret,
           enabled: true,
           createdBy: input.createdBy,
         })
@@ -66,7 +94,10 @@ export function createDrizzleWebhookTriggerStore<
       if (row === undefined) {
         throw new Error("webhook trigger insert returned no row");
       }
-      return row;
+      // The plaintext is already known here (the caller just generated
+      // it) — return it directly rather than round-tripping through an
+      // extra decrypt call.
+      return { ...row, secret: input.secret };
     },
 
     async get(tenantId, triggerId) {
@@ -79,7 +110,7 @@ export function createDrizzleWebhookTriggerStore<
             eq(webhookTrigger.tenantId, tenantId),
           ),
         );
-      return row;
+      return row !== undefined ? decrypted(row) : undefined;
     },
 
     async getById(triggerId) {
@@ -87,10 +118,13 @@ export function createDrizzleWebhookTriggerStore<
         .select()
         .from(webhookTrigger)
         .where(eq(webhookTrigger.id, triggerId));
-      return row;
+      return row !== undefined ? decrypted(row) : undefined;
     },
 
     async list(tenantId) {
+      // Never decrypted: `publicView` (management-routes.ts) never reads
+      // `secret` off a listed row, so paying for N decrypts here would be
+      // pure waste.
       return db
         .select()
         .from(webhookTrigger)
@@ -98,9 +132,13 @@ export function createDrizzleWebhookTriggerStore<
     },
 
     async rotateSecret(tenantId, triggerId, secret) {
+      const encryptedSecret = await credentialCipher.encrypt(
+        secret,
+        credentialAad(triggerId, "secret"),
+      );
       const [row] = await db
         .update(webhookTrigger)
-        .set({ secret })
+        .set({ secret: encryptedSecret })
         .where(
           and(
             eq(webhookTrigger.id, triggerId),
@@ -108,7 +146,9 @@ export function createDrizzleWebhookTriggerStore<
           ),
         )
         .returning();
-      return row;
+      // As in `create`, the plaintext is already known — return it
+      // directly instead of decrypting what was just encrypted.
+      return row !== undefined ? { ...row, secret } : undefined;
     },
 
     async setEnabled(tenantId, triggerId, enabled) {
