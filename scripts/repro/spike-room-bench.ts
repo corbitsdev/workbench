@@ -3,21 +3,27 @@
 // against the spike path and, where the same number exists, against
 // today's chat path in the same process.
 //
-// Run against a local stack that already has an inference source seeded:
+// Run it against a local Ollama, which is all the inference it needs:
 //
 //   bun scripts/repro/spike-room-bench.ts
 //
-// DATABASE_URL, SESSION_SECRET and the sign-in account come from .env,
-// the same values `bun run dev` uses.
+// The bench signs up its own account and connects that Ollama through
+// the real onboarding path, so the numbers never depend on which
+// credentials a given developer's database happens to hold — and no key
+// material is read from anywhere but the environment the hub itself runs
+// under. DATABASE_URL comes from .env, the same value `bun run dev` uses.
 
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { resetSchema, setupDatabase } from "../db-setup.ts";
+import { createHubAPI } from "../../packages/hub-client/src/index.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/hub-client/src/credential-test.ts";
+import { testAndPersistCredential } from "../../packages/onboarding/src/complete-credential.ts";
 
 const databaseUrl = required("DATABASE_URL");
-const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
-const password = process.env["HUB_ADMIN_PASSWORD"] ?? "password123";
+const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434";
 const TURNS = Number(process.env["SPIKE_BENCH_TURNS"] ?? "5");
 
 function required(name: string): string {
@@ -59,6 +65,59 @@ function spawnApp(dir: string, env: Record<string, string>): Spawned {
   };
 }
 
+/** The catalog model row for `canonicalName`, creating it if it is new. */
+async function ensureCatalogModel(
+  tenantId: string,
+  cookies: string[],
+  canonicalName: string,
+): Promise<string> {
+  const created = await hubApi(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/models`,
+    { canonicalName },
+    cookies,
+  );
+  if (created.status === 201) return (created.data as { id: string }).id;
+  if (created.status !== 409) {
+    throw new Error(
+      `catalog model ${canonicalName} rejected (${String(created.status)})`,
+    );
+  }
+  const listed = await hubApi(
+    "GET",
+    `/api/tenants/${tenantId}/catalog/models`,
+    undefined,
+    cookies,
+  );
+  const existing = (
+    listed.data as { data: { id: string; canonicalName: string }[] }
+  ).data.find((row) => row.canonicalName === canonicalName);
+  if (existing === undefined) {
+    throw new Error(`catalog model ${canonicalName} conflicts but is not listable`);
+  }
+  return existing.id;
+}
+
+/** A chat-capable model this machine's Ollama has actually pulled. */
+async function pickLocalOllamaModel(): Promise<string> {
+  const res = await fetch(`${ollamaBaseUrl}/api/tags`);
+  if (!res.ok) {
+    throw new Error(
+      `no Ollama at ${ollamaBaseUrl} (${String(res.status)}); start one or set OLLAMA_BASE_URL`,
+    );
+  }
+  const tags = (await res.json()) as {
+    models: { name: string; capabilities?: string[] }[];
+  };
+  const chat = tags.models.find((entry) =>
+    (entry.capabilities ?? []).includes("completion"),
+  );
+  if (chat === undefined) {
+    throw new Error(`the Ollama at ${ollamaBaseUrl} serves no chat model`);
+  }
+  return chat.name;
+}
+
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
@@ -72,11 +131,22 @@ const repoRoot = path.resolve(import.meta.dir, "..", "..");
 const { default: postgres } = (await import(
   Bun.resolveSync("postgres", path.join(repoRoot, "apps", "hub"))
 )) as { default: (url: string, opts?: unknown) => never };
-const sql = postgres(databaseUrl, { max: 2 });
+// Its own database, rebuilt per run: the catalog a turn resolves against
+// then holds only what this bench seeded, and a developer's own data is
+// neither read nor disturbed.
+const benchDatabaseUrl = (() => {
+  const url = new URL(databaseUrl);
+  url.pathname = `${url.pathname.replace(/^\//, "")}_spike_bench`;
+  return url.toString();
+})();
+await resetSchema(benchDatabaseUrl);
+await setupDatabase(benchDatabaseUrl);
+const sql = postgres(benchDatabaseUrl, { max: 2 });
 const sidecarId = `sidecar-spike-${crypto.randomUUID().slice(0, 8)}`;
 const sidecarToken = crypto.randomUUID();
 const port = 4400 + Math.floor(Math.random() * 200);
 const baseUrl = `http://localhost:${String(port)}`;
+const hubApi = createHubAPI(baseUrl);
 
 const digest = await crypto.subtle.digest(
   "SHA-256",
@@ -88,6 +158,7 @@ await sql`insert into sidecar (id, url, token_hash_sha256)
 const hubData = await mkdtemp(path.join(tmpdir(), "spike-hub-"));
 const sidecarData = await mkdtemp(path.join(tmpdir(), "spike-sidecar-"));
 const hub = spawnApp(path.join(repoRoot, "apps", "hub"), {
+  DATABASE_URL: benchDatabaseUrl,
   PORT: String(port),
   BASE_URL: baseUrl,
   HUB_DATA_DIR: hubData,
@@ -129,20 +200,80 @@ try {
   startSidecar();
   await Bun.sleep(3000);
 
-  const signIn = await fetch(`${baseUrl}/api/auth/sign-in/email`, {
+  const email = `spike-bench-${crypto.randomUUID()}@example.invalid`;
+  const password = `pw-${crypto.randomUUID()}`;
+  const signUp = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ name: "Spike Bench", email, password }),
   });
-  if (signIn.status !== 200) {
-    throw new Error(`sign-in failed (${String(signIn.status)}): ${await signIn.text()}`);
+  if (signUp.status !== 200) {
+    throw new Error(`sign-up failed (${String(signUp.status)}): ${await signUp.text()}`);
   }
-  const cookie = signIn.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+  const setCookies = signUp.headers.getSetCookie().map((c) => c.split(";")[0]);
+  const cookie = setCookies.join("; ");
+  const userId = (JSON.parse(await signUp.text()) as { user: { id: string } }).user.id;
 
-  // The bench needs a tenant that already has an inference source seeded;
-  // naming it explicitly beats guessing from a listing.
-  const tenantId = required("SPIKE_BENCH_TENANT");
-  console.log(`[bench] tenant ${tenantId}`);
+  const provision = await hubApi(
+    "POST",
+    "/api/onboarding/provision",
+    { name: "Spike Bench" },
+    setCookies,
+  );
+  if (provision.status !== 200) {
+    throw new Error(`provision failed (${String(provision.status)})`);
+  }
+
+  // The same connect the onboarding page drives, pointed at a local
+  // Ollama: a real credential, sealed under the hub's own key, so a turn
+  // resolves a source exactly the way a signed-up person's does.
+  const connected = await testAndPersistCredential({
+    api: hubApi,
+    cookies: setCookies,
+    hubUrl: baseUrl,
+    userId,
+    userEmail: email,
+    provider: "ollama",
+    apiKey: OLLAMA_PLACEHOLDER_SECRET,
+    baseURLOverride: ollamaBaseUrl,
+    pushWorkflow: () => {
+      throw new Error("the bench never pushes a workflow");
+    },
+    log: () => undefined,
+  });
+  if (connected.kind !== "connected") {
+    throw new Error(`connecting ollama failed: ${JSON.stringify(connected)}`);
+  }
+  const tenantId = connected.tenantId;
+
+  // The connect offers every model the local Ollama has pulled at one
+  // shared priority, so the tenant default falls to whichever name sorts
+  // first — an embedding model on most machines. The bench promotes the
+  // one chat model it means to measure to the head of that list.
+  const localModel = await pickLocalOllamaModel();
+  const modelId = await ensureCatalogModel(tenantId, setCookies, localModel);
+  const offerings = await hubApi(
+    "GET",
+    `/api/tenants/${tenantId}/catalog/offerings`,
+    undefined,
+    setCookies,
+  );
+  const chatOffering = (
+    offerings.data as { data: { id: string; modelId: string }[] }
+  ).data.find((entry) => entry.modelId === modelId);
+  if (chatOffering === undefined) {
+    throw new Error(`no offering for ${localModel} on the bench tenant`);
+  }
+  const promoted = await hubApi(
+    "PATCH",
+    `/api/tenants/${tenantId}/catalog/offerings/${chatOffering.id}`,
+    { priority: 0 },
+    setCookies,
+  );
+  if (promoted.status !== 200) {
+    throw new Error(`promoting ${localModel} failed (${String(promoted.status)})`);
+  }
+  console.log(`[bench] tenant ${tenantId} (ollama ${localModel} at ${ollamaBaseUrl})`);
 
   const call = async (method: string, route: string, body?: unknown) => {
     const started = performance.now();
@@ -217,41 +348,126 @@ try {
   const hydration = await call("GET", `/spike-rooms/${roomId}/messages`);
   if (hydration.status !== 200) throw new Error(`hydration failed: ${hydration.text}`);
 
-  for (let turn = 0; turn < TURNS; turn++) {
+  type TurnOutcome = {
+    label: string;
+    sendAckMs: number;
+    firstTokenMs?: number;
+    replyMs?: number;
+    status: "completed" | "failed" | "unresolved";
+    childRunId?: string;
+  };
+
+  /** Sends one message and follows its turn on the stream alone. */
+  async function runTurn(
+    label: string,
+    body: string,
+    options: { waitMs: number; onFirstToken?: () => Promise<void> } = {
+      waitMs: 90_000,
+    },
+  ): Promise<TurnOutcome> {
     const before = streamEvents.length;
     const sentAt = performance.now();
-    const sent = await call("POST", `/spike-rooms/${roomId}/messages`, {
-      body: `Reply with the single word ok (${String(turn)}).`,
-    });
+    const sent = await call("POST", `/spike-rooms/${roomId}/messages`, { body });
     if (sent.status !== 201) throw new Error(`send failed: ${sent.text}`);
-    sendMs.push(sent.elapsed);
 
-    let firstToken: number | undefined;
-    let ended: number | undefined;
-    const turnDeadline = Date.now() + 90_000;
-    while (Date.now() < turnDeadline && ended === undefined) {
+    const outcome: TurnOutcome = {
+      label,
+      sendAckMs: sent.elapsed,
+      status: "unresolved",
+    };
+    let firstTokenHandled = false;
+    const deadline = Date.now() + options.waitMs;
+    while (Date.now() < deadline && outcome.status === "unresolved") {
       for (const event of streamEvents.slice(before)) {
-        const data = event.data as { phase?: string; childRunId?: string; runId?: string };
-        if (event.type === "room.turn" && data.phase === "delta" && firstToken === undefined) {
-          firstToken = event.at;
+        if (event.type !== "room.turn") continue;
+        const data = event.data as {
+          phase?: string;
+          childRunId?: string;
+          status?: "completed" | "failed";
+        };
+        if (typeof data.childRunId === "string" && data.childRunId !== "") {
+          outcome.childRunId = data.childRunId;
         }
-        if (event.type === "room.turn" && data.phase === "ended") {
-          ended = event.at;
-          if (typeof data.childRunId === "string" && data.childRunId !== "") {
-            childRunIds.push(data.childRunId);
-          }
+        if (data.phase === "delta" && outcome.firstTokenMs === undefined) {
+          outcome.firstTokenMs = event.at - sentAt;
+        }
+        if (data.phase === "ended") {
+          outcome.replyMs = event.at - sentAt;
+          outcome.status = data.status ?? "failed";
         }
       }
-      if (ended === undefined) await Bun.sleep(25);
+      if (
+        outcome.firstTokenMs !== undefined &&
+        !firstTokenHandled &&
+        options.onFirstToken !== undefined
+      ) {
+        firstTokenHandled = true;
+        await options.onFirstToken();
+      }
+      if (outcome.status === "unresolved") await Bun.sleep(25);
     }
-    if (firstToken !== undefined) firstTokenMs.push(firstToken - sentAt);
-    if (ended !== undefined) replyMs.push(ended - sentAt);
     console.log(
-      `[turn ${String(turn)}] send ack ${String(Math.round(sent.elapsed))}ms, ` +
-        `first token ${firstToken === undefined ? "none" : String(Math.round(firstToken - sentAt)) + "ms"}, ` +
-        `reply ${ended === undefined ? "TIMEOUT" : String(Math.round(ended - sentAt)) + "ms"}`,
+      `[${label}] send ack ${String(Math.round(outcome.sendAckMs))}ms, ` +
+        `first token ${
+          outcome.firstTokenMs === undefined
+            ? "none"
+            : String(Math.round(outcome.firstTokenMs)) + "ms"
+        }, ` +
+        `reply ${
+          outcome.replyMs === undefined
+            ? "none"
+            : String(Math.round(outcome.replyMs)) + "ms"
+        } (${outcome.status})`,
     );
+    return outcome;
   }
+
+  const outcomes: TurnOutcome[] = [];
+  for (let turn = 0; turn < TURNS; turn++) {
+    const outcome = await runTurn(
+      turn === 0 ? "turn 0 (cold)" : `turn ${String(turn)} (warm)`,
+      `Reply with the single word ok (${String(turn)}).`,
+    );
+    outcomes.push(outcome);
+    sendMs.push(outcome.sendAckMs);
+    if (outcome.firstTokenMs !== undefined) firstTokenMs.push(outcome.firstTokenMs);
+    if (outcome.replyMs !== undefined) replyMs.push(outcome.replyMs);
+    if (outcome.childRunId !== undefined) childRunIds.push(outcome.childRunId);
+  }
+  const warmFirstTokens = outcomes
+    .slice(1)
+    .map((outcome) => outcome.firstTokenMs)
+    .filter((value): value is number => value !== undefined);
+
+  // [5] A turn killed under the room: the sidecar — the whole execution
+  // plane — is killed while the turn is streaming, then brought back. The
+  // room is expected to outlive it, the damage to stop at that turn, and
+  // the next message to be answered normally.
+  const killed = await runTurn(
+    "killed turn",
+    "Count slowly from one to fifty, one number per line.",
+    {
+      waitMs: 60_000,
+      onFirstToken: async () => {
+        console.log("[5] killing the sidecar mid-turn");
+        await sidecar.stop();
+      },
+    },
+  );
+  const roomAfterKill = await call("GET", `/spike-rooms/${roomId}/messages`);
+  console.log(
+    `[5] room after the kill: GET messages ${String(roomAfterKill.status)}, ` +
+      `killed turn ${killed.status}`,
+  );
+  startSidecar();
+  await Bun.sleep(15_000);
+  console.log("--- sidecar after the restart ---");
+  console.log(sidecar.output().split("\n").slice(0, 12).join("\n"));
+  const afterKill = await runTurn(
+    "turn after the kill",
+    "Reply with the single word ok (after the kill).",
+    { waitMs: 120_000 },
+  );
 
   const roomRow = (
     await sql`select run_id from chat.spike_room where id = ${roomId}`
@@ -261,26 +477,52 @@ try {
     (await sql`select count(*)::int as n from workflow_run`)[0]?.["n"] ?? 0,
   );
 
-  // Traceability: the reply's child run id, read back through the run
-  // surfaces that already exist.
-  const traceability: Record<string, number> = {};
-  const childRunId = childRunIds[0];
-  if (childRunId !== undefined) {
-    for (const route of [
-      `/workflows/runs/${childRunId}`,
-      `/workflows/runs/${childRunId}/events`,
-      `/workflows/runs/${childRunId}/turns`,
-    ]) {
-      const res = await call("GET", route);
-      traceability[route] = res.status;
+  // [6] Traceability: a reply row's run id, read back through the run
+  // surfaces that already exist. The reply carries the turn's child run
+  // id; the room's own run id is what the run routes are keyed by, so
+  // both are read and the child id is looked for inside the log.
+  const messages = await sql`select id, author_kind, run_id, body from chat.spike_room_message
+                             where room_id = ${roomId} order by created_at`;
+  const replies = messages.filter((row) => row["author_kind"] === "agent");
+  const repliesWithRunId = replies.filter((row) => row["run_id"] !== null).length;
+  const tracedChildRunId =
+    replies.map((row) => row["run_id"]).find((value) => value !== null) ?? null;
+
+  const traceability: Record<string, string> = {};
+  for (const [label, route] of [
+    ["room run", `/workflows/runs/${roomRunId}`],
+    ["room run events", `/workflows/runs/${roomRunId}/events`],
+    ["room run turns", `/workflows/runs/${roomRunId}/turns`],
+    ...(tracedChildRunId !== null
+      ? ([
+          ["child run", `/workflows/runs/${String(tracedChildRunId)}`],
+          ["child run events", `/workflows/runs/${String(tracedChildRunId)}/events`],
+        ] as const)
+      : []),
+  ] as const) {
+    const res = await call("GET", route);
+    const mentions =
+      tracedChildRunId !== null && res.text.includes(String(tracedChildRunId));
+    traceability[label] =
+      `${String(res.status)}${res.status === 200 && mentions ? " (names the child run)" : ""}`;
+    if (label === "room run events" && mentions) {
+      const body = JSON.parse(res.text) as { data?: unknown[]; items?: unknown[] };
+      const events = body.data ?? body.items ?? [];
+      const naming = events.filter((event) =>
+        JSON.stringify(event).includes(String(tracedChildRunId)),
+      );
+      const sample =
+        naming[0] !== undefined
+          ? JSON.stringify(naming[0])
+          : res.text.slice(
+              Math.max(0, res.text.indexOf(String(tracedChildRunId)) - 160),
+            );
+      console.log(
+        `[6] ${String(naming.length)} of ${String(events.length)} room-run events name ` +
+          `${String(tracedChildRunId)}; around the match: ${sample.slice(0, 300)}`,
+      );
     }
   }
-
-  const messages = await sql`select author_kind, run_id from chat.spike_room_message
-                             where room_id = ${roomId} order by created_at`;
-  const repliesWithRunId = messages.filter(
-    (row) => row["author_kind"] === "agent" && row["run_id"] !== null,
-  ).length;
 
   console.log("");
   console.log("=== spike room results ===");
@@ -293,9 +535,17 @@ try {
     )}ms n=${String(sendMs.length)}`,
   );
   console.log(
-    `first token:                  p50 ${String(percentile(firstTokenMs, 50))}ms p95 ${String(
-      percentile(firstTokenMs, 95),
-    )}ms n=${String(firstTokenMs.length)}`,
+    `first token (warm room):      p50 ${String(percentile(warmFirstTokens, 50))}ms p95 ${String(
+      percentile(warmFirstTokens, 95),
+    )}ms n=${String(warmFirstTokens.length)} ` +
+      `[${warmFirstTokens.map((value) => String(Math.round(value))).join(", ")}]`,
+  );
+  console.log(
+    `first token (cold room):      ${
+      outcomes[0]?.firstTokenMs === undefined
+        ? "none"
+        : String(Math.round(outcomes[0].firstTokenMs)) + "ms"
+    }`,
   );
   console.log(
     `reply complete:               p50 ${String(percentile(replyMs, 50))}ms p95 ${String(
@@ -303,10 +553,30 @@ try {
     )}ms n=${String(replyMs.length)}`,
   );
   console.log(`GETs after mount:             ${String(hydrationGets - 1)}`);
-  console.log(`replies carrying a run id:    ${String(repliesWithRunId)}/${String(TURNS)}`);
+  console.log(
+    `killed turn:                  ${killed.status}, room readable after: ${String(
+      roomAfterKill.status,
+    )}`,
+  );
+  console.log(
+    `turn after the kill:          ${afterKill.status}, first token ${
+      afterKill.firstTokenMs === undefined
+        ? "none"
+        : String(Math.round(afterKill.firstTokenMs)) + "ms"
+    }`,
+  );
+  console.log(
+    `replies carrying a run id:    ${String(repliesWithRunId)}/${String(replies.length)}`,
+  );
   console.log(`room run id:                  ${roomRunId}`);
   console.log(`child run ids:                ${childRunIds.join(", ")}`);
   console.log(`run-surface reads:            ${JSON.stringify(traceability)}`);
+  console.log("--- replies ---");
+  for (const reply of replies) {
+    console.log(
+      `${String(reply["run_id"])}: ${String(reply["body"]).slice(0, 120).replaceAll("\n", " ")}`,
+    );
+  }
   streamAbort.abort();
   console.log("--- hub log (spike lines) ---");
   console.log(

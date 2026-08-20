@@ -88,6 +88,11 @@ export type SpikeRoomRunDeps = {
   readonly turnTimeoutMs: number;
 };
 
+/** Asset names are lowercase-kebab; a room id carries an underscore. */
+export function assetNameForRoom(roomId: string): string {
+  return `spike-room-${roomId.replaceAll("_", "-").toLowerCase()}`;
+}
+
 export class SpikeRoomLaunchError extends Error {
   constructor(message: string) {
     super(message);
@@ -165,7 +170,7 @@ export async function ensureRoomRun(
   const asset = await deps.assetService.createAsset({
     tenantId: room.tenantId,
     kind: "workflow",
-    name: `spike-room-${room.id}`,
+    name: assetNameForRoom(room.id),
   });
   await ensureWorkflowDefinitionForAsset(deps.db, {
     assetId: asset.id,
