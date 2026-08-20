@@ -638,3 +638,46 @@ The remaining wire, in order:
    `materializeStepTools`. Whether the source-format deploy still stages a
    `tool-packages-manifest.json` for those pins is the first thing an
    end-to-end run will answer.
+
+## CL-6324 e2e proof: what a real boot found
+
+The stack's first real boot (scratch database, real signup, real Ollama)
+walked the seed/launch path with nothing mocked. It got as far as a fully
+seeded tenant with every default workflow deployed by source-ref, then
+stopped at the folded launch. What it found, in the order it found it:
+
+1. **`@corbits/mcp-tools` shipped new `src/` under an unchanged version.**
+   PR #98's `mcp.<slug>` handle change edited `src/tool.ts` and left
+   `0.0.4` in place, which `assertToolPackagesFresh` refuses — the seed's
+   tool-registry publish failed before any workflow deployed. Fixed by the
+   bump the check asks for.
+2. **The seed pushed the retired `workflow.json` envelope.** A workflow
+   asset now accepts only a source codebase declaring an
+   `interchange.workflow` entry (`workflow-kind.ts`), so every asset push
+   was rejected `path-violation`. `createGitWorkflowPusher` now renders the
+   serialized definition into that two-file form.
+3. **The seed deployed by bare `assetId`.** `POST /workflows/deployments`
+   takes the code-sourced pair — a `source` with
+   `package: { format: "source", commitSha }` plus the declared `entry`.
+   The pusher reports the sha it left on `main` and the deploy pins it.
+4. **STILL OPEN — a folded launch reads its body from `workflow.json`.**
+   `packages/folded-runs/src/definition.ts`'s `readDefinitionJSON` reads
+   `WORKFLOW_JSON_PATH` out of the definition asset, which a source-format
+   asset does not carry, so minting a chat 409s `not_launchable`. The same
+   read appears four more times in `packages/agent-directory/src/routes.ts`.
+   This one is not mechanical: under the retirement a definition's body is
+   whatever its closure evaluates to, and nothing hub-side persists that
+   evaluated projection for a shared deploy — `workflow_definition` holds
+   only the wire hash and the manifests, and `workflow_run_launch_spec`'s
+   frozen bundle covers exclusive placement only. Deciding where a folded
+   launch body comes from is the next blocker, and it blocks the RunStarted
+   milestone behind it.
+5. **STILL OPEN — no `deploy/tool-packages-manifest.json` is staged.** The
+   source-ref front (`deployAdoptedCodeSourcedWorkflow` →
+   `emitSourceRefDeployFrame`) never calls `executeLaunchPhases`, so
+   nothing runs `agentRepoStore.writeDeployTree` and no deploy tree lands
+   for the step. `materializeStepTools` reads its manifest off that tree,
+   so a folded run's pinned tool packages would materialize empty — the
+   prompt moved into the rendered bytes, the tool manifest did not.
+   `stageWorkflowStep` is the seam that still writes one; wiring it into
+   `deployAtHead` is the shape of the fix, unproven until (4) clears.
