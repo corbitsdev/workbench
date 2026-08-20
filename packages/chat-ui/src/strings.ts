@@ -213,6 +213,22 @@ export const CHAT_STRINGS = {
   blockConnectGithubTokenSubmitting: "Connecting…",
   blockConnectGithubTokenCancel: "cancel",
   blockConnectGithubTokenError: "Couldn't connect with that token — try again.",
+  blockConnectServiceHeadline: (name: string) => `Connect ${name}`,
+  blockConnectServiceAction: (name: string) => `Connect ${name}`,
+  blockConnectServiceOAuthHelper: (name: string) =>
+    `Two clicks — you approve in ${name}'s own window, and nothing is touched until you do.`,
+  blockConnectServiceKeylessHelper: "One click — no account keys needed.",
+  blockConnectServiceKeyHelper: (name: string) =>
+    `You'll paste a ${name} API key — it stays in your workspace and you can disconnect any time.`,
+  blockConnectServiceKeyFieldLabel: (name: string) => `${name} API key`,
+  blockConnectServiceKeyFieldPlaceholder: "Paste your key",
+  blockConnectServiceKeyWhere: (name: string) =>
+    `Where do I find my ${name} key?`,
+  blockConnectServiceKeySubmit: "Connect",
+  blockConnectServiceKeySubmitting: "Connecting…",
+  blockConnectServiceKeyCancel: "cancel",
+  blockConnectServiceConnected: (name: string) =>
+    `${name} connected — you're set.`,
   prThreadStatusReviewed: "Reviewed",
   prThreadStatusReading: "Reading now",
   prThreadStatusWaitingOnYou: "Waiting on you",

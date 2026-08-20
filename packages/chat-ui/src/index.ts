@@ -112,6 +112,12 @@ export type {
   ConnectGithubActions,
   ConnectGithubQuery,
 } from "./blocks/connect-github-actions";
+export type {
+  ConnectServiceActions,
+  ConnectServiceQuery,
+  ConnectServiceResult,
+  ConnectAffordance,
+} from "./blocks/connect-service-actions";
 export { applyConnectGithubSettingsEvent } from "./blocks/connect-github-stream";
 
 export {

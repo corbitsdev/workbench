@@ -52,6 +52,7 @@ import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import type { ConnectGithubActions } from "./blocks/connect-github-actions";
+import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
 import { WorkbenchLoadingState } from "./loading-state";
@@ -1137,6 +1138,7 @@ function MessageParts({
   approvalActions,
   blockResponses,
   connectGithubActions,
+  connectServiceActions,
   reactionActions,
   pinActions,
   pendingActions,
@@ -1168,6 +1170,9 @@ function MessageParts({
    * `ConnectGithubActions`. Undefined renders the card in its
    * pre-round-trip disconnected framing. */
   readonly connectGithubActions?: ConnectGithubActions;
+  /** Host round-trip for the generic "connect-service" card. Undefined
+   * renders every connect-service card in its disconnected framing. */
+  readonly connectServiceActions?: ConnectServiceActions;
   readonly reactionActions?: ReactionActions;
   readonly pinActions?: PinActions;
   /** This reader's own failed send's inline Retry/Discard — see
@@ -1318,6 +1323,9 @@ function MessageParts({
                 {...(blockResponses !== undefined ? { blockResponses } : {})}
                 {...(connectGithubActions !== undefined
                   ? { connectGithubActions }
+                  : {})}
+                {...(connectServiceActions !== undefined
+                  ? { connectServiceActions }
                   : {})}
               />
             );
@@ -1518,6 +1526,7 @@ export function WorkbenchTimeline({
   approvalActions,
   blockResponses,
   connectGithubActions,
+  connectServiceActions,
   reactionActions,
   pinActions,
   pendingActions,
@@ -1566,6 +1575,9 @@ export function WorkbenchTimeline({
    * `ConnectGithubActions`. Undefined renders every connect-github card
    * in its pre-round-trip disconnected framing. */
   readonly connectGithubActions?: ConnectGithubActions;
+  /** Host round-trip for the generic "connect-service" card. Undefined
+   * renders every connect-service card in its disconnected framing. */
+  readonly connectServiceActions?: ConnectServiceActions;
   /** The reaction chip row's live round-trip — see `ReactionActions`.
    * Undefined renders no chips and no "add reaction" trigger at all,
    * the same "no port, no feature" contract `blockResponses` follows. */
@@ -1767,6 +1779,9 @@ export function WorkbenchTimeline({
             {...(blockResponses !== undefined ? { blockResponses } : {})}
             {...(connectGithubActions !== undefined
               ? { connectGithubActions }
+              : {})}
+            {...(connectServiceActions !== undefined
+              ? { connectServiceActions }
               : {})}
             {...(reactionActions !== undefined ? { reactionActions } : {})}
             {...(pinActions !== undefined ? { pinActions } : {})}

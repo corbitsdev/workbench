@@ -65,6 +65,7 @@ import type {
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import type { ConnectGithubActions } from "./blocks/connect-github-actions";
+import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import {
   typingLabel,
   TypingIndicator,
@@ -390,6 +391,7 @@ function ChatWorkspaceInner({
   approvalActions,
   blockResponses,
   connectGithubActions,
+  connectServiceActions,
   headerLeading,
   registerComposerInsert,
   listMembers,
@@ -439,6 +441,9 @@ function ChatWorkspaceInner({
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly connectGithubActions?: ConnectGithubActions;
+  /** Host round-trip for the generic "connect-service" card. Undefined
+   * renders every connect-service card in its disconnected framing. */
+  readonly connectServiceActions?: ConnectServiceActions;
   readonly headerLeading?: ReactNode;
   /**
    * Hands the host a function that inserts text into the active workbench's
@@ -1256,6 +1261,9 @@ function ChatWorkspaceInner({
                     {...(connectGithubActions !== undefined
                       ? { connectGithubActions }
                       : {})}
+                    {...(connectServiceActions !== undefined
+                      ? { connectServiceActions }
+                      : {})}
                     reactionActions={reactionActions}
                     pinActions={pinActions}
                     pendingActions={{
@@ -1353,6 +1361,7 @@ export function ChatWorkspace({
   approvalActions,
   blockResponses,
   connectGithubActions,
+  connectServiceActions,
   headerLeading,
   registerComposerInsert,
   listMembers,
@@ -1416,6 +1425,9 @@ export function ChatWorkspace({
   /** The connect-github block's live round-trip — see `WorkbenchTimeline`'s
    * `connectGithubActions`. */
   readonly connectGithubActions?: ConnectGithubActions;
+  /** Host round-trip for the generic "connect-service" card. Undefined
+   * renders every connect-service card in its disconnected framing. */
+  readonly connectServiceActions?: ConnectServiceActions;
   /** Host-supplied control rendered first in the workbench header — the
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
@@ -1464,6 +1476,9 @@ export function ChatWorkspace({
           {...(blockResponses !== undefined ? { blockResponses } : {})}
           {...(connectGithubActions !== undefined
             ? { connectGithubActions }
+            : {})}
+          {...(connectServiceActions !== undefined
+            ? { connectServiceActions }
             : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(onOpenArtifactInLibrary !== undefined
