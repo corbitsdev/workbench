@@ -288,6 +288,16 @@ const CreateWorkbenchBody = type({
   "definitionId?": "string",
   "principalId?": "string",
   "reuseExisting?": "boolean",
+  /**
+   * The picked template's own promise line
+   * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`),
+   * when this chat was minted from the `/new` picker's template
+   * instantiation flow (`apps/web/src/instant-agent-create.ts`). Passed
+   * through as an opaque string — this package has no notion of a
+   * template — to replace the random canned opener with one naming the
+   * room's actual job. Omitted mints exactly like an untemplated chat.
+   */
+  "templatePromise?": "string",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -1133,6 +1143,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const agentDisplayName =
           invitable.find((definition) => definition.id === definitionId)
             ?.description ?? joined.handle;
+        const templatePromise = body.templatePromise;
         runPostMintDelivery(async () => {
           const senderName =
             deps.resolvePrincipalName !== undefined
@@ -1151,6 +1162,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               agentAddress,
               agentName: agentDisplayName,
               ...(senderName !== undefined ? { senderName } : {}),
+              ...(templatePromise !== undefined ? { templatePromise } : {}),
             },
           );
           await deps.platform

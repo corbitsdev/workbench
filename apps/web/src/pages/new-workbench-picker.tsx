@@ -2,10 +2,11 @@
 // second "or start blank" branch underneath it — "Just start talking" is a
 // peer row, not a fallback. A row is always selected on entry (the mock's
 // "Code review" default), so the primary button stays enabled the whole
-// time. Picking "Code review" mints a plain workbench tagged with that
-// template's id for now — real template instantiation (the GitHub connect
-// step, the reviewer roster) is a separate ticket; see
-// `createWorkbenchFromTemplate`'s own doc.
+// time. Picking "Code review" instantiates the real template (CL-6344):
+// the reviewer roster's agent definitions and the room's own opening
+// intro — see `createWorkbenchFromTemplate`'s own doc for exactly what
+// that does and doesn't do yet (the GitHub connect card itself is the
+// next slice).
 
 import { Button, toast } from "@corbits/react-ui";
 import { GitPullRequest, MessageSquare, Plus } from "lucide-react";

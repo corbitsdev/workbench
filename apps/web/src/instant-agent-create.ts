@@ -18,9 +18,14 @@
 // chosen.
 
 import { createWorkbench, patchWorkbenchSettings } from "@corbits/chat-ui";
+import {
+  instantiateWorkbenchTemplate,
+  templateSettingsPatch,
+  workbenchTemplate,
+} from "@corbits/workflow-catalog";
 
 import { launchAgentChat } from "./agent-chat-launch";
-import { listAgentDefinitions } from "./agents-api";
+import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
 import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 import type { WorkbenchTemplateId } from "./workbench-templates";
@@ -45,23 +50,20 @@ export async function createAgentAndLaunch(
   await launchAgentChat(tenantId, template.id, navigate, NEW_WORKBENCH_TITLE);
 }
 
-/** What a picker row's selection means for the workbench it mints, until a
- * real template-instantiation pipeline exists (a separate ticket) — for
- * now, only a `chat/purpose` tag distinguishes them. `undefined` leaves the
- * workbench untagged, exactly like today's plain mint. */
-const TEMPLATE_PURPOSE: Record<WorkbenchTemplateId, string | undefined> = {
-  "code-review": "Code review",
-  blank: undefined,
-};
-
 /**
- * The template picker's "Create workbench" action: mints a fresh
- * "New Workbench" chat against the same default setup template
- * `createAgentAndLaunch` uses, then tags it with the chosen template's
- * `chat/purpose` (Settings and the room's own top bar already read that
- * field). Real template instantiation — provisioning the reviewers, the
- * GitHub connect step — is a separate ticket; this only records which row
- * the person picked.
+ * The template picker's "Create workbench" action (CL-6344): mints a
+ * fresh "New Workbench" chat against the same default setup template
+ * `createAgentAndLaunch` uses, passing the picked row's id through as
+ * `templateId` so the room opens with that template's own intro
+ * (`packages/chat/src/routes.ts`'s `POST /workbenches` resolves it into
+ * the canned greeting). When the id names a real manifest
+ * (`workbenchTemplate`), this also creates its participant agent
+ * definitions and records its required connections as pending — see
+ * `instantiateWorkbenchTemplate`'s own doc for exactly what that does
+ * and does not do yet (inviting the reviewers into the room, and the
+ * GitHub connect card itself, are the next slice). A template id with
+ * no manifest yet (`blank`, "Just start talking") mints a plain
+ * untagged chat, exactly like before templates existed.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
@@ -69,20 +71,43 @@ export async function createWorkbenchFromTemplate(
   navigate: (to: string) => void,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
-  const template = findMyraDefinition(definitions);
-  if (template === undefined) {
+  const setupTemplate = findMyraDefinition(definitions);
+  if (setupTemplate === undefined) {
     throw new Error("No default setup agent found for this workbench.");
   }
+  const manifest = workbenchTemplate(templateId);
   const workbench = await createWorkbench(tenantId, {
     kind: "chat",
-    definitionId: template.id,
+    definitionId: setupTemplate.id,
     name: NEW_WORKBENCH_TITLE,
+    ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
   });
-  const purpose = TEMPLATE_PURPOSE[templateId];
-  if (purpose !== undefined) {
-    await patchWorkbenchSettings(tenantId, workbench.id, {
-      "chat/purpose": purpose,
+
+  if (manifest !== undefined) {
+    const result = await instantiateWorkbenchTemplate(manifest, {
+      async listAgentHandles() {
+        const current = await listAgentDefinitions(tenantId);
+        return current.map((definition) => definition.name);
+      },
+      async createParticipantAgent(request) {
+        const created = await createAgentDefinition(tenantId, request);
+        return { id: created.id };
+      },
+      async recordPendingConnections(pendingConnections) {
+        await patchWorkbenchSettings(
+          tenantId,
+          workbench.id,
+          templateSettingsPatch(manifest.id, pendingConnections),
+        );
+      },
     });
+    // Honest setup-gap notes, not silent stubs — see
+    // `instantiateWorkbenchTemplate`'s own doc on what these mean and why
+    // no live webhook trigger exists yet.
+    for (const todo of result.webhookTriggerTodos) {
+      console.error(todo);
+    }
   }
+
   navigate(workbenchPath(workbench.id));
 }
