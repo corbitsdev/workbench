@@ -439,6 +439,7 @@ export type JoinHumanParticipantDeps = {
   readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
   readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
+  readonly tenancy: Pick<WorkbenchTenancyStore, "addWorkbenchMember">;
 };
 
 export type JoinHumanParticipantInput = {
@@ -451,6 +452,13 @@ export type JoinHumanParticipantInput = {
    * already validated by the caller (see `routes.ts`'s create handler)
    * to name a real, active, non-self principal in this tenant. */
   readonly memberPrincipalId: string;
+  /** The invited member's own auth identity (`principal.refId`) —
+   * what `addWorkbenchMember` mints a member-role principal for in the
+   * workbench's own child tenant (CL-6332), by construction carrying
+   * that role's `room:*` read/write pair. Never `memberPrincipalId`
+   * itself: that id is scoped to the acting/bench tenant, not the
+   * workbench's own tenant a fresh principal is minted into. */
+  readonly memberRefId: string;
   /** The participant record's `handle` — a human has no settings-held
    * name to derive one from the way an invited agent's definition
    * does, so the caller (the create route, which already has the
@@ -483,6 +491,18 @@ export async function joinHumanParticipant(
   deps: JoinHumanParticipantDeps,
   input: JoinHumanParticipantInput,
 ): Promise<JoinHumanParticipantResult> {
+  // Mints (or, for a repeat invite, confirms) the member-role principal
+  // this workbench's own child tenant gates members-only access by —
+  // see `workbench-tenancy.ts`'s `addWorkbenchMember`. Ahead of the
+  // participant record: `chat/participants` is a mention handle only
+  // (CL-6332), never itself the membership signal, so a failure here
+  // must fail the whole invite rather than leave a participant record
+  // with no membership behind it.
+  await deps.tenancy.addWorkbenchMember({
+    workbenchId: input.workbenchId,
+    refId: input.memberRefId,
+  });
+
   const participants = participantsOf(input.existingSettings);
   const row = await deps.store.updateWorkbenchSettings({
     tenantId: input.tenantId,
@@ -1211,6 +1231,7 @@ async function postUndeliveredNotice(
           text: isCredentialDispatchFailure(input.cause)
             ? CREDENTIAL_UNDELIVERED_NOTICE
             : RETRYABLE_UNDELIVERED_NOTICE,
+          turnFailed: true,
         },
       ],
     });

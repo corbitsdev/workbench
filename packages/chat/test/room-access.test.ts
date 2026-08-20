@@ -9,7 +9,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { createChatRoutes } from "../src/routes";
-import { buildDeps, createWorkbench, mountAs, sendText } from "./test-support";
+import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
+import {
+  buildDeps,
+  createWorkbench,
+  mountAs,
+  sendText,
+  TENANT,
+} from "./test-support";
 
 describe("room access", () => {
   test("a bench member opens a bench-visible workbench with no explicit invite", async () => {
@@ -88,5 +95,103 @@ describe("room access", () => {
     expect(
       grantChecks.some((check) => check.resource.startsWith("workflow-run")),
     ).toBe(false);
+  });
+
+  test("inviting a person mints them a member-role principal in the workbench's own tenant, unblocking a members-only flip", async () => {
+    const deps = buildDeps();
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+      refId: "prn_bob",
+    });
+    const asAlice = mountAs(createChatRoutes(deps), "prn_alice");
+    const asBob = mountAs(createChatRoutes(deps), "prn_bob");
+
+    const { body } = await createWorkbench(asAlice, { kind: "workbench" });
+
+    // Bob is invited through the mention popover's pre-invite path
+    // (CL-6332) before the workbench ever flips to members-only —
+    // the mint happens on invite, not on first access.
+    const invited = await asAlice.request(`/workbenches/${body.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
+    expect(invited.status).toBe(201);
+
+    const flip = await asAlice.request(`/workbenches/${body.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/visibility": "members" }),
+    });
+    expect(flip.status).toBe(200);
+
+    // Bob was invited before the flip; he still opens and writes it —
+    // the members-only check reads his membership in the workbench's
+    // own tenant, not whether he was invited before or after the flip.
+    const bobRead = await asBob.request(`/workbenches/${body.id}/messages`);
+    expect(bobRead.status).toBe(200);
+
+    const bobSend = await sendText(asBob, body.id, "thanks for the invite");
+    expect(bobSend.status).toBe(201);
+
+    // `chat/participants` still carries only the mention handle — the
+    // access decision above never consulted it.
+    const settingsResponse = await asAlice.request(
+      `/workbenches/${body.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string; handle: string }[];
+    };
+    expect(settingsBody.participants).toEqual([
+      { address: "prn_bob", handle: "bob" },
+    ]);
+  });
+
+  test("a bench member never invited into a members-only workbench is still denied after another person's invite", async () => {
+    const deps = buildDeps();
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+      refId: "prn_bob",
+    });
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_carol",
+      kind: "user",
+      status: "active",
+      refId: "prn_carol",
+    });
+    const asAlice = mountAs(createChatRoutes(deps), "prn_alice");
+    const asCarol = mountAs(createChatRoutes(deps), "prn_carol");
+
+    const { body } = await createWorkbench(asAlice, { kind: "workbench" });
+
+    await asAlice.request(`/workbenches/${body.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
+    await asAlice.request(`/workbenches/${body.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/visibility": "members" }),
+    });
+
+    const carolRead = await asCarol.request(`/workbenches/${body.id}/messages`);
+    expect(carolRead.status).toBe(404);
   });
 });

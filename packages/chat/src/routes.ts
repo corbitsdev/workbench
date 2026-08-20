@@ -1344,18 +1344,33 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         // the local-part-of-the-principal-id fallback below only
         // fires for a bare API call that omits `name` entirely.
         const memberHandle = handleFromName(body.name ?? "", body.principalId);
+        const memberPrincipal = await deps.tenancy.getTenantPrincipal(
+          tenant.id,
+          body.principalId,
+        );
+        if (memberPrincipal === undefined) {
+          return c.json(
+            ErrorEnvelope(
+              "bad_request",
+              "principalId does not name an active member of this bench",
+            ),
+            400,
+          );
+        }
         try {
           const joined = await joinHumanParticipant(
             {
               store: deps.store,
               roomMessages: deps.roomMessages,
               publish,
+              tenancy: deps.tenancy,
             },
             {
               tenantId: tenant.id,
               principalId: principal.id,
               workbenchId,
               memberPrincipalId: body.principalId,
+              memberRefId: memberPrincipal.refId,
               memberHandle,
               existingSettings: row.settings,
             },
@@ -2072,12 +2087,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               store: deps.store,
               roomMessages: deps.roomMessages,
               publish,
+              tenancy: deps.tenancy,
             },
             {
               tenantId: ownerTenantId,
               principalId: principal.id,
               workbenchId,
               memberPrincipalId: entry.principalId,
+              memberRefId: target.refId,
               memberHandle: handleFromName(entry.name ?? "", entry.principalId),
               existingSettings: currentSettings,
             },

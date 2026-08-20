@@ -794,6 +794,7 @@ describe("POST /workbenches — chat with a person (DM)", () => {
       id: "prn_bob",
       kind: "user",
       status: "active",
+      refId: "prn_bob",
     });
   }
 
@@ -904,6 +905,7 @@ describe("POST /workbenches — chat with a person (DM)", () => {
       id: "prn_bob",
       kind: "user",
       status: "suspended",
+      refId: "prn_bob",
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -1124,6 +1126,7 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
       id: "prn_bob",
       kind: "user",
       status: "active",
+      refId: "prn_bob",
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: chat } = await createWorkbench(app, {
@@ -1600,6 +1603,7 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       id: "prn_bob",
       kind: "user",
       status: "active",
+      refId: "prn_bob",
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {

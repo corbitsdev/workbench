@@ -277,7 +277,11 @@ describe("message fan-out", () => {
     expect(notice?.workbenchId).toBe(workbench.id);
     expect(notice?.runId).toBe("ins_echo1");
     expect(notice?.parts).toEqual([
-      { kind: "text", text: expect.stringContaining("send it again") },
+      {
+        kind: "text",
+        text: expect.stringContaining("send it again"),
+        turnFailed: true,
+      },
     ]);
   });
 
@@ -385,6 +389,7 @@ describe("message fan-out", () => {
       id: "prn_bob",
       kind: "user",
       status: "active",
+      refId: "prn_bob",
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -909,7 +914,11 @@ describe("message fan-out", () => {
       (message) => message.sender.address === "ins_echo1@acme.example",
     );
     expect(notice?.parts).toEqual([
-      { kind: "text", text: expect.stringContaining("send it again") },
+      {
+        kind: "text",
+        text: expect.stringContaining("send it again"),
+        turnFailed: true,
+      },
     ]);
   });
 });
