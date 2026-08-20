@@ -4,7 +4,7 @@
 // fetch and the component so the ordering/provenance logic is covered by
 // a plain unit test, no DOM or network stub required.
 
-import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
+import type { Capability, ModelInfo, ModelOfferingResponse } from "@intx/types";
 import { PROVIDER_TEST_CONFIG } from "@workbench/hub-client/credential-test";
 import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
 
@@ -46,7 +46,10 @@ export function defaultModelForProvider(
   models: readonly ModelInfo[],
   providerName: string,
 ): DefaultProviderModel | null {
-  const candidates: (DefaultProviderModel & { priority: number })[] = [];
+  const candidates: (DefaultProviderModel & {
+    priority: number;
+    capabilities: readonly Capability[];
+  })[] = [];
   for (const model of models) {
     for (const offering of model.offerings) {
       if (offering.providerName !== providerName) continue;
@@ -54,6 +57,7 @@ export function defaultModelForProvider(
         canonicalName: model.canonicalName,
         displayName: model.displayName ?? null,
         priority: offering.priority,
+        capabilities: offering.capabilities,
       });
     }
   }
@@ -61,7 +65,7 @@ export function defaultModelForProvider(
   let best: (DefaultProviderModel & { priority: number }) | null = null;
   for (const candidate of preferCompletionCapable(
     candidates,
-    (candidate) => candidate.canonicalName,
+    (candidate) => candidate.capabilities,
   )) {
     if (best === null || candidate.priority < best.priority) {
       best = candidate;

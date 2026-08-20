@@ -3,6 +3,7 @@
 // the global default, tail is the failover chain.
 import { describe, expect, test } from "bun:test";
 import type { ResolvedOffering } from "@intx/db";
+import type { Capability } from "@intx/types";
 import {
   createWorkbenchHostInferencePreferencesResolver,
   selectDefaultInferencePreferences,
@@ -15,6 +16,7 @@ function offering(
     canonicalName: string;
     providerName: string;
     credentialId: string | null;
+    capabilities: readonly Capability[];
   }> = {},
 ): ResolvedOffering {
   const {
@@ -23,9 +25,14 @@ function offering(
     canonicalName = "claude-sonnet-5",
     providerName = "anthropic",
     credentialId = "cred_1",
+    capabilities = ["plain-text"],
   } = overrides;
   return {
-    offering: { id: offeringId, priority } as ResolvedOffering["offering"],
+    offering: {
+      id: offeringId,
+      priority,
+      capabilities,
+    } as ResolvedOffering["offering"],
     model: { canonicalName } as ResolvedOffering["model"],
     provider: {
       name: providerName,
@@ -84,15 +91,37 @@ describe("selectDefaultInferencePreferences", () => {
         canonicalName: "all-minilm",
         providerName: "ollama",
         priority: 0,
+        capabilities: [],
       }),
       offering({
         offeringId: "off_chat",
         canonicalName: "qwen3:8b",
         providerName: "ollama",
         priority: 0,
+        capabilities: ["plain-text"],
       }),
     ]);
     expect(result).toEqual([{ provider: "ollama", model: "qwen3:8b" }]);
+  });
+
+  test("no capability data anywhere in the candidate set falls back to unfiltered resolution", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_embed",
+        canonicalName: "all-minilm",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: [],
+      }),
+      offering({
+        offeringId: "off_chat",
+        canonicalName: "qwen3:8b",
+        providerName: "ollama",
+        priority: 1,
+        capabilities: [],
+      }),
+    ]);
+    expect(result).toEqual([{ provider: "ollama", model: "all-minilm" }]);
   });
 
   test("returns every provider's offering of the winning model, sorted by priority", () => {
