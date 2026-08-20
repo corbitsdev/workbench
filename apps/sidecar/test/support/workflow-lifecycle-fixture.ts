@@ -23,6 +23,8 @@ import {
   type SubprocessSpawner,
 } from "@intx/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
+import { defineWorkflow, step, type WorkflowDefinition } from "@intx/workflow";
+import { buildSingleStepAgentDefinition } from "@intx/workflow-deploy";
 
 import {
   createSidecarDeployRouter,
@@ -300,6 +302,15 @@ export async function makeLifecycleFixture(opts?: {
     multistepSubstrateEnv: {
       SIDECAR_DATA_DIR: dataDir,
     },
+    // Stand in for the real fetch + SRI-verify + layout + evaluate pass: a
+    // fixture cannot publish a package, so every deploy evaluates to the one
+    // lifecycle definition below.
+    materializeDeploymentClosure: ({ deploymentId }) =>
+      Promise.resolve({
+        definition: LIFECYCLE_CLOSURE_DEFINITION,
+        packageDir: path.join(dataDir, "closure-package", deploymentId),
+        deployDir: path.join(dataDir, "closure-deploy", deploymentId),
+      }),
     multistepMailRouter,
     multistepSignalRouter,
     multistepDrainRouter,
@@ -319,6 +330,30 @@ export async function makeLifecycleFixture(opts?: {
   };
 }
 
+/**
+ * The definition the fixture's stubbed closure evaluates to. Source-ref is the
+ * only deploy lineage, so a frame carries no inline definition and this is the
+ * single source of the deployment's shape.
+ */
+const LIFECYCLE_CLOSURE_DEFINITION: WorkflowDefinition = defineWorkflow({
+  id: "wf-lifecycle",
+  trigger: { type: "mail", to: "wf-lifecycle@example.com" },
+  steps: {
+    "step-1": step({
+      agent: buildSingleStepAgentDefinition({
+        id: "step-1",
+        systemPrompt: "",
+        inferencePreferences: [],
+        toolFactories: [],
+      }),
+      triggers: "unbounded",
+    }),
+  },
+});
+
+/** The wire hash the hub approved for `LIFECYCLE_CLOSURE_DEFINITION`. */
+export const LIFECYCLE_APPROVED_WIRE_HASH = "d".repeat(64);
+
 export function makeWorkflowFrame(agentAddress: string): AgentDeployFrame {
   return {
     type: "agent.deploy",
@@ -331,11 +366,10 @@ export function makeWorkflowFrame(agentAddress: string): AgentDeployFrame {
     // Boundary type assertion: the multi-step branch does not read config
     config: {} as AgentDeployFrame["config"],
     workflow: {
-      definition: {
-        id: "wf-lifecycle",
-        triggers: [{ type: "manual" }],
-        stepOrder: ["step-1"],
-        steps: { "step-1": { kind: "step" } },
+      approvedWireHash: LIFECYCLE_APPROVED_WIRE_HASH,
+      sourceRef: {
+        source: { kind: "registry", registry: "npm" },
+        closure: { schemaVersion: "1", topLevel: [], entries: [] },
       },
       sources: {
         "step-1": [
