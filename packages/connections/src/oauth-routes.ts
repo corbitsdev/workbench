@@ -32,10 +32,15 @@
 // restart-proofing hardened.
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { type } from "arktype";
 import type { AppEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
 import { cookiesFromHeader } from "@workbench/hub-client";
-import { createConnectStateStore, generatePKCEPair } from "./pkce";
+import {
+  createConnectStateStore,
+  generatePKCEPair,
+  type ConnectStateStore,
+} from "./pkce";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
 
@@ -208,6 +213,22 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
 const CONNECT_STATE_TTL_MS = 10 * 60 * 1000;
 const CONNECT_START_RATE_LIMIT_MS = 10_000;
 
+const VerifierStatePayload = type({
+  // Empty for a non-PKCE flow (GitHub's confidential-client web flow
+  // seals `codeVerifier: ""`), so this must accept the empty string —
+  // `string > 0` here silently expired every non-PKCE callback
+  // (CL-6394).
+  codeVerifier: "string",
+});
+type VerifierStatePayload = typeof VerifierStatePayload.infer;
+
+function parseVerifierStatePayload(
+  value: unknown,
+): VerifierStatePayload | undefined {
+  const parsed = VerifierStatePayload(value);
+  return parsed instanceof type.errors ? undefined : parsed;
+}
+
 export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
   deps: CreateOAuthConnectRoutesDeps<E>,
 ): Hono<E> {
@@ -221,7 +242,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
 
   const stateStores = new Map<
     string,
-    ReturnType<typeof createConnectStateStore>
+    ConnectStateStore<VerifierStatePayload>
   >();
   function stateStoreFor(connectorId: string) {
     let store = stateStores.get(connectorId);
@@ -229,6 +250,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       store = createConnectStateStore({
         cipher: deps.credentialCipher,
         provider: connectorId,
+        parsePayload: parseVerifierStatePayload,
         ttlMs: CONNECT_STATE_TTL_MS,
       });
       stateStores.set(connectorId, store);
@@ -341,7 +363,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       : undefined;
     const state = await stateStoreFor(connectorId).issue({
       userId: user.id,
-      codeVerifier: pkce?.codeVerifier ?? "",
+      payload: { codeVerifier: pkce?.codeVerifier ?? "" },
     });
     setCookie(c, stateCookieName(connectorId), state, {
       httpOnly: true,
@@ -467,11 +489,11 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       );
     }
 
-    const codeVerifier = await stateStoreFor(connectorId).consume({
+    const statePayload = await stateStoreFor(connectorId).consume({
       state: cookieState,
       userId: user.id,
     });
-    if (codeVerifier === undefined) {
+    if (statePayload === undefined) {
       // Not necessarily a real failure: a browser that fires this exact
       // callback twice burns the state on its first, successful arrival
       // and only ever sees this branch on the second.
@@ -504,7 +526,9 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
     const exchangeArgs: Parameters<typeof descriptor.oauth.exchange>[0] = {
       code,
       redirectUri: callbackUrl,
-      ...(descriptor.oauth.usesPKCE ? { codeVerifier } : {}),
+      ...(descriptor.oauth.usesPKCE
+        ? { codeVerifier: statePayload.codeVerifier }
+        : {}),
       ...(clientId !== undefined ? { clientId } : {}),
       ...(clientSecret !== undefined ? { clientSecret } : {}),
     };
