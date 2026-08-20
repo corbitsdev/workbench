@@ -44,6 +44,10 @@ export async function runEval(
       step.kind === "persona"
         ? await runPersonaStep(step, target, personaCall)
         : [await target.sendTurn(step.human)];
+    const turn = stepTurns[stepTurns.length - 1];
+    if (turn === undefined) {
+      throw new Error(`runEval: step ${String(stepIndex)} produced no turns`);
+    }
     transcript.push(...stepTurns);
     const turnIndex = transcript.length - 1;
     const world = (await target.snapshotWorld?.()) ?? emptyWorldSnapshot();
@@ -52,11 +56,7 @@ export async function runEval(
       const scorerResult = await scorer({ transcript, turnIndex, world });
       scorerReports.push({ ...scorerResult, stepIndex });
     }
-    steps.push({
-      stepIndex,
-      turn: transcript[turnIndex] as Turn,
-      scorerReports,
-    });
+    steps.push({ stepIndex, turn, scorerReports });
   }
 
   return {

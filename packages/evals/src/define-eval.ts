@@ -18,6 +18,13 @@ export function defineEval(config: DefineEvalConfig): EvalDefinition {
   if (config.steps.length === 0) {
     throw new Error(`defineEval("${config.name}") requires at least one step`);
   }
+  config.steps.forEach((step, index) => {
+    if (step.kind === "persona" && step.maxTurns < 1) {
+      throw new Error(
+        `defineEval("${config.name}") step ${String(index)}: maxTurns must be at least 1`,
+      );
+    }
+  });
   const steps = config.steps.map((step) =>
     step.kind === undefined ? { ...step, kind: "scripted" as const } : step,
   );
