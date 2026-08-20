@@ -8,9 +8,11 @@ import { CircleAlert } from "lucide-react";
 
 export function ProvisioningErrorPage({
   message,
+  refId,
   onRetry,
 }: {
   readonly message: string;
+  readonly refId?: string | undefined;
   readonly onRetry: () => void;
 }) {
   return (
@@ -18,7 +20,17 @@ export function ProvisioningErrorPage({
       <EmptyState
         icon={<CircleAlert />}
         title="Couldn't set up your workbench"
-        description={message}
+        description={
+          refId === undefined ? (
+            message
+          ) : (
+            <>
+              {message}
+              <br />
+              <span className="onboarding-error-refid">Reference: {refId}</span>
+            </>
+          )
+        }
         action={
           <Button variant="outline" onClick={onRetry}>
             Try again

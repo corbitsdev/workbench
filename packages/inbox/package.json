@@ -23,6 +23,7 @@
   "devDependencies": {
     "@intx/db": "workspace:*",
     "@intx/hub-common": "workspace:*",
+    "@intx/log": "workspace:*",
     "@types/bun": "catalog:",
     "postgres": "catalog:",
     "typescript": "catalog:"

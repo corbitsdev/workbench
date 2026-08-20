@@ -17,6 +17,7 @@
 // below is what the picker's "Create workbench" button calls once a row is
 // chosen.
 
+import { getLogger } from "@corbits/client-log";
 import { createWorkbench, patchWorkbenchSettings } from "@corbits/chat-ui";
 import {
   instantiateWorkbenchTemplate,
@@ -28,6 +29,8 @@ import { launchAgentChat } from "./agent-chat-launch";
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
 import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
+
+const log = getLogger("web.instant-agent-create");
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
 export const NEW_WORKBENCH_TITLE = "New Workbench";
@@ -105,7 +108,7 @@ export async function createWorkbenchFromTemplate(
     // `instantiateWorkbenchTemplate`'s own doc on what these mean and why
     // no live webhook trigger exists yet.
     for (const todo of result.webhookTriggerTodos) {
-      console.error(todo);
+      log.error(todo);
     }
   }
 

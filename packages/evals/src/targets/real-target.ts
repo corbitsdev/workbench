@@ -26,6 +26,7 @@ import {
   createHubAPI,
   type ApiCall,
 } from "@workbench/hub-client";
+import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 
@@ -127,6 +128,8 @@ export interface MyraTargetInfra {
 
 /** Never sent anywhere for real in plumbing mode — see the module
  * comment. Only used when `EVAL_PROVIDER_API_KEY` is unset. */
+const log = getLogger(["evals", "real-target"]);
+
 const STUB_API_KEY = "corbits-evals-stub-key-not-real";
 
 interface ChatMessage {
@@ -360,7 +363,7 @@ export async function bootMyraTarget(
             );
           }
           if (process.env["EVALS_DEBUG"] === "1") {
-            console.error("seeding attempt failed, retrying:", cause);
+            log.error`seeding attempt failed, retrying: ${cause instanceof Error ? cause.message : String(cause)}`;
           }
           return undefined;
         }

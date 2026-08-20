@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/client-log",
+  "private": true,
+  "description": "The one browser-side logger apps/web and chat-ui use in place of raw console calls (CL-6359): category + level, a ring buffer a devtools panel or a future beacon can flush, and a console sink gated by level so noisy debug/info lines don't ship to a real user's console.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

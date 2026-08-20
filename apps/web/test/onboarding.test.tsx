@@ -123,7 +123,9 @@ describe("triggerFirstLoginProvisioning", () => {
         {
           error: {
             code: "provisioning_failed",
-            message: "Could not provision a workbench for this account.",
+            userMessage:
+              "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+            refId: "abc123",
           },
         },
         500,
@@ -132,11 +134,16 @@ describe("triggerFirstLoginProvisioning", () => {
     const result = await triggerFirstLoginProvisioning("Ada's bench");
     expect(result).toEqual({
       kind: "error",
-      message: "Could not provision a workbench for this account.",
+      message:
+        "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+      refId: "abc123",
     });
   });
 
-  test("a network failure becomes an error outcome", async () => {
+  // CL-6360: a raw network failure (or any body that doesn't match the
+  // hub's error envelope) must never surface its own text to the user —
+  // only the fixed consumer sentence.
+  test("a network failure becomes a consumer-language error outcome, never the raw cause", async () => {
     globalThis.fetch = (async () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
@@ -144,7 +151,10 @@ describe("triggerFirstLoginProvisioning", () => {
     const result = await triggerFirstLoginProvisioning("Ada's bench");
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
-    expect(result.message).toContain("connection refused");
+    expect(result.message).not.toContain("connection refused");
+    expect(result.message).toBe(
+      "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+    );
   });
 
   test("an ordinary success still parses through", async () => {
@@ -244,12 +254,22 @@ describe("submitCredential", () => {
   test("a rejected key comes back as a rejected outcome with the hub's own reason", async () => {
     globalThis.fetch = (async () =>
       json(
-        { error: { code: "invalid_credential", message: "invalid x-api-key" } },
+        {
+          error: {
+            code: "invalid_credential",
+            userMessage: "invalid x-api-key",
+            refId: "xyz789",
+          },
+        },
         422,
       )) as unknown as typeof fetch;
 
     const result = await submitCredential("anthropic", "sk-ant-bad");
-    expect(result).toEqual({ kind: "rejected", message: "invalid x-api-key" });
+    expect(result).toEqual({
+      kind: "rejected",
+      message: "invalid x-api-key",
+      refId: "xyz789",
+    });
   });
 
   test("a seeded bench reports which routines were confirmed", async () => {
@@ -277,7 +297,7 @@ describe("submitCredential", () => {
     });
   });
 
-  test("a network failure is reported, never mistaken for a bad key", async () => {
+  test("a network failure is reported, never mistaken for a bad key, and never the raw cause", async () => {
     globalThis.fetch = (async () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
@@ -285,7 +305,7 @@ describe("submitCredential", () => {
     const result = await submitCredential("anthropic", "sk-ant-good");
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
-    expect(result.message).toContain("connection refused");
+    expect(result.message).not.toContain("connection refused");
   });
 });
 

@@ -23,6 +23,7 @@
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
+    "@corbits/client-log": "workspace:*",
     "@corbits/command-palette": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/inbox": "workspace:*",

@@ -10,6 +10,7 @@ import { formatRunAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
+import { InferenceResolutionError } from "@corbits/folded-runs";
 import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
@@ -1190,6 +1191,7 @@ async function dispatchTurnBatch(
           tenantId,
           workbenchId,
           agentAddress,
+          cause: err,
         });
       }
     }),
@@ -1226,13 +1228,51 @@ export async function dispatchTurn(
   });
 }
 
+const CREDENTIAL_UNDELIVERED_NOTICE =
+  "I can't reach a model right now — add or check your model key in " +
+  "Settings, then I'll pick this up.";
+const RETRYABLE_UNDELIVERED_NOTICE =
+  "I didn't get that one — send it again and I'll pick it up.";
+
+/**
+ * Whether a dispatch failure is a credential/inference-resolution
+ * problem resending can never fix — as opposed to a genuinely transient
+ * failure (sidecar hiccup, momentary network blip) where "send it again"
+ * is honest advice. `InferenceResolutionError` (`@corbits/folded-runs`)
+ * is the launch-time case: the agent's definition has no resolvable
+ * inference source at all. A dispatch failure whose own status/code
+ * marks it a 401 `credential_failure` is the runtime case: a source
+ * resolved, but the credential itself was rejected. Every other cause —
+ * unclassified, or missing that shape entirely — is treated as
+ * genuinely retryable, per the "conservative classification" rule
+ * `chat-orchestrator.ts`'s own provider-health reporting already follows:
+ * silence (here, the generic notice) over a wrong attribution.
+ */
+function isCredentialDispatchFailure(cause: unknown): boolean {
+  if (cause instanceof InferenceResolutionError) return true;
+  if (cause !== null && typeof cause === "object") {
+    const status = (cause as { status?: unknown; statusCode?: unknown }).status;
+    const statusCode = (cause as { statusCode?: unknown }).statusCode;
+    const code = (cause as { code?: unknown; category?: unknown }).code;
+    const category = (cause as { category?: unknown }).category;
+    if (status === 401 || statusCode === 401) return true;
+    if (code === "credential_failure" || category === "credential_failure")
+      return true;
+  }
+  return false;
+}
+
 /**
  * Reports one agent that could not be reached on the timeline, in that
  * agent's own voice and from its own address — the same attribution its
  * real replies carry — so an unreachable teammate reads as a teammate
- * who missed the message rather than as silence. Swallows its own
- * failure: if the timeline itself is unreachable there is nowhere left
- * to say so, and the error is already logged by the caller.
+ * who missed the message rather than as silence. The notice itself is
+ * cause-aware (CL-6360, owner hit it live): a credential or
+ * inference-resolution failure gets copy that actually helps ("add or
+ * check your model key"), never the generic "send it again" that lies
+ * about resending ever being able to help. Swallows its own failure: if
+ * the timeline itself is unreachable there is nowhere left to say so,
+ * and the error is already logged by the caller.
  */
 async function postUndeliveredNotice(
   deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "publish">,
@@ -1240,6 +1280,7 @@ async function postUndeliveredNotice(
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly agentAddress: string;
+    readonly cause: unknown;
   },
 ): Promise<void> {
   try {
@@ -1251,7 +1292,9 @@ async function postUndeliveredNotice(
       parts: [
         {
           kind: "text",
-          text: "I didn't get that one — send it again and I'll pick it up.",
+          text: isCredentialDispatchFailure(input.cause)
+            ? CREDENTIAL_UNDELIVERED_NOTICE
+            : RETRYABLE_UNDELIVERED_NOTICE,
         },
       ],
     });

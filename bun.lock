@@ -127,6 +127,7 @@
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
+        "@corbits/client-log": "workspace:*",
         "@corbits/command-palette": "workspace:*",
         "@corbits/context-menu": "workspace:*",
         "@corbits/inbox": "workspace:*",
@@ -443,6 +444,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/client-log": {
+      "name": "@corbits/client-log",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/code-review": {
       "name": "@corbits/code-review",
       "version": "0.0.1",
@@ -597,6 +606,7 @@
         "@intx/agent": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
@@ -709,6 +719,7 @@
       "devDependencies": {
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
+        "@intx/log": "workspace:*",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
         "typescript": "catalog:",
@@ -1007,6 +1018,7 @@
       "dependencies": {
         "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1211,6 +1223,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "tar": "catalog:",
@@ -1911,6 +1924,8 @@
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
+
+    "@corbits/client-log": ["@corbits/client-log@workspace:packages/client-log"],
 
     "@corbits/code-review": ["@corbits/code-review@workspace:packages/code-review"],
 

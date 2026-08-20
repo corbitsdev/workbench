@@ -9,7 +9,10 @@
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { type } from "arktype";
+import { getLogger } from "@intx/log";
 import { CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
+
+const log = getLogger(["tool-registry-publish", "freshness-check"]);
 
 const PackageManifest = type({
   name: "string",
@@ -254,7 +257,7 @@ if (import.meta.main) {
   try {
     await checkToolPackageFreshness();
   } catch (err) {
-    console.error(err instanceof Error ? err.message : err);
+    log.error`${err instanceof Error ? err.message : String(err)}`;
     process.exit(1);
   }
 }
