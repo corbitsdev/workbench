@@ -3400,7 +3400,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // connection on this workbench rather than fabricating one.
   app.post(
     "/workbenches/:id/presence",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -3411,6 +3411,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
+          principal.refId,
         )) === undefined
       ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
