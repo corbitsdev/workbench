@@ -268,7 +268,8 @@ following routes:
 | `POST /workbenches/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                              |
 | `DELETE /workbenches/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                            |
 | `GET /workbenches/:id/pins`                                  | Lists a workbench's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
-| `GET /workbenches/:id/stream`                                | Server-Sent Events stream of live workbench activity                                                                                                                                                                              |
+| `GET /workbenches/:id/stream`                                | Server-Sent Events stream of live workbench activity, including the who's-here roster (`chat.presence`/`chat.presence.snapshot`, CL-6328)                                                                                        |
+| `POST /workbenches/:id/presence`                              | Refreshes the calling principal's `lastActiveAt` on the who's-here roster; 404s with no open stream connection (CL-6328) — never polled, called on real client-side activity                                                    |
 | `GET /bench/settings`                                        | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                       |
 | `PATCH /bench/settings`                                      | Updates the tenant's bench-wide chat defaults                                                                                                                                                                                     |
 
@@ -400,6 +401,45 @@ the visual is a small three-dot bubble. The pulse stays up across tool
 rounds (`inference.done` does not wipe an empty pending) and is held for
 a short floor so a fast first token cannot flash it. The signed-in
 reader's own messages sit on the right, like an outgoing iMessage.
+
+### The read path: stream events apply, they never trigger a refetch (CL-6328)
+
+`useWorkbenchFeed` (`packages/chat-ui/src/use-workbench-feed.ts`) holds the
+active workbench's messages/threads/pins as three React Query caches, and
+`useWorkbenchStream` (`use-workbench-stream.ts`) is the one `/stream`
+connection that keeps them current. Every event that changes what those
+caches hold applies straight into the cache it describes —
+`applyStreamMessage`/`applyStreamReaction`/`applyStreamPin` — rather than
+invalidating and refetching: `chat.message` already carries the full
+rendered row (see [the message model](#the-message-model)), and
+`chat.reaction`/`chat.pin` already carry the full changed row for their own
+narrow concern, so a subscriber folds the delta into state it already
+holds. `applyStreamMessage` also bumps the owning thread's `replyCount`/
+`lastActivityAt` in the threads cache — the one piece of thread metadata a
+message row itself doesn't carry. Every apply is deduped by `id`/`clientId`,
+which is what lets a reader's own optimistic send (`use-optimistic-sends.ts`)
+and that same send's `chat.message` echo off the stream converge on one row
+instead of a refetch reconciling them: the confirmed row is written into
+the cache once, from the `POST` response, and the stream's later echo of it
+is a no-op.
+
+`refreshFeed`'s coalesced `invalidateQueries` (CL-6313) still exists, but
+only as the fallback poll `useWorkbenchStream` runs while the connection
+itself is down or just reopening — never as a response to a live event on
+an open connection. The bar this leaves is a hard one: a stream event that
+can't be applied is a missing or under-specified payload in
+`packages/chat/src/stream-events.ts`, fixed there, never patched over with
+a refetch in `chat-ui`.
+
+The who's-here roster follows the same rule: `chat.presence.snapshot`
+seeds it the moment the stream opens and `chat.presence` deltas
+(`useWorkbenchPresenceRoster`, `workbench-presence.ts`) keep it current —
+no second connection, no polled HTTP heartbeat. "Here at all" comes for
+free from the open stream connection itself
+(`packages/chat/src/workbench-presence.ts`); the client only calls
+`POST /workbenches/:id/presence` to refresh `lastActiveAt` on real
+activity (a message send, the tab coming back into view), never on an
+interval.
 
 ### Reactions and pinned messages (CL-6030)
 
