@@ -2584,7 +2584,16 @@ describe("createHubChatPlatform relaunch sweep", () => {
     model: null,
   };
 
-  function createSweepFixture(opts: { runStatus: string; parked: boolean }) {
+  function createSweepFixture(opts: {
+    runStatus: string;
+    parked: boolean;
+    /**
+     * `false` builds the standalone/invited-agent shape (CL-6367): a
+     * section-mode participant whose relaunch must deploy the same
+     * `onTrigger` section it launched as, never the host's folded step.
+     */
+    noopInference?: boolean;
+  }) {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -2606,17 +2615,18 @@ describe("createHubChatPlatform relaunch sweep", () => {
         instanceId: "ins_room1",
         currentRunId: "run_dead",
         foldedBody: DEAD_ROOM_FOLDED_BODY,
-        noopInference: true,
+        noopInference: opts.noopInference ?? true,
       },
     });
     const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
     const notices: unknown[] = [];
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
-      assetService: createFakeAssetService(),
+      assetService,
       // Routable, and dead anyway: that combination is exactly what the
       // wake path cannot fix — boot restore re-announced the address, so
       // nothing looks broken until the next message is dropped.
@@ -2626,7 +2636,7 @@ describe("createHubChatPlatform relaunch sweep", () => {
       eventCollectors: createFakeEventCollectors(),
       relaunchNotice: { current: (notice) => notices.push(notice) },
     });
-    return { db, platform, sessionService, notices };
+    return { db, platform, sessionService, assetService, notices };
   }
 
   test("relaunches a routable-but-dead participant and tells the room", async () => {
@@ -2643,6 +2653,48 @@ describe("createHubChatPlatform relaunch sweep", () => {
     // The fresh run keeps neither the dead run's id nor its address —
     // the platform derives one from the other — while the room's own
     // stable id never moves.
+    const repointed = db.updated.at(-1)?.values as {
+      currentRunId: string;
+      priorRunIds: string[];
+    };
+    expect(repointed.currentRunId).not.toBe("run_dead");
+    expect(repointed.priorRunIds).toEqual(["run_dead"]);
+
+    expect(notices).toEqual([
+      {
+        tenantId: "ten_1",
+        roomAddress: "ins_room1@ten1.workbench.test",
+        deadRunId: "run_dead",
+        deadRunStatus: "failed",
+        newRunId: repointed.currentRunId,
+      },
+    ]);
+  });
+
+  // CL-6367: the section-shaped mirror of the relaunch case above. A
+  // standalone (routine/webhook) or invited agent participant deploys as
+  // an `onTrigger` section, and its relaunch must mint the same shape —
+  // fresh run id, repointed mapping, the section's agent-bearing step in
+  // the redeployed bytes, and the room told — never the host's folded
+  // step.
+  test("relaunches a dead section participant as a fresh onTrigger section", async () => {
+    const { db, platform, sessionService, assetService, notices } =
+      createSweepFixture({
+        runStatus: "failed",
+        parked: false,
+        noopInference: false,
+      });
+
+    const swept = await platform.sweepTerminalRuns();
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+
+    // The redeployed bytes carry the section shape — the agent-bearing
+    // step lives inside the `onTrigger` section, not at the head.
+    const rendered = deployedDefinition(assetService.populatedTrees);
+    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
+
     const repointed = db.updated.at(-1)?.values as {
       currentRunId: string;
       priorRunIds: string[];
