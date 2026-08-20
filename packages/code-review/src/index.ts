@@ -1,3 +1,7 @@
+export {
+  codeReviewAgentRequests,
+  type CodeReviewAgentRequest,
+} from "./agent-requests";
 export { aggregateReview, type ReviewerPass } from "./aggregate";
 export { createGitHubReviewClient } from "./github";
 export { renderReviewPrompt } from "./prompt";

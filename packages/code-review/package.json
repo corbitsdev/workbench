@@ -17,6 +17,7 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@corbits/agent-directory": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
