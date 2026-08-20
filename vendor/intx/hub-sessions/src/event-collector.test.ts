@@ -38,7 +38,7 @@ describe("createEventCollector inference.usage forwarding", () => {
     } as InferenceEvent);
 
     const turnId = collector.getCurrentTurnId();
-    expect(turnId).not.toBeNull();
+    if (turnId === null) throw new Error("expected an active turn");
 
     await collector.onEvent({
       type: "inference.usage",

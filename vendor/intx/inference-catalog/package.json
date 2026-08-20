@@ -14,7 +14,14 @@
       "default": "./src/models.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "files": [
     "src",
     "README.md",

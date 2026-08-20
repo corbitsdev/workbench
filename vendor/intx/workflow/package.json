@@ -26,11 +26,19 @@
       "default": "./src/runlocal/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   },
   "files": [
     "src",

@@ -1364,6 +1364,8 @@
       },
       "devDependencies": {
         "@intx/storage-isogit": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/authz": {
@@ -1372,12 +1374,20 @@
       "dependencies": {
         "@intx/types": "workspace:*",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
     "vendor/intx/crypto": {
       "name": "@intx/crypto",
       "version": "0.2.2",
       "dependencies": {
         "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/db": {
@@ -1393,7 +1403,9 @@
         "postgres": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
         "drizzle-kit": "^0.31.9",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/harness": {
@@ -1408,7 +1420,9 @@
       "devDependencies": {
         "@intx/mime": "workspace:*",
         "@intx/storage-isogit": "workspace:*",
+        "@types/bun": "catalog:",
         "arktype": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/hub-agent": {
@@ -1427,7 +1441,9 @@
       "devDependencies": {
         "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@types/bun": "catalog:",
         "hono": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/hub-api": {
@@ -1456,9 +1472,11 @@
       },
       "devDependencies": {
         "@intx/workflow": "workspace:*",
+        "@types/bun": "catalog:",
         "@types/ssri": "^7.1.5",
         "openapi-types": "^12.1.3",
         "tar": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/hub-common": {
@@ -1466,6 +1484,10 @@
       "version": "0.2.2",
       "dependencies": {
         "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/hub-sessions": {
@@ -1489,6 +1511,10 @@
         "isomorphic-git": "catalog:",
         "tar": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
     "vendor/intx/inference": {
       "name": "@intx/inference",
@@ -1500,11 +1526,17 @@
       },
       "devDependencies": {
         "@intx/mime": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/inference-catalog": {
       "name": "@intx/inference-catalog",
       "version": "0.2.2",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
     "vendor/intx/log": {
       "name": "@intx/log",
@@ -1512,6 +1544,10 @@
       "dependencies": {
         "@logtape/hono": "^2.0.2",
         "@logtape/logtape": "^2.0.2",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
       "peerDependencies": {
         "hono": "^4.0.0",
@@ -1530,6 +1566,10 @@
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
     "vendor/intx/mime": {
       "name": "@intx/mime",
@@ -1539,12 +1579,20 @@
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
     "vendor/intx/pack-transport": {
       "name": "@intx/pack-transport",
       "version": "0.2.2",
       "dependencies": {
         "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/storage-isogit": {
@@ -1561,6 +1609,8 @@
       },
       "devDependencies": {
         "@intx/crypto": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/tool-packaging": {
@@ -1581,9 +1631,11 @@
         "tar": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
         "@types/npm-package-arg": "^6.1.4",
         "@types/semver": "catalog:",
         "@types/ssri": "^7.1.5",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/types": {
@@ -1594,7 +1646,9 @@
         "semver": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
         "@types/semver": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/workflow": {
@@ -1605,6 +1659,10 @@
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/workflow-deploy": {
@@ -1617,7 +1675,9 @@
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
         "arktype": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "vendor/intx/workflow-host": {
@@ -1635,6 +1695,10 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "workflows/assistant": {

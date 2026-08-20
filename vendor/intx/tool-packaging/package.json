@@ -10,6 +10,9 @@
       "default": "./src/index.ts"
     }
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/log": "workspace:*",
@@ -25,9 +28,11 @@
     "tar": "catalog:"
   },
   "devDependencies": {
+    "@types/bun": "catalog:",
     "@types/npm-package-arg": "^6.1.4",
     "@types/semver": "catalog:",
-    "@types/ssri": "^7.1.5"
+    "@types/ssri": "^7.1.5",
+    "typescript": "catalog:"
   },
   "files": [
     "src",
