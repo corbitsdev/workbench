@@ -181,6 +181,21 @@ describe("deriveDisplayName", () => {
     ).toBe("Research Analyst");
   });
 
+  test("backfills when description is whitespace-only, never rendering a blank name", () => {
+    expect(
+      deriveDisplayName({ name: "research-analyst", description: "   " }),
+    ).toBe("Research Analyst");
+  });
+
+  test("trims incidental whitespace around a real description", () => {
+    expect(
+      deriveDisplayName({
+        name: "research-analyst",
+        description: "  Research Analyst  ",
+      }),
+    ).toBe("Research Analyst");
+  });
+
   test("throws on a malformed record instead of rendering undefined", () => {
     expect(() => deriveDisplayName({} as { name: string })).toThrow();
   });
