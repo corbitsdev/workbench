@@ -101,6 +101,17 @@ const ALLOWLIST: readonly {
     tables: ["bench_settings"],
   },
   {
+    // A bench's model policy: its allow/deny selectors, price ceilings
+    // and provider preference. The platform's catalog owns what a bench
+    // can reach; what a bench is willing to spend on it is a product
+    // decision with nowhere native to live. Everything else this package
+    // answers is derived at read time from model_offering and
+    // model_pricing — see docs/inference-concepts.md.
+    relPath: "packages/inference-catalog/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["bench_model_policy"],
+  },
+  {
     relPath: "packages/access-policy/src/schema.ts",
     maxOccurrences: 2,
     tables: ["policy", "pending_invite"],

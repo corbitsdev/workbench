@@ -341,6 +341,7 @@ export function createSidecarStepBuildEnv(
       hubRoutinesUrl: string;
       hubTaskPlannerUrl: string;
       hubConnectionsUrl: string;
+      hubCatalogUrl: string;
       hubAgentDirectoryUrl: string;
       hubChatUrl: string;
       sidecarToken: string;
@@ -392,6 +393,10 @@ export function createSidecarStepBuildEnv(
       hubRoutinesUrl: deps.hubArtifactsUrl,
       hubTaskPlannerUrl: deps.hubArtifactsUrl,
       hubConnectionsUrl: deps.hubArtifactsUrl,
+      // And once more under the key `@corbits/catalog-tools` declares
+      // (`requires: ["hubCatalogUrl", "sidecarToken", "address"]`) for the
+      // inference catalog's own run-authenticated surface.
+      hubCatalogUrl: deps.hubArtifactsUrl,
       hubAgentDirectoryUrl: deps.hubArtifactsUrl,
       hubChatUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,

@@ -25,8 +25,15 @@ API — never discovered at runtime:
   through `POST /api/tenants/:id/catalog/{model,providers,credentials,offerings}`,
   idempotently. The offering's `capabilities` field (see
   `vendor/intx/types/src/catalog.ts` and
-  `vendor/intx/db/src/schema/catalog.ts`) is never set — every offering
-  workbench seeds gets `capabilities: []` from the hub's own default.
+  `vendor/intx/db/src/schema/catalog.ts`) is set from
+  `@corbits/inference-catalog`'s `capabilitiesForDeployment`, which reads
+  the pinned catalog's probe results: what that exact
+  `(baseURL, canonicalName)` deployment demonstrated, or the intersection
+  across other deployments of the same model on the same wire. A
+  deployment the catalog has never probed — a local Ollama model, an
+  open-weight relay — is seeded with an empty list, said out loud in the
+  seed log, because a guessed capability routes real work to a model that
+  cannot do it.
 - **`packages/hub-client/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
   a second, independent hardcoded table: each provider's free auth-gated
   probe endpoint, used to prove a freshly-entered key works before it is
@@ -96,24 +103,24 @@ Not as a cutover, for three independent reasons:
    today would mean adding two more vendored packages (plus a provider
    probe plugin per provider used) with their own ledger rows and kill
    dates, not a plain npm dependency bump.
-3. **No consumer for what it would provide.** The one applicable output,
-   `capabilities`, is not read anywhere in `apps/web` or elsewhere in this
-   repo today — it is dead data on every seeded offering. Wiring
-   `catalogCapabilitiesFor` into `seedCatalog` would populate a field
-   nothing displays or filters on, which is exactly the kind of
-   speculative plumbing this repo's "no fallbacks, no spread-assembly, cut
-   over cleanly" standard argues against building ahead of a real need.
+3. **No consumer for what it would provide** — retired by CL-6341.
+   `capabilities` has a consumer now: `@corbits/inference-catalog` filters
+   on it to answer "which models here can do this kind of work", and the
+   platform's own source resolution filters on it too. `seedCatalog`
+   populates it from the pinned catalog's baked probe results, so reasons
+   1 and 2 still stand — this reads catalog literals, it does not run a
+   discovery rig.
 
 ## If this becomes worth doing later
 
-Revisit once both hold: (a) something in `apps/web` or the hub actually
-reads/filters on offering `capabilities`, and (b) `@intx/inference-discovery`
-has a real npm publish past the folded-model line (or workbench is ready to
-vendor it with a ledger row and kill date like everything else in
-`vendor/intx/`). At that point, the integration is narrow: call
-`catalogCapabilitiesFor(catalogProvider.plugin, catalogModel.canonicalName)`
-in `ensureCatalogOffering` (`packages/hub-client/src/seed.ts`) and pass the
-result as the offering's `capabilities`. It does not change what models or
+Live discovery would still be worth revisiting once
+`@intx/inference-discovery` has a real npm publish past the folded-model
+line (or workbench is ready to vendor it with a ledger row and kill date
+like everything else in `vendor/intx/`). What it would add over the baked
+literals is coverage of the deployments the pinned catalog has never
+probed — local Ollama models and open-weight relays, which seed with an
+empty capability list today and are therefore invisible to anything that
+picks a model by what it can do. It does not change what models or
 providers workbench seeds — that remains curated data, same as
 `PROVIDER_TEST_CONFIG` and `catalog-seed-data.ts` are today, since discovery
 has no opinion on which models exist, only on what a named model can prove

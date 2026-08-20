@@ -28,6 +28,7 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../routines-tools", import.meta.url).pathname,
   new URL("../../task-dispatch-tools", import.meta.url).pathname,
   new URL("../../connections-tools", import.meta.url).pathname,
+  new URL("../../catalog-tools", import.meta.url).pathname,
   new URL("../../agent-directory-tools", import.meta.url).pathname,
   new URL("../../interaction-tools", import.meta.url).pathname,
   new URL("../../skills-tools", import.meta.url).pathname,
