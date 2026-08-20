@@ -838,9 +838,14 @@ export function ConnectorCredentialDialog({
     setSubmitting(true);
     setSubmitError(null);
     completeConnectorCredential(tenantId, descriptor.id, apiKey)
-      .then(() => {
+      .then((completed) => {
+        // CL-6351: a fresh Ollama connect with only an embedding model
+        // pulled still succeeds — `modelGuidance` says so in the same
+        // consumer language the "connected" toast normally would,
+        // instead of the generic success line.
         toast(
-          SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
+          completed.modelGuidance ??
+            SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
         );
         onConnected();
       })

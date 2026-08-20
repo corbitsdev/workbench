@@ -64,6 +64,7 @@ import {
   ollamaOpenAICompatBaseURL,
   type SupportedCredentialProvider,
 } from "./credential-test";
+import { hasCompletionCapableModel } from "./model-capability";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -1350,6 +1351,20 @@ export type SeedCatalogArgs = {
   baseURLOverride?: string;
 };
 
+export type SeedCatalogResult = {
+  /**
+   * Whether at least one seeded offering is completion-capable per
+   * `hasCompletionCapableModel`. `false` only when every seeded model
+   * resolves to no capability data and an embedding-shaped name (a fresh
+   * Ollama connect whose instance has only an embedding model pulled,
+   * most concretely, CL-6351) -- the connect itself still succeeds, but
+   * the caller (`connections`' `/complete` route) surfaces this as a
+   * guided state rather than letting every chat turn fail with "does not
+   * support generate".
+   */
+  hasCompletionCapableModel: boolean;
+};
+
 /**
  * Plants one provider's curated catalog (see `catalog-seed-data.ts`) in a
  * tenant's catalog. The catalog model rows are always planted — data
@@ -1360,7 +1375,9 @@ export type SeedCatalogArgs = {
  * so. Idempotent: an already seeded chain is detected by name and
  * skipped, never duplicated.
  */
-export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
+export async function seedCatalog(
+  args: SeedCatalogArgs,
+): Promise<SeedCatalogResult> {
   const { api, cookies, tenantId, log, provider = "anthropic" } = args;
   const seed = CATALOG_SEEDS[provider];
 
@@ -1412,7 +1429,13 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       `catalog models for ${seed.provider.name} seeded without a credential; ` +
         `no workbench or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
     );
-    return;
+    return {
+      hasCompletionCapableModel: hasCompletionCapableModel(
+        models,
+        (model) => model.capabilities ?? [],
+        (model) => model.canonicalName,
+      ),
+    };
   }
 
   const providerArgs =
@@ -1468,6 +1491,10 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   // the catalog has never probed still gets an empty list: an honest "not
   // known" beats a guess that routes real work to a model that cannot do it.
   const unprobed: string[] = [];
+  const offeredCapabilities: {
+    canonicalName: string;
+    capabilities: readonly string[];
+  }[] = [];
   for (const model of seededModels) {
     // Ollama's dynamic entries already carry their own live-probed
     // capabilities (`fetchOllamaModelCatalog`, CL-6366) — narrowed against
@@ -1487,6 +1514,10 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
             canonicalName: model.canonicalName,
           }).capabilities;
     if (capabilities.length === 0) unprobed.push(model.canonicalName);
+    offeredCapabilities.push({
+      canonicalName: model.canonicalName,
+      capabilities,
+    });
     await ensureCatalogOffering(
       api,
       cookies,
@@ -1509,4 +1540,11 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   log(
     `catalog ready: ${seed.provider.name}/${models.map((m) => m.canonicalName).join(", ")}`,
   );
+  return {
+    hasCompletionCapableModel: hasCompletionCapableModel(
+      offeredCapabilities,
+      (offering) => offering.capabilities,
+      (offering) => offering.canonicalName,
+    ),
+  };
 }

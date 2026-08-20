@@ -319,6 +319,7 @@ async function resolveOllamaModelSource(
   const completionCapable = preferCompletionCapable(
     candidates,
     (candidate) => candidate.capabilities,
+    (candidate) => candidate.canonicalName,
   );
   const curatedName = catalogSeed.models[0]?.canonicalName;
   const preferred =

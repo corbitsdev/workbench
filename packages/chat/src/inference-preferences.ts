@@ -61,12 +61,13 @@ export async function listConnectedProviders(
  * the explicit alphabetical tiebreaker below would then hand the
  * embedding model the win whenever its name sorts first (CL-6351), and
  * every chat turn against it fails with "does not support generate". So
- * offerings the catalog's real capability data does not mark
- * completion-capable are excluded from the running before the
- * priority/name tiebreak ever runs, not after (`preferCompletionCapable`
- * falls back to the unfiltered set when no candidate carries capability
- * data, so a provider the pinned catalog has never probed still gets a
- * default).
+ * offerings `preferCompletionCapable` does not consider completion-capable
+ * (the pinned catalog's real capability data when it has probed the
+ * deployment, an embedding-named fallback check when it hasn't) are
+ * excluded from the running before the priority/name tiebreak ever runs,
+ * not after -- and never fall back to the unfiltered set, so a tenant
+ * whose only reachable offering really is an embedding model gets no
+ * default rather than one that fails every turn.
  *
  * Kept DB-free so the tie/fallback rules stay covered by a plain unit
  * test; `listDefaultInferencePreferences` is the thin `@intx/db`-backed
@@ -81,6 +82,7 @@ export function selectDefaultInferencePreferences(
   const sorted = preferCompletionCapable(
     credentialed,
     (entry) => entry.offering.capabilities,
+    (entry) => entry.model.canonicalName,
   )
     .slice()
     .sort(

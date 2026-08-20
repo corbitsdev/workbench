@@ -506,8 +506,14 @@ function ConnectDialog({
     setSubmitting(true);
     setError(null);
     completeConnectorCredential(tenantId, plugin.descriptor.id, apiKey)
-      .then(() => {
-        toast(`Connected ${plugin.descriptor.displayName} for this workbench.`);
+      .then((completed) => {
+        // CL-6351: a fresh Ollama connect with only an embedding model
+        // pulled still succeeds — `modelGuidance` says so instead of
+        // the generic "connected" toast.
+        toast(
+          completed.modelGuidance ??
+            `Connected ${plugin.descriptor.displayName} for this workbench.`,
+        );
         onConnected();
       })
       .catch((cause: unknown) =>

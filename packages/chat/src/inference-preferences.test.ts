@@ -104,7 +104,7 @@ describe("selectDefaultInferencePreferences", () => {
     expect(result).toEqual([{ provider: "ollama", model: "qwen3:8b" }]);
   });
 
-  test("no capability data anywhere in the candidate set falls back to unfiltered resolution", () => {
+  test("CL-6351: an uncataloged embedding-named offering never wins even at the lowest priority, and never falls back to the unfiltered set", () => {
     const result = selectDefaultInferencePreferences([
       offering({
         offeringId: "off_embed",
@@ -121,7 +121,27 @@ describe("selectDefaultInferencePreferences", () => {
         capabilities: [],
       }),
     ]);
-    expect(result).toEqual([{ provider: "ollama", model: "all-minilm" }]);
+    expect(result).toEqual([{ provider: "ollama", model: "qwen3:8b" }]);
+  });
+
+  test("CL-6351: an offering set that is entirely uncataloged embedding-named models resolves to no default, never one of them", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_embed_1",
+        canonicalName: "all-minilm",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: [],
+      }),
+      offering({
+        offeringId: "off_embed_2",
+        canonicalName: "nomic-embed-text",
+        providerName: "ollama",
+        priority: 1,
+        capabilities: [],
+      }),
+    ]);
+    expect(result).toEqual([]);
   });
 
   test("returns every provider's offering of the winning model, sorted by priority", () => {

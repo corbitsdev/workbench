@@ -159,6 +159,14 @@ const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
 
+// CL-6351: a fresh Ollama connect whose instance has only embedding
+// models pulled still succeeds (the URL and instance are real) but has
+// no model any workbench turn can actually use — surfaced as a guided
+// `modelGuidance` string on an otherwise-normal 200, never as a per-turn
+// "does not support generate" failure downstream.
+const OLLAMA_NO_CHAT_MODEL_GUIDANCE =
+  "Ollama is connected, but no chat model is installed — run `ollama pull qwen3` and try again.";
+
 const SubmitCredential = type({ apiKey: "string > 0" });
 
 export type CreateConnectionRoutesDeps = {
@@ -398,8 +406,9 @@ export function createConnectionRoutes(
         // just stored: plant its curated model catalog (and Ollama's live
         // model list) exactly the way onboarding does, so the models show
         // up in Inference and a workbench can actually run on them.
+        let modelGuidance: string | undefined;
         if (isInferenceProvider(descriptor.id)) {
-          await runSeedCatalog({
+          const seeded = await runSeedCatalog({
             api,
             cookies,
             tenantId: tenant.id,
@@ -409,13 +418,21 @@ export function createConnectionRoutes(
             credentialVerified: true,
             ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
           });
+          if (descriptor.id === "ollama" && !seeded.hasCompletionCapableModel) {
+            modelGuidance = OLLAMA_NO_CHAT_MODEL_GUIDANCE;
+          }
         }
         // Only clear once the credential is actually durable — a storage
         // failure below (the `catch`) must leave a prior needs-attention
         // record standing rather than clearing it on a test pass whose
         // save then failed (CL-6092).
         deps.providerHealth?.clear(tenant.id, descriptor.id);
-        return c.json({ credentialId, status: "active" as const }, 200);
+        return c.json(
+          modelGuidance !== undefined
+            ? { credentialId, status: "active" as const, modelGuidance }
+            : { credentialId, status: "active" as const },
+          200,
+        );
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         deps.log(

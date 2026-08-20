@@ -66,6 +66,7 @@ export function defaultModelForProvider(
   for (const candidate of preferCompletionCapable(
     candidates,
     (candidate) => candidate.capabilities,
+    (candidate) => candidate.canonicalName,
   )) {
     if (best === null || candidate.priority < best.priority) {
       best = candidate;

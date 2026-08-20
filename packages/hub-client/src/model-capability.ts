@@ -9,40 +9,68 @@
 // "all-minilm") wins the tenant default and every chat turn fails with
 // "does not support generate" (CL-6351).
 //
-// `@corbits/inference-catalog`'s `capabilitiesForDeployment` now backs every
+// `@corbits/inference-catalog`'s `capabilitiesForDeployment` backs every
 // offering created from the pinned catalog with its real, wire-observed
 // capabilities, and the pinned catalog only ever lists completion models —
 // an embedding deployment never earns `"plain-text"` there. This module
-// reads that data instead of guessing from the name.
+// prefers that data when it exists.
 //
 // Coverage is partial: a deployment the pinned catalog has never probed
-// (a local Ollama pull, an unlisted relay) carries no capability data at
-// all, `"plain-text"` included. Filtering those out unconditionally would
-// brick every tenant on such a provider, so `preferCompletionCapable` only
-// ever narrows the candidate set — never empties it.
-// `ModelOfferingRow.capabilities` (the DB row `ResolvedOffering.offering`
-// carries) is a plain `text[]` column, looser than the `Capability` enum
-// `@intx/types` guards the offerings API with — so this reads capabilities
-// as bare strings rather than importing `Capability` and forcing every
-// caller to narrow first.
-function isCompletionCapable(capabilities: readonly string[]): boolean {
-  return capabilities.includes("plain-text");
+// (a local Ollama pull, in particular — never in a pinned, publicly
+// reachable catalog) carries no capability data at all, `"plain-text"`
+// included, indistinguishable at this layer from a real probed embedding
+// deployment (both report an empty capability list). For that uncataloged
+// case this falls back to recognizing common embedding-model name
+// families by convention — the same signal CL-6351's first pass used
+// before the pinned catalog existed — rather than trusting an empty list
+// as "no data" and letting an embedding model win anyway.
+const EMBEDDING_MODEL_NAME_PATTERN =
+  /(^|[-_/])(embed(ding)?|minilm|bge|gte|e5|arctic-embed)(-|_|:|$)/i;
+
+function isEmbeddingModelName(canonicalName: string): boolean {
+  return EMBEDDING_MODEL_NAME_PATTERN.test(canonicalName);
+}
+
+function isCompletionCapable(
+  capabilities: readonly string[],
+  canonicalName: string,
+): boolean {
+  return capabilities.length > 0
+    ? capabilities.includes("plain-text")
+    : !isEmbeddingModelName(canonicalName);
 }
 
 /**
- * Narrows `offerings` to the ones whose capability data marks them
- * completion-capable (`"plain-text"`). Falls back to the unfiltered list
- * when that would exclude every candidate — either because none of them
- * carry capability data yet, or because none of the ones that do are
- * tagged completion-capable — so a tenant whose provider lacks capability
- * rows still gets *a* default rather than none.
+ * Narrows `offerings` to the completion-capable ones: whichever of
+ * `capabilitiesOf`'s real, wire-observed data or (when that's empty,
+ * uncataloged) `isEmbeddingModelName`'s name check says so. Returns an
+ * empty list when every offering is excluded — CL-6351 requires an
+ * embedding model never win default-model resolution by default, so
+ * there is no "fall back to picking one anyway" case here; a caller with
+ * nothing completion-capable to choose from must surface that as its own
+ * state (see `hasCompletionCapableModel`), not silently hand back an
+ * offering that will fail every chat turn.
  */
 export function preferCompletionCapable<T>(
   offerings: readonly T[],
   capabilitiesOf: (offering: T) => readonly string[],
+  canonicalNameOf: (offering: T) => string,
 ): readonly T[] {
-  const completionCapable = offerings.filter((offering) =>
-    isCompletionCapable(capabilitiesOf(offering)),
+  return offerings.filter((offering) =>
+    isCompletionCapable(capabilitiesOf(offering), canonicalNameOf(offering)),
   );
-  return completionCapable.length > 0 ? completionCapable : offerings;
+}
+
+/** Whether at least one of `offerings` is completion-capable by
+ * {@link preferCompletionCapable}'s own rule — the connect-time check
+ * behind CL-6351's guided state ("Ollama is connected, but no chat model
+ * is installed"). */
+export function hasCompletionCapableModel<T>(
+  offerings: readonly T[],
+  capabilitiesOf: (offering: T) => readonly string[],
+  canonicalNameOf: (offering: T) => string,
+): boolean {
+  return offerings.some((offering) =>
+    isCompletionCapable(capabilitiesOf(offering), canonicalNameOf(offering)),
+  );
 }
