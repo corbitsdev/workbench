@@ -238,7 +238,7 @@ function runsDetailLabel(stats: {
   if (stats.errored > 0) {
     return `${formatCount(stats.errored)} errored`;
   }
-  return "purpose workflows";
+  return "runs";
 }
 
 function InsightsStat({
@@ -681,19 +681,31 @@ function InsightsLanding({
           </section>
         ) : null}
 
-        {models !== null ? (
-          <section className="insights-panel">
-            <h3>Cost by model</h3>
+        <section className="insights-panel">
+          <h3>Cost by model</h3>
+          {models !== null ? (
             <ModelCostTable models={models} />
-          </section>
-        ) : null}
+          ) : (
+            <RichEmptyState
+              icon={<ChartBar />}
+              title="No model usage yet"
+              description="Costs show up here once a model has been used in this window."
+            />
+          )}
+        </section>
 
-        {tools !== null ? (
-          <section className="insights-panel">
-            <h3>Calls by tool</h3>
+        <section className="insights-panel">
+          <h3>Calls by tool</h3>
+          {tools !== null ? (
             <ToolCallsTable tools={tools} />
-          </section>
-        ) : null}
+          ) : (
+            <RichEmptyState
+              icon={<ChartBar />}
+              title="No tool calls yet"
+              description="Tool calls show up here once an agent has made one in this window."
+            />
+          )}
+        </section>
 
         {tokensSeries.length > 0 ? (
           <section className="insights-panel">
@@ -712,7 +724,7 @@ function InsightsLanding({
           <section className="insights-panel">
             <BarChart
               title="Run outcomes"
-              description={`${formatCount(stats.totalRuns)} purpose runs`}
+              description={`${formatCount(stats.totalRuns)} runs`}
               data={runOutcomeData(stats)}
               valueLabel="Runs"
               format={formatCount}
@@ -720,29 +732,43 @@ function InsightsLanding({
           </section>
         ) : null}
 
-        {workbenches !== null && workbenches.length > 0 ? (
+        {workbenches !== null ? (
           <section className="insights-panel">
             <h3>Activity by workbench</h3>
-            <WorkbenchActivityBars
-              workbenches={workbenches}
-              onSelectWorkbench={onSelectWorkbench}
-            />
+            {workbenches.length > 0 ? (
+              <WorkbenchActivityBars
+                workbenches={workbenches}
+                onSelectWorkbench={onSelectWorkbench}
+              />
+            ) : (
+              <RichEmptyState
+                icon={<ChartBar />}
+                title="No workbench activity yet"
+                description="Activity by workbench shows up here once a workbench has usage in this window."
+              />
+            )}
           </section>
         ) : null}
       </div>
 
-      {recent.length > 0 ? (
-        <section className="insights-section">
-          <div className="insights-section-head">
-            <h2>Recent runs</h2>
-          </div>
+      <section className="insights-section">
+        <div className="insights-section-head">
+          <h2>Recent runs</h2>
+        </div>
+        {recent.length > 0 ? (
           <RecentRunRows
             runs={recent}
             onOpenRun={onOpenRun}
             onOpenRuns={onOpenRuns}
           />
-        </section>
-      ) : null}
+        ) : (
+          <RichEmptyState
+            icon={<ChartBar />}
+            title="No runs yet"
+            description="When a routine or automation fires, it shows up here."
+          />
+        )}
+      </section>
     </div>
   );
 }
@@ -826,7 +852,7 @@ export function InsightsRunsHistory({
             ]}
           />
         }
-        subtitle={`${purpose.length} purpose runs`}
+        subtitle={`${purpose.length} runs`}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
@@ -836,8 +862,8 @@ export function InsightsRunsHistory({
             ) : groups.length === 0 ? (
               <RichEmptyState
                 icon={<ChartBar />}
-                title="No purpose runs yet"
-                description="When a routine or purpose workflow fires, it shows up here."
+                title="No runs yet"
+                description="When a routine or automation fires, it shows up here."
               />
             ) : (
               <>
@@ -895,9 +921,6 @@ function TaskChainStrip({
             <>
               <span className="insights-chain-step-title">
                 {`Step ${leg.position + 1} of ${legs.length}`}
-                <span className="insights-chain-step-agent">
-                  {leg.definitionId}
-                </span>
               </span>
               <Badge tone={legStatusTone(leg.status)}>{leg.status}</Badge>
               <span className="insights-chain-step-duration">
@@ -976,7 +999,7 @@ export function InsightsRunDetail({
           <StageCrumbs
             crumbs={[
               { label: "Runs", onSelect: onBack },
-              { label: run !== null ? runDisplayName(run) : runId },
+              { label: run !== null ? runDisplayName(run) : "Run" },
             ]}
           />
         }
@@ -1036,7 +1059,7 @@ export function InsightsRunDetail({
                 description={
                   trace.message.includes("404") ||
                   trace.message.toLowerCase().includes("not found")
-                    ? "No span data is recorded for this run yet. Pre-sink history is absent on purpose — not shown as zeros."
+                    ? "We didn't record a timeline for this run."
                     : trace.message
                 }
               />
@@ -1048,14 +1071,14 @@ export function InsightsRunDetail({
                 <TraceWaterfall
                   title="Run trace"
                   spans={spans}
-                  description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
+                  description={`${spans.length} step${spans.length === 1 ? "" : "s"}`}
                 />
               </section>
             ) : null}
             {trace.kind === "ready" && spans.length === 0 ? (
               <RichEmptyState
                 title="Empty trace"
-                description="The run exists but has no recorded spans yet."
+                description="This run finished before we started recording steps."
               />
             ) : null}
           </div>
@@ -1140,7 +1163,7 @@ export function resolveInsightsScope({
   if (mode !== "landing") {
     return {
       effectiveTenantId: selectedTenantId,
-      scopeLabel: selectedTenantId ?? "",
+      scopeLabel: "All workbenches",
     };
   }
   if (scopeData?.parent) {
@@ -1153,7 +1176,8 @@ export function resolveInsightsScope({
   // runs land on it, so the landing view is all workbenches by
   // definition — label it that way instead of the tenant's own name,
   // which reads like a single workbench. Before `/scope` resolves this
-  // falls back to the raw tenant id so the dashboard never blocks on it.
+  // falls back to the same honest placeholder rather than the raw
+  // tenant id, so the dashboard never blocks on it and never shows one.
   if (scopeData !== null) {
     return {
       effectiveTenantId: scopeData.tenantId,
@@ -1162,7 +1186,7 @@ export function resolveInsightsScope({
   }
   return {
     effectiveTenantId: selectedTenantId,
-    scopeLabel: selectedTenantId ?? "",
+    scopeLabel: "All workbenches",
   };
 }
 
@@ -1288,13 +1312,13 @@ export function InsightsPage({
   // Usage/activity/tools errors must surface. Loading (and ready-empty /
   // no-tenant ready zeros from InsightsRoute) still render zero defaults so
   // the dashboard never invents spend. Runs/routines soft-empty on landing.
-  const usageError =
+  const usageErrorRetry =
     summary.kind === "error"
-      ? summary.message
+      ? summary.retry
       : activity.kind === "error"
-        ? activity.message
+        ? activity.retry
         : byTool.kind === "error"
-          ? byTool.message
+          ? byTool.retry
           : null;
 
   const summaryData =
@@ -1335,7 +1359,7 @@ export function InsightsPage({
     );
   }
 
-  if (usageError !== null) {
+  if (usageErrorRetry !== null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar title="Insights" />
@@ -1343,7 +1367,8 @@ export function InsightsPage({
           <RichEmptyState
             icon={<ChartBar />}
             title="Couldn't load insights"
-            description={usageError}
+            description="Something went wrong on our side. Try again in a moment."
+            actions={[{ label: "Retry", onClick: usageErrorRetry }]}
           />
         </PageShell>
       </div>

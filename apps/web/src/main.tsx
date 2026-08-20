@@ -81,10 +81,12 @@ function Root() {
   }, [runProvisioning]);
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
+    toast(
+      "Signed out. If you were on a shared computer, close the browser to be sure.",
+    );
     void signOut().then((ok) => {
       if (ok) return;
       log.error("Sign-out request to the server failed");
-      toast("Couldn't fully sign out on the server — you're signed out here.");
     });
   }, []);
 

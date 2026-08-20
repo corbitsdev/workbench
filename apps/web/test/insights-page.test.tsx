@@ -120,7 +120,7 @@ describe("InsightsPage usage honesty", () => {
       byTool: { kind: "ready", data: [] },
     });
     expect(markup).toContain("load insights");
-    expect(markup).toContain("usage endpoint failed");
+    expect(markup).not.toContain("usage endpoint failed");
     expect(markup).not.toContain("$0.00");
   });
 
@@ -135,7 +135,7 @@ describe("InsightsPage usage honesty", () => {
       byTool: { kind: "ready", data: [] },
     });
     expect(markup).toContain("load insights");
-    expect(markup).toContain("activity schema mismatch");
+    expect(markup).not.toContain("activity schema mismatch");
   });
 
   test("byTool API error surfaces load failure", () => {
@@ -149,7 +149,7 @@ describe("InsightsPage usage honesty", () => {
       },
     });
     expect(markup).toContain("load insights");
-    expect(markup).toContain("tools route 500");
+    expect(markup).not.toContain("tools route 500");
   });
 });
 
@@ -659,7 +659,7 @@ describe("InsightsRunsHistory definition grouping", () => {
       />,
     );
     expect(el.querySelector("[data-definition-group]")).toBeNull();
-    expect(el.textContent).toContain("No purpose runs yet");
+    expect(el.textContent).toContain("No runs yet");
   });
 
   test("a non-null nextCursor tells the reader more runs exist beyond the 100 shown", () => {
@@ -1033,7 +1033,8 @@ describe("InsightsPage global landing — KPIs and activity by workbench", () =>
       </TestQueryProvider>,
     );
     expect(el.textContent).toContain("No usage recorded yet in this window.");
-    expect(el.textContent).not.toContain("Activity by workbench");
+    expect(el.textContent).toContain("Activity by workbench");
+    expect(el.textContent).toContain("No workbench activity yet");
   });
 });
 

@@ -10,6 +10,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import type { QuestionBlockData } from "@corbits/chat/blocks";
+import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
@@ -117,7 +118,7 @@ export function QuestionBlockView({
       <BlockCard title={data.question}>
         <div className="chat-block-question-answered" data-answered="true">
           <span className="chat-block-question-check" aria-hidden="true">
-            ✓
+            <Check />
           </span>
           <div>
             <p className="chat-block-question-answered-label">

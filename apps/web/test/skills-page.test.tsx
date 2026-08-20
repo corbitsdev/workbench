@@ -132,8 +132,8 @@ describe("SkillsPage", () => {
         status: 503,
       })) as unknown as typeof fetch;
     const el = await mount();
-    expect(el.textContent).toContain("Could not load the skill registry");
-    expect(el.textContent).toContain("hub is down");
+    expect(el.textContent).toContain("Couldn't load your skills");
+    expect(el.textContent).not.toContain("hub is down");
     expect(el.textContent).not.toContain("No skills yet");
   });
 

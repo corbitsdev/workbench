@@ -58,7 +58,7 @@ function workbenchMenu(
   const entries: ContextMenuEntry[] = [
     contextMenuItem({
       id: "rename",
-      label: "Rename conversation",
+      label: "Rename workbench",
       icon: <PencilSimple />,
       onSelect: () => requestWorkbenchRename(target.id),
     }),
@@ -68,17 +68,15 @@ function workbenchMenu(
     entries.push(
       contextMenuItem({
         id: "pin",
-        label: target.pinned ? "Unpin conversation" : "Pin conversation",
+        label: target.pinned ? "Unpin workbench" : "Pin workbench",
         icon: target.pinned ? <PushPinSlash /> : <PushPin />,
         onSelect: () => {
           void patchWorkbenchSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
           }).then(
             () =>
-              toast(
-                target.pinned ? "Conversation unpinned" : "Conversation pinned",
-              ),
-            () => toast("Couldn't update the conversation"),
+              toast(target.pinned ? "Workbench unpinned" : "Workbench pinned"),
+            () => toast("Couldn't update the workbench"),
           );
         },
       }),

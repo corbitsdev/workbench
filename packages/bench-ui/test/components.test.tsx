@@ -67,7 +67,7 @@ describe("BenchSwitcherTrigger", () => {
     const markup = renderToStaticMarkup(
       <BenchSwitcherTrigger activeName={null} open={false} onToggle={noop} />,
     );
-    expect(markup).toContain("No benches");
+    expect(markup).toContain("No workbenches");
   });
 });
 

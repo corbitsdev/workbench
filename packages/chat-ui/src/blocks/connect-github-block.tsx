@@ -18,6 +18,7 @@
 
 import { useState } from "react";
 import { Button, Checkbox, Input } from "@corbits/react-ui";
+import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
@@ -185,7 +186,7 @@ function ConnectedBody({
     <>
       <p className="chat-block-connect-line">
         <span className="chat-block-connect-tick" aria-hidden="true">
-          ✓
+          <Check />
         </span>
         {CHAT_STRINGS.blockConnectGithubConnectedAs(orgName)}
         <Button type="button" variant="link" onClick={onChangeConnection}>

@@ -72,6 +72,12 @@ const EFFECT_TONE: Record<GrantEffect, "success" | "danger" | "info"> = {
   ask: "info",
 };
 
+const EFFECT_LABEL: Record<GrantEffect, string> = {
+  allow: "Can",
+  deny: "Can't",
+  ask: "Ask first",
+};
+
 function resourceLabel(resource: string): string {
   return GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource;
 }
@@ -339,7 +345,9 @@ export function GrantsTable({
             </TableCell>
             <TableCell>{grant.action}</TableCell>
             <TableCell>
-              <Badge tone={EFFECT_TONE[grant.effect]}>{grant.effect}</Badge>
+              <Badge tone={EFFECT_TONE[grant.effect]}>
+                {EFFECT_LABEL[grant.effect]}
+              </Badge>
             </TableCell>
             <TableCell>{grant.origin}</TableCell>
             <TableCell>
@@ -566,17 +574,17 @@ export function CreateGrantDialog({
                 options={[
                   {
                     id: "ask",
-                    title: "Require approval",
+                    title: "Ask first",
                     description: "Ask a human before the action runs.",
                   },
                   {
                     id: "allow",
-                    title: "Allow",
+                    title: "Can",
                     description: "Permit without further checks.",
                   },
                   {
                     id: "deny",
-                    title: "Deny",
+                    title: "Can't",
                     description: "Block the action outright.",
                   },
                 ]}

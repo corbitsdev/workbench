@@ -159,7 +159,7 @@ export function PluginsRoute({
           <RichEmptyState
             icon={<SquaresFour />}
             title="Select a workbench"
-            description="Pick a workbench from the switcher to see its plugins."
+            description="Open a workbench to see its plugins."
           />
         </PageShell>
       </div>
@@ -175,14 +175,17 @@ export function PluginsRoute({
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<SquaresFour />}
-            title="Couldn't load the plugins gallery"
-            description={
-              pluginsState.status === "error"
-                ? pluginsState.message
-                : skillsState.status === "error"
-                  ? skillsState.message
-                  : ""
-            }
+            title="Couldn't load your plugins"
+            description="Something went wrong on our side. Try again in a moment."
+            actions={[
+              {
+                label: "Retry",
+                onClick: () => {
+                  reloadPlugins();
+                  reloadSkills();
+                },
+              },
+            ]}
           />
         </PageShell>
       </div>

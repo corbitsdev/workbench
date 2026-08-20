@@ -82,7 +82,7 @@ export function AgentSkillsPicker({
   if (state.skills.length === 0 && staleNames.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No skills yet — create one from Settings → Skills, then attach it here.
+        No skills yet — write one on the Skills page, then pin it here.
       </p>
     );
   }

@@ -4,6 +4,7 @@
 // is mounted yet — draft state only, with an honesty note on save.
 
 import { Button, SettingsPanel } from "@corbits/react-ui";
+import { Check } from "@corbits/icons";
 import { useState } from "react";
 
 import { SETTINGS_STRINGS } from "./strings";
@@ -35,7 +36,7 @@ export function NotificationsSection() {
           onClick={() => toggle("mentions")}
         >
           <span className="settings-check-box" aria-hidden="true">
-            {prefs.mentions ? "✓" : ""}
+            {prefs.mentions ? <Check /> : null}
           </span>
           <span>
             <strong>{SETTINGS_STRINGS.notificationsMentions}</strong>
@@ -48,7 +49,7 @@ export function NotificationsSection() {
           onClick={() => toggle("approvals")}
         >
           <span className="settings-check-box" aria-hidden="true">
-            {prefs.approvals ? "✓" : ""}
+            {prefs.approvals ? <Check /> : null}
           </span>
           <span>
             <strong>{SETTINGS_STRINGS.notificationsApprovals}</strong>
@@ -61,7 +62,7 @@ export function NotificationsSection() {
           onClick={() => toggle("routineFail")}
         >
           <span className="settings-check-box" aria-hidden="true">
-            {prefs.routineFail ? "✓" : ""}
+            {prefs.routineFail ? <Check /> : null}
           </span>
           <span>
             <strong>{SETTINGS_STRINGS.notificationsRoutineFail}</strong>

@@ -19,9 +19,9 @@ import { TestQueryProvider } from "./test-query-provider";
 describe("empty states", () => {
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
-    expect(markup).toContain("No artifacts yet");
+    expect(markup).toContain("No files yet");
     expect(markup).toContain(
-      "Upload a file or wait for agents and workflows to produce artifacts",
+      "Upload a file, or let your agents drop their work here",
     );
   });
 });
@@ -57,7 +57,7 @@ describe("live data", () => {
     // Hidden file input behind the top-bar Upload action and
     // workbench:library:upload.
     expect(markup).toContain('type="file"');
-    expect(markup).toContain('aria-label="Upload artifacts"');
+    expect(markup).toContain('aria-label="Upload files"');
     expect(markup).toContain("sr-only");
     // Upload is a top-bar action (mock: primary chip in `.top`).
     expect(markup).toMatch(/stage-top-bar-actions[\s\S]*?>Upload</);
