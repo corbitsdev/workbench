@@ -219,7 +219,7 @@ delivery-thread routes, block responses, reactions, pins, read-state,
 typing, presence, and the SSE stream all check `idResource("room", "id")`
 instead —
 a plain rename in the grant grammar, not a new grammar feature, since
-`vendor/intx/authz`'s pattern matching already treats a resource type as an
+`@intx/authz`'s pattern matching already treats a resource type as an
 arbitrary `"<type>:<id>"` string; the system `owner`/`admin`/`member`
 grants every tenant (bench or workbench) is seeded with already match it
 via their `resource: "*"` wildcard. Route-level lifecycle actions —

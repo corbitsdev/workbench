@@ -56,7 +56,7 @@
 // stub key is not a secret — nothing this suite sends is ever valid —
 // so this stays a zero-secret suite; it is simply no longer a
 // zero-network-call one. The host's real 401 classifies as
-// `credential_failure` (`vendor/intx/inference/src/errors.ts`), which
+// `credential_failure` (`@intx/inference/src/errors.ts`), which
 // the inference harness turns into a completed turn carrying a
 // self-describing credential-error report, rather than failing the
 // run's own bracket — so the task's terminal status is "done", not
@@ -778,7 +778,7 @@ describe.skipIf(databaseUrl === undefined)(
           );
           // The status code is 401 today, but Anthropic controls it —
           // 403 is the same `credential_failure` category in the
-          // vendor retry policy (`vendor/intx/inference/src/errors.ts`
+          // vendor retry policy (`@intx/inference/src/errors.ts`
           // classifies both identically), so accept either without
           // loosening the substantive check: the body must still name
           // a credential error, not merely any 4xx.

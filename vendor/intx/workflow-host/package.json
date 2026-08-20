@@ -1,7 +1,7 @@
 {
   "name": "@intx/workflow-host",
   "description": "Production-host implementations of the abstract WorkflowRuntimeEnv from @intx/workflow",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
@@ -15,15 +15,15 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/crypto": "workspace:*",
+    "@intx/agent": "0.3.0",
+    "@intx/crypto": "0.3.0",
     "@intx/hub-sessions": "workspace:*",
-    "@intx/inference": "workspace:*",
-    "@intx/log": "workspace:*",
-    "@intx/mail-memory": "workspace:*",
-    "@intx/mime": "workspace:*",
-    "@intx/storage-isogit": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/inference": "0.3.0",
+    "@intx/log": "0.3.0",
+    "@intx/mail-memory": "0.3.0",
+    "@intx/mime": "0.3.0",
+    "@intx/storage-isogit": "0.3.0",
+    "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
   },

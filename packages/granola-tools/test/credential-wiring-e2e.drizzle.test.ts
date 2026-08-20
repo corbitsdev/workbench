@@ -26,7 +26,7 @@
 // What this does NOT cover: driving the call through a real `Agent` +
 // LLM inference cycle (`agent.send()` deciding to call the tool). No
 // scripted/deterministic tool-call inference adapter exists anywhere in
-// this repo today (`vendor/intx/agent` ships no test fixtures for one,
+// this repo today (`@intx/agent` ships no test fixtures for one,
 // and the hub's `noop-inference` route emits an empty delta that never
 // triggers a tool call) -- a genuine testing-infrastructure gap, not
 // something this test works around. This test instead drives the tool
@@ -74,18 +74,18 @@ const GRANOLA_BINDING: CredentialBinding = {
   locator: "tenant",
 };
 
-/** The launch-time grant the resolver stamps, reshaped into a `GrantRule`. */
-function toGrantRule(bindingGrant: {
-  resource: string;
-  conditions: { tool: string };
+/** A delivered binding descriptor, reshaped into the launch-time `GrantRule`. */
+function toGrantRule(descriptor: {
+  credentialId: string;
+  consumer: string;
 }): GrantRule {
   return {
     id: "grant_launch_1",
-    resource: bindingGrant.resource,
+    resource: `credential:${descriptor.credentialId}`,
     action: "use",
     effect: "allow",
     origin: "system",
-    conditions: bindingGrant.conditions,
+    conditions: { tool: descriptor.consumer },
     expiresAt: null,
     roleId: null,
     principalId: null,
@@ -184,7 +184,7 @@ describeIfDb(
           consumer: CONSUMER,
           bindings: deriveResolvedBindings(delivery, CONSUMER),
           providers,
-          grants: result.bindingGrants.map(toGrantRule),
+          grants: delivery.bindings.map(toGrantRule),
         });
 
         // Step 4: the real tool bundle, driven exactly as

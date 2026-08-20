@@ -18,11 +18,11 @@
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/workflow-source": "workspace:*",
-    "@intx/agent": "workspace:*",
+    "@intx/agent": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@corbits/tool-registry-publish": "workspace:*",
-    "@intx/crypto": "workspace:*",
+    "@intx/crypto": "0.3.0",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

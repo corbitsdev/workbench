@@ -32,7 +32,7 @@
 //
 // This is one `defineTool` factory declaring two tool names (the shape
 // `ToolDeclaration`/`ToolBundle` both support — see
-// `vendor/intx/agent/src/tool.ts`) rather than two separate exports,
+// `@intx/agent/src/tool.ts`) rather than two separate exports,
 // because both share the same persistence dependency
 // (`./artifact-client.ts`) and env requirements.
 //

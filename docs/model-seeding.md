@@ -24,7 +24,7 @@ API — never discovered at runtime:
   provider's seed
   through `POST /api/tenants/:id/catalog/{model,providers,credentials,offerings}`,
   idempotently. The offering's `capabilities` field (see
-  `vendor/intx/types/src/catalog.ts` and
+  `@intx/types/src/catalog.ts` and
   `vendor/intx/db/src/schema/catalog.ts`) is set from
   `@corbits/inference-catalog`'s `capabilitiesForDeployment`, which reads
   the pinned catalog's probe results: what that exact

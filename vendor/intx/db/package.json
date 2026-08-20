@@ -1,7 +1,7 @@
 {
   "name": "@intx/db",
   "description": "Client, schema, migrations, and row parsers for the hub's PostgreSQL database",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
@@ -18,10 +18,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@intx/authz": "workspace:*",
-    "@intx/crypto": "workspace:*",
-    "@intx/log": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/authz": "0.3.0",
+    "@intx/crypto": "0.3.0",
+    "@intx/log": "0.3.0",
+    "@intx/types": "0.3.0",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"

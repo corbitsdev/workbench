@@ -6,7 +6,7 @@
 // retry is dropped on the floor. This module is the trust boundary that
 // narrows those other event shapes (`inference.tool_call.*`, `tool.*`,
 // `inference.thinking.delta`, `inference.retry` — see
-// `vendor/intx/types/src/runtime.ts`'s `InferenceEvent`) and the pure
+// `@intx/types/src/runtime.ts`'s `InferenceEvent`) and the pure
 // state machine that turns them into one turn's activity list, plus the
 // hook and presentational strip that render it. v1 is live-only: the
 // strip disappears the moment the turn ends (`nextTurnActivityState`
@@ -128,7 +128,7 @@ function parseToolDone(data: unknown): { callId: string } | null {
 /**
  * `inference.thinking.delta`'s `data.partial.thinking` is cumulative, same
  * as `partial.text` (see `PartialMessage` in
- * `vendor/intx/types/src/runtime.ts`) — so the ordinary case replaces the
+ * `@intx/types/src/runtime.ts`) — so the ordinary case replaces the
  * char count outright. `thinking` is typed optional on `PartialMessage`;
  * if a future adapter omits it on the delta event, falling back to the
  * per-delta `token`'s length keeps the counter moving (as an increment,

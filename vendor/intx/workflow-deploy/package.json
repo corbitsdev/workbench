@@ -1,7 +1,7 @@
 {
   "name": "@intx/workflow-deploy",
   "description": "Deploy-time validation, capability walk, and operator-approval gating for workflows",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
@@ -18,9 +18,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/tool-packaging": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/agent": "0.3.0",
+    "@intx/tool-packaging": "0.3.0",
+    "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*"
   },
   "devDependencies": {

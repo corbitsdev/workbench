@@ -1,7 +1,7 @@
 // Agent-address helpers shared by this package's own fan-out
 // (`routes.ts`) and by `@corbits/chat-ui`'s composer: splitting an
 // address into its local part and domain. Mirrors the split
-// `vendor/intx/types/src/agent-address.ts`'s `parseAgentAddress` does,
+// `@intx/types/src/agent-address.ts`'s `parseAgentAddress` does,
 // but stays permissive about the left-hand side on purpose — the
 // mention rule (see `mentions.ts`) only ever needs the substring before
 // the first "@", never a validated `ins_`-prefixed instance id, so it

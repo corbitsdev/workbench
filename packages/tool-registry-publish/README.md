@@ -6,7 +6,7 @@ tarball (every dependency inlined, so the tarball declares no
 `package-registry` asset over the hub's native asset REST routes —
 the packaging pipeline `@corbits/*` tool-package pins need to resolve
 at agent launch (see `vendor/intx/hub-sessions/src/package-registry-kind.ts`
-for the asset's shape and `vendor/intx/tool-packaging/src/loader.ts`
+for the asset's shape and `@intx/tool-packaging/src/loader.ts`
 for how a pin resolves through it).
 
 ## Contract

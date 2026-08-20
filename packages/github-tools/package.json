@@ -2,7 +2,7 @@
   "name": "@corbits/github-tools",
   "private": true,
   "description": "GitHub search integration: a minimal REST client and an @intx/agent tool bundle exposing github_activity",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -20,8 +20,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
     "arktype": "catalog:"
   },
   "devDependencies": {

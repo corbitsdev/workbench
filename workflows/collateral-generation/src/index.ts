@@ -147,8 +147,8 @@ export const COLLATERAL_GENERATION_PENDING_SOURCES = [
  */
 export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
   [
-    { name: "@corbits/granola-tools", version: "0.0.3" },
-    { name: "@corbits/linear-tools", version: "0.0.3" },
+    { name: "@corbits/granola-tools", version: "0.0.4" },
+    { name: "@corbits/linear-tools", version: "0.0.4" },
   ];
 
 /**

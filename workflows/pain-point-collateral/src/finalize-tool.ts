@@ -9,13 +9,13 @@
 //
 // Approval mechanics: `defineTool`'s `definitions` array marks this
 // tool's one definition `approval: "ask"` (see
-// `vendor/intx/agent/src/tool.ts`'s `ToolDeclaration`/`toolApprovalEffect`),
+// `@intx/agent/src/tool.ts`'s `ToolDeclaration`/`toolApprovalEffect`),
 // the platform's native gate. When the model calls this tool, the
 // authz extension floors the call's grant at `"ask"` and suspends the
 // run instead of invoking `run` below — the sidecar co-writes an
 // `approval` row (visible in the inbox via `@corbits/approvals`) and the
 // run parks until a human approves or rejects it
-// (`vendor/intx/inference/src/reactor.ts`'s `resolveApprovalDecision`).
+// (`@intx/inference/src/reactor.ts`'s `resolveApprovalDecision`).
 // On approval the parked call is re-dispatched and `run` below executes
 // for real, exactly once. On rejection `run` never executes at all — the
 // model instead sees a synthetic `isError: true` result ("denied by

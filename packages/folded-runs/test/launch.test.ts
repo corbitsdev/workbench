@@ -56,7 +56,6 @@ type BuildCredentialDeliveryResult = Awaited<
 let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
   ok: true,
   delivery: undefined,
-  bindingGrants: [],
 };
 const buildCredentialDeliveryCalls: unknown[] = [];
 
@@ -1069,12 +1068,6 @@ describe("deployAtHead — mcp credential bindings", () => {
           },
         ],
       },
-      bindingGrants: [
-        {
-          resource: "credential:cred_1",
-          conditions: { tool: "tool:@corbits/mcp-tools" },
-        },
-      ],
     };
 
     const db = createFakeDb();

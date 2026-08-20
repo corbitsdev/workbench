@@ -12,7 +12,7 @@
 // capabilities or autonomy hinge on until a human separately pins it
 // onto a definition. `pin_skill`, by contrast, still declares
 // `approval: "ask"` (`@intx/agent`'s native per-invocation gate,
-// `vendor/intx/agent/src/tool.ts`): it can change ANY agent
+// `@intx/agent/src/tool.ts`): it can change ANY agent
 // definition's own behavior, not just this run's — the reactor
 // suspends the call as a pending approval BEFORE this bundle's `run`
 // ever executes, and only resumes once a human allows it. `list_skills`

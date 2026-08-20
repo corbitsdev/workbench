@@ -856,7 +856,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // `content`. Reading it back — `GET .../messages` →
   // `decodeMail` → `fetchBlob` → `extractPartByPath` — hits a real,
   // pre-existing defect in the vendored `@intx/mime`'s `walkParts`
-  // (`vendor/intx/mime/src/mime.ts`): its leaf-depth branch returns
+  // (`@intx/mime/src/mime.ts`): its leaf-depth branch returns
   // the attachment's raw MIME slice (headers *and* body) instead of
   // the header-stripped body every intermediate depth already
   // produces, so `JSON.parse` fails on the leading `Content-Type: ...`

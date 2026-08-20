@@ -39,7 +39,7 @@
     "@corbits/tasks-ui": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/icons": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/types": "0.3.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "catalog:",

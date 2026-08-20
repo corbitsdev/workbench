@@ -15,9 +15,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/authz": "workspace:*",
-    "@intx/hub-common": "workspace:*",
-    "@intx/types": "workspace:*",
+    "@intx/authz": "0.3.0",
+    "@intx/hub-common": "0.3.0",
+    "@intx/types": "0.3.0",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"

@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/inference-catalog": "workspace:*",
+    "@intx/inference-catalog": "0.3.0",
     "@workbench/hub-client": "workspace:*"
   },
   "devDependencies": {

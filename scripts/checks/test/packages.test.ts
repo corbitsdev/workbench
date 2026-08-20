@@ -35,35 +35,32 @@ test("vendoredLedgerPaths reads backticked paths from ledger rows only", () => {
   const markdown = [
     "| Vendored path | What was copied |",
     "| ------------- | --------------- |",
-    "| `vendor/intx/log` | `@intx/log` source |",
-    "| `vendor/intx/agent` | `@intx/agent` source |",
+    "| `@intx/log` | `@intx/log` source |",
+    "| `@intx/agent` | `@intx/agent` source |",
     "Prose mentioning `vendor/intx/other` is not a row.",
   ].join("\n");
-  expect(vendoredLedgerPaths(markdown)).toEqual([
-    "vendor/intx/log",
-    "vendor/intx/agent",
-  ]);
+  expect(vendoredLedgerPaths(markdown)).toEqual(["@intx/log", "@intx/agent"]);
 });
 
 test("a vendored directory with no ledger row is a violation", () => {
-  const report = auditVendoredLedger(["vendor/intx/log"], [], () => true);
+  const report = auditVendoredLedger(["@intx/log"], [], () => true);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("vendor/intx/log");
+  expect(report.violations[0]).toContain("@intx/log");
   expect(report.violations[0]).toContain("no VENDORED.md ledger row");
 });
 
 test("a ledger row whose path no longer exists is a violation", () => {
-  const report = auditVendoredLedger([], ["vendor/intx/log"], () => false);
+  const report = auditVendoredLedger([], ["@intx/log"], () => false);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain('"vendor/intx/log"');
+  expect(report.violations[0]).toContain('"@intx/log"');
   expect(report.violations[0]).toContain("no longer exists");
 });
 
 test("a vendored directory matched by a ledger row passes", () => {
   const report = auditVendoredLedger(
-    ["vendor/intx/log"],
-    ["vendor/intx/log"],
-    (ledgerPath) => ledgerPath === "vendor/intx/log",
+    ["@intx/log"],
+    ["@intx/log"],
+    (ledgerPath) => ledgerPath === "@intx/log",
   );
   expect(report.violations).toEqual([]);
 });

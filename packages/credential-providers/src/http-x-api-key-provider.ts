@@ -1,6 +1,6 @@
 // A workbench-owned `CredentialProvider`, sibling to
 // `http-raw-authorization-provider.ts` and to `@intx/harness`'s vendored
-// `createHttpCredentialProvider` (`vendor/intx/harness/src/
+// `createHttpCredentialProvider` (`@intx/harness/src/
 // credential-providers.ts`, read-only per AGENTS.md). Neither vendored
 // plugin fits Exa or ScrapeCreators: both APIs authenticate via an
 // `x-api-key` header, not `authorization` in any shape. Registering this

@@ -1,6 +1,6 @@
 // Recognizes a classified inference failure's reply prose (CL-6092) — the
 // one place `chat-ui` matches against the exact preambles
-// `vendor/intx/inference/src/default-director.ts`'s `formatInferenceError`
+// `@intx/inference/src/default-director.ts`'s `formatInferenceError`
 // writes for `"credential_failure"` and `"quota_exhausted"`
 // (`InferenceError.category`, `@intx/types/runtime`). This is a prose
 // match, not a structured read: by the time a reply reaches the chat

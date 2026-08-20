@@ -5,7 +5,7 @@
 // instantly against a constant empty reply instead of burning a live
 // model call whose output would be discarded.
 //
-// The wire shape matches exactly what `vendor/intx/inference/src/providers/anthropic.ts`'s
+// The wire shape matches exactly what `@intx/inference/src/providers/anthropic.ts`'s
 // `parseResponse` accepts (see that file's `AnthropicSSEEvent` union,
 // ~line 490-560): `message_start` (with zeroed usage), one
 // `content_block_start` at index 0, one `content_block_delta` carrying

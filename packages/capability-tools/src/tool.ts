@@ -1,7 +1,7 @@
 // The `@corbits/capability-tools` bundle: `request_capability`, an
 // agent's in-chat way to ask for a tool package, skill, or model it
 // doesn't have yet. Declared `approval: "ask"` (`@intx/agent`'s native
-// per-invocation gate, `vendor/intx/agent/src/tool.ts`) — the reactor
+// per-invocation gate, `@intx/agent/src/tool.ts`) — the reactor
 // suspends the call as a pending approval BEFORE this bundle's `run` ever
 // executes, renders it in-chat as an approve/deny card, and only resumes
 // into `run` once a human allows it. This bundle's own code never sees
