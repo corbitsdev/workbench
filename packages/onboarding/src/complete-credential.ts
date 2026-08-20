@@ -46,7 +46,12 @@
 // own provider, so an OAuth-only or bring-your-own-key user is never
 // stuck waiting on an operator-configured key.
 
-import { PrincipalSummary, TenantResponse, paginatedSchema } from "@intx/types";
+import {
+  ModelInfo,
+  PrincipalSummary,
+  TenantResponse,
+  paginatedSchema,
+} from "@intx/types";
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
@@ -64,6 +69,7 @@ import {
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
+import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
 import { personalTenantSlug, seededWorkflowStatus } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step
@@ -235,19 +241,143 @@ export async function findPersonalTenant(
   };
 }
 
+/**
+ * One provider's offerings out of a tenant's resolved catalog
+ * (`GET /api/tenants/:id/models`), flattened to the shape
+ * `resolveOllamaModelSource` picks a winner from.
+ */
+type CatalogOfferingCandidate = {
+  readonly canonicalName: string;
+  readonly plugin: string;
+  readonly priority: number;
+  readonly capabilities: readonly string[];
+};
+
+/**
+ * Ollama's model resolution: what the instance ACTUALLY serves, never a
+ * curated name it may not have pulled (CL-6366 — pinning
+ * `CATALOG_SEEDS.ollama.models[0]` here killed every turn on any
+ * instance without that exact model). By the time this runs,
+ * `testAndPersistCredential` has already run `seedCatalog` against the
+ * same tenant, which seeded this provider's catalog straight from its
+ * live `/api/tags` — capability rows included (`fetchOllamaModelCatalog`,
+ * CL-6366) — so the resolved catalog read below reflects exactly what
+ * this instance offers, not the two-entry static seed.
+ *
+ * `preferCompletionCapable` narrows to completion-capable offerings
+ * first — the same rule `selectDefaultInferencePreferences`
+ * (`@corbits/chat`) and `defaultModelForProvider`
+ * (`@workbench/inference-settings`) apply, so an embedding pull can
+ * never win here either, by construction rather than by name-sorting
+ * heuristic. The curated name (`CATALOG_SEEDS.ollama.models[0]`) is
+ * honored only as a PREFERENCE among the surviving candidates — a tie
+ * broken toward the name this repo already knows serves tool calls and
+ * thinking — never as a value this can return when the instance doesn't
+ * actually offer it.
+ */
+async function resolveOllamaModelSource(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  apiKey: string,
+  baseURLOverride: string | undefined,
+): Promise<ModelSource> {
+  const catalogSeed = CATALOG_SEEDS.ollama;
+  const baseURL = ollamaOpenAICompatBaseURL(
+    baseURLOverride ?? catalogSeed.provider.baseURL,
+  );
+
+  const response = await api(
+    "GET",
+    `/api/tenants/${tenantId}/models`,
+    undefined,
+    cookies,
+  );
+  const models = parseAs(
+    ModelInfo.array(),
+    response.data,
+    "resolved catalog response",
+  );
+  const candidates: CatalogOfferingCandidate[] = [];
+  for (const model of models) {
+    for (const offering of model.offerings) {
+      if (offering.providerName !== catalogSeed.provider.name) continue;
+      candidates.push({
+        canonicalName: model.canonicalName,
+        plugin: offering.plugin,
+        priority: offering.priority,
+        capabilities: offering.capabilities,
+      });
+    }
+  }
+  if (candidates.length === 0) {
+    throw new Error(
+      `tenant ${tenantId} has no seeded ollama catalog offerings — seedCatalog must run before resolveOllamaModelSource`,
+    );
+  }
+
+  const completionCapable = preferCompletionCapable(
+    candidates,
+    (candidate) => candidate.capabilities,
+  );
+  const curatedName = catalogSeed.models[0]?.canonicalName;
+  const preferred =
+    curatedName !== undefined
+      ? completionCapable.find(
+          (candidate) => candidate.canonicalName === curatedName,
+        )
+      : undefined;
+  const winner =
+    preferred ??
+    [...completionCapable].sort(
+      (left, right) =>
+        left.priority - right.priority ||
+        left.canonicalName.localeCompare(right.canonicalName),
+    )[0];
+  if (winner === undefined) {
+    throw new Error(
+      `tenant ${tenantId}'s seeded ollama catalog resolved to no candidate model`,
+    );
+  }
+
+  return {
+    provider: winner.plugin,
+    model: winner.canonicalName,
+    baseURL,
+    apiKey,
+  };
+}
+
 /** The `ModelSource` `ensureSeeded` deploys every default workflow
- * against: the connected provider's own curated default model
- * (`CATALOG_SEEDS`), paired with the plaintext key stored for that same
- * provider — never probed against it before this point. `baseURLOverride`
- * is the configurable-base-URL seam every provider but `ollama` ignores
- * (a fixed origin); for `ollama` it is the root the person actually
- * pointed their instance at, normalized to the OpenAI-compatible `/v1`
- * form this deploys against. */
-export function modelSourceFor(
+ * against. Every provider but `ollama` has a fixed, always-available
+ * curated model list (`CATALOG_SEEDS`), so its curated default is a safe
+ * pin. `ollama` is the one provider whose actual model list is
+ * per-instance and can diverge from that curated name entirely
+ * (CL-6366) — its resolution defers to `resolveOllamaModelSource`, which
+ * reads back what `seedCatalog` actually found on the instance rather
+ * than repeating the static pin. `baseURLOverride` is the
+ * configurable-base-URL seam every provider but `ollama` ignores (a
+ * fixed origin); for `ollama` it is the root the person actually pointed
+ * their instance at, normalized to the OpenAI-compatible `/v1` form this
+ * deploys against. */
+export async function modelSourceFor(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
   provider: SupportedCredentialProvider,
   apiKey: string,
   baseURLOverride?: string,
-): ModelSource {
+): Promise<ModelSource> {
+  if (provider === "ollama") {
+    return resolveOllamaModelSource(
+      api,
+      cookies,
+      tenantId,
+      apiKey,
+      baseURLOverride,
+    );
+  }
+
   const catalogSeed = CATALOG_SEEDS[provider];
   const defaultModel = catalogSeed.models[0];
   if (defaultModel === undefined) {
@@ -255,16 +385,10 @@ export function modelSourceFor(
       `catalog seed for provider ${provider} has no default model`,
     );
   }
-  const baseURL =
-    provider === "ollama"
-      ? ollamaOpenAICompatBaseURL(
-          baseURLOverride ?? catalogSeed.provider.baseURL,
-        )
-      : catalogSeed.provider.baseURL;
   return {
     provider: catalogSeed.provider.plugin,
     model: defaultModel.canonicalName,
-    baseURL,
+    baseURL: catalogSeed.provider.baseURL,
     apiKey,
   };
 }
@@ -352,7 +476,14 @@ export async function ensureSeeded(
       principalId: args.tenant.principalId,
       domain: args.tenant.tenantDomain,
     },
-    model: modelSourceFor(args.provider, args.apiKey, args.baseURLOverride),
+    model: await modelSourceFor(
+      args.api,
+      args.cookies,
+      args.tenant.tenantId,
+      args.provider,
+      args.apiKey,
+      args.baseURLOverride,
+    ),
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,

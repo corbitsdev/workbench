@@ -28,7 +28,10 @@ const TENANT_ID = "ten_personal";
 const PRINCIPAL_ID = "prn_personal";
 const TENANT_SLUG = "alice-user1";
 
-const noopPush: WorkflowPusher = async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) });
+const noopPush: WorkflowPusher = async () => ({
+  outcome: "pushed" as const,
+  commitSha: "a".repeat(40),
+});
 const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {
@@ -73,9 +76,51 @@ function tenantResponse() {
   };
 }
 
+function resolvedCatalogResponse(
+  models: {
+    canonicalName: string;
+    providerName: string;
+    priority?: number;
+    capabilities?: string[];
+  }[],
+) {
+  return {
+    status: 200,
+    data: models.map((model, index) => ({
+      id: `mdl_${index}`,
+      canonicalName: model.canonicalName,
+      offerings: [
+        {
+          offeringId: `off_${index}`,
+          providerId: "cpv_1",
+          providerName: model.providerName,
+          plugin: "openai-compatible",
+          priority: model.priority ?? 0,
+          deploymentTags: [],
+          capabilities: model.capabilities ?? [],
+          pricing: [],
+        },
+      ],
+    })),
+    cookies: [],
+  };
+}
+
 describe("modelSourceFor", () => {
-  test("every other provider ignores a baseURLOverride", () => {
-    expect(modelSourceFor("anthropic", "sk-ant", "https://ignored")).toEqual({
+  test("every other provider ignores a baseURLOverride and never calls the hub", async () => {
+    const api: ApiCall = (async () => {
+      throw new Error("must not be called for a fixed curated provider");
+    }) as ApiCall;
+    expect(
+      await modelSourceFor(
+        api,
+        ["session=abc"],
+        TENANT_ID,
+        "anthropic",
+        "sk-ant",
+        "https://ignored",
+      ),
+    ).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
       baseURL: "https://api.anthropic.com",
@@ -83,18 +128,118 @@ describe("modelSourceFor", () => {
     });
   });
 
-  test("ollama defaults to the local OpenAI-compatible origin with no override", () => {
-    expect(modelSourceFor("ollama", "ollama")).toEqual({
+  // CL-6366 red/green: a fresh instance whose live catalog carries only
+  // llama3.2 (the curated `qwen3.8:27b` name is absent entirely) still
+  // resolves to what the instance actually serves, never a pin it can't
+  // answer for.
+  test("ollama resolves to the instance's own seeded model, never the curated pin it may lack", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text", "plain-text-streaming"],
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    expect(
+      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama", "ollama"),
+    ).toEqual({
       provider: "openai-compatible",
-      model: "qwen3.8:27b",
+      model: "llama3.2",
       baseURL: "http://localhost:11434/v1",
       apiKey: "ollama",
     });
   });
 
-  test("ollama's baseURLOverride is normalized to the /v1 form", () => {
+  // CL-6366 red/green: an alphabetical-first embedding pull must never
+  // win over a completion-capable model just because its name sorts
+  // first — real capability data, not name order, decides.
+  test("ollama prefers a completion-capable model over an alphabetically-earlier embedding model", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "all-minilm",
+            providerName: "ollama",
+            capabilities: [],
+          },
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text", "plain-text-streaming"],
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("llama3.2");
+  });
+
+  test("ollama prefers the curated name among completion-capable candidates when the instance offers it", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+          {
+            canonicalName: "qwen3.8:27b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("qwen3.8:27b");
+  });
+
+  test("ollama's baseURLOverride is normalized to the /v1 form", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "qwen3.8:27b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
     expect(
-      modelSourceFor("ollama", "ollama", "https://home-mac.example.ts.net"),
+      await modelSourceFor(
+        api,
+        ["session=abc"],
+        TENANT_ID,
+        "ollama",
+        "ollama",
+        "https://home-mac.example.ts.net",
+      ),
     ).toEqual({
       provider: "openai-compatible",
       model: "qwen3.8:27b",
@@ -615,7 +760,8 @@ describe("completeCredentialSetup", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        const assetId = (body as { source: { assetId: string } }).source.assetId;
+        const assetId = (body as { source: { assetId: string } }).source
+          .assetId;
         return {
           status: 201,
           data: {
@@ -832,7 +978,8 @@ describe("completeCredentialSetup", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { source: { assetId: string } }).source.assetId;
+        const assetId = (body as { source: { assetId: string } }).source
+          .assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {
@@ -1563,7 +1710,8 @@ describe("ensureSeeded (the slow half)", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { source: { assetId: string } }).source.assetId;
+        const assetId = (body as { source: { assetId: string } }).source
+          .assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {

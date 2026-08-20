@@ -296,12 +296,21 @@ async function main(): Promise<void> {
           },
           model:
             USE_OLLAMA && OLLAMA_BASE_URL !== undefined
-              ? modelSourceFor(
+              ? await modelSourceFor(
+                  hubApi,
+                  user.cookies,
+                  tenant.tenantId,
                   CONNECT_PROVIDER,
                   CONNECT_API_KEY,
                   OLLAMA_BASE_URL,
                 )
-              : modelSourceFor(CONNECT_PROVIDER, CONNECT_API_KEY),
+              : await modelSourceFor(
+                  hubApi,
+                  user.cookies,
+                  tenant.tenantId,
+                  CONNECT_PROVIDER,
+                  CONNECT_API_KEY,
+                ),
           pushWorkflow,
           log: () => undefined,
           workflows: DEFAULT_WORKFLOWS,

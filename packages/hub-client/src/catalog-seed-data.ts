@@ -20,6 +20,15 @@ import type {
 export type CatalogModelSpec = {
   readonly canonicalName: string;
   readonly displayName: string;
+  /**
+   * Live-probed capabilities for a dynamic (Ollama) catalog entry —
+   * bare strings, not yet narrowed against `@intx/types`' `Capability`
+   * enum (`seedCatalog`'s `ensureCatalogOffering` call does that at the
+   * trust boundary). Absent for every curated seed entry, whose
+   * capabilities are resolved from the pinned catalog instead
+   * (`capabilitiesForDeployment`, `@corbits/inference-catalog`).
+   */
+  readonly capabilities?: readonly string[];
 };
 
 export type CatalogProviderSpec = {
