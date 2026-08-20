@@ -19,6 +19,7 @@ import {
   deployCodeSourcedWorkflow,
   type DeployCodeSourcedWorkflowArgs,
 } from "./session-service";
+import { DeployFrameNotSentError } from "./ws/sidecar-handler";
 
 const TENANT = "tnt_adopt";
 const ANCHOR_RUN_ID = "run_adopted_anchor";
@@ -309,19 +310,49 @@ describe("deployCodeSourcedWorkflow (CL-6388)", () => {
     expect(db.updatedSets).toEqual([{ publicKey: SUPERVISOR_KEY }]);
   });
 
-  test("removes the pre-inserted anchor when the frame emit fails", async () => {
+  // CL-6395: a `DeployFrameNotSentError` is proof the `agent.deploy` frame
+  // never left the hub (e.g. no sidecar available, or the send itself threw
+  // synchronously) -- no child could have spawned against this anchor, so
+  // the pre-inserted row is safe to remove.
+  test("removes the pre-inserted anchor when the frame provably was not sent", async () => {
     const db = orderedFakeDb();
 
     await expect(
       deployCodeSourcedWorkflow(
         sharedDeployArgs(db, () => {
           db.events.push("frame");
-          return Promise.reject(new Error("sidecar unreachable"));
+          return Promise.reject(
+            new DeployFrameNotSentError("No sidecar available"),
+          );
         }),
       ),
-    ).rejects.toThrow(/sidecar unreachable/);
+    ).rejects.toThrow(/No sidecar available/);
 
     expect(db.events).toEqual(["insert", "frame", "delete"]);
+    expect(db.updatedSets).toHaveLength(0);
+  });
+
+  // CL-6395: an ack-timeout or socket-drop rejection is raised AFTER the
+  // frame already went out -- the sidecar may have already spawned the
+  // deployment's child against this anchor. Deleting the row here would
+  // permanently strand that child on the missing-anchor `path_violation`
+  // path with no grants, so the row must survive and the failure is logged
+  // as a reconciliation signal instead.
+  test("keeps the pre-inserted anchor when the frame failure is post-send", async () => {
+    const db = orderedFakeDb();
+
+    await expect(
+      deployCodeSourcedWorkflow(
+        sharedDeployArgs(db, () => {
+          db.events.push("frame");
+          return Promise.reject(
+            new Error('Deploy of "run_adopted_anchor@runs.example.test" timed out after 30000ms'),
+          );
+        }),
+      ),
+    ).rejects.toThrow(/timed out/);
+
+    expect(db.events).toEqual(["insert", "frame"]);
     expect(db.updatedSets).toHaveLength(0);
   });
 });
