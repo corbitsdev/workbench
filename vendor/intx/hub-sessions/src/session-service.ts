@@ -259,6 +259,32 @@ export type DeployPreparedCodeSourcedWorkflowParams = {
   credentialCipher?: CredentialCipher;
 };
 
+/**
+ * Inputs for a shared-capacity code-sourced deploy that ADOPTS an anchor
+ * `workflow_run` the caller already owns -- a folded run, whose row exists
+ * before any deployment is attached to it. Identical to
+ * `DeployWorkflowFromSourceParams` (same source/entry/pin/definition-asset
+ * intent, same harness config) plus the credential cipher the inserting front
+ * never accepted.
+ */
+export type DeployAdoptedWorkflowFromSourceParams =
+  DeployWorkflowFromSourceParams & {
+    /** Cipher for the definition's tenant-owned credential bindings, if any. */
+    credentialCipher?: CredentialCipher;
+  };
+
+export type AdoptingWorkflowDeployer = {
+  /**
+   * Deploy a code-sourced definition onto shared capacity, stamping the
+   * deployment onto a pre-existing anchor run instead of inserting one. The
+   * anchor's tenant + self-anchoring is the ownership gate; there is no
+   * allocation lock.
+   */
+  deployAdoptedWorkflowFromSource(
+    params: DeployAdoptedWorkflowFromSourceParams,
+  ): Promise<DeployWorkflowDefinitionResult>;
+};
+
 export type PreparedWorkflowDeployer = {
   /**
    * Install + probe + gate + freeze a code-sourced definition on shared
@@ -855,9 +881,73 @@ export async function deployCodeSourcedWorkflow(
   return { publicKey };
 }
 
+/**
+ * The single public composition entrypoint for an ADOPTING shared-capacity
+ * code-sourced deploy: emit the source-ref frame, then STAMP the deployment's
+ * identity onto an anchor `workflow_run` row the caller already owns. This is
+ * the third code-sourced front, and the only one a folded run can use.
+ *
+ * `deployCodeSourcedWorkflow` INSERTs its anchor row, so a run whose row already
+ * exists collides on the primary key. `deployPreparedCodeSourcedWorkflow` does
+ * update a pre-existing row and threads a `credentialCipher`, but only under an
+ * allocation-ownership lock, so it cannot deploy onto shared capacity. This
+ * front follows the prepared front's semantics MINUS the allocation lock: the
+ * ownership check is the anchor row's own tenant + self-anchoring, and the frame
+ * routes on the shared `sidecarRouter`. The credential cipher rides through
+ * `emitSourceRefDeployFrame` exactly as it does on the prepared path.
+ *
+ * Ownership is checked TWICE, deliberately. The read below runs BEFORE the
+ * frame, so a refused adoption never leaves a deployed-but-unanchored sidecar
+ * agent behind. The guarded UPDATE afterwards is the actual authority: it
+ * re-asserts the same predicate at write time, so a row that disappeared or
+ * changed hands mid-deploy fails closed rather than stamping nothing silently.
+ */
+export async function deployAdoptedCodeSourcedWorkflow(
+  args: DeployCodeSourcedWorkflowArgs,
+): Promise<{ publicKey: string }> {
+  const adoptable = await args.db.query.workflowRun.findFirst({
+    where: and(
+      eq(workflowRunTable.id, args.anchorRunId),
+      eq(workflowRunTable.anchorRunId, args.anchorRunId),
+      eq(workflowRunTable.tenantId, args.tenantId),
+    ),
+    columns: { id: true },
+  });
+  if (adoptable === undefined) {
+    throw new Error(
+      `deployAdoptedCodeSourcedWorkflow: tenant ${args.tenantId} has no adoptable anchor run ${args.anchorRunId}`,
+    );
+  }
+
+  const { publicKey, definitionId } = await emitSourceRefDeployFrame(args);
+
+  const [adopted] = await args.db
+    .update(workflowRunTable)
+    .set({ definitionId, publicKey })
+    .where(
+      and(
+        eq(workflowRunTable.id, args.anchorRunId),
+        eq(workflowRunTable.anchorRunId, args.anchorRunId),
+        eq(workflowRunTable.tenantId, args.tenantId),
+      ),
+    )
+    .returning({ id: workflowRunTable.id });
+  if (adopted === undefined) {
+    throw new SessionLaunchError(
+      "start",
+      new Error(
+        `Adopted anchor run ${args.anchorRunId} vanished before the deployment could be stamped onto it`,
+      ),
+      true,
+    );
+  }
+
+  return { publicKey };
+}
+
 export function createSessionService(
   deps: SessionServiceDeps,
-): SessionService & PreparedWorkflowDeployer {
+): SessionService & PreparedWorkflowDeployer & AdoptingWorkflowDeployer {
   const {
     sidecarRouter,
     sidecarAllocationRouter,
@@ -1467,6 +1557,81 @@ export function createSessionService(
   }
 
   /**
+   * Deploy a code-sourced definition onto shared capacity ADOPTING an anchor
+   * `workflow_run` the caller already owns. Same install + probe + gate + freeze
+   * as `deployWorkflowFromSource`, and the same per-step source pin; the deploy
+   * hand-off stamps the existing anchor instead of inserting a new one, and
+   * threads the caller's `credentialCipher` so a definition with credential
+   * bindings resolves its material.
+   *
+   * No deployer read grant is seeded here: the anchor row predates this call, so
+   * whoever created it owns its grants.
+   */
+  async function deployAdoptedWorkflowFromSource(
+    params: DeployAdoptedWorkflowFromSourceParams,
+  ): Promise<DeployWorkflowDefinitionResult> {
+    if (db === undefined) {
+      throw new Error(
+        "deployAdoptedWorkflowFromSource requires a db handle to adopt the deployment's anchor run",
+      );
+    }
+    const source = params.source;
+    const { approved, resolveAttachment } =
+      await prepareCodeSourcedApproval(params);
+    if (!approved.approval.ok) {
+      throw new WorkflowDefinitionInvalidError(
+        approved.projection.id,
+        `code-sourced workflow install did not approve (reason: ${approved.approval.reason})`,
+      );
+    }
+
+    const sources = buildInertProjectionStepSources({
+      projection: approved.projection,
+      config: params.config,
+      operatorApprovals: approved.approval.approvedGrants,
+    });
+
+    const commonDeploy = {
+      approved,
+      sidecarRouter,
+      agentAddress: params.agentAddress,
+      config: params.config,
+      sources,
+      db,
+      tenantId: params.tenantId,
+      anchorRunId: params.anchorRunId,
+      deploymentDomain: params.deploymentDomain,
+      ...(params.credentialCipher !== undefined
+        ? { credentialCipher: params.credentialCipher }
+        : {}),
+    };
+    let result: { publicKey: string };
+    if (source.kind === "asset") {
+      if (resolveAttachment === null) {
+        throw new Error(
+          "deployAdoptedWorkflowFromSource: asset source deploy is missing its attachment resolver",
+        );
+      }
+      result = await deployAdoptedCodeSourcedWorkflow({
+        ...commonDeploy,
+        source,
+        resolveAttachment,
+      });
+    } else {
+      result = await deployAdoptedCodeSourcedWorkflow({
+        ...commonDeploy,
+        source,
+      });
+    }
+
+    return {
+      anchorRunId: params.anchorRunId,
+      deploymentAddress: params.agentAddress,
+      publicKey: result.publicKey,
+    };
+  }
+
+  /**
    * Update a prepared anchor run's `publicKey` under the allocation-ownership
    * lock. The anchor row was inserted at prepare time; this stamps the
    * supervisor key returned by the deploy ack, but only while the allocation
@@ -2007,6 +2172,7 @@ export function createSessionService(
     deployWorkflowFromSource,
     installAndApproveWorkflowSource,
     deployPreparedCodeSourcedWorkflow,
+    deployAdoptedWorkflowFromSource,
     sendUserMessage,
     endSession,
   };
