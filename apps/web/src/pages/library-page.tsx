@@ -51,12 +51,15 @@ import {
 } from "../api";
 import { rowActivationProps } from "../activatable-row";
 import { useBench } from "../bench-context";
+import { readLastWorkbenchId } from "../last-workbench";
 import {
   consumePendingLibraryUpload,
   LIBRARY_UPLOAD_EVENT,
 } from "../library-upload";
+import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
+import { useBenchActivity } from "../shell/bench-activity";
 import {
   artifactUploadToast,
   isArtifactsUnavailableStatus,
@@ -241,6 +244,9 @@ export function LibraryPage({
   previewLoading = false,
   previewError = null,
   tenantId = null,
+  workbenchScope = null,
+  scope = "all",
+  onScopeChange,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   readonly now?: number;
@@ -258,6 +264,15 @@ export function LibraryPage({
    * new tab" / iframe affordance is simply absent without one (a
    * standalone render with no bench tenant, e.g. these page tests). */
   readonly tenantId?: string | null;
+  /** The workbench the person just came from (CL-6353), if any — drives the
+   * "This workbench" pill. `null` when Files was reached with no workbench
+   * in view, in which case the lens has nothing to offer and stays hidden. */
+  readonly workbenchScope?: { readonly title: string } | null;
+  /** Which lens is active: this one workbench's files, or every workbench
+   * this bench owns. Uncontrolled callers (tests, standalone renders) get
+   * "all" and no toggle, same as every other optional-controlled prop here. */
+  readonly scope?: "workbench" | "all";
+  readonly onScopeChange?: (scope: "workbench" | "all") => void;
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
@@ -344,6 +359,32 @@ export function LibraryPage({
         />
       ) : null}
       <div className="page-toolbar">
+        {workbenchScope !== null && onScopeChange !== undefined ? (
+          <div
+            role="group"
+            aria-label="Files scope"
+            className="flex items-center gap-1"
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant={scope === "workbench" ? "outline" : "ghost"}
+              aria-pressed={scope === "workbench"}
+              onClick={() => onScopeChange("workbench")}
+            >
+              {workbenchScope.title}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={scope === "all" ? "outline" : "ghost"}
+              aria-pressed={scope === "all"}
+              onClick={() => onScopeChange("all")}
+            >
+              All workbenches
+            </Button>
+          </div>
+        ) : null}
         <LibrarySearchInput
           label="Search files"
           value={activeQuery}
@@ -455,10 +496,34 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const kindSegment =
     deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
+  // Files' workbench-first lens (CL-6353): the workbench the person just
+  // came from, if `last-workbench.ts` recorded one for this bench, resolved
+  // to its own tenant via the same sidebar-backed activity listing every
+  // other bench-scoped surface already fetches.
+  const activity = useBenchActivity(selectedTenantId);
+  const lastWorkbenchId =
+    selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
+  const workbenchScope =
+    activity.kind === "ready"
+      ? resolveLibraryWorkbenchScope(
+          [...activity.workbenches, ...activity.chats],
+          lastWorkbenchId,
+        )
+      : null;
+  const [scopeOverride, setScopeOverride] = useState<
+    "workbench" | "all" | null
+  >(null);
+  const scope =
+    scopeOverride ?? (workbenchScope !== null ? "workbench" : "all");
+  const scopeTenantId =
+    scope === "workbench" && workbenchScope !== null
+      ? workbenchScope.tenantId
+      : selectedTenantId;
+
   const listPath =
-    selectedTenantId === null
+    scopeTenantId === null
       ? ""
-      : `/api/tenants/${selectedTenantId}/artifacts${
+      : `/api/tenants/${scopeTenantId}/artifacts${
           searchQuery.trim() === ""
             ? ""
             : `?q=${encodeURIComponent(searchQuery.trim())}`
@@ -466,9 +531,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const page = useAPIQuery(listPath, ArtifactListPageSchema);
 
   const detailPath =
-    selectedTenantId === null || selectedId === null
+    scopeTenantId === null || selectedId === null
       ? ""
-      : `/api/tenants/${selectedTenantId}/artifacts/${encodeURIComponent(selectedId)}`;
+      : `/api/tenants/${scopeTenantId}/artifacts/${encodeURIComponent(selectedId)}`;
   const detail = useAPIQuery(detailPath, ArtifactDetailSchema);
 
   // Drop selection when the filtered list no longer contains the id.
@@ -543,7 +608,10 @@ export function LibraryRoute({ path }: { readonly path: string }) {
         return (
           <LibraryPage
             artifacts={artifacts}
-            tenantId={selectedTenantId}
+            tenantId={scopeTenantId}
+            workbenchScope={workbenchScope}
+            scope={scope}
+            onScopeChange={setScopeOverride}
             uploading={uploading}
             uploadError={uploadError}
             query={searchQuery}

@@ -49,7 +49,7 @@ describe("stage chrome consistency (CL-6368)", () => {
             updatedAt: "2026-08-01T00:00:00.000Z",
           },
         ]}
-        workbenchCounts={new Map()}
+        workbenches={new Map()}
         selectedId={null}
         onSelect={noop}
         createOpen={false}

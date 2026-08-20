@@ -266,7 +266,7 @@ export function PluginsRoute({
       <CreateSkillDialog
         open={createSkillOpen}
         onOpenChange={setCreateSkillOpen}
-        onCreate={handleCreateSkill}
+        onSubmit={handleCreateSkill}
       />
     </div>
   );

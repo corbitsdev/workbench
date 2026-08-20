@@ -29,7 +29,7 @@ describe("AgentsPage", () => {
       <AgentsPage
         tenantId="tnt_1"
         definitions={[]}
-        workbenchCounts={new Map()}
+        workbenches={new Map()}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
@@ -45,7 +45,18 @@ describe("AgentsPage", () => {
       <AgentsPage
         tenantId="tnt_1"
         definitions={[triage]}
-        workbenchCounts={new Map([["wfd_1", 3]])}
+        workbenches={
+          new Map([
+            [
+              "wfd_1",
+              [
+                { id: "wb_1", title: "Growth" },
+                { id: "wb_2", title: "Support" },
+                { id: "wb_3", title: "Launch" },
+              ],
+            ],
+          ])
+        }
         selectedId={null}
         onSelect={noop}
         createOpen={false}
@@ -60,12 +71,41 @@ describe("AgentsPage", () => {
     expect(markup).not.toContain("Create new agent");
   });
 
+  test("selecting a definition links each workbench instance to its own settings Agents tab", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={
+          new Map([
+            [
+              "wfd_1",
+              [
+                { id: "wb_1", title: "Growth" },
+                { id: "wb_2", title: "Support" },
+              ],
+            ],
+          ])
+        }
+        selectedId="wfd_1"
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+      />,
+    );
+    expect(markup).toContain('href="/w/wb_1/settings/agents"');
+    expect(markup).toContain('href="/w/wb_2/settings/agents"');
+    expect(markup).toContain(">Growth<");
+    expect(markup).toContain(">Support<");
+  });
+
   test("offers Create, never the retired New agent mint action", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
         definitions={[triage]}
-        workbenchCounts={new Map()}
+        workbenches={new Map()}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
@@ -81,7 +121,7 @@ describe("AgentsPage", () => {
       <AgentsPage
         tenantId={null}
         definitions={[]}
-        workbenchCounts={new Map()}
+        workbenches={new Map()}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
