@@ -76,6 +76,41 @@ describe("Sidebar", () => {
     expect(markup).not.toContain('aria-label="Expand sidebar"');
   });
 
+  // CL-6342: the "+" control opens the template picker (`/new`) instead of
+  // minting a workbench directly.
+  test("the + control opens the template picker, not an instant mint", async () => {
+    stubFetch();
+    const navigated: string[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <BenchProvider>
+            <Sidebar
+              path="/w"
+              user={user}
+              onNavigate={(to) => navigated.push(to)}
+              onSignOut={noop}
+            />
+          </BenchProvider>
+        </TestQueryProvider>,
+      );
+    });
+
+    const newButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="New workbench"]',
+    );
+    await act(async () => {
+      newButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigated).toEqual(["/new"]);
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
   test("titles itself Workbenches and never renders a page-nav list", () => {
     const markup = renderSidebar("/settings/agents");
     // The visible "Workbenches" label lives inside the list (below its

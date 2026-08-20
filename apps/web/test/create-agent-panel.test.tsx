@@ -348,13 +348,21 @@ describe("agent creation entry points", () => {
     expect(chatPageSource).not.toContain("instant-agent-create");
   });
 
-  test("the one creation verb mints through instant-agent-create.ts, wired from the command palette", () => {
+  test("the command palette's new-workbench/new-agent open the template picker, not an instant mint (CL-6342)", () => {
     const commandPaletteActionsSource = readFileSync(
       new URL("../src/command-palette-actions.ts", import.meta.url),
       "utf8",
     );
-    expect(commandPaletteActionsSource).toContain(
-      'from "./instant-agent-create"',
+    expect(commandPaletteActionsSource).not.toContain("instant-agent-create");
+    expect(commandPaletteActionsSource).toContain('from "./routes"');
+  });
+
+  test("the template picker mints through instant-agent-create.ts's createWorkbenchFromTemplate", () => {
+    const pickerSource = readFileSync(
+      new URL("../src/pages/new-workbench-picker.tsx", import.meta.url),
+      "utf8",
     );
+    expect(pickerSource).toContain('from "../instant-agent-create"');
+    expect(pickerSource).toContain("createWorkbenchFromTemplate");
   });
 });
