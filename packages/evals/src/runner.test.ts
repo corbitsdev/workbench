@@ -240,3 +240,148 @@ test("runMatrix still closes the target when a run throws", async () => {
   ).rejects.toThrow("target failed");
   expect(closed).toBe(true);
 });
+
+test("runEval drives an install-template step through the target's installTemplate", async () => {
+  const evalDef = defineEval({
+    name: "install",
+    description: "test",
+    steps: [
+      {
+        kind: "install-template",
+        templateId: "code-review",
+        expect: [
+          (ctx) => {
+            expect(ctx.transcript[ctx.turnIndex]?.replyText).toContain(
+              "installed",
+            );
+            return pass("installed");
+          },
+        ],
+      },
+    ],
+  });
+  const installed: string[] = [];
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn() {
+      throw new Error("install-template must never ride sendTurn");
+    },
+    async installTemplate(templateId) {
+      installed.push(templateId);
+      return {
+        human: `(harness) install template "${templateId}"`,
+        replyText: `template "${templateId}" installed`,
+        toolCalls: [],
+      };
+    },
+    async close() {},
+  };
+
+  const result = await runEval(evalDef, target);
+  expect(installed).toEqual(["code-review"]);
+  expect(result.steps[0]?.scorerReports[0]).toMatchObject({
+    name: "installed",
+    pass: true,
+  });
+});
+
+test("runEval fails loudly when an install-template step meets a target without the capability", async () => {
+  const evalDef = defineEval({
+    name: "install-missing",
+    description: "test",
+    steps: [
+      { kind: "install-template", templateId: "code-review", expect: [] },
+    ],
+  });
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn(human) {
+      return { human, replyText: "unreachable", toolCalls: [] };
+    },
+    async close() {},
+  };
+  await expect(runEval(evalDef, target)).rejects.toThrow(
+    "no installTemplate capability",
+  );
+});
+
+test("runEval fires a fire-webhook step against the snapshot's enabled trigger", async () => {
+  const evalDef = defineEval({
+    name: "fire",
+    description: "test",
+    steps: [
+      {
+        kind: "fire-webhook",
+        payload: { action: "opened" },
+        expect: [],
+      },
+    ],
+  });
+  const fired: { triggerId: string; payload: unknown }[] = [];
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn() {
+      throw new Error("fire-webhook must never ride sendTurn");
+    },
+    async snapshotWorld() {
+      return {
+        capturedAt: new Date().toISOString(),
+        agentDefinitions: [],
+        routines: [],
+        connections: [],
+        webhookTriggers: [
+          {
+            id: "wt_disabled",
+            name: "off",
+            workflowDefinitionId: "wd_1",
+            enabled: false,
+          },
+          {
+            id: "wt_live",
+            name: "on",
+            workflowDefinitionId: "wd_1",
+            enabled: true,
+          },
+        ],
+        fakeReceipts: [],
+      };
+    },
+    async fireWebhook(triggerId, payload) {
+      fired.push({ triggerId, payload });
+      return {
+        human: `(harness) fire webhook trigger ${triggerId}`,
+        replyText: "webhook delivery accepted",
+        toolCalls: [],
+      };
+    },
+    async close() {},
+  };
+
+  const result = await runEval(evalDef, target);
+  expect(fired).toEqual([
+    { triggerId: "wt_live", payload: { action: "opened" } },
+  ]);
+  expect(result.steps[0]?.turn.replyText).toContain("accepted");
+});
+
+test("runEval records an honest miss when a fire-webhook step finds no enabled trigger", async () => {
+  const evalDef = defineEval({
+    name: "fire-miss",
+    description: "test",
+    steps: [{ kind: "fire-webhook", payload: {}, expect: [] }],
+  });
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn() {
+      throw new Error("unreachable");
+    },
+    async fireWebhook() {
+      throw new Error("must not fire with no enabled trigger");
+    },
+    async close() {},
+  };
+  const result = await runEval(evalDef, target);
+  expect(result.steps[0]?.turn.replyText).toContain(
+    "no enabled webhook_trigger",
+  );
+});
