@@ -3314,3 +3314,311 @@
   margin-left: -2rem;
   padding-left: 2rem;
 }
+
+/* PR thread (CL-6342 screen 3, screen 4 turn states). A thread is a
+   bordered container inside the one timeline; a reply row matches the
+   mock's `.msg` layout — avatar-plus-body, same shape as any other
+   message. */
+.chat-pr-thread {
+  border: 1px solid var(--border);
+  background: var(--background);
+  margin: 0.5rem 0.45rem 0.9rem;
+}
+
+.chat-pr-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.chat-pr-thread-pr {
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.chat-pr-thread-repo {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.chat-pr-thread-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chat-pr-status-pulse {
+  display: inline-block;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-right: 0.3rem;
+  border-radius: 999px;
+  background: currentColor;
+  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+.chat-pr-thread-body {
+  padding: 0.5rem 0.35rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.chat-pr-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.3rem 0.45rem;
+  max-width: 100%;
+}
+
+.chat-pr-reply-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chat-pr-reply-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.1rem;
+}
+
+.chat-pr-reply-sender {
+  font-size: 0.875rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.chat-pr-reply-time {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.chat-pr-reply-text {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.chat-pr-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: color-mix(
+    in srgb,
+    var(--chat-agent-accent, var(--primary)) 14%,
+    transparent
+  );
+  color: var(--chat-agent-accent, var(--primary));
+}
+
+.chat-pr-role-badge[data-role="host"] {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary-emphasis, var(--primary));
+}
+
+.chat-pr-trace {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  background: transparent;
+  padding: 0.15rem 0;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  border-bottom: 1px dashed
+    color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.chat-pr-trace:hover {
+  color: var(--primary-emphasis, var(--primary));
+  border-bottom-color: var(--primary-emphasis, var(--primary));
+}
+
+.chat-pr-fix {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  max-width: 44rem;
+}
+
+.chat-pr-fix-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.chat-pr-fix-file {
+  font-family: "Space Mono", ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--foreground);
+}
+
+.chat-pr-fix-code {
+  overflow-x: auto;
+}
+
+.chat-pr-fix-code pre {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.65;
+}
+
+.chat-pr-fix-line[data-kind="removed"] {
+  color: var(--destructive);
+}
+
+.chat-pr-fix-line[data-kind="added"] {
+  color: var(--ok, #37904a);
+}
+
+.chat-pr-fix-line[data-kind="context"] {
+  color: var(--muted-foreground);
+}
+
+.chat-pr-fix-actions {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.chat-pr-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.chat-pr-foot-link {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-pr-foot-link:hover {
+  color: var(--foreground);
+}
+
+.chat-pr-wait-avatars {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.chat-pr-queued {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0.45rem 0.9rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.chat-pr-queue-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  height: 0.7rem;
+}
+
+.chat-pr-queue-bars span {
+  width: 0.25rem;
+  background: var(--border-strong);
+}
+
+.chat-pr-queue-bars span:nth-child(1) {
+  height: 0.35rem;
+}
+
+.chat-pr-queue-bars span:nth-child(2) {
+  height: 0.5rem;
+}
+
+.chat-pr-queue-bars span:nth-child(3) {
+  height: 0.7rem;
+}
+
+.chat-pr-failed {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0.5rem 2.9rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 6%, transparent);
+  font-size: 0.8125rem;
+  max-width: 44rem;
+}
+
+.chat-pr-failed-text {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.chat-pr-failed-text strong {
+  font-weight: 640;
+}
+
+.chat-pr-failed-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  margin-top: 0.1rem;
+}
+
+.chat-pr-failed-what-happened {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-pr-failed-what-happened:hover {
+  color: var(--foreground);
+}
