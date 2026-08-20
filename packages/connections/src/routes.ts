@@ -236,6 +236,19 @@ export type CreateConnectionRoutesDeps = {
    * "zero providers" reading.
    */
   listConnectedProviders?: (tenantId: string) => Promise<readonly string[]>;
+  /**
+   * Per-connector API base URL override, keyed by connector id — CL-6403's
+   * seam letting a fake server stand in for a real provider's production
+   * origin in tests/evals (e.g. `{github: "http://localhost:4010"}` for a
+   * recorded GitHub fake). Threaded into `descriptor.probe`'s second
+   * argument for `/:connectorId/complete`'s PAT check, and stored as the
+   * connected provider's `apiBaseUrl` so credential delivery (the sidecar's
+   * origin-pinned mediated fetch) targets the same fake. A connector id
+   * absent from this map keeps probing and delivering against its own
+   * fixed production origin — this is never how a real deployment's
+   * providers get configured.
+   */
+  probeBaseUrls?: Readonly<Record<string, string>>;
 };
 
 export function createConnectionRoutes(
@@ -341,7 +354,11 @@ export function createConnectionRoutes(
       }
 
       const tenant = c.get("tenant");
-      const test = await descriptor.probe(parsed.apiKey);
+      const probeBaseUrl = deps.probeBaseUrls?.[connectorId];
+      const test = await descriptor.probe(
+        parsed.apiKey,
+        probeBaseUrl !== undefined ? { baseUrl: probeBaseUrl } : undefined,
+      );
       if (!test.ok) {
         deps.providerHealth?.report(
           tenant.id,
@@ -372,7 +389,11 @@ export function createConnectionRoutes(
           // rotate rather than silently keeping the stale secret.
           secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
           log: deps.log,
-          ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
+          ...(isUrlCredential
+            ? { baseURLOverride: parsed.apiKey }
+            : probeBaseUrl !== undefined
+              ? { baseURLOverride: probeBaseUrl }
+              : {}),
           ...(deps.ensureProviderFn !== undefined
             ? { ensureProviderFn: deps.ensureProviderFn }
             : {}),

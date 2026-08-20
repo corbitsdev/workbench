@@ -94,11 +94,14 @@ export function testScrapeCreatorsCredential(
   );
 }
 
+const GITHUB_DEFAULT_BASE_URL = "https://api.github.com";
+
 export function testGitHubCredential(
   apiKey: string,
   fetchImpl: FetchLike = fetch,
+  baseUrl: string = GITHUB_DEFAULT_BASE_URL,
 ): Promise<CredentialTestResult> {
-  return probe("GitHub", fetchImpl, "https://api.github.com/user", {
+  return probe("GitHub", fetchImpl, `${baseUrl}/user`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${apiKey}`,
