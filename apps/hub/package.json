@@ -21,7 +21,6 @@
     "@corbits/bench": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/commands": "workspace:*",
-    "@corbits/config-profiles": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
