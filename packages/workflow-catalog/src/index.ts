@@ -115,6 +115,29 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     typicalDuration: "a few seconds",
   },
   {
+    assetName: "code-review",
+    displayName: "Code review",
+    automatable: false,
+    conversational: false,
+    deliveryMode: "workbench",
+    whatItDoes:
+      "Reads a pull request's diff, reviews it for correctness, architecture, and release risk, and posts one review back on the pull request.",
+    requiredConnections: ["github"],
+    exampleOutput:
+      "One review posted: 1 blocking, 2 worth fixing, 1 for later",
+    typicalDuration: "a minute or two",
+    triggerFields: [
+      {
+        key: "pullRequestUrl",
+        kind: "text",
+        label: "Pull request URL",
+        placeholder: "https://github.com/owner/repo/pull/123",
+        required: true,
+        help: "The pull request to review. A GitHub webhook fills this in on its own for every new pull request.",
+      },
+    ],
+  },
+  {
     assetName: "assistant",
     displayName: "Myra",
     automatable: false,
