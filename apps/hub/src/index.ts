@@ -290,7 +290,7 @@ import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
-// `packages/artifact-tools`) are unpublished to npm and stay that way:
+// `packages/skills-tools`) are unpublished to npm and stay that way:
 // they are workbench-specific integration bundles, not general-purpose
 // npm packages, so publishing them to a public registry would be the
 // wrong distribution surface for what they are. `@intx/hub-sessions`
