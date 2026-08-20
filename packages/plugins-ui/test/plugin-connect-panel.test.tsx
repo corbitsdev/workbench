@@ -91,7 +91,7 @@ describe("PluginConnectPanel", () => {
 
     const link = container.querySelector("a");
     expect(link?.getAttribute("href")).toBe(
-      "/api/onboarding/oauth/huggingface/start?return=%2Fplugins",
+      "/api/tenants/ten_1/connections/oauth/huggingface/start?return=%2Fplugins",
     );
     expect(container.querySelector('input[type="password"]')).toBeNull();
   });
