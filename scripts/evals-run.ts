@@ -205,6 +205,21 @@ async function main(): Promise<void> {
       `bun run eval: plumbing-only run passed (${String(results.length)} eval run(s), ` +
         "no EVAL_PROVIDER_API_KEY set — scorer results not required to pass).\n",
     );
+    // The reasons are the triage surface (each scorer names its own
+    // blocker) — print them even though plumbing mode never gates on
+    // them, so a scoreboard read never needs a second, live run just to
+    // see why a scorer is red.
+    for (const result of results) {
+      for (const step of result.steps) {
+        for (const report of step.scorerReports) {
+          if (report.pass || report.skipped === true) continue;
+          process.stdout.write(
+            `  ${result.evalName} step ${String(step.stepIndex)} ` +
+              `${report.name}: ${report.reason}\n`,
+          );
+        }
+      }
+    }
   }
 
   const evalNames = ALL_EVALS.map((evalDef) => evalDef.name);
