@@ -55,6 +55,7 @@ import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
 import { Markdown } from "./markdown";
+import { PrFailedTurnStrip } from "./pr-thread-view";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
@@ -622,6 +623,48 @@ function EventLine({
   );
 }
 
+/**
+ * The general chat timeline's failed-turn treatment (CL-6332): a text
+ * part `postUndeliveredNotice` posted in its unreachable agent's own
+ * voice (`part.turnFailed`), rendered through the same
+ * `PrFailedTurnStrip` the PR-review mock uses — the "visible treatment
+ * matches the mock" is this literal component, just fed chat-specific
+ * copy (`titleText`/`subText`) instead of the PR thread's repo-scoped
+ * one. `onRetry`/`onWhatHappened` are the host's own actions; a host
+ * that wires neither still gets the strip, just with inert buttons —
+ * matching the fixed-disabled framing every other undefined-action port
+ * in this file already falls back to.
+ */
+function FailedTurnStrip({
+  item,
+  participants,
+  currentUser,
+  onRetryFailedTurn,
+  onWhatHappenedFailedTurn,
+}: {
+  readonly item: TimelineMessageItem;
+  readonly participants: readonly ParticipantRecord[];
+  readonly currentUser: CurrentUser | undefined;
+  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
+}) {
+  const display = senderDisplay(item.sender, participants, currentUser);
+  const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
+  return (
+    <PrFailedTurnStrip
+      failedTurn={{
+        afterReplyId: item.id,
+        sender,
+        repo: "",
+        titleText: CHAT_STRINGS.turnFailedTitle(sender),
+        subText: CHAT_STRINGS.turnFailedSub,
+        onRetry: () => onRetryFailedTurn?.(item),
+        onWhatHappened: () => onWhatHappenedFailedTurn?.(item),
+      }}
+    />
+  );
+}
+
 function FallbackPart({ part }: { part: Part }) {
   return (
     <div className="chat-fallback-block">
@@ -1069,6 +1112,8 @@ function MessageParts({
   reactionActions,
   pinActions,
   pendingActions,
+  onRetryFailedTurn,
+  onWhatHappenedFailedTurn,
 }: {
   readonly item: TimelineMessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -1102,6 +1147,13 @@ function MessageParts({
    * pending item (`item.pendingStatus === "failed"`) with no actions
    * wired, the failed row simply doesn't render. */
   readonly pendingActions?: PendingActions;
+  /** The failed-turn strip's Retry/what-happened actions (CL-6332) —
+   * see `WorkbenchTimeline`'s own doc of the same two props. Undefined
+   * renders the strip with inert buttons, never hiding the strip
+   * itself: a failed turn stays visible even on a host that wires no
+   * recovery action for it. */
+  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   // A message this reader's own composer submitted and the server hasn't
   // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
@@ -1150,6 +1202,22 @@ function MessageParts({
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       {item.parts.map((part, index) => {
         const key = `${groupKey}-${index}`;
+        if (part.kind === "text" && part.turnFailed === true) {
+          return (
+            <FailedTurnStrip
+              key={key}
+              item={item}
+              participants={participants}
+              currentUser={currentUser}
+              {...(onRetryFailedTurn !== undefined
+                ? { onRetryFailedTurn }
+                : {})}
+              {...(onWhatHappenedFailedTurn !== undefined
+                ? { onWhatHappenedFailedTurn }
+                : {})}
+            />
+          );
+        }
         if (part.kind === "text") {
           return (
             <TextBubble
@@ -1434,6 +1502,8 @@ export function WorkbenchTimeline({
   reactionActions,
   pinActions,
   pendingActions,
+  onRetryFailedTurn,
+  onWhatHappenedFailedTurn,
   scrollRestore,
   onScrollSnapshot,
   footer,
@@ -1488,6 +1558,16 @@ export function WorkbenchTimeline({
    * `PendingActions`. Undefined renders a failed pending item with no
    * recovery affordance at all (still shown as failed). */
   readonly pendingActions?: PendingActions;
+  /** Retry action offered on a failed-turn strip (CL-6332) — the
+   * server's undelivered-turn notice (`agent_turns` closed `failed`,
+   * see `postUndeliveredNotice`), rendered via `PrFailedTurnStrip`.
+   * Undefined still renders the strip, just with a Retry button that
+   * does nothing when pressed — the strip's job is to make the failure
+   * visible, which it does either way. */
+  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  /** The failed-turn strip's "what happened" action — same undefined
+   * contract as `onRetryFailedTurn`. */
+  readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
   /** The scroll position to restore on mount — the host's own memory of
    * where this workbench's reader last was, captured via `onScrollSnapshot`
    * the last time this component unmounted (e.g. opening Settings, which
@@ -1664,6 +1744,10 @@ export function WorkbenchTimeline({
             {...(reactionActions !== undefined ? { reactionActions } : {})}
             {...(pinActions !== undefined ? { pinActions } : {})}
             {...(pendingActions !== undefined ? { pendingActions } : {})}
+            {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}
+            {...(onWhatHappenedFailedTurn !== undefined
+              ? { onWhatHappenedFailedTurn }
+              : {})}
           />
         );
       })}
