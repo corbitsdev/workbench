@@ -95,7 +95,17 @@ are NOT from upstream faremeter/interchange at all — upstream's own
 commit. They are copied from gtm-workbench's own `packages/workflow-host`
 workspace fork (see `docs/revendor-inventory.md` for the full provenance
 note and why no ordinary upstream-publish kill date applies to this
-sub-delta). `vendor/intx/inference-catalog` (CL-6280) is
+sub-delta). `vendor/intx/workflow` (CL-6326) adds an
+`onBodyFailure` policy field to the `onTrigger` primitive: absent (or
+`"end"`) preserves terminal-is-final exactly as before, `"continue"` lets a
+body run that ends `failed` (never `cancelled`) leave the section
+subscribed instead of ending the whole run, so one bad turn does not kill a
+long-lived section. The gate is read live off `primitive.onBodyFailure` at
+both the steady-state drive loop and the crash-recovery resume plan in
+`runtime/run.ts`, mirroring how `awaitSignal.onTimeout` is read live rather
+than defaulted at construction. This delta targets the current pin
+(`59f5e7b9`) and re-applies against the re-pinned tree once PR #59 lands —
+see `docs/revendor-inventory.md`. `vendor/intx/inference-catalog` (CL-6280) is
 pinned separately at `5d2aa94a`, a later `main` tip than the other twenty
 rows' `59f5e7b9`, since that commit is where the package's folded
 provider/model catalog first landed upstream; its own local modification

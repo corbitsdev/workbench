@@ -294,6 +294,40 @@ no code-side mitigation to retire. Recommend re-running this check against
 the actual Linear ticket bodies before concluding they're stale — this pass
 searched by inferred keyword/CL-number, not by reading each ticket.
 
+### A failed body occurrence permanently ended a long-lived onTrigger section (CL-6326)
+
+`vendor/intx/workflow/src/runtime/run.ts` — `runOnTrigger`'s steady-state
+drive loop and its crash-recovery counterpart, `planOnTriggerResume`
+
+Both treat a body run that ends `failed` identically to one that ends
+`cancelled`: either throws terminal-is-final, ending the whole section run.
+For a long-lived, event-driven section (chat-style: one occurrence per
+inbound message), that means a single bad turn — one agent step throwing —
+permanently ends the entire conversation's run, with no way to keep servicing
+later occurrences.
+
+**Local fix:** a `BodyFailurePolicy` (`"end" | "continue"`) field,
+`onTrigger.onBodyFailure`, defaulting to `"end"` (current behavior,
+byte-compatible). `"continue"` lets the section re-arm on its input park
+after a `failed` occurrence instead of throwing; `cancelled` is untouched and
+always still ends the section — cancellation reflects a drain/operator
+decision, not a turn-level error. The failed occurrence stays durably
+recorded and loudly observable: the existing `ChildCompleted{terminalStatus:
+"failed"}` commit lands on the run's own audit log before the policy check
+runs either way, so a `"continue"`-policy failure is never silent, only
+non-fatal to the section. Covered by
+`vendor/intx/workflow/src/runtime/run.test.ts` — the intended home
+`runlocal/run-local.ts:8` already names for this layer's coverage.
+
+**This delta targets the current pin** (`59f5e7b9`). Upstream's `486a6b1b`
+changed `run.ts` after this pin; the delta above re-diffs against the
+re-pinned tree once PR #59 lands.
+
+**Retire when** upstream ships a non-fatal body-failure edge on `onTrigger`
+(or the whole source-format workflow line reaches a published `@intx/*` npm
+version, per `vendor/intx/workflow`'s broader retirement condition in
+`VENDORED.md`).
+
 ## Estimated fix effort
 
 | Item                                                                                                                                                       | Shape           | Rough size                                                                                                                                                      |
