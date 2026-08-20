@@ -87,7 +87,15 @@ sidecar withheld the ack, and the hub redelivered forever
 inbound mail carrying no conversation text on the parked-resume path rather
 than delivering an empty string that throws inside `agent.send` and fails the
 step with `retriesExhausted`; the gate is the new pure helper
-`hasConversationText`. `vendor/intx/inference-catalog` (CL-6280) is
+`hasConversationText`. `vendor/intx/workflow-host` (CL-6325) additionally
+carries three adapter files (`adapters/action-invoker.ts`,
+`adapters/effect-ledger.ts`, `adapters/run-blobs.ts`, plus their tests) that
+are NOT from upstream faremeter/interchange at all — upstream's own
+`packages/workflow-host` has no action-primitive adapters at the pinned
+commit. They are copied from gtm-workbench's own `packages/workflow-host`
+workspace fork (see `docs/revendor-inventory.md` for the full provenance
+note and why no ordinary upstream-publish kill date applies to this
+sub-delta). `vendor/intx/inference-catalog` (CL-6280) is
 pinned separately at `5d2aa94a`, a later `main` tip than the other twenty
 rows' `59f5e7b9`, since that commit is where the package's folded
 provider/model catalog first landed upstream; its own local modification

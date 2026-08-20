@@ -34,7 +34,7 @@ vendor/intx/tool-packaging | sawyer | 2026-09-14 | 47f29256729105eebab38b23b7326
 vendor/intx/types | sawyer | 2026-09-14 | 29d8a7b2589979a04a38706e40e14491a4c57856d6368f74e944c386afed2ef7
 vendor/intx/workflow | sawyer | 2026-09-14 | 81af2a4cb3669540b98d31a9a530908fb701a2a19da94ae69dcbe55a58f8f73b
 vendor/intx/workflow-deploy | sawyer | 2026-09-14 | de72de087e7b499d42b69b7eae6185a4c5448c34a02d3c21badf7c6d0ad3b66d
-vendor/intx/workflow-host | sawyer | 2026-09-14 | 418ffc162cec5de706fcb8082f0afea6318e89c8ffe71ff010bce1da060bcc59
+vendor/intx/workflow-host | sawyer | 2026-09-14 | 6bbc9fa69c28c81d34285016c7cf88ed470401b2bff8c57d49a9bfd4b22cf426
 
 packages/folded-runs | sawyer | 2026-11-01
 
