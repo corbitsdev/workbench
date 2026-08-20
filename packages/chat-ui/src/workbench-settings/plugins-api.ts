@@ -18,7 +18,6 @@ export class PluginsApiError extends Error {
   }
 }
 
-const TestResult = type({ ok: "true" });
 const CompleteResult = type({ credentialId: "string", status: "'active'" });
 
 async function request<T>(
@@ -62,27 +61,14 @@ async function request<T>(
   return parsed;
 }
 
-export async function testConnectorCredential(
-  tenantId: string,
-  connectorId: string,
-  apiKey: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    await request(
-      `/api/tenants/${tenantId}/connections/${connectorId}/credential/test`,
-      TestResult,
-      "testing that connection",
-      { method: "POST", body: JSON.stringify({ apiKey }) },
-    );
-    return { ok: true };
-  } catch (cause) {
-    if (cause instanceof PluginsApiError && cause.status === 422) {
-      return { ok: false, message: cause.message };
-    }
-    throw cause;
-  }
-}
-
+/**
+ * The one connect action (CL-6377): the server proves the pasted key
+ * against the connector's own probe and only stores it once that probe
+ * accepts — there is no separate client-driven "test" round-trip before
+ * this call. A rejected probe 422s with the probe's own message, which
+ * throws `PluginsApiError` (status 422); the caller renders that inline
+ * as the normal connect-failed state.
+ */
 export function completeConnectorCredential(
   tenantId: string,
   connectorId: string,

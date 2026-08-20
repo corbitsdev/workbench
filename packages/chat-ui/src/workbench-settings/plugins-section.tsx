@@ -62,7 +62,6 @@ import {
   completeConnectorCredential,
   PluginsApiError,
   removeWorkbenchCredential,
-  testConnectorCredential,
 } from "./plugins-api";
 import {
   connectMcpPreset,
@@ -500,26 +499,16 @@ function ConnectDialog({
     setError(null);
   }, [plugin]);
 
+  // One connect action (CL-6377): the server proves the key before ever
+  // storing it, so this is the only round-trip — no separate test step.
   function handleSubmit() {
     if (plugin === null || apiKey.trim() === "") return;
     setSubmitting(true);
     setError(null);
-    testConnectorCredential(tenantId, plugin.descriptor.id, apiKey)
-      .then((result) => {
-        if (!result.ok) {
-          setError(result.message);
-          return;
-        }
-        return completeConnectorCredential(
-          tenantId,
-          plugin.descriptor.id,
-          apiKey,
-        ).then(() => {
-          toast(
-            `Connected ${plugin.descriptor.displayName} for this workbench.`,
-          );
-          onConnected();
-        });
+    completeConnectorCredential(tenantId, plugin.descriptor.id, apiKey)
+      .then(() => {
+        toast(`Connected ${plugin.descriptor.displayName} for this workbench.`);
+        onConnected();
       })
       .catch((cause: unknown) =>
         setError(errorMessage(cause, "Couldn't save that key.")),
@@ -575,7 +564,7 @@ function ConnectDialog({
             disabled={apiKey.trim() === "" || submitting}
             onClick={handleSubmit}
           >
-            {submitting ? "Saving…" : "Test & Save"}
+            {submitting ? "Connecting…" : "Connect"}
           </Button>
         </DialogFooter>
       </DialogContent>

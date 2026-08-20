@@ -50,6 +50,25 @@ function innerEventType(data: unknown): string | null {
   return typeof type === "string" ? type : null;
 }
 
+/** Whether a `chat.message` payload carries `postUndeliveredNotice`'s
+ * `turnFailed` part (see `packages/chat/src/workbench-service.ts`). This
+ * notice posts straight to the room with no `chat.agent` events at all —
+ * the dispatch failed before `sendMail` ever reached the agent — so
+ * without this check a turn that fails this way never emits the
+ * `reactor.error`/`inference.error` this module otherwise relies on to
+ * clear the typing pulse, leaving it stranded until the 120s backstop. */
+function hasTurnFailedPart(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  const parts = (data as Record<string, unknown>).parts;
+  if (!Array.isArray(parts)) return false;
+  return parts.some(
+    (part) =>
+      typeof part === "object" &&
+      part !== null &&
+      (part as Record<string, unknown>).turnFailed === true,
+  );
+}
+
 /**
  * The streaming reply's whole state machine, pure: an `inference.start`
  * opens an empty in-progress reply if nothing is showing yet (it never
@@ -58,13 +77,18 @@ function innerEventType(data: unknown): string | null {
  * clear it — the turn is over. `inference.done` only clears once tokens
  * have streamed (the persisted message takes over); an empty pending
  * survives so the typing pulse stays up across tool rounds. `inference.error`
- * always clears. Every other event type (tool calls, thinking, usage)
- * leaves the current state untouched.
+ * always clears. A `chat.message` carrying `postUndeliveredNotice`'s
+ * `turnFailed` part also clears it (see `hasTurnFailedPart`) — the one
+ * failure path with no `chat.agent` events of its own. Every other event
+ * type (tool calls, thinking, usage) leaves the current state untouched.
  */
 export function nextStreamingReplyState(
   current: StreamingReplyState,
   event: { readonly eventType: string; readonly data: unknown },
 ): StreamingReplyState {
+  if (event.eventType === "chat.message") {
+    return hasTurnFailedPart(event.data) ? null : current;
+  }
   if (event.eventType !== "chat.agent") return current;
 
   const innerType = innerEventType(event.data);

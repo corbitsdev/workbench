@@ -2,8 +2,8 @@
 // Granola's key-plus-webhook combination — connects from this one
 // right-docked panel, never a "create a routine first, then come back"
 // detour. It reuses the exact mutations `@corbits/settings-ui`'s own
-// Connections section already calls (`testConnectorCredential`,
-// `completeConnectorCredential`, `deleteCredential`, `oauthStartHref`) and,
+// Connections section already calls (`completeConnectorCredential`,
+// `deleteCredential`, `oauthStartHref`) and,
 // for Granola's webhook half, mounts `GranolaWebhookCard` wholesale rather
 // than forking its dialog — see that component's own header comment for
 // why a routine picker is deliberately not offered when zero `granola-call`
@@ -30,7 +30,6 @@ import {
   completeConnectorCredential,
   deleteCredential,
   oauthStartHref,
-  testConnectorCredential,
 } from "@corbits/settings-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
@@ -67,22 +66,16 @@ function ApiKeyConnectForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // One connect action (CL-6377): the server proves the key before ever
+  // storing it, so this is the only round-trip — no separate test step.
   function handleSubmit() {
     setSubmitting(true);
     setError(null);
-    testConnectorCredential(tenantId, connectorId, value)
-      .then((result) => {
-        if (!result.ok) {
-          setError(result.message);
-          return;
-        }
-        return completeConnectorCredential(tenantId, connectorId, value).then(
-          () => {
-            toast(`${displayName} connected.`);
-            setValue(isUrl ? (fieldPlaceholder ?? "") : "");
-            onConnected();
-          },
-        );
+    completeConnectorCredential(tenantId, connectorId, value)
+      .then(() => {
+        toast(`${displayName} connected.`);
+        setValue(isUrl ? (fieldPlaceholder ?? "") : "");
+        onConnected();
       })
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : String(cause)),
@@ -116,7 +109,7 @@ function ApiKeyConnectForm({
         disabled={value.trim() === "" || submitting}
         onClick={handleSubmit}
       >
-        {submitting ? "Testing & connecting…" : "Test & connect"}
+        {submitting ? "Connecting…" : "Connect"}
       </Button>
     </div>
   );

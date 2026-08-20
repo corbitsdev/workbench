@@ -117,7 +117,6 @@ export type {
 
 export {
   ConnectionsApiError,
-  testConnectorCredential,
   completeConnectorCredential,
   disconnectConnector,
 } from "./connections-api";

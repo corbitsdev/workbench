@@ -269,10 +269,10 @@ export const SETTINGS_STRINGS = {
   connectionsDialogConnectTitle: (name: string) => `Connect ${name}`,
   connectionsDialogReconnectTitle: (name: string) => `Reconnect ${name}`,
   connectionsDialogDescription:
-    "Sealed on save — this key is never shown again after create. It's tested before it's stored, so a bad key never gets saved.",
+    "Sealed on save — this key is never shown again after create. A bad key never gets saved; connecting surfaces the problem right here.",
   connectionsKeyLabel: "API key",
-  connectionsTestAndSaveAction: "Test key and connect",
-  connectionsTestAndSaving: "Testing and connecting…",
+  connectionsConnectDialogAction: "Connect",
+  connectionsConnecting: "Connecting…",
   connectionsSaving: "Saving…",
   connectionsCancel: "Cancel",
   connectionsConnectedToast: (name: string) => `${name} connected`,

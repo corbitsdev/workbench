@@ -1,7 +1,8 @@
 // The connect panel opens the right surface per connector kind: an OAuth
-// link for `oauth-pkce`/`oauth-code`, a test-and-connect form for
-// `api-key`, and — for Granola specifically — both the api-key form and
-// `GranolaWebhookCard` stacked in the same panel, never a second dialog.
+// link for `oauth-pkce`/`oauth-code`, a single-action connect form for
+// `api-key` (CL-6377: no separate test step), and — for Granola
+// specifically — both the api-key form and `GranolaWebhookCard` stacked
+// in the same panel, never a second dialog.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -83,11 +84,13 @@ describe("PluginConnectPanel", () => {
     expect(container.querySelector('input[type="password"]')).toBeNull();
   });
 
-  test("an api-key connector shows the test-and-connect form", () => {
+  // CL-6377: one Connect action — no separate test step or "Test" copy.
+  test("an api-key connector shows the connect form", () => {
     const container = render(notConnected(descriptor("exa", "Exa", "api-key")));
 
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
-    expect(container.textContent).toContain("Test & connect");
+    expect(container.textContent).toContain("Connect");
+    expect(container.textContent).not.toContain("Test");
     expect(container.querySelector("a")).toBeNull();
   });
 

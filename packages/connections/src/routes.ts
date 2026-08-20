@@ -1,14 +1,13 @@
-// Tenant-scoped credential test-and-store for the Connections surface:
-// `POST /:connectorId/credential/test` proves a pasted api-key against
-// the connector's own probe with no storage, `POST /:connectorId/complete`
-// re-proves it (never trusting a client-side "already tested" claim,
-// mirroring `@workbench/onboarding`'s `completeCredentialSetup`) and, on
-// success, plants the credential through the same `ensureProvider` /
-// `ensureCredential` seam `seedCatalog` uses — never reimplementing
-// credential storage. Mounted inside the platform's native tenant
-// middleware (`TenantEnv`'s `tenant`/`principal` resolved before any
-// handler here runs), the same way `@corbits/webhook-triggers`'
-// management routes are.
+// Tenant-scoped credential connect-and-store for the Connections surface:
+// `POST /:connectorId/complete` proves a pasted api-key against the
+// connector's own probe (CL-6377: one action, not a separate test step
+// the client calls first) and, on success, plants the credential through
+// the same `ensureProvider` / `ensureCredential` seam `seedCatalog` uses —
+// never reimplementing credential storage. A rejected probe 422s with no
+// storage, mirroring `@workbench/onboarding`'s `completeCredentialSetup`.
+// Mounted inside the platform's native tenant middleware (`TenantEnv`'s
+// `tenant`/`principal` resolved before any handler here runs), the same
+// way `@corbits/webhook-triggers`' management routes are.
 //
 // Only api-key connectors are servable here: an unknown connector id, or
 // a registry entry with no `probe` (oauth-pkce/oauth-code/webhook-secret,
@@ -302,48 +301,6 @@ export function createConnectionRoutes(
     const body: unknown = await c.req.json().catch(() => null);
     return SubmitCredential(body);
   }
-
-  app.post(
-    "/:connectorId/credential/test",
-    deps.requireGrant("credential:*", "create"),
-    async (c) => {
-      const connectorId = c.req.param("connectorId");
-      const descriptor = findApiKeyDescriptor(connectorId);
-      if (descriptor === undefined || descriptor.probe === undefined) {
-        return c.json(
-          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
-          404,
-        );
-      }
-
-      const parsed = await parseApiKeyBody(c);
-      if (parsed instanceof type.errors) {
-        return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `An API key is required: ${parsed.summary}`,
-          ),
-          400,
-        );
-      }
-
-      const tenant = c.get("tenant");
-      const result = await descriptor.probe(parsed.apiKey);
-      if (!result.ok) {
-        deps.providerHealth?.report(
-          tenant.id,
-          descriptor.id,
-          CREDENTIAL_TEST_FAILURE_CATEGORY,
-        );
-        return c.json(ErrorEnvelope("invalid_credential", result.message), 422);
-      }
-      // A passing test here is a genuine, if lighter-weight, proof the
-      // credential works — the same signal `/complete`'s own passing test
-      // clears on (CL-6092): never a reply's prose, always a real probe.
-      deps.providerHealth?.clear(tenant.id, descriptor.id);
-      return c.json({ ok: true }, 200);
-    },
-  );
 
   // The PROVIDER row is named by the connector's lowercase `id` — the
   // canonical name `credentialBindings` resolve against via the
