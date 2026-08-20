@@ -69,7 +69,6 @@ afterEach(() => {
 async function mount(
   props: {
     readonly tenantId?: string | null;
-    readonly entityId?: string | null;
     readonly navigate?: (to: string) => void;
   } = {},
 ) {
@@ -148,18 +147,11 @@ describe("SkillsPage", () => {
     expect(el.textContent).toContain("Private");
   });
 
-  test("Create skill posts directly to the registry and opens the new skill's detail", async () => {
+  test("Create skill posts directly to the registry and opens the new skill's page", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
       [`POST /api/tenants/${TENANT}/skills`]: {
         skill: { ...TRIAGE, name: "summarize" },
-      },
-      [`GET /api/tenants/${TENANT}/skills/summarize`]: {
-        skill: { ...TRIAGE, name: "summarize", body: "Do it." },
-        pinnedBy: [],
-      },
-      [`GET /api/tenants/${TENANT}/skills/summarize/versions`]: {
-        versions: [],
       },
     });
     const navigated: string[] = [];
@@ -262,115 +254,29 @@ describe("SkillsPage", () => {
     ).toHaveLength(1);
   });
 
-  test("entityId opens the skill's detail with its version history and pins", async () => {
+  test("opening a row leaves the roster listed — a skill is never rendered inline", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
       [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
-      [`GET /api/tenants/${TENANT}/skills/triage`]: {
-        skill: { ...TRIAGE, body: "Pick exactly one label." },
-        pinnedBy: [{ definitionId: "def_1", name: "Research Buddy" }],
-      },
-      [`GET /api/tenants/${TENANT}/skills/triage/versions`]: {
-        versions: [
-          {
-            commitSha: "abcdef1234",
-            message: "Publish triage",
-            author: "workbench",
-            committedAtIso: "2026-08-05T11:00:00.000Z",
-            current: true,
-          },
-          {
-            commitSha: "0123456789",
-            message: "Draft triage",
-            author: "workbench",
-            committedAtIso: "2026-08-04T11:00:00.000Z",
-            current: false,
-          },
-        ],
-      },
     });
-    const el = await mount({ entityId: "triage" });
-    expect(el.textContent).toContain("Pick exactly one label.");
-    expect(el.textContent).toContain("Research Buddy");
-    expect(el.textContent).toContain("Publish triage");
-    expect(el.textContent).toContain("Restore");
-  });
-
-  test("Restore posts the chosen commit to the registry", async () => {
-    stubRoutes({
-      ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
-      [`GET /api/tenants/${TENANT}/skills/triage`]: {
-        skill: { ...TRIAGE, body: "Pick exactly one label." },
-        pinnedBy: [],
-      },
-      [`GET /api/tenants/${TENANT}/skills/triage/versions`]: {
-        versions: [
-          {
-            commitSha: "abcdef1234",
-            message: "Publish triage",
-            author: "workbench",
-            committedAtIso: "2026-08-05T11:00:00.000Z",
-            current: true,
-          },
-          {
-            commitSha: "0123456789",
-            message: "Draft triage",
-            author: "workbench",
-            committedAtIso: "2026-08-04T11:00:00.000Z",
-            current: false,
-          },
-        ],
-      },
-      [`POST /api/tenants/${TENANT}/skills/triage/restore`]: { skill: TRIAGE },
-    });
-    const el = await mount({ entityId: "triage" });
-    const restore = Array.from(el.querySelectorAll("button")).filter(
-      (button) => button.textContent === "Restore" && !button.disabled,
-    );
-    expect(restore).toHaveLength(1);
-    await act(async () => {
-      restore[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const call = requested.find((entry) =>
-      entry.path.endsWith("/skills/triage/restore"),
-    );
-    expect(call?.body).toEqual({ commitSha: "0123456789" });
-  });
-
-  test("Share with workbench shares a private skill with the whole workbench", async () => {
-    stubRoutes({
-      ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
-      [`GET /api/tenants/${TENANT}/skills/triage`]: {
-        skill: { ...TRIAGE, body: "Pick exactly one label." },
-        pinnedBy: [],
-      },
-      [`GET /api/tenants/${TENANT}/skills/triage/versions`]: { versions: [] },
-      [`PUT /api/tenants/${TENANT}/skills/triage/scope`]: { skill: TRIAGE },
-    });
-    const el = await mount({ entityId: "triage" });
-    const share = Array.from(el.querySelectorAll("button")).find(
-      (button) => button.textContent === "Share with workbench",
+    const el = await mount({ navigate: () => undefined });
+    const row = Array.from(el.querySelectorAll("tr")).find((tr) =>
+      tr.textContent?.includes("triage"),
     );
     await act(async () => {
-      share?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    const call = requested.find((entry) =>
-      entry.path.endsWith("/skills/triage/scope"),
-    );
-    expect(call?.body).toEqual({ scope: "tenant" });
+    expect(el.querySelector('table[aria-label="Skills"]')).not.toBeNull();
+    expect(el.textContent).not.toContain("Version history");
+    expect(
+      requested.some((entry) => entry.path.endsWith("/skills/triage")),
+    ).toBe(false);
   });
 
   test("navigate is called with the skill's name when a row is selected", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
       [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
-      [`GET /api/tenants/${TENANT}/skills/triage`]: {
-        skill: { ...TRIAGE, body: "Pick exactly one label." },
-        pinnedBy: [],
-      },
-      [`GET /api/tenants/${TENANT}/skills/triage/versions`]: { versions: [] },
     });
     const navigated: string[] = [];
     const el = await mount({ navigate: (to) => navigated.push(to) });

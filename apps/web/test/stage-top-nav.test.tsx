@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NavigationProvider } from "../src/navigation";
 import { BenchProvider } from "../src/bench-context";
 import { PluginsRoute } from "../src/pages/plugins-page";
+import { SkillDetailPage } from "../src/pages/skill-detail-page";
 import { SkillsPage } from "../src/pages/skills-page";
 import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { StageTopBar } from "../src/shell/stage-top-bar";
@@ -213,8 +214,6 @@ describe("Skills declares its nav through the top-bar contract", () => {
   test("an open skill deep-links its parent level back to /skills", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills`)
-        return Promise.resolve(json({ skills: [SKILL] }));
       if (path === `/api/tenants/${TENANT}/skills/weekly-digest`)
         return Promise.resolve(
           json({ skill: { ...SKILL, body: "Do it." }, pinnedBy: [] }),
@@ -227,7 +226,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
     const el = await render(
       <TestQueryProvider>
         <NavigationProvider navigate={noop}>
-          <SkillsPage tenantId={TENANT} entityId="weekly-digest" />
+          <SkillDetailPage tenantId={TENANT} name="weekly-digest" />
         </NavigationProvider>
       </TestQueryProvider>,
     );
@@ -237,13 +236,12 @@ describe("Skills declares its nav through the top-bar contract", () => {
     expect(trail?.querySelector('[aria-current="page"]')?.textContent).toBe(
       "weekly-digest",
     );
+    expect(el.querySelector('table[aria-label="Skills"]')).toBeNull();
   });
 
-  test("the parent crumb is the way back: the route it navigates to puts the list view back", async () => {
+  test("the parent crumb is the way back: clicking it navigates to /skills", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills`)
-        return Promise.resolve(json({ skills: [SKILL] }));
       if (path === `/api/tenants/${TENANT}/skills/weekly-digest`)
         return Promise.resolve(
           json({ skill: { ...SKILL, body: "Do it." }, pinnedBy: [] }),
@@ -254,20 +252,13 @@ describe("Skills declares its nav through the top-bar contract", () => {
     }) as typeof fetch;
 
     const navigated: string[] = [];
-    const at = (entityId: string | null) => (
+    const el = await render(
       <TestQueryProvider>
         <NavigationProvider navigate={(to) => navigated.push(to)}>
-          <SkillsPage
-            tenantId={TENANT}
-            navigate={(to) => navigated.push(to)}
-            entityId={entityId}
-          />
+          <SkillDetailPage tenantId={TENANT} name="weekly-digest" />
         </NavigationProvider>
-      </TestQueryProvider>
+      </TestQueryProvider>,
     );
-
-    const el = await render(at("weekly-digest"));
-    expect(el.querySelector('table[aria-label="Skills"]')).toBeNull();
 
     const parent = el.querySelector<HTMLAnchorElement>("a.stage-crumb-link");
     await act(async () => {
@@ -276,14 +267,6 @@ describe("Skills declares its nav through the top-bar contract", () => {
       );
     });
     expect(navigated).toContain("/skills");
-
-    // The router re-renders the same mounted page at the new path — the
-    // route, not click-local state, is what closes the detail view.
-    const back = await render(at(null));
-    expect(back.querySelector('table[aria-label="Skills"]')).not.toBeNull();
-    expect(back.querySelector('[aria-current="page"]')?.textContent).toBe(
-      "Skills",
-    );
   });
 });
 

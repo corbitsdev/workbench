@@ -102,6 +102,45 @@ test("PUT /:name creates a new version and leaves the prior one restorable", asy
   expect(restored.skill.body).toBe("Read the report. Pick one label.");
 });
 
+test("GET /:name/versions/:commitSha reads a prior version without cutting one", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  await app.request("/triage", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Sorts inbound issues.",
+      body: "Read the report. Pick a severity label.",
+    }),
+  });
+
+  const versions = (await (await app.request("/triage/versions")).json()) as {
+    versions: { commitSha: string }[];
+  };
+  const prior = versions.versions[1]?.commitSha ?? "";
+
+  const response = await app.request(`/triage/versions/${prior}`);
+  expect(response.status).toBe(200);
+  const payload = (await response.json()) as { skill: { body: string } };
+  expect(payload.skill.body).toBe("Read the report. Pick one label.");
+
+  const after = (await (await app.request("/triage/versions")).json()) as {
+    versions: { commitSha: string }[];
+  };
+  expect(after.versions).toHaveLength(2);
+  const current = (await (await app.request("/triage")).json()) as {
+    skill: { body: string };
+  };
+  expect(current.skill.body).toBe("Read the report. Pick a severity label.");
+});
+
+test("GET /:name/versions/:commitSha for an unknown commit is a 404", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  const response = await app.request("/triage/versions/deadbeef");
+  expect(response.status).toBe(404);
+});
+
 test("PUT /:name for an unknown skill is a 404", async () => {
   const app = buildApp();
   const response = await app.request("/does-not-exist", {
