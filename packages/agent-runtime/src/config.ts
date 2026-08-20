@@ -1,31 +1,22 @@
-// The deploy-time config contract for the agent-runtime source package.
+// Everything about an agent run that its deployed definition must know:
+// which mailbox it answers on, what it is told to be, which models it
+// may use, which tool packages and credentials it carries, and which of
+// the two shapes it takes.
 //
-// A code-sourced deploy evaluates this package's `interchange.workflow`
-// entry module twice — once in the approval probe, once in the run child
-// — and refuses to run unless both evaluations project to the same wire
-// hash. The package bytes are therefore identical for every run: one
-// published version, deployed over and over. Everything that differs per
-// run (which mailbox it answers on, what it is told to be, which models
-// it may use, which tool packages and credentials it carries) arrives as
-// this config, parsed at the module's trust boundary before a definition
-// is built from it.
-//
-// The config travels out of band from the bytes, in the child's
-// environment under `AGENT_RUNTIME_CONFIG_ENV`. That is the only channel
-// available: mutating the closure would change the bytes that the SRI
-// pin and the content cache are keyed on, and no deploy frame field
-// reaches the entry module's evaluation.
+// This config is DEPLOY-TIME data, and under the workflow.json
+// retirement it has to live inside the deployed package's own bytes.
+// The approval probe and the run child each evaluate the deployment's
+// entry module independently and the child refuses to run a definition
+// whose recomputed wire hash differs from the approved one; the hashed
+// projection covers the system prompt, the trigger address, the model
+// pairs, the tool package pins, and the credential bindings — every
+// field here. So a config delivered out of band (an env var, a file the
+// sidecar drops next to the entry) diverges between the two evaluations
+// and fails closed. `./source-tree.ts` renders it into the bytes
+// instead.
 import { type } from "arktype";
 import { CredentialBinding } from "@intx/types";
 import { ToolPackagePin } from "@intx/types/tool-packages";
-
-/**
- * The environment variable the entry module reads its config from. The
- * host that applies the frozen closure sets it identically for the
- * approval probe and for every run child, so both evaluations of the
- * same package produce the same definition and the same wire hash.
- */
-export const AGENT_RUNTIME_CONFIG_ENV = "CORBITS_AGENT_RUNTIME_CONFIG";
 
 const InferencePreference = type({
   provider: "string > 0",
@@ -90,40 +81,4 @@ export function parseAgentRuntimeConfig(raw: unknown): AgentRuntimeConfig {
     throw new Error(`invalid agent-runtime config: ${parsed.summary}`);
   }
   return parsed;
-}
-
-/**
- * Read and parse the deploy-time config out of an environment map. The
- * entry module calls this with `process.env`; a missing or unparseable
- * value throws, because a workflow package with no config has no
- * definition to export.
- */
-export function readAgentRuntimeConfig(
-  env: Record<string, string | undefined>,
-): AgentRuntimeConfig {
-  const encoded = env[AGENT_RUNTIME_CONFIG_ENV];
-  if (encoded === undefined || encoded === "") {
-    throw new Error(
-      `the agent-runtime workflow package requires its deploy-time config in ${AGENT_RUNTIME_CONFIG_ENV}`,
-    );
-  }
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(encoded);
-  } catch (cause) {
-    throw new Error(
-      `${AGENT_RUNTIME_CONFIG_ENV} does not hold valid JSON`,
-      { cause },
-    );
-  }
-  return parseAgentRuntimeConfig(decoded);
-}
-
-/**
- * Serialize a config for delivery in `AGENT_RUNTIME_CONFIG_ENV`. The
- * deploying host validates before it encodes, so a config that would
- * fail inside the child fails loud at the deploy call instead.
- */
-export function encodeAgentRuntimeConfig(config: AgentRuntimeConfig): string {
-  return JSON.stringify(parseAgentRuntimeConfig(config));
 }

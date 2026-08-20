@@ -127,9 +127,8 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
   });
 
   test("the section's body is one agent step carrying the per-turn timeout", () => {
-    const section = buildAgentRuntimeWorkflow(sectionConfig).steps[
-      AGENT_RUNTIME_SECTION_ID
-    ];
+    const section =
+      buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
 
     expect(section).toMatchObject({
       body: {
