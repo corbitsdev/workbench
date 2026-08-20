@@ -736,6 +736,17 @@ describe("POST /workbenches — agent chat always creates by default (CL-6089)",
     expect(platform.launchInviteCalls).toHaveLength(2);
     const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
     expect(chats).toHaveLength(2);
+
+    // CL-6387: "mints two independent workbenches" must mean two genuinely
+    // distinct child tenants — not two workbench rows sharing one tenant
+    // (which would alias participants/grants across both chats).
+    const firstTenancy = await deps.tenancy.getWorkbenchTenancy(first.body.id);
+    const secondTenancy = await deps.tenancy.getWorkbenchTenancy(
+      second.body.id,
+    );
+    expect(firstTenancy?.tenantId).toBeDefined();
+    expect(secondTenancy?.tenantId).toBeDefined();
+    expect(secondTenancy?.tenantId).not.toBe(firstTenancy?.tenantId);
   });
 
   test("creating a chat with the same agent twice, reuseExisting: false explicitly, still mints two workbenches", async () => {
