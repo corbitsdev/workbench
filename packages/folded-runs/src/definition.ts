@@ -1,106 +1,131 @@
-// Reads a folded `WorkflowDefinition`'s launch body back out of its
-// materialized workflow asset. Reimplemented here rather than imported
-// from `@intx/hub-api`'s `run-grant-materialization.ts` (the reference
-// `POST /workflows/runs` route's own helper): that module is
-// hub-api-internal, not part of its published surface — the same
-// module-privacy reason `@corbits/chat`'s `workbench-workflow.ts`
-// reimplements `assertJsonPortable` rather than reaching into another
-// package's internals.
-import type { AssetService } from "@intx/hub-sessions";
-import { WORKFLOW_JSON_PATH } from "@intx/hub-sessions";
+// Reads a folded `WorkflowDefinition`'s launch body back out of the hub's
+// own record of the definition.
+//
+// Under the `workflow.json` retirement a deployed definition's body is
+// whatever its source closure evaluates to on the sidecar, and a
+// source-format workflow asset carries no envelope to read it back from.
+// The hub-side record of that body is the inert wire projection the
+// approval freeze hashed, persisted on the definition's version row
+// beside the hash that addresses it
+// (`vendor/intx/db/src/workflow-definition-store.ts`'s
+// `loadFrozenWireProjection`). This module is the single reader of that
+// projection for launch purposes.
+//
+// One field of the launch body is deliberately NOT in the projection:
+// `grantRequirements` does not survive the live->inert projector and is
+// therefore outside the wire hash. Its hub-side home is the
+// `workflow_definition.grant_requirements` column, so it is passed in
+// alongside the projection rather than read off it.
+import type { DB } from "@intx/db";
+import { loadFrozenWireProjection } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import { GrantRequirement, CredentialBinding } from "@intx/types";
 import { ToolPackagePin } from "@intx/types/tool-packages";
 import { type } from "arktype";
 
-export async function readDefinitionJSON(
-  assetService: AssetService,
-  assetId: string,
-): Promise<unknown> {
-  const raw = await assetService.readAssetBlob({
-    assetId,
-    path: WORKFLOW_JSON_PATH,
-  });
-  try {
-    return JSON.parse(new TextDecoder().decode(raw));
-  } catch (cause) {
-    throw new Error(
-      `workflow asset ${assetId} ${WORKFLOW_JSON_PATH} is not valid JSON`,
-      { cause },
-    );
-  }
-}
-
 /**
- * Thrown by `resolveNewestReadableDefinitionJSON` when every candidate
- * asset for a definition's name is unresolvable (DB/blob drift — a
- * long-lived DB whose asset rows outlive the git repos they point at,
- * or an asset row that predates a `.data` reset). Carries consumer
- * language so an HTTP boundary can answer with a named 4xx instead of
- * an unhandled 500, mirroring `InferenceResolutionError`'s split
- * between the human `message` and the `guidance` a caller surfaces
- * verbatim.
+ * Thrown when a definition carries no frozen wire projection — a row
+ * persisted before the projection was stored, or one whose approval
+ * never completed. Carries consumer language so an HTTP boundary can
+ * answer with a named 4xx instead of an unhandled 500, mirroring
+ * `InferenceResolutionError`'s split between the human `message` and the
+ * `guidance` a caller surfaces verbatim.
  */
-export class DefinitionAssetUnresolvableError extends Error {
+export class DefinitionProjectionMissingError extends Error {
   readonly definitionName: string;
   readonly guidance: string;
   constructor(definitionName: string) {
     const guidance =
-      "This agent's definition needs re-publishing — run seed / republish.";
+      "This agent was deployed before the hub started recording its " +
+      "launch body — re-deploy it (run seed / republish) and try again.";
     super(
-      `No resolvable asset for definition "${definitionName}" ` +
-        `(${String(guidance)})`,
+      `No stored launch body for definition "${definitionName}" (${guidance})`,
     );
-    this.name = "DefinitionAssetUnresolvableError";
+    this.name = "DefinitionProjectionMissingError";
     this.definitionName = definitionName;
     this.guidance = guidance;
   }
 }
 
-/** One asset candidate for a definition's name, ordered newest-first
- * by the caller (typically `createdAt desc`). */
-export type DefinitionAssetCandidate = {
-  readonly assetId: string;
-  readonly definitionName: string;
+/**
+ * Read one definition's frozen inert projection, failing with the named
+ * error above rather than a raw miss.
+ */
+export async function readDefinitionProjection(
+  db: DB["db"],
+  definition: { id: string; name: string },
+): Promise<unknown> {
+  const projection = await loadFrozenWireProjection(db, definition.id);
+  if (projection === null) {
+    throw new DefinitionProjectionMissingError(definition.name);
+  }
+  return projection;
+}
+
+/** One definition candidate for a name, ordered newest-first by the
+ * caller (typically `createdAt desc`). */
+export type DefinitionCandidate = {
+  readonly id: string;
+  readonly name: string;
 };
 
 /**
- * Resolves a definition's launch body by trying its asset candidates
- * newest-first and returning the first one whose ref actually reads —
- * a stale unresolvable asset never wins over a healthy newer one
- * (CL-6357). Raises `DefinitionAssetUnresolvableError` only once every
- * candidate has failed to resolve.
+ * Resolves a definition's launch body by trying its candidates
+ * newest-first and returning the first one that actually carries a
+ * frozen projection — a stale pre-cutover sibling never wins over a
+ * healthy newer one (the DB-side successor to CL-6357's asset-drift
+ * walk). Raises `DefinitionProjectionMissingError` only once every
+ * candidate has come back empty.
  */
-export async function resolveNewestReadableDefinitionJSON(
-  assetService: AssetService,
-  candidates: readonly DefinitionAssetCandidate[],
-): Promise<{ assetId: string; definitionJSON: unknown }> {
+export async function resolveNewestProjectedDefinition(
+  db: DB["db"],
+  candidates: readonly DefinitionCandidate[],
+): Promise<{ definitionId: string; projection: unknown }> {
   for (const candidate of candidates) {
-    try {
-      const definitionJSON = await readDefinitionJSON(
-        assetService,
-        candidate.assetId,
-      );
-      return { assetId: candidate.assetId, definitionJSON };
-    } catch {
-      continue;
+    const projection = await loadFrozenWireProjection(db, candidate.id);
+    if (projection !== null) {
+      return { definitionId: candidate.id, projection };
     }
   }
-  const definitionName = candidates[0]?.definitionName ?? "unknown";
-  throw new DefinitionAssetUnresolvableError(definitionName);
+  const definitionName = candidates[0]?.name ?? "unknown";
+  throw new DefinitionProjectionMissingError(definitionName);
 }
 
 /**
- * The launch-relevant subset of a folded `WorkflowDefinition`'s single
- * `step` primitive: `AgentDefinition` itself is not JSON-portable (its
- * `toolFactories` are functions), so `@intx/workflow`'s real
- * `WorkflowDefinition` type is not something a parsed JSON blob can
- * ever honestly satisfy — narrowing to it with a cast would just
- * assert the untyped parts into existence. This schema instead
- * validates exactly the fields a folded definition's step carries that
- * `readFoldedBody` below reads.
+ * The launch-relevant subset of an inert projection's single `step`
+ * primitive. The projector reifies the live `AgentDefinition` into plain
+ * data and FLATTENS its inference chain: `agent.inference.sources`
+ * becomes a top-level `modelSources: { provider, model }[]` and the
+ * function-bearing `toolFactories` become descriptors. This schema
+ * validates exactly the reified fields `readFoldedBody` below reads.
  */
-const FoldedWorkflowStepSchema = type({
+const InertWorkflowStepSchema = type({
+  kind: "'step'",
+  agent: {
+    systemPrompt: "string",
+    "toolPackagePins?": ToolPackagePin.array(),
+    modelSources: type({ model: "string" }).array(),
+  },
+});
+
+/** The launch-relevant subset of an inert projection itself. */
+const InertWorkflowDefinitionSchema = type({
+  id: "string",
+  stepOrder: "string[]",
+  steps: "Record<string, unknown>",
+  "credentialBindings?": CredentialBinding.array(),
+});
+
+/**
+ * The launch-relevant subset of a LIVE serialized `WorkflowDefinition`'s
+ * step — the pre-projection shape, where the inference chain is still
+ * nested at `agent.inference.sources`. This is not an alternative source
+ * for a deployed definition's body: it serves the one caller that builds
+ * its definition in process and launches it in the same breath (the
+ * workbench host, `buildWorkbenchHostWorkflow`), which has the live
+ * object in hand and never round-trips through a deploy freeze.
+ */
+const LiveWorkflowStepSchema = type({
   kind: "'step'",
   agent: {
     systemPrompt: "string",
@@ -111,8 +136,7 @@ const FoldedWorkflowStepSchema = type({
   },
 });
 
-/** The launch-relevant subset of a folded `WorkflowDefinition` itself. */
-const FoldedWorkflowDefinitionSchema = type({
+const LiveWorkflowDefinitionSchema = type({
   id: "string",
   stepOrder: "string[]",
   steps: "Record<string, unknown>",
@@ -129,29 +153,73 @@ export const FoldedBodySchema = type({
 });
 
 /**
- * Reads the launch body back out of parsed workflow-definition JSON —
- * the same fields `@intx/workflow-deploy`'s `extractFoldedBody` reads
- * off a real `WorkflowDefinition`, reimplemented against the validated
- * JSON-portable subset above rather than casting a parsed blob into
- * that richer, function-bearing type.
+ * Reads the launch body back out of a definition's frozen inert
+ * projection — the same fields `@intx/workflow-deploy`'s
+ * `extractFoldedBody` reads off a live `WorkflowDefinition`, read here
+ * off the projected plain data instead. `grantRequirements` comes from
+ * the definition row because the projector drops it (see the module
+ * header).
  */
-export function readFoldedBody(raw: unknown): FoldedBody {
-  const definition = FoldedWorkflowDefinitionSchema(raw);
+export function readFoldedBody(
+  projection: unknown,
+  grantRequirements: unknown,
+): FoldedBody {
+  const definition = InertWorkflowDefinitionSchema(projection);
   if (definition instanceof type.errors) {
-    throw new Error(`folded definition is malformed: ${definition.summary}`);
+    throw new Error(`inert projection is malformed: ${definition.summary}`);
   }
   const [stepId, ...rest] = definition.stepOrder;
   if (stepId === undefined || rest.length > 0) {
     throw new Error(
-      `folded definition ${definition.id} is not single-step (${String(
+      `definition ${definition.id} is not single-step (${String(
         definition.stepOrder.length,
       )} steps)`,
     );
   }
-  const step = FoldedWorkflowStepSchema(definition.steps[stepId]);
+  const step = InertWorkflowStepSchema(definition.steps[stepId]);
   if (step instanceof type.errors) {
     throw new Error(
-      `folded definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
+      `definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
+    );
+  }
+  const foldedBody = FoldedBodySchema({
+    systemPrompt: step.agent.systemPrompt,
+    toolPackagePins: step.agent.toolPackagePins ?? [],
+    grantRequirements: grantRequirements ?? [],
+    credentialBindings: definition.credentialBindings ?? [],
+    model: step.agent.modelSources[0]?.model ?? null,
+  });
+  if (foldedBody instanceof type.errors) {
+    throw new Error(
+      `definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
+    );
+  }
+  return foldedBody;
+}
+
+/**
+ * Reads the launch body out of a live serialized `WorkflowDefinition` —
+ * the in-process launch path described on `LiveWorkflowStepSchema`.
+ * Unlike the projection, a live definition still carries its own
+ * `grantRequirements`, so nothing is passed in beside it.
+ */
+export function readLiveFoldedBody(raw: unknown): FoldedBody {
+  const definition = LiveWorkflowDefinitionSchema(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(`live definition is malformed: ${definition.summary}`);
+  }
+  const [stepId, ...rest] = definition.stepOrder;
+  if (stepId === undefined || rest.length > 0) {
+    throw new Error(
+      `live definition ${definition.id} is not single-step (${String(
+        definition.stepOrder.length,
+      )} steps)`,
+    );
+  }
+  const step = LiveWorkflowStepSchema(definition.steps[stepId]);
+  if (step instanceof type.errors) {
+    throw new Error(
+      `live definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
     );
   }
   const foldedBody = FoldedBodySchema({
@@ -163,7 +231,7 @@ export function readFoldedBody(raw: unknown): FoldedBody {
   });
   if (foldedBody instanceof type.errors) {
     throw new Error(
-      `folded definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
+      `live definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
     );
   }
   return foldedBody;

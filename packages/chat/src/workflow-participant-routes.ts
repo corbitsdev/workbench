@@ -41,7 +41,7 @@
 // invite into a workbench it is not itself in.
 import { Hono } from "hono";
 import { type } from "arktype";
-import { DefinitionAssetUnresolvableError } from "@corbits/folded-runs";
+import { DefinitionProjectionMissingError } from "@corbits/folded-runs";
 
 import {
   launchAndJoinAgent,
@@ -186,7 +186,7 @@ export function createWorkflowParticipantRoutes(
       // CL-6357: named, consumer-facing 4xx — never an unhandled 500 —
       // when every asset candidate for the definition has gone
       // unresolvable (DB/blob drift).
-      if (err instanceof DefinitionAssetUnresolvableError) {
+      if (err instanceof DefinitionProjectionMissingError) {
         return c.json(errorEnvelope("not_launchable", err.guidance), 409);
       }
       throw err;

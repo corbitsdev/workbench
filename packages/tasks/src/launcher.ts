@@ -17,7 +17,7 @@ import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import {
   launchFoldedRun,
-  readDefinitionJSON,
+  readDefinitionProjection,
   readFoldedBody,
   sendFoldedMailWithRetry,
   type FoldedRunsDeps,
@@ -159,11 +159,11 @@ async function resolveLaunchTarget(
     throw new Error(`No tenant "${input.tenantId}"`);
   }
 
-  const definitionJSON = await readDefinitionJSON(
-    deps.foldedRuns.assetService,
-    definitionRow.assetId,
+  const projection = await readDefinitionProjection(deps.db, definitionRow);
+  const definitionBody = readFoldedBody(
+    projection,
+    definitionRow.grantRequirements,
   );
-  const definitionBody = readFoldedBody(definitionJSON);
   if (definitionBody.systemPrompt === "") {
     throw new TaskDefinitionNotLaunchableError(
       input.definitionId,

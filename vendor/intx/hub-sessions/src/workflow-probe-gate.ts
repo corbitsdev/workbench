@@ -73,6 +73,13 @@ export type FrozenApproval = {
   readonly approvedWireHash: string;
   readonly approvedGrants: readonly string[];
   readonly grantSnapshot: GrantWalkSnapshot;
+  /**
+   * WORKBENCH DELTA (see VENDORED.md): the inert projection the hash above was
+   * recomputed over, persisted with it so a hub-side reader can recover the
+   * definition's body without re-probing. Rides the same frozen record as the
+   * hash rather than a second write, so the two can never disagree.
+   */
+  readonly projection: WorkflowProjectionDefinition;
 };
 
 /**
@@ -127,7 +134,7 @@ export type ProbeGateResult =
 export function createDbFrozenApprovalWriter(
   db: DBExecutor,
 ): PersistFrozenApprovalFn {
-  return async ({ assetId, approvedWireHash, grantSnapshot }) => {
+  return async ({ assetId, approvedWireHash, grantSnapshot, projection }) => {
     // Ensure-then-stamp is one freeze: a crash between the two would persist a
     // version row with a NULL `approvedWireHash`, which the schema treats as
     // the legitimate "not yet approved" state -- indistinguishable from an
@@ -144,7 +151,7 @@ export function createDbFrozenApprovalWriter(
       // fails loud instead of open.
       const stamped = await tx
         .update(workflowDefinitionVersion)
-        .set({ approvedWireHash, grantSnapshot })
+        .set({ approvedWireHash, grantSnapshot, wireProjection: projection })
         .where(
           and(
             eq(workflowDefinitionVersion.definitionId, definitionId),
@@ -255,6 +262,7 @@ export async function gateAndFreezeProbeResult(
     approvedWireHash: recomputedWireHash,
     approvedGrants,
     grantSnapshot: probeResult.grantWalkSnapshot,
+    projection: probeResult.projection,
   });
 
   return {
