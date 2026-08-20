@@ -23,6 +23,7 @@ import {
   TableRow,
   formatRelativeTime,
 } from "@corbits/react-ui";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -120,7 +121,7 @@ export function PluginSkillDetailPanel({
         </DialogHeader>
         {state.status === "loading" ? (
           <DialogBody>
-            <p className="text-sm text-muted-foreground">Loading skill…</p>
+            <WorkbenchLoadingState title="Loading skill…" />
           </DialogBody>
         ) : state.status === "error" ? (
           <DialogBody>

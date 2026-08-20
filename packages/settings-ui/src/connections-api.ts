@@ -16,8 +16,6 @@ export class ConnectionsApiError extends Error {
   }
 }
 
-const TestResult = type({ ok: "true" });
-
 const CompleteResult = type({
   credentialId: "string",
   status: "'active'",
@@ -32,34 +30,6 @@ function request<T>(
   init?: RequestInit,
 ): Promise<T> {
   return apiRequest(path, schema, verb, ConnectionsApiError, init);
-}
-
-/**
- * Tests an api-key connector's credential without storing it. A 422 means
- * the probe rejected the key — an expected, non-exceptional outcome the
- * caller renders inline, not a transport failure — so it resolves
- * `{ ok: false, message }` instead of throwing. Every other non-2xx status
- * still throws `ConnectionsApiError`.
- */
-export async function testConnectorCredential(
-  tenantId: string,
-  connectorId: string,
-  apiKey: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    await request(
-      `/api/tenants/${tenantId}/connections/${connectorId}/credential/test`,
-      TestResult,
-      "testing that connection",
-      { method: "POST", body: JSON.stringify({ apiKey }) },
-    );
-    return { ok: true };
-  } catch (cause) {
-    if (cause instanceof ConnectionsApiError && cause.status === 422) {
-      return { ok: false, message: cause.message };
-    }
-    throw cause;
-  }
 }
 
 /**
@@ -79,6 +49,14 @@ export function fetchOAuthConfigured(
   );
 }
 
+/**
+ * The one connect action (CL-6377): the server proves the pasted key
+ * against the connector's own probe and only stores it once that probe
+ * accepts — there is no separate client-driven "test" round-trip before
+ * this call. A rejected probe 422s with the probe's own message, which
+ * throws `ConnectionsApiError` (status 422); the caller renders that
+ * inline as the normal connect-failed state.
+ */
 export function completeConnectorCredential(
   tenantId: string,
   connectorId: string,

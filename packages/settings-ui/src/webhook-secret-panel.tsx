@@ -9,7 +9,7 @@
 // second hand-rolled copy.
 
 import { Button } from "@corbits/react-ui";
-import { Copy } from "lucide-react";
+import { Copy } from "@corbits/icons";
 import { useEffect, useRef, useState } from "react";
 
 /** Copies `value` to the clipboard, showing "Copied" for 1.5s. */

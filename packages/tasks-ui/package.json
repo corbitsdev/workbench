@@ -17,7 +17,7 @@
     "@corbits/api-query": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#82f454605630fc2c73c9fc7488d29a5cdf852e9d",
     "arktype": "catalog:",
-    "lucide-react": "^1.27.0",
+    "@corbits/icons": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

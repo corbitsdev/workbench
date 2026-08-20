@@ -24,7 +24,7 @@ import {
   TraceWaterfall,
   type TraceSpan,
 } from "@corbits/react-ui";
-import { ChartColumn } from "lucide-react";
+import { ChartBar } from "@corbits/icons";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -149,7 +149,7 @@ export function statusTone(
 }
 
 function tileValue(value: string | number | null, loading: boolean): string {
-  if (loading) return "…";
+  if (loading) return "";
   if (value === null) return "—";
   return String(value);
 }
@@ -254,13 +254,21 @@ function InsightsStat({
   readonly onClick?: () => void;
   readonly loading?: boolean;
 }) {
+  if (loading === true) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
+        <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground">
+          {label}
+        </span>
+        <Skeleton className="h-[26px] w-16" />
+      </div>
+    );
+  }
   return (
     <StatGridItem
       label={label}
-      value={loading === true ? "…" : value}
-      {...(detail === undefined
-        ? {}
-        : { sub: loading === true ? " " : detail })}
+      value={value}
+      {...(detail === undefined ? {} : { sub: detail })}
       {...(onClick === undefined ? {} : { onClick })}
     />
   );
@@ -827,7 +835,7 @@ export function InsightsRunsHistory({
               <Skeleton className="h-40 w-full" />
             ) : groups.length === 0 ? (
               <RichEmptyState
-                icon={<ChartColumn />}
+                icon={<ChartBar />}
                 title="No purpose runs yet"
                 description="When a routine or purpose workflow fires, it shows up here."
               />
@@ -1333,7 +1341,7 @@ export function InsightsPage({
         <StageTopBar title="Insights" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<ChartColumn />}
+            icon={<ChartBar />}
             title="Couldn't load insights"
             description={usageError}
           />
@@ -1485,7 +1493,7 @@ function InsightsWorkbenchPage({
         <StageTopBar title="Insights" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<ChartColumn />}
+            icon={<ChartBar />}
             title="Workbench not found"
             description="This conversation may have been deleted, or you may not have access to it."
           />
@@ -1499,7 +1507,7 @@ function InsightsWorkbenchPage({
         <StageTopBar title="Insights" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<ChartColumn />}
+            icon={<ChartBar />}
             title="No insights for this conversation yet"
             description="This conversation predates per-workbench insights."
           />

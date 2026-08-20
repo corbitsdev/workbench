@@ -210,6 +210,19 @@ export type CreateChatRoutesDeps = {
    */
   agentTurns?: AgentTurnStore;
   /**
+   * The visible text a still-running turn has committed to the platform's
+   * own `turn_part` rows so far (CL-6380) — what a client reattaching
+   * mid-turn replays as its catch-up snapshot before the live stream's tail
+   * resumes. Omitted, a running turn's detail simply carries no
+   * `textSnapshot` field and the client falls back to showing only the
+   * indicator until the next live event arrives — the same "no store, no
+   * feature" contract every other optional dep here follows.
+   */
+  turnTextSnapshot?: (input: {
+    readonly tenantId: string;
+    readonly runId: string;
+  }) => Promise<string | null>;
+  /**
    * Poll/form response storage — see `./block-responses.ts`. Omitted
    * entirely, the response routes 404 rather than silently accepting
    * votes/submissions nothing durable backs; every deployment that wants
@@ -3677,7 +3690,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (turn === undefined || turn.workbenchId !== workbenchId) {
         return c.json(ErrorEnvelope("not_found", "turn not found"), 404);
       }
-      return c.json(turn);
+      // Only a still-running turn gets a catch-up snapshot attached — a
+      // settled turn's reply already lives in the timeline as an ordinary
+      // message, and re-deriving its text here would just duplicate it.
+      const textSnapshot =
+        turn.status === "running" && deps.turnTextSnapshot !== undefined
+          ? await deps.turnTextSnapshot({
+              tenantId: access.ownerTenantId,
+              runId: turn.childRunId,
+            })
+          : null;
+      return c.json({ ...turn, textSnapshot });
     },
   );
 

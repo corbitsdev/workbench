@@ -41,7 +41,6 @@ function mount(onSend: () => Promise<boolean>) {
         onSend,
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
-        onOpenRoutines: () => undefined,
         onCreateRoutineInSpace: () => undefined,
       }),
     );
@@ -147,7 +146,6 @@ function mountWithMentions(
         onSend,
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
-        onOpenRoutines: () => undefined,
         onCreateRoutineInSpace: () => undefined,
       }),
     );

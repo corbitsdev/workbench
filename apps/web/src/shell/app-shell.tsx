@@ -22,6 +22,9 @@ import {
 import * as Y from "yjs";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
+
+import { useNeedsYouCount } from "../api";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { usePresenceRoom } from "../presence/use-presence-room";
@@ -147,6 +150,16 @@ export function AppShell({
   const mainRef = useRef<HTMLDivElement>(null);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
+  const needsYouCount = useNeedsYouCount(tenantId);
+  const needsYouChip =
+    needsYouCount === null
+      ? undefined
+      : needsYouCount > 0
+        ? {
+            tone: "needs-you" as const,
+            label: `${String(needsYouCount)} waiting on you`,
+          }
+        : { tone: "ok" as const, label: "All caught up" };
 
   return (
     <div className="shell-frame">
@@ -160,9 +173,18 @@ export function AppShell({
         <div className="shell-main-content">
           <ProviderHealthBanner />
           {routeHasNoStageTopBar(path) ? (
-            <StageTopBar title={routeLabel(path)} />
+            <StageTopBar
+              title={routeLabel(path)}
+              {...(needsYouChip !== undefined ? { chip: needsYouChip } : {})}
+            />
           ) : null}
-          <Suspense fallback={<div className="page-fill" aria-busy="true" />}>
+          <Suspense
+            fallback={
+              <div className="page-fill shell-route-loading">
+                <WorkbenchLoadingState />
+              </div>
+            }
+          >
             {children}
           </Suspense>
         </div>

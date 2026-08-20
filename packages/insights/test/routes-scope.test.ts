@@ -414,17 +414,15 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
         items: { tenantId: string; name: string; turns: number }[];
       };
       // Ranked by turns descending — childB has recorded more turns than
-      // childA across this describe block's fixtures, and the parent
-      // itself (a rolled-up total, no usage of its own) sorts last.
-      expect(body.items.map((i) => i.tenantId)).toEqual([
-        childBId,
-        childAId,
-        parentId,
-      ]);
+      // childA across this describe block's fixtures. The parent itself
+      // is the team space, not a workbench (CL-6368) — it never appears
+      // as a row here, even though it is the tenant this rollup was
+      // requested against.
+      expect(body.items.map((i) => i.tenantId)).toEqual([childBId, childAId]);
       expect(body.items.find((i) => i.tenantId === childBId)?.name).toBe(
         "Acme — Sales",
       );
-      expect(body.items.find((i) => i.tenantId === parentId)?.turns).toBe(0);
+      expect(body.items.some((i) => i.tenantId === parentId)).toBe(false);
       // The unrelated root tenant never appears in the parent's scope.
       expect(body.items.some((i) => i.tenantId === unrelatedId)).toBe(false);
 

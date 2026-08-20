@@ -46,6 +46,39 @@ function inertProjection(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function sectionProjection(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "wfd_2",
+    stepOrder: ["turn"],
+    steps: {
+      turn: {
+        kind: "onTrigger",
+        id: "turn",
+        on: { type: "mail", to: "agent@example.com" },
+        onBodyFailure: "continue",
+        body: {
+          inline: {
+            id: "wfd_2_body",
+            stepOrder: ["reply"],
+            steps: {
+              reply: {
+                kind: "step",
+                agent: {
+                  systemPrompt: "you are the invited agent",
+                  toolPackagePins: [],
+                  modelSources: [{ provider: "ollama", model: "qwen3:8b" }],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    credentialBindings: [],
+    ...overrides,
+  };
+}
+
 function liveDefinition(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "wfd_live",
@@ -63,65 +96,6 @@ function liveDefinition(overrides: Partial<Record<string, unknown>> = {}) {
     grantRequirements: [],
     credentialBindings: [],
     ...overrides,
-  };
-}
-
-function sectionInertProjection() {
-  return {
-    id: "wfd_section",
-    stepOrder: ["turn"],
-    steps: {
-      turn: {
-        kind: "onTrigger",
-        body: {
-          inline: {
-            id: "wfd_section__turn",
-            stepOrder: ["reply"],
-            steps: {
-              reply: {
-                kind: "step",
-                agent: {
-                  systemPrompt: "you are a workbench host",
-                  toolPackagePins: [],
-                  modelSources: [{ provider: "ollama", model: "qwen3:8b" }],
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    credentialBindings: [],
-  };
-}
-
-function sectionLiveDefinition() {
-  return {
-    id: "wfd_section_live",
-    stepOrder: ["turn"],
-    steps: {
-      turn: {
-        kind: "onTrigger",
-        body: {
-          inline: {
-            id: "wfd_section_live__turn",
-            stepOrder: ["reply"],
-            steps: {
-              reply: {
-                kind: "step",
-                agent: {
-                  systemPrompt: "you are a workbench host",
-                  toolPackagePins: [],
-                  inference: { sources: [{ model: "qwen3:8b" }] },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    grantRequirements: [],
-    credentialBindings: [],
   };
 }
 
@@ -167,36 +141,15 @@ describe("readFoldedBody", () => {
     ).toThrow(/is not a step primitive/);
   });
 
-  test("reads through an onTrigger section to the agent step inside its body", () => {
-    expect(readFoldedBody(sectionInertProjection(), [])).toEqual({
-      systemPrompt: "you are a workbench host",
-      toolPackagePins: [],
-      grantRequirements: [],
-      credentialBindings: [],
-      model: "qwen3:8b",
-    });
-  });
-
-  test("fails loud on a multi-step onTrigger body", () => {
-    const projection = sectionInertProjection();
-    const section = projection.steps.turn as {
-      body: { inline: { stepOrder: string[] } };
-    };
-    section.body.inline.stepOrder = ["reply", "second"];
-    expect(() => readFoldedBody(projection, [])).toThrow(/not single-step/);
-  });
-
   test("rejects a LIVE definition, whose inference chain the projection flattens away", () => {
     expect(() => readFoldedBody(liveDefinition(), [])).toThrow(
       /is not a step primitive/,
     );
   });
-});
 
-describe("readLiveFoldedBody", () => {
-  test("reads through an onTrigger section to the agent step inside its body", () => {
-    expect(readLiveFoldedBody(sectionLiveDefinition())).toEqual({
-      systemPrompt: "you are a workbench host",
+  test("extracts the launch body from a section-shaped (CL-6329 onTrigger) projection", () => {
+    expect(readFoldedBody(sectionProjection(), [])).toEqual({
+      systemPrompt: "you are the invited agent",
       toolPackagePins: [],
       grantRequirements: [],
       credentialBindings: [],
@@ -204,6 +157,52 @@ describe("readLiveFoldedBody", () => {
     });
   });
 
+  test("fails loud when a section's inline body is not single-step", () => {
+    expect(() =>
+      readFoldedBody(
+        sectionProjection({
+          steps: {
+            turn: {
+              kind: "onTrigger",
+              body: {
+                inline: {
+                  id: "wfd_2_body",
+                  stepOrder: ["reply", "second"],
+                  steps: {},
+                },
+              },
+            },
+          },
+        }),
+        [],
+      ),
+    ).toThrow(/body is not single-step/);
+  });
+
+  test("fails loud when a section's inline body step is not a step primitive", () => {
+    expect(() =>
+      readFoldedBody(
+        sectionProjection({
+          steps: {
+            turn: {
+              kind: "onTrigger",
+              body: {
+                inline: {
+                  id: "wfd_2_body",
+                  stepOrder: ["reply"],
+                  steps: { reply: { kind: "not-a-step" } },
+                },
+              },
+            },
+          },
+        }),
+        [],
+      ),
+    ).toThrow(/body step reply is not a step primitive/);
+  });
+});
+
+describe("readLiveFoldedBody", () => {
   test("extracts the launch body from the in-process live definition shape", () => {
     expect(readLiveFoldedBody(liveDefinition())).toEqual({
       systemPrompt: "you are a workbench host",

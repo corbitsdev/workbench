@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@corbits/icons";
 
 export type PluginBrandIcon = {
   readonly path: string;
@@ -13,7 +13,7 @@ export function PluginLogo({
 }: {
   readonly name: string;
   readonly icon?: PluginBrandIcon | undefined;
-  readonly fallbackIcon?: LucideIcon | undefined;
+  readonly fallbackIcon?: Icon | undefined;
 }) {
   return (
     <span

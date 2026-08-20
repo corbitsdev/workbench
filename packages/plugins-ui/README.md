@@ -12,8 +12,8 @@ owns fetching data and passes it down.
   tenant-inheritance-aware resolver — rather than re-deriving connection
   status itself.
 - `PluginConnectPanel` reuses the exact mutations `@corbits/settings-ui`'s
-  own Connections section calls (`testConnectorCredential`,
-  `completeConnectorCredential`, `deleteCredential`, `oauthStartHref`),
+  own Connections section calls (`completeConnectorCredential`,
+  `deleteCredential`, `oauthStartHref`),
   and mounts `@corbits/settings-ui`'s `GranolaWebhookCard` wholesale for
   Granola's key-plus-webhook connect rather than forking its dialog.
 - Built on `@corbits/react-ui` primitives (`Card`, `Badge`, `Dialog`,

@@ -19,7 +19,7 @@
     "@corbits/workflow-catalog": "workspace:*",
     "@workbench/connections": "workspace:*",
     "arktype": "catalog:",
-    "lucide-react": "^1.27.0",
+    "@corbits/icons": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

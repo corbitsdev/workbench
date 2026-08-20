@@ -1,9 +1,17 @@
-// Routines: named automations over workflow runs.
-// Layout matches the shell mock — col2 search + simple list (name, when,
-// ON/OFF); detail is calm (steps, three recent runs, All runs & traces).
-// Creating and editing a routine happens in the canvas column's routine
-// panel now (CL-6125, see shell/routine-panel.tsx) — this page only lists
-// and links to it via `useOpenRoutineInCanvas`.
+// Routines: one global list, every automation across every workbench the
+// signed-in account is a member of (CL-6362). Per-workbench routines
+// chrome (the header's Routines button, the `/run` composer command, and
+// the canvas pane's list/runs views) is gone — this page is the only
+// place to browse and run routines now; a routine's own workbench still
+// shows it "where it was made" via in-room notices and run-now approval
+// cards, which this page never touches.
+//
+// Visibility resolves through the same membership the sidebar's bench
+// switcher uses (`useBench().memberships`, the `/api/me/principals` /
+// CL-6332 principal model), filtered to actual benches with
+// `classifyBenchMembership` — never just the currently selected one, and
+// never creator-scoped: `GET /routines` already lists every routine a
+// bench's own grant covers, regardless of who created it.
 import {
   Badge,
   Button,
@@ -21,53 +29,32 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import type { Workbench } from "@corbits/chat-ui";
 import { listWorkbenches } from "@corbits/chat-ui";
-import { CopyButton, WebhookSecretPanel } from "@corbits/settings-ui";
-import { Clock, Plus, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  classifyBenchMembership,
+  listWorkbenchTenantIds,
+} from "@corbits/bench-ui";
+import { CaretDown, CaretRight, Clock } from "@corbits/icons";
+import { Fragment, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { APIQuery } from "@corbits/api-query";
-import { QueryView } from "@corbits/api-query";
 
-import { useAPIQuery, RunsSchema } from "../api";
-import type { WorkflowRun } from "../api";
+import type { Principal } from "../api";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
-import { tenantKeys } from "../query-client";
-import { cadenceLabel } from "../routine-trigger";
+import { meKeys, tenantKeys } from "../query-client";
+import { cadenceLabel, approximateNextRun } from "../routine-trigger";
 import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
-import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
+import { StageTopBar } from "../shell/stage-top-bar";
 import {
   listRoutineRuns,
   listRoutines,
-  listWorkflowDefinitions,
   routineRunStartedToast,
   runRoutineNow,
   updateRoutine,
-  useTenantQuery,
 } from "../routines-api";
-import type {
-  Routine,
-  RoutineRun,
-  WorkflowDefinitionSummary,
-} from "../routines-api";
-import {
-  getWebhookTrigger,
-  rotateWebhookTriggerSecret,
-  sampleWebhookPayload,
-  webhookTriggerUrl,
-} from "../webhook-triggers-api";
-import type { WebhookTrigger } from "../webhook-triggers-api";
-
-const ROUTINES_PATH_PREFIX = "/routines";
-
-function routineIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${ROUTINES_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(ROUTINES_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
+import type { Routine, RoutineRun } from "../routines-api";
 
 const RUN_STATUS_TONE: Record<string, BadgeTone> = {
   running: "success",
@@ -76,169 +63,14 @@ const RUN_STATUS_TONE: Record<string, BadgeTone> = {
   cancelled: "neutral",
 };
 
-/** One calm sentence under the routine name; deliver-to only when known. */
-function routineDetailSentence(
-  routine: Routine,
-  workbenches: readonly Workbench[],
-): string {
-  const when = cadenceLabel(routine.trigger);
-  const workbench = workbenches.find(
-    (c) => c.id === routine.deliveryWorkbenchId,
-  );
-  if (workbench !== undefined) {
-    return `${when}, delivers to ${workbench.title}.`;
-  }
-  return `${when}.`;
-}
-
-/** Plain-language state for a routine the scheduler has stopped firing —
- * `consecutiveFailures` at the moment it dead-lettered equals the
- * threshold, so it's an honest count, not a guess. `null` for a
- * healthy routine (never rendered). */
-function routinePausedMessage(routine: Routine): string | null {
-  if (routine.deadLetteredAt === null) return null;
-  return `Paused after ${routine.consecutiveFailures} failed attempt${
-    routine.consecutiveFailures === 1 ? "" : "s"
-  }.`;
-}
-
-/** The most recent recorded failure's own error text, for the honest
- * "why" next to `routinePausedMessage`'s "that". `undefined` runs
- * (still loading) and runs with no `error` are skipped. */
-function mostRecentRunError(runs: readonly RoutineRun[]): string | null {
-  const failed = runs.find(
-    (run) => run.error !== undefined && run.error !== null,
-  );
-  return failed?.error ?? null;
-}
-
-function draftedStepsFromInput(
-  input: Record<string, unknown>,
-): readonly { title: string; detail?: string }[] {
-  const raw = input["draftedSteps"];
-  if (!Array.isArray(raw)) return [];
-  const steps: { title: string; detail?: string }[] = [];
-  for (const item of raw) {
-    if (item === null || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    if (typeof record["title"] !== "string") continue;
-    const step: { title: string; detail?: string } = {
-      title: record["title"],
-    };
-    if (typeof record["detail"] === "string") step.detail = record["detail"];
-    steps.push(step);
-  }
-  return steps;
-}
-
-/**
- * The routine detail view's webhook section: hook URL (built from the
- * trigger id, matching `POST /api/webhooks/:triggerId`), status, and a
- * "Rotate secret" action. Secret text only ever appears here right after
- * a rotate — `GET .../webhook-triggers/:id` never returns it, so between
- * rotates the panel shows the URL and payload sample with the secret row
- * masked, exactly like a freshly-loaded page that has never seen it.
- */
-export function WebhookTriggerPanel({
-  webhookTrigger,
-  onRotate,
-}: {
-  readonly webhookTrigger: APIQuery<WebhookTrigger>;
-  readonly onRotate: () => Promise<{ secret: string }>;
-}) {
-  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const [rotateError, setRotateError] = useState<string | null>(null);
-
-  const triggerId =
-    webhookTrigger.kind === "ready" ? webhookTrigger.data.id : null;
-  useEffect(() => {
-    setRotatedSecret(null);
-    setRotateError(null);
-  }, [triggerId]);
-
-  return (
-    <section aria-label="Webhook trigger">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-          Webhook
-        </h3>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={rotating || triggerId === null}
-          onClick={() => {
-            setRotating(true);
-            setRotateError(null);
-            void onRotate()
-              .then(({ secret }) => setRotatedSecret(secret))
-              .catch((cause: unknown) => {
-                setRotateError(
-                  cause instanceof Error ? cause.message : String(cause),
-                );
-              })
-              .finally(() => setRotating(false));
-          }}
-        >
-          <RotateCw /> {rotating ? "Rotating…" : "Rotate secret"}
-        </Button>
-      </div>
-      {rotateError !== null ? (
-        <p className="mb-2 text-xs text-[var(--ui-danger)]" role="alert">
-          {rotateError}
-        </p>
-      ) : null}
-      {webhookTrigger.kind !== "ready" || triggerId === null ? (
-        <p className="text-sm text-[var(--ui-fg-muted)]">
-          Loading webhook details…
-        </p>
-      ) : rotatedSecret !== null ? (
-        <WebhookSecretPanel
-          url={webhookTriggerUrl(triggerId)}
-          secret={rotatedSecret}
-          samplePayload={sampleWebhookPayload()}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Hook URL</span>
-            <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
-              <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
-                {webhookTriggerUrl(triggerId)}
-              </code>
-              <CopyButton
-                value={webhookTriggerUrl(triggerId)}
-                label="Copy hook URL"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Signing secret</span>
-            <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-              Hidden — shown only once, right after creation or a rotate. Rotate
-              to issue (and reveal) a new one; the old secret stops verifying
-              immediately.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Example payload</span>
-            <pre className="overflow-x-auto rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-2 font-mono text-xs whitespace-pre-wrap text-[var(--ui-fg-muted)]">
-              {sampleWebhookPayload()}
-            </pre>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 /**
  * Recent-run rows deep-link to the workbench the routine delivers to — a
- * routine has one `deliveryWorkbenchId`, not a per-run one, so every row in
- * a given table shares the same destination. Rows render as plain data
+ * routine has one `deliveryWorkbenchId`, not a per-run one, so every row
+ * in a given table shares the same destination. Rows render as plain data
  * when there is nowhere to deep-link (`deliveryWorkbenchId` absent or no
- * `onOpenWorkbench` handler wired).
+ * `onOpenWorkbench` handler wired). Exported: the canvas routine editor
+ * panel (`shell/routine-panel.tsx`) reuses this exact rendering for its
+ * own "Recent runs" section — one run table, never two drifting ones.
  */
 export function RunsTable({
   runs,
@@ -327,395 +159,335 @@ export function RunsTable({
   );
 }
 
-export function RoutinesListPage({
-  routines,
-  runHistories,
-  liveRuns: _liveRuns,
-  now = Date.now(),
-  definitions,
-  workbenches,
-  selectedId,
-  onSelect: _onSelect,
-  webhookTrigger,
-  onRotateWebhookSecret,
+/** Every bench the signed-in account belongs to — not just the currently
+ * selected one — the same classification the bench switcher uses so a
+ * workbench child tenancy or a raw-id row never masquerades as a bench a
+ * person can browse routines in. */
+function useMemberBenches(): {
+  readonly kind: "loading" | "ready";
+  readonly benches: readonly { tenantId: string; tenantName: string }[];
+} {
+  const { memberships } = useBench();
+  const allMemberships: readonly Principal[] =
+    memberships.kind === "ready" ? memberships.data.data : [];
+  const tenantIds = useMemo(
+    () => allMemberships.map((m) => m.tenantId),
+    [allMemberships],
+  );
+  const workbenchTenancyKinds = useQuery({
+    queryKey: meKeys.workbenchTenancyKinds(tenantIds),
+    queryFn: () => listWorkbenchTenantIds(tenantIds),
+    enabled: tenantIds.length > 0,
+  });
+  const benches = useMemo(
+    () =>
+      allMemberships
+        .filter(
+          (m) =>
+            classifyBenchMembership(
+              m,
+              workbenchTenancyKinds.data ?? new Set(),
+            ) === "bench",
+        )
+        .map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
+    [allMemberships, workbenchTenancyKinds.data],
+  );
+  if (memberships.kind !== "ready") return { kind: "loading", benches: [] };
+  return { kind: "ready", benches };
+}
+
+export type GlobalRoutineRow = {
+  readonly routine: Routine;
+  readonly tenantId: string;
+  readonly tenantName: string;
+  readonly deliveryWorkbenchName: string | null;
+  readonly runs: readonly RoutineRun[];
+};
+
+type BenchRoutinesData = {
+  readonly routines: readonly Routine[];
+  readonly workbenchNames: ReadonlyMap<string, string>;
+  readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
+};
+
+async function fetchBenchRoutinesData(
+  tenantId: string,
+): Promise<BenchRoutinesData> {
+  const [routines, workbenches] = await Promise.all([
+    listRoutines(tenantId),
+    listWorkbenches(tenantId, "workbench"),
+  ]);
+  const runHistoryEntries = await Promise.all(
+    routines.map(
+      async (r) => [r.id, await listRoutineRuns(tenantId, r.id)] as const,
+    ),
+  );
+  return {
+    routines,
+    workbenchNames: new Map(workbenches.map((w) => [w.id, w.title])),
+    runHistories: new Map(runHistoryEntries),
+  };
+}
+
+/** Every routine across every bench the account belongs to, flattened
+ * into one list with its own workbench attribution — the aggregation
+ * `GET /routines` doesn't do server-side (it's tenant-scoped, per bench),
+ * done the cheapest correct client-side way: one fetch per bench, run in
+ * parallel. */
+function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
+  const { kind: benchesKind, benches } = useMemberBenches();
+  const results = useQueries({
+    queries: benches.map((bench) => ({
+      queryKey: [...tenantKeys.routines(bench.tenantId), "global-page"],
+      queryFn: () => fetchBenchRoutinesData(bench.tenantId),
+    })),
+  });
+
+  if (benchesKind === "loading") return { kind: "loading" };
+  if (results.some((r) => r.isLoading)) return { kind: "loading" };
+  const failed = results.find((r) => r.isError);
+  if (failed !== undefined) {
+    return {
+      kind: "error",
+      message:
+        failed.error instanceof Error
+          ? failed.error.message
+          : "Couldn't load routines.",
+      retry: () => {
+        for (const result of results) void result.refetch();
+      },
+    };
+  }
+
+  const rows: GlobalRoutineRow[] = [];
+  benches.forEach((bench, index) => {
+    const data = results[index]?.data;
+    if (data === undefined) return;
+    for (const routine of data.routines) {
+      rows.push({
+        routine,
+        tenantId: bench.tenantId,
+        tenantName: bench.tenantName,
+        deliveryWorkbenchName:
+          routine.deliveryWorkbenchId !== null
+            ? (data.workbenchNames.get(routine.deliveryWorkbenchId) ?? null)
+            : null,
+        runs: data.runHistories.get(routine.id) ?? [],
+      });
+    }
+  });
+  return { kind: "ready", data: rows };
+}
+
+/** Idle/On/Off/Paused/Running/Failed — every row's own running-or-not
+ * state at a glance, never a separate detail hop to find out. */
+export function routineStateChip(row: GlobalRoutineRow): {
+  readonly label: string;
+  readonly tone: BadgeTone;
+} {
+  if (!row.routine.enabled) return { label: "Off", tone: "neutral" };
+  if (row.routine.deadLetteredAt !== null) {
+    return { label: "Paused", tone: "danger" };
+  }
+  const latest = row.runs[0];
+  if (latest === undefined) return { label: "Idle", tone: "neutral" };
+  const status = latest.run?.status;
+  if (status === "running") return { label: "Running now", tone: "success" };
+  if (
+    (latest.error !== undefined && latest.error !== null) ||
+    status === "failed"
+  ) {
+    return { label: "Last run failed", tone: "danger" };
+  }
+  return { label: "On", tone: "success" };
+}
+
+/** "Daily at 09:00 UTC, next in 3 hours" — consumer language throughout,
+ * never a raw cron string. `approximateNextRun` and `cadenceLabel` are
+ * this codebase's one source for either half. */
+export function scheduleSummary(row: GlobalRoutineRow, now: number): string {
+  const label = cadenceLabel(row.routine.trigger);
+  const next = approximateNextRun(row.routine.trigger, new Date(now));
+  if (next === null) return label;
+  return `${label} · next ${formatRelativeTime(next.toISOString(), now)}`;
+}
+
+function RoutineRowDetail({
+  row,
+  now,
+  onOpenWorkbench,
+}: {
+  readonly row: GlobalRoutineRow;
+  readonly now: number;
+  readonly onOpenWorkbench: (workbenchId: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-4 py-3">
+      {row.deliveryWorkbenchName !== null ? (
+        <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+          Run updates post into {row.deliveryWorkbenchName}.
+        </p>
+      ) : null}
+      <RunsTable
+        runs={row.runs.slice(0, 3)}
+        now={now}
+        emptyTitle="No runs yet"
+        emptyDescription="This routine has not fired yet — manually or on a schedule."
+        deliveryWorkbenchId={row.routine.deliveryWorkbenchId}
+        onOpenWorkbench={onOpenWorkbench}
+      />
+    </div>
+  );
+}
+
+export function GlobalRoutinesList({
+  rows,
+  now,
+  expandedId,
+  onToggleExpanded,
   onToggleEnabled,
   onRunNow,
-  onOpenRuns,
+  onEdit,
   onOpenWorkbench,
 }: {
-  readonly routines: APIQuery<readonly Routine[]>;
-  readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
-  readonly liveRuns: APIQuery<readonly WorkflowRun[]>;
-  readonly now?: number;
-  readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly workbenches: readonly Workbench[];
-  readonly selectedId: string | null;
-  readonly onSelect: (routineId: string | null) => void;
-  readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
-  readonly onRotateWebhookSecret: () => Promise<{ secret: string }>;
-  readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
-  readonly onRunNow: (routine: Routine) => Promise<void>;
-  readonly onOpenRuns: () => void;
+  readonly rows: readonly GlobalRoutineRow[];
+  readonly now: number;
+  readonly expandedId: string | null;
+  readonly onToggleExpanded: (routineId: string) => void;
+  readonly onToggleEnabled: (row: GlobalRoutineRow, enabled: boolean) => void;
+  readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
+  readonly onEdit: (row: GlobalRoutineRow) => void;
   readonly onOpenWorkbench: (workbenchId: string) => void;
 }) {
-  const openRoutine = useOpenRoutineInCanvas();
-
-  const selected =
-    routines.kind === "ready" && selectedId !== null
-      ? (routines.data.find((r) => r.id === selectedId) ?? null)
-      : null;
-  const selectedRuns =
-    selectedId !== null ? (runHistories.get(selectedId) ?? []) : [];
-  const recentRuns = selectedRuns.slice(0, 3);
-  const steps = selected !== null ? draftedStepsFromInput(selected.input) : [];
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        title={selected === null ? "Routines" : selected.name}
-        subtitle={
-          selected === null
-            ? routines.kind === "ready"
-              ? `${routines.data.length} automations`
-              : null
-            : routineDetailSentence(selected, workbenches)
-        }
-        actions={
-          selected === null ? (
-            <Button size="sm" onClick={() => openRoutine({ routineId: null })}>
-              <Plus /> New routine
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openRoutine({ routineId: null })}
-              >
-                New routine
-              </Button>
-              <Switch
-                checked={selected.enabled}
-                label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
-                onCheckedChange={(enabled) =>
-                  onToggleEnabled(selected, enabled)
-                }
-              />
-              <RunNowButton
-                variant="outline"
-                size="sm"
-                onRun={() => onRunNow(selected)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => openRoutine({ routineId: selected.id })}
-              >
-                Edit
-              </Button>
-            </>
-          )
-        }
+  if (rows.length === 0) {
+    return (
+      <RichEmptyState
+        icon={<Clock />}
+        title="No routines yet"
+        description="Create one from a workflow or a prompt, in any workbench."
       />
-      {selected !== null && routinePausedMessage(selected) !== null ? (
-        <div
-          className="stage-content mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
-          role="alert"
-        >
-          <p className="m-0 font-medium text-destructive">
-            {routinePausedMessage(selected)}
-          </p>
-          {mostRecentRunError(recentRuns) !== null ? (
-            <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
-              {mostRecentRunError(recentRuns)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* List lives in shell col2; stage is detail only. */}
-      <div className="stage-content flex min-h-0 flex-1 flex-col">
-        {selected === null ? (
-          <div className="flex flex-1 items-center justify-center p-6">
-            {routines.kind === "ready" && routines.data.length === 0 ? (
-              <RichEmptyState
-                icon={<Clock />}
-                title="No routines yet"
-                description="Create one from a workflow or a prompt."
-              />
-            ) : (
-              <EmptyState
-                icon={<Clock />}
-                title="Select a routine"
-                description="Pick a routine from the sidebar to see its steps and recent runs."
-              />
-            )}
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <section className="border-b border-[var(--ui-border)] px-4 py-3">
-              <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                Steps
-              </h3>
-              {steps.length === 0 ? (
-                <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
-                  Runs workflow{" "}
-                  <span className="font-medium text-[var(--ui-fg)]">
-                    {definitions.find((d) => d.id === selected.definitionId)
-                      ?.name ?? "selected agent"}
-                  </span>
-                  .
-                </p>
-              ) : (
-                <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
-                  {steps.map((step, index) => (
-                    <li key={`${step.title}-${index}`}>
-                      <span className="font-medium">{step.title}</span>
-                      {step.detail !== undefined ? (
-                        <span className="text-[var(--ui-fg-muted)]">
-                          {" — "}
-                          {step.detail}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-
-            {selected.trigger !== null &&
-            selected.trigger.kind === "webhook" ? (
-              <section className="border-b border-[var(--ui-border)] px-4 py-3">
-                <WebhookTriggerPanel
-                  webhookTrigger={webhookTrigger ?? { kind: "loading" }}
-                  onRotate={onRotateWebhookSecret}
-                />
-              </section>
-            ) : null}
-
-            <section className="px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                  Recent runs
-                </h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onOpenRuns}
-                >
-                  All runs & traces →
-                </Button>
-              </div>
-              <RunsTable
-                runs={recentRuns}
-                now={now}
-                emptyTitle="No runs yet"
-                emptyDescription="This routine has not fired yet — manually or on a schedule."
-                deliveryWorkbenchId={selected.deliveryWorkbenchId}
-                onOpenWorkbench={onOpenWorkbench}
-              />
-            </section>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function RoutineDetailPage({
-  routine,
-  runs,
-  onBack,
-  now = Date.now(),
-  definitions = [],
-  workbenches = [],
-  webhookTrigger = null,
-  onRotateWebhookSecret,
-  onOpenRuns,
-  onOpenWorkbench,
-}: {
-  readonly routine: APIQuery<Routine>;
-  readonly runs: APIQuery<readonly RoutineRun[]>;
-  readonly onBack: () => void;
-  readonly now?: number;
-  readonly definitions?: readonly WorkflowDefinitionSummary[];
-  readonly workbenches?: readonly Workbench[];
-  readonly webhookTrigger?: APIQuery<WebhookTrigger> | null;
-  readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
-  readonly onOpenRuns: () => void;
-  readonly onOpenWorkbench: (workbenchId: string) => void;
-}) {
-  const openRoutine = useOpenRoutineInCanvas();
-  const deliveryWorkbenchId =
-    routine.kind === "ready" ? routine.data.deliveryWorkbenchId : null;
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        title={
-          <StageCrumbs
-            crumbs={[
-              { label: "Routines", onSelect: onBack },
-              {
-                label: routine.kind === "ready" ? routine.data.name : "Routine",
-              },
-            ]}
-          />
-        }
-        actions={
-          routine.kind === "ready" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                openRoutine({
-                  routineId: routine.kind === "ready" ? routine.data.id : null,
-                })
-              }
-            >
-              Edit
-            </Button>
-          ) : null
-        }
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <QueryView query={routine} label="this routine" skeleton="detail">
-          {(data) => {
-            const steps = draftedStepsFromInput(data.input);
-            return (
-              <div className="flex flex-col gap-4">
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                  <dt className="text-[var(--ui-fg-muted)]">Cadence</dt>
-                  <dd>{cadenceLabel(data.trigger)}</dd>
-                  <dt className="text-[var(--ui-fg-muted)]">Status</dt>
-                  <dd>
-                    <Badge tone={data.enabled ? "success" : "neutral"}>
-                      {data.enabled ? "On" : "Off"}
-                    </Badge>
-                  </dd>
-                  {data.deliveryWorkbenchId !== null ? (
-                    <>
-                      <dt className="text-[var(--ui-fg-muted)]">Delivers to</dt>
-                      <dd>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-auto p-0 font-normal"
-                          onClick={() =>
-                            onOpenWorkbench(data.deliveryWorkbenchId as string)
-                          }
-                        >
-                          {workbenches.find(
-                            (c) => c.id === data.deliveryWorkbenchId,
-                          )?.title ?? "Open workbench"}
-                        </Button>
-                      </dd>
-                    </>
-                  ) : null}
-                </dl>
-                {routinePausedMessage(data) !== null ? (
-                  <div
-                    className="flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
-                    role="alert"
-                  >
-                    <p className="m-0 font-medium text-destructive">
-                      {routinePausedMessage(data)}
-                    </p>
-                    {runs.kind === "ready" &&
-                    mostRecentRunError(runs.data) !== null ? (
-                      <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
-                        {mostRecentRunError(runs.data)}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-                <section>
-                  <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                    Steps
-                  </h3>
-                  {steps.length === 0 ? (
-                    <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
-                      Runs workflow{" "}
-                      {definitions.find((d) => d.id === data.definitionId)
-                        ?.name ?? "selected agent"}
-                      .
-                    </p>
-                  ) : (
-                    <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
-                      {steps.map((step, index) => (
-                        <li key={`${step.title}-${index}`}>
-                          <span className="font-medium">{step.title}</span>
-                          {step.detail !== undefined ? (
-                            <span className="text-[var(--ui-fg-muted)]">
-                              {" — "}
-                              {step.detail}
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </section>
-                {data.trigger !== null &&
-                data.trigger.kind === "webhook" &&
-                onRotateWebhookSecret !== undefined ? (
-                  <WebhookTriggerPanel
-                    webhookTrigger={webhookTrigger ?? { kind: "loading" }}
-                    onRotate={onRotateWebhookSecret}
-                  />
-                ) : null}
-              </div>
-            );
-          }}
-        </QueryView>
-
-        <section className="mt-6" aria-label="Run history">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-              Recent runs
-            </h3>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onOpenRuns}
-            >
-              All runs & traces →
-            </Button>
-          </div>
-          <QueryView
-            query={runs}
-            label="this routine's run history"
-            skeleton="rows"
-          >
-            {(items) => (
-              <RunsTable
-                runs={items.slice(0, 3)}
-                now={now}
-                emptyTitle="No runs yet"
-                emptyDescription="This routine has not fired yet — manually or on a schedule."
-                deliveryWorkbenchId={deliveryWorkbenchId}
-                onOpenWorkbench={onOpenWorkbench}
-              />
-            )}
-          </QueryView>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function routineRunIds(
-  runHistories: ReadonlyMap<string, readonly RoutineRun[]>,
-): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const runs of runHistories.values()) {
-    for (const run of runs) ids.add(run.runId);
+    );
   }
-  return ids;
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Routine</TableHead>
+          <TableHead>Delivers to</TableHead>
+          <TableHead>Schedule</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Enabled</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => {
+          const chip = routineStateChip(row);
+          const expanded = expandedId === row.routine.id;
+          return (
+            <Fragment key={row.routine.id}>
+              <TableRow>
+                <TableCell>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-left"
+                    aria-expanded={expanded}
+                    onClick={() => onToggleExpanded(row.routine.id)}
+                  >
+                    {expanded ? (
+                      <CaretDown className="size-3.5 shrink-0" />
+                    ) : (
+                      <CaretRight className="size-3.5 shrink-0" />
+                    )}
+                    <span className="flex flex-col">
+                      <span className="text-sm font-medium">
+                        {row.routine.name}
+                      </span>
+                      <span className="text-xs text-[var(--ui-fg-muted)]">
+                        {row.tenantName}
+                      </span>
+                    </span>
+                  </button>
+                </TableCell>
+                <TableCell>
+                  {row.routine.deliveryWorkbenchId !== null &&
+                  row.deliveryWorkbenchName !== null ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 font-normal"
+                      onClick={() =>
+                        onOpenWorkbench(
+                          row.routine.deliveryWorkbenchId as string,
+                        )
+                      }
+                    >
+                      {row.deliveryWorkbenchName}
+                    </Button>
+                  ) : (
+                    <span className="text-sm text-[var(--ui-fg-muted)]">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm">{scheduleSummary(row, now)}</span>
+                </TableCell>
+                <TableCell>
+                  <Badge tone={chip.tone}>{chip.label}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={row.routine.enabled}
+                    label={`${row.routine.enabled ? "Pause" : "Resume"} ${row.routine.name}`}
+                    onCheckedChange={(enabled) => onToggleEnabled(row, enabled)}
+                  />
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <RunNowButton
+                      variant="outline"
+                      size="sm"
+                      onRun={() => onRunNow(row)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(row)}
+                    >
+                      Edit
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+              {expanded ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="p-0">
+                    <RoutineRowDetail
+                      row={row}
+                      now={now}
+                      onOpenWorkbench={onOpenWorkbench}
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </Fragment>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+const ROUTINES_PATH_PREFIX = "/routines";
+
+/** A deep link into one routine (the context menu's "Open routine",
+ * `/routines/:id` bookmarks) still lands here and expands that row — the
+ * page itself is one flat list now, never a route per routine. */
+function routineIdFromPath(path: string): string | null {
+  if (!path.startsWith(`${ROUTINES_PATH_PREFIX}/`)) return null;
+  const rest = path.slice(ROUTINES_PATH_PREFIX.length + 1);
+  return rest === "" ? null : decodeURIComponent(rest);
 }
 
 export function RoutinesRoute({
@@ -725,220 +497,93 @@ export function RoutinesRoute({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  const { selectedTenantId } = useBench();
+  const routinesQuery = useGlobalRoutines();
   const queryClient = useQueryClient();
-  const allRuns = useAPIQuery("/api/me/workflows/runs", RunsSchema);
-  const tenantId = selectedTenantId;
+  const openRoutine = useOpenRoutineInCanvas();
+  const { selectTenant } = useBench();
+  const deepLinkedId = routineIdFromPath(path);
+  const [expandedId, setExpandedId] = useState<string | null>(deepLinkedId);
+  const now = Date.now();
 
-  function invalidateRoutines() {
-    if (tenantId === null) return;
+  const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
+
+  function invalidate(tenantId: string) {
     void queryClient.invalidateQueries({
-      queryKey: tenantKeys.routines(tenantId),
-    });
-    void queryClient.invalidateQueries({
-      queryKey: tenantKeys.routineRunHistories(tenantId),
+      queryKey: [...tenantKeys.routines(tenantId), "global-page"],
     });
   }
 
-  const routines = useTenantQuery(
-    tenantId === null
-      ? (["tenant", "none", "routines"] as const)
-      : tenantKeys.routines(tenantId),
-    tenantId !== null,
-    () => listRoutines(tenantId ?? ""),
-  );
-  const definitionsQuery = useTenantQuery(
-    tenantId === null
-      ? (["tenant", "none", "definitions"] as const)
-      : tenantKeys.definitions(tenantId),
-    tenantId !== null,
-    () => listWorkflowDefinitions(tenantId ?? ""),
-  );
-  const definitions =
-    definitionsQuery.kind === "ready" ? definitionsQuery.data : [];
-
-  const workbenchesQuery = useTenantQuery(
-    tenantId === null
-      ? tenantKeys.workbenches("none", "workbench")
-      : tenantKeys.workbenches(tenantId, "workbench"),
-    tenantId !== null,
-    () => listWorkbenches(tenantId ?? "", "workbench"),
-  );
-  const workbenches =
-    workbenchesQuery.kind === "ready" ? workbenchesQuery.data : [];
-
-  const routineIds =
-    routines.kind === "ready" ? routines.data.map((r) => r.id) : [];
-  const runHistoriesQuery = useTenantQuery<
-    ReadonlyMap<string, readonly RoutineRun[]>
-  >(
-    tenantId === null
-      ? (["tenant", "none", "routine-run-histories"] as const)
-      : [...tenantKeys.routineRunHistories(tenantId), routineIds.join(",")],
-    tenantId !== null && routineIds.length > 0,
-    async () => {
-      const entries = await Promise.all(
-        routineIds.map(
-          async (id) =>
-            [id, await listRoutineRuns(tenantId ?? "", id)] as const,
-        ),
-      );
-      return new Map(entries);
-    },
-  );
-  const runHistories =
-    runHistoriesQuery.kind === "ready" ? runHistoriesQuery.data : new Map();
-
-  const liveRuns: APIQuery<readonly WorkflowRun[]> =
-    allRuns.kind === "ready"
-      ? {
-          kind: "ready",
-          data: allRuns.data.data.filter((run) =>
-            routineRunIds(runHistories).has(run.id),
-          ),
-        }
-      : allRuns;
-
-  const openRoutineId = routineIdFromPath(path);
-
-  // Mock master-detail: bare /routines with a non-empty list opens the first.
-  useEffect(() => {
-    if (openRoutineId !== null) return;
-    if (routines.kind !== "ready" || routines.data.length === 0) return;
-    const first = routines.data[0];
-    if (first === undefined) return;
-    navigate(`${ROUTINES_PATH_PREFIX}/${encodeURIComponent(first.id)}`);
-  }, [openRoutineId, routines, navigate]);
-
-  // Mobile full-page detail when deep-linked; desktop uses the split pane.
-  const isNarrow =
-    typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 767px)").matches;
-
-  const detailRoutine: APIQuery<Routine> = useMemo(() => {
-    if (openRoutineId === null || tenantId === null) {
-      return { kind: "loading" };
-    }
-    if (routines.kind === "loading") return { kind: "loading" };
-    if (routines.kind !== "ready") return routines;
-    const found = routines.data.find((r) => r.id === openRoutineId);
-    if (found === undefined) {
-      return {
-        kind: "error",
-        message: "Routine not found",
-        retry: invalidateRoutines,
-      };
-    }
-    return { kind: "ready", data: found };
-  }, [openRoutineId, tenantId, routines]);
-
-  const detailRuns = useTenantQuery(
-    tenantId === null || openRoutineId === null
-      ? (["tenant", "none", "routines", "none", "runs"] as const)
-      : tenantKeys.routineRuns(tenantId, openRoutineId),
-    tenantId !== null && openRoutineId !== null,
-    () => listRoutineRuns(tenantId ?? "", openRoutineId ?? ""),
-  );
-
-  // Fetched once per selected routine, not per render of the webhook panel:
-  // `GET .../webhook-triggers/:id` never returns the secret (see
-  // webhook-triggers-api.ts), so this only ever supplies the URL/status
-  // side of the panel — the secret comes from create/rotate responses,
-  // held in the panel's own local state.
-  const selectedWebhookTriggerId =
-    detailRoutine.kind === "ready" &&
-    detailRoutine.data.trigger !== null &&
-    detailRoutine.data.trigger.kind === "webhook"
-      ? detailRoutine.data.trigger.webhookTriggerId
-      : null;
-  const webhookTriggerQuery = useTenantQuery<WebhookTrigger>(
-    tenantId === null || selectedWebhookTriggerId === null
-      ? (["tenant", "none", "webhook-trigger", "none"] as const)
-      : ([
-          "tenant",
-          tenantId,
-          "webhook-trigger",
-          selectedWebhookTriggerId,
-        ] as const),
-    tenantId !== null && selectedWebhookTriggerId !== null,
-    () => getWebhookTrigger(tenantId ?? "", selectedWebhookTriggerId ?? ""),
-  );
-
-  const onRotateWebhookSecret = async () => {
-    if (tenantId === null || selectedWebhookTriggerId === null) {
-      throw new Error("No webhook trigger to rotate");
-    }
-    const rotated = await rotateWebhookTriggerSecret(
-      tenantId,
-      selectedWebhookTriggerId,
-    );
-    void queryClient.invalidateQueries({
-      queryKey: [
-        "tenant",
-        tenantId,
-        "webhook-trigger",
-        selectedWebhookTriggerId,
-      ],
-    });
-    return { secret: rotated.secret };
-  };
-
-  if (openRoutineId !== null && isNarrow) {
-    return (
-      <RoutineDetailPage
-        routine={detailRoutine}
-        runs={detailRuns}
-        definitions={definitions}
-        workbenches={workbenches}
-        webhookTrigger={
-          selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
-        }
-        onRotateWebhookSecret={onRotateWebhookSecret}
-        onBack={() => navigate(ROUTINES_PATH_PREFIX)}
-        onOpenRuns={() => navigate("/insights/runs")}
-        onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
-      />
-    );
+  function openWorkbench(tenantId: string, workbenchId: string) {
+    selectTenant(tenantId);
+    navigate(workbenchPath(workbenchId));
   }
 
   return (
-    <RoutinesListPage
-      routines={
-        routines.kind === "ready"
-          ? { kind: "ready", data: routines.data }
-          : routines
-      }
-      runHistories={runHistories}
-      liveRuns={liveRuns}
-      definitions={definitions}
-      workbenches={workbenches}
-      selectedId={openRoutineId}
-      onSelect={(id) =>
-        navigate(
-          id === null
-            ? ROUTINES_PATH_PREFIX
-            : `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(id)}`,
-        )
-      }
-      webhookTrigger={
-        selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
-      }
-      onRotateWebhookSecret={onRotateWebhookSecret}
-      onToggleEnabled={(routine, enabled) => {
-        if (tenantId === null) return;
-        void updateRoutine(tenantId, routine.id, { enabled }).then(
-          invalidateRoutines,
-        );
-      }}
-      onRunNow={async (routine) => {
-        if (tenantId === null)
-          throw new Error("No workbench to run this on yet");
-        await runRoutineNow(tenantId, routine.id);
-        invalidateRoutines();
-        toast(routineRunStartedToast(routine.name));
-      }}
-      onOpenRuns={() => navigate("/insights/runs")}
-      onOpenWorkbench={(workbenchId) => navigate(workbenchPath(workbenchId))}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title="Routines"
+        subtitle={
+          routinesQuery.kind === "ready"
+            ? `${rows.length} automation${rows.length === 1 ? "" : "s"} across your workbenches`
+            : null
+        }
+        actions={
+          <Button size="sm" onClick={() => openRoutine({ routineId: null })}>
+            New routine
+          </Button>
+        }
+      />
+      <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {routinesQuery.kind === "loading" ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState icon={<Clock />} title="Loading routines…" />
+          </div>
+        ) : routinesQuery.kind === "error" ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <RichEmptyState
+              icon={<Clock />}
+              title="Couldn't load routines"
+              description={routinesQuery.message}
+            />
+          </div>
+        ) : (
+          <GlobalRoutinesList
+            rows={rows}
+            now={now}
+            expandedId={expandedId}
+            onToggleExpanded={(routineId) =>
+              setExpandedId((current) =>
+                current === routineId ? null : routineId,
+              )
+            }
+            onToggleEnabled={(row, enabled) => {
+              void updateRoutine(row.tenantId, row.routine.id, {
+                enabled,
+              }).then(() => invalidate(row.tenantId));
+            }}
+            onRunNow={async (row) => {
+              await runRoutineNow(row.tenantId, row.routine.id);
+              invalidate(row.tenantId);
+              toast(routineRunStartedToast(row.routine.name));
+            }}
+            onEdit={(row) =>
+              openRoutine({
+                routineId: row.routine.id,
+                ...(row.routine.deliveryWorkbenchId !== null
+                  ? { workbenchId: row.routine.deliveryWorkbenchId }
+                  : {}),
+              })
+            }
+            onOpenWorkbench={(workbenchId) => {
+              const row = rows.find(
+                (r) => r.routine.deliveryWorkbenchId === workbenchId,
+              );
+              if (row === undefined) return;
+              openWorkbench(row.tenantId, workbenchId);
+            }}
+          />
+        )}
+      </div>
+    </div>
   );
 }

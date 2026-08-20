@@ -108,8 +108,8 @@ describe("Files deep link", () => {
 
     expect(container.innerHTML).toContain("Q3 report");
     expect(container.innerHTML).toContain("Growth is up");
-    const selectedCard = container.querySelector('[aria-current="true"]');
-    expect(selectedCard?.textContent).toContain("Q3 report");
+    const selectedRow = container.querySelector('[data-state="selected"]');
+    expect(selectedRow?.textContent).toContain("Q3 report");
   });
 
   test("the preview shows a workflow-run provenance link for a workflow-produced artifact", async () => {

@@ -7,7 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { Loader2, Paperclip, Send, X } from "lucide-react";
+import { CircleNotch, Paperclip, PaperPlaneRight, X } from "@corbits/icons";
 import {
   forwardRef,
   useImperativeHandle,
@@ -239,7 +239,7 @@ export function attachmentValidationMessage(
   }
 }
 
-/** Send/Enter stay blocked while a send or file read is in flight. */
+/** PaperPlaneRight/Enter stay blocked while a send or file read is in flight. */
 export function canSendComposerAction(
   text: string,
   attachments: readonly ComposerAttachment[],
@@ -321,8 +321,6 @@ export const Composer = forwardRef<
     readonly onInviteAgent: () => void;
     /** `/agents` — opens this workbench's settings, Agents section. */
     readonly onOpenAgentsSettings: () => void;
-    /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
-    readonly onOpenRoutines: () => void;
     /** `/routine` — opens the New Routine panel with this workbench
      * pre-bound as its destination. */
     readonly onCreateRoutineInSpace: () => void;
@@ -338,7 +336,6 @@ export const Composer = forwardRef<
     onSend,
     onInviteAgent,
     onOpenAgentsSettings,
-    onOpenRoutines,
     onCreateRoutineInSpace,
     placeholder = CHAT_STRINGS.composerPlaceholder,
   },
@@ -445,9 +442,6 @@ export const Composer = forwardRef<
         return;
       case "agents":
         onOpenAgentsSettings();
-        return;
-      case "run":
-        onOpenRoutines();
         return;
       case "routine":
         onCreateRoutineInSpace();
@@ -856,12 +850,12 @@ export const Composer = forwardRef<
           }
         >
           {sendVisualState === "sending" ? (
-            <Loader2
+            <CircleNotch
               className="chat-composer-send-spinner"
               aria-hidden="true"
             />
           ) : (
-            <Send aria-hidden="true" />
+            <PaperPlaneRight aria-hidden="true" />
           )}
         </Button>
       </div>

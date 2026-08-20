@@ -97,6 +97,21 @@ describe("QueryView loading skeletons", () => {
     expect(markup).toContain("query-skeleton-detail");
     expect(markup).toContain("query-skeleton-detail-header");
   });
+
+  test("loadingContent overrides the skeleton entirely for a page-level wait", () => {
+    const markup = renderToStaticMarkup(
+      <QueryView<string>
+        query={{ kind: "loading" }}
+        label="item"
+        loadingContent={<div className="my-warm-loader">Hang tight…</div>}
+      >
+        {(data) => <div>{data}</div>}
+      </QueryView>,
+    );
+    expect(markup).toContain("my-warm-loader");
+    expect(markup).toContain("Hang tight…");
+    expect(markup).not.toContain("query-skeleton");
+  });
 });
 
 describe("SignedOutNotice", () => {

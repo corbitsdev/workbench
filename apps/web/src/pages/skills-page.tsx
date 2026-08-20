@@ -19,10 +19,9 @@ import {
   Badge,
   Button,
   EmptyState,
-  Input,
+  LibrarySearchInput,
   RichEmptyState,
   Section,
-  SidebarItemRow,
   Table,
   TableBody,
   TableCell,
@@ -31,9 +30,11 @@ import {
   TableRow,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import { Plus, Search, Sparkles } from "lucide-react";
+import { Lightning, Plus } from "@corbits/icons";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 
+import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import {
   createSkill,
@@ -114,7 +115,7 @@ function SkillDetailView({
   }, [reload]);
 
   if (state.status === "loading") {
-    return <p className="text-sm text-muted-foreground">Loading skill…</p>;
+    return <WorkbenchLoadingState title="Loading skill…" />;
   }
   if (state.status === "error") {
     return (
@@ -346,7 +347,7 @@ export function SkillsPage({
   }
 
   if (state.status === "loading") {
-    return <p className="text-sm text-muted-foreground">Loading skills…</p>;
+    return <WorkbenchLoadingState title="Loading skills…" />;
   }
 
   if (state.status === "error") {
@@ -382,7 +383,7 @@ export function SkillsPage({
     return (
       <div className="flex flex-col gap-4">
         <RichEmptyState
-          icon={<Sparkles />}
+          icon={<Lightning />}
           title="No skills yet"
           description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin. Write one in this workbench and publish it into the registry."
           actions={[
@@ -410,16 +411,12 @@ export function SkillsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <label className="shell-panel-search">
-          <Search aria-hidden="true" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search…"
-            aria-label="Search skills"
-          />
-        </label>
+      <div className="page-toolbar">
+        <LibrarySearchInput
+          label="Search skills"
+          value={query}
+          onChange={setQuery}
+        />
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus /> New skill
         </Button>
@@ -427,36 +424,40 @@ export function SkillsPage({
 
       {filtered.length === 0 ? (
         <EmptyState
-          icon={<Sparkles />}
+          icon={<Lightning />}
           title="No matching skills"
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (
-        <div className="flex flex-col gap-1">
-          {filtered.map((skill) => (
-            <SidebarItemRow
-              key={skill.assetId}
-              leading={<Sparkles />}
-              name={
-                <span className="panel-row-copy">
-                  <strong>{skill.name}</strong>
-                  <span>{skill.description}</span>
-                </span>
-              }
-              meta={
-                <span
-                  className={
-                    skill.scope === "tenant"
-                      ? "panel-status is-ok"
-                      : "panel-status is-muted"
-                  }
+        <div className="px-4 pb-5 sm:px-7">
+          <Table aria-label="Skills">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Access</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((skill) => (
+                <TableRow
+                  key={skill.assetId}
+                  className="cursor-pointer"
+                  {...rowActivationProps(() => select(skill.name))}
                 >
-                  {skill.scope === "tenant" ? "Shared" : "Private"}
-                </span>
-              }
-              onSelect={() => select(skill.name)}
-            />
-          ))}
+                  <TableCell className="font-medium">{skill.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {skill.description}
+                  </TableCell>
+                  <TableCell>
+                    <Badge tone={skill.scope === "tenant" ? "info" : "neutral"}>
+                      {skill.scope === "tenant" ? "Shared" : "Private"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
       {createDialog}

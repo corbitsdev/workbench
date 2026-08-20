@@ -14,6 +14,7 @@ import {
   Button,
   PageShell,
   RichEmptyState,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Bot } from "lucide-react";
+import { Robot } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -36,6 +37,7 @@ import {
 } from "../agents-api";
 import { purposeAgentDefinitions } from "../agents-directory";
 import { useBench } from "../bench-context";
+import { rowActivationProps } from "../activatable-row";
 import { useBenchActivity } from "../shell/bench-activity";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
@@ -124,7 +126,9 @@ function AgentDetailPanel({
         <div className="flex items-center justify-between gap-2">
           <dt className="text-muted-foreground">Model</dt>
           <dd>
-            {capabilities.status === "loading" ? "Loading…" : null}
+            {capabilities.status === "loading" ? (
+              <Skeleton className="h-4 w-16" />
+            ) : null}
             {capabilities.status === "error" ? (
               <span className="text-danger-foreground">
                 {capabilities.message}
@@ -186,7 +190,7 @@ export function AgentsPage({
               onClick={() => onCreateOpenChange(true)}
               aria-label="Create an agent"
             >
-              <Bot /> Create
+              <Robot /> Create
             </Button>
           ) : null
         }
@@ -196,7 +200,7 @@ export function AgentsPage({
           <PageShell width="full" className="page-fill">
             {definitions.length === 0 ? (
               <RichEmptyState
-                icon={<Bot />}
+                icon={<Robot />}
                 title="No agents yet"
                 description="Create an agent — a name, a system prompt, and optionally a model — and it appears here and in the sidebar, ready to start a workbench."
               />
@@ -218,11 +222,11 @@ export function AgentsPage({
                           selectedId === definition.id ? "selected" : undefined
                         }
                         className="cursor-pointer"
-                        onClick={() =>
+                        {...rowActivationProps(() =>
                           onSelect(
                             selectedId === definition.id ? null : definition.id,
-                          )
-                        }
+                          ),
+                        )}
                       >
                         <TableCell className="font-medium">
                           {definition.name}
@@ -291,7 +295,7 @@ export function AgentsRoute({
         <StageTopBar title="Agents" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<Bot />}
+            icon={<Robot />}
             title="Select a workbench"
             description="Pick a workbench from the switcher to see the agents it can start."
           />

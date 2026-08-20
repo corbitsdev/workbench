@@ -16,11 +16,6 @@
 // therefore outside the wire hash. Its hub-side home is the
 // `workflow_definition.grant_requirements` column, so it is passed in
 // alongside the projection rather than read off it.
-//
-// A definition carries its one agent step in either of the two shapes
-// the platform authors: directly, or inside an `onTrigger` section
-// (CL-6329's per-turn room agents). Both readers below unwrap the
-// section, so a launch body reads the same either way.
 import type { DB } from "@intx/db";
 import { loadFrozenWireProjection } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -113,6 +108,65 @@ const InertWorkflowStepSchema = type({
   },
 });
 
+/**
+ * The launch-relevant subset of an inert projection's `onTrigger`
+ * primitive (CL-6329's per-turn section shape,
+ * `@corbits/agent-runtime`'s `buildSectionWorkflow`): the agent-bearing
+ * step lives one level down, inside the section's inline body, not on
+ * the section step itself. `readFoldedBody` below reads through this
+ * shape the same way it reads a bare `step` primitive.
+ */
+const InertOnTriggerStepSchema = type({
+  kind: "'onTrigger'",
+  body: {
+    inline: {
+      stepOrder: "string[]",
+      steps: "Record<string, unknown>",
+    },
+  },
+});
+
+/**
+ * Extracts the agent-bearing step primitive `readFoldedBody` needs,
+ * whichever of the two shapes a projection's launch step takes — a
+ * bare `step` (the folded conversational shape) or an `onTrigger`
+ * section whose inline body carries the one step that answers each
+ * turn. One reader for both shapes: neither call site duplicates the
+ * other's parsing.
+ */
+function extractAgentBearingStep(
+  rawStep: unknown,
+  definitionId: string,
+  stepId: string,
+): typeof InertWorkflowStepSchema.infer {
+  const asStep = InertWorkflowStepSchema(rawStep);
+  if (!(asStep instanceof type.errors)) {
+    return asStep;
+  }
+  const asSection = InertOnTriggerStepSchema(rawStep);
+  if (asSection instanceof type.errors) {
+    throw new Error(
+      `definition ${definitionId} step ${stepId} is not a step primitive: ${asStep.summary}`,
+    );
+  }
+  const body = asSection.body.inline;
+  const [bodyStepId, ...bodyRest] = body.stepOrder;
+  if (bodyStepId === undefined || bodyRest.length > 0) {
+    throw new Error(
+      `definition ${definitionId} section ${stepId}'s body is not ` +
+        `single-step (${String(body.stepOrder.length)} steps)`,
+    );
+  }
+  const bodyStep = InertWorkflowStepSchema(body.steps[bodyStepId]);
+  if (bodyStep instanceof type.errors) {
+    throw new Error(
+      `definition ${definitionId} section ${stepId} body step ` +
+        `${bodyStepId} is not a step primitive: ${bodyStep.summary}`,
+    );
+  }
+  return bodyStep;
+}
+
 /** The launch-relevant subset of an inert projection itself. */
 const InertWorkflowDefinitionSchema = type({
   id: "string",
@@ -158,57 +212,6 @@ export const FoldedBodySchema = type({
 });
 
 /**
- * An `onTrigger` section carrying its body inline. Section mode
- * (`@corbits/agent-runtime`'s `buildAgentRuntimeWorkflow`) wraps the one
- * agent step in a section so every message becomes its own occurrence,
- * so a run's launch body lives one level down. The wrapper carries no
- * launch body of its own: everything `FoldedBodySchema` needs is on the
- * agent step inside.
- */
-const OnTriggerSectionSchema = type({
-  kind: "'onTrigger'",
-  body: {
-    inline: {
-      stepOrder: "string[]",
-      steps: "Record<string, unknown>",
-    },
-  },
-});
-
-/**
- * The one agent-bearing step of a definition that carries exactly one:
- * the step itself in folded mode, the section body's step in section
- * mode. `label` names the shape being read so a failure says which
- * reader saw it.
- */
-function soleStep(
-  definitionId: string,
-  stepOrder: readonly string[],
-  steps: Record<string, unknown>,
-  label: string,
-): { stepId: string; step: unknown } {
-  const [stepId, ...rest] = stepOrder;
-  if (stepId === undefined || rest.length > 0) {
-    throw new Error(
-      `${label} ${definitionId} is not single-step (${String(
-        stepOrder.length,
-      )} steps)`,
-    );
-  }
-  const step = steps[stepId];
-  const section = OnTriggerSectionSchema(step);
-  if (section instanceof type.errors) {
-    return { stepId, step };
-  }
-  return soleStep(
-    definitionId,
-    section.body.inline.stepOrder,
-    section.body.inline.steps,
-    label,
-  );
-}
-
-/**
  * Reads the launch body back out of a definition's frozen inert
  * projection — the same fields `@intx/workflow-deploy`'s
  * `extractFoldedBody` reads off a live `WorkflowDefinition`, read here
@@ -224,19 +227,19 @@ export function readFoldedBody(
   if (definition instanceof type.errors) {
     throw new Error(`inert projection is malformed: ${definition.summary}`);
   }
-  const sole = soleStep(
-    definition.id,
-    definition.stepOrder,
-    definition.steps,
-    "definition",
-  );
-  const stepId = sole.stepId;
-  const step = InertWorkflowStepSchema(sole.step);
-  if (step instanceof type.errors) {
+  const [stepId, ...rest] = definition.stepOrder;
+  if (stepId === undefined || rest.length > 0) {
     throw new Error(
-      `definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
+      `definition ${definition.id} is not single-step (${String(
+        definition.stepOrder.length,
+      )} steps)`,
     );
   }
+  const step = extractAgentBearingStep(
+    definition.steps[stepId],
+    definition.id,
+    stepId,
+  );
   const foldedBody = FoldedBodySchema({
     systemPrompt: step.agent.systemPrompt,
     toolPackagePins: step.agent.toolPackagePins ?? [],
@@ -263,14 +266,15 @@ export function readLiveFoldedBody(raw: unknown): FoldedBody {
   if (definition instanceof type.errors) {
     throw new Error(`live definition is malformed: ${definition.summary}`);
   }
-  const sole = soleStep(
-    definition.id,
-    definition.stepOrder,
-    definition.steps,
-    "live definition",
-  );
-  const stepId = sole.stepId;
-  const step = LiveWorkflowStepSchema(sole.step);
+  const [stepId, ...rest] = definition.stepOrder;
+  if (stepId === undefined || rest.length > 0) {
+    throw new Error(
+      `live definition ${definition.id} is not single-step (${String(
+        definition.stepOrder.length,
+      )} steps)`,
+    );
+  }
+  const step = LiveWorkflowStepSchema(definition.steps[stepId]);
   if (step instanceof type.errors) {
     throw new Error(
       `live definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,

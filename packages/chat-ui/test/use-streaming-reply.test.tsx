@@ -26,6 +26,9 @@ function mount(
   let send: (eventType: string, data: unknown) => void = () => {};
   let setWorkbenchId: (id: string | null) => void = () => {};
   let awaitReply: () => void = () => {};
+  let resume: (
+    runningTurn: { readonly textSnapshot: string | null } | null,
+  ) => void = () => {};
 
   function Host() {
     const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
@@ -35,11 +38,13 @@ function mount(
       replyTimedOut,
       handleStreamEvent,
       noteAwaitingReply,
+      resumeFromTurn,
     } = useStreamingReply(workbenchId, clearMs, minVisibleMs);
     latestState = streamingReply;
     latestTimedOut = replyTimedOut;
     send = handleStreamEvent;
     awaitReply = noteAwaitingReply;
+    resume = resumeFromTurn;
     return null;
   }
 
@@ -59,6 +64,12 @@ function mount(
     awaitReply: () =>
       act(() => {
         awaitReply();
+      }),
+    resumeFromTurn: (
+      runningTurn: { readonly textSnapshot: string | null } | null,
+    ) =>
+      act(() => {
+        resume(runningTurn);
       }),
     settle: (ms: number) => act(() => sleep(ms)),
     get: () => latestState,
@@ -182,6 +193,49 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
 
     harness.awaitReply();
     expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+});
+
+describe("useStreamingReply.resumeFromTurn (CL-6380: catch-up on remount)", () => {
+  test("hydrates the reply from a running turn's committed text on a fresh mount", () => {
+    const harness = mount("chan_a");
+    expect(harness.get()).toBeNull();
+
+    harness.resumeFromTurn({ textSnapshot: "already streamed so far" });
+    expect(harness.get()).toEqual({ text: "already streamed so far" });
+    harness.unmount();
+  });
+
+  test("a running turn with no text yet opens the same empty pending pulse as noteAwaitingReply", () => {
+    const harness = mount("chan_a");
+    harness.resumeFromTurn({ textSnapshot: null });
+    expect(harness.get()).toEqual({ text: "" });
+    harness.unmount();
+  });
+
+  test("no running turn is a no-op, not a reset", () => {
+    const harness = mount("chan_a");
+    harness.send("chat.agent", {
+      type: "inference.start",
+      seq: 0,
+      data: { model: "x" },
+    });
+    harness.send("chat.agent", delta("hi"));
+    expect(harness.get()).toEqual({ text: "hi" });
+
+    harness.resumeFromTurn(null);
+    expect(harness.get()).toEqual({ text: "hi" });
+    harness.unmount();
+  });
+
+  test("a live event that already opened the reply wins over a slower snapshot fetch", () => {
+    const harness = mount("chan_a");
+    harness.send("chat.agent", delta("live wins"));
+    expect(harness.get()).toEqual({ text: "live wins" });
+
+    harness.resumeFromTurn({ textSnapshot: "stale snapshot" });
+    expect(harness.get()).toEqual({ text: "live wins" });
     harness.unmount();
   });
 });

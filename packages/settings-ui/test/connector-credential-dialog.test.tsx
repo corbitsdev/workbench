@@ -1,9 +1,8 @@
-// CL-6077: one primary action, not test-then-save — the wizard's own
-// onboarding step already combines "test key and run my first routine"
-// into a single button, and this dialog now matches that: pasting a key
-// and pressing the one primary action tests it for real and only stores
-// it once that test passes. A rejected key never reaches
-// `completeConnectorCredential`, so nothing gets sealed on a bad key.
+// CL-6377: one action, not test-then-save — pasting a key and pressing
+// the single Connect button is the whole flow. There is no separate
+// client-driven "test" round-trip before it: `/complete` itself proves
+// the key against the connector's own probe and only stores it once that
+// probe accepts, so a rejected key never gets sealed.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -67,15 +66,15 @@ const settle = () =>
 function primaryButton(): HTMLButtonElement {
   const button = [...document.body.querySelectorAll("button")].find(
     (candidate) =>
-      candidate.textContent === "Test key and connect" ||
-      candidate.textContent === "Testing and connecting…",
+      candidate.textContent === "Connect" ||
+      candidate.textContent === "Connecting…",
   );
   expect(button).not.toBeUndefined();
   return button as HTMLButtonElement;
 }
 
 describe("ConnectorCredentialDialog", () => {
-  test("offers exactly one primary action — no separate Test and Save buttons", () => {
+  test("offers exactly one primary action — no separate Test and Save buttons, and no test-key copy anywhere", () => {
     const { container, root } = mount();
     try {
       const labels = [...document.body.querySelectorAll("button")].map(
@@ -83,24 +82,20 @@ describe("ConnectorCredentialDialog", () => {
       );
       expect(labels).not.toContain("Test connection");
       expect(labels).not.toContain("Save");
-      expect(labels).toContain("Test key and connect");
+      expect(labels).toContain("Connect");
+      expect(document.body.textContent).not.toContain("Test key");
+      expect(document.body.textContent).not.toContain("test the key");
     } finally {
       act(() => root.unmount());
       container.remove();
     }
   });
 
-  test("a passing test stores the key and reports success, in one click", async () => {
+  test("connecting is a single round-trip to /complete — no separate /credential/test call", async () => {
     const calls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = String(input);
       calls.push(path);
-      if (path.endsWith("/credential/test")) {
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
       return new Response(
         JSON.stringify({ credentialId: "cred_1", status: "active" }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -117,10 +112,7 @@ describe("ConnectorCredentialDialog", () => {
       act(() => primaryButton().click());
       await settle();
 
-      expect(calls.some((path) => path.endsWith("/credential/test"))).toBe(
-        true,
-      );
-      expect(calls.some((path) => path.endsWith("/complete"))).toBe(true);
+      expect(calls).toEqual(["/api/tenants/ten_1/connections/linear/complete"]);
       expect(connected).toBe(true);
     } finally {
       act(() => root.unmount());
@@ -128,7 +120,7 @@ describe("ConnectorCredentialDialog", () => {
     }
   });
 
-  test("a failing test shows the rejection and never calls complete", async () => {
+  test("a rejected key surfaces the probe's own message inline, from that same call", async () => {
     const calls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = String(input);
@@ -152,7 +144,7 @@ describe("ConnectorCredentialDialog", () => {
       await settle();
 
       expect(document.body.textContent).toContain("That key doesn't work.");
-      expect(calls.some((path) => path.endsWith("/complete"))).toBe(false);
+      expect(calls).toEqual(["/api/tenants/ten_1/connections/linear/complete"]);
     } finally {
       act(() => root.unmount());
       container.remove();

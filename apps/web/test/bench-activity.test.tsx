@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { WORKBENCHES_MUTATED_EVENT } from "@corbits/chat-ui";
 
 import { useBenchActivity } from "../src/shell/bench-activity";
 import type { BenchActivityQuery } from "../src/shell/bench-activity";
@@ -251,6 +252,81 @@ describe("useBenchActivity", () => {
         agentName: "Incident triage",
       }),
     ]);
+    root.unmount();
+    container.remove();
+  });
+
+  // CL-6387: a workbench minted anywhere (picker, agent launch, land-hop)
+  // must show up in the sidebar the moment `createWorkbench` resolves — no
+  // waiting for the next unrelated refetch. `WORKBENCHES_MUTATED_EVENT` is
+  // the one signal every create path shares; this proves the listener
+  // actually invalidates the cached listing and the new row appears,
+  // rather than just proving the event fires (see
+  // `packages/chat-ui/test/workbenches-mutated-event.test.ts` for that).
+  test("a WORKBENCHES_MUTATED_EVENT for this tenant refetches and surfaces the new workbench immediately", async () => {
+    const calls: string[] = [];
+    let workbenches: readonly unknown[] = [];
+    stubTenantFetch(calls, {
+      get workbenches() {
+        return workbenches;
+      },
+    });
+    const { latest, root, container } = await mountHook("tnt_1");
+    await settle();
+    expect(
+      (latest() as { workbenches?: readonly unknown[] }).workbenches,
+    ).toEqual([]);
+
+    // The row a fresh `createWorkbench` call would have returned — present
+    // in the backing store now, as if the mint had just landed.
+    workbenches = [
+      {
+        id: "run_fresh1",
+        title: "New Workbench",
+        kind: "workbench",
+        pinned: true,
+        participants: [],
+      },
+    ];
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
+          detail: { tenantId: "tnt_1" },
+        }),
+      );
+    });
+    await settle();
+
+    const state = latest();
+    if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
+    expect(state.workbenches.map((w) => w.id)).toEqual(["run_fresh1"]);
+
+    root.unmount();
+    container.remove();
+  });
+
+  test("a WORKBENCHES_MUTATED_EVENT for a different tenant does not trigger a refetch here", async () => {
+    const calls: string[] = [];
+    stubTenantFetch(calls);
+    const { latest, root, container } = await mountHook("tnt_1");
+    await settle();
+    const callsBeforeEvent = calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
+          detail: { tenantId: "tnt_other" },
+        }),
+      );
+    });
+    await settle();
+
+    expect(calls.length).toBe(callsBeforeEvent);
+    const state = latest();
+    if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
+    expect(state.workbenches).toEqual([]);
+
     root.unmount();
     container.remove();
   });

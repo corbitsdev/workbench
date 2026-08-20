@@ -14,7 +14,7 @@ function manualChunks(id: string): string | undefined {
   if (id.includes("@corbits+react-ui") || id.includes("@corbits/react-ui")) {
     return "react-ui";
   }
-  if (id.includes("lucide-react")) return "icons";
+  if (id.includes("@phosphor-icons/react")) return "icons";
   if (id.includes("@tanstack")) return "query-vendor";
   if (id.includes("yjs")) return "collab-vendor";
   return undefined;

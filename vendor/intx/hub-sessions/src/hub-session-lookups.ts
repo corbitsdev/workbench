@@ -100,6 +100,43 @@ export function anchorAddressForPackSource(
   return formatRunAddress(match[0], parsed.domain);
 }
 
+/**
+ * What an accepted workflow-run pack's newly-terminal run means for the
+ * `workflow_run` table. `ownedAnchorRunId` is the run's row as the flip
+ * transaction read it: `undefined` when no row exists, otherwise the row's
+ * own `anchorRunId` (possibly null).
+ *
+ * Only a minted run id (`run_` + 32 hex, the shape `generateId("workflowRun")
+ * produces) ever owns a row. A section-mode occurrence runs as a repo-local
+ * child run (`turn__<n>` — see `@corbits/agent-runtime`'s
+ * `agentRuntimeTurnRunId`) whose whole identity lives in the deployment's
+ * own event repo: it never crosses a route that mints a `workflow_run` row,
+ * so its terminal event has no DB flip to perform and its absence is not a
+ * defect. A minted id with no row IS one — the run terminated before its
+ * anchor committed — and a row anchored elsewhere (or lazily anchored with
+ * a null anchor) is not the source deployment's to flip.
+ */
+export type TerminalRunFlipDecision =
+  | { kind: "flip" }
+  | { kind: "skip_repo_local" }
+  | { kind: "missing_row" }
+  | { kind: "foreign_anchor" };
+
+export function decideTerminalRunFlip(
+  runId: string,
+  ownedAnchorRunId: string | null | undefined,
+  sourceAnchorId: string,
+): TerminalRunFlipDecision {
+  if (ownedAnchorRunId === undefined) {
+    return RUN_ID_PATTERN.test(runId)
+      ? { kind: "missing_row" }
+      : { kind: "skip_repo_local" };
+  }
+  return ownedAnchorRunId === sourceAnchorId
+    ? { kind: "flip" }
+    : { kind: "foreign_anchor" };
+}
+
 export type HubSessionLookupsDeps = {
   db: DB["db"];
   agentRepoStore: AgentRepoStore;
@@ -523,7 +560,21 @@ export function createHubSessionLookups(
               .from(workflowRun)
               .where(eq(workflowRun.id, runId))
               .limit(1);
-            if (ownedRun?.anchorRunId !== anchor.id) {
+            const decision = decideTerminalRunFlip(
+              runId,
+              ownedRun === undefined ? undefined : ownedRun.anchorRunId,
+              anchor.id,
+            );
+            if (decision.kind === "skip_repo_local") {
+              // A section occurrence's child run (`turn__<n>`) settles in
+              // the deployment's own event repo; there is no row to flip.
+              return;
+            }
+            if (decision.kind === "missing_row") {
+              logger.error`Terminal event for run ${runId} (deployment ${anchor.id}, target status ${status}) has no workflow_run row; the run terminated before its anchor committed`;
+              return;
+            }
+            if (decision.kind === "foreign_anchor") {
               logger.error`Ignoring terminal event for run ${runId}: it does not belong to source deployment ${anchor.id}`;
               return;
             }
@@ -534,19 +585,9 @@ export function createHubSessionLookups(
               tx,
             );
             if (won === null) {
-              // No running row matched. Either the run is already terminal (a
-              // benign replay against an already-settled row) or no row exists
-              // at all -- the run reached a terminal event before its anchor
-              // committed, so its terminal state has nowhere to land. Only the
-              // second case is a defect; distinguish them and log the missing
-              // anchor loudly rather than silently treating both as done.
-              const [existing] = await tx
-                .select({ id: workflowRun.id })
-                .from(workflowRun)
-                .where(eq(workflowRun.id, runId));
-              if (existing === undefined) {
-                logger.error`Terminal event for run ${runId} (deployment ${anchor.id}, target status ${status}) has no workflow_run row; the run terminated before its anchor committed`;
-              }
+              // The row exists and is anchored here but no "running" row
+              // matched: the run is already terminal — a benign replay
+              // against an already-settled row.
               return;
             }
             // Deactivate the run's own principal, if it has one. Externally-

@@ -60,7 +60,13 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
  * token response also issues a refresh token — an authorization server
  * that doesn't (the Hugging-Face-precedent case) is the default. */
 function startStubAuthorizationServer(
-  tokenGrant: { refreshToken?: string; expiresIn?: number } = {},
+  tokenGrant: {
+    refreshToken?: string;
+    expiresIn?: number;
+    /** CL-6371 red-path fixture: a provider that never echoes `state`
+     * back on the authorize redirect, even though we sent one. */
+    echoState?: boolean;
+  } = {},
 ): {
   origin: string;
   resourcePath: string;
@@ -119,7 +125,9 @@ function startStubAuthorizationServer(
         issuedCodes.set(code, { codeChallenge, clientId });
         const redirect = new URL(redirectUri);
         redirect.searchParams.set("code", code);
-        redirect.searchParams.set("state", state);
+        if (tokenGrant.echoState !== false) {
+          redirect.searchParams.set("state", state);
+        }
         return Response.redirect(redirect.toString(), 302);
       }
       if (url.pathname === "/token" && req.method === "POST") {
@@ -313,6 +321,11 @@ describe("MCP OAuth connect flow", () => {
       const params = new URL(location).searchParams;
       expect(params.get("code_challenge_method")).toBe("S256");
       expect(params.get("client_id")).not.toBeNull();
+      // CL-6371: the authorize URL must carry a CSRF-binding `state` --
+      // omitting it is what made PostHog's real MCP authorization server
+      // reject the redirect with "Missing state parameter."
+      expect(params.get("state")).not.toBeNull();
+      expect(params.get("state")).not.toBe("");
       expect(response.headers.get("set-cookie") ?? "").toContain(
         "workbench_mcp_oauth_exa=",
       );
@@ -442,6 +455,67 @@ describe("MCP OAuth connect flow", () => {
     const app = mountAs(routes);
     const response = await app.request("/not-a-preset/start");
     expect(response.status).toBe(404);
+  });
+
+  test("CL-6371: a provider that echoes state back completes the round trip", async () => {
+    const as = startStubAuthorizationServer({ echoState: true });
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 1,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const callbackResponse = await runConnectFlow(app, as);
+
+      expect(callbackResponse.status).toBe(302);
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "outcome=connected",
+      );
+    } finally {
+      as.stop();
+    }
+  });
+
+  test("CL-6371: a provider that omits state we sent is rejected as a CSRF failure, not a raw error", async () => {
+    const as = startStubAuthorizationServer({ echoState: false });
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 1,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const callbackResponse = await runConnectFlow(app, as);
+
+      expect(callbackResponse.status).toBe(302);
+      const location = callbackResponse.headers.get("location") ?? "";
+      expect(location).toContain("outcome=error");
+      expect(location).toContain("code=state_mismatch");
+      // The consumer envelope idiom (CL-6360): the redirect carries a
+      // machine code the UI maps to copy, never the raw provider/SDK
+      // error text.
+      expect(location).not.toContain("Missing state parameter");
+      expect(hub.credentials).toHaveLength(0);
+    } finally {
+      as.stop();
+    }
   });
 
   test("a callback with no cookie redirects with a state_expired error", async () => {

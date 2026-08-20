@@ -271,12 +271,19 @@ describe('a failed memberships fetch never reads as "pick from the switcher"', (
 });
 
 describe("the other two entries land on the same `/` hop", () => {
-  test("signing in navigates to `/`, not a dashboard of its own", () => {
+  test("signing in navigates home (or `next=`), not a dashboard of its own", () => {
+    // CL-6369: a plain sign-in still lands on `/` — `validatedNextPath`
+    // defaults there with no `next=` param — but a sign-in redirected
+    // through `/login?next=...` returns to that path instead, so the
+    // literal `navigate("/")` call this test used to pin no longer
+    // applies unconditionally.
     const source = readFileSync(
       new URL("../src/main.tsx", import.meta.url),
       "utf8",
     );
-    expect(source).toMatch(/handleSignedIn[\s\S]*?navigate\("\/"\)/);
+    expect(source).toMatch(
+      /handleSignedIn[\s\S]*?navigate\(validatedNextPath\(window\.location\.search\)\)/,
+    );
   });
 
   test("onboarding hands off to `/` once a working credential is confirmed", () => {

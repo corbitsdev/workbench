@@ -74,3 +74,8 @@ export {
   withTurnPartPersistGuard,
   turnPartPersistFailures,
 } from "./turn-part-write-guard";
+export {
+  createDrizzleTurnTextSnapshotReader,
+  snapshotTextFromParts,
+  type TurnTextSnapshotReader,
+} from "./turn-text-snapshot";

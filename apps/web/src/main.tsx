@@ -7,7 +7,9 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { getLogger } from "@corbits/client-log";
+import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
+import { validatedNextPath } from "./login-next";
 import { triggerFirstLoginProvisioning } from "./onboarding";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
@@ -24,7 +26,11 @@ function Root() {
   }, []);
   const navigate = useCallback((to: string) => {
     window.history.pushState(null, "", to);
-    setPath(to);
+    // `path` state is pathname-only (every comparison against it —
+    // `matchesRoute`, `LOGIN_PATH`, `ONBOARDING_PATH` — expects a bare
+    // path); a query string like `/login?next=...` still lands on the
+    // URL bar via `pushState` above, just not in this state.
+    setPath(new URL(to, window.location.origin).pathname);
   }, []);
 
   const [session, setSession] = useState<SessionState>({ kind: "loading" });
@@ -37,7 +43,7 @@ function Root() {
   const handleSignedIn = useCallback(
     (user: SessionUser) => {
       setSession({ kind: "signed-in", user });
-      navigate("/");
+      navigate(validatedNextPath(window.location.search));
     },
     [navigate],
   );
@@ -115,6 +121,8 @@ const container = document.getElementById("root");
 if (container === null) throw new Error("index.html is missing #root");
 createRoot(container).render(
   <StrictMode>
-    <Root />
+    <AppErrorBoundary>
+      <Root />
+    </AppErrorBoundary>
   </StrictMode>,
 );

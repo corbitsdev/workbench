@@ -112,7 +112,30 @@ export function createEventCollector(
   // Tool results that reported isError, accumulated for TurnFinalized.
   let accumulatedToolErrors: { name: string; content: string }[] = [];
 
-  async function onEvent(event: InferenceEvent): Promise<void> {
+  // Serializes event processing. Callers fire onEvent without awaiting
+  // (the registry's dispatch is deliberately fire-and-forget so it never
+  // blocks the websocket message loop), so without this chain two events
+  // interleave across their DB awaits: a connector.reply's finalize can
+  // null currentTurnId while inference.done is still inserting parts
+  // (dropping them as "no active turn"), and a finalize processed while
+  // the next inference.start's beginTurn is mid-insert marks the NEW
+  // turn finalized, leaving its row "running" forever (CL-6379). Each
+  // event fully settles before the next begins, restoring wire order.
+  let eventTail: Promise<void> = Promise.resolve();
+
+  function enqueue(work: () => Promise<void>): Promise<void> {
+    const run = eventTail.then(work);
+    // A rejected event must not wedge every later event; the caller
+    // still observes the rejection through the returned promise.
+    eventTail = run.catch(() => undefined);
+    return run;
+  }
+
+  function onEvent(event: InferenceEvent): Promise<void> {
+    return enqueue(() => processEvent(event));
+  }
+
+  async function processEvent(event: InferenceEvent): Promise<void> {
     switch (event.type) {
       case "inference.start":
         await beginTurn(event.data.model);
@@ -406,12 +429,17 @@ export function createEventCollector(
     currentTurnId = null;
   }
 
-  async function abandon(): Promise<void> {
-    if (currentTurnId === null || finalized) return;
+  function abandon(): Promise<void> {
+    // Chained behind any in-flight events so an abandon issued while a
+    // turn's events are still persisting closes the turn they produce,
+    // not a half-processed intermediate state.
+    return enqueue(async () => {
+      if (currentTurnId === null || finalized) return;
 
-    log.warn`Abandoning running turn ${currentTurnId} for session ${sessionId}`;
+      log.warn`Abandoning running turn ${currentTurnId} for session ${sessionId}`;
 
-    await finalizeTurn("failed", false, false);
+      await finalizeTurn("failed", false, false);
+    });
   }
 
   async function insertPart(

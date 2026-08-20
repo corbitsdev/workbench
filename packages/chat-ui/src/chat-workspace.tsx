@@ -12,16 +12,14 @@
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { Button, EmptyState, toast } from "@corbits/react-ui";
 import {
-  ChartColumn,
-  ChevronDown,
-  CircleAlert,
-  MessageSquare,
-  Repeat,
+  CaretDown,
+  ChatCircle,
   SlidersHorizontal,
   UserPlus,
-} from "lucide-react";
+  WarningCircle,
+} from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -30,6 +28,7 @@ import {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
   describeChatError,
+  fetchRunningTurn,
   inviteAgent,
   listWorkbenches,
   listInvitableDefinitions,
@@ -46,6 +45,7 @@ import type { WorkbenchSettingsSectionId } from "./workbench-settings";
 import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
+import { WorkbenchLoadingState } from "./loading-state";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import type { BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
@@ -392,10 +392,8 @@ function ChatWorkspaceInner({
   connectGithubActions,
   headerLeading,
   registerComposerInsert,
-  onOpenRoutines,
   listMembers,
   onCreateRoutineInSpace,
-  onOpenInsights,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -452,10 +450,6 @@ function ChatWorkspaceInner({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
-  /** The composer's `/run` command: routine create/run lives on its own
-   * route the host owns, so opening it is a host-supplied hop the same way
-   * `onOpenArtifact` is. */
-  readonly onOpenRoutines?: () => void;
   /** Workspace members the mention popover's "Bring in…" group can
    * offer — the same reduced listing the shell already fetches for its
    * People views. Absent, the group only offers invitable agents. */
@@ -464,25 +458,17 @@ function ChatWorkspaceInner({
   ) => Promise<readonly BringInMember[]>;
 
   /**
-   * "New routine in this space" — the header button and the composer's
-   * `/routine` command: opens the New Routine panel with the active
-   * workbench pre-bound as its destination. Host-supplied so the panel's
-   * own route (and its prefill store) stays owned by the host, the same
-   * way `onOpenRoutines` is; the active workbench id is closed over here
-   * rather than passed as an argument, since only this component knows
-   * it. Omitted, the button and command are hidden — the same
-   * "no dead promise" contract `onOpenRoutines` follows.
+   * The composer's `/routine` command: opens the New Routine panel with
+   * the active workbench pre-bound as its destination. Host-supplied so
+   * the panel's own route (and its prefill store) stays owned by the
+   * host; the active workbench id is closed over here rather than passed
+   * as an argument, since only this component knows it. Omitted, the
+   * command is hidden — the "no dead promise" contract every optional
+   * header/composer action here follows. Routines and Insights (CL-6362,
+   * CL-6099) are global-only pages now — reached from the shell rail, not
+   * a per-workbench header button or composer command.
    */
   readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
-  /**
-   * "Insights for this workbench" — the header button that deep-links to
-   * this tenant's own Insights scope (CL-6099). Host-supplied so the
-   * Insights route (and its tenant-scope resolution) stays owned by the
-   * host, the same way `onOpenRoutines` is. Omitted, the button is
-   * hidden — the same "no dead promise" contract as the other optional
-   * header actions here.
-   */
-  readonly onOpenInsights?: () => void;
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -641,6 +627,7 @@ function ChatWorkspaceInner({
     replyTimedOut,
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
+    resumeFromTurn,
   } = useStreamingReply(activeWorkbenchId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
     useTurnActivity(activeWorkbenchId);
@@ -805,6 +792,34 @@ function ChatWorkspaceInner({
     (participant) => isAgentAddress(participant.address),
   );
 
+  const resumeAgentAddress = (activeWorkbench?.participants ?? []).find(
+    (participant) => isAgentAddress(participant.address),
+  )?.address;
+
+  // CL-6380: a turn runs entirely server-side — this component mounting or
+  // unmounting never starts or stops it (see `useWorkbenchStream`'s own
+  // header: unmount only closes the `EventSource`, nothing server-side).
+  // So a fresh mount (first visit, or a return after navigating away while
+  // a reply was still streaming) asks once whether the agent has a turn
+  // still running and, if so, replays its committed text immediately
+  // rather than showing nothing until the next live token arrives. Any
+  // live event that beats this fetch back always wins — see
+  // `resumeFromTurn`'s own guard.
+  useEffect(() => {
+    if (activeWorkbenchId === null || resumeAgentAddress === undefined) {
+      return;
+    }
+    let cancelled = false;
+    fetchRunningTurn(tenantId, activeWorkbenchId, resumeAgentAddress)
+      .then((runningTurn) => {
+        if (!cancelled) resumeFromTurn(runningTurn);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, activeWorkbenchId, resumeAgentAddress]);
+
   const { pendingSends, handleSend, retryPendingSend, discardPendingSend } =
     useOptimisticSends({
       tenantId,
@@ -949,10 +964,10 @@ function ChatWorkspaceInner({
         <div className="chat-main">
           {bareLeadingHeader}
           {workbenchesState.kind === "loading" ? (
-            <Skeleton className="query-skeleton" />
+            <WorkbenchLoadingState />
           ) : workbenchesState.kind === "error" ? (
             <EmptyState
-              icon={<CircleAlert />}
+              icon={<WarningCircle />}
               title={`Couldn't load ${CHAT_STRINGS.couldNotLoadWorkbenches}`}
               description={workbenchesState.message}
               action={
@@ -966,7 +981,7 @@ function ChatWorkspaceInner({
             />
           ) : activeWorkbenchId === null ? (
             <EmptyState
-              icon={<MessageSquare />}
+              icon={<ChatCircle />}
               title={CHAT_STRINGS.noChatSelectedTitle}
               description={CHAT_STRINGS.noChatSelectedDescription}
             />
@@ -1030,7 +1045,7 @@ function ChatWorkspaceInner({
                     <details className="chat-threads-menu">
                       <summary className="chat-threads-menu-trigger">
                         {CHAT_STRINGS.threadsMenuCount(depth1Threads.length)}
-                        <ChevronDown className="size-3.5 opacity-70" />
+                        <CaretDown className="size-3.5 opacity-70" />
                       </summary>
                       <div className="chat-threads-menu-panel" role="menu">
                         {depth1Threads.map((thread) => (
@@ -1122,27 +1137,6 @@ function ChatWorkspaceInner({
                       {CHAT_STRINGS.inviteAgentAction}
                     </Button>
                   ) : null}
-                  {onOpenRoutines !== undefined ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={CHAT_STRINGS.routinesAction}
-                      title={CHAT_STRINGS.routinesAction}
-                      onClick={() => onOpenRoutines()}
-                    >
-                      <Repeat />
-                    </Button>
-                  ) : null}
-                  {onOpenInsights !== undefined ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onOpenInsights()}
-                    >
-                      <ChartColumn />
-                      {CHAT_STRINGS.insightsAction}
-                    </Button>
-                  ) : null}
                   <div className="chat-workbench-settings-slot">
                     <Button
                       variant="ghost"
@@ -1157,11 +1151,11 @@ function ChatWorkspaceInner({
                 </div>
               </div>
               {messagesState.kind === "loading" ? (
-                <Skeleton className="query-skeleton" />
+                <WorkbenchLoadingState />
               ) : messagesState.kind === "error" &&
                 messagesState.workbenchNotFound ? (
                 <EmptyState
-                  icon={<CircleAlert />}
+                  icon={<WarningCircle />}
                   title={CHAT_STRINGS.workbenchNotFoundTitle}
                   description={CHAT_STRINGS.workbenchNotFoundDescription}
                   action={
@@ -1174,7 +1168,7 @@ function ChatWorkspaceInner({
                 />
               ) : messagesState.kind === "error" ? (
                 <EmptyState
-                  icon={<CircleAlert />}
+                  icon={<WarningCircle />}
                   title={`Couldn't load ${CHAT_STRINGS.couldNotLoadMessages}`}
                   description={messagesState.message}
                   action={
@@ -1219,7 +1213,10 @@ function ChatWorkspaceInner({
                   <WorkbenchTimeline
                     settingUpAgent={
                       activeWorkbench?.kind === "chat" &&
-                      typeof activeWorkbench.definitionId === "string"
+                      typeof activeWorkbench.definitionId === "string" &&
+                      !(activeWorkbench.participants ?? []).some(
+                        (participant) => isAgentAddress(participant.address),
+                      )
                     }
                     items={appendReplyTimedOutNotice(
                       mergeStreamingReply(
@@ -1303,13 +1300,6 @@ function ChatWorkspaceInner({
                       onOpenAgentsSettings={() =>
                         openWorkbenchSettings("agents")
                       }
-                      onOpenRoutines={() => {
-                        if (onOpenRoutines !== undefined) {
-                          onOpenRoutines();
-                          return;
-                        }
-                        toast(CHAT_STRINGS.runRoutineUnavailable);
-                      }}
                       onCreateRoutineInSpace={() => {
                         if (
                           onCreateRoutineInSpace !== undefined &&
@@ -1365,10 +1355,8 @@ export function ChatWorkspace({
   connectGithubActions,
   headerLeading,
   registerComposerInsert,
-  onOpenRoutines,
   listMembers,
   onCreateRoutineInSpace,
-  onOpenInsights,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
@@ -1436,23 +1424,12 @@ export function ChatWorkspace({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
-  /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
-  readonly onOpenRoutines?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly listMembers?: (
     tenantId: string,
   ) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
   readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
-  /**
-   * "Insights for this workbench" — the header button that deep-links to
-   * this tenant's own Insights scope (CL-6099). Host-supplied so the
-   * Insights route (and its tenant-scope resolution) stays owned by the
-   * host, the same way `onOpenRoutines` is. Omitted, the button is
-   * hidden — the same "no dead promise" contract as the other optional
-   * header actions here.
-   */
-  readonly onOpenInsights?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
@@ -1497,12 +1474,10 @@ export function ChatWorkspace({
           {...(registerComposerInsert !== undefined
             ? { registerComposerInsert }
             : {})}
-          {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
           {...(onCreateRoutineInSpace !== undefined
             ? { onCreateRoutineInSpace }
             : {})}
-          {...(onOpenInsights !== undefined ? { onOpenInsights } : {})}
           {...(onWorkbenchNotFound !== undefined
             ? { onWorkbenchNotFound }
             : {})}
@@ -1516,7 +1491,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title="No workbench yet"
             description="Create or join a workbench before chatting."
           />
@@ -1526,7 +1501,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title="Sign in to continue"
             description="Your conversations live on a workbench — sign in to open them."
           />
@@ -1536,7 +1511,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<CircleAlert />}
+            icon={<WarningCircle />}
             title="Couldn't open this workbench"
             description={tenant.message}
           />
@@ -1545,7 +1520,7 @@ export function ChatWorkspace({
     case "loading":
       return (
         <ChatWorkspaceFrame>
-          <Skeleton className="query-skeleton" />
+          <WorkbenchLoadingState />
         </ChatWorkspaceFrame>
       );
   }

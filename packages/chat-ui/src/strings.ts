@@ -50,7 +50,7 @@ export const CHAT_STRINGS = {
   // One honest headline for every waiting state \u2014 the reader never needs
   // to know which internal stage this is; that distinction stays in logs,
   // never in front of them.
-  workbenchLoadingTitle: "Loading your workbench\u2026",
+  workbenchLoadingTitle: "Getting your workbench ready\u2026",
   workbenchLoadingTips: [
     "Tip: @mention an agent to bring them into the conversation",
     "Tip: every message can become a thread",
@@ -58,6 +58,8 @@ export const CHAT_STRINGS = {
     "Tip: press / for commands",
   ],
   emptyTimelineDescription: "Say something to get the conversation going.",
+  emptyAgentTimelineDescription:
+    "They're ready — send the first message to get started.",
   mentionEmpty: "No matches",
   mentionAgentsGroupLabel: "Agents",
   mentionPeopleGroupLabel: "People",
@@ -68,7 +70,7 @@ export const CHAT_STRINGS = {
   composerHelpTitle: "Slash commands",
   composerHelpNote: "Not sent as a message",
   composerHelpClose: "Close",
-  runRoutineUnavailable: "Open Routines to run one",
+  runRoutineUnavailable: "Open Routines to create one",
   unnamedWorkbench: "Untitled conversation",
   newWorkbenchTitle: "New workbench",
   unnamedRun: "Untitled agent",
@@ -88,8 +90,6 @@ export const CHAT_STRINGS = {
   eventBlockResponseForm: "A form was submitted",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
   inviteAgentAction: "Invite agent",
-  routinesAction: "Routines",
-  insightsAction: "Insights",
   workbenchMembersLabel: "Members",
   teamStackOverflow: (count: number) =>
     `${count} more ${count === 1 ? "member" : "members"}`,
@@ -145,13 +145,9 @@ export const CHAT_STRINGS = {
   blockUnsupportedBody: (type: string) =>
     `This "${type}" block can't be shown here yet.`,
   blockApproveAction: "Approve",
-  blockDenyAction: "Deny",
-  blockRiskLabel: (risk: "low" | "medium" | "high") =>
-    risk === "low"
-      ? "Low risk"
-      : risk === "medium"
-        ? "Medium risk"
-        : "High risk",
+  blockDenyAction: "Not now",
+  blockApproveAllowStanding: (offer: { verb: string; resource: string }) =>
+    `Allow ${offer.verb} for ${offer.resource}`,
   blockFormSubmit: "Submit",
   blockApproveStatusLoading: "Checking status…",
   blockApproveStatusApproved: "Approved",
@@ -160,16 +156,15 @@ export const CHAT_STRINGS = {
   blockApproveStatusExpired: "Expired",
   blockApproveStatusNotFound: "This approval could not be found.",
   blockApproveStatusLoadError: "Couldn't load this approval's status.",
-  blockApproveSpectatorNote:
-    "Only an approver on this workbench can act on this.",
+  blockApproveSpectatorNote: "This one isn't yours to decide.",
   blockApproveUndeterminedNote:
-    "Your access to act on this could not be confirmed yet — try Approve or Deny to find out.",
+    "We're still checking whether this is yours to decide.",
   blockApproveApproving: "Approving…",
   blockApproveRejecting: "Denying…",
   blockApproveActionForbidden: "You do not have permission to act on this.",
   blockApproveActionError: "Couldn't reach the approval — try again.",
   blockApprovePlatformRequestedBy: (agentName: string) =>
-    `Requested by ${agentName}`,
+    `${agentName} is asking to`,
   blockApproveAgentNoteLabel: "Agent's note",
   blockApproveConflictNote:
     "Someone else already resolved this while you were deciding.",

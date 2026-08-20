@@ -39,7 +39,7 @@ import {
   type EffectiveInferenceRow,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@intx/types";
-import { ArrowDown, ArrowUp, Bot, Cable, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUp, Cpu, Plugs, Robot } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -49,10 +49,10 @@ import {
   describeQueryError,
 } from "@corbits/api-query";
 import {
+  ConnectionsApiError,
   completeConnectorCredential,
   disconnectConnector,
   fetchOAuthConfigured,
-  testConnectorCredential,
 } from "./connections-api";
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 import {
@@ -337,7 +337,7 @@ export function ConnectionsSection({
             <section className="settings-provider-section">
               <div className="settings-provider-section-heading">
                 <span className="settings-provider-section-icon" aria-hidden>
-                  <Cable />
+                  <Plugs />
                 </span>
                 <div>
                   <h3>AI providers</h3>
@@ -446,7 +446,7 @@ function ModelRoutePanel({
     >
       <div className="settings-model-route-heading">
         <span className="settings-model-route-icon" aria-hidden>
-          <Sparkles />
+          <Cpu />
         </span>
         <div>
           <h3 id="model-route-title">Default model & fallbacks</h3>
@@ -458,7 +458,7 @@ function ModelRoutePanel({
       </div>
       {ordered.length === 0 ? (
         <div className="settings-model-route-empty">
-          <Bot aria-hidden />
+          <Robot aria-hidden />
           <span>Connect an AI provider to choose a default model.</span>
         </div>
       ) : (
@@ -829,31 +829,28 @@ export function ConnectorCredentialDialog({
   const open = descriptor !== null;
   const canSubmit = apiKey.trim() !== "" && !submitting;
 
-  // One primary action, not test-then-save: it proves the key with a real
-  // call before ever storing it, so a rejected key never reaches
-  // `completeConnectorCredential` and nothing gets sealed on a bad key.
+  // One action, not test-then-save (CL-6377): the server proves the key
+  // with a real call before ever storing it, so a rejected key never gets
+  // sealed — this call is the only round-trip, and its 422 rejection
+  // renders inline the same as any other connect failure.
   function handleSubmit() {
     if (descriptor === null) return;
     setSubmitting(true);
     setSubmitError(null);
-    testConnectorCredential(tenantId, descriptor.id, apiKey)
-      .then((result) => {
-        if (!result.ok) {
-          setSubmitError(result.message);
-          return;
-        }
-        return completeConnectorCredential(
-          tenantId,
-          descriptor.id,
-          apiKey,
-        ).then(() => {
-          toast(
-            SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
-          );
-          onConnected();
-        });
+    completeConnectorCredential(tenantId, descriptor.id, apiKey)
+      .then(() => {
+        toast(
+          SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
+        );
+        onConnected();
       })
-      .catch((cause: unknown) => setSubmitError(describeQueryError(cause)))
+      .catch((cause: unknown) => {
+        setSubmitError(
+          cause instanceof ConnectionsApiError && cause.status === 422
+            ? cause.message
+            : describeQueryError(cause),
+        );
+      })
       .finally(() => setSubmitting(false));
   }
 
@@ -935,8 +932,8 @@ export function ConnectorCredentialDialog({
             onClick={handleSubmit}
           >
             {submitting
-              ? SETTINGS_STRINGS.connectionsTestAndSaving
-              : SETTINGS_STRINGS.connectionsTestAndSaveAction}
+              ? SETTINGS_STRINGS.connectionsConnecting
+              : SETTINGS_STRINGS.connectionsConnectDialogAction}
           </Button>
         </DialogFooter>
       </DialogContent>

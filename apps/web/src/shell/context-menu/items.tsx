@@ -11,19 +11,19 @@ import type { ProfileSubject } from "@corbits/chat-ui";
 import { contextMenuItem, contextMenuSeparator } from "@corbits/context-menu";
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
 import {
-  ExternalLink,
+  ArrowSquareOut,
   Hash,
-  Link as LinkIcon,
-  LogOut,
-  Pencil,
-  Pin,
-  PinOff,
+  LinkSimple as LinkIcon,
+  MagnifyingGlass,
+  MoonStars,
+  PencilSimple,
   PlayCircle,
-  Search,
+  PushPin,
+  PushPinSlash,
+  SignOut,
   SlidersHorizontal,
-  SunMoon,
-  UserRound,
-} from "lucide-react";
+  UserCircle,
+} from "@corbits/icons";
 import { toast } from "@corbits/react-ui";
 
 import { workbenchPath } from "../../workbench-path";
@@ -59,7 +59,7 @@ function workbenchMenu(
     contextMenuItem({
       id: "rename",
       label: "Rename conversation",
-      icon: <Pencil />,
+      icon: <PencilSimple />,
       onSelect: () => requestWorkbenchRename(target.id),
     }),
   ];
@@ -69,7 +69,7 @@ function workbenchMenu(
       contextMenuItem({
         id: "pin",
         label: target.pinned ? "Unpin conversation" : "Pin conversation",
-        icon: target.pinned ? <PinOff /> : <Pin />,
+        icon: target.pinned ? <PushPinSlash /> : <PushPin />,
         onSelect: () => {
           void patchWorkbenchSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
@@ -110,7 +110,7 @@ function profileMenu(
       contextMenuItem({
         id: "open-profile",
         label: "Open profile",
-        icon: <UserRound />,
+        icon: <UserCircle />,
         onSelect: () => actions.openProfile(subject),
       }),
     ],
@@ -126,7 +126,7 @@ function routineMenu(
     contextMenuItem({
       id: "open",
       label: "Open routine",
-      icon: <ExternalLink />,
+      icon: <ArrowSquareOut />,
       onSelect: () => actions.navigate(path),
     }),
   ];
@@ -168,7 +168,7 @@ function insightsRunMenu(
       contextMenuItem({
         id: "open",
         label: "Open run",
-        icon: <ExternalLink />,
+        icon: <ArrowSquareOut />,
         onSelect: () => actions.navigate(path),
       }),
       contextMenuItem({
@@ -195,7 +195,7 @@ function accountMenu(actions: ShellContextMenuActions): ContextMenu {
       contextMenuItem({
         id: "sign-out",
         label: "Sign out",
-        icon: <LogOut />,
+        icon: <SignOut />,
         onSelect: () => actions.signOut(),
       }),
     ],
@@ -209,7 +209,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
       contextMenuItem({
         id: "search",
         label: "Search…",
-        icon: <Search />,
+        icon: <MagnifyingGlass />,
         onSelect: () => requestOpenCommandPalette(),
       }),
       contextMenuItem({
@@ -222,7 +222,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
       contextMenuItem({
         id: "theme",
         label: "Toggle theme",
-        icon: <SunMoon />,
+        icon: <MoonStars />,
         onSelect: () => actions.cycleTheme(),
       }),
     ],

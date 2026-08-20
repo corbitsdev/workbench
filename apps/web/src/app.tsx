@@ -3,26 +3,58 @@
 // screens that talk to the hub only mount once the session is confirmed, so
 // a signed-out browser fires no authenticated request anywhere.
 
-import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
+import { Button, EmptyState } from "@corbits/react-ui";
+import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { CircleAlert } from "lucide-react";
-import { useMemo } from "react";
-import { Toaster } from "sonner";
+import { BoldIconProvider, WarningCircle } from "@corbits/icons";
+import { useEffect, useMemo } from "react";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
 import { CommandPaletteProvider } from "./command-palette-provider";
+import { buildLoginRedirect } from "./login-next";
 import { NavigationProvider, type Navigate } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { createAppQueryClient } from "./query-client";
-import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
+import {
+  APP_ROUTES,
+  LOGIN_PATH,
+  matchesRoute,
+  ONBOARDING_PATH,
+} from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
 import { ProviderHealthProvider } from "./shell/provider-health-context";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
+
+/** Any signed-out request for a path other than `/login` itself bounces
+ * there with `?next=` so a successful sign-in returns to where the visitor
+ * meant to go — the URL is the source of truth for "where was I headed",
+ * not an implicit conditional swap in `App`. */
+function LoginRedirect({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: Navigate;
+}) {
+  useEffect(() => {
+    navigate(buildLoginRedirect(path));
+  }, [path, navigate]);
+  return null;
+}
+
+/** An already-authed visit to `/login` (a stale tab, a bookmark) bounces
+ * home rather than showing the sign-in form to someone already signed in. */
+function LoginBounceHome({ navigate }: { readonly navigate: Navigate }) {
+  useEffect(() => {
+    navigate("/");
+  }, [navigate]);
+  return null;
+}
 
 /**
  * Onboarding renders above the shell entirely — no rail, no col2, no bench
@@ -41,15 +73,6 @@ function OnboardingGate({
     <NavigationProvider navigate={navigate}>
       <OnboardingPage user={user} />
     </NavigationProvider>
-  );
-}
-
-function Brand() {
-  return (
-    <>
-      <CorbitsMark decorative className="app-mark" />
-      <span className="app-wordmark">Workbench</span>
-    </>
   );
 }
 
@@ -94,7 +117,6 @@ function Shell({
                   )}
                 </AppShell>
               </ShellChromeProvider>
-              <Toaster />
             </ComposerInsertionProvider>
           </ProviderHealthProvider>
         </BenchProvider>
@@ -130,50 +152,60 @@ export function App({
   readonly provisioningErrorRefId?: string | undefined;
   readonly onRetryProvisioning?: () => void;
 }) {
-  if (session.kind === "signed-in" && provisioningError) {
-    return (
-      <ProvisioningErrorPage
-        message={provisioningError}
-        refId={provisioningErrorRefId}
-        onRetry={onRetryProvisioning ?? onRetry}
-      />
-    );
-  }
-  switch (session.kind) {
-    case "loading":
+  return <BoldIconProvider>{renderApp()}</BoldIconProvider>;
+
+  function renderApp() {
+    if (session.kind === "signed-in" && provisioningError) {
       return (
-        <div className="app-boot-frame">
-          <BootScreen message="Loading workbench" brand={<Brand />} />
-        </div>
-      );
-    case "signed-out":
-      return <AuthScreen onSignedIn={onSignedIn} />;
-    case "error":
-      return (
-        <div className="app-boot-frame">
-          <EmptyState
-            icon={<CircleAlert />}
-            title="Connection lost"
-            description={session.message}
-            action={
-              <Button variant="outline" onClick={onRetry}>
-                Try again
-              </Button>
-            }
-          />
-        </div>
-      );
-    case "signed-in":
-      if (path === ONBOARDING_PATH) {
-        return <OnboardingGate navigate={navigate} user={session.user} />;
-      }
-      return (
-        <Shell
-          path={path}
-          navigate={navigate}
-          user={session.user}
-          onSignOut={onSignOut}
+        <ProvisioningErrorPage
+          message={provisioningError}
+          refId={provisioningErrorRefId}
+          onRetry={onRetryProvisioning ?? onRetry}
         />
       );
+    }
+    switch (session.kind) {
+      case "loading":
+        return (
+          <div className="app-boot-frame">
+            <WorkbenchLoadingState delayMs={0} />
+          </div>
+        );
+      case "signed-out":
+        if (path !== LOGIN_PATH) {
+          return <LoginRedirect path={path} navigate={navigate} />;
+        }
+        return <AuthScreen onSignedIn={onSignedIn} />;
+      case "error":
+        return (
+          <div className="app-boot-frame">
+            <EmptyState
+              icon={<WarningCircle />}
+              title="Connection lost"
+              description={session.message}
+              action={
+                <Button variant="outline" onClick={onRetry}>
+                  Try again
+                </Button>
+              }
+            />
+          </div>
+        );
+      case "signed-in":
+        if (path === LOGIN_PATH) {
+          return <LoginBounceHome navigate={navigate} />;
+        }
+        if (path === ONBOARDING_PATH) {
+          return <OnboardingGate navigate={navigate} user={session.user} />;
+        }
+        return (
+          <Shell
+            path={path}
+            navigate={navigate}
+            user={session.user}
+            onSignOut={onSignOut}
+          />
+        );
+    }
   }
 }

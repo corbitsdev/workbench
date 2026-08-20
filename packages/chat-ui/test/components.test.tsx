@@ -26,7 +26,6 @@ const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
 const composerSlashHandlers = {
   onInviteAgent: () => {},
   onOpenAgentsSettings: () => {},
-  onOpenRoutines: () => {},
   onCreateRoutineInSpace: () => {},
 };
 

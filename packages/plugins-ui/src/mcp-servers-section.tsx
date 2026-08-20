@@ -10,7 +10,7 @@
 
 import { ConfirmButton, toast } from "@corbits/react-ui";
 import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
-import { Plug } from "lucide-react";
+import { PuzzlePiece } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import {
@@ -48,19 +48,16 @@ function ConnectedMcpServerRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 border border-border p-3">
+    <div className="flex items-center justify-between gap-3 border-b border-border px-2 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <span
           aria-hidden="true"
           className="flex size-9 shrink-0 items-center justify-center border border-border text-muted-foreground"
         >
-          <Plug className="size-4" />
+          <PuzzlePiece className="size-4" />
         </span>
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium">{server.name}</span>
-          <span className="truncate text-sm text-muted-foreground">
-            {server.url}
-          </span>
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
@@ -117,14 +114,16 @@ export function McpServersSection({ tenantId }: { readonly tenantId: string }) {
           {loadError}
         </p>
       ) : null}
-      {customServers.map((server) => (
-        <ConnectedMcpServerRow
-          key={server.slug}
-          tenantId={tenantId}
-          server={server}
-          onChanged={reload}
-        />
-      ))}
+      <div className="border border-border [&>*:last-child]:border-b-0">
+        {customServers.map((server) => (
+          <ConnectedMcpServerRow
+            key={server.slug}
+            tenantId={tenantId}
+            server={server}
+            onChanged={reload}
+          />
+        ))}
+      </div>
     </section>
   );
 }

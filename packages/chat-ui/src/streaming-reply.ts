@@ -50,6 +50,25 @@ function innerEventType(data: unknown): string | null {
   return typeof type === "string" ? type : null;
 }
 
+/** Whether a `chat.message` payload carries `postUndeliveredNotice`'s
+ * `turnFailed` part (see `packages/chat/src/workbench-service.ts`). This
+ * notice posts straight to the room with no `chat.agent` events at all —
+ * the dispatch failed before `sendMail` ever reached the agent — so
+ * without this check a turn that fails this way never emits the
+ * `reactor.error`/`inference.error` this module otherwise relies on to
+ * clear the typing pulse, leaving it stranded until the 120s backstop. */
+function hasTurnFailedPart(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  const parts = (data as Record<string, unknown>).parts;
+  if (!Array.isArray(parts)) return false;
+  return parts.some(
+    (part) =>
+      typeof part === "object" &&
+      part !== null &&
+      (part as Record<string, unknown>).turnFailed === true,
+  );
+}
+
 /**
  * The streaming reply's whole state machine, pure: an `inference.start`
  * opens an empty in-progress reply if nothing is showing yet (it never
@@ -58,13 +77,18 @@ function innerEventType(data: unknown): string | null {
  * clear it — the turn is over. `inference.done` only clears once tokens
  * have streamed (the persisted message takes over); an empty pending
  * survives so the typing pulse stays up across tool rounds. `inference.error`
- * always clears. Every other event type (tool calls, thinking, usage)
- * leaves the current state untouched.
+ * always clears. A `chat.message` carrying `postUndeliveredNotice`'s
+ * `turnFailed` part also clears it (see `hasTurnFailedPart`) — the one
+ * failure path with no `chat.agent` events of its own. Every other event
+ * type (tool calls, thinking, usage) leaves the current state untouched.
  */
 export function nextStreamingReplyState(
   current: StreamingReplyState,
   event: { readonly eventType: string; readonly data: unknown },
 ): StreamingReplyState {
+  if (event.eventType === "chat.message") {
+    return hasTurnFailedPart(event.data) ? null : current;
+  }
   if (event.eventType !== "chat.agent") return current;
 
   const innerType = innerEventType(event.data);
@@ -109,6 +133,23 @@ export function openPendingReply(
   return current ?? { text: "" };
 }
 
+/**
+ * The catch-up snapshot a client reattaching mid-turn (a fresh mount after
+ * navigating away and back, CL-6380) hydrates its streaming reply with,
+ * before the live SSE tail resumes: a running turn with committed text
+ * opens the reply already carrying it; a running turn with none yet (still
+ * in its first inference call) opens the same empty pending state
+ * `openPendingReply` would; no running turn at all means there's nothing to
+ * resume. Never called once a live event has already produced state — see
+ * `resumeFromTurn`'s own guard below.
+ */
+export function hydrateStreamingReplyFromTurn(
+  runningTurn: { readonly textSnapshot?: string | null } | null,
+): StreamingReplyState {
+  if (runningTurn === null) return null;
+  return { text: runningTurn.textSnapshot ?? "" };
+}
+
 /** How long an empty pending reply may sit with no tokens before the
  * indicator clears itself — the backstop for a turn whose stream events
  * never arrive (agent down, SSE dropped mid-reconnect). */
@@ -133,6 +174,10 @@ export function useStreamingReply(
   readonly replyTimedOut: boolean;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
   readonly noteAwaitingReply: () => void;
+  /** See `resumeFromTurn`'s own doc comment below. */
+  readonly resumeFromTurn: (
+    runningTurn: { readonly textSnapshot?: string | null } | null,
+  ) => void;
 } {
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
@@ -220,11 +265,32 @@ export function useStreamingReply(
     );
   }
 
+  /**
+   * Applies a fetched turn-state snapshot (see `api.ts`'s
+   * `fetchRunningTurn`) on a fresh mount, before any live event has
+   * arrived. Guarded to only ever fill an empty (`null`) state — a stream
+   * event that already opened or grew the reply always wins, since it is
+   * strictly newer than a snapshot fetched moments earlier over a separate
+   * request. A `null` turn (nothing running) is a no-op, not a reset: it
+   * must never clear a reply a fast SSE `reactor.start` already opened
+   * while the snapshot fetch was in flight.
+   */
+  function resumeFromTurn(
+    runningTurn: { readonly textSnapshot?: string | null } | null,
+  ) {
+    if (runningTurn === null) return;
+    setReplyTimedOut(false);
+    setStreamingReply(
+      (current) => current ?? hydrateStreamingReplyFromTurn(runningTurn),
+    );
+  }
+
   return {
     streamingReply,
     replyTimedOut,
     handleStreamEvent,
     noteAwaitingReply,
+    resumeFromTurn,
   };
 }
 

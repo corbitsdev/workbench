@@ -26,10 +26,11 @@ import {
 import type { Workbench } from "@corbits/chat-ui";
 import { WorkingTaskRow } from "@corbits/tasks-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Hash, MessageSquare, MoreHorizontal, Search } from "lucide-react";
+import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { useNeedsYouCount } from "../api";
 import { useBench } from "../bench-context";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import {
@@ -37,7 +38,26 @@ import {
   isWorkbenchRenameRequestFor,
 } from "../workbench-rename-events";
 import { useBenchActivity } from "./bench-activity";
+import { Chip } from "./chip";
 import { buildSidebarRows, type SidebarRow } from "./sidebar-rows";
+
+/**
+ * The bench-wide "something needs you" signal above the row list. The
+ * `/approvals/needs-you` read is scoped to the selected bench already, but
+ * carries no per-workbench id (a known v1 gap — see
+ * `workbench-timeline-merge.ts`'s `toApprovalEvents` doc), so this renders
+ * once for the whole list rather than guessing which row it belongs to.
+ */
+function NeedsYouSignal({ tenantId }: { readonly tenantId: string | null }) {
+  const count = useNeedsYouCount(tenantId);
+  if (count === null || count <= 0) return null;
+  return (
+    <div className="shell-panel-needs-you">
+      <span>{count} waiting on you</span>
+      <Chip tone="needs-you">Needs you</Chip>
+    </div>
+  );
+}
 
 /**
  * The always-active, no-op row naming the current screen as "where the
@@ -325,7 +345,7 @@ function WorkbenchRow({
               className="chat-sidebar-row-menu-trigger"
               aria-label={CHAT_STRINGS.rowMenuLabel}
             >
-              <MoreHorizontal />
+              <DotsThree />
             </button>
           </MenuTrigger>
           <MenuContent align="start">
@@ -353,7 +373,14 @@ export function WorkbenchList({
   const [query, setQuery] = useState("");
 
   if (activity.kind === "loading") {
-    return <Skeleton className="shell-activity-skeleton" />;
+    return (
+      <div className="shell-activity-skeleton-rows" aria-hidden="true">
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+        <Skeleton className="shell-activity-skeleton-row" />
+      </div>
+    );
   }
   if (activity.kind === "empty") {
     return (
@@ -393,6 +420,7 @@ export function WorkbenchList({
     return (
       <div className="panel-stack" aria-label="Workbenches">
         {workingGroup}
+        <NeedsYouSignal tenantId={selectedTenantId} />
         <h2 className="shell-panel-list-label">Workbenches</h2>
         <div className="panel-stack-group">
           <NewWorkbenchStubRow />
@@ -417,7 +445,7 @@ export function WorkbenchList({
     <div className="panel-stack" aria-label="Workbenches">
       {workingGroup}
       <label className="shell-panel-search">
-        <Search aria-hidden="true" />
+        <MagnifyingGlass aria-hidden="true" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -425,10 +453,11 @@ export function WorkbenchList({
           aria-label="Search workbenches"
         />
       </label>
+      <NeedsYouSignal tenantId={selectedTenantId} />
       <h2 className="shell-panel-list-label">Workbenches</h2>
       {filtered.length === 0 ? (
         <EmptyState
-          icon={<MessageSquare />}
+          icon={<ChatCircle />}
           title="No matches"
           description={`Nothing matches “${query.trim()}”.`}
         />

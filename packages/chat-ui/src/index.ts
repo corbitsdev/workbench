@@ -11,6 +11,8 @@ export type {
   TimelineMessageItem,
 } from "./timeline";
 
+export { WorkbenchLoadingState } from "./loading-state";
+
 export { PinnedStrip } from "./pinned-strip";
 export {
   Composer,

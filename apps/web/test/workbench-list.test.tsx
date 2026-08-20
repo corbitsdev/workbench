@@ -53,19 +53,37 @@ function json(body: unknown): Response {
   });
 }
 
-function stubFetch(data: { readonly tasks?: readonly unknown[] }): void {
+function stubFetch(data: {
+  readonly tasks?: readonly unknown[];
+  readonly needsYou?: readonly unknown[];
+}): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
+    if (path.includes("/approvals/needs-you"))
+      return Promise.resolve(json({ items: data.needsYou ?? [] }));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
+}
+
+function needsYouItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "apr_1",
+    agentName: "Myra",
+    benchName: "Corbits Bench",
+    headline: "Merge the checkout fix",
+    arguments: {},
+    status: "pending",
+    createdAt: "2026-08-14T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function runningTask(overrides: Record<string, unknown> = {}) {
@@ -152,5 +170,25 @@ describe("WorkbenchList — Working group", () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(navigatedTo as string | null).toBe("/inbox");
+  });
+});
+
+describe("WorkbenchList — needs-you signal", () => {
+  test("hides the signal when nothing is pending", async () => {
+    stubFetch({ tasks: [], needsYou: [] });
+    const el = await mount();
+    expect(el.textContent).not.toContain("waiting on you");
+  });
+
+  test("shows a filled needs-you chip with the real pending count", async () => {
+    stubFetch({
+      tasks: [],
+      needsYou: [needsYouItem(), needsYouItem({ id: "apr_2" })],
+    });
+    const el = await mount();
+    expect(el.textContent).toContain("2 waiting on you");
+    const chip = el.querySelector('.chip[data-tone="needs-you"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toBe("Needs you");
   });
 });

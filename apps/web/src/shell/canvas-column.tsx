@@ -40,13 +40,13 @@ import {
 } from "@corbits/artifact-ui";
 import type { ProfileSubject, SharedWorkbenchSummary } from "@corbits/chat-ui";
 import {
-  ChevronLeft,
-  ExternalLink,
-  Maximize2,
-  Minimize2,
-  UserRound,
+  ArrowsIn,
+  ArrowsOut,
+  ArrowSquareOut,
+  CaretLeft,
+  UserCircle,
   X,
-} from "lucide-react";
+} from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type * as Y from "yjs";
@@ -155,7 +155,7 @@ export function CanvasColumn({
           <RoutinePanel />
         ) : (
           <EmptyState
-            icon={<UserRound />}
+            icon={<UserCircle />}
             title="Nothing open"
             description="Profiles and artifacts open here when you need them."
           />
@@ -265,7 +265,7 @@ export function CanvasPaneHeader({
             aria-label="Back"
             title="Back"
           >
-            <ChevronLeft />
+            <CaretLeft />
           </Button>
         ) : null}
         {title !== undefined ? (
@@ -277,7 +277,7 @@ export function CanvasPaneHeader({
         {previewSrc !== undefined ? (
           <Button variant="ghost" size="sm" asChild>
             <a href={previewSrc} target="_blank" rel="noreferrer">
-              <ExternalLink aria-hidden="true" />
+              <ArrowSquareOut aria-hidden="true" />
               Open in new tab
             </a>
           </Button>
@@ -290,7 +290,7 @@ export function CanvasPaneHeader({
             aria-label={focus === true ? "Exit focus" : "Focus"}
             title={focus === true ? "Exit focus" : "Focus"}
           >
-            {focus === true ? <Minimize2 /> : <Maximize2 />}
+            {focus === true ? <ArrowsIn /> : <ArrowsOut />}
           </Button>
         ) : null}
         {onClose !== undefined ? (

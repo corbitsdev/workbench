@@ -34,7 +34,7 @@ import {
   providerDisplayName,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@corbits/inference-settings";
-import { ArrowLeft, ChevronRight, CircleAlert, UserPlus } from "lucide-react";
+import { ArrowLeft, CaretRight, UserPlus, WarningCircle } from "@corbits/icons";
 
 import {
   addAgentCapability,
@@ -133,7 +133,7 @@ export function AgentsSection({
   if (state.kind === "error") {
     return (
       <EmptyState
-        icon={<CircleAlert />}
+        icon={<WarningCircle />}
         title="Couldn't load agents"
         description={state.message}
       />
@@ -187,7 +187,7 @@ export function AgentsSection({
                   onClick={() => select(agent.definitionId)}
                 >
                   @{agent.handle}
-                  <ChevronRight
+                  <CaretRight
                     aria-hidden="true"
                     className="chat-settings-agent-picker-row-chevron"
                   />
@@ -287,7 +287,7 @@ function AgentDetailEditor({
   if (state.kind === "error") {
     return (
       <EmptyState
-        icon={<CircleAlert />}
+        icon={<WarningCircle />}
         title={CHAT_STRINGS.workbenchSettingsAgentDetailLoadError}
         description={state.message}
       />

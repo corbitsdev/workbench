@@ -99,8 +99,8 @@ export interface DeliverySpacePort {
  * (CL-6247), a routine created enabled or flipped to enabled posts one
  * of these into its delivery workbench so the people in that workbench
  * learn what just started running, honestly, without digging into the
- * Routines panel first. Omitted: no notice is posted, unchanged from
- * before this port existed.
+ * global Routines page first (CL-6362). Omitted: no notice is posted,
+ * unchanged from before this port existed.
  */
 export interface WorkbenchNoticePort {
   postWorkbenchNotice(input: {
@@ -240,6 +240,12 @@ const CreateRoutineBody = type({
   // must never be forced to collect a workbench it would just discard.
   "deliveryWorkbenchId?": "string",
   "runOnceNow?": "boolean",
+  // Present only for a template-minted routine (e.g. a
+  // `DEFAULT_ROUTINE_PRESETS` entry seeded by `ensureDefaultRoutines`) —
+  // see `RoutineStore.createRoutineIfAbsent`'s own doc comment for the
+  // create-if-absent guarantee this unlocks. Absent for every
+  // person-authored create, unchanged prior behavior.
+  "presetKey?": "string",
 });
 
 const UpdateRoutineBody = type({
@@ -486,7 +492,7 @@ export async function postRoutineEnabledNotice(
   if (input.workbenchId === null || input.workbenchId === "") return;
   const text =
     `${input.verb} routine "${input.name}" — runs ` +
-    `${routineCadenceLabel(input.trigger)}. Disable it in the Routines panel.`;
+    `${routineCadenceLabel(input.trigger)}. Manage it from Routines.`;
   try {
     await deps.workbenchNotice.postWorkbenchNotice({
       tenantId: input.tenantId,
@@ -623,17 +629,34 @@ export function createRoutineRoutes(
         body.deliveryWorkbenchId ?? provisionedSpace?.workbenchId ?? null;
 
       let row: RoutineRow;
+      let created = true;
       try {
-        row = await deps.store.createRoutine({
-          tenantId: tenant.id,
-          name: body.name,
-          definitionId: body.definitionId,
-          trigger: body.trigger,
-          scope: body.scope,
-          input: body.input ?? {},
-          deliveryWorkbenchId,
-          createdBy: principal.id,
-        });
+        if (body.presetKey !== undefined) {
+          const result = await deps.store.createRoutineIfAbsent({
+            tenantId: tenant.id,
+            name: body.name,
+            definitionId: body.definitionId,
+            trigger: body.trigger,
+            scope: body.scope,
+            input: body.input ?? {},
+            deliveryWorkbenchId,
+            createdBy: principal.id,
+            presetKey: body.presetKey,
+          });
+          row = result.row;
+          created = result.created;
+        } else {
+          row = await deps.store.createRoutine({
+            tenantId: tenant.id,
+            name: body.name,
+            definitionId: body.definitionId,
+            trigger: body.trigger,
+            scope: body.scope,
+            input: body.input ?? {},
+            deliveryWorkbenchId,
+            createdBy: principal.id,
+          });
+        }
       } catch (err) {
         if (provisionedSpace !== undefined) {
           log.error(
@@ -653,6 +676,30 @@ export function createRoutineRoutes(
           }
         }
         throw err;
+      }
+
+      // Lost the create-if-absent race (or this is a genuine re-seed):
+      // the preset row already exists. Any space this request just
+      // provisioned points at nothing real and is compensated (deleted)
+      // rather than left orphaned — the winning request's own row keeps
+      // whatever delivery workbench it resolved to. No fire, no notice:
+      // both already happened (or are about to happen) on the winning
+      // request.
+      if (!created) {
+        if (provisionedSpace !== undefined) {
+          try {
+            await provisionedSpace.compensate();
+          } catch (compensationErr) {
+            log.error(
+              "Compensation failed for orphaned space {workbenchId} " +
+                "after losing a routine create-if-absent race; this " +
+                "space now has no routine pointing at it and requires " +
+                "manual cleanup",
+              { workbenchId: provisionedSpace.workbenchId, compensationErr },
+            );
+          }
+        }
+        return c.json(routineView(row), 200);
       }
 
       if (body.runOnceNow === true) {

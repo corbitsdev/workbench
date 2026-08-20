@@ -117,9 +117,9 @@ export type {
 
 export {
   ConnectionsApiError,
-  testConnectorCredential,
   completeConnectorCredential,
   disconnectConnector,
+  fetchOAuthConfigured,
 } from "./connections-api";
 
 export { connectorStatus } from "./connections-status";

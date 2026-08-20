@@ -356,9 +356,9 @@ const GREETING_VARIATIONS: readonly ((who: string, agent: string) => string)[] =
       "research, lining up automations: all fair game. What should we " +
       "dig into first?",
     (who, agent) =>
-      `Welcome in${who}. I'm ${agent}; think of me as the teammate who ` +
-      "writes, plans, and pulls in the right specialists when a job " +
-      "calls for them. What's on your plate?",
+      `Welcome in${who === "" ? "" : `,${who}`}. I'm ${agent}; think of me ` +
+      "as the teammate who writes, plans, and pulls in the right " +
+      "specialists when a job calls for them. What's on your plate?",
     (who, agent) =>
       `Hey${who} — ${agent} here. This space is ours to work in: I can ` +
       "draft, plan, and wire things up as we go. What are you working on?",

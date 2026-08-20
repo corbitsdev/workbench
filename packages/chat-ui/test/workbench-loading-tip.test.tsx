@@ -38,7 +38,7 @@ describe("WorkbenchTimeline — setup loader", () => {
   test("shows one honest headline, never a system-stage name", () => {
     const el = mount();
 
-    expect(el.textContent).toContain("Loading your workbench…");
+    expect(el.textContent).toContain("Getting your workbench ready…");
     expect(el.textContent).not.toContain("runtime");
     expect(el.textContent).not.toContain("joining");
   });
@@ -64,5 +64,25 @@ describe("WorkbenchTimeline — setup loader", () => {
     const expected: string = CHAT_STRINGS.workbenchLoadingTips[1] ?? "";
     expect(second).toBe(expected);
     expect(second).not.toBe(first);
+  });
+});
+
+describe("WorkbenchTimeline — empty agent DM", () => {
+  test("once the agent has joined, leads with its own name instead of the loader", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        <WorkbenchTimeline
+          items={[]}
+          participants={[{ address: "myra@agents.example", handle: "myra" }]}
+          settingUpAgent={false}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Say hello to Myra");
+    expect(container.querySelector(".chat-workbench-loading")).toBeNull();
   });
 });

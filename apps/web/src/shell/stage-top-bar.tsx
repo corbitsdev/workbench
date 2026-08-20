@@ -7,14 +7,20 @@
 import { Button } from "@corbits/react-ui";
 import { Fragment, type ReactNode } from "react";
 
+import { Chip, type ChipTone } from "./chip";
+
 export function StageTopBar({
   title,
   subtitle,
+  chip,
   actions,
 }: {
   /** Plain text or a StageCrumbs trail. */
   readonly title: ReactNode;
   readonly subtitle?: ReactNode;
+  /** A quiet status pill (mock's `.chip[data-tone]`), rendered first among
+   * the right-aligned actions — ambient state, not a button. */
+  readonly chip?: { readonly tone: ChipTone; readonly label: ReactNode };
   readonly actions?: ReactNode;
 }) {
   const hasSubtitle = subtitle !== undefined && subtitle !== null;
@@ -27,7 +33,10 @@ export function StageTopBar({
           <div className="stage-top-bar-sub">{subtitle}</div>
         </>
       ) : null}
-      <div className="stage-top-bar-actions">{actions}</div>
+      <div className="stage-top-bar-actions">
+        {chip !== undefined ? <Chip tone={chip.tone}>{chip.label}</Chip> : null}
+        {actions}
+      </div>
     </header>
   );
 }
