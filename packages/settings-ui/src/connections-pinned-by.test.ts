@@ -37,8 +37,15 @@ describe("connections pinned-by", () => {
     );
   });
 
-  test("exa pins last-30-days-research", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual(["last-30-days-research"]);
+  test("exa pins both web-search workflows", () => {
+    expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual([
+      "last-30-days-research",
+      "exa-topic-watch",
+    ]);
+  });
+
+  test("attio pins the CRM task agent", () => {
+    expect(CONNECTOR_PINNED_WORKFLOWS.attio).toEqual(["attio-task-agent"]);
   });
 
   test("scrapecreators pins reddit-opportunity-scanner", () => {
