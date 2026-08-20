@@ -5,7 +5,7 @@
 // section's own `render`, never here.
 
 import { EmptyState } from "@corbits/react-ui";
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@corbits/icons";
 import type { ReactElement } from "react";
 
 import { SETTINGS_STRINGS } from "./strings";
@@ -36,7 +36,7 @@ export type SettingsSection = {
   readonly id: string;
   readonly title: string;
   /** Leading icon for a host's own section nav (col2). */
-  readonly icon: LucideIcon;
+  readonly icon: Icon;
   readonly render: (ctx: SettingsContext) => ReactElement;
   /** Tucks this section under a collapsed "Advanced" disclosure at the
    * bottom of its group's nav, instead of listing it as a peer section —

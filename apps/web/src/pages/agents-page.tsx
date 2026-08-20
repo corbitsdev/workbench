@@ -22,7 +22,7 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Bot } from "lucide-react";
+import { Robot } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -186,7 +186,7 @@ export function AgentsPage({
               onClick={() => onCreateOpenChange(true)}
               aria-label="Create an agent"
             >
-              <Bot /> Create
+              <Robot /> Create
             </Button>
           ) : null
         }
@@ -196,7 +196,7 @@ export function AgentsPage({
           <PageShell width="full" className="page-fill">
             {definitions.length === 0 ? (
               <RichEmptyState
-                icon={<Bot />}
+                icon={<Robot />}
                 title="No agents yet"
                 description="Create an agent — a name, a system prompt, and optionally a model — and it appears here and in the sidebar, ready to start a workbench."
               />
@@ -291,7 +291,7 @@ export function AgentsRoute({
         <StageTopBar title="Agents" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<Bot />}
+            icon={<Robot />}
             title="Select a workbench"
             description="Pick a workbench from the switcher to see the agents it can start."
           />

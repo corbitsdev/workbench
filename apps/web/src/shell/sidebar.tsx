@@ -32,18 +32,18 @@ import {
   SidebarPanelFooter,
 } from "@corbits/react-ui";
 import {
-  Bot,
-  ChartColumn,
-  ChevronRight,
-  Library,
-  LogOut,
-  MessageSquarePlus,
-  Plug,
+  CaretRight,
+  ChartBar,
+  ChatCircleDots,
+  FolderOpen,
+  Lightning,
   Plus,
+  PuzzlePiece,
+  Robot,
+  SignOut,
+  Repeat,
   SlidersHorizontal,
-  Sparkles,
-  Workflow,
-} from "lucide-react";
+} from "@corbits/icons";
 import { useMemo } from "react";
 
 import {
@@ -97,7 +97,7 @@ function WeeklyUsageMenuItem({
       <span>Weekly usage</span>
       <span className="shell-sidebar-account-menu-usage-value">
         {summary}
-        <ChevronRight />
+        <CaretRight />
       </span>
     </MenuItem>
   );
@@ -155,7 +155,7 @@ export function Sidebar({
           aria-current={matchesRoute("/routines", path) ? "page" : undefined}
           onClick={() => onNavigate("/routines")}
         >
-          <Workflow />
+          <Repeat />
           <span>Routines</span>
         </button>
         <button
@@ -165,7 +165,7 @@ export function Sidebar({
           aria-current={matchesRoute("/files", path) ? "page" : undefined}
           onClick={() => onNavigate("/files")}
         >
-          <Library />
+          <FolderOpen />
           <span>Files</span>
         </button>
         <button
@@ -175,7 +175,7 @@ export function Sidebar({
           aria-current={matchesRoute("/skills", path) ? "page" : undefined}
           onClick={() => onNavigate("/skills")}
         >
-          <Sparkles />
+          <Lightning />
           <span>Skills</span>
         </button>
         <button
@@ -185,7 +185,7 @@ export function Sidebar({
           aria-current={matchesRoute("/agents", path) ? "page" : undefined}
           onClick={() => onNavigate("/agents")}
         >
-          <Bot />
+          <Robot />
           <span>Agents</span>
         </button>
         <button
@@ -195,7 +195,7 @@ export function Sidebar({
           aria-current={matchesRoute("/plugins", path) ? "page" : undefined}
           onClick={() => onNavigate("/plugins")}
         >
-          <Plug />
+          <PuzzlePiece />
           <span>Plugins</span>
         </button>
         <button
@@ -205,7 +205,7 @@ export function Sidebar({
           aria-current={matchesRoute("/insights", path) ? "page" : undefined}
           onClick={() => onNavigate("/insights")}
         >
-          <ChartColumn />
+          <ChartBar />
           <span>Insights</span>
         </button>
 
@@ -234,7 +234,7 @@ export function Sidebar({
             </MenuItem>
             <MenuItem asChild>
               <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
-                <MessageSquarePlus /> Send Feedback
+                <ChatCircleDots /> Send Feedback
               </a>
             </MenuItem>
             <MenuSeparator />
@@ -242,7 +242,7 @@ export function Sidebar({
               onSelect={onSignOut}
               className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
             >
-              <LogOut /> Log out
+              <SignOut /> Log out
             </MenuItem>
           </MenuContent>
         </Menu>

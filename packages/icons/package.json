@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/icons",
+  "private": true,
+  "description": "The one Phosphor icon surface every app/package imports glyphs through — bold weight, curated names, no lucide-react and no Sparkle anywhere",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "typescript": "catalog:"
+  }
+}

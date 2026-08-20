@@ -9,7 +9,7 @@
 import { Button } from "@corbits/react-ui";
 import { connectorDescriptors } from "@workbench/connections/registry";
 import type { ClassifiedInferenceFailureCategory } from "@workbench/connections/provider-health";
-import { TriangleAlert, X } from "lucide-react";
+import { Warning, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import { useNavigate } from "../navigation";
@@ -105,10 +105,7 @@ export function ProviderHealthBanner() {
             className="provider-health-banner"
             role={isOpen ? "alert" : undefined}
           >
-            <TriangleAlert
-              className="provider-health-banner-icon"
-              aria-hidden
-            />
+            <Warning className="provider-health-banner-icon" aria-hidden />
             <p className="provider-health-banner-text">
               Your {bannerMessage(cachedBanner)}
             </p>

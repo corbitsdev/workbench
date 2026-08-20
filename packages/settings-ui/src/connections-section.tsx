@@ -39,7 +39,7 @@ import {
   type EffectiveInferenceRow,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@intx/types";
-import { ArrowDown, ArrowUp, Bot, Cable, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUp, Cpu, Plugs, Robot } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -337,7 +337,7 @@ export function ConnectionsSection({
             <section className="settings-provider-section">
               <div className="settings-provider-section-heading">
                 <span className="settings-provider-section-icon" aria-hidden>
-                  <Cable />
+                  <Plugs />
                 </span>
                 <div>
                   <h3>AI providers</h3>
@@ -446,7 +446,7 @@ function ModelRoutePanel({
     >
       <div className="settings-model-route-heading">
         <span className="settings-model-route-icon" aria-hidden>
-          <Sparkles />
+          <Cpu />
         </span>
         <div>
           <h3 id="model-route-title">Default model & fallbacks</h3>
@@ -458,7 +458,7 @@ function ModelRoutePanel({
       </div>
       {ordered.length === 0 ? (
         <div className="settings-model-route-empty">
-          <Bot aria-hidden />
+          <Robot aria-hidden />
           <span>Connect an AI provider to choose a default model.</span>
         </div>
       ) : (

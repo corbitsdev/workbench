@@ -14,12 +14,12 @@
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import {
-  ChevronDown,
-  CircleAlert,
-  MessageSquare,
+  CaretDown,
+  ChatCircle,
   SlidersHorizontal,
   UserPlus,
-} from "lucide-react";
+  WarningCircle,
+} from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -937,7 +937,7 @@ function ChatWorkspaceInner({
             <WorkbenchLoadingState />
           ) : workbenchesState.kind === "error" ? (
             <EmptyState
-              icon={<CircleAlert />}
+              icon={<WarningCircle />}
               title={`Couldn't load ${CHAT_STRINGS.couldNotLoadWorkbenches}`}
               description={workbenchesState.message}
               action={
@@ -951,7 +951,7 @@ function ChatWorkspaceInner({
             />
           ) : activeWorkbenchId === null ? (
             <EmptyState
-              icon={<MessageSquare />}
+              icon={<ChatCircle />}
               title={CHAT_STRINGS.noChatSelectedTitle}
               description={CHAT_STRINGS.noChatSelectedDescription}
             />
@@ -1015,7 +1015,7 @@ function ChatWorkspaceInner({
                     <details className="chat-threads-menu">
                       <summary className="chat-threads-menu-trigger">
                         {CHAT_STRINGS.threadsMenuCount(depth1Threads.length)}
-                        <ChevronDown className="size-3.5 opacity-70" />
+                        <CaretDown className="size-3.5 opacity-70" />
                       </summary>
                       <div className="chat-threads-menu-panel" role="menu">
                         {depth1Threads.map((thread) => (
@@ -1125,7 +1125,7 @@ function ChatWorkspaceInner({
               ) : messagesState.kind === "error" &&
                 messagesState.workbenchNotFound ? (
                 <EmptyState
-                  icon={<CircleAlert />}
+                  icon={<WarningCircle />}
                   title={CHAT_STRINGS.workbenchNotFoundTitle}
                   description={CHAT_STRINGS.workbenchNotFoundDescription}
                   action={
@@ -1138,7 +1138,7 @@ function ChatWorkspaceInner({
                 />
               ) : messagesState.kind === "error" ? (
                 <EmptyState
-                  icon={<CircleAlert />}
+                  icon={<WarningCircle />}
                   title={`Couldn't load ${CHAT_STRINGS.couldNotLoadMessages}`}
                   description={messagesState.message}
                   action={
@@ -1461,7 +1461,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title="No workbench yet"
             description="Create or join a workbench before chatting."
           />
@@ -1471,7 +1471,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title="Sign in to continue"
             description="Your conversations live on a workbench — sign in to open them."
           />
@@ -1481,7 +1481,7 @@ export function ChatWorkspace({
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<CircleAlert />}
+            icon={<WarningCircle />}
             title="Couldn't open this workbench"
             description={tenant.message}
           />

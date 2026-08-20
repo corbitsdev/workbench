@@ -6,14 +6,14 @@
 // where the gallery's opinions about those live.
 
 import {
+  ChatCircle,
   Cpu,
   GitBranch,
   GitPullRequest,
-  Mic,
-  Search,
-  MessageSquare,
-  type LucideIcon,
-} from "lucide-react";
+  type Icon,
+  MagnifyingGlass,
+  Microphone,
+} from "@corbits/icons";
 
 export type PluginCategory =
   | "Communication"
@@ -74,13 +74,13 @@ const OUTCOME_BY_ID: Readonly<Record<string, string>> = {
   github: "Lets agents read and open pull requests in your GitHub repos.",
 };
 
-// No brand mark for GitHub or Linear ships in lucide-react — `GitPullRequest`
+// No brand mark for GitHub or Linear ships in @corbits/icons — `GitPullRequest`
 // and `GitBranch` read as their nearest honest generic equivalents rather
 // than reaching for a third-party brand icon set.
-const ICON_BY_ID: Readonly<Record<string, LucideIcon>> = {
-  granola: Mic,
-  exa: Search,
-  scrapecreators: MessageSquare,
+const ICON_BY_ID: Readonly<Record<string, Icon>> = {
+  granola: Microphone,
+  exa: MagnifyingGlass,
+  scrapecreators: ChatCircle,
   linear: GitBranch,
   github: GitPullRequest,
 };
@@ -113,6 +113,6 @@ export function pluginOutcome(
  * and the two OAuth connectors that don't have a distinct product mark of
  * their own share `Cpu`, since "inference provider" is the honest shape of
  * what they all are here. */
-export function pluginIcon(connectorId: string): LucideIcon {
+export function pluginIcon(connectorId: string): Icon {
   return ICON_BY_ID[connectorId] ?? Cpu;
 }

@@ -3,7 +3,7 @@
 // them invents placeholder content.
 
 import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
-import { CircleAlert, Lock } from "lucide-react";
+import { Lock, WarningCircle } from "@corbits/icons";
 import type { ReactNode } from "react";
 
 import type { APIQuery } from "./envelope";
@@ -92,7 +92,7 @@ export function QueryView<T>({
     case "error":
       return (
         <EmptyState
-          icon={<CircleAlert />}
+          icon={<WarningCircle />}
           title={`Couldn't load ${label}`}
           description={describeApiError(
             { status: query.status },

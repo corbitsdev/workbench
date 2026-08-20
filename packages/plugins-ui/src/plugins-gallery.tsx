@@ -12,7 +12,7 @@ import {
   MCP_PRESETS,
   MCP_PRESET_CONNECTOR_IDS,
 } from "@workbench/connections/mcp-presets";
-import { Sparkles } from "lucide-react";
+import { Lightning } from "@corbits/icons";
 import { useMemo } from "react";
 
 import { McpServersSection } from "./mcp-servers-section";
@@ -137,7 +137,7 @@ function SkillsTabPanel({
   if (skills.length === 0) {
     return (
       <EmptyState
-        icon={<Sparkles />}
+        icon={<Lightning />}
         title="No skills yet"
         description="A skill is a named, reusable capability an agent can pin. Write one and it shows up here."
       />
@@ -147,7 +147,7 @@ function SkillsTabPanel({
   if (filtered.length === 0) {
     return (
       <EmptyState
-        icon={<Sparkles />}
+        icon={<Lightning />}
         title="Nothing matches"
         description={`No skill matches "${query.trim()}".`}
       />

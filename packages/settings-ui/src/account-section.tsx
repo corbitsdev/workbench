@@ -17,7 +17,7 @@ import {
   useTheme,
 } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
-import { Copy, LogOut } from "lucide-react";
+import { Copy, SignOut } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -144,7 +144,7 @@ export function AccountSectionView({
             className="settings-account-signout"
             onClick={onSignOut}
           >
-            <LogOut /> {SETTINGS_STRINGS.accountSignOutAction}
+            <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
           </Button>
         ) : null}
       </div>

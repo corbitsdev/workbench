@@ -33,7 +33,7 @@ import {
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, ExternalLink, FileStack, X } from "lucide-react";
+import { ArrowsDownUp, ArrowSquareOut, Stack, X } from "@corbits/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   describeApiError,
@@ -183,7 +183,7 @@ function PreviewPane({
           {previewSrc !== undefined ? (
             <Button variant="ghost" size="sm" asChild>
               <a href={previewSrc} target="_blank" rel="noreferrer">
-                <ExternalLink aria-hidden="true" />
+                <ArrowSquareOut aria-hidden="true" />
                 Open in new tab
               </a>
             </Button>
@@ -357,7 +357,7 @@ export function LibraryPage({
               aria-label={SORT_LABEL[sort]}
               title={SORT_LABEL[sort]}
             >
-              <ArrowDownUp />
+              <ArrowsDownUp />
             </Button>
           </MenuTrigger>
           <MenuContent align="end">
@@ -380,13 +380,13 @@ export function LibraryPage({
           <PageShell width="full" className="page-fill">
             {artifacts.length === 0 ? (
               <RichEmptyState
-                icon={<FileStack />}
+                icon={<Stack />}
                 title="No artifacts yet"
                 description="Upload a file or wait for agents and workflows to produce artifacts — they land here as soon as they exist."
               />
             ) : visible.length === 0 ? (
               <RichEmptyState
-                icon={<FileStack />}
+                icon={<Stack />}
                 title="Nothing matches"
                 description={`No artifact matches "${activeQuery}".`}
               />
@@ -485,7 +485,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
         <StageTopBar title="Files" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<FileStack />}
+            icon={<Stack />}
             title="Select a workbench"
             description="Pick a workbench from the switcher to browse the artifacts it owns."
           />
@@ -500,7 +500,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
         <StageTopBar title="Files" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<FileStack />}
+            icon={<Stack />}
             title="Files not configured"
             description="Files isn't set up yet. Ask your workbench admin to finish setup."
           />
@@ -520,7 +520,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
             <SignedOutNotice />
           ) : (
             <RichEmptyState
-              icon={<FileStack />}
+              icon={<Stack />}
               title="Couldn't load artifacts"
               description={describeApiError(
                 { status: page.status },

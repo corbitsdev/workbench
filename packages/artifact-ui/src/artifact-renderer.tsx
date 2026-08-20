@@ -8,7 +8,7 @@
 // multiplayer-editing half is CL-5958's substrate to build on top of this.
 
 import { CsvTable } from "@corbits/react-ui";
-import { FileQuestion } from "lucide-react";
+import { FileDashed } from "@corbits/icons";
 import type { ArtifactRendererKind } from "./renderer-kind";
 
 export type ArtifactRenderProps = {
@@ -171,7 +171,7 @@ function UnsupportedRenderer({
 }) {
   return (
     <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
-      <FileQuestion className="size-6" aria-hidden="true" />
+      <FileDashed className="size-6" aria-hidden="true" />
       <p>{unavailableReason ?? "No inline preview for this artifact."}</p>
     </div>
   );

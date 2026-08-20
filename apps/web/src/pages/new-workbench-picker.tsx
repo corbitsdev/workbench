@@ -9,7 +9,7 @@
 // next slice).
 
 import { Button, toast } from "@corbits/react-ui";
-import { GitPullRequest, MessageSquare, Plus } from "lucide-react";
+import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
 import { useState } from "react";
 
 import { useBench } from "../bench-context";
@@ -24,7 +24,7 @@ import {
 
 const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
-  blank: MessageSquare,
+  blank: ChatCircle,
 };
 
 function ctaLabel(selected: boolean): string {

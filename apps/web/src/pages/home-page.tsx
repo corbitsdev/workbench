@@ -9,7 +9,7 @@
 // `/w/:workbenchId`. Deep links to other pages are unchanged.
 
 import { BootScreen, Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
+import { WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import { listAllWorkbenches } from "@corbits/chat-ui";
@@ -79,7 +79,7 @@ export function HomeRoute() {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
-          icon={<CircleAlert />}
+          icon={<WarningCircle />}
           title="Couldn't load your workbenches"
           description={memberships.message}
           action={
@@ -96,7 +96,7 @@ export function HomeRoute() {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
-          icon={<CircleAlert />}
+          icon={<WarningCircle />}
           title="No workbench selected"
           description="Pick a workbench from the switcher, then Myra will open here."
         />
@@ -108,7 +108,7 @@ export function HomeRoute() {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
-          icon={<CircleAlert />}
+          icon={<WarningCircle />}
           title="Couldn't open Myra"
           description={state.message}
           action={

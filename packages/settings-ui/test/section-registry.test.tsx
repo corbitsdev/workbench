@@ -9,7 +9,7 @@
 // account.
 
 import { describe, expect, test } from "bun:test";
-import { Bot } from "lucide-react";
+import { Robot } from "@corbits/icons";
 
 import {
   insertEveryoneSections,
@@ -104,8 +104,8 @@ describe("resolveSettingsSectionGroups", () => {
 
 describe("insertEveryoneSections", () => {
   const extra: readonly SettingsSection[] = [
-    { id: "agents", title: "Agents", icon: Bot, render: () => <div /> },
-    { id: "skills", title: "Skills", icon: Bot, render: () => <div /> },
+    { id: "agents", title: "Agents", icon: Robot, render: () => <div /> },
+    { id: "skills", title: "Skills", icon: Robot, render: () => <div /> },
   ];
 
   test("splices host sections into Everyone, at its front", () => {

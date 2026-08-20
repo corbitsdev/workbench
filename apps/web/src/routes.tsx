@@ -19,15 +19,15 @@
 // redirect to `/`.
 
 import {
-  Blocks,
-  Bot,
-  ChartColumn,
-  Library,
-  MessageSquare,
-  Sparkles,
+  ChatCircle,
+  ChartBar,
+  FlowArrow,
+  FolderOpen,
+  Lightning,
+  Robot,
   SlidersHorizontal,
-  Workflow,
-} from "lucide-react";
+  SquaresFour,
+} from "@corbits/icons";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
@@ -154,20 +154,20 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/",
     label: "New Workbench",
-    icon: <MessageSquare />,
+    icon: <ChatCircle />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
   },
   {
     path: NEW_WORKBENCH_PATH,
     label: "New workbench",
-    icon: <MessageSquare />,
+    icon: <ChatCircle />,
     render: () => <NewWorkbenchPickerRoute />,
   },
   {
     path: WORKBENCH_PATH_PREFIX,
     label: "Workbenches",
-    icon: <MessageSquare />,
+    icon: <ChatCircle />,
     render: (path: string, navigate: (to: string) => void) => (
       <ChatPage path={path} navigate={navigate} />
     ),
@@ -175,7 +175,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/inbox",
     label: "Inbox",
-    icon: <MessageSquare />,
+    icon: <ChatCircle />,
     render: (_path: string, navigate: (to: string) => void) => (
       <InboxRedirect navigate={navigate} />
     ),
@@ -183,7 +183,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/routines",
     label: "Routines",
-    icon: <Workflow />,
+    icon: <FlowArrow />,
     render: (path: string, navigate: (to: string) => void) => (
       <RoutinesRoute path={path} navigate={navigate} />
     ),
@@ -194,14 +194,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // (`library-page.tsx`, `libraryArtifactIdFromPath`, …) keeps its name.
     path: "/files",
     label: "Files",
-    icon: <Library />,
+    icon: <FolderOpen />,
     render: (path: string) => <LibraryRoute path={path} />,
   },
   {
     // Old `/library` links and bookmarks (CL-6353's rename) land here.
     path: "/library",
     label: "Files",
-    icon: <Library />,
+    icon: <FolderOpen />,
     render: (path: string, navigate: (to: string) => void) => (
       <LegacyLibraryRedirect path={path} navigate={navigate} />
     ),
@@ -209,7 +209,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/agents",
     label: "Agents",
-    icon: <Bot />,
+    icon: <Robot />,
     render: (path: string, navigate: (to: string) => void) => (
       <AgentsRoute path={path} navigate={navigate} />
     ),
@@ -219,7 +219,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // entry keeps old `/settings/agents[/:id]` links routable.
     path: "/settings/agents",
     label: "Agents",
-    icon: <Bot />,
+    icon: <Robot />,
     render: (path: string, navigate: (to: string) => void) => (
       <LegacySettingsAgentsRedirect path={path} navigate={navigate} />
     ),
@@ -227,7 +227,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/skills",
     label: "Skills",
-    icon: <Sparkles />,
+    icon: <Lightning />,
     render: (path: string, navigate: (to: string) => void) => (
       <SkillsRoute path={path} navigate={navigate} />
     ),
@@ -237,7 +237,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // entry keeps old `/settings/skills[/:id]` links routable.
     path: "/settings/skills",
     label: "Skills",
-    icon: <Sparkles />,
+    icon: <Lightning />,
     render: (path: string, navigate: (to: string) => void) => (
       <LegacySettingsSkillsRedirect path={path} navigate={navigate} />
     ),
@@ -245,7 +245,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/insights",
     label: "Insights",
-    icon: <ChartColumn />,
+    icon: <ChartBar />,
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
@@ -255,7 +255,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // NAV_ROUTES below.
     path: "/plugins",
     label: "Plugins",
-    icon: <Blocks />,
+    icon: <SquaresFour />,
     render: (path: string, navigate: (to: string) => void) => (
       <PluginsRoute path={path} navigate={navigate} />
     ),

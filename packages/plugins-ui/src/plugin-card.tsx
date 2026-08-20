@@ -7,7 +7,7 @@
 
 import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { Plus } from "lucide-react";
+import { Plus } from "@corbits/icons";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
 import { PluginLogo } from "./plugin-logo";

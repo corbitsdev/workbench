@@ -44,7 +44,7 @@ import {
   toast,
 } from "@corbits/react-ui";
 import { listWorkbenchAgents } from "@corbits/chat-ui";
-import { Clock, X } from "lucide-react";
+import { Clock, X } from "@corbits/icons";
 
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";

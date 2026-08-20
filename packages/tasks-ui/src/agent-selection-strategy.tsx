@@ -8,7 +8,7 @@
 // invisible to today's user — there is no "let the agent choose for
 // me" affordance anywhere in this package yet.
 import { EmptyState } from "@corbits/react-ui";
-import { Users } from "lucide-react";
+import { Users } from "@corbits/icons";
 import { useEffect, useState, type ComponentType } from "react";
 
 import type { APIQuery } from "@corbits/api-query";

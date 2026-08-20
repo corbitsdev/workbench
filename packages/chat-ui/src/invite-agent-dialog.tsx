@@ -16,7 +16,7 @@ import {
   EmptyState,
   Skeleton,
 } from "@corbits/react-ui";
-import { CircleAlert, Users } from "lucide-react";
+import { Users, WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import {
@@ -107,7 +107,7 @@ export function InviteAgentDialog({
             <Skeleton className="query-skeleton" />
           ) : state.kind === "error" ? (
             <EmptyState
-              icon={<CircleAlert />}
+              icon={<WarningCircle />}
               title={CHAT_STRINGS.inviteAgentLoadError}
               description={state.message}
             />

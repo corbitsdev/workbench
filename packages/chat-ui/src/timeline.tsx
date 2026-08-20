@@ -28,15 +28,15 @@ import {
 } from "@corbits/react-ui";
 import { toReactUiReasoning, toReactUiToolTrace } from "./agent-part-adapter";
 import {
+  ArrowBendUpLeft,
+  ChatCircle,
   Clock,
   Copy,
-  MessageSquare,
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  Reply,
-  SmilePlus,
-} from "lucide-react";
+  DotsThree,
+  PushPin,
+  PushPinSlash,
+  Smiley,
+} from "@corbits/icons";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -890,7 +890,7 @@ function buildMessageMenu({
           threadAffordanceMode === "fork"
             ? CHAT_STRINGS.forkThreadAction
             : CHAT_STRINGS.replyInThreadAction,
-        icon: <Reply aria-hidden="true" />,
+        icon: <ArrowBendUpLeft aria-hidden="true" />,
         onSelect: () => onOpenThread(item.id),
       }),
     );
@@ -919,9 +919,9 @@ function buildMessageMenu({
           ? CHAT_STRINGS.unpinMessageAction
           : CHAT_STRINGS.pinMessageAction,
         icon: pinned ? (
-          <PinOff aria-hidden="true" />
+          <PushPinSlash aria-hidden="true" />
         ) : (
-          <Pin aria-hidden="true" />
+          <PushPin aria-hidden="true" />
         ),
         onSelect: () =>
           pinned ? pinActions.onUnpin(item.id) : pinActions.onPin(item.id),
@@ -1006,7 +1006,7 @@ function MessageHoverToolbar({
             aria-expanded={pickerOpen}
             onClick={() => setPickerOpen((open) => !open)}
           >
-            <SmilePlus aria-hidden="true" />
+            <Smiley aria-hidden="true" />
           </button>
           {pickerOpen ? (
             <span
@@ -1044,7 +1044,7 @@ function MessageHoverToolbar({
           }
           onClick={() => onOpenThread(messageId)}
         >
-          <Reply aria-hidden="true" />
+          <ArrowBendUpLeft aria-hidden="true" />
         </button>
       ) : null}
       {menuHasEntries ? (
@@ -1058,7 +1058,7 @@ function MessageHoverToolbar({
             onOpenMenu(rect.left, rect.bottom, event.currentTarget);
           }}
         >
-          <MoreHorizontal aria-hidden="true" />
+          <DotsThree aria-hidden="true" />
         </button>
       ) : null}
     </div>
@@ -1089,7 +1089,11 @@ function PinToggleButton({
         pinned ? pinActions.onUnpin(messageId) : pinActions.onPin(messageId)
       }
     >
-      {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+      {pinned ? (
+        <PushPinSlash aria-hidden="true" />
+      ) : (
+        <PushPin aria-hidden="true" />
+      )}
     </button>
   );
 }
@@ -1493,7 +1497,7 @@ export function WorkbenchTimeline({
    * renders the setting-up state instead of "No messages yet". */
   readonly settingUpAgent?: boolean;
   readonly currentUser?: CurrentUser;
-  /** Reply-thread summary keyed by parent message id. */
+  /** ArrowBendUpLeft-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
   /** `"reply"` on the workbench root feed, `"fork"` inside an open thread —
    * see `ThreadAffordanceMode`. */
@@ -1651,7 +1655,7 @@ export function WorkbenchTimeline({
       return (
         <div className="chat-timeline-empty">
           <EmptyState
-            icon={<MessageSquare />}
+            icon={<ChatCircle />}
             title={`Say hello to ${displayNameFromHandle(readyAgent.handle)}`}
             description={CHAT_STRINGS.emptyAgentTimelineDescription}
           />
@@ -1661,7 +1665,7 @@ export function WorkbenchTimeline({
     return (
       <div className="chat-timeline-empty">
         <EmptyState
-          icon={<MessageSquare />}
+          icon={<ChatCircle />}
           title={CHAT_STRINGS.emptyTimelineTitle}
           description={CHAT_STRINGS.emptyTimelineDescription}
         />

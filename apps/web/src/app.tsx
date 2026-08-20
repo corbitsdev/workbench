@@ -5,7 +5,7 @@
 
 import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { CircleAlert } from "lucide-react";
+import { BoldIconProvider, WarningCircle } from "@corbits/icons";
 import { useEffect, useMemo } from "react";
 
 import { AuthScreen } from "./auth-screen";
@@ -160,56 +160,60 @@ export function App({
   readonly provisioningErrorRefId?: string | undefined;
   readonly onRetryProvisioning?: () => void;
 }) {
-  if (session.kind === "signed-in" && provisioningError) {
-    return (
-      <ProvisioningErrorPage
-        message={provisioningError}
-        refId={provisioningErrorRefId}
-        onRetry={onRetryProvisioning ?? onRetry}
-      />
-    );
-  }
-  switch (session.kind) {
-    case "loading":
+  return <BoldIconProvider>{renderApp()}</BoldIconProvider>;
+
+  function renderApp() {
+    if (session.kind === "signed-in" && provisioningError) {
       return (
-        <div className="app-boot-frame">
-          <BootScreen message="Loading workbench" brand={<Brand />} />
-        </div>
-      );
-    case "signed-out":
-      if (path !== LOGIN_PATH) {
-        return <LoginRedirect path={path} navigate={navigate} />;
-      }
-      return <AuthScreen onSignedIn={onSignedIn} />;
-    case "error":
-      return (
-        <div className="app-boot-frame">
-          <EmptyState
-            icon={<CircleAlert />}
-            title="Connection lost"
-            description={session.message}
-            action={
-              <Button variant="outline" onClick={onRetry}>
-                Try again
-              </Button>
-            }
-          />
-        </div>
-      );
-    case "signed-in":
-      if (path === LOGIN_PATH) {
-        return <LoginBounceHome navigate={navigate} />;
-      }
-      if (path === ONBOARDING_PATH) {
-        return <OnboardingGate navigate={navigate} user={session.user} />;
-      }
-      return (
-        <Shell
-          path={path}
-          navigate={navigate}
-          user={session.user}
-          onSignOut={onSignOut}
+        <ProvisioningErrorPage
+          message={provisioningError}
+          refId={provisioningErrorRefId}
+          onRetry={onRetryProvisioning ?? onRetry}
         />
       );
+    }
+    switch (session.kind) {
+      case "loading":
+        return (
+          <div className="app-boot-frame">
+            <BootScreen message="Loading workbench" brand={<Brand />} />
+          </div>
+        );
+      case "signed-out":
+        if (path !== LOGIN_PATH) {
+          return <LoginRedirect path={path} navigate={navigate} />;
+        }
+        return <AuthScreen onSignedIn={onSignedIn} />;
+      case "error":
+        return (
+          <div className="app-boot-frame">
+            <EmptyState
+              icon={<WarningCircle />}
+              title="Connection lost"
+              description={session.message}
+              action={
+                <Button variant="outline" onClick={onRetry}>
+                  Try again
+                </Button>
+              }
+            />
+          </div>
+        );
+      case "signed-in":
+        if (path === LOGIN_PATH) {
+          return <LoginBounceHome navigate={navigate} />;
+        }
+        if (path === ONBOARDING_PATH) {
+          return <OnboardingGate navigate={navigate} user={session.user} />;
+        }
+        return (
+          <Shell
+            path={path}
+            navigate={navigate}
+            user={session.user}
+            onSignOut={onSignOut}
+          />
+        );
+    }
   }
 }

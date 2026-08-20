@@ -14,7 +14,7 @@ import {
 } from "@corbits/react-ui";
 import { listMessages, listThreads } from "@corbits/chat-ui";
 import { listTasks } from "@corbits/tasks-ui";
-import { Clock } from "lucide-react";
+import { Clock } from "@corbits/icons";
 import { useMemo, useState } from "react";
 
 import { useAPIQuery, NeedsYouSchema } from "../api";

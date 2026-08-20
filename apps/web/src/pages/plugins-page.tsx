@@ -27,7 +27,7 @@ import {
 } from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
-import { Blocks, Plus, TriangleAlert } from "lucide-react";
+import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import { useBench } from "../bench-context";
@@ -156,7 +156,7 @@ export function PluginsRoute({
         <StageTopBar title="Plugins" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<Blocks />}
+            icon={<SquaresFour />}
             title="Select a workbench"
             description="Pick a workbench from the switcher to see its plugins."
           />
@@ -173,7 +173,7 @@ export function PluginsRoute({
         <StageTopBar title="Plugins" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
-            icon={<Blocks />}
+            icon={<SquaresFour />}
             title="Couldn't load the plugins gallery"
             description={
               pluginsState.status === "error"
@@ -228,10 +228,7 @@ export function PluginsRoute({
       <PageShell width="full" className="page-fill">
         {connectDeepLinkNotFound ? (
           <div className="plugins-connect-notice" role="status">
-            <TriangleAlert
-              className="plugins-connect-notice-icon"
-              aria-hidden
-            />
+            <Warning className="plugins-connect-notice-icon" aria-hidden />
             <p className="plugins-connect-notice-text">
               Couldn't find that connection — pick it below.
             </p>

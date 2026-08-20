@@ -30,7 +30,7 @@ import {
   TableRow,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import { Plus, Sparkles } from "lucide-react";
+import { Lightning, Plus } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import { consumePendingNewSkill } from "../command-palette-actions";
@@ -381,7 +381,7 @@ export function SkillsPage({
     return (
       <div className="flex flex-col gap-4">
         <RichEmptyState
-          icon={<Sparkles />}
+          icon={<Lightning />}
           title="No skills yet"
           description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin. Write one in this workbench and publish it into the registry."
           actions={[
@@ -422,7 +422,7 @@ export function SkillsPage({
 
       {filtered.length === 0 ? (
         <EmptyState
-          icon={<Sparkles />}
+          icon={<Lightning />}
           title="No matching skills"
           description={`Nothing matches “${query.trim()}”.`}
         />

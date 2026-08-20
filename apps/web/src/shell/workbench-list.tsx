@@ -26,7 +26,7 @@ import {
 import type { Workbench } from "@corbits/chat-ui";
 import { WorkingTaskRow } from "@corbits/tasks-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Hash, MessageSquare, MoreHorizontal, Search } from "lucide-react";
+import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
@@ -325,7 +325,7 @@ function WorkbenchRow({
               className="chat-sidebar-row-menu-trigger"
               aria-label={CHAT_STRINGS.rowMenuLabel}
             >
-              <MoreHorizontal />
+              <DotsThree />
             </button>
           </MenuTrigger>
           <MenuContent align="start">
@@ -417,7 +417,7 @@ export function WorkbenchList({
     <div className="panel-stack" aria-label="Workbenches">
       {workingGroup}
       <label className="shell-panel-search">
-        <Search aria-hidden="true" />
+        <MagnifyingGlass aria-hidden="true" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -428,7 +428,7 @@ export function WorkbenchList({
       <h2 className="shell-panel-list-label">Workbenches</h2>
       {filtered.length === 0 ? (
         <EmptyState
-          icon={<MessageSquare />}
+          icon={<ChatCircle />}
           title="No matches"
           description={`Nothing matches “${query.trim()}”.`}
         />
