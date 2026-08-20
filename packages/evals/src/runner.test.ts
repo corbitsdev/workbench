@@ -138,6 +138,88 @@ test("runMatrix runs every eval against every config and always closes the targe
   );
 });
 
+test("runEval plays a persona step's sub-turns in order and scores the final one", async () => {
+  const evalDef = defineEval({
+    name: "persona-step",
+    description: "test",
+    steps: [
+      {
+        kind: "persona",
+        opening: "set up my digest",
+        persona: {
+          name: "Dana",
+          goal: "get a daily digest set up",
+          knownFacts: { cadence: "every weekday at 8am" },
+        },
+        maxTurns: 5,
+        expect: [
+          (ctx) => {
+            expect(ctx.transcript).toHaveLength(2);
+            expect(ctx.turnIndex).toBe(1);
+            return pass("final-turn-scored");
+          },
+        ],
+      },
+    ],
+  });
+
+  let turnCount = 0;
+  const target: Target = {
+    configName: "default",
+    async sendTurn(human) {
+      turnCount += 1;
+      if (turnCount === 1) {
+        return {
+          human,
+          replyText: "What cadence works for you?",
+          toolCalls: [],
+        };
+      }
+      return { human, replyText: "Great, all set.", toolCalls: [] };
+    },
+    async close() {},
+  };
+  const personaCall = async () => ({ text: "every weekday at 8am" });
+
+  const result = await runEval(evalDef, target, personaCall);
+
+  expect(result.steps).toHaveLength(1);
+  expect(result.steps[0]?.scorerReports[0]).toMatchObject({
+    name: "final-turn-scored",
+    pass: true,
+    stepIndex: 0,
+  });
+});
+
+test("runEval throws rather than record a corrupted step if a persona sub-loop yields no turns", async () => {
+  // Bypasses defineEval's maxTurns validation to prove runEval itself
+  // guards against a malformed EvalDefinition, not just well-formed ones.
+  const evalDef = {
+    name: "malformed",
+    description: "test",
+    steps: [
+      {
+        kind: "persona" as const,
+        opening: "set up my digest",
+        persona: { name: "Dana", goal: "get a digest", knownFacts: {} },
+        maxTurns: 0,
+        expect: [],
+      },
+    ],
+  };
+  const target: Target = {
+    configName: "cfg",
+    async sendTurn(human) {
+      return { human, replyText: "unreachable", toolCalls: [] };
+    },
+    async close() {},
+  };
+
+  await expect(runEval(evalDef, target)).rejects.toThrow(
+    "runEval: step 0 produced no turns",
+  );
+});
+
 test("runMatrix still closes the target when a run throws", async () => {
   const evalDef = defineEval({
     name: "boom",

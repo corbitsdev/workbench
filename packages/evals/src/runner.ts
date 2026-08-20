@@ -4,6 +4,7 @@
 // observing tool calls); this module never talks to a hub directly,
 // which is what makes it testable against a fake target with no real
 // stack booted (see runner.test.ts).
+import { runPersonaStep } from "./persona-runner.ts";
 import type {
   EvalDefinition,
   EvalRunResult,
@@ -27,6 +28,7 @@ function emptyWorldSnapshot(): WorldSnapshot {
 export async function runEval(
   evalDef: EvalDefinition,
   target: Target,
+  personaCall?: (prompt: string) => Promise<{ text: string }>,
 ): Promise<EvalRunResult> {
   const startedAt = new Date().toISOString();
   const transcript: Turn[] = [];
@@ -38,8 +40,15 @@ export async function runEval(
   }
 
   for (const [stepIndex, step] of evalDef.steps.entries()) {
-    const turn = await target.sendTurn(step.human);
-    transcript.push(turn);
+    const stepTurns =
+      step.kind === "persona"
+        ? await runPersonaStep(step, target, personaCall)
+        : [await target.sendTurn(step.human)];
+    const turn = stepTurns[stepTurns.length - 1];
+    if (turn === undefined) {
+      throw new Error(`runEval: step ${String(stepIndex)} produced no turns`);
+    }
+    transcript.push(...stepTurns);
     const turnIndex = transcript.length - 1;
     const world = (await target.snapshotWorld?.()) ?? emptyWorldSnapshot();
     const scorerReports: ScorerReport[] = [];
