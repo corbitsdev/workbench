@@ -1,13 +1,15 @@
 // The RFC 7636 PKCE mechanics and the single-use state store shared by
-// every OAuth connect flow this package offers (OpenRouter today,
-// Hugging Face alongside it): a verifier/S256-challenge pair, and a
-// short-TTL state that keys the server-held verifier to the signed-in
-// user who started the flow. Each connect module owns its own TTL and
-// endpoints — only the cryptographic and bookkeeping primitives live
-// here, so a third connect flow never re-derives them.
+// every OAuth connect flow this package offers (OpenRouter and Hugging
+// Face through `./oauth-routes.ts`, the MCP-server connect through
+// `./mcp-oauth-routes.ts`): a verifier/S256-challenge pair, and a
+// short-TTL state that keys a caller-shaped payload to the signed-in
+// user who started the flow. Each connect module owns its own TTL,
+// payload schema, and endpoints — only the cryptographic and
+// bookkeeping primitives live here, so a third connect flow never
+// re-derives them.
 //
 // The state itself carries no server-side bookkeeping: `issue` seals
-// `{ userId, codeVerifier, nonce, expiresAt }` into a single
+// `{ userId, nonce, expiresAt, payload }` into a single
 // AEAD-encrypted token through the caller's `CredentialCipher` (the same
 // seam `CREDENTIAL_ENCRYPTION_KEY` backs everywhere else a secret is
 // encrypted at rest — see `apps/hub`'s `credentialCipherFrom`) and hands
@@ -34,7 +36,10 @@ function base64url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
-function randomToken(): string {
+/** 43 base64url chars from 32 random bytes — the entropy grade shared
+ * by PKCE verifiers, state-envelope nonces, and the OAuth `state`
+ * values connect flows send to an authorization server. */
+export function randomToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return base64url(bytes);
@@ -59,15 +64,11 @@ export async function s256Challenge(codeVerifier: string): Promise<string> {
   return base64url(new Uint8Array(digest));
 }
 
-const ConnectStatePayload = type({
+const ConnectStateEnvelope = type({
   userId: "string > 0",
-  // Empty for a non-PKCE flow (GitHub's confidential-client web flow
-  // seals `codeVerifier: ""`), so this must accept the empty string —
-  // `string > 0` here silently expired every non-PKCE callback
-  // (CL-6394).
-  codeVerifier: "string",
   nonce: "string > 0",
   expiresAt: "number",
+  payload: "unknown",
 });
 
 /** Binds a sealed state to the one connect flow it was minted for, so a
@@ -78,21 +79,29 @@ function connectStateAad(provider: string): string {
   return JSON.stringify(["onboarding-connect-state", provider]);
 }
 
-export type ConnectStateStore = {
-  issue(args: { userId: string; codeVerifier: string }): Promise<string>;
-  /** Returns the verifier exactly once; a second consume, a wrong user,
-   * an expired state, or a state sealed for a different provider all
-   * come back undefined. */
-  consume(args: { state: string; userId: string }): Promise<string | undefined>;
+export type ConnectStateStore<Payload> = {
+  issue(args: { userId: string; payload: Payload }): Promise<string>;
+  /** Returns the payload exactly once; a second consume, a wrong user,
+   * an expired state, a state sealed for a different provider, or a
+   * payload `parsePayload` refuses all come back undefined. */
+  consume(args: {
+    state: string;
+    userId: string;
+  }): Promise<Payload | undefined>;
 };
 
-export function createConnectStateStore(args: {
+export function createConnectStateStore<Payload>(args: {
   cipher: CredentialCipher;
   provider: string;
+  /** Trust-boundary parse of the decrypted payload — the envelope's
+   * user/nonce/expiry bookkeeping is validated here, but the payload's
+   * shape is the connect flow's own contract. Return undefined to
+   * reject. */
+  parsePayload: (value: unknown) => Payload | undefined;
   ttlMs?: number;
   now?: () => number;
-}): ConnectStateStore {
-  const { cipher, provider } = args;
+}): ConnectStateStore<Payload> {
+  const { cipher, provider, parsePayload } = args;
   const ttlMs = args.ttlMs ?? 10 * 60 * 1000;
   const now = args.now ?? Date.now;
   const aad = connectStateAad(provider);
@@ -109,39 +118,39 @@ export function createConnectStateStore(args: {
   }
 
   return {
-    async issue({ userId, codeVerifier }) {
-      const payload = {
+    async issue({ userId, payload }) {
+      const envelope = {
         userId,
-        codeVerifier,
         nonce: randomToken(),
         expiresAt: now() + ttlMs,
+        payload,
       };
-      return cipher.encrypt(JSON.stringify(payload), aad);
+      return cipher.encrypt(JSON.stringify(envelope), aad);
     },
 
     async consume({ state, userId }) {
       sweep();
 
-      let payload: typeof ConnectStatePayload.infer;
+      let envelope: typeof ConnectStateEnvelope.infer;
       try {
         const plaintext = await cipher.decrypt(state, aad);
-        const parsed = ConnectStatePayload(JSON.parse(plaintext));
+        const parsed = ConnectStateEnvelope(JSON.parse(plaintext));
         if (parsed instanceof type.errors) return undefined;
-        payload = parsed;
+        envelope = parsed;
       } catch {
         return undefined;
       }
 
-      if (payload.expiresAt <= now()) return undefined;
+      if (envelope.expiresAt <= now()) return undefined;
 
       // Consumed by the attempt regardless of outcome — a wrong-user
       // redeem burns the state exactly like the rightful user's would,
       // so a stolen state cookie is worthless to everyone after one try.
-      if (consumedNonces.has(payload.nonce)) return undefined;
-      consumedNonces.set(payload.nonce, payload.expiresAt);
+      if (consumedNonces.has(envelope.nonce)) return undefined;
+      consumedNonces.set(envelope.nonce, envelope.expiresAt);
 
-      if (payload.userId !== userId) return undefined;
-      return payload.codeVerifier;
+      if (envelope.userId !== userId) return undefined;
+      return parsePayload(envelope.payload);
     },
   };
 }

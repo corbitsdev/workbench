@@ -518,6 +518,64 @@ describe("MCP OAuth connect flow", () => {
     }
   });
 
+  test("a replayed callback is rejected as state_expired without a second exchange (one-shot state)", async () => {
+    const as = startStubAuthorizationServer();
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 2,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const startResponse = await app.request(
+        `/exa/start?url=${encodeURIComponent(as.resourcePath)}&name=Exa`,
+        { redirect: "manual" },
+      );
+      const cookieHeader = startResponse.headers.get("set-cookie") ?? "";
+      const cookie = cookieHeader.split(";")[0] ?? "";
+      const authorizeResponse = await fetch(
+        startResponse.headers.get("location") ?? "",
+        { redirect: "manual" },
+      );
+      const callbackUrl = new URL(
+        authorizeResponse.headers.get("location") ?? "",
+      );
+      const replayableCallback = `${callbackUrl.pathname}${callbackUrl.search}`;
+
+      const firstResponse = await app.request(replayableCallback, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(firstResponse.headers.get("location") ?? "").toContain(
+        "outcome=connected",
+      );
+
+      // A browser (or an attacker holding a stolen state cookie)
+      // presenting the exact same callback again: the sealed state was
+      // burned by the first arrival, so the replay dies at the state
+      // check — it never reaches the token endpoint a second time.
+      const replayResponse = await app.request(replayableCallback, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(replayResponse.status).toBe(302);
+      expect(replayResponse.headers.get("location") ?? "").toContain(
+        "code=state_expired",
+      );
+      expect(hub.credentials).toHaveLength(1);
+    } finally {
+      as.stop();
+    }
+  });
+
   test("a callback with no cookie redirects with a state_expired error", async () => {
     const hub = fakeHub();
     const routes = createMcpOAuthRoutes({

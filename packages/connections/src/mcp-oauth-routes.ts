@@ -31,6 +31,7 @@ import {
 import { createHubAPI } from "@workbench/hub-client";
 import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createMcpOAuthProvider, type McpOAuthSession } from "./mcp-oauth";
+import { createConnectStateStore, randomToken } from "./pkce";
 import { mcpPresetBySlug } from "./mcp-presets";
 import { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 import {
@@ -51,27 +52,31 @@ const ErrorEnvelope = (code: string, message: string) => ({
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
+// One provider label for the whole MCP connect surface — the sealed
+// state already carries the target slug/url, and the shared store's AAD
+// separates this flow's states from the fixed-registry connectors'.
+const MCP_OAUTH_STATE_PROVIDER = "mcp-oauth";
+
 const McpOAuthStatePayload = type({
-  principalId: "string > 0",
   slug: "string > 0",
   name: "string > 0",
   url: "string > 0",
   returnPath: "string > 0",
-  nonce: "string > 0",
-  expiresAt: "number",
+  // The `state` value `/start` sent to the authorization server, which
+  // the callback requires echoed back — the CSRF binding, distinct from
+  // the sealed envelope's own single-use replay nonce (the shared
+  // store's concern).
+  oauthState: "string > 0",
   "codeVerifier?": "string",
   "clientInformation?": "unknown",
 });
 type McpOAuthStatePayload = typeof McpOAuthStatePayload.infer;
 
-function randomNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function stateAad(): string {
-  return JSON.stringify(["mcp-oauth-connect-state"]);
+function parseMcpOAuthStatePayload(
+  value: unknown,
+): McpOAuthStatePayload | undefined {
+  const parsed = McpOAuthStatePayload(value);
+  return parsed instanceof type.errors ? undefined : parsed;
 }
 
 function cookieName(slug: string): string {
@@ -114,6 +119,12 @@ export function createMcpOAuthRoutes(
   const returnPathAllowlist =
     deps.returnPathAllowlist ?? DEFAULT_RETURN_PATH_ALLOWLIST;
   const secureCookies = deps.hubUrl.startsWith("https:");
+  const stateStore = createConnectStateStore({
+    cipher: deps.credentialCipher,
+    provider: MCP_OAUTH_STATE_PROVIDER,
+    parsePayload: parseMcpOAuthStatePayload,
+    ttlMs: OAUTH_STATE_TTL_MS,
+  });
 
   function redirectPath(
     returnPath: string,
@@ -158,7 +169,7 @@ export function createMcpOAuthRoutes(
       // already be on the session by the time `redirectToAuthorization`
       // fires. The same value is what `/callback` requires the provider's
       // `?state=` to match.
-      const nonce = randomNonce();
+      const nonce = randomToken();
       const session: McpOAuthSession = { state: nonce };
       const provider = createMcpOAuthProvider({
         callbackUrl,
@@ -196,13 +207,11 @@ export function createMcpOAuthRoutes(
       }
 
       const payload: McpOAuthStatePayload = {
-        principalId: principal.id,
         slug: target.slug,
         name: target.name,
         url: target.url,
         returnPath,
-        nonce,
-        expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+        oauthState: nonce,
         ...(session.codeVerifier !== undefined
           ? { codeVerifier: session.codeVerifier }
           : {}),
@@ -210,10 +219,10 @@ export function createMcpOAuthRoutes(
           ? { clientInformation: session.clientInformation }
           : {}),
       };
-      const sealed = await deps.credentialCipher.encrypt(
-        JSON.stringify(payload),
-        stateAad(),
-      );
+      const sealed = await stateStore.issue({
+        userId: principal.id,
+        payload,
+      });
       setCookie(c, cookieName(target.slug), sealed, {
         httpOnly: true,
         sameSite: "Lax",
@@ -249,16 +258,16 @@ export function createMcpOAuthRoutes(
         );
       }
 
-      let payload: McpOAuthStatePayload;
-      try {
-        const plaintext = await deps.credentialCipher.decrypt(
-          sealed,
-          stateAad(),
-        );
-        const parsed = McpOAuthStatePayload(JSON.parse(plaintext));
-        if (parsed instanceof type.errors) throw new Error(parsed.summary);
-        payload = parsed;
-      } catch {
+      // One-shot: the shared store burns the sealed state on this
+      // attempt (decrypt + AAD + TTL + user binding + replay guard all
+      // inside `consume`), so a replayed callback dies here without a
+      // second token exchange.
+      const principal = c.get("principal");
+      const payload = await stateStore.consume({
+        state: sealed,
+        userId: principal.id,
+      });
+      if (payload === undefined) {
         return c.redirect(
           redirectPath(fallbackReturn, {
             mcpOauth: slugParam,
@@ -274,14 +283,8 @@ export function createMcpOAuthRoutes(
         defaultReturnPath,
         returnPathAllowlist,
       );
-      const principal = c.get("principal");
       const code = c.req.query("code");
-      if (
-        payload.expiresAt <= Date.now() ||
-        payload.principalId !== principal.id ||
-        code === undefined ||
-        code === ""
-      ) {
+      if (code === undefined || code === "") {
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: payload.slug,
@@ -297,7 +300,7 @@ export function createMcpOAuthRoutes(
       // must echo that exact value back -- never optional-when-absent.
       // A missing or mismatched `state` means this callback did not
       // originate from the authorize redirect this session minted.
-      if (c.req.query("state") !== payload.nonce) {
+      if (c.req.query("state") !== payload.oauthState) {
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: payload.slug,
