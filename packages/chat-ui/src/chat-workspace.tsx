@@ -64,6 +64,7 @@ import type {
 } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
+import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import {
   typingLabel,
   TypingIndicator,
@@ -388,6 +389,7 @@ function ChatWorkspaceInner({
   onFixConnection,
   approvalActions,
   blockResponses,
+  connectGithubActions,
   headerLeading,
   registerComposerInsert,
   onOpenRoutines,
@@ -438,6 +440,7 @@ function ChatWorkspaceInner({
   readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
+  readonly connectGithubActions?: ConnectGithubActions;
   readonly headerLeading?: ReactNode;
   /**
    * Hands the host a function that inserts text into the active workbench's
@@ -1253,6 +1256,9 @@ function ChatWorkspaceInner({
                     {...(blockResponses !== undefined
                       ? { blockResponses }
                       : {})}
+                    {...(connectGithubActions !== undefined
+                      ? { connectGithubActions }
+                      : {})}
                     reactionActions={reactionActions}
                     pinActions={pinActions}
                     pendingActions={{
@@ -1356,6 +1362,7 @@ export function ChatWorkspace({
   onFixConnection,
   approvalActions,
   blockResponses,
+  connectGithubActions,
   headerLeading,
   registerComposerInsert,
   onOpenRoutines,
@@ -1418,6 +1425,9 @@ export function ChatWorkspace({
   /** The poll/form blocks' live round-trip — see `WorkbenchTimeline`'s
    * `blockResponses`. */
   readonly blockResponses?: BlockResponseActions;
+  /** The connect-github block's live round-trip — see `WorkbenchTimeline`'s
+   * `connectGithubActions`. */
+  readonly connectGithubActions?: ConnectGithubActions;
   /** Host-supplied control rendered first in the workbench header — the
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
@@ -1475,6 +1485,9 @@ export function ChatWorkspace({
             : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(blockResponses !== undefined ? { blockResponses } : {})}
+          {...(connectGithubActions !== undefined
+            ? { connectGithubActions }
+            : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(onOpenArtifactInLibrary !== undefined
             ? { onOpenArtifactInLibrary }

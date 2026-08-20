@@ -12,6 +12,8 @@ import { CHAT_STRINGS } from "../strings";
 import { ApproveBlockView } from "./approve-block";
 import type { ApprovalActions } from "./approval-actions";
 import type { BlockResponseActions } from "./block-responses";
+import { ConnectGithubBlockContainer } from "./connect-github-block-container";
+import type { ConnectGithubActions } from "./connect-github-actions";
 import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
 import { PollBlockView } from "./poll-block";
@@ -24,6 +26,7 @@ function renderKnownBlock(
   messageId: string,
   approvalActions: ApprovalActions | undefined,
   blockResponses: BlockResponseActions | undefined,
+  connectGithubActions: ConnectGithubActions | undefined,
 ): ReactElement {
   switch (block.type) {
     case "approve":
@@ -65,6 +68,16 @@ function renderKnownBlock(
           {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
         />
       );
+    case "connect-github":
+      return (
+        <ConnectGithubBlockContainer
+          data={block.data}
+          messageId={messageId}
+          {...(connectGithubActions !== undefined
+            ? { actions: connectGithubActions }
+            : {})}
+        />
+      );
   }
 }
 
@@ -86,6 +99,7 @@ export function BlockPartView({
   messageId,
   approvalActions,
   blockResponses,
+  connectGithubActions,
 }: {
   readonly block: BlockPart["block"];
   /** The message this block part lives in -- polls and forms scope every
@@ -98,6 +112,10 @@ export function BlockPartView({
   /** Host-supplied poll/form round-trip; only "poll" and "form" blocks read
    * it. Absent means the pre-round-trip fixed-disabled framing. */
   readonly blockResponses?: BlockResponseActions;
+  /** Host-supplied connect/list-repos/start-reviewing round-trip; only the
+   * "connect-github" block reads it. Absent means the pre-round-trip
+   * disconnected framing. */
+  readonly connectGithubActions?: ConnectGithubActions;
 }) {
   const result = parseBlock(block);
   if (!result.ok) {
@@ -108,5 +126,6 @@ export function BlockPartView({
     messageId,
     approvalActions,
     blockResponses,
+    connectGithubActions,
   );
 }
