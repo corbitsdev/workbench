@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/code-review",
+  "private": true,
+  "description": "Multi-reviewer pull-request review: three reviewer definitions, one aggregated review, posted to GitHub",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/github-tools": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@corbits/agent-directory": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@corbits/code-review-workflow",
+  "private": true,
+  "description": "Pull-request review workflow: three reviewer lenses over one diff, one review posted back",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "code-review",
+      "displayName": "Code review",
+      "automatable": false
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/code-review": "workspace:*",
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
