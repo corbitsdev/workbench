@@ -28,6 +28,15 @@ import type {
 export type McpOAuthSession = {
   clientInformation?: OAuthClientInformationMixed;
   codeVerifier?: string;
+  /** The CSRF-binding OAuth `state` value: minted by the `/start` route
+   * before `auth()` runs (so it's known before `redirectToAuthorization`
+   * fires) and sealed into the same cookie as `codeVerifier`. `auth()`
+   * reads it through `state()` below and appends it to the authorize URL
+   * it sends the provider; `/callback` re-derives it from the cookie and
+   * requires the provider's `?state=` to match exactly -- CSRF protection
+   * that was previously minted (`nonce`) but never actually sent to the
+   * provider or checked back, so every connect silently omitted `state`. */
+  state?: string;
   tokens?: OAuthTokens;
 };
 
@@ -58,6 +67,12 @@ export function createMcpOAuthProvider(args: {
         response_types: ["code"],
         token_endpoint_auth_method: "none",
       };
+    },
+    state(): string {
+      if (session.state === undefined) {
+        throw new Error("No OAuth state minted for this MCP OAuth session");
+      }
+      return session.state;
     },
     clientInformation(): OAuthClientInformationMixed | undefined {
       return session.clientInformation;
