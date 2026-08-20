@@ -106,11 +106,7 @@ export function NewWorkbenchPickerRoute() {
             );
           })}
 
-          <span
-            className="new-workbench-pick-row"
-            aria-disabled="true"
-            aria-label={`${COMING_SOON_ROW.title} — coming soon`}
-          >
+          <span className="new-workbench-pick-row" aria-disabled="true">
             <span className="new-workbench-pick-glyph" aria-hidden="true">
               <Plus size={16} strokeWidth={1.8} />
             </span>
