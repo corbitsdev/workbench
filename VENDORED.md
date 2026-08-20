@@ -83,7 +83,19 @@ required `status in (deployed, running)`, which wedged every terminal run that
 still had mail in flight into a permanent loop — the run's own inbox-enqueue
 and `markConsumed` rejection packs were refused as `path_violation`, the
 sidecar withheld the ack, and the hub redelivered forever
-(`docs/revendor-inventory.md`). `vendor/intx/workflow-host` (CL-6164) drops
+(`docs/revendor-inventory.md`). `vendor/intx/hub-sessions` (CL-6361) also
+widens that same anchor lookup to resolve a per-step pack source address
+(`deriveStepAddress`'s `<runId>-<stepId>@<domain>`,
+`vendor/intx/workflow-deploy/src/orchestrator.ts:837`) back to its base run's
+anchor address via the new pure helper `anchorAddressForPackSource`. Upstream
+keys the lookup on an exact `workflow_run.address` match, which only the
+anchor row ever carries; a multi-step deployment's per-step agents push their
+own event-log commits (e.g. a step named `write`) under their step-suffixed
+address, so every such pack was rejected `path_violation` with "source
+address has no deployment anchor it owns," the sidecar withheld the ack, and
+the hub redelivered forever — the same infinite-retry shape as the terminal-run
+case above, one layer up the address hierarchy. `vendor/intx/workflow-host`
+(CL-6164) drops
 inbound mail carrying no conversation text on the parked-resume path rather
 than delivering an empty string that throws inside `agent.send` and fails the
 step with `retriesExhausted`; the gate is the new pure helper
