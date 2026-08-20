@@ -101,6 +101,68 @@ and injects it everywhere, the same "one instance, shared" pattern
 `workbenchSubscribers` already follows — otherwise each surface would only
 serialize against its own traffic, not the others'.
 
+## Turn = run: room agents as `onTrigger` sections (CL-6329)
+
+Every agent invited into a room deploys as an **`onTrigger` section keyed
+on (agent, workbench)**: one warm run per pair, every message an
+occurrence, every occurrence its own child run with its own run id and
+event log. The shape lives in `@corbits/agent-runtime`
+(`buildAgentRuntimeWorkflow`, `mode: "section"`), and
+`platform-adapter.ts`'s `ROOM_AGENT_MODE` is the single place that pins
+it — one switch feeding both the wake and the relaunch path. The
+workbench host keeps the folded step shape: it holds a mailbox and never
+takes a turn, so it has no occurrences to name.
+
+`onBodyFailure: "continue"` — authored in the section shape itself — is
+the failure edge: a turn that ends `failed` records the failed occurrence
+and leaves the section subscribed, so one bad turn kills neither the agent
+nor the room. The runtime names an occurrence's child run `turn__<n>`,
+which is what `agentRuntimeTurnRunId` derives and what a reply's `run_id`
+carries.
+
+- **The dispatch seam** (`dispatchTurn` in `workbench-service.ts`) opens
+  a projection row before it touches the execution plane, so an in-flight
+  turn is visible from its first moment and the child run id its reply
+  will carry is already allocated. Firing the section's trigger is still
+  a `sendMail`, because a mail trigger is what the section subscribes on
+  — but what it starts is an occurrence, not another turn folded into one
+  endless step.
+- **Context assembly** (`packages/chat/src/turn-context.ts`) —
+  `assembleTurnContext` builds the conversation a turn is asked with from
+  message rows: the turn's own thread (never the whole room when a thread
+  is named), capped to the workbench's resolved `chat/contextWindow`, with
+  the dropped span folded into one bounded recap rather than silently
+  lost. Thread membership lives in its own store, so the scope is injected
+  as a `TurnContextThreadScope` rather than this module reaching for a
+  second store.
+- **The turn projection** (`packages/chat/src/agent-turns.ts`, table
+  `chat.agent_turns`) — one row per turn, opened as the turn starts and
+  closed as it settles, carrying the child run id, the messages it was
+  asked to answer, the message it produced, and how it ended. This is
+  deliberately **our** projection rather than a read of the platform's own
+  run tables: a room has to answer "which run produced this reply, and how
+  did that turn end" from its own rows, at timeline speed, whether or not
+  the execution plane is reachable. Occurrence allocation happens inside
+  the insert with a unique index behind it, so two dispatches racing for
+  one agent can never quietly share a child run id. `GET
+/workbenches/:id/turns` and `GET /workbenches/:id/turns/:turnId` serve
+  it, following the same "no store, no feature" contract `pins` already
+  does.
+
+**Where a reply finds its turn.** The sidecar's `agent.event` frames carry
+the agent's address and nothing finer — no occurrence id — so the reply
+path matches on the newest still-`running` turn for (workbench, agent).
+The one-in-flight-turn-per-workbench claim is what makes that
+unambiguous in the common case; under a burst that opens more turns than
+the runtime runs occurrences, older rows can be left `running`. Closing
+that gap properly needs the runtime to report the occurrence id on the
+event, not a heuristic here.
+
+Proved live end to end by `scripts/e2e/cl-6329-turn-swap-proof.ts`: two
+agents replying in one room under distinct occurrences, three rapid
+messages serializing into ordered turns, and a sidecar killed
+mid-occurrence leaving both the room and the section alive.
+
 ## Threads: workbench → thread → sub-thread
 
 A workbench's timeline is itself a thread — its **root thread**, one per
@@ -268,6 +330,8 @@ following routes:
 | `POST /workbenches/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                              |
 | `DELETE /workbenches/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                            |
 | `GET /workbenches/:id/pins`                                  | Lists a workbench's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
+| `GET /workbenches/:id/turns`                                 | Lists the workbench's agent turns, newest first — each carrying the child run id its reply is traceable to (CL-6329)                                                                                                              |
+| `GET /workbenches/:id/turns/:turnId`                         | Reads one turn: its child run id, the messages it answered, the message it produced, and how it ended                                                                                                                             |
 | `GET /workbenches/:id/stream`                                | Server-Sent Events stream of live workbench activity, including the who's-here roster (`chat.presence`/`chat.presence.snapshot`, CL-6328)                                                                                         |
 | `POST /workbenches/:id/presence`                             | Refreshes the calling principal's `lastActiveAt` on the who's-here roster; 404s with no open stream connection (CL-6328) — never polled, called on real client-side activity                                                      |
 | `GET /bench/settings`                                        | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                       |
