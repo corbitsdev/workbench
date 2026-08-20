@@ -201,7 +201,9 @@ function connectRoutes(
 ): Hono<AppEnv> {
   const deps: CreateOnboardingRoutesDeps = {
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
-    pushWorkflow: overrides.pushWorkflow ?? (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
+    pushWorkflow:
+      overrides.pushWorkflow ??
+      (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
     log: overrides.log ?? (() => undefined),
     pendingSeedStore:
       overrides.pendingSeedStore ??

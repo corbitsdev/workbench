@@ -51,6 +51,25 @@ import {
 
 const logger = getLogger(["hub", "ws", "sidecar"]);
 
+/**
+ * A deploy frame failure that PROVABLY never reached the wire: thrown only by
+ * a guard clause that runs before `conn.send()`, or by `conn.send()` itself
+ * throwing synchronously. A caller that inserted a row anticipating the frame
+ * (e.g. `deployCodeSourcedWorkflow`'s pre-inserted anchor `workflow_run`) may
+ * safely undo that insert on this error class specifically.
+ *
+ * Any OTHER deploy rejection (ack timeout, socket drop, reconnect takeover,
+ * ack-processing failure) is raised after `conn.send()` already ran -- the
+ * frame may have reached and been acted on by the sidecar -- and must NOT be
+ * treated as not-sent.
+ */
+export class DeployFrameNotSentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeployFrameNotSentError";
+  }
+}
+
 export type SidecarConnection = {
   sidecarId: string;
   identity: SidecarAuthIdentity;
@@ -3088,19 +3107,25 @@ export function createSidecarRouter(
     workflow?: AgentDeployFrame["workflow"],
   ): Promise<{ publicKey: string }> {
     if (hubPublicKeyHex === undefined) {
-      throw new Error("Hub signing key is required for agent deployment");
+      throw new DeployFrameNotSentError(
+        "Hub signing key is required for agent deployment",
+      );
     }
     const ws =
       addressIndex.get(agentAddress) ?? findSidecarForNewAgent(agentAddress);
     if (ws === undefined) {
-      throw new Error(`No sidecar available for agent "${agentAddress}"`);
+      throw new DeployFrameNotSentError(
+        `No sidecar available for agent "${agentAddress}"`,
+      );
     }
     const conn = connections.get(ws);
     if (conn === undefined) {
-      throw new Error(`No sidecar connected for agent "${agentAddress}"`);
+      throw new DeployFrameNotSentError(
+        `No sidecar connected for agent "${agentAddress}"`,
+      );
     }
     if (conn.identity.kind !== "shared") {
-      throw new Error(
+      throw new DeployFrameNotSentError(
         `Allocated sidecar ${conn.sidecarId} requires allocation-bound deploy routing`,
       );
     }
@@ -3121,11 +3146,15 @@ export function createSidecarRouter(
     workflow?: AgentDeployFrame["workflow"],
   ): Promise<{ publicKey: string }> {
     if (hubPublicKeyHex === undefined) {
-      throw new Error("Hub signing key is required for agent deployment");
+      throw new DeployFrameNotSentError(
+        "Hub signing key is required for agent deployment",
+      );
     }
 
     if (pendingDeploys.has(agentAddress)) {
-      throw new Error(`Deploy already in progress for agent "${agentAddress}"`);
+      throw new DeployFrameNotSentError(
+        `Deploy already in progress for agent "${agentAddress}"`,
+      );
     }
 
     const addressSet =
@@ -3165,14 +3194,35 @@ export function createSidecarRouter(
         timer,
       });
 
-      conn.send({
-        type: "agent.deploy",
-        agentAddress,
-        agentId: harnessConfig.agentId,
-        config: harnessConfig,
-        hubPublicKey: hubPublicKeyHex,
-        ...(workflow !== undefined ? { workflow } : {}),
-      });
+      // Once `pendingDeploys` carries this entry, every OTHER rejection path
+      // (timeout, disconnect, reconnect takeover, ack-processing failure) is
+      // reached only through `req.reject()` above -- which fires after this
+      // send, by construction. A synchronous throw HERE is the sole
+      // post-registration case that provably never left the process, so it
+      // is the one case converted to `DeployFrameNotSentError` rather than
+      // rejecting through `req.reject()`.
+      try {
+        conn.send({
+          type: "agent.deploy",
+          agentAddress,
+          agentId: harnessConfig.agentId,
+          config: harnessConfig,
+          hubPublicKey: hubPublicKeyHex,
+          ...(workflow !== undefined ? { workflow } : {}),
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        pendingDeploys.delete(agentAddress);
+        if (addressIndex.get(agentAddress) === ws) {
+          addressSet.delete(agentAddress);
+          addressIndex.delete(agentAddress);
+        }
+        reject(
+          new DeployFrameNotSentError(
+            `Failed to send agent.deploy frame to "${agentAddress}": ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
     });
   }
 
@@ -3184,18 +3234,18 @@ export function createSidecarRouter(
   ): Promise<{ publicKey: string }> {
     const { ws, conn } = await getAllocatedConnection(target, "routing");
     if (conn.identity.kind !== "allocated") {
-      throw new Error(
+      throw new DeployFrameNotSentError(
         `Allocation ${target.allocationId} resolved to a shared sidecar`,
       );
     }
     if (agentAddress !== conn.identity.workflowRunAddress) {
-      throw new Error(
+      throw new DeployFrameNotSentError(
         `Allocation ${target.allocationId} cannot deploy unrelated address ${agentAddress}`,
       );
     }
     const existing = addressIndex.get(agentAddress);
     if (existing !== undefined && existing !== ws) {
-      throw new Error(
+      throw new DeployFrameNotSentError(
         `Deployment ${agentAddress} is already routed to another sidecar`,
       );
     }

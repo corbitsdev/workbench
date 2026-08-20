@@ -310,6 +310,7 @@ describe("POST /:connectorId/complete", () => {
       ensureCredentialFn: async () => "crd_1",
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
     const app = mountAs(routes);
@@ -357,6 +358,7 @@ describe("POST /:connectorId/complete", () => {
       ensureCredentialFn: async () => "crd_1",
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
     const app = mountAs(routes);
@@ -381,6 +383,88 @@ describe("POST /:connectorId/complete", () => {
     // Ollama has no auth layer of its own -- the fixed placeholder
     // secret is what gets stored/seeded, never the URL itself.
     expect(args.apiKey).toBe("ollama");
+    const body = (await response.json()) as { modelGuidance?: string };
+    expect(body.modelGuidance).toBeUndefined();
+  });
+
+  test("CL-6351: connecting Ollama with only an embedding model installed surfaces guided model guidance, never a bare success", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      ollama: {
+        id: "ollama",
+        displayName: "Ollama",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        credentialInputKind: "url",
+        credentialPlaceholder: "http://localhost:11434",
+        probe: async () => ({ ok: true }),
+      },
+    };
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: false }),
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "http://localhost:11434" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      modelGuidance?: string;
+    };
+    expect(body.status).toBe("active");
+    expect(body.modelGuidance).toBe(
+      "Ollama is connected, but no chat model is installed — run `ollama pull qwen3` and try again.",
+    );
+  });
+
+  test("CL-6351: connecting Ollama with a chat-capable model installed never surfaces model guidance", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      ollama: {
+        id: "ollama",
+        displayName: "Ollama",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        credentialInputKind: "url",
+        credentialPlaceholder: "http://localhost:11434",
+        probe: async () => ({ ok: true }),
+      },
+    };
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "http://localhost:11434" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      modelGuidance?: string;
+    };
+    expect(body.status).toBe("active");
+    expect(body.modelGuidance).toBeUndefined();
   });
 
   test("connecting a non-inference connector never seeds a catalog", async () => {
@@ -390,6 +474,7 @@ describe("POST /:connectorId/complete", () => {
       ensureCredentialFn: async () => "crd_1",
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
       },
     });
     const response = await app.request("/accepting-connector/complete", {

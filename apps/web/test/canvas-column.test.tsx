@@ -4,15 +4,12 @@
 // Mention action already used (CL-6019).
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { spyOnReactUiToast } from "./react-ui-toast-mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-const toastMock = mock((_message: string) => undefined);
-const actualReactUi = await import("@corbits/react-ui");
-mock.module("@corbits/react-ui", () => ({
-  ...actualReactUi,
-  toast: toastMock,
-}));
+const toastMock = spyOnReactUiToast();
 
 let ensureProfileDmResult: Promise<
   { kind: "ready"; workbenchId: string } | { kind: "error"; message: string }

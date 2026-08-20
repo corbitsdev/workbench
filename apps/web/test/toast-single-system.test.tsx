@@ -9,13 +9,14 @@
 // the house styling, and clears itself.
 
 import { toast, Toaster } from "@corbits/react-ui";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { NewWorkbenchPickerRoute } from "../src/pages/new-workbench-picker";
+import { clearToasts } from "./react-ui-toast-mock";
 import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
@@ -116,6 +117,14 @@ async function renderPickerWithToaster(): Promise<void> {
 }
 
 describe("the one toast system (CL-6372)", () => {
+  // The store outlives this file too: a sibling suite that raised a toast
+  // before bun loaded this one leaves it queued, and it would render into
+  // the first `<Toaster />` mounted here. Start every test from an empty
+  // surface so the count below is this test's own toasts and nothing else.
+  beforeEach(() => {
+    clearToasts();
+  });
+
   test("a failed workbench create fires exactly one toast", async () => {
     stubFailingCreate();
     await renderPickerWithToaster();

@@ -132,7 +132,19 @@ are NOT from upstream faremeter/interchange at all — upstream's own
 commit. They are copied from gtm-workbench's own `packages/workflow-host`
 workspace fork (see `docs/revendor-inventory.md` for the full provenance
 note and why no ordinary upstream-publish kill date applies to this
-sub-delta). `vendor/intx/workflow` (CL-6326, CL-6324) gives
+sub-delta). The same CL-6325 delta completes the run-child bind those
+adapters exist for: `RunWorkflowChildBindings` gains
+`resolveActionHandler` — awaited once per child, after the definition
+re-verify, with the resolved `WorkflowDefinition` and the live
+`CredentialWiring`, so the app-owned registry
+(`apps/sidecar/src/action-tool-handler.ts`) eagerly materializes every
+action step's tool closure at establish and scopes credentials through
+the same per-step grant wiring agent steps use — and `loopFns`, both
+defaulting to the fail-closed empty registries; `buildRuntimeEnv` wires
+`effects`, `invokeAction`, `loopFns`, and `runLoopIteration` into every
+run's env and is exported so a host's runtime-env-level probe
+(`apps/sidecar/test/action-runtime-env.test.ts`) can exercise the bind
+without the full control-channel harness. `vendor/intx/workflow` (CL-6326, CL-6324) gives
 `onTrigger` an `onBodyFailure?: "end" | "continue"` policy: absent or `"end"`
 preserves terminal-is-final, while `"continue"` lets a long-lived section
 re-arm past a `failed` body occurrence instead of one bad turn permanently
@@ -190,7 +202,17 @@ null `publicKey` (the reconnect challenge keeps failing closed until the
 ack), the acked supervisor key is stamped afterwards, and a failed frame
 emit deletes the pre-inserted row. The prepared and adopted fronts
 already had their anchor row pre-frame; the shared front now matches
-them. `vendor/intx/inference-catalog`'s own local
+them. `vendor/intx/hub-sessions` (CL-6395) narrows that failed-emit
+deletion: CL-6388 deleted the pre-inserted anchor on ANY
+`emitSourceRefDeployFrame` rejection, but an ack-timeout or socket-drop
+rejection fires strictly after the `agent.deploy` frame already reached
+the sidecar, so deleting the row could permanently orphan an
+already-spawned child on the missing-anchor `path_violation` path.
+`ws/sidecar-handler.ts` now exports `DeployFrameNotSentError`, thrown only
+where a guard clause or the `conn.send()` call itself fails before the
+frame could have reached the wire; `deployCodeSourcedWorkflow` deletes the
+row only on that error and otherwise keeps the row and logs a
+reconciliation line. `vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
 Each package's `VENDORED-FROM` file restates its own delta.

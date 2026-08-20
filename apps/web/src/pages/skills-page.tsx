@@ -30,7 +30,7 @@ import {
   TableRow,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import { Lightning, Plus } from "@corbits/icons";
+import { Lightning, PencilSimple, Plus } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 
@@ -43,6 +43,7 @@ import {
   loadSkill,
   restoreSkillVersion,
   setSkillScope,
+  updateSkill,
   type PinnedByEntry,
   type SkillDetail,
   type SkillSummary,
@@ -91,6 +92,7 @@ function SkillDetailView({
 }) {
   const [state, setState] = useState<DetailState>({ status: "loading" });
   const [busy, setBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setState({ status: "loading" });
@@ -164,6 +166,15 @@ function SkillDetailView({
             size="sm"
             variant="outline"
             disabled={busy}
+            onClick={() => setEditOpen(true)}
+          >
+            <PencilSimple /> Edit
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
             onClick={() =>
               void run(() =>
                 setSkillScope(
@@ -178,6 +189,26 @@ function SkillDetailView({
           </Button>
         </div>
       </header>
+
+      <CreateSkillDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        mode="edit"
+        initialValues={{
+          name: skill.name,
+          description: skill.description,
+          body: skill.body,
+        }}
+        onSubmit={async (input) => {
+          await updateSkill(tenantId, skill.name, {
+            description: input.description,
+            body: input.body,
+          });
+          setEditOpen(false);
+          await reload();
+          onChanged();
+        }}
+      />
 
       <Section title="About" description="What this skill packages.">
         <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
@@ -337,7 +368,7 @@ export function SkillsPage({
     <CreateSkillDialog
       open={createOpen}
       onOpenChange={setCreateOpen}
-      onCreate={handleCreate}
+      onSubmit={handleCreate}
     />
   );
 

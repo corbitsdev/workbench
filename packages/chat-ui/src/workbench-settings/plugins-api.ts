@@ -18,7 +18,11 @@ export class PluginsApiError extends Error {
   }
 }
 
-const CompleteResult = type({ credentialId: "string", status: "'active'" });
+const CompleteResult = type({
+  credentialId: "string",
+  status: "'active'",
+  "modelGuidance?": "string",
+});
 
 async function request<T>(
   path: string,
@@ -73,7 +77,11 @@ export function completeConnectorCredential(
   tenantId: string,
   connectorId: string,
   apiKey: string,
-): Promise<{ credentialId: string; status: "active" }> {
+): Promise<{
+  credentialId: string;
+  status: "active";
+  modelGuidance?: string;
+}> {
   return request(
     `/api/tenants/${tenantId}/connections/${connectorId}/complete`,
     CompleteResult,

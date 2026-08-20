@@ -28,7 +28,8 @@ import {
   freePort,
   hop,
   provisionSidecar,
-  pushWorkflowJson,
+  pushWorkflowSource,
+  workflowDeployBody,
   startHub,
   startSidecar,
   waitForRunCompletion,
@@ -147,46 +148,49 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     });
 
     const assetName = "workbench-digest";
-    const assetId = await hop("workflow asset publication", async () => {
-      const created = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenantId}/assets`,
-        { kind: "workflow", name: assetName },
-        user.cookies,
-      );
-      expectStatus("create workflow asset", created, 201);
-      const id = stringField(created.data, "id", "create workflow asset");
+    const { assetId, commitSha } = await hop(
+      "workflow asset publication",
+      async () => {
+        const created = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/assets`,
+          { kind: "workflow", name: assetName },
+          user.cookies,
+        );
+        expectStatus("create workflow asset", created, 201);
+        const id = stringField(created.data, "id", "create workflow asset");
 
-      const minted = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenantId}/git-tokens`,
-        {
-          name: "e2e-workbench-digest-push",
-          resource: "asset:*",
-          refPattern: "**",
-          actions: ["can_read", "can_push"],
-          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-        },
-        user.cookies,
-      );
-      expectStatus("mint git token", minted, 201);
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/git-tokens`,
+          {
+            name: "e2e-workbench-digest-push",
+            resource: "asset:*",
+            refPattern: "**",
+            actions: ["can_read", "can_push"],
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          },
+          user.cookies,
+        );
+        expectStatus("mint git token", minted, 201);
 
-      const definition = buildWorkbenchDigestWorkflow({
-        triggerAddress: `workbench-digest@${slug}.localhost`,
-        inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-        turnTimeoutMs: 30_000,
-      });
-      await pushWorkflowJson({
-        baseUrl: hub.baseUrl,
-        tenantId,
-        assetName,
-        tokenSecret: stringField(minted.data, "secret", "mint git token"),
-        workflowJson: serializeWorkbenchDigestWorkflow(definition),
-      });
-      return id;
-    });
+        const definition = buildWorkbenchDigestWorkflow({
+          triggerAddress: `workbench-digest@${slug}.localhost`,
+          inferencePreferences: [{ provider: "anthropic", model: "noop" }],
+          turnTimeoutMs: 30_000,
+        });
+        const pushed = await pushWorkflowSource({
+          baseUrl: hub.baseUrl,
+          tenantId,
+          assetName,
+          tokenSecret: stringField(minted.data, "secret", "mint git token"),
+          workflowJson: serializeWorkbenchDigestWorkflow(definition),
+        });
+        return { assetId: id, commitSha: pushed.commitSha };
+      },
+    );
 
     // The deploy's source is the hub's own, really-reachable
     // noop-inference endpoint — not a placeholder like the walking
@@ -196,19 +200,15 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     // noop-inference answers it locally without reaching a real model.
     const deploymentId = await hop("workflow deploy", async () => {
       const sourceId = "src-workbench-digest-e2e";
-      const body = {
+      const body = workflowDeployBody({
         assetId,
-        sources: [
-          {
-            id: sourceId,
-            provider: "anthropic",
-            baseURL: `${hub.baseUrl}/api/chat/noop-inference`,
-            apiKey: "noop",
-            model: "noop",
-          },
-        ],
-        defaultSource: sourceId,
-      };
+        commitSha,
+        sourceId: sourceId,
+        provider: "anthropic",
+        baseURL: `${hub.baseUrl}/api/chat/noop-inference`,
+        apiKey: "noop",
+        model: "noop",
+      });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;
       for (;;) {

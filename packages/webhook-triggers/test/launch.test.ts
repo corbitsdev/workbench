@@ -71,6 +71,9 @@ const TRIGGER = {
   lastFiredAt: null,
 };
 
+let persistLaunchCalls: unknown[] = [];
+const persistedLaunchExtra = async () => {};
+
 function baseDeps() {
   return {
     db: createFakeDb() as never,
@@ -80,6 +83,11 @@ function baseDeps() {
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
+    launchMode: { kind: "section" as const, turnTimeoutMs: 60_000 },
+    persistLaunch: (input: unknown) => {
+      persistLaunchCalls.push(input);
+      return persistedLaunchExtra;
+    },
   };
 }
 
@@ -120,5 +128,33 @@ describe("launchWebhookTrigger", () => {
     ];
     expect(params.content).toBe("deployed: ok");
     expect(params.sessionId).toBe("ses_run1");
+  });
+
+  // CL-6367: a webhook-driven run with no stable-id -> current-run
+  // mapping could never be relaunched after its sidecar died — the
+  // terminal sweep and the wake path both resolve through that mapping.
+  test("launches as a section and persists the relaunch mapping with the run", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    persistLaunchCalls = [];
+    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+
+    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
+      status: "ok",
+    });
+
+    const [, params] = launchFoldedRunCalls[0] as [
+      unknown,
+      { mode: unknown; persistExtra: unknown },
+    ];
+    expect(params.mode).toEqual({ kind: "section", turnTimeoutMs: 60_000 });
+    expect(params.persistExtra).toBe(persistedLaunchExtra);
+    expect(persistLaunchCalls).toEqual([
+      {
+        tenantId: "ten_1",
+        instanceId: result.instanceId,
+        foldedBody: FOLDED_BODY,
+      },
+    ]);
   });
 });

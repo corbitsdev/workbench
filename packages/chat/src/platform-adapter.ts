@@ -36,7 +36,7 @@ import {
   type LiveAgent,
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
-import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
+import { AGENT_SECTION_MODE } from "./standalone-launch";
 import type { DB } from "@intx/db";
 import {
   sessionMail,
@@ -137,23 +137,6 @@ export type CreateHubChatPlatformDeps = {
  * somebody writes into them, through the same send-triggered path.
  */
 const RELAUNCH_SWEEP_LIMIT = 100;
-
-/**
- * Every agent invited into a room deploys as an `onTrigger` section
- * (CL-6329): one warm run per (agent, workbench), and each message
- * asking it for a turn is an occurrence running as its own child run
- * (`turn__<n>`) with its own event log. That child id is what a reply's
- * `run_id` carries, which is the whole reason a reply is traceable.
- *
- * `onBodyFailure: "continue"` — authored in the section shape itself
- * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
- * records a failed occurrence and leaves the section subscribed, so one
- * bad turn kills neither the agent nor the room.
- */
-const ROOM_AGENT_MODE: FoldedRunMode = {
-  kind: "section",
-  turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-};
 
 /**
  * The concrete object `createHubChatPlatform` returns: the `ChatPlatform`
@@ -296,8 +279,8 @@ export function createHubChatPlatform(
   ): Promise<{ mode: FoldedRunMode; fallbackModel?: string }> {
     const fallbackModel = await resolveFallbackModel(binding);
     return fallbackModel !== undefined
-      ? { mode: ROOM_AGENT_MODE, fallbackModel }
-      : { mode: ROOM_AGENT_MODE };
+      ? { mode: AGENT_SECTION_MODE, fallbackModel }
+      : { mode: AGENT_SECTION_MODE };
   }
 
   /**
@@ -651,6 +634,13 @@ export function createHubChatPlatform(
       if (binding === undefined) return undefined;
       const live = await resolveLiveAgent(deps.db, binding);
       return live?.run.definitionId ?? undefined;
+    },
+
+    async resolveDefinitionAssetId(definitionId): Promise<string | undefined> {
+      const row = await deps.db.query.workflowDefinition.findFirst({
+        where: eq(workflowDefinition.id, definitionId),
+      });
+      return row?.assetId ?? undefined;
     },
 
     async refreshAgentInstanceFromDefinition(

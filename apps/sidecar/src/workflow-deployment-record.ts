@@ -74,6 +74,25 @@ function recordPath(dataDir: string, deploymentId: string): string {
   return pathJoin(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
 }
 
+// The format cutover added exactly two required fields (`approvedWireHash`,
+// `sourceRef`); every pre-cutover record on disk fails validation with
+// nothing wrong except those two missing. Recognizing that exact shape --
+// and only that shape -- is what lets the boot scan tell "deliberately
+// obsolete, safe to reap" apart from "genuinely corrupt, must keep warning
+// about": a record invalid for any other reason (a bad `version`, a
+// malformed `sources` map, a `sourceRef` present but shaped wrong) still
+// warns individually rather than being silently deleted.
+const PRE_CUTOVER_MISSING_FIELDS = new Set(["approvedWireHash", "sourceRef"]);
+
+function isPreCutoverShape(errors: type.errors): boolean {
+  return [...errors].every(
+    (error) =>
+      error.code === "required" &&
+      error.path.length === 1 &&
+      PRE_CUTOVER_MISSING_FIELDS.has(String(error.path[0])),
+  );
+}
+
 /**
  * Read one deployment's record by id, for a caller that already knows the
  * deployment id it needs and has no reason to re-scan the whole
@@ -194,6 +213,7 @@ export async function scanWorkflowDeploymentRecords(
   }
 
   const scanned: ScannedWorkflowDeployment[] = [];
+  let reapedCount = 0;
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const deploymentId = entry.name;
@@ -224,10 +244,24 @@ export async function scanWorkflowDeploymentRecords(
 
     const record = WorkflowDeploymentRecord(parsed);
     if (record instanceof type.errors) {
+      if (isPreCutoverShape(record)) {
+        // Reap rather than warn-forever: this is the deliberate format
+        // cutover, and the hard-cutover/wipe policy applies to dev data.
+        // Removes this deployment's whole `workflow-runs/<id>/` directory
+        // (record plus its co-located run substrate) so the next boot has
+        // nothing left to warn about -- never touches a sibling
+        // deployment's directory or any other data store.
+        await rm(dirname(path), { recursive: true, force: true });
+        reapedCount += 1;
+        continue;
+      }
       logger.warn`skipping workflow-runs/${deploymentId}: ${RECORD_FILENAME} failed validation: ${record.summary}`;
       continue;
     }
     scanned.push({ deploymentId, record });
+  }
+  if (reapedCount > 0) {
+    logger.info`reaped ${reapedCount} pre-cutover deployment record(s)`;
   }
   return scanned;
 }

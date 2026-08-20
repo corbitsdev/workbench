@@ -32,6 +32,11 @@ const CreateSkillBody = type({
   scope: skillAccessScopeSchema,
 });
 
+const UpdateSkillBody = type({
+  description: "string",
+  body: "string",
+});
+
 const RestoreBody = type({ commitSha: "string > 0" });
 
 const ScopeBody = type({ scope: skillAccessScopeSchema });
@@ -114,6 +119,21 @@ export function createSkillRoutes({
       skill,
       pinnedBy: await pinnedBy.resolve(scope.tenantId, name),
     });
+  });
+
+  app.put("/:name", requireGrant("asset:*", "create"), async (c) => {
+    const body = UpdateSkillBody(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        errorEnvelope("bad_request", `invalid update: ${body.summary}`),
+        400,
+      );
+    }
+    const skill = await registry.update(caller(c), c.req.param("name"), {
+      description: body.description,
+      body: body.body,
+    });
+    return c.json({ skill });
   });
 
   app.get("/:name/versions", requireGrant("asset:*", "read"), async (c) => {

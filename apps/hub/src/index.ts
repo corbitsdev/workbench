@@ -12,6 +12,7 @@ import {
   createDB,
   createGrantStore,
   createSidecarAllocationStore,
+  createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
   listVisibleOfferings,
   resolveCredentialByName,
@@ -37,6 +38,7 @@ import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
   createRequireGrant,
+  readDurableWorkflowRunLifecycles,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
@@ -56,6 +58,7 @@ import {
 } from "@corbits/agent-directory";
 
 import {
+  AGENT_SECTION_MODE,
   CHAT_TURN_TIMEOUT_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
@@ -87,6 +90,7 @@ import {
   provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
+  workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -155,6 +159,8 @@ import {
   validateTriggerFieldsAtCreate,
   workflowCatalogEntry,
   workflowDisplayName,
+  WORKBENCH_TEMPLATES,
+  serializeWorkbenchTemplateManifest,
 } from "@corbits/workflow-catalog";
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import {
@@ -225,12 +231,29 @@ import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
-import { createNeedsYouRoutes } from "@corbits/approvals";
+import {
+  createNeedsYouRoutes,
+  createToolAllowanceRegistry,
+  withGrantAllowance,
+} from "@corbits/approvals";
+import {
+  createMcpCallClassifier,
+  MCP_CALL_TOOL,
+  mcpTools,
+} from "@corbits/mcp-tools";
+import {
+  createAllowanceAutoApprover,
+  createMcpServerToolsAllowanceLoader,
+  createRegisteredApprovalFinder,
+  createTenantGrantLister,
+} from "./grant-allowance";
 import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
   createArtifactDbStore,
   createArtifactRoutes,
+  createTemplateLibraryDbStore,
+  createTemplateLibraryRoutes,
   createUnavailableArtifactRoutes,
   createUnavailableWorkflowArtifactRoutes,
   createWorkflowArtifactDbStore,
@@ -305,6 +328,7 @@ import {
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
+import { scheduleTemplateLibrarySeed } from "./template-library-seed";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
@@ -529,6 +553,25 @@ export async function createHub(config: HubConfig) {
         },
       },
     },
+    // No mailer is wired up anywhere in this stack, so better-auth can
+    // never actually verify an address -- `emailVerified` would stay
+    // false forever and every self-serve signup would dead-end at
+    // @workbench/access-policy's gate. `allowUnverifiedEmails`
+    // (ALLOW_UNVERIFIED_EMAILS, dev/test only) auto-verifies at the
+    // source instead of leaving each downstream consumer of
+    // `emailVerified` to separately special-case it.
+    databaseHooks: config.allowUnverifiedEmails
+      ? {
+          user: {
+            create: {
+              before: async (user: { email: string }) => {
+                log.info`ALLOW_UNVERIFIED_EMAILS is set: auto-verifying ${user.email} at account creation (dev/test only)`;
+                return { data: { ...user, emailVerified: true } };
+              },
+            },
+          },
+        }
+      : undefined,
   });
   const signingKey = await generateKeyPair();
   const agentRepoStore = createAgentRepoStore({
@@ -558,8 +601,28 @@ export async function createHub(config: HubConfig) {
   // "completed" folded run keeps its reconnect honest without loosening
   // the gate for a real workflow deployment or for a folded run that is
   // genuinely gone ("failed"/"cancelled" still fail closed).
+  // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
+  // so a parked read-only call whose resource a standing grant covers is
+  // auto-approved right after its approval row lands — no card for a
+  // human, the ledgered row still records the decision. The gate's deps
+  // (dispatch service, grant store, approval stores) don't exist yet at
+  // this point in the composition, so the wrapper reads through this ref,
+  // assigned once they do; until then every registration takes the plain
+  // parked path.
+  const grantAllowanceGateRef: {
+    current?: (
+      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
+    ) => Promise<void>;
+  } = {};
   const lookups = {
     ...baseLookups,
+    async registerSignalCorrelation(
+      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
+    ): Promise<void> {
+      const gate = grantAllowanceGateRef.current;
+      if (gate !== undefined) return gate(args);
+      return baseLookups.registerSignalCorrelation(args);
+    },
     async lookupPublicKey(agentAddress: string): Promise<string | null> {
       // CL-6281: the repair runs before `baseLookups` because the case
       // it exists for is exactly the one `baseLookups` answers WRONGLY —
@@ -983,6 +1046,67 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  // CL-6345: arm the grant-allowance gate declared up at `lookups`. The
+  // one annotation today is `mcp_call` (registered under both its bare
+  // and pinned-namespaced names): a downstream MCP tool the server
+  // itself marks `readOnlyHint: true`, called on a connection whose
+  // `mcp:<slug>` resource an `allow`/"read" grant covers, is
+  // auto-approved through the native resolve machinery; every other
+  // parked call — writes, unverified claims, uncovered connections —
+  // waits for a human exactly as before.
+  {
+    const mcpCallClassify = createMcpCallClassifier(
+      createMcpServerToolsAllowanceLoader({ db, credentialCipher }),
+    );
+    const allowanceLog = (line: string) => log.info`${line}`;
+    grantAllowanceGateRef.current = withGrantAllowance(
+      (args) => baseLookups.registerSignalCorrelation(args),
+      {
+        registry: createToolAllowanceRegistry([
+          {
+            tool: MCP_CALL_TOOL,
+            grantAction: "read",
+            classify: mcpCallClassify,
+          },
+          {
+            tool: `${mcpTools.id}:${MCP_CALL_TOOL}`,
+            grantAction: "read",
+            classify: mcpCallClassify,
+          },
+        ]),
+        findRegisteredApproval: createRegisteredApprovalFinder(db),
+        listTenantGrants: createTenantGrantLister(db),
+        autoApprove: createAllowanceAutoApprover(
+          {
+            db,
+            sidecarRouter,
+            workflowDispatchService,
+            readRunLifecycles: async (
+              agentAddress,
+              topLevelRunId,
+              targetRunId,
+            ) => {
+              const lifecycles = await readDurableWorkflowRunLifecycles(
+                agentRepoStore.repoStore,
+                agentAddress,
+                [topLevelRunId, targetRunId],
+              );
+              return {
+                topLevel: lifecycles.get(topLevelRunId) ?? "absent",
+                target: lifecycles.get(targetRunId) ?? "absent",
+              };
+            },
+            grantStore: chatGrantStore,
+            conditionRegistry: chatConditionRegistry,
+            approvalStore: createApprovalStore(db),
+            signalCorrelationStore: createSignalCorrelationStore(db),
+          },
+          allowanceLog,
+        ),
+        log: allowanceLog,
+      },
+    );
+  }
   // Mounted here (not up with the registry construction above) because
   // its `/update` route's grant gate needs `chatGrantStore`/
   // `chatConditionRegistry`, which don't exist yet up there — the same
@@ -1710,6 +1834,8 @@ export async function createHub(config: HubConfig) {
             toolGrantsForPins,
             mcpCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
+            launchMode: AGENT_SECTION_MODE,
+            persistLaunch: workbenchLaunchPersistExtra,
           },
           trigger,
           payload,
@@ -3040,6 +3166,20 @@ export async function createHub(config: HubConfig) {
       }),
     );
 
+    // The bench library's template shelf (CL-6344): what the
+    // new-workbench picker instantiates from — seeded rows, never a
+    // hardcoded import.
+    app.route(
+      `${TENANT_PREFIX}/library/templates`,
+      createTemplateLibraryRoutes({
+        store: createTemplateLibraryDbStore(artifactsHandle.db),
+        requireGrant: createRequireGrant({
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+        }),
+      }),
+    );
+
     // Co-editing persistence (CL-5958 phase 2): debounced snapshots of a
     // presence room's Y.Text into a real artifact version, layered on top
     // of the presence registry mounted above without changing its own
@@ -3168,6 +3308,26 @@ export async function createHub(config: HubConfig) {
     fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
   });
 
+  // Bench-library template seed (CL-6344): the hub, as system, plants
+  // the shipped workbench template manifests and their tool tarballs
+  // into the operator bench's library at boot — idempotently, so a
+  // second boot leaves exactly one entry per template. Skipped in
+  // degraded (no-artifacts) mode: with no library to seed into there is
+  // nothing honest to do. See ./template-library-seed.ts.
+  const templateLibrarySeed =
+    artifactsHandle !== undefined
+      ? scheduleTemplateLibrarySeed({
+          baseUrl: config.baseUrl,
+          admin: config.envCredentialPlantAdmin,
+          fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
+          artifactsDb: artifactsHandle.db,
+          entries: WORKBENCH_TEMPLATES.map((template) => ({
+            id: template.id,
+            content: serializeWorkbenchTemplateManifest(template),
+          })),
+        })
+      : { stop: (): void => {} };
+
   return {
     app: guardedApp,
     db,
@@ -3177,6 +3337,7 @@ export async function createHub(config: HubConfig) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
       envCredentialPlant.stop();
+      templateLibrarySeed.stop();
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();

@@ -585,9 +585,12 @@ export function createHubSessionLookups(
               tx,
             );
             if (won === null) {
-              // The row exists and is anchored here but no "running" row
-              // matched: the run is already terminal — a benign replay
-              // against an already-settled row.
+              // The row exists and is anchored here, but `markTerminal`'s
+              // guard is a LIVE status (`deployed` or `running`), not just
+              // "running" -- so this also covers a deployment torn down
+              // before its first trigger. No live row matched: the run is
+              // already terminal — a benign replay against an
+              // already-settled row.
               return;
             }
             // Deactivate the run's own principal, if it has one. Externally-

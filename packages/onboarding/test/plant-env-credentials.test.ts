@@ -191,6 +191,7 @@ describe("plantEnvProviderCredentials", () => {
         // Mirrors the real `seedCatalog`'s side effect: a fresh plant
         // actually stores an active credential under this name.
         active.add("anthropic-default");
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -222,6 +223,7 @@ describe("plantEnvProviderCredentials", () => {
       },
       seedCatalogFn: async () => {
         seeded = true;
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -253,6 +255,7 @@ describe("plantEnvProviderCredentials", () => {
       }),
       seedCatalogFn: async () => {
         seeded = true;
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -288,6 +291,7 @@ describe("plantEnvProviderCredentials", () => {
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
         active.add("ollama-default");
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -314,6 +318,7 @@ describe("plantEnvProviderCredentials", () => {
       seedCatalogFn: async (args) => {
         planted.push(args.provider ?? "unknown");
         active.add("openai-default");
+        return { hasCompletionCapableModel: true };
       },
     });
 
@@ -346,6 +351,7 @@ describe("plantEnvProviderCredentials", () => {
         // the fake mirrors that side effect so the second call's
         // pre-check sees it.
         active.add("anthropic-default");
+        return { hasCompletionCapableModel: true };
       },
     };
 
@@ -375,6 +381,7 @@ describe("plantEnvProviderCredentials", () => {
         // Mirrors the real `ensureCredential`'s 409-skip: the revoked
         // row is left untouched, so the credentials list still shows no
         // active row for this provider.
+        return { hasCompletionCapableModel: true };
       },
     });
 

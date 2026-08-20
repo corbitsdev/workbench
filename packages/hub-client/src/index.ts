@@ -26,6 +26,7 @@ export type {
   ModelSource,
   PushOutcome,
   SeedCatalogArgs,
+  SeedCatalogResult,
   SeedTenant,
   SeedTenantArgs,
   ToolRegistryPublisher,

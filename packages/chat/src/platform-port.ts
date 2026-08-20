@@ -85,6 +85,17 @@ export interface WorkbenchLauncher {
   resolveDefinitionIdByAddress(address: string): Promise<string | undefined>;
 
   /**
+   * Resolves a definition id to the workflow asset it projects over —
+   * the agent's stable identity. A code-sourced deploy projects a fresh
+   * `workflow_definition` row per frozen wire projection, so one agent
+   * accumulates many definition ids over its life while its asset stays
+   * the same; anything asking "is this the same agent?" compares assets,
+   * never rows. Returns undefined for a definition this tenant has no
+   * row for.
+   */
+  resolveDefinitionAssetId(definitionId: string): Promise<string | undefined>;
+
+  /**
    * Recomputes an already-invited instance's folded launch body from
    * its definition's CURRENT asset content, and persists it so the
    * instance's next wake uses it. A wake replays whatever the launch

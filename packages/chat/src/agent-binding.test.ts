@@ -23,7 +23,6 @@ type LaunchRow = {
   currentRunId: string;
   priorRunIds: string[];
   foldedBody: unknown;
-  noopInference: boolean;
 };
 
 /**
@@ -72,7 +71,6 @@ const relaunched: LaunchRow = {
   currentRunId: "run_fresh",
   priorRunIds: ["run_original"],
   foldedBody: FOLDED_BODY,
-  noopInference: false,
 };
 
 describe("readBindingByAddress", () => {

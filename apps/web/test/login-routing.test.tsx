@@ -42,7 +42,11 @@ const user: SessionUser = {
  * `LoginForm` submission end to end. */
 let capturedHandleSignedIn: ((user: SessionUser) => void) | null = null;
 
-function TestRoot({ initialSession }: { readonly initialSession: SessionState }) {
+function TestRoot({
+  initialSession,
+}: {
+  readonly initialSession: SessionState;
+}) {
   const [path, setPath] = useState(window.location.pathname);
   useEffect(() => {
     const onPopState = () => setPath(window.location.pathname);

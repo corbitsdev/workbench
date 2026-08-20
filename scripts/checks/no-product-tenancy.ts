@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 15,
+    maxOccurrences: 16,
     tables: [
       // Created as channel_settings et al.; renamed to workbench_* by
       // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
@@ -66,6 +66,10 @@ const ALLOWLIST: readonly {
       // workbench data, held here rather than read back out of the
       // anchor run's mailbox — see room-messages.ts.
       "workbench_messages",
+      // The turn projection (CL-6329): one row per agent turn, so a room
+      // answers "which run produced this reply, and how did that turn
+      // end" from its own rows — see agentTurns in schema.ts.
+      "agent_turns",
     ],
   },
   {

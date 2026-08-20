@@ -8,7 +8,7 @@ import { describeApiError } from "@corbits/api-query";
 import { listPrincipals } from "@corbits/settings-ui";
 import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
@@ -31,6 +31,7 @@ import {
   isWorkbenchSettingsPath,
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
+import { recordLastWorkbenchId } from "../last-workbench";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -67,6 +68,14 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
+
+  // Files' workbench-first lens (CL-6353) reads this back to default to
+  // "this workbench" when the person just came from one.
+  useEffect(() => {
+    if (tenantId === null || workbenchId === null) return;
+    recordLastWorkbenchId(tenantId, workbenchId);
+  }, [tenantId, workbenchId]);
+
   // Who's live in this workbench right now is derived inside `ChatWorkspace`
   // itself now (CL-6328), off the same `/stream` connection as everything
   // else — no separate `@corbits/presence` room/heartbeat for this surface

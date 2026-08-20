@@ -110,6 +110,10 @@ export {
   createInMemoryTurnClaimStore,
 } from "./turn-claims";
 export type { TurnClaim, TurnClaimStore } from "./turn-claims";
+export {
+  AGENT_SECTION_MODE,
+  workbenchLaunchPersistExtra,
+} from "./standalone-launch";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
 export type {
   DispatchTurnBatch,

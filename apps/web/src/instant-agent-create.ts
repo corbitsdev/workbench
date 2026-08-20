@@ -29,8 +29,9 @@ import { listPluginsForTenant } from "@workbench/connections/plugins";
 import {
   instantiateWorkbenchTemplate,
   templateSettingsPatch,
-  workbenchTemplate,
 } from "@corbits/workflow-catalog";
+
+import { fetchWorkbenchTemplateManifest } from "./workbench-templates-api";
 
 import { launchAgentChat } from "./agent-chat-launch";
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
@@ -102,7 +103,21 @@ export async function createWorkbenchFromTemplate(
   if (setupTemplate === undefined) {
     throw new Error("No default setup agent found for this workbench.");
   }
-  const manifest = workbenchTemplate(templateId);
+  // The manifest comes from the bench library the hub seeded at boot
+  // (CL-6344), never from a hardcoded catalog import. `blank` is the one
+  // id with no manifest by design; any other id resolving to nothing
+  // means this bench's boot seed hasn't run — fail loud rather than
+  // mint a workbench missing its agents.
+  const manifest =
+    templateId === "blank"
+      ? undefined
+      : ((await fetchWorkbenchTemplateManifest(tenantId, templateId)) ??
+        undefined);
+  if (templateId !== "blank" && manifest === undefined) {
+    throw new Error(
+      `The "${templateId}" template isn't in this bench's library yet — its boot seed hasn't run.`,
+    );
+  }
   const requiresGithub =
     manifest?.requiredConnections.includes("github") ?? false;
 

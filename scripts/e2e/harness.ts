@@ -5,10 +5,11 @@
 // real the suite fails and says which hop, it never fakes the result.
 
 import { afterAll } from "bun:test";
-import { spawn } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createGitWorkflowPusher } from "../../packages/hub-client/src/index.ts";
+import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflow-source/src/index.ts";
 
 export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 const HUB_DIR = path.join(REPO_ROOT, "apps", "hub");
@@ -567,117 +568,59 @@ export function expectStepCompleted(events: RunEvent[], stepId: string): void {
 
 // --- workflow asset content over git smart-HTTP -----------------------
 
-interface GitResult {
-  status: number;
-  stdout: string;
-  stderr: string;
-}
-
-function runGit(
-  args: string[],
-  cwd: string,
-  env: Record<string, string>,
-): Promise<GitResult> {
-  return new Promise((resolveRun, reject) => {
-    const child = spawn("git", args, {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Uint8Array) => {
-      stdout += new TextDecoder().decode(chunk);
-    });
-    child.stderr.on("data", (chunk: Uint8Array) => {
-      stderr += new TextDecoder().decode(chunk);
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      resolveRun({ status: code ?? -1, stdout, stderr });
-    });
-  });
-}
-
 /**
- * Commit `workflow.json` into a workflow asset over the platform's
- * asset smart-HTTP route — the only surface that writes asset tree
- * content — using the system git binary with a bearer-token askpass
- * shim, exactly as the platform's own tooling does.
+ * Publishes a workflow definition into its asset repo in the one shape
+ * a `workflow`-kind asset accepts: the source codebase
+ * `@corbits/workflow-source` renders. Delegates to the platform's own
+ * pusher so the suite exercises the same publication path the seed and
+ * the product use, and returns the commit a code-sourced deploy pins.
  */
-export async function pushWorkflowJson(options: {
+export async function pushWorkflowSource(options: {
   baseUrl: string;
   tenantId: string;
   assetName: string;
   tokenSecret: string;
   workflowJson: string;
-}): Promise<void> {
-  const work = await mkdtemp(path.join(tmpdir(), "e2e-workflow-push-"));
-  try {
-    const askpass = path.join(work, "askpass.sh");
-    await writeFile(
-      askpass,
-      `#!/bin/sh\nprintf '%s\\n' '${options.tokenSecret.replace(/'/g, "'\\''")}'\n`,
-      "utf-8",
-    );
-    await chmod(askpass, 0o755);
-    const env: Record<string, string> = {
-      ...osEnv(),
-      GIT_ASKPASS: askpass,
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_AUTHOR_NAME: "Walking Skeleton",
-      GIT_AUTHOR_EMAIL: "e2e@workbench.invalid",
-      GIT_COMMITTER_NAME: "Walking Skeleton",
-      GIT_COMMITTER_EMAIL: "e2e@workbench.invalid",
-    };
-    const remote = new URL(
-      `${options.baseUrl}/api/tenants/${options.tenantId}/assets/workflow/${options.assetName}.git`,
-    );
-    remote.username = "x-access-token";
-    remote.password = encodeURIComponent(options.tokenSecret);
-    const repoDir = path.join(work, "repo");
+}): Promise<{ commitSha: string }> {
+  const pushed = await createGitWorkflowPusher()({
+    remoteUrl: `${options.baseUrl}/api/tenants/${options.tenantId}/assets/workflow/${options.assetName}.git`,
+    tokenSecret: options.tokenSecret,
+    workflowJson: options.workflowJson,
+    packageName: options.assetName,
+  });
+  return { commitSha: pushed.commitSha };
+}
 
-    const clone = await runGit(
-      ["-c", "credential.helper=", "clone", remote.toString(), repoDir],
-      work,
-      env,
-    );
-    if (clone.status !== 0) {
-      throw new Error(`git clone of workflow asset failed: ${clone.stderr}`);
-    }
-
-    await writeFile(
-      path.join(repoDir, "workflow.json"),
-      options.workflowJson,
-      "utf-8",
-    );
-    for (const step of [
-      { label: "add workflow.json", args: ["add", "workflow.json"] },
+/**
+ * The deploy body a code-sourced asset deployment takes: the pushed
+ * commit is the definition's pin, and the entry names the
+ * `interchange.workflow` module the sidecar evaluates.
+ */
+export function workflowDeployBody(options: {
+  assetId: string;
+  commitSha: string;
+  sourceId: string;
+  provider: string;
+  baseURL: string;
+  apiKey: string;
+  model: string;
+}): Record<string, unknown> {
+  return {
+    source: {
+      kind: "asset",
+      assetId: options.assetId,
+      package: { format: "source", commitSha: options.commitSha },
+    },
+    entry: WORKFLOW_SOURCE_ENTRY,
+    sources: [
       {
-        label: "commit workflow.json",
-        args: [
-          "-c",
-          "user.name=Walking Skeleton",
-          "-c",
-          "user.email=e2e@workbench.invalid",
-          "commit",
-          "-m",
-          "Add echo workflow definition",
-        ],
+        id: options.sourceId,
+        provider: options.provider,
+        baseURL: options.baseURL,
+        apiKey: options.apiKey,
+        model: options.model,
       },
-      {
-        label: "push workflow.json",
-        args: ["-c", "credential.helper=", "push", "origin", "HEAD:main"],
-      },
-    ]) {
-      const result = await runGit(step.args, repoDir, env);
-      if (result.status !== 0) {
-        throw new Error(
-          `git ${step.label} failed: ${result.stderr || result.stdout}`,
-        );
-      }
-    }
-  } finally {
-    await rm(work, { recursive: true, force: true });
-  }
+    ],
+    defaultSource: options.sourceId,
+  };
 }

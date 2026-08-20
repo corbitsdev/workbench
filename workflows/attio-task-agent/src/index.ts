@@ -91,7 +91,7 @@ export const ATTIO_TASK_AGENT_SYSTEM_PROMPT = buildAttioTaskAgentSystemPrompt({
  * deploy of this package itself.
  */
 export const ATTIO_TASK_AGENT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/mcp-tools", version: "0.0.5" },
+  { name: "@corbits/mcp-tools", version: "0.0.6" },
 ];
 
 /**

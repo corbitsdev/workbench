@@ -10,6 +10,7 @@
 // approach `packages/folded-runs/test/launch.test.ts` and
 // `packages/webhook-triggers/test/launch.test.ts` use.
 import { describe, expect, mock, test } from "bun:test";
+import { CHAT_TURN_TIMEOUT_MS } from "@corbits/chat";
 import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
@@ -165,6 +166,44 @@ describe("createHubRoutineLauncher", () => {
     expect(result.runId).toBeTruthy();
     expect(launchFoldedRunCalls).toHaveLength(1);
     expect(sendFoldedMailWithRetryCalls).toHaveLength(0);
+  });
+
+  // CL-6367: a routine-driven run with no stable-id -> current-run
+  // mapping could never be relaunched after its sidecar died — chat's
+  // terminal sweep and wake path both resolve through that mapping.
+  test("launches as an onTrigger section and persists the relaunch mapping with the run", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+
+    const result = await buildLauncher().launchRoutineRun(baseInput({}));
+
+    const [, params] = launchFoldedRunCalls[0] as [
+      unknown,
+      {
+        mode: unknown;
+        persistExtra: (tx: unknown) => Promise<void>;
+      },
+    ];
+    expect(params.mode).toEqual({
+      kind: "section",
+      turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+    });
+
+    const written: { values: unknown }[] = [];
+    await params.persistExtra({
+      insert: () => ({
+        values: async (values: unknown) => {
+          written.push({ values });
+        },
+      }),
+    } as never);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.values).toMatchObject({
+      tenantId: "ten_1",
+      instanceId: result.runId,
+      currentRunId: result.runId,
+      foldedBody: FOLDED_BODY,
+    });
   });
 
   test("still returns the run id when input delivery fails after every retry — the run is never hidden or un-launched", async () => {

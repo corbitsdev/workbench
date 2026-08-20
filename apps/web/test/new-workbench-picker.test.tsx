@@ -6,6 +6,10 @@
 // leaving it blank.
 
 import { afterEach, describe, expect, test } from "bun:test";
+import {
+  CODE_REVIEW_TEMPLATE,
+  serializeWorkbenchTemplateManifest,
+} from "@corbits/workflow-catalog";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -53,6 +57,16 @@ function stubFetch(
     calls.push(init === undefined ? { path } : { path, init });
     if (path.includes("/api/me/principals")) {
       return Promise.resolve(json(MEMBERSHIP));
+    }
+    // The bench library the hub seeded at boot (CL-6344) — what the
+    // create flow instantiates from instead of a hardcoded import.
+    if (path.endsWith("/library/templates/code-review")) {
+      return Promise.resolve(
+        json({
+          id: "code-review",
+          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+        }),
+      );
     }
     const response = extra(path, init);
     if (response !== undefined) return Promise.resolve(response);
