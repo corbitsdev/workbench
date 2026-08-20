@@ -48,6 +48,17 @@ export {
   routineHasTrigger,
 } from "./scorers/world-scorers.ts";
 export {
+  parseMcpFakeRecording,
+  type McpFakeRecording,
+  type McpFakeToolDefinition,
+  type RecordedCall,
+} from "./fakes/recording.ts";
+export { startMcpFake, type McpFakeHandle } from "./fakes/mcp-fake-server.ts";
+export {
+  fireRoutineNow,
+  type FireRoutineDeps,
+} from "./targets/fire-routine.ts";
+export {
   ALL_EVALS,
   aiDailyResearchEval,
   docsOnSdkChangeEval,

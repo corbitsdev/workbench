@@ -29,12 +29,32 @@ import {
 import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 
-import type { RunConfig, Target, Turn, WorldSnapshot } from "../types.ts";
+import type {
+  FakeReceipt,
+  RunConfig,
+  Target,
+  Turn,
+  WorldSnapshot,
+} from "../types.ts";
+import type { McpFakeRecording } from "../fakes/recording.ts";
+import { startMcpFake } from "../fakes/mcp-fake-server.ts";
+import { fireRoutineNow } from "./fire-routine.ts";
+import { arrayField, stringField } from "./json-fields.ts";
 import {
   newToolCallsSince,
   readAllToolCalls,
   type SqlClientLike,
 } from "./trace.ts";
+
+/** One recorded MCP fake (packages/evals/src/fakes) to stand up and
+ * connect into the tenant before the target is handed back — connected
+ * through the exact same `POST /mcp-servers` route real users use
+ * (see mcp-fake-server.ts's module comment), never a second connect
+ * mechanism. */
+export interface MyraTargetMcpFake {
+  readonly server: string;
+  readonly recording: McpFakeRecording;
+}
 
 export interface EvalSpawnedApp {
   output(): string;
@@ -95,33 +115,19 @@ export interface MyraTargetInfra {
    * when the caller supplies this, the returned `Target` gains
    * `snapshotWorld`. Left unset in `plumbing-only` runs that never
    * assert on tenant state, so this package's callers never have to
-   * wire a drizzle handle + AssetService just to run `bun run eval`. */
-  captureWorldSnapshot?: (tenantId: string) => Promise<WorldSnapshot>;
+   * wire a drizzle handle + AssetService just to run `bun run eval`.
+   * `fakeReceiptsReader` hands back every call the target's connected
+   * MCP fakes received, so the snapshot's `fakeReceipts` come from the
+   * fakes this target actually started. */
+  captureWorldSnapshot?: (
+    tenantId: string,
+    fakeReceiptsReader: () => readonly FakeReceipt[],
+  ) => Promise<WorldSnapshot>;
 }
 
 /** Never sent anywhere for real in plumbing mode — see the module
  * comment. Only used when `EVAL_PROVIDER_API_KEY` is unset. */
 const STUB_API_KEY = "corbits-evals-stub-key-not-real";
-
-function stringField(data: unknown, field: string, what: string): string {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
-}
-
-function arrayField(data: unknown, field: string, what: string): unknown[] {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (Array.isArray(value)) return value;
-  }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
-}
 
 interface ChatMessage {
   readonly id: string;
@@ -181,6 +187,7 @@ async function pollUntil<T>(
 export async function bootMyraTarget(
   config: RunConfig,
   infra: MyraTargetInfra,
+  mcpFakes: readonly MyraTargetMcpFake[] = [],
 ): Promise<Target> {
   const {
     api,
@@ -300,6 +307,16 @@ export async function bootMyraTarget(
       200,
     );
 
+    const startedFakes = mcpFakes.map(({ recording }) =>
+      startMcpFake(recording, freePort()),
+    );
+    for (const fake of startedFakes) {
+      cleanups.push(() => {
+        fake.stop();
+        return Promise.resolve();
+      });
+    }
+
     // EVAL_PROVIDER=ollama + OLLAMA_BASE_URL runs against a local Ollama
     // (no key: the fixed placeholder secret); otherwise an Anthropic key.
     const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"];
@@ -349,6 +366,23 @@ export async function bootMyraTarget(
         }
       },
     );
+
+    // Connect every started fake through the exact same route Plugins
+    // uses for a real MCP server — no eval-only connect mechanism.
+    for (const [index, fake] of startedFakes.entries()) {
+      const connectRes = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${seeded.tenantId}/mcp-servers`,
+        { name: mcpFakes[index]?.server, url: fake.url },
+        cookies,
+      );
+      expectStatus(
+        `connect MCP fake "${mcpFakes[index]?.server ?? "?"}"`,
+        connectRes,
+        200,
+      );
+    }
 
     const assistantDefinitionId = await pollUntil(
       '"assistant" becoming invitable',
@@ -573,9 +607,28 @@ export async function bootMyraTarget(
       return { human, replyText: replyTextOf(reply), toolCalls: newCalls };
     }
 
+    function fakeReceipts(): readonly FakeReceipt[] {
+      return startedFakes.flatMap((fake) => fake.receipts());
+    }
+
+    async function fireRoutine(routineId: string): Promise<Turn> {
+      return fireRoutineNow(
+        {
+          api,
+          hubUrl: hub.baseUrl,
+          tenantId: seeded.tenantId,
+          cookies,
+          sql: sqlClient,
+        },
+        routineId,
+        routineId,
+      );
+    }
+
     return {
       configName: config.name,
       sendTurn,
+      fireRoutine,
       close: closeAll,
       ...(infra.captureWorldSnapshot === undefined
         ? {}
@@ -584,8 +637,9 @@ export async function bootMyraTarget(
               (
                 infra.captureWorldSnapshot as (
                   tenantId: string,
+                  fakeReceiptsReader: () => readonly FakeReceipt[],
                 ) => Promise<WorldSnapshot>
-              )(seeded.tenantId),
+              )(seeded.tenantId, fakeReceipts),
           }),
     };
   } catch (cause) {

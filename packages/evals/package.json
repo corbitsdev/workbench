@@ -21,15 +21,18 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
+    "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"
   },
   "devDependencies": {
     "@corbits/agent-directory-tools": "workspace:*",
     "@corbits/connections-tools": "workspace:*",
+    "@corbits/mcp-tools": "workspace:*",
     "@corbits/memory-tools": "workspace:*",
     "@corbits/routines-tools": "workspace:*",
     "@corbits/task-dispatch-tools": "workspace:*",
