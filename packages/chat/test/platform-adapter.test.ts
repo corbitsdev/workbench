@@ -1141,7 +1141,6 @@ describe("createHubChatPlatform", () => {
     });
 
     const platform = createHubChatPlatform({
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
@@ -1200,7 +1199,6 @@ describe("createHubChatPlatform", () => {
     });
 
     const platform = createHubChatPlatform({
-      hubPublicKey: "hub-key",
       toolGrantsForPins: () => [],
       db: db as never,
       noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
