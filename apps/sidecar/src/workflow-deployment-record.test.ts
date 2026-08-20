@@ -11,6 +11,12 @@ import {
   type WorkflowDeploymentRecord,
 } from "./workflow-deployment-record";
 
+const RECORD_FILENAME = "deployment.json";
+
+function recordPath(dataDir: string, deploymentId: string): string {
+  return path.join(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
+}
+
 async function makeDataDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "deployment-record-test-"));
 }
@@ -80,5 +86,60 @@ describe("scanWorkflowDeploymentRecords parked/live distinction", () => {
 
     expect(byId.get("dep_live")?.parkedAt).toBeUndefined();
     expect(byId.get("dep_parked")?.parkedAt).toBeDefined();
+  });
+});
+
+describe("scanWorkflowDeploymentRecords reaps pre-cutover records", () => {
+  test("an unreadable old-format record (missing approvedWireHash/sourceRef) is reaped once, then boots quietly", async () => {
+    const dataDir = await makeDataDir();
+    const preCutover = {
+      version: 1,
+      agentAddress: "run_old-format@example.com",
+      definitionId: "def_1",
+      sources: {},
+    };
+    const filePath = recordPath(dataDir, "dep_old");
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(preCutover));
+
+    const firstScan = await scanWorkflowDeploymentRecords(dataDir);
+    expect(firstScan).toHaveLength(0);
+    await expect(fs.access(filePath)).rejects.toThrow();
+
+    // Quiet second boot: the record is already gone, nothing left to reap.
+    const secondScan = await scanWorkflowDeploymentRecords(dataDir);
+    expect(secondScan).toHaveLength(0);
+  });
+
+  test("a parseable record is never reaped", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_live", baseRecord);
+
+    const scanned = await scanWorkflowDeploymentRecords(dataDir);
+
+    expect(scanned).toHaveLength(1);
+    expect(scanned[0]?.deploymentId).toBe("dep_live");
+    await expect(
+      readWorkflowDeploymentRecord(dataDir, "dep_live"),
+    ).resolves.toBeDefined();
+  });
+
+  test("a record invalid for a reason other than the old-format shape is warned about, not reaped", async () => {
+    const dataDir = await makeDataDir();
+    const corrupt = {
+      version: 2, // wrong version -- not the recognized pre-cutover shape
+      agentAddress: "run_corrupt@example.com",
+      definitionId: "def_1",
+      sources: {},
+    };
+    const filePath = recordPath(dataDir, "dep_corrupt");
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(corrupt));
+
+    const scanned = await scanWorkflowDeploymentRecords(dataDir);
+
+    expect(scanned).toHaveLength(0);
+    // Still on disk -- never silently eaten.
+    await fs.access(filePath);
   });
 });
