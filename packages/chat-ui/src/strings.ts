@@ -184,6 +184,29 @@ export const CHAT_STRINGS = {
   blockQuestionSubmitting: "Sending…",
   blockQuestionAnswerError: "Couldn't send your answer — try again.",
   blockQuestionAnsweredLabel: "Your answer",
+  blockConnectGithubHeadline: "Connect GitHub",
+  blockConnectGithubPickHeadline: "Pick your repos",
+  blockConnectGithubIntro:
+    "Install the Workbench app on your GitHub account. Two clicks — you pick the repos on the next step, and nothing is read until you do.",
+  blockConnectGithubAction: "Connect GitHub",
+  blockConnectGithubTokenPrompt: "On a server without GitHub sign-in?",
+  blockConnectGithubTokenLink: "Use an access token instead",
+  blockConnectGithubTokenTrust:
+    " — a token carries whatever access it was made with, so the app install is the safer path when you have the choice.",
+  blockConnectGithubConnectedAs: (org: string) =>
+    `Connected to GitHub as ${org}`,
+  blockConnectGithubChange: "change",
+  blockConnectGithubRepoCount: (found: number, picked: number) =>
+    `${found} repos found · ${picked} picked`,
+  blockConnectGithubSelectAll: "Select all",
+  blockConnectGithubNoOpenPulls: "no open pull requests",
+  blockConnectGithubOpenPulls: (count: number) =>
+    count === 1 ? "1 open pull request" : `${count} open pull requests`,
+  blockConnectGithubPermissionHelper:
+    "Picking a repo lets the reviewers post reviews to it — each repo is its own permission, and you can turn any off later.",
+  blockConnectGithubStartReviewing: (count: number) =>
+    `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
+  blockConnectGithubSkip: "skip for now",
   optionLetter: (index: number) => String.fromCharCode(65 + index),
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
