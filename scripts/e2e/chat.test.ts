@@ -248,6 +248,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     }
     await plantGrant(principal2Id, "workflow-run:*", "read");
     await plantGrant(principal2Id, "workflow-run:*", "write");
+    // The room routes gate on `room:<id>` since CL-6346, not on the
+    // run pair above — same two grants `seed.ts` plants for a bench's
+    // own principal.
+    await plantGrant(principal2Id, "room:*", "read");
+    await plantGrant(principal2Id, "room:*", "write");
 
     // A workbench host's folded launch pins a real inference source
     // chain against the tenant catalog before it will launch at all,
