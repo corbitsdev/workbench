@@ -61,7 +61,6 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
           loading={false}
           nextCursor={null}
           onOpenRun={(id) => opened.push(id)}
-          onBack={() => undefined}
         />
       </TestQueryProvider>,
     );
@@ -86,7 +85,6 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
           loading={false}
           nextCursor={null}
           onOpenRun={(id) => opened.push(id)}
-          onBack={() => undefined}
         />
       </TestQueryProvider>,
     );
@@ -109,7 +107,6 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
           loading={false}
           nextCursor={null}
           onOpenRun={(id) => opened.push(id)}
-          onBack={() => undefined}
         />
       </TestQueryProvider>,
     );
@@ -132,7 +129,6 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
           loading={false}
           nextCursor={null}
           onOpenRun={(id) => opened.push(id)}
-          onBack={() => undefined}
         />
       </TestQueryProvider>,
     );

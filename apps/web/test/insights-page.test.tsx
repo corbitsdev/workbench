@@ -283,7 +283,7 @@ describe("InsightsPage breadcrumbs", () => {
     const markup = renderAtPath("/insights/runs");
     expect(markup).toContain('data-testid="stage-top-bar"');
     expect(markup).toContain('aria-label="Breadcrumb"');
-    expect(markup).toContain(">Insights</button>");
+    expect(markup).toContain('href="/insights"');
     expect(markup).toContain('aria-current="page">Run history</span>');
     expect(markup).not.toContain("insights-crumb");
   });
@@ -291,7 +291,7 @@ describe("InsightsPage breadcrumbs", () => {
   test("run detail puts a Runs / {run} trail in the top bar", () => {
     const markup = renderAtPath("/insights/runs/run_1");
     expect(markup).toContain('aria-label="Breadcrumb"');
-    expect(markup).toContain(">Runs</button>");
+    expect(markup).toContain('href="/insights/runs"');
     expect(markup).toContain('aria-current="page">Morning brief</span>');
     expect(markup).not.toContain("insights-crumb");
   });
@@ -317,7 +317,6 @@ describe("InsightsPage run-detail stat strip", () => {
         trace={{ kind: "loading" }}
         chainLegs={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(markup).toContain('data-slot="skeleton"');
@@ -337,7 +336,6 @@ describe("InsightsPage run-detail stat strip", () => {
         }}
         chainLegs={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(markup).not.toContain(">…<");
@@ -386,7 +384,6 @@ describe("InsightsPage trace timeline honesty", () => {
         trace={traceQuery([measuredSpan, ordinalSpanWithNoDuration])}
         chainLegs={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     // The ordinal span's own duration cell reads as an honest dash, never a
@@ -403,7 +400,6 @@ describe("InsightsPage trace timeline honesty", () => {
         trace={traceQuery([measuredSpan])}
         chainLegs={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(markup).toContain("5.0s");
@@ -477,7 +473,6 @@ describe("InsightsRunDetail chain strip", () => {
         trace={readyEmptyTrace}
         chainLegs={legs}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
 
@@ -515,7 +510,6 @@ describe("InsightsRunDetail chain strip", () => {
         trace={readyEmptyTrace}
         chainLegs={legs}
         onOpenRun={(runId) => opened.push(runId)}
-        onBack={() => undefined}
       />,
     );
 
@@ -547,7 +541,6 @@ describe("InsightsRunDetail chain strip", () => {
         trace={readyEmptyTrace}
         chainLegs={legs}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
 
@@ -563,7 +556,6 @@ describe("InsightsRunDetail chain strip", () => {
         trace={readyEmptyTrace}
         chainLegs={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
 
@@ -579,7 +571,6 @@ describe("InsightsRunDetail chain strip", () => {
         trace={readyEmptyTrace}
         chainLegs={[leg({ position: 0, runId: "run_solo" })]}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
 
@@ -635,7 +626,6 @@ describe("InsightsRunsHistory definition grouping", () => {
         loading={false}
         nextCursor={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
 
@@ -655,7 +645,6 @@ describe("InsightsRunsHistory definition grouping", () => {
         loading={false}
         nextCursor={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(el.querySelector("[data-definition-group]")).toBeNull();
@@ -669,7 +658,6 @@ describe("InsightsRunsHistory definition grouping", () => {
         loading={false}
         nextCursor="cursor_2"
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(el.textContent).toContain("Showing the 100 most recent runs.");
@@ -691,7 +679,6 @@ describe("InsightsRunsHistory definition grouping", () => {
         loading={false}
         nextCursor={null}
         onOpenRun={() => undefined}
-        onBack={() => undefined}
       />,
     );
     expect(el.textContent).toContain("Pulse check");
@@ -728,7 +715,6 @@ describe("InsightsRunDetailRoute wiring", () => {
             runId="run_1"
             run={null}
             tenantId="tnt_1"
-            onBack={() => undefined}
             onOpenRun={() => undefined}
           />
         </TestQueryProvider>,
