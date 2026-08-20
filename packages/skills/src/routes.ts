@@ -142,6 +142,20 @@ export function createSkillRoutes({
     });
   });
 
+  app.get(
+    "/:name/versions/:commitSha",
+    requireGrant("asset:*", "read"),
+    async (c) => {
+      return c.json({
+        skill: await registry.versionContent(
+          caller(c),
+          c.req.param("name"),
+          c.req.param("commitSha"),
+        ),
+      });
+    },
+  );
+
   app.post("/:name/restore", requireGrant("asset:*", "create"), async (c) => {
     const body = RestoreBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {

@@ -84,8 +84,8 @@ const SettingsRoute = lazy(async () => ({
 const AgentDetailRoute = lazy(async () => ({
   default: (await import("./pages/agent-detail-page")).AgentDetailRoute,
 }));
-const SkillDetailPlaceholder = lazy(async () => ({
-  default: (await import("./pages/detail-placeholders")).SkillDetailPlaceholder,
+const SkillDetailRoute = lazy(async () => ({
+  default: (await import("./pages/skill-detail-page")).SkillDetailRoute,
 }));
 const PluginDetailPlaceholder = lazy(async () => ({
   default: (await import("./pages/detail-placeholders"))
@@ -342,16 +342,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: SKILL_DETAIL_PATH,
     label: "Skill",
     icon: <Lightning />,
-    render: (path: string) => (
-      <SkillDetailPlaceholder slug={detailRouteSlug(SKILL_DETAIL_PATH, path)} />
-    ),
+    render: (path: string) => <SkillDetailRoute path={path} />,
   },
   {
     path: "/skills",
     label: "Skills",
     icon: <Lightning />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <SkillsRoute path={path} navigate={navigate} />
+    render: (_path: string, navigate: (to: string) => void) => (
+      <SkillsRoute navigate={navigate} />
     ),
   },
   {

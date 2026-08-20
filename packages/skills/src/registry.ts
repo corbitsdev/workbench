@@ -60,6 +60,14 @@ export type SkillRegistry = {
   search(caller: SkillCaller, query: string): Promise<readonly SkillSummary[]>;
   load(caller: SkillCaller, name: string): Promise<SkillDetail>;
   versions(caller: SkillCaller, name: string): Promise<readonly SkillVersion[]>;
+  /** The skill exactly as it stood at one commit — what a diff against the
+   * current version is computed from. Read-only: nothing is written and no
+   * version is cut. */
+  versionContent(
+    caller: SkillCaller,
+    name: string,
+    commitSha: string,
+  ): Promise<SkillDetail>;
   restore(
     caller: SkillCaller,
     name: string,
@@ -291,6 +299,34 @@ export function createSkillRegistry(
         ...commit,
         current: index === 0,
       }));
+    },
+
+    async versionContent(caller, name, commitSha) {
+      const { row } = await resolveVisible(caller, name);
+      const contents = await assets.readSkillMd({
+        assetId: row.assetId,
+        skillName: row.skillName,
+        commitSha,
+      });
+      if (contents === null) {
+        throw new SkillRegistryError(
+          "not_found",
+          `skill "${name}" has no SKILL.md at commit ${commitSha}`,
+        );
+      }
+      const parsed = parseSkillMd(contents);
+      const commit = (await assets.history(row.assetId)).find(
+        (entry) => entry.commitSha === commitSha,
+      );
+      return {
+        assetId: row.assetId,
+        name: parsed.name,
+        description: parsed.description,
+        body: parsed.body,
+        scope: row.scope,
+        creatorPrincipalId: row.creatorPrincipalId,
+        updatedAtIso: commit?.committedAtIso ?? new Date(0).toISOString(),
+      };
     },
 
     async restore(caller, name, commitSha) {

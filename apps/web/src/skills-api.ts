@@ -46,6 +46,7 @@ const SkillDetailResponse = type({
   pinnedBy: PinnedByEntry.array(),
 });
 const SkillVersionsResponse = type({ versions: SkillVersion.array() });
+const SkillAtVersionResponse = type({ skill: SkillDetail });
 const SkillResponse = type({ skill: SkillSummary });
 
 const ErrorEnvelope = type({ error: { message: "string" } });
@@ -137,6 +138,22 @@ export function listSkillVersions(
     `${base(tenantId)}/${encodeURIComponent(name)}/versions`,
     SkillVersionsResponse,
   ).then((page) => page.versions);
+}
+
+/**
+ * The skill as it stood at one commit — the "before" side of a diff
+ * against the current version. A read, never a write: nothing is restored
+ * by looking.
+ */
+export function loadSkillAtVersion(
+  tenantId: string,
+  name: string,
+  commitSha: string,
+): Promise<SkillDetail> {
+  return request(
+    `${base(tenantId)}/${encodeURIComponent(name)}/versions/${encodeURIComponent(commitSha)}`,
+    SkillAtVersionResponse,
+  ).then((page) => page.skill);
 }
 
 const DEFAULT_CREATE_SCOPE: SkillScope = "private";
