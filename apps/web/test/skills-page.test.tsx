@@ -374,8 +374,8 @@ describe("SkillsPage", () => {
     });
     const navigated: string[] = [];
     const el = await mount({ navigate: (to) => navigated.push(to) });
-    const row = Array.from(el.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("triage"),
+    const row = Array.from(el.querySelectorAll("tr")).find((tr) =>
+      tr.textContent?.includes("triage"),
     );
     await act(async () => {
       row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
