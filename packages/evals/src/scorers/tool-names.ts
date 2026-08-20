@@ -19,3 +19,12 @@ export const BUILD_TOOLS = [
   ROUTINE_CREATE_TOOL,
   DISPATCH_TASK_TOOL,
 ] as const;
+
+// The two names below do NOT pin against a real manager-tools bundle —
+// `@corbits/github-tools` exposes only the read-only `github_activity`
+// today (CL-6325). They document the tool names the CL-6322 §8.2 case
+// expects a GitHub-write vertical to land under; a scorer referencing
+// one of these will simply never see a matching tool call until CL-6325
+// ships, which is the intended red signal.
+export const GITHUB_POST_REVIEW_COMMENT_TOOL = "github_post_review_comment";
+export const GITHUB_MERGE_PULL_REQUEST_TOOL = "github_merge_pull_request";
