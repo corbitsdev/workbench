@@ -3,7 +3,7 @@
   "private": true,
   "description": "Pull-request review workflow: three reviewer lenses over one diff, one review posted back",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {
