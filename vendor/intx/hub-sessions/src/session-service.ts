@@ -69,10 +69,11 @@ import {
   type Asset,
   type AssetService,
 } from "./asset-service";
-import type {
-  AllocatedSidecarTarget,
-  SidecarAllocationRouter,
-  SidecarRouter,
+import {
+  DeployFrameNotSentError,
+  type AllocatedSidecarTarget,
+  type SidecarAllocationRouter,
+  type SidecarRouter,
 } from "./ws/sidecar-handler";
 import type { Principal, RepoId, RepoKind } from "./repo-store";
 import {
@@ -897,9 +898,17 @@ export async function deployCodeSourcedWorkflow(
   // this front now matches them. The supervisor key is only known from the
   // ack, so the row is born with a null `publicKey` (which keeps the
   // reconnect challenge failing closed until the ack) and the key is
-  // stamped afterwards. A failed frame emit removes the pre-inserted row so
-  // the deploy leaves no anchored-but-undeployed record and a retry does
-  // not collide on the primary key.
+  // stamped afterwards.
+  //
+  // CL-6395 (workbench-local; see VENDORED.md): the pre-inserted row is
+  // deleted ONLY when `emitSourceRefDeployFrame` fails with a
+  // `DeployFrameNotSentError` -- proof the `agent.deploy` frame never left
+  // the hub, so no child could have spawned against this anchor. Any OTHER
+  // failure (ack timeout, socket drop, reconnect takeover) is raised AFTER
+  // the frame was already sent: the spawned child may already be running
+  // against this anchor, and deleting the row would permanently strand it
+  // on the missing-anchor `path_violation` path with no grants. That row
+  // is kept and the failure logged as a reconciliation signal instead.
   await args.db.insert(workflowRunTable).values({
     id: args.anchorRunId,
     tenantId: args.tenantId,
@@ -915,9 +924,13 @@ export async function deployCodeSourcedWorkflow(
   try {
     ({ publicKey } = await emitSourceRefDeployFrame(args));
   } catch (error) {
-    await args.db
-      .delete(workflowRunTable)
-      .where(eq(workflowRunTable.id, args.anchorRunId));
+    if (error instanceof DeployFrameNotSentError) {
+      await args.db
+        .delete(workflowRunTable)
+        .where(eq(workflowRunTable.id, args.anchorRunId));
+    } else {
+      logger.error`deployCodeSourcedWorkflow: anchor run ${args.anchorRunId} kept after a post-send deploy-frame failure; the row needs manual reconciliation: ${error instanceof Error ? error.message : String(error)}`;
+    }
     throw error;
   }
 
