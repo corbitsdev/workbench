@@ -997,3 +997,66 @@ The hub-side detection and the relaunch itself are not implemented
 here. What is on the record is a deterministic red: the proof now fails
 at "PROOF 4 — the section survives the restart and runs its next
 occurrence" with `409 workflow_run_terminal`, every time.
+
+### The ruling: relaunch, and un-fuse the room from the run
+
+The open design decision above is settled in favour of the FRESH run.
+The durable log is never reclaimed and never erased: it is the audit
+trail, and a resurrection that overwrote it would trade the one thing
+this shape is better at for a shortcut. A relaunch mints a new run,
+which the platform gives a new address and therefore a new event-log
+repo (`<dataDir>/workflow-runs/<sanitized address>/runs/<runId>/`),
+leaving the dead run's log intact and readable through the ordinary run
+routes.
+
+That is only possible because the room stops being the run. Three
+independent points in the platform fuse a run's id to its address —
+`deriveWorkflowRunId(address)` is the address's local part, the
+code-sourced deploy front refuses an `(anchorRunId, agentAddress)` pair
+that does not name the same run
+(`vendor/intx/hub-sessions/src/session-service.ts`'s coherence guard),
+and `receiveWorkflowRunPack` marks runs terminal by an id read out of
+the address-derived repo — so a fresh run CANNOT keep the old address.
+Nothing can be done about that from here, and nothing needs to be: the
+address only has to be stable for the ROOM, not for the sidecar.
+
+`chat.workbench_launch` is where the two come apart. `instance_id` is
+now the stable participant id the room addresses forever — the
+workbench id for a host, the first-mint id for an invited agent — and
+`current_run_id` names the run executing behind it, re-pointed on every
+relaunch. `packages/chat/src/agent-binding.ts` owns both directions:
+outbound (`sendMail`, `ensureAwake`, `subscribeToWorkbench`) resolves
+the stable id to the live address, and inbound
+(`chat-orchestrator.ts`'s `resolveMemberWorkbenches`) resolves a live
+address the sidecar reported back to the room address the participant
+records, the mention handles, and every already-posted message's
+`sender_address` carry. Nothing else in the room moves, because none of
+the room's tables were ever keyed on the run — only on the id that is
+now the stable one.
+
+Detection is `workflow_run.status` plus `@corbits/folded-runs`'
+previously orphaned `isFoldedRunSettled`: a terminal status that is NOT
+a folded run parked between messages is a run beyond waking, and
+`wakeByAddress` relaunches it instead of redeploying an address whose
+log already says terminal.
+
+### What is still open
+
+- **The relaunch is send-triggered.** It fires on the next `sendMail`
+  through the wake choke point. Nothing sweeps for terminal runs at
+  boot, so a room whose agent died stays silently dead until somebody
+  writes into it. Proof 4's "the turn the kill interrupted surfaces
+  visibly" hop asserts a notice with no new message sent, and that hop
+  needs the boot-time sweep, not this.
+- **No relaunch notice is posted.** The turn-drop notice in
+  `chat-orchestrator.ts` fires on `message.run.ended`, which a killed
+  sidecar never sends. A relaunch should announce itself in the room in
+  the agent's own voice; the seam for it is a notice port on
+  `createHubChatPlatform`, wired in the hub beside `roomMessages`.
+- **Pre-relaunch attachments.** `fetchBlob` reads through the LIVE
+  run's session, so mail attachments written under a previous run's
+  session are not reachable after a relaunch. Room messages themselves
+  are unaffected (they are `chat.workbench_messages` rows, not mail).
+- **The e2e proof has not been re-run on this branch.** Proof 4's
+  deterministic red is unchanged; the green half is asserted only by
+  the unit suites so far.

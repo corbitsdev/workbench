@@ -23,7 +23,6 @@
 import { headlineFor } from "@corbits/approvals";
 import {
   connectorReplyContent,
-  findFoldedRunByAddress,
   messageRunEnded,
   messageRunStarted,
 } from "@corbits/folded-runs";
@@ -46,6 +45,7 @@ import { encodeParts } from "./codec";
 import type { ConnectedProviderLister } from "./inference-preferences";
 import { mentionedParticipants } from "./mentions";
 import { localPartOf } from "./agent-address";
+import { readBindingByAddress, resolveLiveAgent } from "./agent-binding";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
@@ -199,6 +199,17 @@ async function resolveMemberWorkbenches(
        * than guessing an owner.
        */
       principalId: string | null;
+      /**
+       * The address the ROOM knows this agent by — its stable
+       * participant address, which is what the participant records, the
+       * mention handles, and every already-posted message's
+       * `senderAddress` carry. Not necessarily the address the event
+       * arrived on: a relaunched run announces itself under a fresh
+       * address (the platform derives one from the other), and the
+       * room must keep attributing its replies to the same teammate it
+       * has been talking to all along. See `./agent-binding.ts`.
+       */
+      roomAddress: string;
       workbenchIds: string[];
       /**
        * Each member workbench's own participant records, keyed by
@@ -210,26 +221,33 @@ async function resolveMemberWorkbenches(
     }
   | undefined
 > {
-  const run = await findFoldedRunByAddress(deps.db, agentAddress);
-  if (run === undefined) {
+  // Resolved through the address→run mapping, not by matching the
+  // event's address against `workflow_run.address` directly: after a
+  // relaunch the two differ, and only the mapping knows that the run
+  // announcing itself under a fresh address is the same room teammate.
+  const binding = await readBindingByAddress(deps.db, agentAddress);
+  if (binding === undefined) {
     // Not every agent address on the event stream belongs to a chat
     // workbench (an echo instance, say) — an address this package's own
     // launch machinery never produced is silently not this
     // orchestrator's concern.
     return undefined;
   }
+  const live = await resolveLiveAgent(deps.db, binding);
+  if (live === undefined) return undefined;
 
-  const workbenches = await deps.store.listWorkbenchSettings(run.tenantId);
+  const workbenches = await deps.store.listWorkbenchSettings(binding.tenantId);
   const memberWorkbenches = workbenches.filter((workbench) =>
     parseParticipants(workbench.settings["chat/participants"]).some(
-      (participant) => participant.address === agentAddress,
+      (participant) => participant.address === binding.roomAddress,
     ),
   );
   if (memberWorkbenches.length === 0) return undefined;
 
   return {
-    tenantId: run.tenantId,
-    principalId: run.principalId,
+    tenantId: binding.tenantId,
+    principalId: live.run.principalId,
+    roomAddress: binding.roomAddress,
     workbenchIds: memberWorkbenches.map((workbench) => workbench.workbenchId),
     participantsByWorkbenchId: new Map(
       memberWorkbenches.map((workbench) => [
@@ -303,15 +321,15 @@ async function postReply(
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
-      sender: { name: null, address: agentAddress },
+      sender: { name: null, address: resolved.roomAddress },
       parts: [{ kind: "text", text: content }],
-      runId: localPartOf(agentAddress),
+      runId: localPartOf(resolved.roomAddress),
     });
 
     await threadDelegatedReply(
       deps,
       pendingDelegationThreads,
-      agentAddress,
+      resolved.roomAddress,
       workbenchId,
       posted.id,
     );
@@ -325,7 +343,9 @@ async function postReply(
     const mentioned = mentionedParticipants(
       [{ kind: "text", text: content }],
       participants,
-    ).filter((address) => localPartOf(address) !== localPartOf(agentAddress));
+    ).filter(
+      (address) => localPartOf(address) !== localPartOf(resolved.roomAddress),
+    );
     for (const recipient of mentioned) {
       await deps.platform.sendMail({
         tenantId: resolved.tenantId,
@@ -383,9 +403,9 @@ async function postApproveBlock(
     await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
-      sender: { name: null, address: agentAddress },
+      sender: { name: null, address: resolved.roomAddress },
       parts: [{ kind: "block", block: { type: "approve", data } }],
-      runId: localPartOf(agentAddress),
+      runId: localPartOf(resolved.roomAddress),
     });
   }
 }
@@ -439,9 +459,9 @@ async function postFinalizedTurnArtifacts(
       await postRoomMessage(deps, {
         tenantId: resolved.tenantId,
         workbenchId,
-        sender: { name: null, address: agentAddress },
+        sender: { name: null, address: resolved.roomAddress },
         parts,
-        runId: localPartOf(agentAddress),
+        runId: localPartOf(resolved.roomAddress),
       });
     } catch (error) {
       await deps.claims.release(claim);
