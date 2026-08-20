@@ -1866,6 +1866,15 @@ export async function createHub(config: HubConfig) {
       providerHealth: providerHealthStore,
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),
+      // CL-6403: an operator-set GITHUB_API_BASE_URL lets a fake server
+      // stand in for api.github.com for the `github` connector's PAT
+      // probe and stored provider origin; unset in every real deployment,
+      // so `probeBaseUrls` is empty and every connector probes its own
+      // fixed production origin.
+      probeBaseUrls:
+        config.githubApiBaseUrl !== undefined
+          ? { github: config.githubApiBaseUrl }
+          : {},
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
@@ -1919,7 +1928,9 @@ export async function createHub(config: HubConfig) {
           row.secret,
           credentialAad(row.id, "secret"),
         );
-        return { apiKey };
+        return config.githubApiBaseUrl !== undefined
+          ? { apiKey, baseUrl: config.githubApiBaseUrl }
+          : { apiKey };
       },
       resolveCodeReviewDefinitionId: async (tenantId) => {
         const row = await db.query.workflowDefinition.findFirst({

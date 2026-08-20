@@ -284,6 +284,82 @@ describe("POST /:connectorId/complete", () => {
     expect(credentialSecret).toBe("ollama");
   });
 
+  test("CL-6403: probeBaseUrls threads a fake server's origin into the probe and the stored provider row", async () => {
+    let probedBaseUrl: string | undefined;
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      github: {
+        id: "github",
+        displayName: "GitHub",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: ["@corbits/github-tools"],
+        probe: async (_apiKey, opts) => {
+          probedBaseUrl = opts?.baseUrl;
+          return { ok: true };
+        },
+      },
+    };
+    let providerArgs: { apiBaseUrl?: string } | undefined;
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      probeBaseUrls: { github: "http://fake-github.test" },
+      ensureProviderFn: async (_api, _cookies, args) => {
+        providerArgs = args;
+        return "prv_1";
+      },
+      ensureCredentialFn: async () => "crd_1",
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/github/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "pat-value" }),
+    });
+    expect(response.status).toBe(200);
+    expect(probedBaseUrl).toBe("http://fake-github.test");
+    expect(providerArgs?.apiBaseUrl).toBe("http://fake-github.test");
+  });
+
+  test("a connector absent from probeBaseUrls gets no baseUrl override", async () => {
+    let probedOpts: { baseUrl?: string } | undefined;
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      "accepting-connector": {
+        id: "accepting-connector",
+        displayName: "Accepting Connector",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        probe: async (_apiKey, opts) => {
+          probedOpts = opts;
+          return { ok: true };
+        },
+      },
+    };
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      probeBaseUrls: { github: "http://fake-github.test" },
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(response.status).toBe(200);
+    expect(probedOpts).toBeUndefined();
+  });
+
   test("connecting an inference provider seeds its catalog with the proved key", async () => {
     // "anthropic" is a real `PROVIDER_TEST_CONFIG` key, so
     // `isInferenceProvider` recognizes it -- unlike `accepting-connector`

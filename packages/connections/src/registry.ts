@@ -316,7 +316,8 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       authKind: "api-key",
       docsUrl: "https://github.com/settings/tokens",
       feedsTools: ["@corbits/github-tools"],
-      probe: (apiKey) => testGitHubCredential(apiKey),
+      probe: (apiKey, opts) =>
+        testGitHubCredential(apiKey, undefined, opts?.baseUrl),
       description: "Read repos, issues, and pull requests.",
       icon: { path: siGithub.path, hex: siGithub.hex },
       oauth: {

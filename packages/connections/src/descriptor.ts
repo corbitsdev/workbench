@@ -104,8 +104,15 @@ export interface ConnectorDescriptor {
   /** api-key connectors only. Absent for oauth-pkce/oauth-code/webhook-secret
    * descriptors. For a `credentialInputKind: "url"` connector (Ollama),
    * the string this receives is the URL the person typed, not a secret —
-   * see that field's own doc. */
-  readonly probe?: (apiKey: string) => Promise<CredentialTestResult>;
+   * see that field's own doc. `opts.baseUrl`, when present, overrides the
+   * connector's own production API origin — `./routes.ts`'s `probeBaseUrls`
+   * is the one caller that sets it (CL-6403: a fake server standing in for
+   * a real provider in tests/evals); a descriptor that ignores the second
+   * argument keeps probing its fixed production origin. */
+  readonly probe?: (
+    apiKey: string,
+    opts?: { readonly baseUrl?: string },
+  ) => Promise<CredentialTestResult>;
   /** oauth-pkce/oauth-code connectors only. Absent for api-key/webhook-secret
    * descriptors. */
   readonly oauth?: ConnectorOAuthConfig;

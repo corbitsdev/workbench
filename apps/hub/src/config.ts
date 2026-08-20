@@ -148,6 +148,9 @@ const HubEnv = type({
   "GITHUB_APP_CLIENT_SECRET?": type("string > 0").describe(
     "GitHub OAuth App client secret; set together with GITHUB_APP_CLIENT_ID to enable the hosted GitHub connect",
   ),
+  "GITHUB_API_BASE_URL?": type(/^https?:\/\/.+$/).describe(
+    "override for the GitHub REST API origin the `github` connector's PAT probe and credential delivery target, e.g. a fake server recorded for tests/evals; unset (default) targets https://api.github.com — never set this for a real deployment",
+  ),
   "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
     "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
   ),
@@ -295,6 +298,11 @@ export type HubConfig = {
   readonly huggingfaceOAuthClientId?: string;
   readonly githubAppClientId?: string;
   readonly githubAppClientSecret?: string;
+  /** Override for the GitHub REST API origin the `github` connector's PAT
+   * probe and credential delivery target. Unset (default) targets
+   * https://api.github.com; a fake server substitutes cleanly in
+   * tests/evals — never set this for a real deployment. */
+  readonly githubApiBaseUrl?: string;
   readonly credentialEncryptionKeyHex?: string;
   /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
   readonly allowPlaintextSecrets: boolean;
@@ -606,6 +614,8 @@ export function readHubConfig(
     hubConfig.githubAppClientId = parsed.GITHUB_APP_CLIENT_ID;
   if (parsed.GITHUB_APP_CLIENT_SECRET !== undefined)
     hubConfig.githubAppClientSecret = parsed.GITHUB_APP_CLIENT_SECRET;
+  if (parsed.GITHUB_API_BASE_URL !== undefined)
+    hubConfig.githubApiBaseUrl = parsed.GITHUB_API_BASE_URL;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
   if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
