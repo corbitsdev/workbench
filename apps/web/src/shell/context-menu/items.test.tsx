@@ -8,6 +8,7 @@ const toastMock = spyOnReactUiToast();
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";
 import type { ShellContextMenuTarget } from "./targets";
+import { LIBRARY_BULK_OPERATION_IDS } from "../library-artifacts";
 
 function itemIds(entries: readonly ContextMenuEntry[]): readonly string[] {
   return entries
@@ -149,6 +150,48 @@ describe("shellContextMenuFor: insights-run", () => {
     expect(itemIds(menu.entries)).toEqual(["open", "copy-link"]);
     findItem(menu.entries, "open").onSelect();
     expect(navigate).toHaveBeenCalledWith("/insights/runs/run-1");
+  });
+});
+
+describe("shellContextMenuFor: artifact", () => {
+  test("a single right-clicked file offers exactly the Files bulk action bar's operation set", () => {
+    const target: ShellContextMenuTarget = {
+      type: "artifact",
+      id: "art_1",
+      ids: ["art_1"],
+    };
+    const menu = shellContextMenuFor(target, actions());
+    // Parity, not eyeballing: the context menu and the bulk action bar are
+    // driven off the exact same constant (CL-6423).
+    expect(itemIds(menu.entries)).toEqual([...LIBRARY_BULK_OPERATION_IDS]);
+    expect(findItem(menu.entries, "copy-link").label).toBe("Copy link");
+  });
+
+  test("right-clicking inside a multi-select still offers the same operation set, pluralized", () => {
+    const target: ShellContextMenuTarget = {
+      type: "artifact",
+      id: "art_2",
+      ids: ["art_1", "art_2", "art_3"],
+    };
+    const menu = shellContextMenuFor(target, actions());
+    expect(itemIds(menu.entries)).toEqual([...LIBRARY_BULK_OPERATION_IDS]);
+    expect(findItem(menu.entries, "copy-link").label).toBe("Copy 3 links");
+  });
+
+  test("copy-link writes every acted-on file's canonical link, newline-joined", async () => {
+    const target: ShellContextMenuTarget = {
+      type: "artifact",
+      id: "art_1",
+      ids: ["art_1", "art_2"],
+    };
+    const menu = shellContextMenuFor(target, actions());
+    findItem(menu.entries, "copy-link").onSelect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/files/a/art_1\n${window.location.origin}/files/a/art_2`,
+    );
+    expect(toastMock).toHaveBeenCalledWith("2 links copied");
   });
 });
 
