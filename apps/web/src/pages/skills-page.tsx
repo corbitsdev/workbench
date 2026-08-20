@@ -339,6 +339,14 @@ export function SkillsPage({
     void reload();
   }, [reload]);
 
+  // The route is the source of truth for which skill is open: the same
+  // component instance stays mounted across `/skills/<name>` → `/skills`
+  // (both match the one route entry), so a crumb click that only changes
+  // the URL has to move the view with it.
+  useEffect(() => {
+    setSelected(entityId ?? null);
+  }, [entityId]);
+
   useEffect(() => {
     if (consumePendingNewSkill()) setCreateOpen(true);
   }, []);

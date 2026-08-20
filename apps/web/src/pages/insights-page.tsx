@@ -102,6 +102,7 @@ import {
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
+import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { WorkbenchTimelineRoute } from "./workbench-timeline";
@@ -843,7 +844,7 @@ export function InsightsRunsHistory({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[
-          { label: "Insights", href: "/insights" },
+          { label: "Insights", href: INSIGHTS_PATH_PREFIX },
           { label: "Run history" },
         ]}
         subtitle={`${purpose.length} runs`}
@@ -988,7 +989,7 @@ export function InsightsRunDetail({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[
-          { label: "Runs", href: "/insights/runs" },
+          { label: "Runs", href: INSIGHTS_RUNS_PATH },
           { label: run !== null ? runDisplayName(run) : "Run" },
         ]}
         subtitle={run !== null ? formatWhen(run.createdAt) : null}
@@ -1099,10 +1100,10 @@ function parseInsightsPath(path: string): {
       workbenchId: decodeURIComponent(workbenchMatch[1]),
     };
   }
-  if (path === "/insights" || path === "/insights/") {
+  if (path === INSIGHTS_PATH_PREFIX || path === `${INSIGHTS_PATH_PREFIX}/`) {
     return { mode: "landing", runId: null, workbenchId: null };
   }
-  if (path === "/insights/runs" || path === "/insights/runs/") {
+  if (path === INSIGHTS_RUNS_PATH || path === `${INSIGHTS_RUNS_PATH}/`) {
     return { mode: "runs", runId: null, workbenchId: null };
   }
   const match = /^\/insights\/runs\/([^/]+)\/?$/.exec(path);
@@ -1329,7 +1330,9 @@ export function InsightsPage({
         runId={runId}
         run={run}
         tenantId={selectedTenantId}
-        onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
+        onOpenRun={(id) =>
+          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
+        }
       />
     );
   }
@@ -1340,7 +1343,9 @@ export function InsightsPage({
         runs={runsData}
         loading={runs.kind === "loading"}
         nextCursor={runsNextCursor}
-        onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
+        onOpenRun={(id) =>
+          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
+        }
       />
     );
   }
@@ -1371,7 +1376,7 @@ export function InsightsPage({
             scope={scope}
             onSelect={(tenantId) => {
               if (tenantId === null) {
-                navigate("/insights");
+                navigate(INSIGHTS_PATH_PREFIX);
                 return;
               }
               const workbenchId = resolveWorkbenchIdForTenant(tenantId);
@@ -1395,9 +1400,9 @@ export function InsightsPage({
             range={range}
             loading={loading}
             onOpenRun={(id) =>
-              navigate(`/insights/runs/${encodeURIComponent(id)}`)
+              navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
             }
-            onOpenRuns={() => navigate("/insights/runs")}
+            onOpenRuns={() => navigate(INSIGHTS_RUNS_PATH)}
             onSelectWorkbench={(tenantId) => {
               const workbenchId = resolveWorkbenchIdForTenant(tenantId);
               if (workbenchId !== null)
@@ -1527,7 +1532,7 @@ function InsightsWorkbenchPage({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[
-          { label: "Insights", href: "/insights" },
+          { label: "Insights", href: INSIGHTS_PATH_PREFIX },
           { label: resolution.title },
         ]}
         subtitle={`Last ${INSIGHTS_WINDOW_DAYS} days`}
@@ -1550,7 +1555,9 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const navigate = useNavigate();
   const currentPath =
     path ??
-    (typeof window !== "undefined" ? window.location.pathname : "/insights");
+    (typeof window !== "undefined"
+      ? window.location.pathname
+      : INSIGHTS_PATH_PREFIX);
   const { mode, workbenchId } = parseInsightsPath(currentPath);
 
   // A sliding window: `to` re-anchors to now every minute, so the
@@ -1702,7 +1709,9 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
         workbenchesLoading={workbenchesLoading}
         resolution={workbenchResolution}
         benchTenantId={selectedTenantId}
-        onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
+        onOpenRun={(id) =>
+          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
+        }
       />
     );
   }

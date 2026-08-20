@@ -6,6 +6,7 @@
 // their nav through it.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,6 +21,15 @@ import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
 const realFetch = globalThis.fetch;
+
+/** The declaration block of the last rule that names `className`, so a test
+ * can assert on the actual CSS the class carries. */
+function ruleFor(css: string, className: string): string {
+  const selector = new RegExp(`\\.${className}\\s*[,{]`);
+  const block = css.split("}").find((candidate) => selector.test(candidate));
+  if (block === undefined) throw new Error(`no rule for .${className}`);
+  return block.slice(block.indexOf("{"));
+}
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -82,7 +92,17 @@ describe("stage breadcrumbs", () => {
     expect(markup).not.toContain("<a ");
   });
 
-  test("crumb labels are truncation-safe rather than pushing the actions off the bar", () => {
+  test("a one-level page renders no Breadcrumb landmark — there is nowhere to go up to", () => {
+    const markup = renderToStaticMarkup(
+      <NavigationProvider navigate={noop}>
+        <StageTopBar crumbs={[{ label: "Files" }]} />
+      </NavigationProvider>,
+    );
+    expect(markup).not.toContain('aria-label="Breadcrumb"');
+    expect(markup).not.toContain("<nav");
+  });
+
+  test("every class the trail renders is truncation-capped by the stylesheet", () => {
     const markup = renderToStaticMarkup(
       <NavigationProvider navigate={noop}>
         <StageTopBar
@@ -93,8 +113,20 @@ describe("stage breadcrumbs", () => {
         />
       </NavigationProvider>,
     );
-    expect(markup).toContain('class="stage-crumb-link"');
-    expect(markup).toContain('class="stage-crumb-current"');
+    const css = readFileSync(
+      new URL("../src/app.css", import.meta.url),
+      "utf8",
+    );
+    for (const className of ["stage-crumb-link", "stage-crumb-current"]) {
+      expect(markup).toContain(`class="${className}"`);
+      const rule = ruleFor(css, className);
+      expect(rule).toContain("overflow: hidden");
+      expect(rule).toContain("text-overflow: ellipsis");
+      expect(rule).toContain("min-width");
+    }
+    // The trail itself must be the part that gives, not the action slot.
+    expect(ruleFor(css, "stage-crumbs")).toContain("min-width: 0");
+    expect(ruleFor(css, "stage-top-bar-actions")).toContain("flex-shrink: 0");
   });
 
   test("clicking an intermediate crumb navigates in-app instead of reloading", async () => {
@@ -204,6 +236,53 @@ describe("Skills declares its nav through the top-bar contract", () => {
     expect(trail?.querySelector("a")?.getAttribute("href")).toBe("/skills");
     expect(trail?.querySelector('[aria-current="page"]')?.textContent).toBe(
       "weekly-digest",
+    );
+  });
+
+  test("the parent crumb is the way back: the route it navigates to puts the list view back", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === `/api/tenants/${TENANT}/skills`)
+        return Promise.resolve(json({ skills: [SKILL] }));
+      if (path === `/api/tenants/${TENANT}/skills/weekly-digest`)
+        return Promise.resolve(
+          json({ skill: { ...SKILL, body: "Do it." }, pinnedBy: [] }),
+        );
+      if (path === `/api/tenants/${TENANT}/skills/weekly-digest/versions`)
+        return Promise.resolve(json({ versions: [] }));
+      return Promise.resolve(json({ error: { message: "no stub" } }, 404));
+    }) as typeof fetch;
+
+    const navigated: string[] = [];
+    const at = (entityId: string | null) => (
+      <TestQueryProvider>
+        <NavigationProvider navigate={(to) => navigated.push(to)}>
+          <SkillsPage
+            tenantId={TENANT}
+            navigate={(to) => navigated.push(to)}
+            entityId={entityId}
+          />
+        </NavigationProvider>
+      </TestQueryProvider>
+    );
+
+    const el = await render(at("weekly-digest"));
+    expect(el.querySelector('table[aria-label="Skills"]')).toBeNull();
+
+    const parent = el.querySelector<HTMLAnchorElement>("a.stage-crumb-link");
+    await act(async () => {
+      parent?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(navigated).toContain("/skills");
+
+    // The router re-renders the same mounted page at the new path — the
+    // route, not click-local state, is what closes the detail view.
+    const back = await render(at(null));
+    expect(back.querySelector('table[aria-label="Skills"]')).not.toBeNull();
+    expect(back.querySelector('[aria-current="page"]')?.textContent).toBe(
+      "Skills",
     );
   });
 });
