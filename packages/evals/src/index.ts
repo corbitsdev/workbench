@@ -4,11 +4,14 @@ export type {
   EvalStep,
   EvalStepRecord,
   FakeReceipt,
+  PersonaBrief,
+  PersonaEvalStep,
   RunConfig,
   Scorer,
   ScorerContext,
   ScorerReport,
   ScorerResult,
+  ScriptedEvalStep,
   Target,
   ToolCall,
   Turn,
@@ -19,6 +22,11 @@ export type {
 } from "./types.ts";
 export { defineEval } from "./define-eval.ts";
 export { runEval, runMatrix } from "./runner.ts";
+export { callEvalModel } from "./model-call.ts";
+export type { ModelCallResult } from "./model-call.ts";
+export { personaAnswer } from "./persona.ts";
+export type { PersonaReply } from "./persona.ts";
+export { runPersonaStep } from "./persona-runner.ts";
 export { renderResultsMarkdown } from "./report.ts";
 export {
   agentCreatedInWorkbench,

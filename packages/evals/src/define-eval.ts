@@ -18,17 +18,20 @@ export function defineEval(config: DefineEvalConfig): EvalDefinition {
   if (config.steps.length === 0) {
     throw new Error(`defineEval("${config.name}") requires at least one step`);
   }
+  const steps = config.steps.map((step) =>
+    step.kind === undefined ? { ...step, kind: "scripted" as const } : step,
+  );
   if (config.memorySeed !== undefined) {
     return {
       name: config.name,
       description: config.description,
-      steps: config.steps,
+      steps,
       memorySeed: config.memorySeed,
     };
   }
   return {
     name: config.name,
     description: config.description,
-    steps: config.steps,
+    steps,
   };
 }

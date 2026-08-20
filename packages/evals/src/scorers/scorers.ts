@@ -5,6 +5,7 @@
 // is unit-testable on hand-built transcripts (see scorers.test.ts)
 // without booting the real stack.
 
+import { callEvalModel } from "../model-call.ts";
 import type { ScorerContext, ScorerResult, ToolCall, Turn } from "../types.ts";
 import {
   BUILD_TOOLS,
@@ -297,24 +298,7 @@ export function judge(
     const run =
       judgeCall ??
       (async (p: string) => {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": key,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-3-5-haiku-20241022",
-            max_tokens: 200,
-            messages: [{ role: "user", content: p }],
-          }),
-        });
-        const data = (await res.json()) as {
-          content?: { type: string; text?: string }[];
-        };
-        const text =
-          data.content?.find((block) => block.type === "text")?.text ?? "";
+        const { text } = await callEvalModel(p, key);
         return { pass: text.trim().startsWith("PASS"), reason: text.trim() };
       });
     const { pass, reason } = await run(prompt);

@@ -106,10 +106,41 @@ export type Scorer = (
   ctx: ScorerContext,
 ) => ScorerResult | Promise<ScorerResult>;
 
-export interface EvalStep {
+/** A step whose human message is fixed in advance. `kind` defaults to
+ * `"scripted"` — `defineEval` fills it in, so every existing case file
+ * that writes a bare `{human, expect}` keeps working unchanged. */
+export interface ScriptedEvalStep {
+  readonly kind?: "scripted";
   readonly human: string;
   readonly expect: readonly Scorer[];
 }
+
+/** What a simulated-human persona knows going in. `goal` is the
+ * persona's private objective — the opening message a scenario still
+ * scripts; `knownFacts` are offered only when the agent's last reply
+ * asks something that fairly maps to one ("answers what's asked,
+ * volunteers nothing else"); `tone` is a voice note only, never a
+ * behavioral instruction. */
+export interface PersonaBrief {
+  readonly name: string;
+  readonly goal: string;
+  readonly knownFacts: Readonly<Record<string, string>>;
+  readonly tone?: string;
+}
+
+/** A step whose later human messages are generated turn-by-turn by a
+ * persona reacting to the agent's replies, instead of being scripted in
+ * advance. `maxTurns` is a hard bound on the sub-loop; `expect` scores
+ * the last turn the loop produced. */
+export interface PersonaEvalStep {
+  readonly kind: "persona";
+  readonly opening: string;
+  readonly persona: PersonaBrief;
+  readonly maxTurns: number;
+  readonly expect: readonly Scorer[];
+}
+
+export type EvalStep = ScriptedEvalStep | PersonaEvalStep;
 
 export interface EvalDefinition {
   readonly name: string;
