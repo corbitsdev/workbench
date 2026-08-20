@@ -80,6 +80,31 @@ export function runStepStorageRoot(args: {
  * subtree so the undeploy sweep of `workflow-step-state/<repoId>/`
  * reclaims both with one removal and the two keyings never collide.
  */
+/**
+ * Stable per-action-step scratch root for the action-handler registry's
+ * tool materialization (tarball-cache + apply-state + workspace). An
+ * action step's tool closure is materialized ONCE, at deployment
+ * establish (registry construction), and its handler dispatches against
+ * that closure across every run -- so the keying is per step, not per
+ * run/attempt. Rooted under an `action/` sibling of the cold `runs/`
+ * and warm `warm/` sub-roots so no reclamation sweep collides with it;
+ * the undeploy sweep of `workflow-step-state/<repoId>/` reclaims all
+ * three with one removal.
+ */
+export function actionStepStorageRoot(args: {
+  dataDir: string;
+  workflowRunRepoId: RepoId;
+  stepId: string;
+}): string {
+  return path.join(
+    args.dataDir,
+    "workflow-step-state",
+    args.workflowRunRepoId.id,
+    "action",
+    encodeURIComponent(args.stepId),
+  );
+}
+
 export function warmStepStorageRoot(args: {
   dataDir: string;
   workflowRunRepoId: RepoId;
