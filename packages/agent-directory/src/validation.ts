@@ -80,6 +80,18 @@ export const UpdateAgentInstructionsInput = type({
 export type UpdateAgentInstructionsInput =
   typeof UpdateAgentInstructionsInput.infer;
 
+/** The body of a request that moves a definition between the two
+ * lifecycle states the schema knows: `deployed` (launchable, listed
+ * everywhere a person can start a chat) and `stopped` — what the agent
+ * detail page's "Archive" writes. Never a delete: the definition, its
+ * asset, and its history all stay intact, so restoring it is one write
+ * back to `deployed`. */
+export const UpdateDefinitionStatusInput = type({
+  status: "'deployed' | 'stopped'",
+});
+export type UpdateDefinitionStatusInput =
+  typeof UpdateDefinitionStatusInput.infer;
+
 /** The body of a request that restores a definition to an earlier
  * commit on its own asset history — the same `commitSha` shape
  * `@corbits/skills`' restore route takes, kept plain-text ("history",

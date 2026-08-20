@@ -56,6 +56,7 @@ import {
   RestoreDefinitionInput,
   UpdateAgentInstructionsInput,
   UpdateAgentSkillsInput,
+  UpdateDefinitionStatusInput,
 } from "./validation";
 import {
   AddCapabilityInput,
@@ -617,6 +618,52 @@ export function createAgentDefinitionRoutes({
       }
 
       return c.json({ name: body.name, systemPrompt: body.systemPrompt });
+    },
+  );
+
+  // Archive and restore: a definition's status is the whole lifecycle a
+  // person controls from the agent detail page. `stopped` drops it out of
+  // every launchable listing (`listVisibleAgentDefinitions`,
+  // `listInvitableDefinitions`) while leaving the row, its asset, and its
+  // git history untouched — which is what makes the same route, with
+  // `deployed`, a restore rather than a re-create.
+  app.put(
+    "/:definitionId/status",
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
+    async (c) => {
+      const body = UpdateDefinitionStatusInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid status: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      await db
+        .update(workflowDefinition)
+        .set({ status: body.status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenant.id),
+          ),
+        );
+
+      return c.json({ id: definitionId, status: body.status });
     },
   );
 

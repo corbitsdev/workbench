@@ -4,13 +4,12 @@
 // testable before the page behind it exists.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { FlowArrow, Lightning, Robot, SquaresFour } from "@corbits/icons";
+import { FlowArrow, Lightning, SquaresFour } from "@corbits/icons";
 import type { Slug } from "@corbits/slug";
 import type { ReactNode } from "react";
 
 import { Link } from "../navigation";
 import {
-  AGENTS_PATH_PREFIX,
   PLUGINS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
@@ -48,18 +47,6 @@ function DetailPlaceholder({
         />
       </PageShell>
     </div>
-  );
-}
-
-export function AgentDetailPlaceholder({ slug }: { readonly slug: Slug }) {
-  return (
-    <DetailPlaceholder
-      slug={slug}
-      entity="Agent"
-      rosterLabel="Agents"
-      rosterPath={AGENTS_PATH_PREFIX}
-      icon={<Robot />}
-    />
   );
 }
 

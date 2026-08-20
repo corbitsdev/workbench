@@ -36,11 +36,13 @@ export {
   CreateAgentDefinitionInput,
   RestoreDefinitionInput,
   UpdateAgentSkillsInput,
+  UpdateDefinitionStatusInput,
 } from "./validation";
 export type {
   CreateAgentDefinitionInput as CreateAgentDefinitionInputType,
   RestoreDefinitionInput as RestoreDefinitionInputType,
   UpdateAgentSkillsInput as UpdateAgentSkillsInputType,
+  UpdateDefinitionStatusInput as UpdateDefinitionStatusInputType,
 } from "./validation";
 export {
   createAgentDefinitionRoutes,
