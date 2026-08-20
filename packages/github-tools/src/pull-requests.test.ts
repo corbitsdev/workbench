@@ -90,13 +90,25 @@ test("fetchPullRequestDiff returns metadata plus anchorable lines", async () => 
   expect(requested.some((url) => url.includes("/pulls/7/files"))).toBe(true);
 });
 
-test("fetchPullRequestDiff refuses to run without a credential", async () => {
-  await expect(
-    fetchPullRequestDiff(
-      { baseUrl: BASE },
-      { owner: "acme", repo: "widgets", number: 7 },
-    ),
-  ).rejects.toThrow(/needs an authenticated GitHub credential/);
+test("fetchPullRequestDiff sends a bearer header only when given a token", async () => {
+  const sent: (Record<string, string> | undefined)[] = [];
+  await fetchPullRequestDiff(
+    {
+      baseUrl: BASE,
+      fetchImpl: fakeFetch((input, init) => {
+        sent.push(init?.headers as Record<string, string> | undefined);
+        return Promise.resolve(
+          String(input).includes("/files")
+            ? jsonResponse([])
+            : jsonResponse(PULL_BODY),
+        );
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  for (const headers of sent) {
+    expect(headers?.authorization).toBeUndefined();
+  }
 });
 
 test("fetchPullRequestDiff names a response whose shape is wrong", async () => {

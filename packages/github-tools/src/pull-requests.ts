@@ -1,9 +1,11 @@
 // Pull-request reads and one write, on top of the same minimal REST
-// client `./client.ts` uses for search. Unlike search, both calls here
-// need a real credential: the diff of a private repository is not
-// readable keylessly, and posting a review is a write GitHub only
-// accepts from an authenticated caller. A missing token is therefore an
-// error at this boundary rather than a lower rate limit.
+// client `./client.ts` uses for search. Both calls here need a real
+// credential in practice — a private diff is not readable keylessly and
+// posting a review is a write — but which shape that credential takes is
+// the caller's business: a mediated `fetch` that injects the secret
+// itself, or a token passed as `apiKey`. This module only sends what it
+// was given, so "not connected" is decided where the credential is
+// resolved, never guessed at here.
 //
 // The right-hand line numbers a patch actually touches are parsed out of
 // each file's hunk headers. GitHub rejects a review comment anchored to
@@ -136,35 +138,27 @@ export function changedLinesOf(patch: string): readonly number[] {
   return lines;
 }
 
-function requireApiKey(config: GitHubClientConfig, purpose: string): string {
-  const apiKey = config.apiKey;
-  if (apiKey === undefined || apiKey.length === 0) {
-    throw new Error(
-      `${purpose} needs an authenticated GitHub credential; none was bound`,
-    );
-  }
-  return apiKey;
-}
-
-function headers(apiKey: string): Record<string, string> {
-  return {
+function headers(apiKey: string | undefined): Record<string, string> {
+  const base: Record<string, string> = {
     accept: "application/vnd.github+json",
     "x-github-api-version": "2022-11-28",
-    authorization: `Bearer ${apiKey}`,
     "content-type": "application/json",
   };
+  if (apiKey !== undefined && apiKey.length > 0) {
+    base.authorization = `Bearer ${apiKey}`;
+  }
+  return base;
 }
 
 async function requestJSON(
   config: GitHubClientConfig,
-  apiKey: string,
   url: URL,
   init: { readonly method: string; readonly body?: string },
 ): Promise<unknown> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(url, {
     method: init.method,
-    headers: headers(apiKey),
+    headers: headers(config.apiKey),
     ...(init.body === undefined ? {} : { body: init.body }),
   });
   if (!response.ok) {
@@ -207,7 +201,6 @@ export async function fetchPullRequestDiff(
   config: GitHubClientConfig,
   ref: PullRequestRef,
 ): Promise<PullRequestDiff> {
-  const apiKey = requireApiKey(config, "reading a pull request's diff");
   const base = baseOf(config);
 
   const pullUrl = new URL(`${base}${pullPath(ref)}`);
@@ -215,8 +208,8 @@ export async function fetchPullRequestDiff(
   filesUrl.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
 
   const [pullRaw, filesRaw] = await Promise.all([
-    requestJSON(config, apiKey, pullUrl, { method: "GET" }),
-    requestJSON(config, apiKey, filesUrl, { method: "GET" }),
+    requestJSON(config, pullUrl, { method: "GET" }),
+    requestJSON(config, filesUrl, { method: "GET" }),
   ]);
 
   const pull = PullRequestResponse(pullRaw);
@@ -254,12 +247,11 @@ export async function postPullRequestReview(
   headSha: string,
   review: PullRequestReviewDraft,
 ): Promise<PostedPullRequestReview> {
-  const apiKey = requireApiKey(config, "posting a pull-request review");
   if (review.body.trim().length === 0) {
     throw new Error("a posted pull-request review needs a non-empty body");
   }
   const url = new URL(`${baseOf(config)}${pullPath(ref)}/reviews`);
-  const raw = await requestJSON(config, apiKey, url, {
+  const raw = await requestJSON(config, url, {
     method: "POST",
     body: JSON.stringify({
       commit_id: headSha,

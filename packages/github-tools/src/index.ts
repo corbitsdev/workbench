@@ -14,5 +14,11 @@ export type {
   PullRequestReviewComment,
   PullRequestReviewDraft,
 } from "./pull-requests";
+export {
+  GITHUB_POST_PULL_REQUEST_REVIEW_TOOL,
+  GITHUB_PULL_REQUEST_DIFF_TOOL,
+  githubPullRequestTools,
+} from "./pull-request-tools";
+export type { GitHubPullRequestEnv } from "./pull-request-tools";
 export { GITHUB_ACTIVITY_TOOL, githubTools } from "./tool";
 export type { GitHubEnv } from "./tool";
