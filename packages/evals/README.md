@@ -58,6 +58,17 @@ wired into `scripts/evals-run.ts`'s `bootMyraTarget`.
 Everything below is what still stands between this case and green —
 none of it is scorer drift any more:
 
+0. **`bun run eval` still grades world scorers against an empty
+   snapshot.** `scripts/evals-run.ts` never passes
+   `infra.captureWorldSnapshot` to `bootMyraTarget` — wiring it needs
+   the hub's own `AssetService` (built on the boot-time agent-repo
+   store and signing key inside the hub process), which the external
+   e2e harness has no handle on. Until the hub exposes a read path (or
+   the harness rebuilds an AssetService over the same data dir), even
+   state the run really created — e.g. the connected GitHub MCP fake —
+   reads as absent to scorers #1–#3 in `bun run eval`; a caller that
+   wires `captureWorldSnapshot` gets honest grading today.
+
 1. **No fake-able GitHub REST boundary.** The connect card
    (`connect-github-routes.ts`), the `/complete` credential prove, and
    the sidecar's pinned `@corbits/github-tools` all hit
