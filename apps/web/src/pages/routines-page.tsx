@@ -511,7 +511,7 @@ export function RoutinesRoute({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title="Routines"
+        crumbs={[{ label: "Routines" }]}
         subtitle={
           routinesQuery.kind === "ready"
             ? `${rows.length} automation${rows.length === 1 ? "" : "s"} across your workbenches`

@@ -84,10 +84,13 @@ export function SettingsRoute({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={
+        crumbs={
           activeSection === undefined
-            ? "Settings"
-            : `Settings · ${activeSection.title}`
+            ? [{ label: "Settings" }]
+            : [
+                { label: "Settings", href: SETTINGS_PATH_PREFIX },
+                { label: activeSection.title },
+              ]
         }
       />
       <div className="settings-layout min-h-0 flex-1">

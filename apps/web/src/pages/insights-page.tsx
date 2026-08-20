@@ -102,7 +102,7 @@ import {
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
-import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
+import { StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { WorkbenchTimelineRoute } from "./workbench-timeline";
 
@@ -828,7 +828,6 @@ export function InsightsRunsHistory({
   loading,
   nextCursor,
   onOpenRun,
-  onBack,
 }: {
   readonly runs: readonly InsightsRun[];
   readonly loading: boolean;
@@ -837,21 +836,16 @@ export function InsightsRunsHistory({
    * so the view says so instead of silently truncating at 100. */
   readonly nextCursor: string | null;
   readonly onOpenRun: (id: string) => void;
-  readonly onBack: () => void;
 }) {
   const purpose = purposeRunsForInsights(runs);
   const groups = groupRunsByDefinition(purpose);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={
-          <StageCrumbs
-            crumbs={[
-              { label: "Insights", onSelect: onBack },
-              { label: "Run history" },
-            ]}
-          />
-        }
+        crumbs={[
+          { label: "Insights", href: "/insights" },
+          { label: "Run history" },
+        ]}
         subtitle={`${purpose.length} runs`}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -968,7 +962,6 @@ export function InsightsRunDetail({
   chainLegs,
   chainLookupFailed = false,
   onOpenRun,
-  onBack,
 }: {
   readonly runId: string;
   readonly run: InsightsRun | null;
@@ -984,7 +977,6 @@ export function InsightsRunDetail({
    * honest note instead of just leaving the strip out. */
   readonly chainLookupFailed?: boolean;
   readonly onOpenRun: (runId: string) => void;
-  readonly onBack: () => void;
 }) {
   const spans = trace.kind === "ready" ? toTraceSpans(trace.data) : [];
   const traceStats =
@@ -995,14 +987,10 @@ export function InsightsRunDetail({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={
-          <StageCrumbs
-            crumbs={[
-              { label: "Runs", onSelect: onBack },
-              { label: run !== null ? runDisplayName(run) : "Run" },
-            ]}
-          />
-        }
+        crumbs={[
+          { label: "Runs", href: "/insights/runs" },
+          { label: run !== null ? runDisplayName(run) : "Run" },
+        ]}
         subtitle={run !== null ? formatWhen(run.createdAt) : null}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1295,7 +1283,7 @@ export function InsightsPage({
   if (unauth) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Insights" />
+        <StageTopBar crumbs={[{ label: "Insights" }]} />
         <PageShell width="full" className="page-fill">
           <SignedOutNotice />
         </PageShell>
@@ -1341,7 +1329,6 @@ export function InsightsPage({
         runId={runId}
         run={run}
         tenantId={selectedTenantId}
-        onBack={() => navigate("/insights/runs")}
         onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
       />
     );
@@ -1354,7 +1341,6 @@ export function InsightsPage({
         loading={runs.kind === "loading"}
         nextCursor={runsNextCursor}
         onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
-        onBack={() => navigate("/insights")}
       />
     );
   }
@@ -1362,7 +1348,7 @@ export function InsightsPage({
   if (usageErrorRetry !== null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Insights" />
+        <StageTopBar crumbs={[{ label: "Insights" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<ChartBar />}
@@ -1378,7 +1364,7 @@ export function InsightsPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title="Insights"
+        crumbs={[{ label: "Insights" }]}
         subtitle={`${scopeLabel} · Last ${INSIGHTS_WINDOW_DAYS} days`}
         actions={
           <InsightsScopeSwitcher
@@ -1428,13 +1414,11 @@ export function InsightsRunDetailRoute({
   runId,
   run,
   tenantId,
-  onBack,
   onOpenRun,
 }: {
   readonly runId: string;
   readonly run: InsightsRun | null;
   readonly tenantId: string | null;
-  readonly onBack: () => void;
   readonly onOpenRun: (runId: string) => void;
 }) {
   const trace = useAPIQuery(
@@ -1474,7 +1458,6 @@ export function InsightsRunDetailRoute({
       chainLegs={chainLegs}
       chainLookupFailed={chainLookupFailed}
       onOpenRun={onOpenRun}
-      onBack={onBack}
     />
   );
 }
@@ -1505,7 +1488,7 @@ function InsightsWorkbenchPage({
   if (workbenchesLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Insights" />
+        <StageTopBar crumbs={[{ label: "Insights" }]} />
         <PageShell width="full" className="page-fill">
           <Skeleton className="h-48 w-full" />
         </PageShell>
@@ -1515,7 +1498,7 @@ function InsightsWorkbenchPage({
   if (resolution.kind === "not-found") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Insights" />
+        <StageTopBar crumbs={[{ label: "Insights" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<ChartBar />}
@@ -1529,7 +1512,7 @@ function InsightsWorkbenchPage({
   if (resolution.kind === "legacy") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Insights" />
+        <StageTopBar crumbs={[{ label: "Insights" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<ChartBar />}
@@ -1543,7 +1526,10 @@ function InsightsWorkbenchPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={resolution.title}
+        crumbs={[
+          { label: "Insights", href: "/insights" },
+          { label: resolution.title },
+        ]}
         subtitle={`Last ${INSIGHTS_WINDOW_DAYS} days`}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">

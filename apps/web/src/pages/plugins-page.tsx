@@ -154,7 +154,7 @@ export function PluginsRoute({
   if (selectedTenantId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Plugins" />
+        <StageTopBar crumbs={[{ label: "Plugins" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<SquaresFour />}
@@ -171,7 +171,7 @@ export function PluginsRoute({
   if (pluginsState.status === "error" || skillsState.status === "error") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Plugins" />
+        <StageTopBar crumbs={[{ label: "Plugins" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<SquaresFour />}
@@ -195,7 +195,7 @@ export function PluginsRoute({
   if (pluginsState.status === "loading" || skillsState.status === "loading") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Plugins" />
+        <StageTopBar crumbs={[{ label: "Plugins" }]} />
         <PageShell width="full" className="page-fill">
           <WorkbenchLoadingState title="Loading plugins…" />
         </PageShell>
@@ -213,7 +213,7 @@ export function PluginsRoute({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title="Plugins"
+        crumbs={[{ label: "Plugins" }]}
         actions={
           <>
             <LibrarySearchInput

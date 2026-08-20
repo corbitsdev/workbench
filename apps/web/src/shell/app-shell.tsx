@@ -174,7 +174,7 @@ export function AppShell({
           <ProviderHealthBanner />
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
-              title={routeLabel(path)}
+              crumbs={[{ label: routeLabel(path) }]}
               {...(needsYouChip !== undefined ? { chip: needsYouChip } : {})}
             />
           ) : null}

@@ -709,18 +709,22 @@ select:disabled,
   white-space: nowrap;
 }
 
-.stage-crumbs button {
+.stage-crumb-link,
+.stage-crumb-label {
+  flex-shrink: 0;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted-foreground);
-  cursor: pointer;
   font-size: 0.95rem;
   font-weight: 640;
 }
 
-.stage-crumbs button:hover {
+.stage-crumb-link:hover {
   color: var(--foreground);
 }
 
-.stage-crumbs [aria-current="page"] {
+.stage-crumb-current {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

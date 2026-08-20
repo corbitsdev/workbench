@@ -58,6 +58,7 @@ import {
 } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
+import { FILES_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
 import {
@@ -317,7 +318,14 @@ export function LibraryPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={selectedSummary === null ? "Files" : selectedSummary.title}
+        crumbs={
+          selectedSummary === null
+            ? [{ label: "Files" }]
+            : [
+                { label: "Files", href: FILES_PATH_PREFIX },
+                { label: selectedSummary.title },
+              ]
+        }
         subtitle={
           selectedSummary === null
             ? `${artifacts.length} files`
@@ -548,7 +556,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (selectedTenantId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Files" />
+        <StageTopBar crumbs={[{ label: "Files" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<Stack />}
@@ -563,7 +571,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Files" />
+        <StageTopBar crumbs={[{ label: "Files" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<Stack />}
@@ -578,7 +586,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind !== "ready") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Files" />
+        <StageTopBar crumbs={[{ label: "Files" }]} />
         <PageShell width="full" className="page-fill">
           {page.kind === "loading" ? (
             <ListSkeleton />
