@@ -47,6 +47,14 @@ export type RoutineHealth = {
   readonly caption: string;
   /** Successful fires since the most recent failed one. */
   readonly cleanStreak: number;
+  /**
+   * When this routine last ran, by the only definition every surface can
+   * agree on: the newest row of its own fire history. Deliberately not
+   * the routine row's `lastFireAt`, which the store stamps only inside
+   * `claimRoutineFire` — a run-now-only routine would report "never run"
+   * beside a history table full of runs.
+   */
+  readonly lastRunAt: string | null;
   readonly consecutiveFailures: number;
   readonly lastFailure: {
     readonly at: string;
@@ -208,6 +216,7 @@ export function routineHealth(
     label: words.label,
     caption: words.caption,
     cleanStreak,
+    lastRunAt: fires[0]?.createdAt ?? null,
     consecutiveFailures: routine.consecutiveFailures,
     lastFailure: lastFailedFire(fires),
     medianDurationMs: medianFireDurationMs(fires),

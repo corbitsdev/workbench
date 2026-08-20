@@ -71,10 +71,11 @@ export function skillIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, SKILLS_PATH_PREFIX);
 }
 
-/** A deep link into one routine (the context menu's "Open routine",
- * `/routines/:id` bookmarks) expands that row on the Routines page — the
- * page itself is one flat list, never a route per routine. */
-export function routineIdFromPath(path: string): string | null {
+/** The segment `/routines/<segment>` addresses: a routine id (the
+ * canonical address) or a name-derived slug the detail route resolves and
+ * redirects to the id. `null` for the bare roster path, a path outside
+ * Routines, or a segment whose percent-escapes cannot be decoded. */
+export function routineSegmentFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, ROUTINES_PATH_PREFIX);
 }
 

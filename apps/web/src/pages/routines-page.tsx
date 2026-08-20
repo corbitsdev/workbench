@@ -30,15 +30,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock } from "@corbits/icons";
-import { useEffect } from "react";
 import type { KeyboardEvent } from "react";
 import {
   routineHealth,
   routineScheduleSentence,
+  runStatusLabel,
+  triggeredByLabel,
 } from "@corbits/routines/client";
 import type { RoutineHealth } from "@corbits/routines/client";
 
@@ -46,20 +46,14 @@ import { useBench } from "../bench-context";
 import {
   routineDetailPath,
   useGlobalRoutines,
-  useInvalidateRoutines,
+  useRoutineActions,
 } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { Link } from "../navigation";
 import { workbenchPath } from "../workbench-path";
-import { routineIdFromPath } from "../path-ids";
 import { ROUTINE_HEALTH_TONE } from "../routine-health-tone";
 import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
 import { StageTopBar } from "../shell/stage-top-bar";
-import {
-  routineRunStartedToast,
-  runRoutineNow,
-  updateRoutine,
-} from "../routines-api";
 import type { RoutineRun } from "../routines-api";
 
 export type { GlobalRoutineRow } from "../global-routines";
@@ -152,15 +146,14 @@ export function RunsTable({
 
 /** What started a fire, plus the launch failure's own message when the
  * fire never produced a run at all. Shared by the roster's run table and
- * the detail page's history table. */
+ * the detail page's history table. Words, not the `triggered_by` column's
+ * enum (DESIGN.md, Copy). */
 export function TriggeredByCell({ run }: { readonly run: RoutineRun }) {
   const hasError = run.error !== undefined && run.error !== null;
   return (
     <>
       <Badge tone={hasError ? "danger" : "neutral"}>
-        {run.triggeredBy === "schedule-failed"
-          ? "Failed to start"
-          : run.triggeredBy}
+        {triggeredByLabel(run.triggeredBy)}
       </Badge>
       {hasError ? (
         <p className="mt-1 max-w-xs text-xs text-[var(--ui-fg-muted)]">
@@ -171,14 +164,18 @@ export function TriggeredByCell({ run }: { readonly run: RoutineRun }) {
   );
 }
 
-/** A fire's settled run status, or a dash when the platform has no run to
- * report (a launch that never got that far). */
+/** A fire's settled run status in words, or a dash when the platform has
+ * no run to report (a launch that never got that far). */
 export function RunStatusCell({ run }: { readonly run: RoutineRun }) {
   const status = run.run?.status;
   if (typeof status !== "string") {
     return <span className="text-[var(--ui-fg-muted)]">—</span>;
   }
-  return <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>{status}</Badge>;
+  return (
+    <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>
+      {runStatusLabel(status)}
+    </Badge>
+  );
 }
 
 /** A routine's health, from the telemetry the scheduler already records —
@@ -198,15 +195,24 @@ export function scheduleSentence(row: GlobalRoutineRow): string {
  * When this routine fires next, read off the scheduler's own `nextFireAt`
  * clock rather than re-derived in the browser — a routine that is off,
  * dead-lettered, manual, or webhook-driven honestly has no next run, and
- * says so.
+ * says so. An absent field reads the same as `null`: an un-upgraded hub
+ * has told us nothing, which is not a licence to guess (see the wire
+ * schema's own note).
+ *
+ * A due time in the past is not "2h ago" — the fire has not happened, the
+ * scheduler is behind, and the word for that is overdue.
  */
 export function nextRunLabel(row: GlobalRoutineRow, now: number): string {
-  const { nextFireAt } = row.routine;
+  const nextFireAt = row.routine.nextFireAt ?? null;
   if (nextFireAt === null) return "Not scheduled";
+  const due = Date.parse(nextFireAt);
+  if (Number.isNaN(due)) return "Not scheduled";
+  if (due <= now) return "Overdue";
   return formatRelativeTime(nextFireAt, now);
 }
 
-/** The newest fire on record — what "last run" means in the list. */
+/** The newest fire on record — the one definition of "last run", shared
+ * with the detail page's health rail through `routineHealth`. */
 export function latestFire(row: GlobalRoutineRow): RoutineRun | undefined {
   return row.runs[0];
 }
@@ -261,21 +267,17 @@ export function GlobalRoutinesList({
       <TableBody>
         {rows.map((row) => {
           const health = routineRowHealth(row);
-          const detailPath = routineDetailPath(row.routine.name);
           const lastRun = latestFire(row);
           return (
             <TableRow key={row.routine.id}>
               <TableCell>
                 <span className="flex flex-col">
-                  {detailPath === null ? (
-                    <span className="text-sm font-medium">
-                      {row.routine.name}
-                    </span>
-                  ) : (
-                    <Link to={detailPath} className="text-sm font-medium">
-                      {row.routine.name}
-                    </Link>
-                  )}
+                  <Link
+                    to={routineDetailPath(row.routine.id)}
+                    className="text-sm font-medium"
+                  >
+                    {row.routine.name}
+                  </Link>
                   <span className="text-xs text-[var(--ui-fg-muted)]">
                     {row.tenantName}
                   </span>
@@ -344,42 +346,18 @@ export function GlobalRoutinesList({
   );
 }
 
-/**
- * `/routines/<id>` used to expand a row on this page. Detail lives at
- * `/routines/<slug>` now, so an id deep link (a context menu's "Open
- * routine", an old bookmark) resolves the routine and hops to its page —
- * an old link always lands somewhere real (DESIGN.md, Pages & Routing).
- */
-function useRoutineIdDeepLink(
-  path: string,
-  rows: readonly GlobalRoutineRow[],
-  navigate: (to: string) => void,
-): void {
-  const routineId = routineIdFromPath(path);
-  const match = rows.find((row) => row.routine.id === routineId);
-  const target =
-    match === undefined ? null : routineDetailPath(match.routine.name);
-  useEffect(() => {
-    if (target === null) return;
-    navigate(target);
-  }, [target, navigate]);
-}
-
 export function RoutinesRoute({
-  path,
   navigate,
 }: {
-  readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
   const routinesQuery = useGlobalRoutines();
-  const invalidate = useInvalidateRoutines();
+  const actions = useRoutineActions();
   const openRoutine = useOpenRoutineInCanvas();
   const { selectTenant } = useBench();
   const now = Date.now();
 
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
-  useRoutineIdDeepLink(path, rows, navigate);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -414,15 +392,9 @@ export function RoutinesRoute({
             rows={rows}
             now={now}
             onToggleEnabled={(row, enabled) => {
-              void updateRoutine(row.tenantId, row.routine.id, {
-                enabled,
-              }).then(() => invalidate(row.tenantId));
+              void actions.setEnabled(row, enabled);
             }}
-            onRunNow={async (row) => {
-              await runRoutineNow(row.tenantId, row.routine.id);
-              invalidate(row.tenantId);
-              toast(routineRunStartedToast(row.routine.name));
-            }}
+            onRunNow={(row) => actions.runNow(row)}
             onOpenWorkbench={(workbenchId) => {
               const row = rows.find(
                 (r) => r.routine.deliveryWorkbenchId === workbenchId,

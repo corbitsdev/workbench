@@ -7,6 +7,11 @@
 // `failing` (still scheduled, still retrying) reads warning; `paused`
 // (dead-lettered, the scheduler gave up) reads danger — a routine that has
 // stopped for good is not the same signal as one having a bad morning.
+//
+// This table belongs next to `health.ts` in the routines package, since
+// the state→tone pairing is as much a product rule as the states
+// themselves; it sits here only because `BadgeTone` is a react-ui type and
+// the package has no react-ui dependency yet. Moving both is ticketed.
 import type { BadgeTone } from "@corbits/react-ui";
 import type { RoutineHealthState } from "@corbits/routines/client";
 

@@ -19,16 +19,28 @@ import {
   classifyBenchMembership,
   listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
-import { routineSlug } from "@corbits/routines/client";
+import {
+  routineActionFailedToast,
+  routineRunStartedToast,
+  routineSlug,
+  timezoneForTrigger,
+} from "@corbits/routines/client";
+import { toast } from "@corbits/react-ui";
 import { useMemo } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { describeApiError } from "@corbits/api-query";
 import type { APIQuery } from "@corbits/api-query";
 
 import type { Principal } from "./api";
 import { useBench } from "./bench-context";
 import { ROUTINES_PATH_PREFIX } from "./path-ids";
 import { meKeys, tenantKeys } from "./query-client";
-import { listRoutineRuns, listRoutines } from "./routines-api";
+import {
+  listRoutineRuns,
+  listRoutines,
+  runRoutineNow,
+  updateRoutine,
+} from "./routines-api";
 import type { Routine, RoutineRun } from "./routines-api";
 
 /** The query-key suffix both routines surfaces share, so a mutation on
@@ -43,10 +55,24 @@ export type GlobalRoutineRow = {
   readonly runs: readonly RoutineRun[];
 };
 
-/** `/routines/<slug>` — the routine's own page. `null` when the name has
- * nothing sluggable in it, so a caller renders the routine without a link
- * rather than linking somewhere that cannot resolve. */
-export function routineDetailPath(name: string): string | null {
+/**
+ * A routine's own page. Addressed by id, which is the only address a
+ * routine actually has: DESIGN.md permits a slug in a route only where it
+ * is immutable and tenant-unique by hard database constraint, and a
+ * routine has no slug column — so a name-derived slug is the soft
+ * convention that rule forbids, and the opaque id is the documented
+ * fallback. `routineSlugPath` below still builds the name address, for
+ * resolving links people typed or shared.
+ */
+export function routineDetailPath(routineId: string): string {
+  return `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(routineId)}`;
+}
+
+/** The name-derived address a person may have typed or shared — resolved
+ * and redirected to `routineDetailPath` by the detail route, never
+ * rendered as canonical. `null` when the name has nothing sluggable in
+ * it. */
+export function routineSlugPath(name: string): string | null {
   const slug = routineSlug(name);
   return slug === "" ? null : `${ROUTINES_PATH_PREFIX}/${slug}`;
 }
@@ -127,7 +153,9 @@ async function fetchBenchRoutinesData(
  * into one list with its own workbench attribution — the aggregation
  * `GET /routines` doesn't do server-side (it's tenant-scoped, per bench),
  * done the cheapest correct client-side way: one fetch per bench, run in
- * parallel. */
+ * parallel. A server-side health summary that collapses this fan-out into
+ * a single request is ticketed separately; it changes where the numbers
+ * are computed, not what they mean. */
 export function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
   const { kind: benchesKind, benches } = useMemberBenches();
   const results = useQueries({
@@ -180,5 +208,88 @@ export function useInvalidateRoutines(): (tenantId: string) => void {
     void queryClient.invalidateQueries({
       queryKey: [...tenantKeys.routines(tenantId), ROUTINES_QUERY_SCOPE],
     });
+  };
+}
+
+export type RoutineActions = {
+  /** Toasts and resolves on failure — the caller has no second thing to
+   * say, and an unhandled rejection is not a user-facing error message. */
+  readonly runNow: (row: GlobalRoutineRow) => Promise<void>;
+  readonly setEnabled: (
+    row: GlobalRoutineRow,
+    enabled: boolean,
+  ) => Promise<void>;
+  /** Toasts and *rethrows*, so a schedule editor can also keep the draft
+   * on screen and say what happened next to the field. */
+  readonly saveCronSchedule: (
+    row: GlobalRoutineRow,
+    expression: string,
+  ) => Promise<void>;
+};
+
+/**
+ * The three routine mutations, each of which reports its own failure.
+ * Shared by the roster and the detail page so a refused write reads the
+ * same on both, and so neither surface can quietly drop one: every path
+ * here either invalidates on success or says what went wrong in words.
+ * Nothing is applied optimistically — the row changes when the hub says
+ * it changed.
+ */
+export function useRoutineActions(): RoutineActions {
+  const invalidate = useInvalidateRoutines();
+  return {
+    runNow: async (row) => {
+      try {
+        await runRoutineNow(row.tenantId, row.routine.id);
+        invalidate(row.tenantId);
+        toast(routineRunStartedToast(row.routine.name));
+      } catch (cause) {
+        toast(
+          routineActionFailedToast(
+            "run",
+            row.routine.name,
+            describeApiError(cause, "starting this routine"),
+          ),
+        );
+      }
+    },
+    setEnabled: async (row, enabled) => {
+      try {
+        await updateRoutine(row.tenantId, row.routine.id, { enabled });
+        invalidate(row.tenantId);
+      } catch (cause) {
+        toast(
+          routineActionFailedToast(
+            enabled ? "resume" : "pause",
+            row.routine.name,
+            describeApiError(
+              cause,
+              enabled ? "resuming this routine" : "pausing this routine",
+            ),
+          ),
+        );
+      }
+    },
+    saveCronSchedule: async (row, expression) => {
+      const timezone = timezoneForTrigger(row.routine.trigger);
+      try {
+        await updateRoutine(row.tenantId, row.routine.id, {
+          trigger:
+            timezone === "UTC"
+              ? { kind: "cron", expression }
+              : { kind: "cron", expression, timezone },
+        });
+      } catch (cause) {
+        toast(
+          routineActionFailedToast(
+            "schedule",
+            row.routine.name,
+            describeApiError(cause, "saving this schedule"),
+          ),
+        );
+        throw cause;
+      }
+      invalidate(row.tenantId);
+    },
   };
 }

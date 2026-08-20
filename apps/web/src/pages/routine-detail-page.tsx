@@ -1,5 +1,7 @@
-// `/routines/<slug>` — a routine's own page (CL-6418), replacing the
-// placeholder CL-6412 routed here.
+// `/routines/<id>` — a routine's own page (CL-6418), replacing the
+// placeholder CL-6412 routed here. The id is the address (see
+// `resolveRoutineSegment` at the bottom for why, and for how a name still
+// resolves onto it).
 //
 // A routine is a workflow on a schedule: schedule + target workflow +
 // health + history, and nothing else. It never shows an agent it "runs
@@ -33,15 +35,14 @@ import {
   TableHeader,
   TableRow,
   formatRelativeTime,
-  toast,
 } from "@corbits/react-ui";
 import { Clock, FlowArrow } from "@corbits/icons";
-import type { Slug } from "@corbits/slug";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   isValidCronExpression,
   cronExpressionForTrigger,
   cronSentence,
+  fireNeverStarted,
   routineHealth,
   routineScheduleSentence,
   timezoneForTrigger,
@@ -49,9 +50,10 @@ import {
 import type { RoutineHealth } from "@corbits/routines/client";
 
 import {
+  routineDetailPath,
   rowsForSlug,
   useGlobalRoutines,
-  useInvalidateRoutines,
+  useRoutineActions,
 } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { runDetailPath } from "../insights-deeplinks";
@@ -59,14 +61,8 @@ import { Link } from "../navigation";
 import { ROUTINES_PATH_PREFIX } from "../path-ids";
 import { ROUTINE_HEALTH_TONE } from "../routine-health-tone";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { RunStatusCell, TriggeredByCell } from "./routines-page";
-import {
-  listWorkflowDefinitions,
-  routineRunStartedToast,
-  runRoutineNow,
-  updateRoutine,
-  useTenantQuery,
-} from "../routines-api";
+import { nextRunLabel, RunStatusCell, TriggeredByCell } from "./routines-page";
+import { listWorkflowDefinitions, useTenantQuery } from "../routines-api";
 import { tenantKeys } from "../query-client";
 
 /** The cron expression behind a routine's schedule — `null` for the
@@ -117,7 +113,6 @@ export function RoutineHealthRail({
   readonly row: GlobalRoutineRow;
   readonly now: number;
 }) {
-  const { nextFireAt, lastFireAt } = row.routine;
   return (
     <aside className="flex w-full flex-col gap-4 rounded-md border border-[var(--ui-border)] p-4 lg:w-80">
       <div className="flex flex-col gap-1">
@@ -136,13 +131,15 @@ export function RoutineHealthRail({
           ? "Not measured yet"
           : formatDuration(health.medianDurationMs)}
       </RailFact>
-      <RailFact label="Next run">
-        {nextFireAt === null
-          ? "Not scheduled"
-          : formatRelativeTime(nextFireAt, now)}
-      </RailFact>
+      {/* Both read exactly what the list's own columns read —
+          `nextRunLabel` off the scheduler's clock, `health.lastRunAt` off
+          the newest history row — so a routine cannot report "never run"
+          here beside a history table full of runs. */}
+      <RailFact label="Next run">{nextRunLabel(row, now)}</RailFact>
       <RailFact label="Last run">
-        {lastFireAt === null ? "Never" : formatRelativeTime(lastFireAt, now)}
+        {health.lastRunAt === null
+          ? "Never"
+          : formatRelativeTime(health.lastRunAt, now)}
       </RailFact>
       <RailFact label="Last failure">
         {health.lastFailure === null ? (
@@ -165,9 +162,15 @@ export function RoutineHealthRail({
 /**
  * The schedule, sentence first: the raw expression is editable behind it
  * and the sentence re-renders from whatever is typed, so a person sees
- * what their change means before they save it. An expression the
- * scheduler's own parser rejects (`isValidCronExpression`, the same check
- * the server saves against) cannot be saved at all.
+ * what their change means before they save it.
+ *
+ * Saveable means two things, and both are the same question — "will this
+ * do what it reads like?": the scheduler's own parser must accept it
+ * (`isValidCronExpression`, the check the server saves against) *and* it
+ * must be describable, because an expression this page cannot put into
+ * words is one the person cannot check before committing to it. Whatever
+ * the field's whitespace, exactly one trimmed expression is compared,
+ * previewed, and sent.
  */
 export function RoutineScheduleSection({
   row,
@@ -180,9 +183,12 @@ export function RoutineScheduleSection({
   const timezone = timezoneForTrigger(row.routine.trigger);
   const [draft, setDraft] = useState(stored ?? "");
   const [saving, setSaving] = useState(false);
-  const valid = isValidCronExpression(draft);
-  const preview = valid ? cronSentence(draft, timezone) : null;
-  const changed = stored !== null && draft.trim() !== stored;
+  const [failure, setFailure] = useState<string | null>(null);
+  const expression = draft.trim();
+  const preview = isValidCronExpression(expression)
+    ? cronSentence(expression, timezone)
+    : null;
+  const changed = stored !== null && expression !== stored;
 
   return (
     <section className="flex flex-col gap-3">
@@ -211,17 +217,25 @@ export function RoutineScheduleSection({
             <Button
               type="button"
               size="sm"
-              disabled={!valid || !changed || saving}
+              disabled={preview === null || !changed || saving}
               onClick={() => {
                 setSaving(true);
-                void onSave(draft.trim()).finally(() => setSaving(false));
+                setFailure(null);
+                void onSave(expression)
+                  .catch(() => {
+                    // `useRoutineActions` already said what went wrong in
+                    // a toast; this keeps it on screen next to the field
+                    // the person is still holding.
+                    setFailure("Not saved — the schedule is unchanged.");
+                  })
+                  .finally(() => setSaving(false));
               }}
             >
               Save schedule
             </Button>
           </div>
           <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
-            {preview ?? "That isn't a schedule this can run."}
+            {failure ?? preview ?? "That isn't a schedule this can run."}
           </p>
         </div>
       )}
@@ -299,7 +313,7 @@ export function RoutineRunHistory({
                 </TableCell>
                 <TableCell>{formatRelativeTime(run.createdAt, now)}</TableCell>
                 <TableCell>
-                  {run.triggeredBy === "schedule-failed" ? (
+                  {fireNeverStarted(run.triggeredBy) ? (
                     <span className="text-sm text-[var(--ui-fg-muted)]">
                       Never started
                     </span>
@@ -337,8 +351,7 @@ export function RoutineDetailPage({
 }) {
   const health = routineHealth(row.routine, row.runs);
   const latestRunId =
-    row.runs.find((run) => run.triggeredBy !== "schedule-failed")?.runId ??
-    null;
+    row.runs.find((run) => !fireNeverStarted(run.triggeredBy))?.runId ?? null;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -384,12 +397,16 @@ export function RoutineDetailPage({
   );
 }
 
-function NotFound({
+/** A routine-shaped screen with nothing to show: the trail still reads
+ * Routines, and the way out is a link, never a dead end. */
+function RoutineNotice({
   title,
   description,
+  children,
 }: {
   readonly title: string;
   readonly description: string;
+  readonly children?: ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -410,6 +427,7 @@ function NotFound({
             </Button>
           }
         />
+        {children}
       </PageShell>
     </div>
   );
@@ -435,14 +453,66 @@ function useWorkflowName(row: GlobalRoutineRow | undefined): string {
   return match?.name ?? row.routine.definitionId;
 }
 
-export function RoutineDetailRoute({ slug }: { readonly slug: Slug }) {
+/**
+ * What `/routines/<segment>` resolves to.
+ *
+ * The id is the canonical address and renders the page directly — a
+ * routine has no slug column, so a name-derived slug is exactly the "soft
+ * convention a migration can violate" DESIGN.md forbids in a route, and
+ * the opaque id is the fallback that section prescribes. A name still
+ * resolves, as a convenience: it redirects to the id path, so what ends
+ * up in the address bar, in a bookmark, and in a shared link is the
+ * address that cannot break when someone renames the routine.
+ *
+ * A name two routines answer to resolves to neither — it offers both by
+ * id instead. A segment nothing answers to says the routine is gone,
+ * rather than quietly showing the roster under a URL that no longer means
+ * anything.
+ */
+export type RoutineResolution =
+  | { readonly kind: "found"; readonly row: GlobalRoutineRow }
+  | { readonly kind: "redirect"; readonly to: string }
+  | { readonly kind: "ambiguous"; readonly rows: readonly GlobalRoutineRow[] }
+  | { readonly kind: "gone" };
+
+export function resolveRoutineSegment(
+  rows: readonly GlobalRoutineRow[],
+  segment: string,
+): RoutineResolution {
+  const byId = rows.find((row) => row.routine.id === segment);
+  if (byId !== undefined) return { kind: "found", row: byId };
+  const byName = rowsForSlug(rows, segment);
+  const only = byName.length === 1 ? byName[0] : undefined;
+  if (only !== undefined) {
+    return { kind: "redirect", to: routineDetailPath(only.routine.id) };
+  }
+  if (byName.length > 1) return { kind: "ambiguous", rows: byName };
+  return { kind: "gone" };
+}
+
+export function RoutineDetailRoute({
+  segment,
+  navigate,
+}: {
+  readonly segment: string;
+  readonly navigate: (to: string) => void;
+}) {
   const routinesQuery = useGlobalRoutines();
-  const invalidate = useInvalidateRoutines();
+  const actions = useRoutineActions();
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
-  const matches = rowsForSlug(rows, slug);
-  const row = matches.length === 1 ? matches[0] : undefined;
+  const resolution = resolveRoutineSegment(rows, segment);
+  const row = resolution.kind === "found" ? resolution.row : undefined;
   const workflowName = useWorkflowName(row);
   const now = Date.now();
+  const redirectTo =
+    routinesQuery.kind === "ready" && resolution.kind === "redirect"
+      ? resolution.to
+      : null;
+
+  useEffect(() => {
+    if (redirectTo === null) return;
+    navigate(redirectTo);
+  }, [redirectTo, navigate]);
 
   if (routinesQuery.kind === "loading") {
     return (
@@ -450,7 +520,7 @@ export function RoutineDetailRoute({ slug }: { readonly slug: Slug }) {
         <StageTopBar
           crumbs={[
             { label: "Routines", href: ROUTINES_PATH_PREFIX },
-            { label: slug },
+            { label: segment },
           ]}
         />
         <PageShell width="full" className="page-fill">
@@ -460,21 +530,41 @@ export function RoutineDetailRoute({ slug }: { readonly slug: Slug }) {
     );
   }
   if (routinesQuery.kind === "error") {
-    return <NotFound title={slug} description={routinesQuery.message} />;
-  }
-  if (matches.length > 1) {
     return (
-      <NotFound
-        title={slug}
-        description="More than one routine answers to this name. Rename one of them so each has its own address."
+      <RoutineNotice title={segment} description={routinesQuery.message} />
+    );
+  }
+  if (resolution.kind === "redirect") {
+    return (
+      <RoutineNotice
+        title={segment}
+        description="Opening this routine at its permanent address…"
       />
+    );
+  }
+  if (resolution.kind === "ambiguous") {
+    return (
+      <RoutineNotice
+        title={segment}
+        description="More than one routine is named this. Pick the one you meant — each link opens that routine at its permanent address."
+      >
+        <ul className="mt-4 flex flex-col gap-2">
+          {resolution.rows.map((candidate) => (
+            <li key={candidate.routine.id}>
+              <Link to={routineDetailPath(candidate.routine.id)}>
+                {candidate.routine.name} · {candidate.tenantName}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </RoutineNotice>
     );
   }
   if (row === undefined) {
     return (
-      <NotFound
-        title={slug}
-        description="No routine in your workbenches answers to this name."
+      <RoutineNotice
+        title={segment}
+        description="That routine is gone — it was deleted, or it lives in a workbench you no longer belong to."
       />
     );
   }
@@ -485,26 +575,13 @@ export function RoutineDetailRoute({ slug }: { readonly slug: Slug }) {
       row={resolved}
       now={now}
       workflowName={workflowName}
-      onRunNow={async () => {
-        await runRoutineNow(resolved.tenantId, resolved.routine.id);
-        invalidate(resolved.tenantId);
-        toast(routineRunStartedToast(resolved.routine.name));
-      }}
+      onRunNow={() => actions.runNow(resolved)}
       onToggleEnabled={(enabled) => {
-        void updateRoutine(resolved.tenantId, resolved.routine.id, {
-          enabled,
-        }).then(() => invalidate(resolved.tenantId));
+        void actions.setEnabled(resolved, enabled);
       }}
-      onSaveSchedule={async (expression) => {
-        const timezone = timezoneForTrigger(resolved.routine.trigger);
-        await updateRoutine(resolved.tenantId, resolved.routine.id, {
-          trigger:
-            timezone === "UTC"
-              ? { kind: "cron", expression }
-              : { kind: "cron", expression, timezone },
-        });
-        invalidate(resolved.tenantId);
-      }}
+      onSaveSchedule={(expression) =>
+        actions.saveCronSchedule(resolved, expression)
+      }
     />
   );
 }
