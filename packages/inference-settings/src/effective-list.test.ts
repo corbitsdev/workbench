@@ -118,6 +118,54 @@ describe("defaultModelForProvider", () => {
       displayName: null,
     });
   });
+
+  test("CL-6351: skips an embedding offering tied at the same priority even when its name sorts first", () => {
+    // A fresh Ollama connect mints one offering per pulled model, every
+    // one at the provider's shared priority -- exactly what
+    // `packages/hub-client/src/seed.ts`'s `seedCatalog` does today. With
+    // no capability signal to break the tie, "all-minilm" (an
+    // embedding-only model) sorts before "qwen3:8b" and used to win.
+    const models: ModelInfo[] = [
+      model({
+        id: "model-embed",
+        canonicalName: "all-minilm",
+        displayName: "all-minilm",
+        offerings: [
+          {
+            offeringId: "offering-embed",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-chat",
+        canonicalName: "qwen3:8b",
+        displayName: "qwen3:8b",
+        offerings: [
+          {
+            offeringId: "offering-chat",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+    ];
+    expect(defaultModelForProvider(models, "ollama")).toEqual({
+      canonicalName: "qwen3:8b",
+      displayName: "qwen3:8b",
+    });
+  });
 });
 
 describe("buildEffectiveInferenceRows", () => {

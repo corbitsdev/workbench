@@ -6,6 +6,7 @@
 
 import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 import { PROVIDER_TEST_CONFIG } from "@workbench/hub-client/credential-test";
+import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
 
 /**
  * The provider's own display name (e.g. "Ollama (local)", "Opencode Zen")
@@ -45,17 +46,25 @@ export function defaultModelForProvider(
   models: readonly ModelInfo[],
   providerName: string,
 ): DefaultProviderModel | null {
-  let best: (DefaultProviderModel & { priority: number }) | null = null;
+  const candidates: (DefaultProviderModel & { priority: number })[] = [];
   for (const model of models) {
     for (const offering of model.offerings) {
       if (offering.providerName !== providerName) continue;
-      if (best === null || offering.priority < best.priority) {
-        best = {
-          canonicalName: model.canonicalName,
-          displayName: model.displayName ?? null,
-          priority: offering.priority,
-        };
-      }
+      candidates.push({
+        canonicalName: model.canonicalName,
+        displayName: model.displayName ?? null,
+        priority: offering.priority,
+      });
+    }
+  }
+
+  let best: (DefaultProviderModel & { priority: number }) | null = null;
+  for (const candidate of preferCompletionCapable(
+    candidates,
+    (candidate) => candidate.canonicalName,
+  )) {
+    if (best === null || candidate.priority < best.priority) {
+      best = candidate;
     }
   }
   return best === null

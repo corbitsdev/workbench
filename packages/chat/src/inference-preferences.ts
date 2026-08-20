@@ -11,8 +11,14 @@
 // provider still gets an empty list, and `buildWorkbenchHostWorkflow` /
 // the deploy-time catalog resolution downstream of it still fail loud
 // on that, exactly as before.
-import { listVisibleOfferings, listVisibleProviders, type DB } from "@intx/db";
+import {
+  listVisibleOfferings,
+  listVisibleProviders,
+  type DB,
+  type ResolvedOffering,
+} from "@intx/db";
 import type { InferencePreference } from "@intx/agent";
+import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
 
 /** Reads back the provider names a tenant (or an ancestor it inherits
  * catalog rows from) actually has a usable credential for. */
@@ -44,16 +50,35 @@ export async function listConnectedProviders(
 }
 
 /**
- * Reads one real default model and its compatible provider fallbacks from the
- * tenant-visible catalog. The lowest-priority offering chooses the model;
- * remaining offerings of that exact canonical model form the fallback chain.
+ * Picks one real default model and its compatible provider fallbacks out
+ * of a tenant's visible catalog offerings. The lowest-priority offering
+ * chooses the model; remaining offerings of that exact canonical model
+ * form the fallback chain.
+ *
+ * A fresh connect (Ollama's live `/api/tags` catalog, in particular) can
+ * mint every pulled model as an offering tied at the same priority, with
+ * no capability metadata to tell a chat model from an embedding one —
+ * the explicit alphabetical tiebreaker below would then hand the
+ * embedding model the win whenever its name sorts first (CL-6351), and
+ * every chat turn against it fails with "does not support generate". So
+ * embedding-named offerings are excluded from the running before the
+ * priority/name tiebreak ever runs, not after.
+ *
+ * Kept DB-free so the tie/fallback rules stay covered by a plain unit
+ * test; `listDefaultInferencePreferences` is the thin `@intx/db`-backed
+ * wrapper around it.
  */
-export async function listDefaultInferencePreferences(
-  db: DB["db"],
-  tenantId: string,
-): Promise<readonly InferencePreference[]> {
-  const offerings = (await listVisibleOfferings(db, tenantId))
-    .filter((entry) => entry.provider.credentialId !== null)
+export function selectDefaultInferencePreferences(
+  offerings: readonly ResolvedOffering[],
+): readonly InferencePreference[] {
+  const credentialed = offerings.filter(
+    (entry) => entry.provider.credentialId !== null,
+  );
+  const sorted = preferCompletionCapable(
+    credentialed,
+    (entry) => entry.model.canonicalName,
+  )
+    .slice()
     .sort(
       (left, right) =>
         left.offering.priority - right.offering.priority ||
@@ -61,14 +86,22 @@ export async function listDefaultInferencePreferences(
         left.provider.name.localeCompare(right.provider.name) ||
         left.offering.id.localeCompare(right.offering.id),
     );
-  const defaultModel = offerings[0]?.model.canonicalName;
+  const defaultModel = sorted[0]?.model.canonicalName;
   if (defaultModel === undefined) return [];
-  return offerings
+  return sorted
     .filter((entry) => entry.model.canonicalName === defaultModel)
     .map((entry) => ({
       provider: entry.provider.name,
       model: entry.model.canonicalName,
     }));
+}
+
+export async function listDefaultInferencePreferences(
+  db: DB["db"],
+  tenantId: string,
+): Promise<readonly InferencePreference[]> {
+  const offerings = await listVisibleOfferings(db, tenantId);
+  return selectDefaultInferencePreferences(offerings);
 }
 
 /**

@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./credential-test": "./src/credential-test.ts",
-    "./catalog-seed-data": "./src/catalog-seed-data.ts"
+    "./catalog-seed-data": "./src/catalog-seed-data.ts",
+    "./model-capability": "./src/model-capability.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
