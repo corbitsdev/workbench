@@ -302,6 +302,34 @@ describe("createRoutineRoutes", () => {
     expect(due.find((r) => r.id === body["id"])).toBeUndefined();
   });
 
+  test("the wire view surfaces the scheduler's own next-fire clock, so a UI never has to re-derive it", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+    });
+
+    expect(typeof body["nextFireAt"]).toBe("string");
+    expect(body["lastFireAt"]).toBeNull();
+
+    // The same instant the scheduler's own claim test compares against —
+    // not an independently rendered estimate.
+    const nextFireAt = new Date(body["nextFireAt"] as string);
+    expect(nextFireAt.getUTCHours()).toBe(9);
+    expect(nextFireAt.getUTCMinutes()).toBe(0);
+    expect(nextFireAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("a manual routine reports no next fire rather than omitting the field", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body } = await createRoutine(app, { ...VALID_BODY, trigger: null });
+
+    expect(body["nextFireAt"]).toBeNull();
+    expect(body["lastFireAt"]).toBeNull();
+  });
+
   test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");

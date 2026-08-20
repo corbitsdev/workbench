@@ -1,10 +1,15 @@
-// Screen-level proof for the global Routines page (CL-6362): every
-// routine across every workbench the account belongs to, as rows —
-// workbench attribution, running-or-not state, schedule, inline
-// enable/disable, Run now, and an inline-expandable detail with recent
-// runs. `GlobalRoutinesList` is pure (real props in, honest markup out);
-// `RoutinesRoute` (aggregation across bench memberships, never
-// creator-scoped) gets its own fetch-mocked integration coverage below.
+// Screen-level proof for the global Routines page: every routine across
+// every workbench the account belongs to, as ops rows (CL-6418) —
+// human-language schedule, the scheduler's own next-run clock, health as
+// a state pill with a caption, the last run and its status, workbench
+// attribution, Pause/Resume, and Run now. `GlobalRoutinesList` is pure
+// (real props in, honest markup out); `RoutinesRoute` (aggregation across
+// bench memberships, never creator-scoped) gets its own fetch-mocked
+// integration coverage below.
+//
+// Row detail is a page now (`/routines/<slug>`), not an inline expansion:
+// the name is a link, and an old `/routines/<id>` deep link redirects to
+// that page rather than expanding a row that no longer expands.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -14,10 +19,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   GlobalRoutinesList,
-  routineStateChip,
-  scheduleSummary,
+  nextRunLabel,
+  routineRowHealth,
+  scheduleSentence,
 } from "../src/pages/routines-page";
 import type { GlobalRoutineRow } from "../src/pages/routines-page";
+import { NavigationProvider } from "../src/navigation";
 import type { Routine, RoutineRun } from "../src/routines-api";
 
 const noop = () => undefined;
@@ -33,6 +40,8 @@ const routine: Routine = {
   deliveryWorkbenchId: "ch_1",
   consecutiveFailures: 0,
   deadLetteredAt: null,
+  nextFireAt: "2026-01-02T09:00:00.000Z",
+  lastFireAt: "2026-01-01T09:00:00.000Z",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -50,115 +59,145 @@ function row(overrides: Partial<GlobalRoutineRow> = {}): GlobalRoutineRow {
 
 const listProps = {
   now: Date.parse("2026-01-01T12:00:00.000Z"),
-  expandedId: null as string | null,
-  onToggleExpanded: noop,
   onToggleEnabled: (_row: GlobalRoutineRow, _enabled: boolean) => {},
   onRunNow: (_row: GlobalRoutineRow) => Promise.resolve(),
-  onEdit: (_row: GlobalRoutineRow) => {},
   onOpenWorkbench: (_workbenchId: string) => {},
 };
 
-describe("routineStateChip", () => {
+function renderList(rows: readonly GlobalRoutineRow[]): string {
+  return renderToStaticMarkup(
+    <NavigationProvider navigate={noop}>
+      <GlobalRoutinesList rows={rows} {...listProps} />
+    </NavigationProvider>,
+  );
+}
+
+describe("routineRowHealth", () => {
   test("Off for a disabled routine, regardless of run history", () => {
-    expect(
-      routineStateChip(row({ routine: { ...routine, enabled: false } })),
-    ).toEqual({ label: "Off", tone: "neutral" });
+    const health = routineRowHealth(
+      row({ routine: { ...routine, enabled: false } }),
+    );
+    expect(health.state).toBe("off");
+    expect(health.label).toBe("Off");
   });
 
   test("Paused for a dead-lettered routine", () => {
-    expect(
-      routineStateChip(
-        row({
-          routine: {
-            ...routine,
-            deadLetteredAt: "2026-01-02T00:00:00.000Z",
-          },
-        }),
-      ),
-    ).toEqual({ label: "Paused", tone: "danger" });
+    const health = routineRowHealth(
+      row({
+        routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" },
+      }),
+    );
+    expect(health.state).toBe("paused");
   });
 
-  test("Idle for an enabled routine with no run history", () => {
-    expect(routineStateChip(row())).toEqual({ label: "Idle", tone: "neutral" });
-  });
-
-  test("Running now while the latest run is in flight", () => {
-    const run: RoutineRun = {
+  test("a clean streak is counted, not just asserted", () => {
+    const finished: RoutineRun = {
       runId: "run_1",
       triggeredBy: "schedule",
       createdAt: "2026-01-01T00:00:00.000Z",
-      run: { status: "running" },
+      run: { status: "completed" },
     };
-    expect(routineStateChip(row({ runs: [run] }))).toEqual({
-      label: "Running now",
-      tone: "success",
-    });
-  });
-
-  test("Last run failed when the latest run errored", () => {
-    const run: RoutineRun = {
-      runId: "run_1",
-      triggeredBy: "schedule-failed",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      error: "sidecar unreachable",
-    };
-    expect(routineStateChip(row({ runs: [run] }))).toEqual({
-      label: "Last run failed",
-      tone: "danger",
-    });
+    const health = routineRowHealth(row({ runs: [finished, finished] }));
+    expect(health.state).toBe("ok");
+    expect(health.cleanStreak).toBe(2);
   });
 });
 
-describe("scheduleSummary", () => {
-  test("humanizes the cadence and appends a relative next-run", () => {
-    const summary = scheduleSummary(
-      row(),
-      Date.parse("2026-01-01T00:00:00.000Z"),
-    );
-    expect(summary).toContain("Daily at 09:00 UTC");
-    expect(summary).toContain("next");
-    expect(summary).not.toMatch(/\d+ \d+ \* \* \*/);
+describe("scheduleSentence", () => {
+  test("humanizes the cadence and never prints the expression", () => {
+    const sentence = scheduleSentence(row());
+    expect(sentence).toBe("At 09:00 (UTC)");
+    expect(sentence).not.toMatch(/\d+ \d+ \* \* \*/);
   });
 
-  test("no next-run suffix for a manual routine", () => {
-    const summary = scheduleSummary(
-      row({ routine: { ...routine, trigger: null } }),
-      Date.now(),
+  test("a raw cron routine still reads as a sentence", () => {
+    const sentence = scheduleSentence(
+      row({
+        routine: {
+          ...routine,
+          trigger: { kind: "cron", expression: "0 9 * * 1-5" },
+        },
+      }),
     );
-    expect(summary).toBe("Manual");
+    expect(sentence).toContain("Monday through Friday");
+    expect(sentence).not.toContain("1-5");
+  });
+
+  test("a manual routine says it runs on demand", () => {
+    expect(
+      scheduleSentence(row({ routine: { ...routine, trigger: null } })),
+    ).toBe("On demand only");
+  });
+});
+
+describe("nextRunLabel", () => {
+  test("reads the scheduler's own clock, not a re-derived estimate", () => {
+    expect(nextRunLabel(row(), listProps.now)).toBe(
+      // 2026-01-02T09:00Z from 2026-01-01T12:00Z
+      "in 21h",
+    );
+  });
+
+  test("a routine with nothing scheduled says so rather than guessing", () => {
+    expect(
+      nextRunLabel(
+        row({ routine: { ...routine, trigger: null, nextFireAt: null } }),
+        listProps.now,
+      ),
+    ).toBe("Not scheduled");
   });
 });
 
 describe("GlobalRoutinesList", () => {
   test("says there are no routines yet when the list is empty", () => {
-    const markup = renderToStaticMarkup(
-      <GlobalRoutinesList rows={[]} {...listProps} />,
-    );
-    expect(markup).toContain("No routines yet");
+    expect(renderList([])).toContain("No routines yet");
   });
 
-  test("renders a row with its name and workbench attribution", () => {
-    const markup = renderToStaticMarkup(
-      <GlobalRoutinesList rows={[row()]} {...listProps} />,
-    );
+  test("a row carries the ops columns: schedule, next run, health, last run", () => {
+    const markup = renderList([
+      row({
+        runs: [
+          {
+            runId: "run_1",
+            triggeredBy: "schedule",
+            createdAt: "2026-01-01T09:00:00.000Z",
+            run: { status: "completed" },
+          },
+        ],
+      }),
+    ]);
     expect(markup).toContain("Morning brief");
     expect(markup).toContain("Acme Team");
+    expect(markup).toContain("At 09:00 (UTC)");
+    expect(markup).toContain("in 21h");
+    expect(markup).toContain("Healthy");
+    expect(markup).toContain("completed");
     expect(markup).toContain("Ops");
-    expect(markup).toContain("Daily at 09:00 UTC");
+  });
+
+  test("the routine's name links to its own page", () => {
+    expect(renderList([row()])).toContain('href="/routines/morning-brief"');
+  });
+
+  test("a failing routine states its failure count in words, not only in colour", () => {
+    const markup = renderList([
+      row({ routine: { ...routine, consecutiveFailures: 2 } }),
+    ]);
+    expect(markup).toContain("Failing");
+    expect(markup).toContain("2 runs failed in a row");
+  });
+
+  test("a routine that has never run says Never rather than showing an empty cell", () => {
+    expect(renderList([row()])).toContain("Never");
   });
 
   test("a routine with no delivery workbench shows a dash, not a broken link", () => {
-    const markup = renderToStaticMarkup(
-      <GlobalRoutinesList
-        rows={[
-          row({
-            routine: { ...routine, deliveryWorkbenchId: null },
-            deliveryWorkbenchName: null,
-          }),
-        ]}
-        {...listProps}
-      />,
-    );
+    const markup = renderList([
+      row({
+        routine: { ...routine, deliveryWorkbenchId: null },
+        deliveryWorkbenchName: null,
+      }),
+    ]);
     expect(markup).toContain("—");
   });
 
@@ -169,13 +208,16 @@ describe("GlobalRoutinesList", () => {
     const root: Root = createRoot(container);
     act(() => {
       root.render(
-        createElement(GlobalRoutinesList, {
-          rows: [row()],
-          ...listProps,
-          onRunNow: (r: GlobalRoutineRow) => {
-            calls.push(r);
-            return Promise.resolve();
-          },
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(GlobalRoutinesList, {
+            rows: [row()],
+            ...listProps,
+            onRunNow: (r: GlobalRoutineRow) => {
+              calls.push(r);
+              return Promise.resolve();
+            },
+          }),
         }),
       );
     });
@@ -195,19 +237,22 @@ describe("GlobalRoutinesList", () => {
     }
   });
 
-  test("the Enabled switch calls onToggleEnabled with the flipped value", () => {
+  test("the On switch calls onToggleEnabled with the flipped value", () => {
     const calls: [GlobalRoutineRow, boolean][] = [];
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
     act(() => {
       root.render(
-        createElement(GlobalRoutinesList, {
-          rows: [row()],
-          ...listProps,
-          onToggleEnabled: (r: GlobalRoutineRow, enabled: boolean) => {
-            calls.push([r, enabled]);
-          },
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(GlobalRoutinesList, {
+            rows: [row()],
+            ...listProps,
+            onToggleEnabled: (r: GlobalRoutineRow, enabled: boolean) => {
+              calls.push([r, enabled]);
+            },
+          }),
         }),
       );
     });
@@ -232,10 +277,13 @@ describe("GlobalRoutinesList", () => {
     const root: Root = createRoot(container);
     act(() => {
       root.render(
-        createElement(GlobalRoutinesList, {
-          rows: [row()],
-          ...listProps,
-          onOpenWorkbench: (workbenchId: string) => opened.push(workbenchId),
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(GlobalRoutinesList, {
+            rows: [row()],
+            ...listProps,
+            onOpenWorkbench: (workbenchId: string) => opened.push(workbenchId),
+          }),
         }),
       );
     });
@@ -253,94 +301,6 @@ describe("GlobalRoutinesList", () => {
       container.remove();
     }
   });
-
-  test("Edit calls onEdit with the row", () => {
-    const edited: GlobalRoutineRow[] = [];
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root: Root = createRoot(container);
-    act(() => {
-      root.render(
-        createElement(GlobalRoutinesList, {
-          rows: [row()],
-          ...listProps,
-          onEdit: (r: GlobalRoutineRow) => edited.push(r),
-        }),
-      );
-    });
-    try {
-      const editButton = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Edit",
-      );
-      expect(editButton).not.toBeUndefined();
-      act(() => {
-        editButton?.click();
-      });
-      expect(edited).toHaveLength(1);
-      expect(edited[0]?.routine.id).toBe("rtn_1");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("expanding a row shows recent runs and the delivery note inline, without navigating", () => {
-    const run: RoutineRun = {
-      runId: "run_1",
-      triggeredBy: "schedule",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      run: { status: "completed" },
-    };
-    const markup = renderToStaticMarkup(
-      <GlobalRoutinesList
-        rows={[row({ runs: [run] })]}
-        {...listProps}
-        expandedId="rtn_1"
-      />,
-    );
-    expect(markup).toContain("Run updates post into Ops");
-    expect(markup).toContain("completed");
-  });
-
-  test("a collapsed row shows no run detail", () => {
-    const run: RoutineRun = {
-      runId: "run_1",
-      triggeredBy: "schedule",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      run: { status: "completed" },
-    };
-    const markup = renderToStaticMarkup(
-      <GlobalRoutinesList rows={[row({ runs: [run] })]} {...listProps} />,
-    );
-    expect(markup).not.toContain("Run updates post into");
-  });
-
-  test("expand toggling calls onToggleExpanded with the routine id", () => {
-    const toggled: string[] = [];
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root: Root = createRoot(container);
-    act(() => {
-      root.render(
-        createElement(GlobalRoutinesList, {
-          rows: [row()],
-          ...listProps,
-          onToggleExpanded: (id: string) => toggled.push(id),
-        }),
-      );
-    });
-    try {
-      const expandButton = container.querySelector("button[aria-expanded]");
-      expect(expandButton).not.toBeNull();
-      act(() => {
-        (expandButton as HTMLButtonElement).click();
-      });
-      expect(toggled).toEqual(["rtn_1"]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
 });
 
 describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
@@ -351,78 +311,54 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
     });
   }
 
-  test("lists routines from every bench the account is a member of, not just the currently selected one, and never creator-scoped", async () => {
-    const { BenchProvider } = await import("../src/bench-context");
-    const { NavigationProvider } = await import("../src/navigation");
-    const { CanvasAvailabilityProvider } =
-      await import("../src/shell/canvas-availability");
-    const { RoutinesRoute } = await import("../src/pages/routines-page");
-    const { TestQueryProvider } = await import("./test-query-provider");
-
-    const realFetch = globalThis.fetch;
-    // Two benches this account belongs to — GET /routines is already
-    // tenant-scoped, never filtered by who created a row, so a second
-    // member's routine (created by a different principal) shows up here
-    // exactly like the viewer's own.
-    const memberships = [
-      {
-        principalId: "prn_me",
-        tenantId: "tnt_1",
-        tenantName: "Acme Team",
-        tenantSlug: "acme",
-        kind: "user",
-        status: "active",
-        roles: [],
-      },
-      {
-        principalId: "prn_me_2",
-        tenantId: "tnt_2",
-        tenantName: "Beta Team",
-        tenantSlug: "beta",
-        kind: "user",
-        status: "active",
-        roles: [],
-      },
-    ];
-    const routinesByTenant: Record<string, Record<string, unknown>[]> = {
-      tnt_1: [
-        {
-          id: "rtn_mine",
-          name: "My digest",
-          definitionId: "wfd_1",
-          trigger: null,
-          scope: "bench",
-          input: {},
-          enabled: true,
-          deliveryWorkbenchId: null,
-          consecutiveFailures: 0,
-          deadLetteredAt: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-      tnt_2: [
-        {
-          id: "rtn_theirs",
-          name: "Their digest",
-          definitionId: "wfd_2",
-          trigger: null,
-          scope: "bench",
-          input: {},
-          enabled: true,
-          deliveryWorkbenchId: null,
-          consecutiveFailures: 0,
-          deadLetteredAt: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
+  function routineRecord(
+    overrides: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
+      definitionId: "wfd_1",
+      trigger: null,
+      scope: "bench",
+      input: {},
+      enabled: true,
+      deliveryWorkbenchId: null,
+      consecutiveFailures: 0,
+      deadLetteredAt: null,
+      nextFireAt: null,
+      lastFireAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
     };
+  }
 
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ): Promise<Response> => {
+  const memberships = [
+    {
+      principalId: "prn_me",
+      tenantId: "tnt_1",
+      tenantName: "Acme Team",
+      tenantSlug: "acme",
+      kind: "user",
+      status: "active",
+      roles: [],
+    },
+    {
+      principalId: "prn_me_2",
+      tenantId: "tnt_2",
+      tenantName: "Beta Team",
+      tenantSlug: "beta",
+      kind: "user",
+      status: "active",
+      roles: [],
+    },
+  ];
+
+  const routinesByTenant: Record<string, Record<string, unknown>[]> = {
+    tnt_1: [routineRecord({ id: "rtn_mine", name: "My digest" })],
+    tnt_2: [routineRecord({ id: "rtn_theirs", name: "Their digest" })],
+  };
+
+  function mockFetch(): typeof fetch {
+    return (async (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input);
       if (url.includes("/api/me/principals")) {
         return jsonResponse({ data: memberships, nextCursor: null });
@@ -444,45 +380,59 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
       }
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch;
+  }
+
+  async function renderRoute(
+    path: string,
+    navigate: (to: string) => void,
+  ): Promise<{ container: HTMLDivElement; root: Root }> {
+    const { BenchProvider } = await import("../src/bench-context");
+    const { CanvasAvailabilityProvider } =
+      await import("../src/shell/canvas-availability");
+    const { RoutinesRoute } = await import("../src/pages/routines-page");
+    const { TestQueryProvider } = await import("./test-query-provider");
 
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
-    try {
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={navigate}>
+            <BenchProvider>
+              <CanvasAvailabilityProvider
+                allowed={false}
+                open={false}
+                profile={null}
+                artifact={null}
+                routine={null}
+                focus={false}
+                openProfile={() => {}}
+                openArtifact={() => {}}
+                openRoutine={() => {}}
+                toggleFocus={() => {}}
+                close={() => {}}
+              >
+                {createElement(RoutinesRoute, { path, navigate })}
+              </CanvasAvailabilityProvider>
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 8; i++) {
       await act(async () => {
-        root.render(
-          <TestQueryProvider>
-            <NavigationProvider navigate={() => {}}>
-              <BenchProvider>
-                <CanvasAvailabilityProvider
-                  allowed={false}
-                  open={false}
-                  profile={null}
-                  artifact={null}
-                  routine={null}
-                  focus={false}
-                  openProfile={() => {}}
-                  openArtifact={() => {}}
-                  openRoutine={() => {}}
-                  toggleFocus={() => {}}
-                  close={() => {}}
-                >
-                  {createElement(RoutinesRoute, {
-                    path: "/routines",
-                    navigate: () => {},
-                  })}
-                </CanvasAvailabilityProvider>
-              </BenchProvider>
-            </NavigationProvider>
-          </TestQueryProvider>,
-        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
-      for (let i = 0; i < 8; i++) {
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        });
-      }
+    }
+    return { container, root };
+  }
 
+  test("lists routines from every bench the account is a member of, not just the currently selected one, and never creator-scoped", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch();
+    const { container, root } = await renderRoute("/routines", () => {});
+    try {
       // Bench switcher defaults to the first bench (tnt_1) — proving the
       // second bench's routine still renders proves this page never
       // narrows to just the selected tenant.
@@ -490,6 +440,23 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
       expect(container.textContent).toContain("Their digest");
       expect(container.textContent).toContain("Acme Team");
       expect(container.textContent).toContain("Beta Team");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      globalThis.fetch = realFetch;
+      window.localStorage.clear();
+    }
+  });
+
+  test("an old /routines/<id> deep link lands on the routine's own page", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch();
+    const navigated: string[] = [];
+    const { container, root } = await renderRoute("/routines/rtn_mine", (to) =>
+      navigated.push(to),
+    );
+    try {
+      expect(navigated).toContain("/routines/my-digest");
     } finally {
       act(() => root.unmount());
       container.remove();

@@ -13,8 +13,20 @@ import {
   routineRunNowPath,
   routineRunStartedToast,
   routineRunsPath,
+  routineSlug,
   routinesPath,
 } from "./client";
+
+describe("routineSlug", () => {
+  test("derives the URL-facing name from the display name", () => {
+    expect(routineSlug("Morning brief")).toBe("morning-brief");
+    expect(routineSlug("Weekly Digest — Q3!")).toBe("weekly-digest-q3");
+  });
+
+  test("empty for a name that cannot name a URL, so a caller can skip the link", () => {
+    expect(routineSlug("🌅")).toBe("");
+  });
+});
 
 describe("routine toast copy", () => {
   test("create carries the routine's name", () => {
@@ -69,6 +81,8 @@ describe("wire schemas", () => {
       deliveryWorkbenchId: null,
       consecutiveFailures: 0,
       deadLetteredAt: null,
+      nextFireAt: null,
+      lastFireAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
@@ -95,6 +109,8 @@ describe("wire schemas", () => {
       deliveryWorkbenchId: null,
       consecutiveFailures: 0,
       deadLetteredAt: null,
+      nextFireAt: null,
+      lastFireAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
