@@ -52,9 +52,11 @@ import {
 
 import {
   createArtifactDeliveryHandler,
+  createInMemoryTurnClaimStore,
   createWorkbenchHostInferencePreferencesResolver,
   createWorkbenchSubscriberRegistry,
   createWorkbenchTenancyRoutes,
+  createWorkbenchTurnQueue,
   createChatOrchestrator,
   createChatRoutes,
   joinRunParticipant,
@@ -1071,6 +1073,17 @@ export async function createHub(config: HubConfig) {
   // orchestrator publishes every message it posts onto a workbench's
   // timeline.
   const workbenchSubscribers = createWorkbenchSubscriberRegistry();
+  // One in-flight turn per workbench (CL-6331), shared by every send
+  // surface below the same way `workbenchSubscribers` is: the chat
+  // router, the workflow-participant router (a workflow child's own
+  // sends), and the Slack tag mount all route through this one queue,
+  // so a burst arriving through any of them for the same workbench
+  // still serializes against the others rather than each queue only
+  // seeing its own slice of the traffic.
+  const turnQueue = createWorkbenchTurnQueue({
+    claims: createInMemoryTurnClaimStore({ ttlMs: CHAT_TURN_TIMEOUT_MS }),
+    publish: workbenchSubscribers.publish,
+  });
   // The room timeline store (CL-6327): a workbench's own messages, held
   // as workbench data rather than platform mail.
   const roomMessages = createDrizzleRoomMessageStore(db);
@@ -1209,6 +1222,7 @@ export async function createHub(config: HubConfig) {
     pins: pinStore,
     clientIds: createDrizzleClientIdStore(db),
     workbenchSubscribers,
+    turnQueue,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
@@ -1261,6 +1275,7 @@ export async function createHub(config: HubConfig) {
       platform: chatPlatform,
       roomMessages,
       publish: workbenchSubscribers.publish,
+      turnQueue,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
   );
@@ -1280,6 +1295,7 @@ export async function createHub(config: HubConfig) {
     roomMessages,
     chatTenancy,
     workbenchSubscribers,
+    turnQueue,
     workbenchHostInferencePreferences:
       chatDeps.workbenchHostInferencePreferences,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
@@ -2079,6 +2095,7 @@ export async function createHub(config: HubConfig) {
               platform: chatPlatform,
               roomMessages,
               publish: workbenchSubscribers.publish,
+              turnQueue,
             },
             {
               tenantId: input.tenantId,

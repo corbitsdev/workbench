@@ -86,6 +86,11 @@ import {
   createWorkbenchPresenceRegistry,
   type WorkbenchPresenceRegistry,
 } from "./workbench-presence";
+import { createInMemoryTurnClaimStore } from "./turn-claims";
+import {
+  createWorkbenchTurnQueue,
+  type WorkbenchTurnQueue,
+} from "./turn-queue";
 import type { ChatPlatform } from "./platform-port";
 import type { WorkbenchSettingsRow, ChatStore } from "./store";
 import {
@@ -255,6 +260,16 @@ export type CreateChatRoutesDeps = {
    * same way.
    */
   workbenchPresence?: WorkbenchPresenceRegistry;
+  /**
+   * One-in-flight-turn-per-workbench queue (CL-6331) every message send
+   * routes its recipient fan-out through — see `./turn-queue.ts`.
+   * Defaults to a fresh, router-scoped queue backed by an in-memory
+   * claim store whose TTL is `turnTimeoutMs`, when omitted: the same
+   * "construct one instance, inject it everywhere that needs it"
+   * pattern `workbenchSubscribers` follows, for a caller with no other
+   * consumer of turn-claim state to share it with.
+   */
+  turnQueue?: WorkbenchTurnQueue;
   /**
    * Slack-Connect-style workbench projection (CL-5882) — see
    * `./workbench-share.ts`. Omitted entirely, every `/workbenches/:id/shares*`
@@ -905,6 +920,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // SSE connection on that workbench — see `createPlatformWorkbenchFanout`.
   const platformEvents = createPlatformWorkbenchFanout(deps.platform);
   const presence = deps.workbenchPresence ?? createWorkbenchPresenceRegistry();
+  const turnQueue =
+    deps.turnQueue ??
+    createWorkbenchTurnQueue({
+      claims: createInMemoryTurnClaimStore({ ttlMs: deps.turnTimeoutMs }),
+      publish,
+    });
 
   app.post(
     "/workbenches",
@@ -2050,6 +2071,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           platform: deps.platform,
           roomMessages: deps.roomMessages,
           publish,
+          turnQueue,
         },
         {
           tenantId: ownerTenantId,
@@ -2213,6 +2235,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             platform: deps.platform,
             roomMessages: deps.roomMessages,
             publish,
+            turnQueue,
           },
           {
             tenantId: ownerTenantId,
