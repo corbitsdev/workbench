@@ -82,8 +82,18 @@ import type {
   WorkflowRun,
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
-import { baseStepId, emptyState, runtimeRun } from "@intx/workflow";
-import { createWorkflowActionInvoker } from "../adapters/action-invoker";
+import type { LoopFnRegistry } from "@intx/workflow";
+import {
+  baseStepId,
+  createLoopIteration,
+  emptyState,
+  runtimeRun,
+} from "@intx/workflow";
+import {
+  createActionHandlerRegistry,
+  createLoopFnRegistry,
+  createWorkflowActionInvoker,
+} from "../adapters/action-invoker";
 import { createWorkflowRunEffectLedger } from "../adapters/effect-ledger";
 
 import {
@@ -446,23 +456,31 @@ export interface RunWorkflowChildBindings {
     publicKey: Uint8Array;
   }>;
   /**
-   * CL-6325 (this is the skeletal half of the `invokeAction` bind --
-   * see docs/revendor-inventory.md "CL-6325: invokeAction bind" and
-   * VENDORED.md's `vendor/intx/workflow-host` row; MUST be re-applied
-   * after the concurrent `vendor/intx` re-pin regenerates this file).
-   * Resolve an action step's `handler` ref to a host `ActionHandler`,
-   * built from the resolved `WorkflowDefinition` this function already
-   * has in scope by the time it calls `buildRuntimeEnv` -- the app-owned
-   * registry (`apps/sidecar/src/action-tool-handler.ts`) is constructed
-   * against that definition, never against `workflow.json`. Optional so
+   * CL-6325 (`invokeAction` bind -- see docs/revendor-inventory.md
+   * "CL-6325: invokeAction bind" and VENDORED.md's
+   * `vendor/intx/workflow-host` row; MUST be re-applied after the
+   * concurrent `vendor/intx` re-pin regenerates this file).
+   * Resolve an action step's `handler` ref to a host `ActionHandler`.
+   * Awaited ONCE per child, right after the definition re-verify, with
+   * the resolved `WorkflowDefinition` and the live `CredentialWiring` --
+   * so the app-owned registry (`apps/sidecar/src/action-tool-handler.ts`)
+   * can eagerly materialize every action step's tool closure (failing a
+   * broken deploy at establish, not mid-run) and scope credentials
+   * through the same per-step grant wiring agent steps use. Optional so
    * a deployment with no `action` steps, and every existing test
-   * bindings object, need not wire it; an `action` step whose handler
-   * this resolver rejects fails the run loudly via
-   * `createActionHandlerRegistry`'s fail-closed default.
+   * bindings object, need not wire it; absent, the fail-closed
+   * `createActionHandlerRegistry({})` default refuses every ref loudly.
    */
-  resolveActionHandler?: (
-    definition: WorkflowDefinition,
-  ) => (ref: string) => ActionHandler;
+  resolveActionHandler?: (args: {
+    definition: WorkflowDefinition;
+    credentialWiring: CredentialWiring;
+  }) => Promise<(ref: string) => ActionHandler>;
+  /**
+   * CL-6325: resolve a loop's `while`/`carry` string refs to pure
+   * functions. Optional; absent, the fail-closed
+   * `createLoopFnRegistry({})` default refuses every ref loudly.
+   */
+  loopFns?: LoopFnRegistry;
 }
 
 export interface RunWorkflowChildOpts {
@@ -676,6 +694,21 @@ export async function runWorkflowChild(
     packageDir: opts.env.closurePackageDir,
   });
 
+  // CL-6325: resolve the action-handler and loop-fn registries ONCE per
+  // child, against the re-verified definition and the live credential
+  // wiring, so the app seam can eagerly materialize every action step's
+  // tool closure at establish. Absent bindings fall to the fail-closed
+  // empty registries: an `action` (or `loop`) step that nonetheless runs
+  // fails loudly at its ref resolve, never silently.
+  const resolveActionHandler =
+    opts.bindings.resolveActionHandler !== undefined
+      ? await opts.bindings.resolveActionHandler({
+          definition,
+          credentialWiring,
+        })
+      : createActionHandlerRegistry({});
+  const loopFns = opts.bindings.loopFns ?? createLoopFnRegistry({});
+
   // Suspendable-child (onTrigger body) resolver, selected ONCE per deployment:
   // the bodies map is immutable and the per-run `onEvent` is injected later in
   // `buildRuntimeEnv`. Resolve each body from the parent's in-memory closure
@@ -810,7 +843,8 @@ export async function runWorkflowChild(
         });
       },
       upstreamSender,
-      definition,
+      resolveActionHandler,
+      loopFns,
     });
     const handle = runtimeRun(definition, env, {
       runId: run.runId,
@@ -904,6 +938,8 @@ export async function runWorkflowChild(
           sourcesRef,
           credentialMaterialRef,
           credentialWiring,
+          resolveActionHandler,
+          loopFns,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
             : {}),
@@ -982,6 +1018,8 @@ async function handleControlPayload(
     sourcesRef: SourcesSnapshotRef;
     credentialMaterialRef: CredentialMaterialRef;
     credentialWiring: CredentialWiring;
+    resolveActionHandler: (ref: string) => ActionHandler;
+    loopFns: LoopFnRegistry;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
   },
@@ -1044,7 +1082,8 @@ async function handleControlPayload(
           });
         },
         upstreamSender: ctx.upstreamSender,
-        definition: ctx.definition,
+        resolveActionHandler: ctx.resolveActionHandler,
+        loopFns: ctx.loopFns,
       });
       const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
         runId: payload.data.runId,
@@ -1384,8 +1423,12 @@ async function handleControlPayload(
  * `BlobSubstrate` and `SignalChannel` because both are per-run by
  * shape; the substrate handle and per-deployment `RepoStore` adapter
  * are shared across runs.
+ *
+ * Exported (CL-6325 delta) so a host's runtime-env-level probe can
+ * exercise the production `invokeAction`/`effects`/`loopFns` bind
+ * without standing up the full control-channel harness.
  */
-function buildRuntimeEnv(args: {
+export function buildRuntimeEnv(args: {
   runId: string;
   bindings: RunWorkflowChildBindings;
   runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
@@ -1402,10 +1445,14 @@ function buildRuntimeEnv(args: {
   onEvent: (event: EventPayload) => void;
   upstreamSender: ControlChannelSender;
   /**
-   * CL-6325 (skeletal `invokeAction` bind, re-apply after the concurrent
+   * CL-6325 (`invokeAction`/`loopFns` bind, re-apply after the concurrent
    * `vendor/intx` re-pin -- see `RunWorkflowChildBindings.resolveActionHandler`).
+   * Both registries are resolved once per child in `runWorkflowChild`;
+   * this per-run builder binds them into the env alongside the per-run
+   * effect ledger.
    */
-  definition: WorkflowDefinition;
+  resolveActionHandler: (ref: string) => ActionHandler;
+  loopFns: LoopFnRegistry;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
     repoStore: args.bindings.substrate,
@@ -1452,30 +1499,25 @@ function buildRuntimeEnv(args: {
     hostSuspendable === undefined
       ? undefined
       : (spawnInput) => hostSuspendable(spawnInput, args.onEvent);
-  // CL-6325: skeletal `invokeAction`/`effects` bind. Mirrors gtm-workbench's
-  // run-child.ts:1170-1185 -- built ONLY when the app seam supplied a
-  // resolver, since a deployment with no `action` steps has nothing to
-  // resolve. MUST be re-applied after the concurrent `vendor/intx` re-pin
-  // regenerates this file (see docs/revendor-inventory.md).
-  const effects =
-    args.bindings.resolveActionHandler !== undefined
-      ? createWorkflowRunEffectLedger({
-          substrate: args.bindings.substrate,
-          repoId: args.bindings.workflowRunRepoId,
-          principal: args.bindings.principal,
-          runId: args.runId,
-          ref: args.bindings.workflowRunRef,
-        })
-      : undefined;
-  const invokeAction =
-    args.bindings.resolveActionHandler !== undefined && effects !== undefined
-      ? createWorkflowActionInvoker({
-          authorize: args.authorize,
-          effects,
-          resolveHandler: args.bindings.resolveActionHandler(args.definition),
-        })
-      : undefined;
-  return {
+  // CL-6325: `invokeAction`/`effects`/`loopFns` bind. Mirrors
+  // gtm-workbench's run-child.ts -- wired unconditionally: the registries
+  // are fail-closed, so an action-free deployment resolves nothing and an
+  // undeclared ref fails its run loudly. MUST be re-applied after the
+  // concurrent `vendor/intx` re-pin regenerates this file (see
+  // docs/revendor-inventory.md).
+  const effects = createWorkflowRunEffectLedger({
+    substrate: args.bindings.substrate,
+    repoId: args.bindings.workflowRunRepoId,
+    principal: args.bindings.principal,
+    runId: args.runId,
+    ref: args.bindings.workflowRunRef,
+  });
+  const invokeAction = createWorkflowActionInvoker({
+    authorize: args.authorize,
+    effects,
+    resolveHandler: args.resolveActionHandler,
+  });
+  const env: WorkflowRuntimeEnv = {
     repoStore: args.runtimeRepoStore,
     scheduler: args.bindings.scheduler,
     signalChannel,
@@ -1505,10 +1547,16 @@ function buildRuntimeEnv(args: {
     ...(args.bindings.readParkedApprovalOps !== undefined
       ? { readParkedApprovalOps: args.bindings.readParkedApprovalOps }
       : {}),
-    // CL-6325: skeletal bind, re-apply after the concurrent re-pin.
-    ...(effects !== undefined ? { effects } : {}),
-    ...(invokeAction !== undefined ? { invokeAction } : {}),
+    // CL-6325: bind, re-apply after the concurrent re-pin.
+    effects,
+    invokeAction,
+    loopFns: args.loopFns,
   };
+  // Wired after construction because the loop-iteration runner closes
+  // over the env it belongs to, so each iteration's child run shares
+  // the parent's repoStore, blobs, and effect ledger.
+  env.runLoopIteration = createLoopIteration(env);
+  return env;
 }
 
 /**

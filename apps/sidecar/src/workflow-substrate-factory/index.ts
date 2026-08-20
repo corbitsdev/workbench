@@ -74,7 +74,11 @@ import {
   SIDECAR_SUBSTRATE_CONFIG_KEYS,
   SubstrateConfig,
 } from "./config";
-import { runStepStorageRoot } from "./storage-paths";
+import { actionStepStorageRoot, runStepStorageRoot } from "./storage-paths";
+import {
+  createActionToolHandlerRegistry,
+  type ActionStepMaterializationArgs,
+} from "../action-tool-handler";
 import {
   readColdParkedApprovalSnapshot,
   readColdParkedPendingOperations,
@@ -676,6 +680,47 @@ export function createSidecarSubstrateFactory(
             }),
       );
 
+    // Native `action` steps carry no `agent`, so they never reach
+    // `invokeStep` above -- the runtime dispatches them through the
+    // separate `ActionInvoker` seam, whose `handler` refs this binding
+    // resolves. The child awaits it once, right after the definition
+    // re-verify, with the resolved in-memory `WorkflowDefinition` and the
+    // live `CredentialWiring` -- so every action step's tool closure is
+    // materialized eagerly at establish (a missing tool package or an
+    // unresolvable credential fails now, not mid-run) and each handler's
+    // `credentials` capability is scoped through the same per-step grant
+    // wiring agent steps use. Wired unconditionally: an action-free
+    // deployment enumerates zero action steps and resolves nothing.
+    const resolveActionHandler: RunWorkflowChildBindings["resolveActionHandler"] =
+      ({ definition, credentialWiring }) => {
+        const materializationByStepId = new Map<
+          string,
+          ActionStepMaterializationArgs
+        >();
+        for (const [stepId, primitive] of Object.entries(definition.steps)) {
+          if (primitive.kind !== "action") continue;
+          materializationByStepId.set(stepId, {
+            dataDir: validated.SIDECAR_DATA_DIR,
+            mailboxAddress: env.spawn.mailboxAddress,
+            stepId,
+            stepCount: env.spawn.stepCount,
+            storeDir: actionStepStorageRoot({
+              dataDir: validated.SIDECAR_DATA_DIR,
+              workflowRunRepoId,
+              stepId,
+            }),
+            cache: stepToolCache,
+            registries: parseToolRegistries(validated.SIDECAR_TOOL_REGISTRIES),
+            credentials: { wiring: credentialWiring },
+          });
+        }
+        return createActionToolHandlerRegistry({
+          definition,
+          materializationByStepId,
+          providers: credentialProviders,
+        });
+      };
+
     const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
@@ -683,6 +728,7 @@ export function createSidecarSubstrateFactory(
       principal,
       invokeStep,
       initialSources: stepInferenceSources,
+      resolveActionHandler,
       runChild,
       runSuspendableChild,
       scheduler,
