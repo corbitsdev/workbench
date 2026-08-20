@@ -1248,6 +1248,7 @@
       "name": "@corbits/workflow-catalog",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/code-review": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {

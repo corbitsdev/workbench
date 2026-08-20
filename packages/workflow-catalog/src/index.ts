@@ -9,16 +9,24 @@
 import { type } from "arktype";
 
 export {
+  CODE_REVIEW_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
   WorkbenchTemplateBlock,
   WorkbenchTemplateOpenInput,
   WorkbenchTemplateParticipant,
   WorkbenchTemplateRoutine,
+  WorkbenchTemplateWebhookTrigger,
   templateBlockAssetNames,
   workbenchTemplate,
 } from "./templates";
 export type { WorkbenchTemplateManifest } from "./templates";
+export {
+  instantiateWorkbenchTemplate,
+  type WorkbenchTemplateInstantiationPorts,
+  type WorkbenchTemplateInstantiationResult,
+} from "./instantiate";
+export { TemplateSettingsPatch, templateSettingsPatch } from "./settings";
 
 /**
  * One named field a mail trigger reads by name — the create-time UI's only

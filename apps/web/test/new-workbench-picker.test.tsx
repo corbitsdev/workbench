@@ -169,7 +169,8 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(codeReview?.getAttribute("aria-checked")).toBe("false");
   });
 
-  test("creating with Code review selected mints a workbench and tags it, then navigates in", async () => {
+  test("creating with Code review selected mints a workbench from the template, then navigates in", async () => {
+    const createdAgentHandles: string[] = [];
     const calls = stubFetch((path, init) => {
       if (path.includes("/workflows/definitions")) {
         return json({
@@ -196,6 +197,20 @@ describe("NewWorkbenchPickerRoute", () => {
           participants: [],
         });
       }
+      if (path.endsWith("/agent-definitions") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { handle: string };
+        createdAgentHandles.push(body.handle);
+        return json({
+          id: `wfd_${body.handle}`,
+          tenantId: "tnt_1",
+          name: body.handle,
+          currentVersion: "1",
+          status: "deployed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          skills: [],
+        });
+      }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {
         return json({
           id: "chan_new",
@@ -203,7 +218,10 @@ describe("NewWorkbenchPickerRoute", () => {
           kind: "chat",
           pinned: false,
           participants: [],
-          settings: { "chat/purpose": "Code review" },
+          settings: {
+            "template/id": "code-review",
+            "template/pendingConnections": ["github"],
+          },
           contextWindow: { value: 0, source: "inherit" },
         });
       }
@@ -225,11 +243,30 @@ describe("NewWorkbenchPickerRoute", () => {
     }
 
     expect(navigated).toEqual(["/w/chan_new"]);
+
+    const createWorkbenchCall = calls.find(
+      (call) =>
+        call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
+    );
+    expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
+      kind: "chat",
+      definitionId: "wfd_assistant",
+      templatePromise:
+        "Three reviewers read every pull request and post what they'd change.",
+    });
+
+    expect(createdAgentHandles).toEqual([
+      "correctness-reviewer",
+      "architecture-reviewer",
+      "release-risk-reviewer",
+    ]);
+
     const settingsPatch = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/settings"),
     );
     expect(JSON.parse(String(settingsPatch?.init?.body))).toEqual({
-      "chat/purpose": "Code review",
+      "template/id": "code-review",
+      "template/pendingConnections": ["github"],
     });
   });
 });

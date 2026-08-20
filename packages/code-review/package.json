@@ -6,7 +6,9 @@
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./reviewers": "./src/reviewers.ts",
+    "./agent-requests": "./src/agent-requests.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

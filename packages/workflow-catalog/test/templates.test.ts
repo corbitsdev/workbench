@@ -3,6 +3,7 @@ import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 
 import {
+  CODE_REVIEW_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
   WORKFLOW_CATALOG,
@@ -88,9 +89,10 @@ test("the watch's one open input reaches the routine that needs it", () => {
   expect(topic?.appliesToRoutine).toBe("topic-watch");
 });
 
-test("every open input names a field the block's own trigger contract carries", () => {
+test("every routine-scoped open input names a field the block's own trigger contract carries", () => {
   for (const template of WORKBENCH_TEMPLATES) {
     for (const input of template.openInputs) {
+      if (input.appliesToRoutine === undefined) continue;
       const routine = template.routines.find(
         (candidate) => candidate.key === input.appliesToRoutine,
       );
@@ -100,6 +102,58 @@ test("every open input names a field the block's own trigger contract carries", 
       expect(fields.map((field) => field.key)).toContain(input.key);
     }
   }
+});
+
+test("every webhook-trigger-scoped open input names a real webhook trigger", () => {
+  for (const template of WORKBENCH_TEMPLATES) {
+    for (const input of template.openInputs) {
+      if (input.appliesToWebhookTrigger === undefined) continue;
+      const trigger = template.webhookTriggers.find(
+        (candidate) => candidate.key === input.appliesToWebhookTrigger,
+      );
+      expect(trigger).toBeDefined();
+    }
+  }
+});
+
+test("every webhook trigger's field names a field the block's own trigger contract carries", () => {
+  for (const template of WORKBENCH_TEMPLATES) {
+    for (const trigger of template.webhookTriggers) {
+      const fields =
+        workflowCatalogEntry(trigger.blockAssetName)?.triggerFields ?? [];
+      expect(fields.map((field) => field.key)).toContain(
+        trigger.triggerFieldKey,
+      );
+    }
+  }
+});
+
+test("the code-review template installs the code-review workflow and requires github", () => {
+  expect(workbenchTemplate("code-review")).toBe(CODE_REVIEW_TEMPLATE);
+  expect(templateBlockAssetNames(CODE_REVIEW_TEMPLATE)).toEqual([
+    "code-review",
+  ]);
+  expect(CODE_REVIEW_TEMPLATE.requiredConnections).toEqual(["github"]);
+});
+
+test("the code-review template fires from a pull-request webhook, not a clock", () => {
+  expect(CODE_REVIEW_TEMPLATE.routines).toEqual([]);
+  expect(CODE_REVIEW_TEMPLATE.webhookTriggers).toHaveLength(1);
+  const [trigger] = CODE_REVIEW_TEMPLATE.webhookTriggers;
+  expect(trigger?.key).toBe("pull-request-opened");
+  expect(trigger?.blockAssetName).toBe("code-review");
+  expect(trigger?.triggerFieldKey).toBe("pullRequestUrl");
+});
+
+test("the code-review template's participants are Myra and the three reviewers", () => {
+  expect(
+    CODE_REVIEW_TEMPLATE.participants.map((participant) => participant.handle),
+  ).toEqual([
+    "myra",
+    "correctness-reviewer",
+    "architecture-reviewer",
+    "release-risk-reviewer",
+  ]);
 });
 
 test("participants are addressable by a distinct handle", () => {

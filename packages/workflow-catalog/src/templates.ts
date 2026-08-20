@@ -18,6 +18,13 @@
 // change in what a template creates.
 
 import { type } from "arktype";
+// Imported from the package's own `./reviewers` subpath, never its root
+// (`@corbits/code-review`) — the root barrel also re-exports the review
+// run and GitHub client, which pull in `@corbits/github-tools` and
+// `@intx/agent`'s full provider surface. `reviewers.ts` itself has no
+// imports at all, so this subpath keeps every consumer of this
+// manifest (this package's whole point) off that much heavier graph.
+import { CODE_REVIEW_REVIEWERS } from "@corbits/code-review/reviewers";
 
 /** One workflow a template installs, pinned to the version it was
  * designed against. `assetName` matches a `WORKFLOW_CATALOG` entry. */
@@ -61,9 +68,36 @@ export type WorkbenchTemplateParticipant =
   typeof WorkbenchTemplateParticipant.infer;
 
 /**
+ * One workflow a template fires from an inbound webhook rather than a
+ * clock — the PR-review trigger a code-review template needs, as opposed
+ * to `WorkbenchTemplateRoutine`'s cron-scheduled kind. `triggerFieldKey`
+ * names the block's own `WorkflowCatalogEntry.triggerFields` entry the
+ * webhook payload fills — see `./index.ts`'s `WorkflowTriggerField`.
+ * Creating the live `webhook_trigger` row itself (`@corbits/webhook-triggers`)
+ * needs a repo to scope it to, which only exists once the person has
+ * answered the template's own open input for it — this is the spec a
+ * create flow resolves against that answer, not the row.
+ */
+export const WorkbenchTemplateWebhookTrigger = type({
+  /** Stable key an open input can point at. Unique within a template. */
+  key: "/^[a-z][a-z0-9-]*$/",
+  /** Which block this webhook launches a run of. */
+  blockAssetName: "string > 0",
+  /** What the person sees this trigger called. */
+  label: "string > 0",
+  /** One honest line: why this fires on a webhook instead of a clock. */
+  why: "string > 0",
+  triggerFieldKey: "/^[a-zA-Z][a-zA-Z0-9]*$/",
+});
+export type WorkbenchTemplateWebhookTrigger =
+  typeof WorkbenchTemplateWebhookTrigger.infer;
+
+/**
  * One answer the template cannot supply for the person — the questions
- * the create flow asks before anything runs. `appliesToRoutine` names the
- * routine whose trigger input this fills.
+ * the create flow asks before anything runs. Exactly one of
+ * `appliesToRoutine` / `appliesToWebhookTrigger` names the trigger this
+ * input's answer feeds: a cron-scheduled routine, or a webhook trigger
+ * spec.
  */
 export const WorkbenchTemplateOpenInput = type({
   key: "/^[a-zA-Z][a-zA-Z0-9]*$/",
@@ -71,7 +105,8 @@ export const WorkbenchTemplateOpenInput = type({
   "placeholder?": "string",
   help: "string > 0",
   required: "boolean",
-  appliesToRoutine: "/^[a-z][a-z0-9-]*$/",
+  "appliesToRoutine?": "/^[a-z][a-z0-9-]*$/",
+  "appliesToWebhookTrigger?": "/^[a-z][a-z0-9-]*$/",
 });
 export type WorkbenchTemplateOpenInput =
   typeof WorkbenchTemplateOpenInput.infer;
@@ -95,6 +130,9 @@ export type WorkbenchTemplateManifest = {
    */
   readonly optionalConnections: readonly string[];
   readonly routines: readonly WorkbenchTemplateRoutine[];
+  /** Webhook-fired triggers this template installs — empty for a
+   * clock-only template like GTM. */
+  readonly webhookTriggers: readonly WorkbenchTemplateWebhookTrigger[];
   readonly participants: readonly WorkbenchTemplateParticipant[];
   readonly openInputs: readonly WorkbenchTemplateOpenInput[];
 };
@@ -128,6 +166,7 @@ export const GTM_TEMPLATE: WorkbenchTemplateManifest = {
   // watch alone is still a real workbench, so it never blocks the create.
   requiredConnections: ["attio", "exa"],
   optionalConnections: ["granola"],
+  webhookTriggers: [],
   routines: [
     {
       key: "call-discovery",
@@ -170,8 +209,64 @@ export const GTM_TEMPLATE: WorkbenchTemplateManifest = {
   ],
 };
 
+/**
+ * The code-review template (CL-6344): three reviewer lenses over every
+ * pull request, plus Myra to talk through what they found. Its blocks
+ * install the one `code-review` workflow; the reviewer roster itself is
+ * `@corbits/code-review`'s own `CODE_REVIEW_REVIEWERS` — mirrored into
+ * participants here rather than duplicated, so a reviewer's handle,
+ * name, and one-line role can never drift between the package that
+ * runs the review and the template that describes it.
+ */
+export const CODE_REVIEW_TEMPLATE: WorkbenchTemplateManifest = {
+  id: "code-review",
+  title: "Code review",
+  promise:
+    "Three reviewers read every pull request and post what they'd change.",
+  blocks: [{ assetName: "code-review", version: "0.0.1" }],
+  // GitHub is the one thing this template cannot work without: no
+  // repository, no diff to read and nowhere to post the review.
+  requiredConnections: ["github"],
+  optionalConnections: [],
+  routines: [],
+  webhookTriggers: [
+    {
+      key: "pull-request-opened",
+      blockAssetName: "code-review",
+      label: "Review new pull requests",
+      why: "A review is worth most posted while the pull request is still open for comment, so this fires the moment GitHub says one exists rather than waiting on a clock.",
+      triggerFieldKey: "pullRequestUrl",
+    },
+  ],
+  participants: [
+    {
+      handle: "myra",
+      displayName: "Myra",
+      blockAssetName: "code-review",
+      role: "Talks through what the reviewers found and helps you decide what to act on.",
+    },
+    ...CODE_REVIEW_REVIEWERS.map((reviewer) => ({
+      handle: reviewer.handle,
+      displayName: reviewer.displayName,
+      blockAssetName: "code-review",
+      role: reviewer.description,
+    })),
+  ],
+  openInputs: [
+    {
+      key: "repos",
+      label: "Which repositories?",
+      placeholder: "corbitsdev/workbench",
+      help: "The GitHub repositories to watch. Every new pull request there gets reviewed.",
+      required: true,
+      appliesToWebhookTrigger: "pull-request-opened",
+    },
+  ],
+};
+
 export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplateManifest[] = [
   GTM_TEMPLATE,
+  CODE_REVIEW_TEMPLATE,
 ];
 
 const templateById = new Map(
@@ -223,11 +318,29 @@ function assertValid(template: WorkbenchTemplateManifest): void {
       `workbench template "${template.id}" has an invalid openInputs shape: ${parsedInputs.summary}`,
     );
   }
+  const parsedWebhookTriggers = WorkbenchTemplateWebhookTrigger.array()(
+    template.webhookTriggers,
+  );
+  if (parsedWebhookTriggers instanceof type.errors) {
+    throw new Error(
+      `workbench template "${template.id}" has an invalid webhookTriggers shape: ${parsedWebhookTriggers.summary}`,
+    );
+  }
   const routineKeys = new Set(template.routines.map((routine) => routine.key));
   for (const routine of template.routines) {
     if (!blockNames.has(routine.blockAssetName)) {
       throw new Error(
         `workbench template "${template.id}" routine "${routine.key}" runs "${routine.blockAssetName}", which the template does not install`,
+      );
+    }
+  }
+  const webhookTriggerKeys = new Set(
+    template.webhookTriggers.map((trigger) => trigger.key),
+  );
+  for (const trigger of template.webhookTriggers) {
+    if (!blockNames.has(trigger.blockAssetName)) {
+      throw new Error(
+        `workbench template "${template.id}" webhook trigger "${trigger.key}" fires "${trigger.blockAssetName}", which the template does not install`,
       );
     }
   }
@@ -239,9 +352,28 @@ function assertValid(template: WorkbenchTemplateManifest): void {
     }
   }
   for (const input of template.openInputs) {
-    if (!routineKeys.has(input.appliesToRoutine)) {
+    const appliesToCount =
+      Number(input.appliesToRoutine !== undefined) +
+      Number(input.appliesToWebhookTrigger !== undefined);
+    if (appliesToCount !== 1) {
+      throw new Error(
+        `workbench template "${template.id}" input "${input.key}" must apply to exactly one of a routine or a webhook trigger`,
+      );
+    }
+    if (
+      input.appliesToRoutine !== undefined &&
+      !routineKeys.has(input.appliesToRoutine)
+    ) {
       throw new Error(
         `workbench template "${template.id}" input "${input.key}" applies to routine "${input.appliesToRoutine}", which the template does not create`,
+      );
+    }
+    if (
+      input.appliesToWebhookTrigger !== undefined &&
+      !webhookTriggerKeys.has(input.appliesToWebhookTrigger)
+    ) {
+      throw new Error(
+        `workbench template "${template.id}" input "${input.key}" applies to webhook trigger "${input.appliesToWebhookTrigger}", which the template does not create`,
       );
     }
   }

@@ -1,0 +1,115 @@
+// Turns a picked template into the state a freshly minted workbench
+// needs: the participant agent definitions that don't already exist,
+// and the required-connections list the room persists so the inline
+// connect card (CL-6344's next slice) knows what to ask for. Pure
+// orchestration over injected ports — no HTTP, no store — so a host
+// (today, `apps/web`'s `instant-agent-create.ts`) can bind the ports to
+// its own REST clients and this stays testable with plain fakes.
+//
+// Today this only resolves a manifest whose non-Myra participants are
+// backed by `@corbits/code-review`'s reviewer roster (CL-6344's
+// `CODE_REVIEW_TEMPLATE`). A template like `GTM_TEMPLATE`, whose
+// participants are backed by their own deployed workflow definitions
+// rather than an agent-directory create request, needs its own
+// resolution path — a later ticket, not this one; calling this
+// function against such a manifest throws rather than silently doing
+// nothing.
+// `./agent-requests`, not the package root — see `./templates.ts`'s own
+// comment on its `CODE_REVIEW_REVIEWERS` import for why.
+import {
+  codeReviewAgentRequests,
+  type CodeReviewAgentRequest,
+} from "@corbits/code-review/agent-requests";
+
+import type { WorkbenchTemplateManifest } from "./templates";
+
+export interface WorkbenchTemplateInstantiationPorts {
+  /** Every agent definition handle already deployed in the bench —
+   * the idempotency check so re-running instantiation (a retried
+   * create, a second workbench from the same template) never double-
+   * creates a reviewer. */
+  listAgentHandles(): Promise<readonly string[]>;
+  /** The agent-directory create path (`POST /agent-definitions`), or a
+   * fake of it in tests. */
+  createParticipantAgent(
+    request: CodeReviewAgentRequest,
+  ): Promise<{ readonly id: string }>;
+  /** Persists the room's still-needed connections — the workbench
+   * settings `template/pendingConnections` key today; see
+   * `apps/web/src/instant-agent-create.ts`. */
+  recordPendingConnections(
+    pendingConnections: readonly string[],
+  ): Promise<void>;
+}
+
+export interface WorkbenchTemplateInstantiationResult {
+  readonly createdHandles: readonly string[];
+  readonly skippedHandles: readonly string[];
+  readonly pendingConnections: readonly string[];
+  /**
+   * One line per webhook trigger this template names, honestly stating
+   * why no live `webhook_trigger` row was created yet. Never a silent
+   * stub: a caller surfacing these tells the person setup isn't done
+   * rather than pretending it is.
+   */
+  readonly webhookTriggerTodos: readonly string[];
+}
+
+function webhookTriggerTodo(
+  manifest: WorkbenchTemplateManifest,
+  trigger: WorkbenchTemplateManifest["webhookTriggers"][number],
+): string {
+  return (
+    `TODO(CL-6345): create the live webhook_trigger row for "${manifest.id}"'s ` +
+    `"${trigger.key}" trigger once the repo-scoping open input is answered and ` +
+    "the GitHub connect card (ConnectGithubBlockView, PR #70) is wired — the " +
+    "manifest spec alone names no repo to scope the trigger to."
+  );
+}
+
+/**
+ * Resolves `manifest` against the bench: creates the participant agent
+ * definitions that don't already exist (Myra is never re-created — she
+ * is the bench's seeded default setup agent, reused as-is), and
+ * records the manifest's required connections as still pending. Never
+ * registers a live webhook trigger — see `webhookTriggerTodos`.
+ */
+export async function instantiateWorkbenchTemplate(
+  manifest: WorkbenchTemplateManifest,
+  ports: WorkbenchTemplateInstantiationPorts,
+): Promise<WorkbenchTemplateInstantiationResult> {
+  const existingHandles = new Set(await ports.listAgentHandles());
+  const requestsByHandle = new Map(
+    codeReviewAgentRequests().map((request) => [request.handle, request]),
+  );
+
+  const createdHandles: string[] = [];
+  const skippedHandles: string[] = [];
+  for (const participant of manifest.participants) {
+    if (participant.handle === "myra") continue;
+    if (existingHandles.has(participant.handle)) {
+      skippedHandles.push(participant.handle);
+      continue;
+    }
+    const request = requestsByHandle.get(participant.handle);
+    if (request === undefined) {
+      throw new Error(
+        `workbench template "${manifest.id}" participant "${participant.handle}" ` +
+          "has no known create-agent request to instantiate it from",
+      );
+    }
+    await ports.createParticipantAgent(request);
+    createdHandles.push(participant.handle);
+  }
+
+  await ports.recordPendingConnections(manifest.requiredConnections);
+
+  return {
+    createdHandles,
+    skippedHandles,
+    pendingConnections: manifest.requiredConnections,
+    webhookTriggerTodos: manifest.webhookTriggers.map((trigger) =>
+      webhookTriggerTodo(manifest, trigger),
+    ),
+  };
+}

@@ -344,6 +344,12 @@ export type CreateWorkbenchInput =
       readonly definitionId: string;
       readonly name?: string;
       readonly reuseExisting?: boolean;
+      /** The picked template's own promise line
+       * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`)
+       * — replaces the room's random canned opener with one naming its
+       * actual job (`packages/chat/src/routes.ts`'s `POST /workbenches`).
+       * Omitted for an untemplated chat. */
+      readonly templatePromise?: string;
     }
   | {
       readonly kind: "chat";
@@ -1097,6 +1103,18 @@ export type WorkbenchSettingsPatch = {
   readonly "chat/purpose"?: string;
   readonly "chat/pinned"?: boolean;
   readonly "chat/contextWindow"?: number | null;
+  /**
+   * `template/*` keys: the room's own record of which template minted
+   * it and what it still needs connected, per `@corbits/workflow-catalog`'s
+   * own schema for this namespace. `chat`'s settings route validates
+   * only its own `chat/*` keys and passes any other namespace through
+   * opaquely (see `packages/chat/src/workbench-settings.ts`) — a
+   * `template/*` patch is validated by the caller
+   * (`apps/web/src/instant-agent-create.ts`) against that schema before
+   * it ever reaches this function.
+   */
+  readonly "template/id"?: string;
+  readonly "template/pendingConnections"?: readonly string[];
 };
 
 export function patchWorkbenchSettings(

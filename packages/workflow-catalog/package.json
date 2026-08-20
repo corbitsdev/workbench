@@ -13,6 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/code-review": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
