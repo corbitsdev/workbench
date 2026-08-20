@@ -146,9 +146,15 @@ describeIfDb("extension mounting", () => {
       method: "POST",
     });
     expect(gated.status).toBe(401);
-    expect(await gated.json()).toEqual({
-      error: { code: "unauthorized", message: "Authentication required" },
-    });
+    // Onboarding answers in CL-6360's envelope: a consumer-language
+    // `userMessage` and a `refId` that ties the response to the log
+    // line, never a raw internal `message`.
+    const body = (await gated.json()) as {
+      error: { code: string; userMessage: string; refId: string };
+    };
+    expect(body.error.code).toBe("unauthorized");
+    expect(body.error.userMessage).toBe("Sign in to continue.");
+    expect(body.error.refId).toMatch(/\S/);
   });
 
   test("the workbench-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
