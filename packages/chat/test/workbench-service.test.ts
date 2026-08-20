@@ -3,6 +3,7 @@
 // own — exercised through the HTTP layer. Split out of
 // `routes.test.ts` alongside the module itself.
 import { describe, expect, test } from "bun:test";
+import { InferenceResolutionError } from "@corbits/folded-runs";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
@@ -278,6 +279,70 @@ describe("message fan-out", () => {
     expect(notice?.parts).toEqual([
       { kind: "text", text: expect.stringContaining("send it again") },
     ]);
+  });
+
+  // CL-6360: resending can never fix a missing or invalid model
+  // credential, so the undelivered notice must say so instead of the
+  // generic (and, for this cause, false) "send it again" line — for
+  // every shape a credential/inference-resolution failure actually
+  // takes: `InferenceResolutionError` (launch-time, no resolvable
+  // source) and a runtime 401 `credential_failure`.
+  describe("the undelivered notice is cause-aware", () => {
+    async function noticeTextFor(dispatchFailure: unknown): Promise<string> {
+      const platform = fakePlatform();
+      const deliverMail = platform.sendMail.bind(platform);
+      platform.sendMail = async (input) => {
+        if (input.workbenchId === "ins_echo1") throw dispatchFailure;
+        return deliverMail(input);
+      };
+      const deps = buildDeps({ platform });
+      const app = mountAs(createChatRoutes(deps), "prn_alice");
+      const { body: workbench } = await createWorkbench(app, {
+        kind: "workbench",
+        participants: ["ins_echo1@acme.example"],
+      });
+
+      await app.request(`/workbenches/${workbench.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "hi @ins_echo1" }],
+        }),
+      });
+      await settleFanout();
+
+      const timeline = await timelineOf(deps, workbench.id);
+      const notice = timeline.find(
+        (message) => message.sender.address === "ins_echo1@acme.example",
+      );
+      const part = notice?.parts[0];
+      return part?.kind === "text" ? part.text : "";
+    }
+
+    test("InferenceResolutionError gets the fix-your-key copy, not 'send it again'", async () => {
+      const text = await noticeTextFor(
+        new InferenceResolutionError("test-launch", "no catalog source"),
+      );
+      expect(text).toContain("add or check your model key");
+      expect(text).not.toContain("send it again");
+    });
+
+    test("a 401 credential_failure gets the fix-your-key copy", async () => {
+      const text = await noticeTextFor(
+        Object.assign(new Error("unauthorized"), {
+          status: 401,
+          category: "credential_failure",
+        }),
+      );
+      expect(text).toContain("add or check your model key");
+      expect(text).not.toContain("send it again");
+    });
+
+    test("a genuinely transient failure keeps the retryable copy", async () => {
+      const text = await noticeTextFor(new Error("sidecar unavailable"));
+      expect(text).toContain("send it again");
+      expect(text).not.toContain("model key");
+    });
   });
 
   test("a message to a chat delivers to its agent without a mention", async () => {

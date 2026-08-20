@@ -2060,6 +2060,13 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
+/* A quoteable reference id under a consumer-language failure message
+   (CL-6360) — small and muted, never the focal point of the card. */
+.onboarding-error-refid {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 /* The secondary three providers, tucked behind a subtle expander so the
    primary six-card row is what a person sees first — same square-cornered
    chrome as the rest of the wizard, not a popover. Full-width so it reads

@@ -12,6 +12,7 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import { createInMemoryPendingSeedStore } from "../src/pending-seed";
 import { createProviderHealthStore } from "@workbench/connections/provider-health";
+import { CliError } from "@workbench/hub-client";
 
 // Most of these tests never exercise the pending-seed store — it is
 // required wiring for `createOnboardingRoutes` (see
@@ -53,11 +54,15 @@ describe("POST /provision", () => {
     // may come back, and provisioning is idempotent so retry is safe.
     expect(response.status).toBe(503);
     const body = (await response.json()) as {
-      error: { code: string; kind: string; message: string };
+      error: { code: string; kind: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("provisioning_failed");
     expect(body.error.kind).toBe("transient");
-    expect(typeof body.error.message).toBe("string");
+    expect(typeof body.error.userMessage).toBe("string");
+    expect(typeof body.error.refId).toBe("string");
+    // The raw detail (here, the connection-refused failure) is logged
+    // behind the refId — never handed to the client as `userMessage`.
+    expect(body.error.userMessage).not.toContain("ECONNREFUSED");
     expect(lines.some((line) => line.includes("user_1"))).toBe(true);
   });
 
@@ -480,5 +485,54 @@ describe("POST /complete", () => {
       error: { code: string; message: string };
     };
     expect(body.error.code).toBe("credential_setup_failed");
+  });
+
+  // CL-6360: the owner hit exactly this live — a `CliError` wrapping a
+  // package-registry freshness-check failure whose message names an
+  // absolute path on the hub's own disk. That text must never reach the
+  // client; only a fixed consumer sentence and a refId may.
+  test("a CliError naming an absolute file path never reaches the client", async () => {
+    const lines: string[] = [];
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+      logError: (line) => lines.push(line),
+      pendingSeedStore,
+      completeCredentialSetupFn: async () => {
+        throw new CliError(
+          "publishing the corbits-tools package-registry asset failed: " +
+            "tool-package freshness: @corbits/memory-tools@1.2.0 changed " +
+            "src/ without bumping version.\n  /Users/alice/abklabs/workbench/packages/memory-tools",
+          "check the hub logs for the underlying failure, then re-run: workbench seed",
+        );
+      },
+    });
+    const app = mountAuthenticated(routes);
+
+    const response = await app.request("/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-good" }),
+    });
+
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as {
+      error: { code: string; userMessage: string; refId: string };
+    };
+    expect(body.error.code).toBe("credential_setup_failed");
+    expect(body.error.userMessage).not.toContain("/Users/");
+    expect(body.error.userMessage).not.toContain("workbench seed");
+    expect(typeof body.error.refId).toBe("string");
+    expect(body.error.refId.length).toBeGreaterThan(0);
+    // The raw detail is still recoverable from the hub log, tagged with
+    // the same refId the client got back.
+    expect(
+      lines.some(
+        (line) =>
+          line.includes(body.error.refId) &&
+          line.includes("/Users/alice/abklabs/workbench/packages/memory-tools"),
+      ),
+    ).toBe(true);
   });
 });

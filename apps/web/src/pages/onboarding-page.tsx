@@ -64,8 +64,16 @@ function defaultWorkbenchName(user: SessionUser): string {
 
 type WizardState =
   | { readonly phase: "provisioning" }
-  | { readonly phase: "provisioning-error"; readonly message: string }
-  | { readonly phase: "credential"; readonly error: string | null }
+  | {
+      readonly phase: "provisioning-error";
+      readonly message: string;
+      readonly refId?: string;
+    }
+  | {
+      readonly phase: "credential";
+      readonly error: string | null;
+      readonly errorRefId?: string;
+    }
   | { readonly phase: "submitting" }
   | { readonly phase: "finishing-setup" };
 
@@ -190,7 +198,15 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       setState({ phase: "provisioning" });
       void triggerFirstLoginProvisioning(name).then(async (result) => {
         if (result.kind === "error") {
-          setState({ phase: "provisioning-error", message: result.message });
+          setState(
+            result.refId === undefined
+              ? { phase: "provisioning-error", message: result.message }
+              : {
+                  phase: "provisioning-error",
+                  message: result.message,
+                  refId: result.refId,
+                },
+          );
         } else if (
           result.kind === "existing-member" &&
           result.seeded === true
@@ -277,7 +293,15 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           setResumingUnseeded(true);
           setState({ phase: "credential", error: null });
         } else {
-          setState({ phase: "credential", error: outcome.message });
+          setState(
+            outcome.refId === undefined
+              ? { phase: "credential", error: outcome.message }
+              : {
+                  phase: "credential",
+                  error: outcome.message,
+                  errorRefId: outcome.refId,
+                },
+          );
         }
       });
       return;
@@ -314,7 +338,15 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         if (outcome.kind === "seeded") {
           navigate("/");
         } else {
-          setState({ phase: "credential", error: outcome.message });
+          setState(
+            outcome.refId === undefined
+              ? { phase: "credential", error: outcome.message }
+              : {
+                  phase: "credential",
+                  error: outcome.message,
+                  errorRefId: outcome.refId,
+                },
+          );
         }
       });
     },
@@ -360,7 +392,19 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
             <EmptyState
               icon={<CircleAlert />}
               title="Couldn't set up your workbench"
-              description={state.message}
+              description={
+                state.refId === undefined ? (
+                  state.message
+                ) : (
+                  <>
+                    {state.message}
+                    <br />
+                    <span className="onboarding-error-refid">
+                      Reference: {state.refId}
+                    </span>
+                  </>
+                )
+              }
               action={
                 <Button
                   variant="outline"
@@ -378,6 +422,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   const submitting = state.phase === "submitting";
   const error = state.phase === "credential" ? state.error : null;
+  const errorRefId =
+    state.phase === "credential" ? state.errorRefId : undefined;
 
   return (
     <OnboardingLayout>
@@ -501,7 +547,19 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               <EmptyState
                 icon={<KeyRound />}
                 title="That key didn't work"
-                description={error}
+                description={
+                  errorRefId === undefined ? (
+                    error
+                  ) : (
+                    <>
+                      {error}
+                      <br />
+                      <span className="onboarding-error-refid">
+                        Reference: {errorRefId}
+                      </span>
+                    </>
+                  )
+                }
               />
             )}
             <Button

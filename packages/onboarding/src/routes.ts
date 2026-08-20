@@ -13,7 +13,6 @@ import {
   createHubAPI,
   DEFAULT_WORKFLOWS,
   inferenceCredentialName,
-  isCliError,
   parseAs,
   supportedCredentialProviders,
   type ApiCall,
@@ -24,6 +23,7 @@ import {
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { AccessPolicyStore } from "@workbench/access-policy";
+import { generateRefId, makeErrorEnvelope } from "@workbench/hub-client";
 
 import {
   isFullySeeded,
@@ -57,6 +57,35 @@ function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
   if (arr.length === 0) {
     throw new Error("expected a non-empty array");
   }
+}
+
+/**
+ * Logs a caught failure's raw detail — the exact text a `CliError` or a
+ * generic `Error` carries, which can and does include absolute file
+ * paths (see `StaleToolPackageError`) or other internals a user must
+ * never see (CL-6360) — behind a `refId`, then returns the envelope the
+ * client actually renders: a fixed consumer-language `userMessage` plus
+ * that same `refId` so a person can quote it back for support. Never
+ * forwards `cause.message` to the client, regardless of error type.
+ */
+function reportOnboardingError(
+  logError: (line: string) => void,
+  args: {
+    userAction: string;
+    code: string;
+    userMessage: string;
+    cause: unknown;
+  },
+): ReturnType<typeof makeErrorEnvelope> {
+  const refId = generateRefId();
+  const detail =
+    args.cause instanceof Error ? args.cause.message : String(args.cause);
+  logError(`[${refId}] ${args.userAction} failed (${args.code}): ${detail}`);
+  return makeErrorEnvelope({
+    code: args.code,
+    userMessage: args.userMessage,
+    refId,
+  });
 }
 
 const providerIds = supportedCredentialProviders().map((p) => p.id);
@@ -300,7 +329,10 @@ export function createOnboardingRoutes(
     const user = c.get("user");
     if (!user) {
       return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Sign in to continue.",
+        }),
         401,
       );
     }
@@ -320,24 +352,20 @@ export function createOnboardingRoutes(
         rawBody = JSON.parse(bodyText) as unknown;
       } catch {
         return c.json(
-          {
-            error: {
-              code: "bad_request",
-              message: "Request body must be valid JSON",
-            },
-          },
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "That request wasn't valid. Try again.",
+          }),
           400,
         );
       }
       const parsed = ProvisionBody(rawBody);
       if (parsed instanceof type.errors) {
         return c.json(
-          {
-            error: {
-              code: "bad_request",
-              message: "Invalid provision body",
-            },
-          },
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "That request wasn't valid. Try again.",
+          }),
           400,
         );
       }
@@ -358,10 +386,12 @@ export function createOnboardingRoutes(
         return c.json(
           {
             error: {
-              code: "rate_limited",
+              ...makeErrorEnvelope({
+                code: "rate_limited",
+                userMessage:
+                  "Too many attempts. Wait a moment, then try again.",
+              }).error,
               kind: "transient" as const,
-              message:
-                "Too many provisioning attempts. Please wait a moment and try again.",
             },
           },
           429,
@@ -396,10 +426,6 @@ export function createOnboardingRoutes(
 
       return c.json(result, 200);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `first-login provisioning failed for user ${user.id}: ${message}`,
-      );
       if (cause instanceof ProvisionError) {
         const status =
           cause.code === "signup_not_allowed"
@@ -407,13 +433,19 @@ export function createOnboardingRoutes(
             : cause.errorKind === "transient"
               ? 503
               : 500;
+        const userMessage =
+          cause.code === "signup_not_allowed"
+            ? "Sign-ups aren't open for this account yet. Contact your workspace admin for access."
+            : "Setting up your workbench hit a snag — we're on it. Try again in a moment.";
+        const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+          userAction: `first-login provisioning for user ${user.id}`,
+          code: cause.code,
+          userMessage,
+          cause,
+        });
         return c.json(
           {
-            error: {
-              code: cause.code,
-              kind: cause.errorKind,
-              message: cause.message,
-            },
+            error: { ...envelope.error, kind: cause.errorKind },
           },
           status,
         );
@@ -421,15 +453,15 @@ export function createOnboardingRoutes(
       // An unrecognized error is treated as transient — the hub may have
       // been momentarily unavailable, and retrying is safe because
       // provisioning is idempotent.
+      const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        userAction: `first-login provisioning for user ${user.id}`,
+        code: "provisioning_failed",
+        userMessage:
+          "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+        cause,
+      });
       return c.json(
-        {
-          error: {
-            code: "provisioning_failed",
-            kind: "transient" as const,
-            message:
-              "Could not provision a workbench for this account. Try again in a moment.",
-          },
-        },
+        { error: { ...envelope.error, kind: "transient" as const } },
         503,
       );
     }
@@ -641,7 +673,10 @@ export function createOnboardingRoutes(
     const user = c.get("user");
     if (!user) {
       return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Sign in to continue.",
+        }),
         401,
       );
     }
@@ -650,12 +685,10 @@ export function createOnboardingRoutes(
     const parsed = SubmitCredential(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        {
-          error: {
-            code: "invalid_request",
-            message: `A provider and an API key are required: ${parsed.summary}`,
-          },
-        },
+        makeErrorEnvelope({
+          code: "invalid_request",
+          userMessage: "Pick a provider and enter a key before connecting.",
+        }),
         400,
       );
     }
@@ -682,20 +715,24 @@ export function createOnboardingRoutes(
       );
 
       if (result.kind === "invalid-credential") {
+        // `result.message` is the provider's own validation verdict
+        // (e.g. "the key was rejected") — already written in consumer
+        // language by `testAndPersistCredential`, never raw stack text.
         return c.json(
-          { error: { code: "invalid_credential", message: result.message } },
+          makeErrorEnvelope({
+            code: "invalid_credential",
+            userMessage: result.message,
+          }),
           422,
         );
       }
       if (result.kind === "no-personal-bench") {
         return c.json(
-          {
-            error: {
-              code: "no_personal_bench",
-              message:
-                "No personal bench was found for this account yet. Reload and try again.",
-            },
-          },
+          makeErrorEnvelope({
+            code: "no_personal_bench",
+            userMessage:
+              "No personal bench was found for this account yet. Reload and try again.",
+          }),
           409,
         );
       }
@@ -723,28 +760,20 @@ export function createOnboardingRoutes(
       }
       return c.json(result, 200);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      (deps.logError ?? deps.log)(
-        `credential setup failed for user ${user.id}: ${message}`,
-      );
-      // ProvisionError and CliError messages are both written to be shown
-      // (they name the actual step that failed); anything else stays
-      // behind the generic sentence rather than leaking an internal error
-      // shape at a user.
-      const shown =
-        cause instanceof ProvisionError || isCliError(cause)
-          ? `Your key was added, but setting up your workbench failed: ${cause.message}.`
-          : "Your key was added, but setting up your workbench failed. " +
-            "The hub log has the underlying error.";
-      return c.json(
-        {
-          error: {
-            code: "credential_setup_failed",
-            message: shown,
-          },
-        },
-        500,
-      );
+      // Neither `ProvisionError` nor `CliError` messages are safe to show
+      // verbatim: `CliError` in particular wraps failures like
+      // `StaleToolPackageError`, whose text names absolute file paths on
+      // the hub's own disk (CL-6360). The raw detail is logged behind a
+      // refId; the client only ever sees a fixed consumer sentence plus
+      // that refId.
+      const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        userAction: `credential setup for user ${user.id}`,
+        code: "credential_setup_failed",
+        userMessage:
+          "Your key was added, but finishing your workbench setup hit a snag — we're on it. Try again in a moment.",
+        cause,
+      });
+      return c.json({ error: envelope.error }, 500);
     }
   });
 
@@ -763,7 +792,10 @@ export function createOnboardingRoutes(
     const user = c.get("user");
     if (!user) {
       return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Sign in to continue.",
+        }),
         401,
       );
     }
@@ -774,13 +806,11 @@ export function createOnboardingRoutes(
       const tenant = await findPersonalTenant(api, cookies, expectedSlug);
       if (!tenant) {
         return c.json(
-          {
-            error: {
-              code: "no_personal_bench",
-              message:
-                "No personal bench was found for this account yet. Reload and try again.",
-            },
-          },
+          makeErrorEnvelope({
+            code: "no_personal_bench",
+            userMessage:
+              "No personal bench was found for this account yet. Reload and try again.",
+          }),
           409,
         );
       }
@@ -823,20 +853,14 @@ export function createOnboardingRoutes(
         200,
       );
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      (deps.logError ?? deps.log)(
-        `complete-setup failed for user ${user.id}: ${message}`,
-      );
-      return c.json(
-        {
-          error: {
-            code: "complete_setup_failed",
-            message:
-              "Finishing your workbench setup failed. Try again in a moment.",
-          },
-        },
-        500,
-      );
+      const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        userAction: `complete-setup for user ${user.id}`,
+        code: "complete_setup_failed",
+        userMessage:
+          "Finishing your workbench setup hit a snag — we're on it. Try again in a moment.",
+        cause,
+      });
+      return c.json({ error: envelope.error }, 500);
     }
   });
 

@@ -117,6 +117,7 @@ export function App({
   onSignOut,
   onRetry,
   provisioningError,
+  provisioningErrorRefId,
   onRetryProvisioning,
 }: {
   readonly path: string;
@@ -126,12 +127,14 @@ export function App({
   readonly onSignOut: () => void;
   readonly onRetry: () => void;
   readonly provisioningError?: string | null;
+  readonly provisioningErrorRefId?: string | undefined;
   readonly onRetryProvisioning?: () => void;
 }) {
   if (session.kind === "signed-in" && provisioningError) {
     return (
       <ProvisioningErrorPage
         message={provisioningError}
+        refId={provisioningErrorRefId}
         onRetry={onRetryProvisioning ?? onRetry}
       />
     );

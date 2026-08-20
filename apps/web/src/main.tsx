@@ -6,11 +6,14 @@ import { ThemeProvider, Toaster, toast } from "@corbits/react-ui";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
+import { getLogger } from "@corbits/client-log";
 import { App } from "./app";
 import { triggerFirstLoginProvisioning } from "./onboarding";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
+
+const log = getLogger("web.session");
 
 function Root() {
   const [path, setPath] = useState(window.location.pathname);
@@ -44,9 +47,10 @@ function Root() {
   // Without a display name the hub does not mint a bench — it returns
   // needs-onboarding so we route into the naming wizard. Existing members
   // cost one read. A failure blocks the shell entirely.
-  const [provisioningError, setProvisioningError] = useState<string | null>(
-    null,
-  );
+  const [provisioningError, setProvisioningError] = useState<{
+    message: string;
+    refId?: string | undefined;
+  } | null>(null);
   const provisionedUserId =
     session.kind === "signed-in" ? session.user.id : null;
   const runProvisioning = useCallback(() => {
@@ -58,7 +62,7 @@ function Root() {
       if (result.kind === "needs-onboarding" || result.kind === "provisioned") {
         navigate(ONBOARDING_PATH);
       } else if (result.kind === "error") {
-        setProvisioningError(result.message);
+        setProvisioningError({ message: result.message, refId: result.refId });
       }
     });
     return () => {
@@ -73,7 +77,7 @@ function Root() {
     setSession({ kind: "signed-out" });
     void signOut().then((ok) => {
       if (ok) return;
-      console.error("Sign-out request to the server failed");
+      log.error("Sign-out request to the server failed");
       toast("Couldn't fully sign out on the server — you're signed out here.");
     });
   }, []);
@@ -98,7 +102,8 @@ function Root() {
         onSignedIn={handleSignedIn}
         onSignOut={handleSignOut}
         onRetry={probe}
-        provisioningError={provisioningError}
+        provisioningError={provisioningError?.message ?? null}
+        provisioningErrorRefId={provisioningError?.refId}
         onRetryProvisioning={handleRetryProvisioning}
       />
       <Toaster />

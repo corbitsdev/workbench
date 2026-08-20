@@ -45,9 +45,16 @@ export async function hasActiveCredential(tenantId: string): Promise<boolean> {
   }
 }
 
+// The hub's user-facing error envelope (CL-6360): `userMessage` is
+// consumer language, safe to render as-is; `refId` is what a person can
+// quote back for support. Never a raw `message`/stack/file-path field —
+// those stay in the hub's own logger.
 const ErrorEnvelope = type({
-  error: { code: "string", message: "string" },
+  error: { code: "string", userMessage: "string", refId: "string" },
 });
+
+const FALLBACK_ERROR_MESSAGE =
+  "Setting up your workbench hit a snag — we're on it. Try again in a moment.";
 
 export type ProvisionOutcome =
   | {
@@ -76,7 +83,11 @@ export type ProvisionOutcome =
       readonly seeded: boolean;
       readonly seedSkipReason?: string;
     }
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly refId?: string;
+    };
 
 export async function triggerFirstLoginProvisioning(
   displayName?: string,
@@ -94,20 +105,17 @@ export async function triggerFirstLoginProvisioning(
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const envelope = ErrorEnvelope(body);
-      return {
-        kind: "error",
-        message:
-          envelope instanceof type.errors
-            ? `The server answered ${response.status} while setting up your workbench.`
-            : envelope.error.message,
-      };
+      return envelope instanceof type.errors
+        ? { kind: "error", message: FALLBACK_ERROR_MESSAGE }
+        : {
+            kind: "error",
+            message: envelope.error.userMessage,
+            refId: envelope.error.refId,
+          };
     }
     const parsed = ProvisionResult(body);
     if (parsed instanceof type.errors) {
-      return {
-        kind: "error",
-        message: `Unexpected provisioning response shape: ${parsed.summary}`,
-      };
+      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     if (parsed.kind === "existing-member") {
       if (parsed.seeded === undefined) return { kind: "existing-member" };
@@ -125,11 +133,7 @@ export async function triggerFirstLoginProvisioning(
       parsed.tenantSlug === undefined ||
       parsed.seeded === undefined
     ) {
-      return {
-        kind: "error",
-        message:
-          "Unexpected provisioning response: a provisioned workbench is missing its details.",
-      };
+      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     return parsed.seedSkipReason === undefined
       ? {
@@ -145,11 +149,8 @@ export async function triggerFirstLoginProvisioning(
           seeded: parsed.seeded,
           seedSkipReason: parsed.seedSkipReason,
         };
-  } catch (cause) {
-    return {
-      kind: "error",
-      message: cause instanceof Error ? cause.message : String(cause),
-    };
+  } catch {
+    return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
   }
 }
 
@@ -403,8 +404,16 @@ export type CredentialOutcome =
       readonly tenantSlug: string;
       readonly workflows: string[];
     }
-  | { readonly kind: "rejected"; readonly message: string }
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "rejected";
+      readonly message: string;
+      readonly refId?: string;
+    }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly refId?: string;
+    };
 
 async function postOnboarding(
   path: string,
@@ -425,15 +434,14 @@ async function postOnboarding(
   return { response, body };
 }
 
-function readErrorEnvelope(
-  status: number,
-  body: unknown,
-  verb: string,
-): string {
+function readErrorEnvelope(body: unknown): {
+  readonly message: string;
+  readonly refId?: string;
+} {
   const envelope = ErrorEnvelope(body);
   return envelope instanceof type.errors
-    ? `The server answered ${status} while ${verb}.`
-    : envelope.error.message;
+    ? { message: FALLBACK_ERROR_MESSAGE }
+    : { message: envelope.error.userMessage, refId: envelope.error.refId };
 }
 
 /**
@@ -466,21 +474,19 @@ export async function submitCredential(
       baseURL,
     );
     if (!response.ok) {
-      const message = readErrorEnvelope(
-        response.status,
-        body,
-        "setting up your workbench",
-      );
-      return response.status === 422
-        ? { kind: "rejected", message }
-        : { kind: "error", message };
+      const { message, refId } = readErrorEnvelope(body);
+      if (response.status === 422) {
+        return refId === undefined
+          ? { kind: "rejected", message }
+          : { kind: "rejected", message, refId };
+      }
+      return refId === undefined
+        ? { kind: "error", message }
+        : { kind: "error", message, refId };
     }
     const parsed = CredentialSeeded(body);
     if (parsed instanceof type.errors) {
-      return {
-        kind: "error",
-        message: `Unexpected credential response shape: ${parsed.summary}`,
-      };
+      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     return parsed.tenantId === undefined
       ? {
@@ -494,11 +500,8 @@ export async function submitCredential(
           tenantSlug: parsed.tenantSlug,
           workflows: parsed.workflows,
         };
-  } catch (cause) {
-    return {
-      kind: "error",
-      message: cause instanceof Error ? cause.message : String(cause),
-    };
+  } catch {
+    return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
   }
 }
 
@@ -518,7 +521,11 @@ export type CompleteSetupOutcome =
       readonly workflows: string[];
     }
   | { readonly kind: "unseeded" }
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly refId?: string;
+    };
 
 /**
  * The follow-up call the wizard makes once it lands back from a
@@ -537,29 +544,18 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
-      return {
-        kind: "error",
-        message: readErrorEnvelope(
-          response.status,
-          body,
-          "finishing your workbench setup",
-        ),
-      };
+      const { message, refId } = readErrorEnvelope(body);
+      return refId === undefined
+        ? { kind: "error", message }
+        : { kind: "error", message, refId };
     }
     const parsed = CompleteSetupResult(body);
     if (parsed instanceof type.errors) {
-      return {
-        kind: "error",
-        message: `Unexpected setup response shape: ${parsed.summary}`,
-      };
+      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     if (parsed.kind === "unseeded") return { kind: "unseeded" };
     if (parsed.tenantSlug === undefined || parsed.workflows === undefined) {
-      return {
-        kind: "error",
-        message:
-          "Unexpected setup response: a finished workbench is missing its details.",
-      };
+      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     return parsed.tenantId === undefined
       ? {
@@ -573,10 +569,7 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
           tenantSlug: parsed.tenantSlug,
           workflows: parsed.workflows,
         };
-  } catch (cause) {
-    return {
-      kind: "error",
-      message: cause instanceof Error ? cause.message : String(cause),
-    };
+  } catch {
+    return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
   }
 }
