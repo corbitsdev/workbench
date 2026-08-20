@@ -96,7 +96,27 @@ export {
   ChatPresenceSnapshotEventData,
 } from "./stream-events";
 
-export { createInMemoryTurnClaimStore } from "./turn-claims";
+export {
+  AGENT_TURNS_PAGE_SIZE,
+  createDrizzleAgentTurnStore,
+  createInMemoryAgentTurnStore,
+} from "./agent-turns";
+export type {
+  AgentTurn,
+  AgentTurnStatus,
+  AgentTurnStore,
+  FinishAgentTurnInput,
+  StartAgentTurnInput,
+} from "./agent-turns";
+export { assembleTurnContext, contextItemFor } from "./turn-context";
+export type {
+  AssembleTurnContextInput,
+  TurnContextThreadScope,
+} from "./turn-context";
+export {
+  CHAT_TURN_TIMEOUT_MS,
+  createInMemoryTurnClaimStore,
+} from "./turn-claims";
 export type { TurnClaim, TurnClaimStore } from "./turn-claims";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
 export type {

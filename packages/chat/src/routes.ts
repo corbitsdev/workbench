@@ -105,6 +105,7 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
+import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
 import type { WorkbenchShareStore } from "./workbench-share";
@@ -201,6 +202,13 @@ export type CreateChatRoutesDeps = {
    * CRUD stay free of thread tables.
    */
   threads?: ThreadStore;
+  /**
+   * The turn projection (CL-6329) — one row per agent turn, which is
+   * what makes a reply traceable back to the child run that produced
+   * it. Omitted, the turns routes 404: the same "no store, no feature"
+   * contract `pins` and `blockResponses` already follow.
+   */
+  agentTurns?: AgentTurnStore;
   /**
    * Poll/form response storage — see `./block-responses.ts`. Omitted
    * entirely, the response routes 404 rather than silently accepting
@@ -2120,6 +2128,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           roomMessages: deps.roomMessages,
           publish,
           turnQueue,
+          ...(deps.agentTurns !== undefined
+            ? { agentTurns: deps.agentTurns }
+            : {}),
+          ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
         },
         {
           tenantId: ownerTenantId,
@@ -2284,6 +2296,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             roomMessages: deps.roomMessages,
             publish,
             turnQueue,
+            ...(deps.agentTurns !== undefined
+              ? { agentTurns: deps.agentTurns }
+              : {}),
+            ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
           },
           {
             tenantId: ownerTenantId,
@@ -3551,6 +3567,74 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         stream.onAbort(unbridge);
         await new Promise<void>(() => undefined);
       });
+    },
+  );
+
+  // The turn projection (CL-6329): what makes a reply traceable back to
+  // the child run that produced it, served from our own rows rather than
+  // the execution plane's.
+  app.get(
+    "/workbenches/:id/turns",
+    deps.requireGrant(idResource("room", "id"), "read"),
+    async (c) => {
+      if (deps.agentTurns === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "turn history not available"),
+          404,
+        );
+      }
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const workbenchId = c.req.param("id");
+      const access = await resolveWorkbenchAccess(
+        deps,
+        tenant.id,
+        workbenchId,
+        principal.id,
+        principal.refId,
+      );
+      if (access === undefined) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+      const items = await deps.agentTurns.listTurns({
+        tenantId: access.ownerTenantId,
+        workbenchId,
+      });
+      return c.json({ items });
+    },
+  );
+
+  app.get(
+    "/workbenches/:id/turns/:turnId",
+    deps.requireGrant(idResource("room", "id"), "read"),
+    async (c) => {
+      if (deps.agentTurns === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "turn history not available"),
+          404,
+        );
+      }
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const workbenchId = c.req.param("id");
+      const access = await resolveWorkbenchAccess(
+        deps,
+        tenant.id,
+        workbenchId,
+        principal.id,
+        principal.refId,
+      );
+      if (access === undefined) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+      const turn = await deps.agentTurns.getTurn({
+        tenantId: access.ownerTenantId,
+        turnId: c.req.param("turnId"),
+      });
+      if (turn === undefined || turn.workbenchId !== workbenchId) {
+        return c.json(ErrorEnvelope("not_found", "turn not found"), 404);
+      }
+      return c.json(turn);
     },
   );
 

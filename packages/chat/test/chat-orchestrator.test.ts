@@ -23,6 +23,7 @@ import {
   createArtifactDeliveryHandler,
   createChatOrchestrator,
 } from "../src/chat-orchestrator";
+import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { parseBlock } from "../src/blocks";
 import type { ChatPlatform, ChatWorkbenchEvent } from "../src/platform-port";
 import {
@@ -211,6 +212,15 @@ function workbenchRow(
 describe("createChatOrchestrator", () => {
   test("posts a connector.reply onto the member workbench's timeline resolved from the store", async () => {
     const room = fakeRoom();
+    // The reply's run id is the occurrence that produced it, taken from
+    // the turn the dispatch seam opened — never derived from the address.
+    const agentTurns = createInMemoryAgentTurnStore();
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      requestMessageIds: ["msg_1"],
+    });
     const listWorkbenchSettingsCalls: string[] = [];
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -227,6 +237,7 @@ describe("createChatOrchestrator", () => {
       publish: room.publish,
       platform: fakeMail().platform,
       events,
+      agentTurns,
       claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
@@ -244,8 +255,17 @@ describe("createChatOrchestrator", () => {
     expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_workbench1",
       sender: { name: null, address: "ins_echo1@ten1.workbench.test" },
-      runId: "ins_echo1",
+      runId: "turn__0",
       parts: [{ kind: "text", text: "hello back" }],
+    });
+    const [settled] = await agentTurns.listTurns({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+    });
+    expect(settled).toMatchObject({
+      status: "completed",
+      childRunId: "turn__0",
+      replyMessageId: room.posted[0]?.id,
     });
     // The message is on every open timeline, not only in the table.
     expect(room.published).toHaveLength(1);

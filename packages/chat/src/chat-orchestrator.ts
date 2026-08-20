@@ -49,6 +49,7 @@ import { readBindingByAddress, resolveLiveAgent } from "./agent-binding";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import type { AgentTurnStore } from "./agent-turns";
 import type { ChatStore } from "./store";
 import type { ThreadStore } from "./threads";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
@@ -75,6 +76,15 @@ export type ChatOrchestratorDeps = {
    */
   platform: Pick<ChatPlatform, "sendMail">;
   events: SidecarEventEmitter;
+  /**
+   * The turn projection (CL-6329). A room agent runs as an `onTrigger`
+   * section, so the reply this orchestrator posts belongs to one
+   * occurrence — its own child run — and the projection is what names
+   * that child: the sidecar's `agent.event` frames carry the agent's
+   * address and nothing finer. Omitted, replies carry no run id at all
+   * rather than a guessed one; there is no second way to name a run.
+   */
+  agentTurns?: Pick<AgentTurnStore, "findRunningTurn" | "finishTurn">;
   /**
    * Resolves a gate-blocked event's `correlationId` to the approval row the
    * hub's IPC register co-write already wrote — the same read the "needs
@@ -308,23 +318,47 @@ async function threadDelegatedReply(
   });
 }
 
+/**
+ * How the occurrence that produced a post ended — recorded on the turn
+ * projection as the post lands, so the row's `replyMessageId` names the
+ * very message a reader is looking at.
+ */
+type TurnOutcome =
+  | { readonly status: "completed" }
+  | { readonly status: "failed"; readonly error: string };
+
 async function postReply(
   deps: ChatOrchestratorDeps,
   pendingDelegationThreads: Map<string, PendingDelegationThread>,
   agentAddress: string,
   content: string,
+  outcome: TurnOutcome,
 ): Promise<void> {
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
   for (const workbenchId of resolved.workbenchIds) {
+    const turn = await deps.agentTurns?.findRunningTurn({
+      tenantId: resolved.tenantId,
+      workbenchId,
+      agentAddress: resolved.roomAddress,
+    });
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
       parts: [{ kind: "text", text: content }],
-      runId: localPartOf(resolved.roomAddress),
+      ...(turn !== undefined ? { runId: turn.childRunId } : {}),
     });
+    if (turn !== undefined) {
+      await deps.agentTurns?.finishTurn({
+        tenantId: resolved.tenantId,
+        turnId: turn.id,
+        status: outcome.status,
+        replyMessageId: posted.id,
+        ...(outcome.status === "failed" ? { error: outcome.error } : {}),
+      });
+    }
 
     await threadDelegatedReply(
       deps,
@@ -780,12 +814,9 @@ export function createChatOrchestrator(
       if (content !== undefined) {
         repliedAddresses.add(agentAddress);
         notifiedDropAddresses.delete(agentAddress);
-        void postReply(
-          deps,
-          pendingDelegationThreads,
-          agentAddress,
-          content,
-        ).catch((cause: unknown) => {
+        void postReply(deps, pendingDelegationThreads, agentAddress, content, {
+          status: "completed",
+        }).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
@@ -834,6 +865,7 @@ export function createChatOrchestrator(
               pendingDelegationThreads,
               agentAddress,
               noticeContent,
+              { status: "failed", error: errorMessage },
             ).catch((cause: unknown) => {
               log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
                 cause instanceof Error ? cause.message : String(cause)

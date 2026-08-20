@@ -389,11 +389,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/agent-runtime": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
         "@corbits/turn-artifacts": "workspace:*",
+        "@corbits/workflow-source": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",

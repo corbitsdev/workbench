@@ -368,6 +368,33 @@ export const chatMigrations: readonly ChatMigration[] = [
         ADD COLUMN IF NOT EXISTS "prior_run_ids" jsonb NOT NULL DEFAULT '[]'::jsonb;
     `,
   },
+  {
+    name: "0022_agent_turns",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."agent_turns" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "workbench_id" text NOT NULL,
+        "agent_address" text NOT NULL,
+        "section_run_id" text,
+        "child_run_id" text NOT NULL,
+        "occurrence" integer NOT NULL,
+        "request_message_ids" jsonb NOT NULL,
+        "reply_message_id" text,
+        "status" text NOT NULL,
+        "error" text,
+        "started_at" timestamptz NOT NULL DEFAULT now(),
+        "ended_at" timestamptz
+      );
+
+      CREATE INDEX IF NOT EXISTS "agent_turns_workbench_idx"
+        ON "chat"."agent_turns" ("tenant_id", "workbench_id", "started_at");
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "agent_turns_occurrence_key"
+        ON "chat"."agent_turns"
+        ("tenant_id", "workbench_id", "agent_address", "occurrence");
+    `,
+  },
 ];
 
 /**

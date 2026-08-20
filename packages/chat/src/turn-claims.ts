@@ -40,6 +40,16 @@ export type TurnClaimStore = {
 };
 
 /**
+ * How long one agent turn may run before the room stops waiting on it.
+ * One number, two enforcement points that must never drift: the section
+ * body's own per-occurrence `timeout` (CL-6329, pinned into a room
+ * agent's deployed definition by `./platform-adapter.ts`) and the claim
+ * TTL that stops a workbench wedging behind a dispatch that never
+ * settles.
+ */
+export const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
  * In-memory `TurnClaimStore`, with a TTL escape hatch: a claim older
  * than `ttlMs` is treated as available again even if `release` was
  * never called. This is the honest interim this seam can offer today —

@@ -39,6 +39,11 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
+import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
+import {
+  parseWorkflowSourceEntry,
+  WORKFLOW_SOURCE_ENTRY_PATH,
+} from "@corbits/workflow-source";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
@@ -465,6 +470,27 @@ function createFakeSessionService(): FakeSessionService {
   } as unknown as FakeSessionService;
 }
 
+/**
+ * The workflow definition a rendered source tree carries — the deployed
+ * bytes themselves, read back so a test can assert which shape was
+ * pinned rather than trusting the caller's arguments.
+ */
+function deployedDefinition(
+  trees: readonly Record<string, string | Uint8Array>[],
+): {
+  steps: Record<string, unknown>;
+} {
+  const tree = trees[trees.length - 1];
+  if (tree === undefined) throw new Error("no source tree was ever rendered");
+  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
+  if (typeof entry !== "string") {
+    throw new Error("no workflow entry module in the rendered tree");
+  }
+  return JSON.parse(parseWorkflowSourceEntry(entry, "asst_rendered")) as {
+    steps: Record<string, unknown>;
+  };
+}
+
 function createFakeAssetService(
   opts: {
     assetBlob?: Uint8Array;
@@ -480,9 +506,13 @@ function createFakeAssetService(
 ) {
   const createAssetCalls: unknown[] = [];
   const readAssetBlobCalls: unknown[] = [];
+  // The bytes each deploy actually renders — the only place a test can
+  // read which shape (folded step vs. `onTrigger` section) was pinned.
+  const populatedTrees: Record<string, string | Uint8Array>[] = [];
   return {
     createAssetCalls,
     readAssetBlobCalls,
+    populatedTrees,
     async createAsset(params: unknown) {
       createAssetCalls.push(params);
       return {
@@ -496,7 +526,10 @@ function createFakeAssetService(
         updatedAt: new Date(),
       };
     },
-    async populateAsset() {
+    async populateAsset(params: {
+      tree: { files: Record<string, string | Uint8Array> };
+    }) {
+      populatedTrees.push(params.tree.files);
       return { commitSha: "unused" };
     },
     async readAssetBlob(params: { assetId: string; path: string }) {
@@ -1109,6 +1142,16 @@ describe("createHubChatPlatform", () => {
     );
     expect(workbenchLaunchInsert?.values).toMatchObject({
       noopInference: false,
+    });
+
+    // CL-6329: a room agent deploys as an `onTrigger` section, so every
+    // message it is asked to answer is an occurrence with its own child
+    // run — and `onBodyFailure: "continue"` keeps the section subscribed
+    // after a turn that threw.
+    const rendered = deployedDefinition(assetService.populatedTrees);
+    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
+    expect(rendered.steps[AGENT_RUNTIME_SECTION_ID]).toMatchObject({
+      onBodyFailure: "continue",
     });
   });
 
