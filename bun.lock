@@ -648,6 +648,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/agent-runtime": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",

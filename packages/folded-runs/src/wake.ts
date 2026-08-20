@@ -8,11 +8,14 @@
 // table of its own to read.
 import { eq } from "drizzle-orm";
 import { sessionAsset } from "@intx/db/schema";
-import { deployAtHead, type SourcesOverride } from "./launch";
+import {
+  deployAtHead,
+  type FoldedRunMode,
+  type SourcesOverride,
+} from "./launch";
 import { resolveFoldedRunSessionId } from "./runs";
 import type { FoldedRunsDeps } from "./types";
 import type { FoldedBody } from "@intx/workflow-deploy";
-import type { Selector } from "@intx/workflow";
 
 export type WakeFoldedRunParams = {
   tenantId: string;
@@ -36,7 +39,7 @@ export type WakeFoldedRunParams = {
    * `trigger.payload` selector would silently restore the CL-6164 crash
    * on the very next mail this occurrence receives.
    */
-  stepInput?: Selector;
+  mode?: FoldedRunMode;
   /**
    * See `deployAtHead`'s own doc on the same field. A definition that
    * declares no model of its own resolves a catalog default at every
@@ -84,9 +87,7 @@ export async function wakeFoldedRun(
     await deployAtHead(deps, {
       ...deployAtHeadParams,
       ...(params.sources !== undefined ? { sources: params.sources } : {}),
-      ...(params.stepInput !== undefined
-        ? { stepInput: params.stepInput }
-        : {}),
+      ...(params.mode !== undefined ? { mode: params.mode } : {}),
       ...(params.fallbackModel !== undefined
         ? { fallbackModel: params.fallbackModel }
         : {}),
