@@ -9,11 +9,13 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgSchema,
   primaryKey,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 export const chatSchema = pgSchema("chat");
@@ -458,5 +460,53 @@ export const finalizedTurnWriteClaim = chatSchema.table(
     primaryKey({
       columns: [table.tenantId, table.surface, table.claimKey],
     }),
+  ],
+);
+
+/**
+ * The turn projection (CL-6329): one row per agent turn, opened by the
+ * dispatch seam and closed when the turn settles. Traceability is a
+ * product concern, so a room answers "which run produced this reply, and
+ * how did that turn end" from its own rows rather than from the
+ * execution plane's — the same shape gtm's event collector settled on.
+ *
+ * A turn's identity is (warm section run, occurrence). The workflow
+ * runtime names an occurrence's child run `turn__<n>` and assigns `n`
+ * sequentially per section run, so `child_run_id` here is exactly the id
+ * the reply message's `run_id` carries. `section_run_id` is null until a
+ * dispatch gets far enough to learn it.
+ */
+export const agentTurns = chatSchema.table(
+  "agent_turns",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
+    agentAddress: text("agent_address").notNull(),
+    sectionRunId: text("section_run_id"),
+    childRunId: text("child_run_id").notNull(),
+    occurrence: integer("occurrence").notNull(),
+    requestMessageIds: jsonb("request_message_ids").notNull(),
+    replyMessageId: text("reply_message_id"),
+    /** running | completed | failed */
+    status: text("status").notNull(),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_turns_workbench_idx").on(
+      table.tenantId,
+      table.workbenchId,
+      table.startedAt,
+    ),
+    unique("agent_turns_occurrence_key").on(
+      table.tenantId,
+      table.workbenchId,
+      table.agentAddress,
+      table.occurrence,
+    ),
   ],
 );

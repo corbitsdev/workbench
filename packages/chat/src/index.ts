@@ -96,6 +96,31 @@ export {
   ChatPresenceSnapshotEventData,
 } from "./stream-events";
 
+export {
+  AGENT_TURN_BODY_STEP_ID,
+  AGENT_TURN_SECTION_ID,
+  agentTurnChildRunId,
+  agentTurnWorkflowId,
+  buildAgentTurnWorkflow,
+} from "./agent-turn-workflow";
+export type { AgentTurnWorkflowInput } from "./agent-turn-workflow";
+export {
+  AGENT_TURNS_PAGE_SIZE,
+  createDrizzleAgentTurnStore,
+  createInMemoryAgentTurnStore,
+} from "./agent-turns";
+export type {
+  AgentTurn,
+  AgentTurnStatus,
+  AgentTurnStore,
+  FinishAgentTurnInput,
+  StartAgentTurnInput,
+} from "./agent-turns";
+export { assembleTurnContext, contextItemFor } from "./turn-context";
+export type {
+  AssembleTurnContextInput,
+  TurnContextThreadScope,
+} from "./turn-context";
 export { createInMemoryTurnClaimStore } from "./turn-claims";
 export type { TurnClaim, TurnClaimStore } from "./turn-claims";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";

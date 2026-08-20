@@ -14,13 +14,8 @@ import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
-import {
-  buildDroppedRecap,
-  DROPPED_RECAP_LOOKBACK,
-  mergeContextIntoParts,
-  renderWorkbenchContext,
-  type WorkbenchContextItem,
-} from "./workbench-context";
+import { mergeContextIntoParts } from "./workbench-context";
+import { assembleTurnContext } from "./turn-context";
 import {
   addParticipant,
   handleFromName,
@@ -43,17 +38,12 @@ import type {
   ChatWorkbenchEvent,
   InvitableDefinition,
 } from "./platform-port";
-import {
-  postRoomMessage,
-  type RoomMessage,
-  type RoomMessageStore,
-} from "./room-messages";
+import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ChatStore } from "./store";
 
-const contextLog = getLogger(["chat", "context"]);
 const provisionLog = getLogger(["chat", "provision-space"]);
 const removeLog = getLogger(["chat", "remove-participant"]);
 const greetingLog = getLogger(["chat", "canned-greeting"]);
@@ -756,162 +746,6 @@ export async function startWorkflowCommand(
   return { handle: joined.handle, address: joined.address };
 }
 
-/**
- * The label a sender renders as inside a workbench context block: an
- * agent participant renders as its workbench handle (`@echo`), matching
- * the mention syntax participants already type; anything else — the
- * server has no human display names to draw on — renders as the
- * literal string `"user"`. Never a raw address or principal id: this
- * text reaches a model prompt and possibly logs.
- */
-function labelForSender(
-  address: string,
-  participants: readonly ParticipantRecord[],
-): string {
-  // Mail's `from` always carries a full `id@domain` address regardless
-  // of sender kind (see `platform-adapter.ts`'s `sendMail`), so an
-  // agent sender is recognized by matching its local part against a
-  // known *agent* participant's local part — never by the mere
-  // presence of "@", which every mail sender address carries either
-  // way.
-  const known = participants.find(
-    (participant) =>
-      isAgentAddress(participant.address) &&
-      localPartOf(participant.address) === localPartOf(address),
-  );
-  return known !== undefined ? `@${known.handle}` : "user";
-}
-
-/**
- * Decodes a single listed mail item into a context item, or `undefined`
- * for event-only mail with no text parts — contributes nothing a
- * context block can render.
- */
-function contextItemFor(
-  message: RoomMessage,
-  participants: readonly ParticipantRecord[],
-): WorkbenchContextItem | undefined {
-  const texts = message.parts
-    .filter(
-      (part): part is Extract<PartType, { kind: "text" }> =>
-        part.kind === "text",
-    )
-    .map((part) => part.text);
-  if (texts.length === 0) return undefined;
-  return {
-    label: labelForSender(message.sender.address, participants),
-    text: texts.join(" "),
-  };
-}
-
-/**
- * Loads the workbench's recent timeline into context items for a
- * mention fan-out copy, excluding the just-sent message (matched by id,
- * since it is typically the newest item in the listing) and any message
- * with no text parts (an event-only message contributes nothing a
- * context block can render). Capped to the workbench's resolved
- * `contextWindow` (most-recent-first before the final oldest-first
- * slice, so a window of 0 loads nothing and a small window keeps only
- * the newest few).
- *
- * When the workbench carries more messages than the window keeps, the
- * dropped span (CL-6204) is folded into one synthetic recap entry
- * (`buildDroppedRecap`) prepended ahead of the kept items, rather than
- * silently vanishing. The listing is paged out to
- * `contextWindow + DROPPED_RECAP_LOOKBACK` items — just enough to cover
- * the window plus the recap's own bounded lookback — never further: a
- * dropped span longer than that is still counted (and its date range
- * still reported) from what was fetched, just marked as a lower bound
- * (`moreBeyondFold`) rather than pretending to know the exact total.
- *
- * Returns `undefined` when there is nothing to show at all — no kept
- * items and no recap — or when the timeline fails to load: that failure
- * must never break the send, so it is logged and swallowed here,
- * leaving the caller to fan out un-situated.
- */
-async function loadWorkbenchContext(input: {
-  roomMessages: Pick<RoomMessageStore, "listMessages">;
-  tenantId: string;
-  workbenchId: string;
-  excludeMessageId: string;
-  participants: readonly ParticipantRecord[];
-  contextWindow: number;
-}): Promise<string | undefined> {
-  if (input.contextWindow === 0) return undefined;
-  try {
-    const fetchCap = input.contextWindow + DROPPED_RECAP_LOOKBACK;
-    const fetched: RoomMessage[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await input.roomMessages.listMessages(
-        cursor === undefined
-          ? { tenantId: input.tenantId, workbenchId: input.workbenchId }
-          : {
-              tenantId: input.tenantId,
-              workbenchId: input.workbenchId,
-              cursor,
-            },
-      );
-      fetched.push(...page.items);
-      cursor = page.nextCursor;
-    } while (cursor !== undefined && fetched.length < fetchCap);
-
-    const newestFirstExcludingSent = fetched
-      .filter((message) => message.id !== input.excludeMessageId)
-      .slice(0, fetchCap);
-    const moreBeyondFold = cursor !== undefined;
-
-    const windowed = newestFirstExcludingSent.slice(0, input.contextWindow);
-    const dropped = newestFirstExcludingSent.slice(input.contextWindow);
-    const wasDropped = dropped.length > 0 || moreBeyondFold;
-
-    const items: WorkbenchContextItem[] = [];
-    for (const message of [...windowed].reverse()) {
-      const item = contextItemFor(message, input.participants);
-      if (item !== undefined) items.push(item);
-    }
-
-    let recap: WorkbenchContextItem | undefined;
-    if (wasDropped) {
-      const droppedItems: WorkbenchContextItem[] = [];
-      for (const message of dropped) {
-        const item = contextItemFor(message, input.participants);
-        if (item !== undefined) droppedItems.push(item);
-      }
-      const humanTexts = [...droppedItems]
-        .reverse()
-        .filter((item) => item.label === "user")
-        .map((item) => item.text);
-      const oldestDropped = dropped[dropped.length - 1];
-      const newestDropped = dropped[0];
-      recap =
-        oldestDropped !== undefined && newestDropped !== undefined
-          ? buildDroppedRecap({
-              droppedCount: dropped.length,
-              moreBeyondFold,
-              humanTexts,
-              firstDate: oldestDropped.createdAt,
-              lastDate: newestDropped.createdAt,
-            })
-          : buildDroppedRecap({
-              droppedCount: dropped.length,
-              moreBeyondFold,
-              humanTexts,
-            });
-    }
-
-    if (items.length === 0 && recap === undefined) return undefined;
-    return recap !== undefined
-      ? renderWorkbenchContext({ items, recap })
-      : renderWorkbenchContext({ items });
-  } catch (err) {
-    contextLog.warn`failed to load workbench context for mention fan-out on workbench ${input.workbenchId}: ${
-      err instanceof Error ? err.message : String(err)
-    }`;
-    return undefined;
-  }
-}
-
 export type SendWorkbenchMessageDeps = {
   readonly store: Pick<ChatStore, "getWorkbenchSettings" | "getBenchSettings">;
   readonly roomMessages: RoomMessageStore;
@@ -1101,7 +935,7 @@ async function routeToRecipients(
 
   const contextText =
     !isDefaultRouting && recipients.length > 0
-      ? await loadWorkbenchContext({
+      ? await assembleTurnContext({
           roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
