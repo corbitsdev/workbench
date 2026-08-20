@@ -6,7 +6,7 @@ export {
   agentRuntimeTurnRunId,
   buildAgentRuntimeWorkflow,
 } from "./definition";
-export { AGENT_RUNTIME_PACKAGE_NAME, AGENT_RUNTIME_PACKAGE_RANGE } from "./pin";
+export { AGENT_RUNTIME_PACKAGE_NAME } from "./pin";
 export {
   AGENT_RUNTIME_ENTRY_PATH,
   renderAgentRuntimeSourceTree,

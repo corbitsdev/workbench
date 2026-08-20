@@ -5,17 +5,25 @@
 // wire hash covers every field that differs per run. So the per-run
 // config cannot ride beside the bytes — it has to BE the bytes.
 //
-// The tree this renders is deliberately thin: a `package.json` and a
-// four-line entry module that pins `@corbits/agent-runtime` and calls
-// `buildAgentRuntimeWorkflow` with the run's config as a literal. All
-// the behaviour stays in this one versioned package, reviewed and
-// upgraded in one place; what varies per run is a JSON literal. A host
-// commits the tree into a `workflow`-kind asset and deploys it with
-// `source.kind: "asset"`, `package.format: "source"`, `commitSha` — the
-// only source variant whose pin is cheap enough to mint per run (the
-// registry and tarball variants would each need a publish).
+// The tree this renders is deliberately thin AND dependency-free: a
+// `package.json` declaring only the entry, and an entry module that
+// default-exports this run's evaluated definition as a JSON literal.
+// The hub evaluates `buildAgentRuntimeWorkflow` here, at render time,
+// rather than shipping a call to it: an asset tree is a standalone
+// codebase, so a `workspace:*` dependency on `@corbits/agent-runtime`
+// has no workspace to resolve against and the closure resolver rejects
+// it outright. This is the same shape the seed's default workflows take
+// (`@workbench/hub-client`'s `renderWorkflowSourceTree`) — the whole
+// closure is these two files — and it keeps the config-IS-the-bytes
+// property the retirement requires: everything that varies per run is
+// inside the hashed source, nothing rides beside it.
+//
+// A host commits the tree into a `workflow`-kind asset and deploys it
+// with `source.kind: "asset"`, `package.format: "source"`, `commitSha` —
+// the only source variant whose pin is cheap enough to mint per run
+// (the registry and tarball variants would each need a publish).
 import { parseAgentRuntimeConfig, type AgentRuntimeConfig } from "./config";
-import { AGENT_RUNTIME_PACKAGE_NAME } from "./pin";
+import { buildAgentRuntimeWorkflow } from "./definition";
 
 /** The entry path the rendered `package.json` declares and the sidecar evaluates. */
 export const AGENT_RUNTIME_ENTRY_PATH = "./workflow.js";
@@ -26,8 +34,6 @@ export interface RenderAgentRuntimeSourceTreeInput {
    * only has to be a valid package name and stable for a given run.
    */
   readonly packageName: string;
-  /** The `@corbits/agent-runtime` range the rendered package depends on. */
-  readonly runtimeVersion: string;
   /** The run's deploy-time config, rendered into the entry module. */
   readonly config: AgentRuntimeConfig;
 }
@@ -44,23 +50,61 @@ export function renderAgentRuntimeSourceTree(
   input: RenderAgentRuntimeSourceTreeInput,
 ): AgentRuntimeSourceTree {
   const config = parseAgentRuntimeConfig(input.config);
+  const definition = buildAgentRuntimeWorkflow(config);
+  assertJsonPortable(definition, "definition");
   const packageJson = {
     name: input.packageName,
     version: "0.0.0",
     private: true,
     type: "module",
     interchange: { workflow: AGENT_RUNTIME_ENTRY_PATH },
-    dependencies: { [AGENT_RUNTIME_PACKAGE_NAME]: input.runtimeVersion },
   };
-  const entry = [
-    `import { buildAgentRuntimeWorkflow } from ${JSON.stringify(AGENT_RUNTIME_PACKAGE_NAME)};`,
-    "",
-    `export default buildAgentRuntimeWorkflow(${JSON.stringify(config, null, 2)});`,
-    "",
-  ].join("\n");
 
   return {
     "package.json": `${JSON.stringify(packageJson, null, 2)}\n`,
-    "workflow.js": entry,
+    "workflow.js": `export default ${JSON.stringify(definition, null, 2)};\n`,
   };
+}
+
+/**
+ * A function reaching the rendered bytes would JSON-encode to `null` and
+ * the sidecar would evaluate a silently different definition than the
+ * hub validated. Every agent this builds declares `toolFactories: []`
+ * (its tools come from `toolPackagePins`, resolved on the sidecar), so a
+ * non-portable value here means the builder changed shape — fail at the
+ * deploying call site rather than shipping the hole.
+ */
+function assertJsonPortable(value: unknown, path: string): void {
+  if (value === null) return;
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return;
+    case "number":
+      if (!Number.isFinite(value)) {
+        throw new Error(`${path} is a non-finite number; JSON drops it`);
+      }
+      return;
+    case "object":
+      break;
+    default:
+      throw new Error(
+        `${path} is a ${typeof value}, which does not survive JSON serialization`,
+      );
+  }
+  if (Array.isArray(value)) {
+    value.forEach((element, index) => {
+      assertJsonPortable(element, `${path}[${index}]`);
+    });
+    return;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new Error(
+      `${path} is a non-plain object; JSON would flatten it lossily`,
+    );
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    assertJsonPortable(entry, `${path}.${key}`);
+  }
 }

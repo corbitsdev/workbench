@@ -31,7 +31,6 @@ import type { WireGrantRule } from "@intx/types/grant-wire";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AGENT_RUNTIME_ENTRY_PATH,
-  AGENT_RUNTIME_PACKAGE_RANGE,
   renderAgentRuntimeSourceTree,
   type AgentRuntimeConfig,
 } from "@corbits/agent-runtime";
@@ -380,11 +379,37 @@ export async function deployAtHead(
     tree: {
       files: renderAgentRuntimeSourceTree({
         packageName: foldedRunPackageName(params.instanceId),
-        runtimeVersion: AGENT_RUNTIME_PACKAGE_RANGE,
         config: runtimeConfig,
       }),
       message: `Deploy folded run ${params.instanceId}`,
     },
+  });
+
+  // Stage the run's step deploy tree BEFORE the deploy frame.
+  //
+  // This is workbench's deliberate divergence from the upstream
+  // source-ref front. Upstream, a source-ref deploy stages no per-step
+  // tree at all: `emitSourceRefDeployFrame` never runs
+  // `executeLaunchPhases`, because the definition now travels as source
+  // the child evaluates. But the sidecar's tool loader
+  // (`apps/sidecar/src/step-agent-tools.ts`'s `materializeStepTools`)
+  // still reads a step's pinned tool-package closure off
+  // `deploy/tool-packages-manifest.json` in that tree — the prompt moved
+  // into the rendered bytes, the tool manifest did not. Without this
+  // call a folded run deploys with its pins in the hash and NO tools in
+  // the child.
+  //
+  // `stageWorkflowStep` is the seam that writes exactly that tree. The
+  // step address collapses to the head for a single-step deployment
+  // (`resolveStepAddress`), so the run's own trigger address is the step
+  // address, and the staged tree lands where the child looks for it.
+  await deps.sessionService.stageWorkflowStep({
+    agentAddress: params.triggerAddress,
+    agentId: params.instanceId,
+    runId: params.instanceId,
+    config,
+    deployContent: { systemPrompt: params.foldedBody.systemPrompt },
+    toolPackagePins: params.foldedBody.toolPackagePins,
   });
 
   // The adopting front is the only code-sourced deploy a folded run can
@@ -403,6 +428,11 @@ export async function deployAtHead(
       package: { format: "source", commitSha },
     },
     entry: AGENT_RUNTIME_ENTRY_PATH,
+    // The run's tree lives on its own ref inside the shared definition
+    // asset, so the pack the sidecar materializes has to be cut from
+    // THAT ref — the asset's default ref carries a history the pinned
+    // commit is not reachable from.
+    sourceRef: foldedRunSourceRef(params.instanceId),
     definitionAssetId,
     config,
     ...(deps.credentialCipher !== undefined
