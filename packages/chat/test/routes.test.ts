@@ -259,10 +259,13 @@ describe("POST /workbenches", () => {
     });
     await deliveries[0]?.();
 
+    // The greeting is a row on the chat's own timeline, not mail: the
+    // only thing the platform is ever asked for on a mint is the
+    // agent's launch.
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const greeting = platform.sentMail[1];
-    expect(greeting?.workbenchId).toBe(body.id);
-    expect(greeting?.content.content).toContain(
+    expect(platform.sentMail).toHaveLength(0);
+    const timeline = await timelineOf(deps, body.id);
+    expect(timelineTexts(timeline)[0]).toContain(
       "Three reviewers read every pull request and post what they'd change.",
     );
   });
@@ -277,16 +280,15 @@ describe("POST /workbenches", () => {
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const { response } = await createWorkbench(app, {
+    const { response, body } = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
     });
     await deliveries[0]?.();
 
     expect(response.status).toBe(201);
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const greeting = platform.sentMail[1];
-    expect(greeting?.content.content).toContain("echo");
+    const timeline = await timelineOf(deps, body.id);
+    expect(timelineTexts(timeline)[0]).toContain("echo");
   });
 
   test("creating a chat deploys nothing on the request path — the deploys ride the post-mint delivery", async () => {
