@@ -357,15 +357,15 @@ see below), but the two adapters that wiring needs now exist.
 
 - `vendor/intx/workflow-host/src/adapters/{action-invoker,effect-ledger,run-blobs}.ts`
   (+ their tests), copied from gtm-workbench's `packages/workflow-host/src/
-  adapters/`. Important provenance note carried over from the port scope
+adapters/`. Important provenance note carried over from the port scope
   report: **these three files are gtm-OWNED, not upstream Interchange.**
   Upstream `faremeter/interchange`'s own `packages/workflow-host/src/
-  adapters/` (at the pinned `59f5e7b9`) has none of them — only blob-
+adapters/` (at the pinned `59f5e7b9`) has none of them — only blob-
   substrate/repo-store/spawn-child/step-invoker. So there is no upstream
   publish this sub-delta tracks toward; it is copy-with-attribution from a
   sibling internal fork, not a normal "vendored until the next npm publish"
   entry. The ordinary `VENDORED.md` kill date on the `vendor/intx/
-  workflow-host` row does not really apply to this slice — treat it as
+workflow-host` row does not really apply to this slice — treat it as
   retired only once workbench builds its own equivalent inline (dropping the
   gtm-origin copy) or gtm's fork itself gets folded into a real publish,
   whichever happens first.

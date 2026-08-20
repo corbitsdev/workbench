@@ -56,6 +56,24 @@ async function ensureTenant(
     return existing.tenantId;
   }
 
+  const hubError =
+    created.status === 403 &&
+    typeof created.data === "object" &&
+    created.data !== null &&
+    "error" in created.data &&
+    typeof created.data.error === "object" &&
+    created.data.error !== null &&
+    "code" in created.data.error &&
+    created.data.error.code === "signup_not_allowed"
+      ? created.data.error
+      : undefined;
+  if (hubError !== undefined && "message" in hubError) {
+    throw new CliError(
+      String(hubError.message),
+      "set ALLOW_UNVERIFIED_EMAILS=1 in .env for local development, then re-run: workbench setup",
+    );
+  }
+
   throw new CliError(
     `the hub rejected creation of bench ${args.slug} with status ${created.status}: ${JSON.stringify(created.data)}`,
     "pick a different ORG_SLUG, or check the hub logs for the underlying failure, then re-run: workbench setup",
