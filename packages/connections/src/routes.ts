@@ -27,15 +27,14 @@ import {
   ensureProvider,
   parseAs,
   OLLAMA_PLACEHOLDER_SECRET,
-  PROVIDER_TEST_CONFIG,
   seedCatalog,
   type ApiCall,
-  type SupportedCredentialProvider,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
 } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
+import { persistConnectorCredential } from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
 
@@ -245,9 +244,6 @@ export function createConnectionRoutes(
   const app = new Hono<TenantEnv>();
   const api = createHubAPI(deps.hubUrl);
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
-  const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
-  const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
-  const runSeedCatalog = deps.seedCatalogFn ?? seedCatalog;
   const runDisconnectConnector =
     deps.disconnectConnectorFn ?? disconnectConnector;
 
@@ -296,10 +292,6 @@ export function createConnectionRoutes(
       return c.json({ providers, connectedProviderCount }, 200);
     },
   );
-
-  function isInferenceProvider(id: string): id is SupportedCredentialProvider {
-    return Object.hasOwn(PROVIDER_TEST_CONFIG, id);
-  }
 
   function findApiKeyDescriptor(connectorId: string) {
     const descriptor = registry[connectorId];
@@ -364,64 +356,43 @@ export function createConnectionRoutes(
       // in the same wire field every other connector uses for a secret —
       // it stores the fixed placeholder secret instead, and the URL
       // itself as the provider row's `apiBaseUrl` (the same seam MCP
-      // servers use).
+      // servers use). The persist-and-seed sequence itself is the one
+      // shared `persistConnectorCredential` every connect surface runs
+      // (CL-6394).
       const isUrlCredential = descriptor.credentialInputKind === "url";
-      const providerArgs: EnsureProviderArgs = isUrlCredential
-        ? {
-            tenantId: tenant.id,
-            name: descriptor.id,
-            plugin: descriptor.credentialPlugin,
-            apiBaseUrl: parsed.apiKey,
-          }
-        : {
-            tenantId: tenant.id,
-            name: descriptor.id,
-            plugin: descriptor.credentialPlugin,
-          };
       try {
-        const providerId = await runEnsureProvider(
+        const { credentialId, seedResult } = await persistConnectorCredential({
           api,
           cookies,
-          providerArgs,
-          deps.log,
-        );
-        const credentialId = await runEnsureCredential(
-          api,
-          cookies,
-          {
-            tenantId: tenant.id,
-            providerId,
-            name: descriptor.displayName,
-            secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
-            type: "api_key",
-            // `test` above already proved `parsed.apiKey` against
-            // `descriptor.probe`, so a name conflict here (a
-            // regenerated key, or a retry after a bad paste) is safe
-            // to rotate rather than silently keeping the stale secret.
-            verified: true,
-          },
-          deps.log,
-        );
-        // An inference provider connected here must become usable, not
-        // just stored: plant its curated model catalog (and Ollama's live
-        // model list) exactly the way onboarding does, so the models show
-        // up in Inference and a workbench can actually run on them.
-        let modelGuidance: string | undefined;
-        if (isInferenceProvider(descriptor.id)) {
-          const seeded = await runSeedCatalog({
-            api,
-            cookies,
-            tenantId: tenant.id,
-            log: deps.log,
-            provider: descriptor.id,
-            apiKey: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
-            credentialVerified: true,
-            ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
-          });
-          if (descriptor.id === "ollama" && !seeded.hasCompletionCapableModel) {
-            modelGuidance = OLLAMA_NO_CHAT_MODEL_GUIDANCE;
-          }
-        }
+          tenantId: tenant.id,
+          descriptor,
+          // `test` above already proved `parsed.apiKey` against
+          // `descriptor.probe`, so a name conflict on the credential row
+          // (a regenerated key, or a retry after a bad paste) is safe to
+          // rotate rather than silently keeping the stale secret.
+          secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
+          log: deps.log,
+          ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
+          ...(deps.ensureProviderFn !== undefined
+            ? { ensureProviderFn: deps.ensureProviderFn }
+            : {}),
+          ...(deps.ensureCredentialFn !== undefined
+            ? { ensureCredentialFn: deps.ensureCredentialFn }
+            : {}),
+          ...(deps.seedCatalogFn !== undefined
+            ? { seedCatalogFn: deps.seedCatalogFn }
+            : {}),
+        });
+        // CL-6351: a fresh Ollama connect whose instance serves no
+        // completion-capable model gets guided copy, not a silent dead
+        // end — read off the catalog seed the shared persist sequence
+        // just ran.
+        const modelGuidance =
+          descriptor.id === "ollama" &&
+          seedResult !== undefined &&
+          !seedResult.hasCompletionCapableModel
+            ? OLLAMA_NO_CHAT_MODEL_GUIDANCE
+            : undefined;
         // Only clear once the credential is actually durable — a storage
         // failure below (the `catch`) must leave a prior needs-attention
         // record standing rather than clearing it on a test pass whose

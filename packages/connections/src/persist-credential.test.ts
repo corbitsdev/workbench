@@ -47,6 +47,7 @@ function recordingFns() {
       },
       seedCatalogFn: async (args: SeedCatalogArgs) => {
         seeds.push(args);
+        return { hasCompletionCapableModel: true };
       },
     },
   };

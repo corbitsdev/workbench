@@ -58,18 +58,20 @@ import {
   isSidecarUnavailableError,
   ollamaOpenAICompatBaseURL,
   parseAs,
-  seedCatalog,
   seedTenant,
-  supportedCredentialProviders,
   type ApiCall,
   type ModelSource,
-  type SeedCatalogArgs,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+import {
+  persistConnectorCredential,
+  type PersistConnectorCredentialFns,
+} from "@workbench/connections/persist-credential";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { personalTenantSlug, seededWorkflowStatus } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step
@@ -153,23 +155,23 @@ type CommonArgs = {
   log: (line: string) => void;
 };
 
-export type TestAndPersistCredentialArgs = CommonArgs & {
-  userId: string;
-  userEmail: string;
-  provider: SupportedCredentialProvider;
-  apiKey: string;
-  /**
-   * Free-form data stored on the credential's `metadata` field — the
-   * extension point an OAuth connect flow's token expiry lives in (see
-   * `huggingface-connect.ts`'s `exchangeCodeForToken`). Absent for a
-   * pasted key or a durable-key connect flow (OpenRouter).
-   */
-  credentialMetadata?: Record<string, unknown>;
-  /** The configurable-base-URL seam `ollama` uses (see `modelSourceFor`);
-   * ignored for every other provider. */
-  baseURLOverride?: string;
-  seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
-};
+export type TestAndPersistCredentialArgs = CommonArgs &
+  PersistConnectorCredentialFns & {
+    userId: string;
+    userEmail: string;
+    provider: SupportedCredentialProvider;
+    apiKey: string;
+    /**
+     * Free-form data stored on the credential's `metadata` field — the
+     * extension point an OAuth connect flow's token expiry lives in (see
+     * `huggingface-connect.ts`'s `exchangeCodeForToken`). Absent for a
+     * pasted key or a durable-key connect flow (OpenRouter).
+     */
+    credentialMetadata?: Record<string, unknown>;
+    /** The configurable-base-URL seam `ollama` uses (see `modelSourceFor`);
+     * ignored for every other provider. */
+    baseURLOverride?: string;
+  };
 
 export type EnsureSeededArgs = CommonArgs & {
   tenant: PersonalTenant;
@@ -179,34 +181,16 @@ export type EnsureSeededArgs = CommonArgs & {
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
 
-export type CompleteCredentialArgs = CommonArgs & {
-  userId: string;
-  userEmail: string;
-  provider: SupportedCredentialProvider;
-  apiKey: string;
-  credentialMetadata?: Record<string, unknown>;
-  baseURLOverride?: string;
-  seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
-  seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
-};
-
-/**
- * The exact name the Plugins gallery's resolver
- * (`@workbench/connections/plugins`'s `resolveOne`) looks a credential up
- * by: a connector's `descriptor.displayName`, itself sourced from this
- * same `PROVIDER_TEST_CONFIG` table (see `packages/connections/src/
- * registry.ts`). Seeding the credential under any other name — the
- * catalog-seed convention `inferenceCredentialName` still uses for the
- * hub-owned CLI seed and the env-key auto-plant — leaves a self-served
- * connect flow's credential invisible to that gallery.
- */
-function credentialDisplayName(provider: SupportedCredentialProvider): string {
-  const match = supportedCredentialProviders().find((p) => p.id === provider);
-  if (match === undefined) {
-    throw new Error(`No display name registered for provider ${provider}`);
-  }
-  return match.displayName;
-}
+export type CompleteCredentialArgs = CommonArgs &
+  PersistConnectorCredentialFns & {
+    userId: string;
+    userEmail: string;
+    provider: SupportedCredentialProvider;
+    apiKey: string;
+    credentialMetadata?: Record<string, unknown>;
+    baseURLOverride?: string;
+    seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
+  };
 
 export async function findPersonalTenant(
   api: ApiCall,
@@ -405,41 +389,48 @@ export async function modelSourceFor(
 export async function testAndPersistCredential(
   args: TestAndPersistCredentialArgs,
 ): Promise<TestAndPersistCredentialResult> {
-  const runSeedCatalog = args.seedCatalogFn ?? seedCatalog;
-
   const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
   const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug);
   if (!tenant) return { kind: "no-personal-bench" };
 
-  const seedCatalogArgs = {
+  const descriptor = CONNECTOR_REGISTRY[args.provider];
+  if (descriptor === undefined) {
+    throw new Error(
+      `no connector descriptor registered for provider ${args.provider}`,
+    );
+  }
+
+  // The one shared persist-and-seed sequence (CL-6394): provider +
+  // credential rows named the way the Plugins gallery's resolver reads
+  // them back (`descriptor.id` / `descriptor.displayName`), then the
+  // curated model catalog. An explicit user submission through a connect
+  // UI — a pasted key or a completed OAuth exchange — always rotates a
+  // name-conflicting credential (a regenerated key, or a retry after a
+  // bad paste): see `ensureCredential`'s own `verified` doc comment in
+  // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
+  await persistConnectorCredential({
     api: args.api,
     cookies: args.cookies,
     tenantId: tenant.tenantId,
-    provider: args.provider,
-    apiKey: args.apiKey,
+    descriptor,
+    secret: args.apiKey,
     log: args.log,
-    credentialName: credentialDisplayName(args.provider),
-    credentialType:
-      args.credentialMetadata !== undefined
-        ? ("oauth_token" as const)
-        : ("api_key" as const),
-    // An explicit user submission through a connect UI — a pasted key or
-    // a completed OAuth exchange — always rotates a name-conflicting
-    // api_key credential (a regenerated key, or a retry after a bad
-    // paste), independent of whether the key was ever probed: see
-    // `ensureCredential`'s own `verified` doc comment in
-    // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
-    credentialVerified: true,
-  };
-  const withMetadata =
-    args.credentialMetadata !== undefined
-      ? { ...seedCatalogArgs, credentialMetadata: args.credentialMetadata }
-      : seedCatalogArgs;
-  await runSeedCatalog(
-    args.baseURLOverride !== undefined
-      ? { ...withMetadata, baseURLOverride: args.baseURLOverride }
-      : withMetadata,
-  );
+    ...(args.credentialMetadata !== undefined
+      ? { credentialMetadata: args.credentialMetadata }
+      : {}),
+    ...(args.baseURLOverride !== undefined
+      ? { baseURLOverride: args.baseURLOverride }
+      : {}),
+    ...(args.ensureProviderFn !== undefined
+      ? { ensureProviderFn: args.ensureProviderFn }
+      : {}),
+    ...(args.ensureCredentialFn !== undefined
+      ? { ensureCredentialFn: args.ensureCredentialFn }
+      : {}),
+    ...(args.seedCatalogFn !== undefined
+      ? { seedCatalogFn: args.seedCatalogFn }
+      : {}),
+  });
 
   return { kind: "connected", ...tenant };
 }

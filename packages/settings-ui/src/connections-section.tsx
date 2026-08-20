@@ -75,25 +75,25 @@ type OAuthConnectorCard = {
   readonly displayName: string;
 };
 
-// The generalized `/api/connections/:id/oauth/start` factory is out of
-// scope for Track A — these two ride the existing onboarding OAuth routes.
 const OAUTH_CARDS: readonly OAuthConnectorCard[] = [
   { id: "openrouter", displayName: "OpenRouter" },
   { id: "huggingface", displayName: "Hugging Face" },
 ];
 
 /**
- * Exported so other surfaces (the plugins gallery's connect panel) can send
- * the same OAuth connectors through the same existing onboarding route
- * instead of re-deriving this URL — see the comment above `OAUTH_CARDS` for
- * why this still targets `/api/onboarding/oauth/...` rather than the
- * generalized per-connector factory.
+ * Exported so other surfaces (the plugins gallery's connect panel) can
+ * send every OAuth-capable connector through the same tenant-scoped
+ * `connections/oauth` mount instead of re-deriving this URL. Onboarding's
+ * own `/api/onboarding/oauth/...` mount serves only its first-login
+ * OpenRouter/Hugging Face flow and is never a connect surface's target
+ * (CL-6394).
  */
 export function oauthStartHref(
+  tenantId: string,
   connectorId: string,
   returnPath = "/settings/connections",
 ): string {
-  return `/api/onboarding/oauth/${connectorId}/start?return=${encodeURIComponent(returnPath)}`;
+  return `/api/tenants/${tenantId}/connections/oauth/${connectorId}/start?return=${encodeURIComponent(returnPath)}`;
 }
 
 type ConnectionsData = {
@@ -358,6 +358,7 @@ export function ConnectionsSection({
                 {OAUTH_CARDS.map((card) => (
                   <OAuthConnectorRow
                     key={card.id}
+                    tenantId={currentTenantId}
                     card={card}
                     statusResult={connectorStatus(
                       card.id,
@@ -700,12 +701,14 @@ function ConnectorRow({
 }
 
 function OAuthConnectorRow({
+  tenantId,
   card,
   statusResult,
   modelCount,
   configured,
   onDisconnect,
 }: {
+  readonly tenantId: string;
   readonly card: OAuthConnectorCard;
   readonly statusResult: ConnectorStatusResult;
   readonly modelCount: number;
@@ -783,7 +786,7 @@ function OAuthConnectorRow({
             className="settings-connection-row-connect-action"
             asChild
           >
-            <a href={oauthStartHref(card.id)}>
+            <a href={oauthStartHref(tenantId, card.id)}>
               {statusResult.status === "needs_attention"
                 ? SETTINGS_STRINGS.connectionsReconnectAction
                 : SETTINGS_STRINGS.connectionsConnectAction}

@@ -124,6 +124,7 @@ function mountHubShaped() {
       },
       seedCatalogFn: async (args) => {
         seeds.push(args);
+        return { hasCompletionCapableModel: true };
       },
     }),
     defaultReturnPath: "/settings/connections",

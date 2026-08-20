@@ -7,87 +7,52 @@
 // inside the platform's tenant middleware — the same one
 // `createConnectionRoutes` and `createMcpOAuthRoutes` (#115) run
 // inside — so `c.get("tenant")`/`c.get("principal")` are already
-// resolved and this never re-derives a tenant of its own.
+// resolved, typed by the factory's own `TenantEnv` parameter rather
+// than a cast.
 //
-// Persists exactly the way `routes.ts`'s `POST /:connectorId/complete`
-// does: `ensureProvider` + `ensureCredential`, then `seedCatalog` for an
-// inference connector so a just-connected provider's models are
-// launchable immediately, not just stored. The credential is already
-// proven by the OAuth exchange itself, so there is no separate probe
-// step here (unlike `/complete`'s pasted-key path, which has nothing
-// else vouching for the secret).
-import type { Context } from "hono";
+// Persists through the one shared sequence every connect surface runs
+// (`./persist-credential.ts`): provider + credential rows always, the
+// curated model catalog only for an inference connector — a
+// non-inference connector (GitHub) stores its token and stops there.
+// The credential is already proven by the OAuth exchange itself, so
+// there is no separate probe step here (unlike `/complete`'s pasted-key
+// path, which has nothing else vouching for the secret).
 import type { TenantEnv } from "@intx/hub-api";
-import {
-  createHubAPI,
-  ensureCredential,
-  ensureProvider,
-  PROVIDER_TEST_CONFIG,
-  seedCatalog,
-  type ApiCall,
-  type EnsureCredentialArgs,
-  type EnsureProviderArgs,
-  type SeedCatalogArgs,
-  type SupportedCredentialProvider,
-} from "@workbench/hub-client";
+import { createHubAPI } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
 import type { CreateOAuthConnectRoutesDeps } from "./oauth-routes";
+import {
+  persistConnectorCredential,
+  type PersistConnectorCredentialFns,
+} from "./persist-credential";
 
-export type CreateTenantConnectCredentialDeps = {
-  readonly hubUrl: string;
-  readonly log: (line: string) => void;
-  /** Test-only override, matching every other route factory here. */
-  readonly registry?: Readonly<Record<string, ConnectorDescriptor>>;
-  /** Cleared on a successful connect, same store `createConnectionRoutes`'
-   * `/complete` and `GET /provider-health` share (CL-6092). */
-  readonly providerHealth?: ProviderHealthStore;
-  /** Test-only override, matching `routes.ts`'s own seam — lets this
-   * module's own test prove the persist/seed sequencing without
-   * reaching for module mocking or a real hub HTTP server. */
-  readonly ensureProviderFn?: (
-    api: ApiCall,
-    cookies: string[],
-    args: EnsureProviderArgs,
-    log: (line: string) => void,
-  ) => ReturnType<typeof ensureProvider>;
-  readonly ensureCredentialFn?: (
-    api: ApiCall,
-    cookies: string[],
-    args: EnsureCredentialArgs,
-    log: (line: string) => void,
-  ) => ReturnType<typeof ensureCredential>;
-  readonly seedCatalogFn?: (
-    args: SeedCatalogArgs,
-  ) => ReturnType<typeof seedCatalog>;
-};
-
-function isInferenceProvider(id: string): id is SupportedCredentialProvider {
-  return Object.hasOwn(PROVIDER_TEST_CONFIG, id);
-}
+export type CreateTenantConnectCredentialDeps =
+  PersistConnectorCredentialFns & {
+    readonly hubUrl: string;
+    readonly log: (line: string) => void;
+    /** Test-only override, matching every other route factory here. */
+    readonly registry?: Readonly<Record<string, ConnectorDescriptor>>;
+    /** Cleared on a successful connect, same store `createConnectionRoutes`'
+     * `/complete` and `GET /provider-health` share (CL-6092). */
+    readonly providerHealth?: ProviderHealthStore;
+  };
 
 /**
- * Builds the `connectCredential` dep `createOAuthConnectRoutes` needs,
- * scoped to whatever tenant the request's own middleware already
- * resolved. `args.c` is cast to `Context<TenantEnv>` — safe only
- * because this is wired exclusively into a mount reached through the
- * platform's tenant middleware (see this module's own header); a caller
- * mounting outside that middleware must not use this.
+ * Builds the `connectCredential` dep a `TenantEnv`-typed
+ * `createOAuthConnectRoutes` mount needs, scoped to whatever tenant the
+ * request's own middleware already resolved.
  */
 export function createTenantConnectCredential(
   deps: CreateTenantConnectCredentialDeps,
-): CreateOAuthConnectRoutesDeps["connectCredential"] {
+): CreateOAuthConnectRoutesDeps<TenantEnv>["connectCredential"] {
   const api = createHubAPI(deps.hubUrl);
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
-  const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
-  const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
-  const runSeedCatalog = deps.seedCatalogFn ?? seedCatalog;
 
   return async (args) => {
-    const c = args.c as Context<TenantEnv>;
-    const tenant = c.get("tenant");
-    const principal = c.get("principal");
+    const tenant = args.c.get("tenant");
+    const principal = args.c.get("principal");
     const descriptor = registry[args.connectorId];
     if (descriptor === undefined) {
       return {
@@ -97,40 +62,27 @@ export function createTenantConnectCredential(
     }
 
     try {
-      const providerId = await runEnsureProvider(
+      const persistArgs: Parameters<typeof persistConnectorCredential>[0] = {
         api,
-        args.cookies,
-        {
-          tenantId: tenant.id,
-          name: descriptor.id,
-          plugin: descriptor.credentialPlugin,
-        },
-        deps.log,
-      );
-      await runEnsureCredential(
-        api,
-        args.cookies,
-        {
-          tenantId: tenant.id,
-          providerId,
-          name: descriptor.displayName,
-          secret: args.apiKey,
-          type: "api_key",
-          verified: true,
-        },
-        deps.log,
-      );
-      if (isInferenceProvider(descriptor.id)) {
-        await runSeedCatalog({
-          api,
-          cookies: args.cookies,
-          tenantId: tenant.id,
-          log: deps.log,
-          provider: descriptor.id,
-          apiKey: args.apiKey,
-          credentialVerified: true,
-        });
-      }
+        cookies: args.cookies,
+        tenantId: tenant.id,
+        descriptor,
+        secret: args.apiKey,
+        log: deps.log,
+        ...(args.credentialMetadata !== undefined
+          ? { credentialMetadata: args.credentialMetadata }
+          : {}),
+        ...(deps.ensureProviderFn !== undefined
+          ? { ensureProviderFn: deps.ensureProviderFn }
+          : {}),
+        ...(deps.ensureCredentialFn !== undefined
+          ? { ensureCredentialFn: deps.ensureCredentialFn }
+          : {}),
+        ...(deps.seedCatalogFn !== undefined
+          ? { seedCatalogFn: deps.seedCatalogFn }
+          : {}),
+      };
+      await persistConnectorCredential(persistArgs);
       deps.providerHealth?.clear(tenant.id, descriptor.id);
       return {
         kind: "connected",

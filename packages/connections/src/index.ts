@@ -80,6 +80,12 @@ export {
   type CreateTenantConnectCredentialDeps,
 } from "./oauth-tenant-connect";
 export {
+  isInferenceProvider,
+  persistConnectorCredential,
+  type PersistConnectorCredentialArgs,
+  type PersistConnectorCredentialFns,
+} from "./persist-credential";
+export {
   CONNECT_STATE_TTL_MS as OPENROUTER_CONNECT_STATE_TTL_MS,
   exchangeCodeForKey,
   OPENROUTER_AUTH_URL,
