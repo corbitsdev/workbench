@@ -24,11 +24,70 @@ export interface Turn {
   readonly toolCalls: readonly ToolCall[];
 }
 
+/** One agent definition's guided-capability state, as read off its
+ * `workflow.json` (the same shape `GET /:definitionId/capabilities`
+ * returns — see `targets/world-snapshot.ts`). */
+export interface WorldAgentDefinition {
+  readonly id: string;
+  readonly name: string;
+  readonly toolPackagePins: readonly string[];
+  readonly skills: readonly string[];
+  readonly model: string | null;
+}
+
+/** One routine row. `trigger` is kept structural (not the
+ * `@corbits/routines` arktype-validated type) so this package never
+ * takes a hard dependency on that package's wire shape, only its
+ * table. */
+export interface WorldRoutine {
+  readonly id: string;
+  readonly name: string;
+  readonly definitionId: string;
+  readonly trigger: unknown;
+  readonly deliveryWorkbenchId: string | null;
+  readonly enabled: boolean;
+}
+
+/** One connected external system — an MCP server or another connector
+ * — with whether its credential is currently active. */
+export interface WorldConnection {
+  readonly slug: string;
+  readonly name: string;
+  readonly url: string;
+  readonly live: boolean;
+}
+
+/** One call a recording MCP fake actually received — the eval
+ * harness's "what did the outside world see" channel, folded into a
+ * snapshot alongside the tenant's own state. Empty when no fake is
+ * wired for a case. */
+export interface FakeReceipt {
+  readonly server: string;
+  readonly toolName: string;
+  readonly arguments: Record<string, unknown>;
+}
+
+/** What actually exists in the tenant right now — not what the agent
+ * said or called, but the state those calls produced. Captured once
+ * per step, after that step's turn has landed (see runner.ts). */
+export interface WorldSnapshot {
+  readonly capturedAt: string;
+  readonly agentDefinitions: readonly WorldAgentDefinition[];
+  readonly routines: readonly WorldRoutine[];
+  readonly connections: readonly WorldConnection[];
+  readonly fakeReceipts: readonly FakeReceipt[];
+}
+
 /** What a scorer sees: the full transcript so far, with `turnIndex`
- * naming which entry is the turn just played. */
+ * naming which entry is the turn just played, and `world` — the
+ * tenant's actual state as of that step. A `Target` with no
+ * `snapshotWorld` capability yields an empty `WorldSnapshot` rather
+ * than an absent field, so every scorer can read `ctx.world`
+ * unconditionally. */
 export interface ScorerContext {
   readonly transcript: readonly Turn[];
   readonly turnIndex: number;
+  readonly world: WorldSnapshot;
 }
 
 export interface ScorerResult {
@@ -76,10 +135,16 @@ export interface RunConfig {
 
 /** A target is anything that can play one scripted human turn and
  * report what happened — a real Myra deployment (targets/real-stack.ts)
- * or a fake for unit-testing the runner itself (runner.test.ts). */
+ * or a fake for unit-testing the runner itself (runner.test.ts).
+ * `snapshotWorld` is an optional capability: not every target can read
+ * the tenant's own tables (a scripted-only fake `Target` has nothing to
+ * read), so `runEval` guards the call and falls back to an empty
+ * `WorldSnapshot` rather than requiring every `Target` to implement
+ * it. */
 export interface Target {
   readonly configName: string;
   sendTurn(human: string): Promise<Turn>;
+  snapshotWorld?(): Promise<WorldSnapshot>;
   close(): Promise<void>;
 }
 

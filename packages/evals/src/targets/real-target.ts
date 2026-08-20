@@ -29,7 +29,7 @@ import {
 import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 
-import type { RunConfig, Target, Turn } from "../types.ts";
+import type { RunConfig, Target, Turn, WorldSnapshot } from "../types.ts";
 import {
   newToolCallsSince,
   readAllToolCalls,
@@ -91,6 +91,12 @@ export interface MyraTargetInfra {
     databaseUrl: string,
   ): Promise<SqlClientLike & { end(): Promise<void> }>;
   freePort(): number;
+  /** Optional world-snapshot capability (targets/world-snapshot.ts):
+   * when the caller supplies this, the returned `Target` gains
+   * `snapshotWorld`. Left unset in `plumbing-only` runs that never
+   * assert on tenant state, so this package's callers never have to
+   * wire a drizzle handle + AssetService just to run `bun run eval`. */
+  captureWorldSnapshot?: (tenantId: string) => Promise<WorldSnapshot>;
 }
 
 /** Never sent anywhere for real in plumbing mode — see the module
@@ -571,6 +577,16 @@ export async function bootMyraTarget(
       configName: config.name,
       sendTurn,
       close: closeAll,
+      ...(infra.captureWorldSnapshot === undefined
+        ? {}
+        : {
+            snapshotWorld: () =>
+              (
+                infra.captureWorldSnapshot as (
+                  tenantId: string,
+                ) => Promise<WorldSnapshot>
+              )(seeded.tenantId),
+          }),
     };
   } catch (cause) {
     await closeAll();

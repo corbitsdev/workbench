@@ -3,6 +3,7 @@ export type {
   EvalRunResult,
   EvalStep,
   EvalStepRecord,
+  FakeReceipt,
   RunConfig,
   Scorer,
   ScorerContext,
@@ -11,6 +12,10 @@ export type {
   Target,
   ToolCall,
   Turn,
+  WorldAgentDefinition,
+  WorldConnection,
+  WorldRoutine,
+  WorldSnapshot,
 } from "./types.ts";
 export { defineEval } from "./define-eval.ts";
 export { runEval, runMatrix } from "./runner.ts";
@@ -28,6 +33,13 @@ export {
   routineCreatedOnlyAfterOk,
 } from "./scorers/scorers.ts";
 export {
+  agentHasTools,
+  connectionIsLive,
+  fakeReceived,
+  routineDeliversTo,
+  routineHasTrigger,
+} from "./scorers/world-scorers.ts";
+export {
   ALL_EVALS,
   aiDailyResearchEval,
   docsOnSdkChangeEval,
@@ -44,3 +56,5 @@ export type {
 } from "./targets/real-target.ts";
 export { newToolCallsSince, readAllToolCalls } from "./targets/trace.ts";
 export type { SqlClientLike } from "./targets/trace.ts";
+export { captureWorldSnapshot } from "./targets/world-snapshot.ts";
+export type { WorldSnapshotInfra } from "./targets/world-snapshot.ts";
