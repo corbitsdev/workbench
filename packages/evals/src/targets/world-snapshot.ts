@@ -23,14 +23,18 @@
 //     active credential, so everything it returns is "live".
 import { and, eq, isNull } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import { schema } from "@intx/db";
+import { resolveCredentialByName, schema } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 import {
   readAgentCapabilities,
   readAgentDefinitionWorkflowJson,
 } from "@corbits/agent-directory";
 import { routine as routineTable } from "@corbits/routines";
-import { listMcpServerConnections } from "@workbench/connections";
+import { webhookTrigger as webhookTriggerTable } from "@corbits/webhook-triggers";
+import {
+  connectorDescriptors,
+  listMcpServerConnections,
+} from "@workbench/connections";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
 
@@ -44,6 +48,10 @@ export interface WorldSnapshotInfra {
   readonly db: DB["db"];
   readonly assetService: AssetService;
   readonly fakeReceiptsReader?: () => readonly FakeReceipt[];
+  /** Test seam over `@intx/db`'s ancestor-walking credential resolver,
+   * defaulting to the real one — the same resolution the Plugins layer
+   * and the hub's own `resolveGithubConfig` binding use. */
+  readonly resolveCredentialByNameFn?: typeof resolveCredentialByName;
 }
 
 async function readAgentDefinitions(
@@ -96,13 +104,50 @@ async function readRoutines(db: DB["db"], tenantId: string) {
   }));
 }
 
-async function readConnections(db: DB["db"], tenantId: string) {
-  const connections = await listMcpServerConnections(db, tenantId);
-  return connections.map((connection) => ({
+async function readConnections(
+  db: DB["db"],
+  tenantId: string,
+  resolveByName: typeof resolveCredentialByName,
+) {
+  const mcpConnections = await listMcpServerConnections(db, tenantId);
+  const fromMcp = mcpConnections.map((connection) => ({
     slug: connection.slug,
     name: connection.name,
     url: connection.url,
     live: true,
+  }));
+
+  // Connector credentials (the Plugins layer): a connector's credential
+  // row is named after its descriptor's displayName — the exact
+  // resolution `@workbench/connections`' plugins module and the hub's
+  // own `resolveGithubConfig` binding use — so a GitHub PAT connected
+  // through the connections layer shows up here as slug "github",
+  // which is not an MCP server and was invisible to this snapshot
+  // before.
+  const fromConnectors: typeof fromMcp = [];
+  for (const descriptor of connectorDescriptors()) {
+    const row = await resolveByName(db, tenantId, descriptor.displayName);
+    if (row === null) continue;
+    fromConnectors.push({
+      slug: descriptor.id,
+      name: descriptor.displayName,
+      url: "",
+      live: true,
+    });
+  }
+  return [...fromMcp, ...fromConnectors];
+}
+
+async function readWebhookTriggers(db: DB["db"], tenantId: string) {
+  const rows = await db
+    .select()
+    .from(webhookTriggerTable)
+    .where(eq(webhookTriggerTable.tenantId, tenantId));
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    workflowDefinitionId: row.workflowDefinitionId,
+    enabled: row.enabled,
   }));
 }
 
@@ -117,16 +162,23 @@ export async function captureWorldSnapshot(
   infra: WorldSnapshotInfra,
   tenantId: string,
 ): Promise<WorldSnapshot> {
-  const [agentDefinitions, routines, connections] = await Promise.all([
-    readAgentDefinitions(infra.db, infra.assetService, tenantId),
-    readRoutines(infra.db, tenantId),
-    readConnections(infra.db, tenantId),
-  ]);
+  const [agentDefinitions, routines, connections, webhookTriggers] =
+    await Promise.all([
+      readAgentDefinitions(infra.db, infra.assetService, tenantId),
+      readRoutines(infra.db, tenantId),
+      readConnections(
+        infra.db,
+        tenantId,
+        infra.resolveCredentialByNameFn ?? resolveCredentialByName,
+      ),
+      readWebhookTriggers(infra.db, tenantId),
+    ]);
   return {
     capturedAt: new Date().toISOString(),
     agentDefinitions,
     routines,
     connections,
+    webhookTriggers,
     fakeReceipts: infra.fakeReceiptsReader?.() ?? [],
   };
 }

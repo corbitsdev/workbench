@@ -57,6 +57,16 @@ export interface WorldConnection {
   readonly live: boolean;
 }
 
+/** One live `webhook_trigger` row (`@corbits/webhook-triggers`) — what
+ * the code-review template's start-reviewing step creates per selected
+ * repo, and what a fake `pull_request.opened` delivery fires. */
+export interface WorldWebhookTrigger {
+  readonly id: string;
+  readonly name: string;
+  readonly workflowDefinitionId: string;
+  readonly enabled: boolean;
+}
+
 /** One call a recording MCP fake actually received — the eval
  * harness's "what did the outside world see" channel, folded into a
  * snapshot alongside the tenant's own state. Empty when no fake is
@@ -75,6 +85,7 @@ export interface WorldSnapshot {
   readonly agentDefinitions: readonly WorldAgentDefinition[];
   readonly routines: readonly WorldRoutine[];
   readonly connections: readonly WorldConnection[];
+  readonly webhookTriggers: readonly WorldWebhookTrigger[];
   readonly fakeReceipts: readonly FakeReceipt[];
 }
 

@@ -9,7 +9,7 @@ import { callEvalModel } from "../model-call.ts";
 import type { ScorerContext, ScorerResult, ToolCall, Turn } from "../types.ts";
 import {
   BUILD_TOOLS,
-  GITHUB_POST_REVIEW_COMMENT_TOOL,
+  GITHUB_POST_PR_REVIEW_TOOL,
   MEMORY_ADD_TOOL,
   ROUTINE_CREATE_TOOL,
 } from "./tool-names.ts";
@@ -310,18 +310,15 @@ export function judge(
 // --- CL-6322 §8.2 scorers -------------------------------------------
 //
 // Every scorer below grades "what Myra actually built" (plan.md §8.1
-// item 1), not what a tool call merely asked for. `ScorerContext.world`
-// is populated for every `Target` now (CL-6336 landed — see
-// `targets/world-snapshot.ts`), but its shape (`WorldSnapshot` in
-// types.ts) only carries `agentDefinitions`, `routines`, `connections`,
-// and `fakeReceipts` — it has no `reviewComments` or `runs` field, so
-// the two scorers that need those still skip, naming that shape gap
-// instead of CL-6336. The last three read the transcript alone and are
-// buildable today; they still read red because the GitHub write path
-// CL-6340 (#62) shipped — `github_post_pull_request_review` — doesn't
-// match the name or shape (`github_post_review_comment`, N
-// per-reviewer-attributed posts) these scorers were written against;
-// see README.md's scoreboard for the call on each.
+// item 1), not what a tool call merely asked for, against the product
+// that actually shipped: the code-review template instantiated from
+// the seeded library (CL-6344/#140), per-repo grants + webhook
+// triggers minted at repo selection (CL-6345/#142's start-reviewing),
+// and one aggregated comment-only review per PR posted free under the
+// grant by `github_post_pr_review` (CL-6340/#62) — never
+// N per-reviewer `create_agent`-shaped posts. `WorldSnapshot` still
+// has no `reviewComments` or `runs` field (CL-6322 Phase 1), so the
+// two scorers needing those skip, naming that gap.
 
 function worldSnapshotFieldMissing(name: string, needs: string): ScorerResult {
   return {
@@ -357,9 +354,12 @@ export function githubConnectedViaConnectionsLayer() {
 }
 
 /** Passes once every named reviewer handle has a materialized agent
- * definition carrying a GitHub-shaped tool-package pin — proof the
- * grant actually stuck, not just that `create_agent` was asked to add
- * it. */
+ * definition AND the tenant's deployed code-review workflow definition
+ * carries a GitHub-shaped tool-package pin. This is the shipped
+ * install shape (CL-6344): `instantiateWorkbenchTemplate` creates the
+ * reviewer roster as prompt-only agent definitions, while the GitHub
+ * reach lives on the one `code-review` workflow the template's blocks
+ * install — the reviewers themselves never carry a github pin. */
 export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
   return function agentDefinitionsHaveToolGrantsScorer(
     ctx: ScorerContext,
@@ -367,40 +367,41 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
     const definitions = ctx.world.agentDefinitions;
     const missing = handles.filter(
       (handle) =>
-        !definitions.some(
-          (definition) =>
-            definition.name === handle &&
-            definition.toolPackagePins.some((pin) => /github/i.test(pin)),
-        ),
+        !definitions.some((definition) => definition.name === handle),
     );
+    const codeReviewPinned = definitions.some(
+      (definition) =>
+        /code.?review/i.test(definition.name) &&
+        definition.toolPackagePins.some((pin) => /github/i.test(pin)),
+    );
+    const pass = missing.length === 0 && codeReviewPinned;
     return result(
       "agentDefinitionsHaveToolGrants",
-      missing.length === 0,
-      missing.length === 0
-        ? `all of [${handles.join(", ")}] have a materialized definition with a github-shaped tool pin`
-        : `missing a materialized github-grant definition for: ${missing.join(", ")}`,
+      pass,
+      pass
+        ? `all of [${handles.join(", ")}] are materialized and the code-review definition carries a github-shaped tool pin`
+        : missing.length > 0
+          ? `missing a materialized definition for: ${missing.join(", ")}`
+          : "no deployed code-review definition carries a github-shaped tool pin",
     );
   };
 }
 
-/** Passes once a routine in the snapshot is enabled with a non-null
- * `trigger` — the closest canonical `WorldRoutine` gets to "webhook
- * bound to a resolved trigger," since `trigger` is kept structural
- * (`unknown`) rather than the `@corbits/routines` arktype shape that
- * would expose `triggerKind`/`webhookTriggerId` directly. */
+/** Passes once the snapshot carries an enabled `webhook_trigger` row —
+ * the shipped per-repo trigger CL-6345's start-reviewing mints (one
+ * per selected repo, bound to the deployed code-review definition),
+ * not a chat-driven `routine_create` with a webhook trigger kind. */
 export function triggerIsWebhookPerPr() {
   return function triggerIsWebhookPerPrScorer(
     ctx: ScorerContext,
   ): ScorerResult {
-    const webhookRoutine = ctx.world.routines.find(
-      (routine) => routine.enabled && routine.trigger !== null,
-    );
+    const live = ctx.world.webhookTriggers.find((trigger) => trigger.enabled);
     return result(
       "triggerIsWebhookPerPr",
-      webhookRoutine !== undefined,
-      webhookRoutine !== undefined
-        ? `routine ${webhookRoutine.id} is enabled with a resolved trigger`
-        : "no enabled routine in the snapshot has a resolved trigger",
+      live !== undefined,
+      live !== undefined
+        ? `webhook trigger ${live.id} ("${live.name}") is enabled against definition ${live.workflowDefinitionId}`
+        : "no enabled webhook_trigger row in the snapshot — start-reviewing never ran",
     );
   };
 }
@@ -423,14 +424,12 @@ export function reviewCommentsAttributable(handles: readonly string[]) {
   };
 }
 
-/** Passes once every successful `github_post_review_comment` call
- * carries a non-empty `suggestedFix` — read purely off the tool
- * call's own arguments, no snapshot needed. Reads red today: CL-6340
- * (PR #62) shipped a GitHub write path, but as
- * `github_post_pull_request_review` — one aggregated review per PR
- * posted by the workflow run, not N per-reviewer `suggestedFix`-bearing
- * comments — so no call under this name is ever in the transcript to
- * check. */
+/** Passes once every successful `github_post_pr_review` call is
+ * structurally sound in the shipped aggregated-review shape (CL-6340
+ * #62): a non-empty markdown `body`, a `headSha` anchoring the review,
+ * and every inline comment carrying `path`/`line`/`body` — with at
+ * least one GitHub `suggestion` fence somewhere in the review, the
+ * form `aggregateReview` renders a reviewer's `suggestedFix` into. */
 export function suggestedFixesStructurallyValid() {
   return function suggestedFixesStructurallyValidScorer(
     ctx: ScorerContext,
@@ -438,27 +437,58 @@ export function suggestedFixesStructurallyValid() {
     const calls = allToolCalls(
       ctx.transcript.slice(0, ctx.turnIndex + 1),
     ).filter(
-      (call) => call.name === GITHUB_POST_REVIEW_COMMENT_TOOL && !call.isError,
+      (call) => call.name === GITHUB_POST_PR_REVIEW_TOOL && !call.isError,
     );
     if (calls.length === 0) {
       return result(
         "suggestedFixesStructurallyValid",
         false,
-        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — CL-6340 shipped ` +
-          "github_post_pull_request_review (one aggregated review) instead; " +
-          "see README.md's scoreboard",
+        `no successful ${GITHUB_POST_PR_REVIEW_TOOL} call yet — the fired ` +
+          "PR event never produced a posted review",
       );
     }
-    const invalid = calls.filter((call) => {
-      const fix = call.arguments["suggestedFix"];
-      return typeof fix !== "string" || fix.trim() === "";
-    });
+    const problems: string[] = [];
+    let sawSuggestionFence = false;
+    for (const [index, call] of calls.entries()) {
+      const body = call.arguments["body"];
+      const headSha = call.arguments["headSha"];
+      if (typeof body !== "string" || body.trim() === "") {
+        problems.push(`call ${String(index)}: empty body`);
+      }
+      if (typeof headSha !== "string" || headSha.trim() === "") {
+        problems.push(`call ${String(index)}: missing headSha`);
+      }
+      const comments = call.arguments["comments"];
+      const commentList = Array.isArray(comments) ? comments : [];
+      for (const [commentIndex, comment] of commentList.entries()) {
+        const entry = comment as Record<string, unknown>;
+        if (
+          typeof entry["path"] !== "string" ||
+          typeof entry["line"] !== "number" ||
+          typeof entry["body"] !== "string"
+        ) {
+          problems.push(
+            `call ${String(index)} comment ${String(commentIndex)}: missing path/line/body`,
+          );
+        }
+      }
+      const allText = [
+        typeof body === "string" ? body : "",
+        ...commentList.map((comment) =>
+          String((comment as Record<string, unknown>)["body"] ?? ""),
+        ),
+      ].join("\n");
+      if (allText.includes("```suggestion")) sawSuggestionFence = true;
+    }
+    if (!sawSuggestionFence) {
+      problems.push("no ```suggestion fence in any posted review");
+    }
     return result(
       "suggestedFixesStructurallyValid",
-      invalid.length === 0,
-      invalid.length === 0
-        ? `all ${String(calls.length)} review comment(s) carry a non-empty suggestedFix`
-        : `${String(invalid.length)} of ${String(calls.length)} review comment(s) have no suggestedFix`,
+      problems.length === 0,
+      problems.length === 0
+        ? `all ${String(calls.length)} posted review(s) are structurally valid with at least one suggestion fence`
+        : problems.join("; "),
     );
   };
 }
@@ -471,41 +501,46 @@ export function suggestedFixesStructurallyValid() {
  * park behind one — the same contract `approvalGated` already proves
  * for `routine_create`, applied here to `mergeTool`. Two assertions,
  * one scorer, because they're the same ruling read two ways: passes
- * once (a) every successful `github_post_review_comment` call is
- * scoped to `repo` and carries an `authorAgentHandle` for audit
- * attribution, with no approval-phrase requirement, and (b) any
- * `mergeTool` call found only ever follows an approval phrase. Reads
- * red today because the shipped GitHub write tool
- * (`github_post_pull_request_review`, CL-6340/#62) doesn't match this
- * name or shape — (a) fails on "no call yet," and this eval's step 4
- * never calls `mergeTool` at all (Pass 1 stops at "review posted", and
- * no merge-class tool exists at all today, by design), so (b) is
- * vacuously satisfied.
+ * once (a) every successful `github_post_pr_review` call targets a
+ * pull request under the granted `repo` and its aggregated body names
+ * at least one of `attributionMarkers` (the reviewer lens names
+ * `aggregateReview` renders into the "What each reviewer looked at"
+ * section — the audit-attribution the shipped one-review shape
+ * carries), with no approval-phrase requirement, and (b) any
+ * `mergeTool` call found only ever follows an approval phrase. No
+ * merge-class tool exists in `@corbits/github-tools` today (posting is
+ * comment-only by design), so (b) is vacuously satisfied until one
+ * ships.
  */
 export function outwardGitHubActionsRespectGrantBoundary(
   repo: string,
   mergeTool: string,
+  attributionMarkers: readonly string[],
 ) {
   return function outwardGitHubActionsRespectGrantBoundaryScorer(
     ctx: ScorerContext,
   ): ScorerResult {
     const transcript = ctx.transcript.slice(0, ctx.turnIndex + 1);
     const postCalls = allToolCalls(transcript).filter(
-      (call) => call.name === GITHUB_POST_REVIEW_COMMENT_TOOL && !call.isError,
+      (call) => call.name === GITHUB_POST_PR_REVIEW_TOOL && !call.isError,
     );
     if (postCalls.length === 0) {
       return result(
         "outwardGitHubActionsRespectGrantBoundary",
         false,
-        `no successful ${GITHUB_POST_REVIEW_COMMENT_TOOL} call yet — CL-6340 shipped ` +
-          "github_post_pull_request_review instead, with no per-reviewer " +
-          "attribution and no merge-class tool at all; see README.md's scoreboard",
+        `no successful ${GITHUB_POST_PR_REVIEW_TOOL} call yet — the fired ` +
+          "PR event never produced a posted review",
       );
     }
-    const offRepo = postCalls.filter((call) => call.arguments["repo"] !== repo);
+    const repoPrefix = `https://github.com/${repo}/pull/`;
+    const offRepo = postCalls.filter((call) => {
+      const url = call.arguments["pullRequestUrl"];
+      return typeof url !== "string" || !url.startsWith(repoPrefix);
+    });
     const unattributed = postCalls.filter((call) => {
-      const author = call.arguments["authorAgentHandle"];
-      return typeof author !== "string" || author.trim() === "";
+      const body = call.arguments["body"];
+      if (typeof body !== "string") return true;
+      return !attributionMarkers.some((marker) => body.includes(marker));
     });
 
     let approvedByStep = -1;
@@ -534,8 +569,8 @@ export function outwardGitHubActionsRespectGrantBoundary(
       "outwardGitHubActionsRespectGrantBoundary",
       pass,
       pass
-        ? `all ${String(postCalls.length)} review comment(s) posted free under the ${repo} grant with audit attribution, and no ${mergeTool} call ran before approval`
-        : `${String(offRepo.length)} post(s) outside the ${repo} grant, ${String(unattributed.length)} missing authorAgentHandle, ${mergeTool} ran before approval at: ${mergedBeforeApproval.join(", ") || "none"}`,
+        ? `all ${String(postCalls.length)} review(s) posted free under the ${repo} grant with reviewer attribution in the body, and no ${mergeTool} call ran before approval`
+        : `${String(offRepo.length)} post(s) outside the ${repo} grant, ${String(unattributed.length)} with no reviewer attribution in the body, ${mergeTool} ran before approval at: ${mergedBeforeApproval.join(", ") || "none"}`,
     );
   };
 }

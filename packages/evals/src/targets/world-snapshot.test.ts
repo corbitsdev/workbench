@@ -4,6 +4,7 @@ import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { agentDefinitionSourceTree } from "@corbits/agent-directory";
+import { webhookTrigger as webhookTriggerTable } from "@corbits/webhook-triggers";
 
 import {
   captureWorldSnapshot,
@@ -40,6 +41,13 @@ type FakeTables = {
     name: string;
     status: string;
   }[];
+  webhookTriggers: {
+    id: string;
+    tenantId: string;
+    name: string;
+    workflowDefinitionId: string;
+    enabled: boolean;
+  }[];
   workflowBlobs: Record<string, string>;
 };
 
@@ -60,11 +68,25 @@ function fakeDb(tables: FakeTables): DB["db"] {
       },
     },
     select: () => ({
-      from: () => ({
-        where: async () => tables.routines,
+      from: (table: unknown) => ({
+        where: async () =>
+          table === webhookTriggerTable
+            ? tables.webhookTriggers
+            : tables.routines,
       }),
     }),
   } as unknown as DB["db"];
+}
+
+/** Fake of the ancestor-walking credential resolver: a plain name
+ * lookup over the fixture's credential rows. */
+function fakeResolveCredentialByName(tables: FakeTables) {
+  return (async (_db: unknown, _tenantId: string, name: string) =>
+    tables.credentials.find(
+      (credential) => credential.name === name,
+    ) ?? null) as unknown as NonNullable<
+    WorldSnapshotInfra["resolveCredentialByNameFn"]
+  >;
 }
 
 /** Answers each asset's entry module out of the source tree its
@@ -112,6 +134,7 @@ function emptyTables(): FakeTables {
     routines: [],
     providers: [],
     credentials: [],
+    webhookTriggers: [],
     workflowBlobs: {},
   };
 }
@@ -128,6 +151,7 @@ test("captureWorldSnapshot reads agent definitions with their capabilities", asy
   ];
   const infra: WorldSnapshotInfra = {
     db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({
       "asset-1": workflowJsonWith(
         [{ name: "@corbits/web-search-tools", version: "0.0.1" }],
@@ -154,6 +178,7 @@ test("captureWorldSnapshot skips a definition with no materialized asset", async
   ];
   const infra: WorldSnapshotInfra = {
     db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");
@@ -176,6 +201,7 @@ test("captureWorldSnapshot reads routines with their trigger and delivery", asyn
   ];
   const infra: WorldSnapshotInfra = {
     db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");
@@ -206,23 +232,75 @@ test("captureWorldSnapshot reads live MCP connections", async () => {
       id: "c-1",
       tenantId: "tenant-1",
       providerId: "p-1",
+      name: "mcp:github",
+      status: "active",
+    },
+  ];
+  const infra: WorldSnapshotInfra = {
+    db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
+    assetService: fakeAssetService({}),
+  };
+  const world = await captureWorldSnapshot(infra, "tenant-1");
+  expect(world.connections).toEqual([
+    { slug: "github", name: "mcp:github", url: "https://fake/mcp", live: true },
+  ]);
+});
+
+test("captureWorldSnapshot reads a connector credential (a GitHub PAT) as a live connection", async () => {
+  const tables = emptyTables();
+  tables.credentials = [
+    {
+      id: "c-1",
+      tenantId: "tenant-1",
+      providerId: "p-1",
       name: "GitHub",
       status: "active",
     },
   ];
   const infra: WorldSnapshotInfra = {
     db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");
   expect(world.connections).toEqual([
-    { slug: "github", name: "GitHub", url: "https://fake/mcp", live: true },
+    { slug: "github", name: "GitHub", url: "", live: true },
+  ]);
+});
+
+test("captureWorldSnapshot reads webhook trigger rows", async () => {
+  const tables = emptyTables();
+  tables.webhookTriggers = [
+    {
+      id: "wt-1",
+      tenantId: "tenant-1",
+      name: "abklabs/workbench pull-request-opened",
+      workflowDefinitionId: "def-cr",
+      enabled: true,
+    },
+  ];
+  const infra: WorldSnapshotInfra = {
+    db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
+    assetService: fakeAssetService({}),
+  };
+  const world = await captureWorldSnapshot(infra, "tenant-1");
+  expect(world.webhookTriggers).toEqual([
+    {
+      id: "wt-1",
+      name: "abklabs/workbench pull-request-opened",
+      workflowDefinitionId: "def-cr",
+      enabled: true,
+    },
   ]);
 });
 
 test("captureWorldSnapshot folds in fake receipts from the injected reader", async () => {
+  const tables = emptyTables();
   const infra: WorldSnapshotInfra = {
-    db: fakeDb(emptyTables()),
+    db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
     fakeReceiptsReader: () => [
       { server: "github", toolName: "list_pull_requests", arguments: {} },
@@ -235,8 +313,10 @@ test("captureWorldSnapshot folds in fake receipts from the injected reader", asy
 });
 
 test("captureWorldSnapshot returns an empty, well-formed snapshot for a tenant with nothing yet", async () => {
+  const tables = emptyTables();
   const infra: WorldSnapshotInfra = {
-    db: fakeDb(emptyTables()),
+    db: fakeDb(tables),
+    resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");

@@ -21,6 +21,7 @@ function emptyWorldSnapshot(): WorldSnapshot {
     agentDefinitions: [],
     routines: [],
     connections: [],
+    webhookTriggers: [],
     fakeReceipts: [],
   };
 }
