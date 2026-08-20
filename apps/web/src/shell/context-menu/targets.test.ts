@@ -83,6 +83,26 @@ describe("SHELL_CONTEXT_MENU_TARGETS", () => {
     expect(resolve(container)).toEqual({ type: "account" });
   });
 
+  test("resolves an artifact row, defaulting ids to just its own id", () => {
+    const container = mount('<div data-ctx-artifact="art_1"></div>');
+    expect(resolve(container)).toEqual({
+      type: "artifact",
+      id: "art_1",
+      ids: ["art_1"],
+    });
+  });
+
+  test("resolves an artifact row inside an active multi-select as every selected id", () => {
+    const container = mount(
+      '<div data-ctx-artifact="art_2" data-ctx-artifact-selected-ids="art_1,art_2,art_3"></div>',
+    );
+    expect(resolve(container)).toEqual({
+      type: "artifact",
+      id: "art_2",
+      ids: ["art_1", "art_2", "art_3"],
+    });
+  });
+
   test("falls back to the shell target for anything unmatched", () => {
     const container = mount('<div><span id="plain"></span></div>');
     expect(resolve(container.querySelector("#plain"))).toEqual(

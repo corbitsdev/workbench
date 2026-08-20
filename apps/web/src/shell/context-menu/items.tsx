@@ -26,6 +26,11 @@ import {
 } from "@corbits/icons";
 import { toast } from "@corbits/react-ui";
 
+import {
+  copyArtifactLinks,
+  copyArtifactLinksActionLabel,
+  copyArtifactLinksToastLabel,
+} from "../library-artifacts";
 import { workbenchPath } from "../../workbench-path";
 import { requestWorkbenchRename } from "../../workbench-rename-events";
 import { requestOpenCommandPalette } from "../../command-palette-events";
@@ -179,6 +184,33 @@ function insightsRunMenu(
   };
 }
 
+/**
+ * Same operation set the Files bulk action bar offers (CL-6423): copy
+ * every acted-on file's canonical link. `target.ids` is either the single
+ * right-clicked row, or the whole active selection when the row is part of
+ * one — see `SHELL_CONTEXT_MENU_TARGETS`.
+ */
+function artifactMenu(
+  target: Extract<ShellContextMenuTarget, { type: "artifact" }>,
+): ContextMenu {
+  const count = target.ids.length;
+  return {
+    entries: [
+      contextMenuItem({
+        id: "copy-link",
+        label: copyArtifactLinksActionLabel(count),
+        icon: <LinkIcon />,
+        onSelect: () => {
+          void copyArtifactLinks(target.ids).then(
+            () => toast(copyArtifactLinksToastLabel(count)),
+            () => toast("Couldn't copy the link"),
+          );
+        },
+      }),
+    ],
+  };
+}
+
 function accountMenu(actions: ShellContextMenuActions): ContextMenu {
   return {
     label: "Account",
@@ -240,6 +272,8 @@ export function shellContextMenuFor(
       return routineMenu(target, actions);
     case "insights-run":
       return insightsRunMenu(target, actions);
+    case "artifact":
+      return artifactMenu(target);
     case "account":
       return accountMenu(actions);
     case "shell":

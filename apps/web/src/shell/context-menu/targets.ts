@@ -19,7 +19,18 @@ export type ShellContextMenuTarget =
       readonly handle: string;
     }
   | { readonly type: "routine"; readonly id: string; readonly name: string }
-  | { readonly type: "insights-run"; readonly id: string };
+  | { readonly type: "insights-run"; readonly id: string }
+  | {
+      readonly type: "artifact";
+      readonly id: string;
+      /**
+       * The ids this menu acts on: the row's own id alone, or — when the
+       * right-clicked row is part of a multi-row selection — every
+       * selected id, so a right-click inside an active selection offers
+       * the exact same operation set as the bulk action bar (CL-6423).
+       */
+      readonly ids: readonly string[];
+    };
 
 function attr(element: Element, name: string): string | null {
   const value = element.getAttribute(name);
@@ -76,6 +87,19 @@ export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextM
         const id = attr(element, "data-ctx-insights-run");
         if (id === null) return null;
         return { type: "insights-run", id };
+      },
+    },
+    {
+      selector: "[data-ctx-artifact]",
+      resolve: (element) => {
+        const id = attr(element, "data-ctx-artifact");
+        if (id === null) return null;
+        const selectedIds = attr(element, "data-ctx-artifact-selected-ids");
+        const ids =
+          selectedIds === null
+            ? [id]
+            : selectedIds.split(",").filter((candidate) => candidate !== "");
+        return { type: "artifact", id, ids: ids.length > 0 ? ids : [id] };
       },
     },
   ];

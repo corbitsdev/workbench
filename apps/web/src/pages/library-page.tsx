@@ -1,4 +1,5 @@
 import {
+  BulkActionBar,
   Button,
   LibrarySearchInput,
   Menu,
@@ -7,6 +8,7 @@ import {
   MenuTrigger,
   PageShell,
   RichEmptyState,
+  SelectionCheckbox,
   Skeleton,
   Table,
   TableBody,
@@ -18,8 +20,13 @@ import {
   artifactKindLabel,
   formatRelativeTime,
   toast,
+  useListSelection,
 } from "@corbits/react-ui";
-import type { ViewMode } from "@corbits/react-ui";
+import type {
+  SelectionCheckboxState,
+  UseListSelectionResult,
+  ViewMode,
+} from "@corbits/react-ui";
 import {
   ArtifactCard,
   ArtifactRenderer,
@@ -33,8 +40,15 @@ import {
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowsDownUp, ArrowSquareOut, Stack, X } from "@corbits/icons";
+import {
+  ArrowsDownUp,
+  ArrowSquareOut,
+  LinkSimple as LinkIcon,
+  Stack,
+  X,
+} from "@corbits/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   describeApiError,
   ListSkeleton,
@@ -49,7 +63,7 @@ import {
   useAPIQuery,
   type ArtifactDetail,
 } from "../api";
-import { rowActivationProps } from "../activatable-row";
+import { isAdditiveSelectClick, isRowActivationKey } from "../activatable-row";
 import { useBench } from "../bench-context";
 import { readLastWorkbenchId } from "../last-workbench";
 import {
@@ -63,7 +77,11 @@ import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
 import {
   artifactUploadToast,
+  copyArtifactLinks,
+  copyArtifactLinksActionLabel,
+  copyArtifactLinksToastLabel,
   isArtifactsUnavailableStatus,
+  LIBRARY_BULK_OPERATION_IDS,
   mapArtifactListToSummaries,
   uploadArtifactFiles,
 } from "../shell/library-artifacts";
@@ -79,16 +97,46 @@ function ArtifactRows({
   now,
   selectedId,
   onSelect,
+  selection,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   readonly now: number | undefined;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
+  readonly selection: UseListSelectionResult<string>;
 }) {
+  const allSelected =
+    artifacts.length > 0 && selection.selectedCount === artifacts.length;
+  const headerChecked: SelectionCheckboxState =
+    selection.selectedCount === 0
+      ? false
+      : allSelected
+        ? true
+        : "indeterminate";
+  // `useListSelection` hands back ids in toggle/insertion order, not row
+  // order — a bottom-up shift-select would otherwise join/copy links out of
+  // visible order. Sort against this row order before handing ids to any
+  // bulk operation (copy links here, the context menu's `ids` below).
+  const visibleOrder = useMemo(
+    () => new Map(artifacts.map((artifact, index) => [artifact.id, index])),
+    [artifacts],
+  );
+
   return (
     <Table aria-label="Files">
       <TableHeader>
         <TableRow>
+          <TableHead className="w-10">
+            <SelectionCheckbox
+              checked={headerChecked}
+              onToggle={() =>
+                allSelected ? selection.clear() : selection.selectAll()
+              }
+              rowLabel="all files"
+              ariaLabel="Select all files"
+              className="opacity-100"
+            />
+          </TableHead>
           <TableHead>Title</TableHead>
           <TableHead>Kind</TableHead>
           <TableHead>Owner</TableHead>
@@ -96,28 +144,62 @@ function ArtifactRows({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {artifacts.map((artifact) => (
-          <TableRow
-            key={artifact.id}
-            data-state={selectedId === artifact.id ? "selected" : undefined}
-            className="cursor-pointer"
-            {...rowActivationProps(() => onSelect(artifact.id))}
-          >
-            <TableCell className="font-medium">{artifact.title}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {artifactKindLabel(artifact.kind)}
-            </TableCell>
-            <TableCell className="text-muted-foreground">
-              {artifact.ownerName ?? "—"}
-            </TableCell>
-            <TableCell className="text-muted-foreground">
-              {formatRelativeTime(
-                artifact.updatedAt ?? artifact.createdAt,
-                now,
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
+        {artifacts.map((artifact) => {
+          const isSelected = selection.isSelected(artifact.id);
+          const selectionIds =
+            isSelected && selection.selectedCount > 1
+              ? [...selection.selectedIds].sort(
+                  (a, b) =>
+                    (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
+                )
+              : [artifact.id];
+          return (
+            <TableRow
+              key={artifact.id}
+              data-state={selectedId === artifact.id ? "selected" : undefined}
+              data-ctx-artifact={artifact.id}
+              data-ctx-artifact-selected-ids={selectionIds.join(",")}
+              className="group cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={(event: ReactMouseEvent) => {
+                if (event.shiftKey || isAdditiveSelectClick(event)) {
+                  selection.toggle(artifact.id, { shiftKey: event.shiftKey });
+                  return;
+                }
+                onSelect(artifact.id);
+              }}
+              onKeyDown={(event) => {
+                if (!isRowActivationKey(event.key)) return;
+                event.preventDefault();
+                onSelect(artifact.id);
+              }}
+            >
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <SelectionCheckbox
+                  checked={isSelected}
+                  onToggle={(modifiers) =>
+                    selection.toggle(artifact.id, modifiers)
+                  }
+                  rowLabel={artifact.title}
+                />
+              </TableCell>
+              <TableCell className="font-medium">{artifact.title}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {artifactKindLabel(artifact.kind)}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {artifact.ownerName ?? "—"}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {formatRelativeTime(
+                  artifact.updatedAt ?? artifact.createdAt,
+                  now,
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -297,6 +379,26 @@ export function LibraryPage({
     [artifacts, activeQuery, sort, onQueryChange],
   );
 
+  const visibleIds = useMemo(
+    () => visible.map((artifact) => artifact.id),
+    [visible],
+  );
+  // A row filtered out of `visibleIds` drops out of `selection.selectedIds`
+  // immediately (the hook reconciles against `ids` on every read) but
+  // `useListSelection` keeps it in its own internal state, so the row comes
+  // back selected if the filter that hid it is cleared. Deliberate: it
+  // matches Finder/Sheets ("clearing a filter doesn't lose your picks") and
+  // needs no bookkeeping here.
+  const selection = useListSelection({ ids: visibleIds });
+
+  // Rows and cards render selection differently — only rows has checkboxes
+  // — so a selection made in one view has nothing to anchor to in the
+  // other. Clearing on view change is simpler than teaching the card view
+  // its own checkboxes for a selection UI it doesn't otherwise need.
+  useEffect(() => {
+    selection.clear();
+  }, [viewMode, selection.clear]);
+
   const openPicker = useCallback(() => {
     if (uploading === true) return;
     fileInputRef.current?.click();
@@ -447,6 +549,7 @@ export function LibraryPage({
                   now={now}
                   selectedId={activeSelected}
                   onSelect={(id) => select(id)}
+                  selection={selection}
                 />
               </div>
             ) : (
@@ -479,6 +582,26 @@ export function LibraryPage({
           </div>
         ) : null}
       </div>
+      <BulkActionBar count={selection.selectedCount} onClear={selection.clear}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-bulk-action={LIBRARY_BULK_OPERATION_IDS[0]}
+          onClick={() => {
+            const ids = [...selection.selectedIds].sort(
+              (a, b) => visibleIds.indexOf(a) - visibleIds.indexOf(b),
+            );
+            void copyArtifactLinks(ids).then(
+              () => toast(copyArtifactLinksToastLabel(ids.length)),
+              () => toast("Couldn't copy the link"),
+            );
+          }}
+        >
+          <LinkIcon aria-hidden="true" />
+          {copyArtifactLinksActionLabel(selection.selectedCount)}
+        </Button>
+      </BulkActionBar>
     </div>
   );
 }
