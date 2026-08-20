@@ -79,7 +79,7 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { colorForPrincipal } from "@corbits/presence";
+import { colorForPrincipal } from "@corbits/presence/color";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {

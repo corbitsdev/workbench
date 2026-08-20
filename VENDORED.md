@@ -94,7 +94,14 @@ own event-log commits (e.g. a step named `write`) under their step-suffixed
 address, so every such pack was rejected `path_violation` with "source
 address has no deployment anchor it owns," the sidecar withheld the ack, and
 the hub redelivered forever — the same infinite-retry shape as the terminal-run
-case above, one layer up the address hierarchy. `vendor/intx/workflow-host`
+case above, one layer up the address hierarchy. `vendor/intx/inference`
+narrows `UploadGoogleGenAIFileOpts.bytes` from `Uint8Array` to
+`Uint8Array<ArrayBuffer>`: the bytes go straight out as a
+`RequestInit.body`, and the DOM's `BodyInit` accepts only an
+`ArrayBuffer`-backed view, so under a browser package's `lib` the
+unnarrowed parameter is a hard type error while under a Node-only `lib` it
+slips through undici's laxer `BodyInit`. The narrowing is what lets one
+vendored file type-check identically in both. `vendor/intx/workflow-host`
 (CL-6164) drops
 inbound mail carrying no conversation text on the parked-resume path rather
 than delivering an empty string that throws inside `agent.send` and fails the

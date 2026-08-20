@@ -349,6 +349,14 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow-definition:*", action: "read" },
   { resource: "workflow-run:*", action: "create" },
   { resource: "workflow-run:*", action: "write" },
+  // CL-6346 moved the room routes (post a message, read-state, typing,
+  // reactions, pins, the live stream) off `workflow-run:<id>` and onto
+  // `room:<id>`. The two grants above used to be what carried a
+  // non-owner principal through those routes; without the room pair
+  // beside them the rename leaves every seeded principal that is not a
+  // wildcard owner unable to read or write its own workbenches.
+  { resource: "room:*", action: "read" },
+  { resource: "room:*", action: "write" },
 ];
 
 // The grants table has no unique constraint and the create route is a

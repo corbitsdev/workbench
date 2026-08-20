@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 14,
+    maxOccurrences: 15,
     tables: [
       // Created as channel_settings et al.; renamed to workbench_* by
       // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
@@ -62,6 +62,10 @@ const ALLOWLIST: readonly {
       // in schema.ts.
       "finalized_turn_write_claim",
       "message_client_ids",
+      // The room's own messages (CL-6327): a workbench message is
+      // workbench data, held here rather than read back out of the
+      // anchor run's mailbox — see room-messages.ts.
+      "workbench_messages",
     ],
   },
   {

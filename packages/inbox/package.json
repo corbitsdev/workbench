@@ -17,13 +17,13 @@
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
     "@corbits/notify": "workspace:*",
     "@intx/hub-api": "workspace:*",
+    "@intx/log": "workspace:*",
     "arktype": "catalog:",
     "hono": "catalog:"
   },
   "devDependencies": {
     "@intx/db": "workspace:*",
     "@intx/hub-common": "workspace:*",
-    "@intx/log": "workspace:*",
     "@types/bun": "catalog:",
     "postgres": "catalog:",
     "typescript": "catalog:"
