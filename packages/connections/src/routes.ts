@@ -34,6 +34,10 @@ import {
   type SeedCatalogArgs,
 } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
+import {
+  fireConnectedHook,
+  type ServiceConnectedHook,
+} from "./connected-hook";
 import { persistConnectorCredential } from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
@@ -249,6 +253,11 @@ export type CreateConnectionRoutesDeps = {
    * providers get configured.
    */
   probeBaseUrls?: Readonly<Record<string, string>>;
+  /** Fires once for every durably stored connection, whatever the
+   * connector — the composition's connect-settling seam (flip in-room
+   * connect cards, resume waiting agents). Failures are logged and
+   * never surface into the response. */
+  onConnected?: ServiceConnectedHook;
 };
 
 export function createConnectionRoutes(
@@ -419,6 +428,12 @@ export function createConnectionRoutes(
         // record standing rather than clearing it on a test pass whose
         // save then failed (CL-6092).
         deps.providerHealth?.clear(tenant.id, descriptor.id);
+        await fireConnectedHook(deps.onConnected, deps.log, {
+          tenantId: tenant.id,
+          principalId: c.get("principal").id,
+          connectorId: descriptor.id,
+          displayName: descriptor.displayName,
+        });
         return c.json(
           modelGuidance !== undefined
             ? { credentialId, status: "active" as const, modelGuidance }

@@ -33,6 +33,10 @@ import {
   MCP_STREAMABLE_HTTP_PROVIDER_KEY,
 } from "@corbits/credential-providers";
 import { probeMcpServer } from "./mcp-probe";
+import {
+  fireConnectedHook,
+  type ServiceConnectedHook,
+} from "./connected-hook";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -102,6 +106,11 @@ export type CreateMcpServerRoutesDeps = {
    * without a network. */
   apiCall?: ApiCall;
   probe?: typeof probeMcpServer;
+  /** Fires once for every durably stored connection, whatever the
+   * connector — the composition's connect-settling seam (flip in-room
+   * connect cards, resume waiting agents). Failures are logged and
+   * never surface into the response. */
+  onConnected?: ServiceConnectedHook;
 };
 
 export async function listMcpProviders(
@@ -303,6 +312,12 @@ export function createMcpServerRoutes(
         },
         deps.log,
       );
+      await fireConnectedHook(deps.onConnected, deps.log, {
+        tenantId: tenant.id,
+        principalId: c.get("principal").id,
+        connectorId: slug,
+        displayName: name,
+      });
       const connected: McpServerConnected = {
         slug,
         name,

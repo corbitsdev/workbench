@@ -166,6 +166,7 @@ function buildApp(opts: {
   apiCall: ApiCall;
   probe?: (url: string, token: string | undefined) => Promise<McpProbeResult>;
   requireGrant?: RequireGrant;
+  onConnected?: Parameters<typeof createMcpServerRoutes>[0]["onConnected"];
 }) {
   const routes = createMcpServerRoutes({
     hubUrl: "http://hub.test",
@@ -173,6 +174,9 @@ function buildApp(opts: {
     log: () => {},
     apiCall: opts.apiCall,
     probe: opts.probe ?? (async () => ({ ok: true, toolCount: 3 })),
+    ...(opts.onConnected !== undefined
+      ? { onConnected: opts.onConnected }
+      : {}),
   });
   return mountAs(routes);
 }

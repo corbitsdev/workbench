@@ -137,6 +137,7 @@ function buildApp(
     listConnectedProviders?: Parameters<
       typeof createConnectionRoutes
     >[0]["listConnectedProviders"];
+    onConnected?: Parameters<typeof createConnectionRoutes>[0]["onConnected"];
   } = {},
 ) {
   const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
@@ -158,6 +159,8 @@ function buildApp(
     routeArgs.providerHealth = overrides.providerHealth;
   if (overrides.listConnectedProviders !== undefined)
     routeArgs.listConnectedProviders = overrides.listConnectedProviders;
+  if (overrides.onConnected !== undefined)
+    routeArgs.onConnected = overrides.onConnected;
   const routes = createConnectionRoutes(routeArgs);
   return mountAs(routes);
 }

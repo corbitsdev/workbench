@@ -109,6 +109,8 @@ function connectRoutes(
       })),
   };
   if (overrides.oauthEnv !== undefined) deps.oauthEnv = overrides.oauthEnv;
+  if (overrides.onConnected !== undefined)
+    deps.onConnected = overrides.onConnected;
   if (overrides.recentlyConnected !== undefined)
     deps.recentlyConnected = overrides.recentlyConnected;
   if (overrides.afterConnected !== undefined)

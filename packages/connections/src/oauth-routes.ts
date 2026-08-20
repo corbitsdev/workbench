@@ -41,6 +41,10 @@ import {
   generatePKCEPair,
   type ConnectStateStore,
 } from "./pkce";
+import {
+  fireConnectedHook,
+  type ServiceConnectedHook,
+} from "./connected-hook";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
 
@@ -200,6 +204,11 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
     principalId: string;
     tenantDomain: string;
   }) => Promise<void>;
+  /** Fires once for every durably stored connection, whatever the
+   * connector — the composition's connect-settling seam (flip in-room
+   * connect cards, resume waiting agents). Failures are logged and
+   * never surface into the redirect. */
+  readonly onConnected?: ServiceConnectedHook;
   /** Where a caller lands when no `?return=` was given on `/start`, or
    * when the given one fails `sanitizeReturnPath`. */
   readonly defaultReturnPath?: string;
@@ -596,6 +605,13 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
           tenantDomain: result.tenantDomain,
         });
       }
+
+      await fireConnectedHook(deps.onConnected, deps.log, {
+        tenantId: result.tenantId,
+        principalId: result.principalId,
+        connectorId,
+        displayName: descriptor.displayName,
+      });
 
       return c.redirect(
         redirectPath(returnPath, connectorId, {
