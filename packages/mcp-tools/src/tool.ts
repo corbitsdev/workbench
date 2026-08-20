@@ -39,8 +39,13 @@
 // call sees whether the tool the model is about to invoke claims to
 // be read-only — an honest signal, not an enforcement mechanism. This
 // is the [Intx gap] the task named up front (no dynamic/late-bound
-// approval floor); "ask always" is the safe over-approximation of "ask
-// unless read-only" until the runtime grows a per-call floor.
+// approval floor); "ask always" stays the static floor. CL-6345 layers
+// the grant allowance on top at the hub: a parked `mcp_call` whose
+// downstream tool the server itself marks `readOnlyHint: true` (see
+// `./allowance.ts`'s classifier, which re-verifies the claim live) and
+// whose `mcp:<slug>` connection resource a standing `allow` grant
+// covers is auto-approved through the native resolve machinery, so it
+// proceeds without a human while every write still parks.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
@@ -630,8 +635,9 @@ export const mcpTools = defineTool<McpToolsEnv>({
         name: MCP_CALL_TOOL,
         description:
           "Calls any tool — read or write — on a connected MCP server. " +
-          "Always requires human approval before it runs, regardless of " +
-          `the downstream tool; prefer ${MCP_READ_TOOL} for read-only ` +
+          "Requires human approval before it runs unless the downstream " +
+          "tool is verified read-only and the connection carries a " +
+          `standing read grant; prefer ${MCP_READ_TOOL} for read-only ` +
           `tools, which needs no approval. Call ${MCP_LIST_TOOLS_TOOL} ` +
           "once first to find the tool (pattern search when unsure " +
           "which server) and get its exact name and input schema — " +
