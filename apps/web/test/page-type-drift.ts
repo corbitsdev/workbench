@@ -3,11 +3,11 @@
 // schema-inferred type directly. If either side drifts, the assignments
 // below stop compiling.
 
-import { WorkflowRunSummary, paginatedSchema } from "@intx/types";
+import { PrincipalSummary, paginatedSchema } from "@intx/types";
 import type { APIQuery } from "@corbits/api-query";
-import type { RunsPage, WorkflowRun } from "../src/api";
+import type { PrincipalsPage, Principal } from "../src/api";
 
-const _schema = paginatedSchema(WorkflowRunSummary);
+const _schema = paginatedSchema(PrincipalSummary);
 type Inferred = typeof _schema.infer;
 
 // The inferred type must not be any-like, or these guards prove nothing.
@@ -16,13 +16,13 @@ const _notAny: { totallyWrong: number } = null as unknown as Inferred;
 
 // The inferred envelope carries exactly the structural fields.
 declare const inferred: Inferred;
-const _data: WorkflowRun[] = inferred.data;
+const _data: Principal[] = inferred.data;
 const _cursor: string | null = inferred.nextCursor;
 
 // At the query seam, a schema-backed result satisfies the structural page
 // type, and a drifted structural envelope is rejected.
-declare const runsQuery: APIQuery<Inferred>;
-const _accepted: APIQuery<RunsPage> = runsQuery;
+declare const principalsQuery: APIQuery<Inferred>;
+const _accepted: APIQuery<PrincipalsPage> = principalsQuery;
 // @ts-expect-error a drifted envelope (nextCursor: number) must be rejected
-const _rejected: APIQuery<{ data: WorkflowRun[]; nextCursor: number }> =
-  runsQuery;
+const _rejected: APIQuery<{ data: Principal[]; nextCursor: number }> =
+  principalsQuery;

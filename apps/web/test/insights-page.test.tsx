@@ -728,13 +728,13 @@ describe("InsightsRunDetailRoute wiring", () => {
     return el;
   }
 
-  test("a 404 on the by-run lookup is the true quiet no-op: plain view, no error note, no retries", async () => {
+  test("a null-item by-run answer is the quiet no-op: plain view, no error note, one request", async () => {
     const calls: string[] = [];
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       calls.push(path);
       if (path.includes("/tasks/by-run/")) {
-        return Promise.resolve(json({ error: "not found" }, 404));
+        return Promise.resolve(json({ item: null }));
       }
       if (path.includes("/trace")) {
         return Promise.resolve(json(readyTrace));
@@ -742,10 +742,6 @@ describe("InsightsRunDetailRoute wiring", () => {
       return Promise.resolve(json({ error: "unexpected" }, 500));
     }) as typeof fetch;
 
-    // The real app retry predicate (`shouldRetryQuery`), not the test
-    // client's blanket retry:false — this is what proves the 404 branch
-    // actually stops react-query from retrying, not just that the test
-    // harness never retries anything.
     const client = new QueryClient({
       defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0 } },
     });

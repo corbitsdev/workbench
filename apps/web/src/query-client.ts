@@ -10,11 +10,11 @@ import type { WorkbenchKind } from "@corbits/chat-ui";
 
 /**
  * Retry policy shared by every query in the app: no session and a
- * definitive 404 both mean retrying cannot help — a 404 on a chain-context
- * lookup (a run with no owning task) is a real, stable answer, not a
- * transient failure, so retrying it three times only delays an honest
- * quiet no-op. Everything else (500s, network failures) gets the normal
- * three attempts.
+ * definitive 404 both mean retrying cannot help — a 404 on a detail
+ * lookup (an artifact or approval deleted since the link was made) is a
+ * real, stable answer, not a transient failure, so retrying it three
+ * times only delays an honest quiet no-op. Everything else (500s,
+ * network failures) gets the normal three attempts.
  */
 export function shouldRetryQuery(
   failureCount: number,
@@ -77,7 +77,6 @@ export function createAppQueryClient(
 export const meKeys = {
   profile: ["me", "profile"] as const,
   principals: ["me", "principals"] as const,
-  runs: ["me", "runs"] as const,
   workbenchTenancyKinds: (tenantIds: readonly string[]) =>
     ["me", "workbench-tenancy-kinds", [...tenantIds].sort()] as const,
 };
@@ -169,7 +168,6 @@ export const tenantKeys = {
 export function pathToQueryKey(path: string): readonly unknown[] {
   if (path === "/api/me") return meKeys.profile;
   if (path === "/api/me/principals") return meKeys.principals;
-  if (path === "/api/me/workflows/runs") return meKeys.runs;
   const needsYou = /^\/api\/tenants\/([^/]+)\/approvals\/needs-you$/.exec(path);
   if (needsYou?.[1] !== undefined) return tenantKeys.needsYou(needsYou[1]);
   const assets = /^\/api\/tenants\/([^/]+)\/assets$/.exec(path);

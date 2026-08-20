@@ -257,9 +257,11 @@ export const TaskSchema = type({
   stepCount: "number",
 });
 
-/** GET /tasks/by-run/:runId and GET /tasks/:id envelope. */
+/** GET /tasks/by-run/:runId envelope — `item` is null for a run with no
+ * owning task (every directly-launched run), a normal state the server
+ * answers 200 for, never 404. */
 export const TaskResponseSchema = type({
-  item: TaskSchema,
+  item: TaskSchema.or("null"),
 });
 
 export type TaskLeg = typeof TaskLegSchema.infer;

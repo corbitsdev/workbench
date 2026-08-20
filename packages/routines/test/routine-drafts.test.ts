@@ -371,3 +371,49 @@ describe("POST /routine-drafts/:id/approve definitionId recovery", () => {
     expect(approved.routine.definitionId).toBe("def_picked");
   });
 });
+
+describe("routine-drafts when no draft store is configured", () => {
+  function mountWithoutDrafts(): Hono<TenantEnv> {
+    return mountAs(
+      createRoutineRoutes(buildDeps(undefined, { drafts: undefined })),
+      "prn_alice",
+    );
+  }
+
+  test("POST /routine-drafts answers 503, never a 404 conflated with a missing draft", async () => {
+    const app = mountWithoutDrafts();
+    const response = await app.request("/routine-drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(DRAFT_BODY),
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("unavailable");
+  });
+
+  test("GET /routine-drafts still lists an honest empty page", async () => {
+    const app = mountWithoutDrafts();
+    const response = await app.request("/routine-drafts");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [] });
+  });
+
+  test("GET /routine-drafts/:id and approve/discard answer 503", async () => {
+    const app = mountWithoutDrafts();
+    expect((await app.request("/routine-drafts/rd_1")).status).toBe(503);
+    expect(
+      (
+        await app.request("/routine-drafts/rd_1/approve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        })
+      ).status,
+    ).toBe(503);
+    expect(
+      (await app.request("/routine-drafts/rd_1/discard", { method: "POST" }))
+        .status,
+    ).toBe(503);
+  });
+});

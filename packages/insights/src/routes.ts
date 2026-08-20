@@ -326,9 +326,20 @@ export function createInsightsRoutes(
           200,
         );
       }
+      // No recorded trace is a normal state for a run (recorded before
+      // tracing, or trace rows pruned) — answer the same absent envelope
+      // as an unmounted reader instead of 404ing a lookup the run-detail
+      // page fires on every open.
       const trace = await deps.runTraceReader.getTrace(tenant.id, runId);
       if (trace === null) {
-        return c.json(ErrorEnvelope("not_found", "run not found"), 404);
+        return c.json(
+          {
+            runId,
+            spans: null,
+            absent: "trace_not_recorded",
+          },
+          200,
+        );
       }
       return c.json(trace);
     },
