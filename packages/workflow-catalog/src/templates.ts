@@ -111,6 +111,25 @@ export const WorkbenchTemplateOpenInput = type({
 export type WorkbenchTemplateOpenInput =
   typeof WorkbenchTemplateOpenInput.infer;
 
+/**
+ * The full manifest, as parsed back off a trust boundary — the bench
+ * library row a hub seeded (see `@corbits/artifacts-hub`'s template
+ * library) travels over HTTP before a picker instantiates from it, so
+ * it re-enters through this schema, never through `as`.
+ */
+export const WorkbenchTemplateManifestSchema = type({
+  id: "/^[a-z][a-z0-9-]*$/",
+  title: "string > 0",
+  promise: "string > 0",
+  blocks: WorkbenchTemplateBlock.array(),
+  requiredConnections: "string[]",
+  optionalConnections: "string[]",
+  routines: WorkbenchTemplateRoutine.array(),
+  webhookTriggers: WorkbenchTemplateWebhookTrigger.array(),
+  participants: WorkbenchTemplateParticipant.array(),
+  openInputs: WorkbenchTemplateOpenInput.array(),
+});
+
 export type WorkbenchTemplateManifest = {
   readonly id: string;
   /** What the picker row calls it. */
@@ -288,6 +307,33 @@ export function templateBlockAssetNames(
   template: WorkbenchTemplateManifest,
 ): readonly string[] {
   return template.blocks.map((block) => block.assetName);
+}
+
+/** The exact string a hub seeds into the bench library for one template. */
+export function serializeWorkbenchTemplateManifest(
+  template: WorkbenchTemplateManifest,
+): string {
+  return JSON.stringify(template, null, 2);
+}
+
+/**
+ * Parses a seeded library row's content back into a manifest, running
+ * the same cross-reference checks module load runs on the shipped
+ * constants. Throws on anything malformed — an unreadable library row
+ * is a seeding defect to surface, never a shape to limp past.
+ */
+export function parseWorkbenchTemplateManifest(
+  data: unknown,
+): WorkbenchTemplateManifest {
+  const raw = typeof data === "string" ? JSON.parse(data) : data;
+  const parsed = WorkbenchTemplateManifestSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `workbench template manifest failed to parse: ${parsed.summary}`,
+    );
+  }
+  assertValid(parsed);
+  return parsed;
 }
 
 function assertValid(template: WorkbenchTemplateManifest): void {

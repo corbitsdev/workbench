@@ -9,6 +9,8 @@ import {
   WORKFLOW_CATALOG,
   templateBlockAssetNames,
   workbenchTemplate,
+  parseWorkbenchTemplateManifest,
+  serializeWorkbenchTemplateManifest,
   workflowCatalogEntry,
 } from "../src/index";
 
@@ -163,4 +165,30 @@ test("participants are addressable by a distinct handle", () => {
     );
     expect(new Set(handles).size).toBe(handles.length);
   }
+});
+
+test("every shipped template survives the seed round trip verbatim", () => {
+  for (const template of WORKBENCH_TEMPLATES) {
+    const parsed = parseWorkbenchTemplateManifest(
+      serializeWorkbenchTemplateManifest(template),
+    );
+    expect(parsed).toEqual(template);
+  }
+});
+
+test("a malformed library row fails to parse instead of half-loading", () => {
+  expect(() => parseWorkbenchTemplateManifest('{"id":"code-review"}')).toThrow(
+    /failed to parse/,
+  );
+  const orphanRoutine = {
+    ...GTM_TEMPLATE,
+    routines: [
+      { ...GTM_TEMPLATE.routines[0]!, blockAssetName: "not-installed" },
+    ],
+  };
+  expect(() =>
+    parseWorkbenchTemplateManifest(
+      serializeWorkbenchTemplateManifest(orphanRoutine),
+    ),
+  ).toThrow(/does not install/);
 });
