@@ -16,7 +16,7 @@ describe("requestLibraryUpload", () => {
     requestLibraryUpload({
       alreadyOnLibrary: true,
       navigateToLibrary: () => {
-        navigated.push("/library");
+        navigated.push("/files");
       },
     });
     expect(navigated).toEqual([]);
@@ -28,10 +28,10 @@ describe("requestLibraryUpload", () => {
     requestLibraryUpload({
       alreadyOnLibrary: false,
       navigateToLibrary: () => {
-        navigated.push("/library");
+        navigated.push("/files");
       },
     });
-    expect(navigated).toEqual(["/library"]);
+    expect(navigated).toEqual(["/files"]);
     expect(consumePendingLibraryUpload()).toBe(true);
     expect(consumePendingLibraryUpload()).toBe(false);
   });

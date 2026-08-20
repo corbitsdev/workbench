@@ -1,23 +1,30 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — Plugins, Insights, and Settings are reached from its footer, and
-// everything here also stays reachable by deep link and the palette.
-// Conversation deep links (`/w/:workbenchId`) stay routable; `/` is the Myra
-// land hop (ensure + open her conversation) for a bench with a workbench
-// already, or the guided first-workbench describe screen for a bench with
-// none (CL-6104) — never a Home dashboard.
-// Approvals has no page — the Activity band owns them. Agents and Skills
-// are Settings sections; `/agents` and `/skills` stay routable only as
-// redirects to their new home, so old links and bookmarks still land
-// somewhere real. Inbox is gone too (CL-6151: tasks + approvals don't flow
-// into workbenches); `/inbox` stays routable only as a redirect to `/`.
+// routes — Files, Skills, Agents, Plugins, Insights, and Settings are
+// reached from its footer, and everything here also stays reachable by
+// deep link and the palette. Conversation deep links (`/w/:workbenchId`)
+// stay routable; `/` is the Myra land hop (ensure + open her conversation)
+// for a bench with a workbench already, or the guided first-workbench
+// describe screen for a bench with none (CL-6104) — never a Home
+// dashboard.
+// Approvals has no page — the Activity band owns them. Agents (CL-6354)
+// and Skills (CL-6355) are their own rail destinations again — they spent
+// a stretch as Settings sections (CL-5990) and `/settings/agents[/:id]` /
+// `/settings/skills[/:id]` stay routable only as redirects back here, so
+// old links and bookmarks still land somewhere real. Library was renamed
+// Files (CL-6353) at the same time it moved off `/library`, which
+// redirects the same way. Inbox is gone too (CL-6151: tasks + approvals
+// don't flow into workbenches); `/inbox` stays routable only as a
+// redirect to `/`.
 
 import {
   Blocks,
+  Bot,
   ChartColumn,
   Library,
   MessageSquare,
+  Sparkles,
   SlidersHorizontal,
   Workflow,
 } from "lucide-react";
@@ -25,8 +32,9 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
-  LegacyAgentsRedirect,
-  LegacySkillsRedirect,
+  LegacyLibraryRedirect,
+  LegacySettingsAgentsRedirect,
+  LegacySettingsSkillsRedirect,
 } from "./pages/legacy-settings-redirects";
 
 // Each signed-in page is a dynamic import so Vite emits one chunk per
@@ -48,6 +56,12 @@ const RoutinesRoute = lazy(async () => ({
 }));
 const LibraryRoute = lazy(async () => ({
   default: (await import("./pages/library-page")).LibraryRoute,
+}));
+const AgentsRoute = lazy(async () => ({
+  default: (await import("./pages/agents-page")).AgentsRoute,
+}));
+const SkillsRoute = lazy(async () => ({
+  default: (await import("./pages/skills-page")).SkillsRoute,
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
@@ -102,9 +116,12 @@ export function matchesRoute(routePath: string, path: string): boolean {
   if (
     routePath === "/routines" ||
     routePath === "/library" ||
+    routePath === "/files" ||
     routePath === "/insights" ||
     routePath === "/agents" ||
     routePath === "/skills" ||
+    routePath === "/settings/agents" ||
+    routePath === "/settings/skills" ||
     routePath === SETTINGS_PATH
   ) {
     return path === routePath || path.startsWith(`${routePath}/`);
@@ -164,29 +181,57 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    path: "/library",
-    label: "Library",
+    // The renamed, remounted Library page (CL-6353) — "Library" stays out
+    // of user-facing copy, but the underlying artifact machinery
+    // (`library-page.tsx`, `libraryArtifactIdFromPath`, …) keeps its name.
+    path: "/files",
+    label: "Files",
     icon: <Library />,
     render: (path: string) => <LibraryRoute path={path} />,
   },
   {
-    // Agents is a Settings section — this entry only keeps old `/agents`
-    // links routable.
-    path: "/agents",
-    label: "Agents",
-    icon: <SlidersHorizontal />,
+    // Old `/library` links and bookmarks (CL-6353's rename) land here.
+    path: "/library",
+    label: "Files",
+    icon: <Library />,
     render: (path: string, navigate: (to: string) => void) => (
-      <LegacyAgentsRedirect path={path} navigate={navigate} />
+      <LegacyLibraryRedirect path={path} navigate={navigate} />
     ),
   },
   {
-    // Skills is a Settings section — this entry only keeps old `/skills`
-    // links routable.
+    path: "/agents",
+    label: "Agents",
+    icon: <Bot />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <AgentsRoute path={path} navigate={navigate} />
+    ),
+  },
+  {
+    // Agents spent CL-5990 through CL-6354 as a Settings section — this
+    // entry keeps old `/settings/agents[/:id]` links routable.
+    path: "/settings/agents",
+    label: "Agents",
+    icon: <Bot />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <LegacySettingsAgentsRedirect path={path} navigate={navigate} />
+    ),
+  },
+  {
     path: "/skills",
     label: "Skills",
-    icon: <SlidersHorizontal />,
+    icon: <Sparkles />,
     render: (path: string, navigate: (to: string) => void) => (
-      <LegacySkillsRedirect path={path} navigate={navigate} />
+      <SkillsRoute path={path} navigate={navigate} />
+    ),
+  },
+  {
+    // Skills spent CL-5990 through CL-6355 as a Settings section — this
+    // entry keeps old `/settings/skills[/:id]` links routable.
+    path: "/settings/skills",
+    label: "Skills",
+    icon: <Sparkles />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <LegacySettingsSkillsRedirect path={path} navigate={navigate} />
     ),
   },
   {
@@ -227,13 +272,16 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 
 /**
  * Everything the command palette treats as a product destination (its
- * "Pages" group). The sidebar footer reaches Inbox / Insights / Settings
- * directly; the rest are palette- and deep-link-reachable.
+ * "Pages" group). The sidebar footer reaches Files / Skills / Agents /
+ * Plugins / Insights / Settings directly; the rest are palette- and
+ * deep-link-reachable.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   WORKBENCH_PATH_PREFIX,
   "/routines",
-  "/library",
+  "/files",
+  "/skills",
+  "/agents",
   "/insights",
   SETTINGS_PATH,
 ]);

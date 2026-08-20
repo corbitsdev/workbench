@@ -120,9 +120,12 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("footer is Plugins, Insights, then the account row — no Inbox", () => {
+  test("footer is Files, Skills, Agents, Plugins, Insights, then the account row — no Inbox", () => {
     const markup = renderSidebar("/w");
     expect(markup).toContain("shell-sidebar-footer-row");
+    expect(markup).toContain(">Files<");
+    expect(markup).toContain(">Skills<");
+    expect(markup).toContain(">Agents<");
     expect(markup).toContain(">Plugins<");
     expect(markup).toContain(">Insights<");
     expect(markup).toContain("data-ctx-account");

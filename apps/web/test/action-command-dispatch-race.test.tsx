@@ -18,7 +18,7 @@ import {
   resetPendingDialogRequests,
   runActionCommand,
 } from "../src/command-palette-actions";
-import { SkillsSettingsSection } from "../src/pages/skills-settings-section";
+import { SkillsPage } from "../src/pages/skills-page";
 import { TestQueryProvider } from "./test-query-provider";
 
 let container: HTMLDivElement | null = null;
@@ -52,7 +52,7 @@ describe("runActionCommand off-route dispatch ordering", () => {
         openRoutine: () => undefined,
       });
     });
-    expect(navigated).toEqual(["/settings/skills"]);
+    expect(navigated).toEqual(["/skills"]);
 
     // Only now (mirroring main.tsx's setState-based navigate re-rendering
     // the route switch on the next tick) does the section actually mount.
@@ -70,7 +70,7 @@ describe("runActionCommand off-route dispatch ordering", () => {
     await act(async () => {
       root?.render(
         <TestQueryProvider>
-          <SkillsSettingsSection tenantId="tenant-1" />
+          <SkillsPage tenantId="tenant-1" />
         </TestQueryProvider>,
       );
     });

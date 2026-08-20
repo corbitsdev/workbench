@@ -1,5 +1,5 @@
-// CL-6015: a chat artifact chip's "Open in Library" affordance navigates to
-// `/library/a/:id` — this is the Library side of that deep link, proving
+// CL-6015: a chat artifact chip's "Open in Files" affordance navigates to
+// `/files/a/:id` — this is the Files side of that deep link, proving
 // the route lands on the right artifact already selected, without any
 // extra click.
 
@@ -65,7 +65,7 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
   return Promise.reject(new Error(`unrouted fetch in library test: ${url}`));
 }
 
-describe("Library deep link", () => {
+describe("Files deep link", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -92,13 +92,13 @@ describe("Library deep link", () => {
     }
   }
 
-  test("navigating to /library/a/:id lands with that artifact already selected", async () => {
+  test("navigating to /files/a/:id lands with that artifact already selected", async () => {
     await act(async () => {
       root.render(
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
             <BenchProvider>
-              <LibraryRoute path="/library/a/art_1" />
+              <LibraryRoute path="/files/a/art_1" />
             </BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,
@@ -118,7 +118,7 @@ describe("Library deep link", () => {
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
             <BenchProvider>
-              <LibraryRoute path="/library/a/art_1" />
+              <LibraryRoute path="/files/a/art_1" />
             </BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,

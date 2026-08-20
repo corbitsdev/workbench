@@ -1,7 +1,7 @@
-// Agents and Skills moved from their own rail routes into Settings
-// sections (CL-5990). Old `/agents[/:id]` and `/skills[/:id]` links must
-// still land somewhere real: these two components bounce to the section's
-// new home, preserving any deep-linked id.
+// Agents and Skills moved from Settings sections back to their own rail
+// routes (CL-6354/CL-6355); Library was renamed Files off its own prefix
+// (CL-6353). Old links must still land somewhere real: these components
+// bounce to the new home, preserving any deep-linked id.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -9,8 +9,9 @@ import type { ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import {
-  LegacyAgentsRedirect,
-  LegacySkillsRedirect,
+  LegacyLibraryRedirect,
+  LegacySettingsAgentsRedirect,
+  LegacySettingsSkillsRedirect,
 } from "../src/pages/legacy-settings-redirects";
 
 let container: HTMLDivElement | null = null;
@@ -36,50 +37,74 @@ async function mount(element: ReactElement) {
   });
 }
 
-describe("LegacyAgentsRedirect", () => {
-  test("bare /agents redirects to /settings/agents", async () => {
+describe("LegacySettingsAgentsRedirect", () => {
+  test("bare /settings/agents redirects to /agents", async () => {
     const navigated: string[] = [];
     await mount(
-      <LegacyAgentsRedirect
-        path="/agents"
+      <LegacySettingsAgentsRedirect
+        path="/settings/agents"
         navigate={(to) => navigated.push(to)}
       />,
     );
-    expect(navigated).toEqual(["/settings/agents"]);
+    expect(navigated).toEqual(["/agents"]);
   });
 
-  test("/agents/:id preserves the id at its new home", async () => {
+  test("/settings/agents/:id preserves the id at its new home", async () => {
     const navigated: string[] = [];
     await mount(
-      <LegacyAgentsRedirect
-        path="/agents/wfd_1"
+      <LegacySettingsAgentsRedirect
+        path="/settings/agents/wfd_1"
         navigate={(to) => navigated.push(to)}
       />,
     );
-    expect(navigated).toEqual(["/settings/agents/wfd_1"]);
+    expect(navigated).toEqual(["/agents/wfd_1"]);
   });
 });
 
-describe("LegacySkillsRedirect", () => {
-  test("bare /skills redirects to /settings/skills", async () => {
+describe("LegacySettingsSkillsRedirect", () => {
+  test("bare /settings/skills redirects to /skills", async () => {
     const navigated: string[] = [];
     await mount(
-      <LegacySkillsRedirect
-        path="/skills"
+      <LegacySettingsSkillsRedirect
+        path="/settings/skills"
         navigate={(to) => navigated.push(to)}
       />,
     );
-    expect(navigated).toEqual(["/settings/skills"]);
+    expect(navigated).toEqual(["/skills"]);
   });
 
-  test("/skills/:id preserves the id at its new home", async () => {
+  test("/settings/skills/:id preserves the id at its new home", async () => {
     const navigated: string[] = [];
     await mount(
-      <LegacySkillsRedirect
-        path="/skills/skill_1"
+      <LegacySettingsSkillsRedirect
+        path="/settings/skills/skill_1"
         navigate={(to) => navigated.push(to)}
       />,
     );
-    expect(navigated).toEqual(["/settings/skills/skill_1"]);
+    expect(navigated).toEqual(["/skills/skill_1"]);
+  });
+});
+
+describe("LegacyLibraryRedirect", () => {
+  test("bare /library redirects to /files", async () => {
+    const navigated: string[] = [];
+    await mount(
+      <LegacyLibraryRedirect
+        path="/library"
+        navigate={(to) => navigated.push(to)}
+      />,
+    );
+    expect(navigated).toEqual(["/files"]);
+  });
+
+  test("/library/:id preserves the id at its new home", async () => {
+    const navigated: string[] = [];
+    await mount(
+      <LegacyLibraryRedirect
+        path="/library/art_1"
+        navigate={(to) => navigated.push(to)}
+      />,
+    );
+    expect(navigated).toEqual(["/files/art_1"]);
   });
 });

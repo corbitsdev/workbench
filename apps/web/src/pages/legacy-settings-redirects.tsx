@@ -1,8 +1,10 @@
-// Agents and Skills used to be their own rail destinations; they are now
-// Settings sections (CL-5990). These two routes keep old `/agents[/:id]`
-// and `/skills[/:id]` links alive by bouncing straight to the section's new
-// home — `/settings/agents[/:id]` / `/settings/skills[/:id]` — so a deep
-// link's selection survives the move, not just the bare list.
+// Old links that must still land somewhere real. Agents and Skills were
+// Settings sections for a stretch (CL-5990: `/settings/agents[/:id]`,
+// `/settings/skills[/:id]`); CL-6354/CL-6355 moved both back out to their
+// own rail destinations, so any deep link into the old Settings home now
+// bounces to the new one, preserving a deep-linked id. Library was renamed
+// Files (CL-6353) at the same time it was moved off `/library` — that old
+// prefix bounces to `/files` the same way.
 
 import { useEffect } from "react";
 
@@ -35,7 +37,7 @@ export function LegacyRedirect({
   return null;
 }
 
-export function LegacyAgentsRedirect({
+export function LegacySettingsAgentsRedirect({
   path,
   navigate,
 }: {
@@ -46,13 +48,13 @@ export function LegacyAgentsRedirect({
     <LegacyRedirect
       path={path}
       navigate={navigate}
-      oldPrefix="/agents"
-      newPrefix="/settings/agents"
+      oldPrefix="/settings/agents"
+      newPrefix="/agents"
     />
   );
 }
 
-export function LegacySkillsRedirect({
+export function LegacySettingsSkillsRedirect({
   path,
   navigate,
 }: {
@@ -63,8 +65,25 @@ export function LegacySkillsRedirect({
     <LegacyRedirect
       path={path}
       navigate={navigate}
-      oldPrefix="/skills"
-      newPrefix="/settings/skills"
+      oldPrefix="/settings/skills"
+      newPrefix="/skills"
+    />
+  );
+}
+
+export function LegacyLibraryRedirect({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
+  return (
+    <LegacyRedirect
+      path={path}
+      navigate={navigate}
+      oldPrefix="/library"
+      newPrefix="/files"
     />
   );
 }

@@ -1,14 +1,14 @@
-// Settings · Skills, over the real registry (CL-5920). The section
-// reads `/api/tenants/:id/skills` and its sub-paths, so every case here
-// stubs `fetch` at that seam — no live hub, and no session-local skill
-// store (that path is gone).
+// Skills (CL-6355), over the real registry (CL-5920). The page reads
+// `/api/tenants/:id/skills` and its sub-paths, so every case here stubs
+// `fetch` at that seam — no live hub, and no session-local skill store
+// (that path is gone).
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { validationIssues } from "../src/pages/create-skill-dialog";
-import { SkillsSettingsSection } from "../src/pages/skills-settings-section";
+import { SkillsPage } from "../src/pages/skills-page";
 import { TestQueryProvider } from "./test-query-provider";
 
 const TENANT = "tnt_1";
@@ -79,7 +79,7 @@ async function mount(
   await act(async () => {
     root?.render(
       <TestQueryProvider>
-        <SkillsSettingsSection tenantId={TENANT} {...props} />
+        <SkillsPage tenantId={TENANT} {...props} />
       </TestQueryProvider>,
     );
   });
@@ -118,7 +118,7 @@ function fillField(id: string, value: string, textarea = false) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("SkillsSettingsSection", () => {
+describe("SkillsPage", () => {
   test("renders the honest empty state when the registry has nothing", async () => {
     stubRoutes(EMPTY_REGISTRY);
     const el = await mount();
@@ -197,7 +197,7 @@ describe("SkillsSettingsSection", () => {
       body: "Do it.",
       scope: "private",
     });
-    expect(navigated).toContain("/settings/skills/summarize");
+    expect(navigated).toContain("/skills/summarize");
   });
 
   test("a rejected create surfaces the registry's error inline in the dialog and creates nothing", async () => {
@@ -380,7 +380,7 @@ describe("SkillsSettingsSection", () => {
     await act(async () => {
       row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigated).toContain("/settings/skills/triage");
+    expect(navigated).toContain("/skills/triage");
   });
 });
 
