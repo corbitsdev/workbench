@@ -3,6 +3,7 @@
 // connection — this module never reads an environment variable itself.
 import {
   fetchPullRequestDiff,
+  fetchPullRequestReviewComments,
   postPullRequestReview,
   type GitHubClientConfig,
 } from "@corbits/github-tools";
@@ -17,5 +18,6 @@ export function createGitHubReviewClient(
     fetchDiff: (ref) => fetchPullRequestDiff(config, ref),
     postReview: (ref, headSha, review) =>
       postPullRequestReview(config, ref, headSha, review),
+    listPostedComments: (ref) => fetchPullRequestReviewComments(config, ref),
   };
 }

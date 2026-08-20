@@ -3,6 +3,12 @@ export {
   type CodeReviewAgentRequest,
 } from "./agent-requests";
 export { aggregateReview, type ReviewerPass } from "./aggregate";
+export { isBotAuthor } from "./bot-guard";
+export {
+  fingerprintMarker,
+  fingerprintOf,
+  fingerprintsIn,
+} from "./fingerprint";
 export { createGitHubReviewClient } from "./github";
 export { renderReviewPrompt } from "./prompt";
 export {
@@ -21,6 +27,8 @@ export {
   runPullRequestReview,
   type CodeReviewGitHub,
   type PullRequestReviewResult,
+  type PullRequestReviewRun,
+  type PullRequestReviewSkipped,
   type ReviewerTurn,
   type RunPullRequestReviewDeps,
 } from "./review-run";

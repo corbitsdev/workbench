@@ -7,6 +7,7 @@ import type {
   PullRequestReviewDraft,
 } from "@corbits/github-tools";
 
+import { fingerprintMarker, fingerprintOf } from "./fingerprint";
 import { CODE_REVIEW_REVIEWERS } from "./reviewers";
 import { runPullRequestReview, type CodeReviewGitHub } from "./review-run";
 
@@ -17,6 +18,7 @@ const DIFF: PullRequestDiff = {
   title: "Add the review loop",
   description: "Closes the loop.",
   url: "https://github.com/acme/widgets/pull/7",
+  author: "octocat",
   headSha: "headsha",
   baseSha: "basesha",
   files: [
@@ -39,18 +41,24 @@ interface FakeGitHub {
     review: PullRequestReviewDraft;
   }[];
   readonly diffReads: PullRequestRef[];
+  readonly listedComments: PullRequestRef[];
 }
 
-function fakeGitHub(): FakeGitHub {
+function fakeGitHub(
+  diff: PullRequestDiff = DIFF,
+  postedComments: readonly string[] = [],
+): FakeGitHub {
   const posted: FakeGitHub["posted"][number][] = [];
   const diffReads: PullRequestRef[] = [];
+  const listedComments: PullRequestRef[] = [];
   return {
     posted,
     diffReads,
+    listedComments,
     client: {
       fetchDiff: (ref) => {
         diffReads.push(ref);
-        return Promise.resolve(DIFF);
+        return Promise.resolve(diff);
       },
       postReview: (ref, headSha, review) => {
         posted.push({ ref, headSha, review });
@@ -58,6 +66,10 @@ function fakeGitHub(): FakeGitHub {
           id: 1,
           url: "https://github.com/acme/widgets/pull/7#review",
         });
+      },
+      listPostedComments: (ref) => {
+        listedComments.push(ref);
+        return Promise.resolve(postedComments);
       },
     },
   };
@@ -105,6 +117,7 @@ test("every reviewer sees the same diff and the review is posted once", async ()
   for (const reviewer of CODE_REVIEW_REVIEWERS) {
     expect(github.posted[0]?.review.body).toContain(`${reviewer.id} finding`);
   }
+  if (result.skipped) throw new Error("expected the review to run");
   expect(result.posted.id).toBe(1);
 });
 
@@ -122,6 +135,7 @@ test("one reviewer failing still posts a review that names the gap", async () =>
   );
 
   expect(github.posted.length).toBe(1);
+  if (result.skipped) throw new Error("expected the review to run");
   expect(result.review.body).toContain("Reviewers that did not report");
   expect(result.review.body).toContain("inference timed out");
   expect(result.review.body).toContain("correctness finding");
@@ -135,6 +149,7 @@ test("a diff that cannot be read means no review is posted", async () => {
         github: {
           fetchDiff: () => Promise.reject(new Error("404 not found")),
           postReview: github.client.postReview,
+          listPostedComments: github.client.listPostedComments,
         },
         runReviewerTurn: () => Promise.resolve(reportFor("correctness")),
       },
@@ -156,4 +171,53 @@ test("a review needs at least one reviewer", async () => {
       REF,
     ),
   ).rejects.toThrow(/at least one reviewer/);
+});
+
+test("a bot author is skipped before any inference or posting", async () => {
+  const github = fakeGitHub({ ...DIFF, author: "dependabot[bot]" });
+  const turns: string[] = [];
+
+  const result = await runPullRequestReview(
+    {
+      github: github.client,
+      runReviewerTurn: ({ reviewer }) => {
+        turns.push(reviewer.id);
+        return Promise.resolve(reportFor(reviewer.id));
+      },
+    },
+    REF,
+  );
+
+  expect(result).toEqual({
+    skipped: true,
+    reason: expect.stringContaining("dependabot[bot]") as unknown as string,
+  });
+  expect(turns).toEqual([]);
+  expect(github.posted.length).toBe(0);
+  expect(github.listedComments).toEqual([]);
+});
+
+test("a finding whose fingerprint was already posted is not raised again", async () => {
+  const alreadyPosted = fingerprintOf({
+    severity: "should-fix",
+    file: "src/loop.ts",
+    line: 2,
+    summary: "architecture finding",
+  });
+  const github = fakeGitHub(DIFF, [fingerprintMarker(alreadyPosted)]);
+
+  const result = await runPullRequestReview(
+    {
+      github: github.client,
+      runReviewerTurn: ({ reviewer }) =>
+        Promise.resolve(reportFor(reviewer.id)),
+    },
+    REF,
+  );
+
+  expect(github.listedComments).toEqual([REF]);
+  if (result.skipped) throw new Error("expected the review to run");
+  expect(result.review.body).toContain("correctness finding");
+  expect(result.review.body).toContain("release-risk finding");
+  expect(result.review.body).not.toContain("architecture finding");
 });

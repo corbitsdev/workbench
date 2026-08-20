@@ -9,6 +9,7 @@ import type {
   PullRequestReviewDraft,
 } from "@corbits/github-tools";
 
+import { fingerprintMarker, fingerprintOf } from "./fingerprint";
 import { parseReviewerReport, type ReviewerFinding } from "./report";
 import type { ReviewerDefinition } from "./reviewers";
 
@@ -27,6 +28,7 @@ export type ReviewerPass =
 
 interface AggregatedFinding {
   readonly finding: ReviewerFinding;
+  readonly fingerprint: string;
   readonly reviewers: readonly string[];
 }
 
@@ -57,12 +59,6 @@ function inlineCodeSafe(text: string): string {
   return text.replace(/`/g, "'");
 }
 
-function dedupeKey(finding: ReviewerFinding): string {
-  const line = finding.line === undefined ? "" : String(finding.line);
-  const summary = finding.summary.trim().toLowerCase().replace(/\s+/g, " ");
-  return `${finding.file}:${line}:${summary}`;
-}
-
 function severityRank(severity: ReviewerFinding["severity"]): number {
   return SEVERITY_ORDER.indexOf(severity);
 }
@@ -73,8 +69,14 @@ interface CollectedPasses {
   readonly silent: readonly { name: string; reason: string }[];
 }
 
-function collect(passes: readonly ReviewerPass[]): CollectedPasses {
-  const byKey = new Map<string, { finding: ReviewerFinding; who: string[] }>();
+function collect(
+  passes: readonly ReviewerPass[],
+  alreadyPosted: ReadonlySet<string>,
+): CollectedPasses {
+  const byFingerprint = new Map<
+    string,
+    { finding: ReviewerFinding; who: string[] }
+  >();
   const summaries: { name: string; summary: string }[] = [];
   const silent: { name: string; reason: string }[] = [];
 
@@ -93,23 +95,28 @@ function collect(passes: readonly ReviewerPass[]): CollectedPasses {
       summaries.push({ name, summary: parsed.report.summary.trim() });
     }
     for (const finding of parsed.report.findings) {
-      const key = dedupeKey(finding);
-      const existing = byKey.get(key);
+      const fingerprint = fingerprintOf(finding);
+      if (alreadyPosted.has(fingerprint)) continue;
+      const existing = byFingerprint.get(fingerprint);
       if (existing === undefined) {
-        byKey.set(key, { finding, who: [name] });
+        byFingerprint.set(fingerprint, { finding, who: [name] });
         continue;
       }
       existing.who.push(name);
       if (
         severityRank(finding.severity) < severityRank(existing.finding.severity)
       ) {
-        byKey.set(key, { finding, who: existing.who });
+        byFingerprint.set(fingerprint, { finding, who: existing.who });
       }
     }
   }
 
-  const findings = [...byKey.values()]
-    .map((entry) => ({ finding: entry.finding, reviewers: entry.who }))
+  const findings = [...byFingerprint.entries()]
+    .map(([fingerprint, entry]) => ({
+      finding: entry.finding,
+      fingerprint,
+      reviewers: entry.who,
+    }))
     .sort(
       (left, right) =>
         severityRank(left.finding.severity) -
@@ -132,6 +139,32 @@ function attribution(reviewers: readonly string[]): string {
   return reviewers.join(", ");
 }
 
+// The `suggestion` fence is a GitHub commit-suggestion: whatever text it
+// wraps replaces the anchored line outright. Rendering `suggestedFix`
+// there only makes sense once `existingCode` is verified against the
+// diff — otherwise a model that wrote prose instead of code would ship
+// as a broken, unreviewable "fix". A finding that fails the check keeps
+// its text; it only drops the fence.
+function rightHandLines(patch: string): string {
+  return patch
+    .split("\n")
+    .filter((line) => !line.startsWith("-") && !line.startsWith("@@"))
+    .map((line) =>
+      line.startsWith("+") || line.startsWith(" ") ? line.slice(1) : line,
+    )
+    .join("\n");
+}
+
+function existingCodeAnchors(
+  finding: ReviewerFinding,
+  diff: PullRequestDiff,
+): boolean {
+  if (finding.existingCode === undefined) return false;
+  const file = diff.files.find((entry) => entry.path === finding.file);
+  if (file?.patch === undefined) return false;
+  return rightHandLines(file.patch).includes(finding.existingCode.trim());
+}
+
 function bodyLine(entry: AggregatedFinding): string {
   const path = inlineCodeSafe(entry.finding.file);
   const where =
@@ -140,16 +173,26 @@ function bodyLine(entry: AggregatedFinding): string {
       : `${path}:${String(entry.finding.line)}`;
   return (
     `- \`${where}\` — ${singleLine(entry.finding.summary)} ` +
-    `_(${attribution(entry.reviewers)})_`
+    `_(${attribution(entry.reviewers)})_ ` +
+    fingerprintMarker(entry.fingerprint)
   );
 }
 
-function commentBody(entry: AggregatedFinding): string {
+function commentBody(entry: AggregatedFinding, diff: PullRequestDiff): string {
   const head =
     `**${SEVERITY_HEADING[entry.finding.severity]}** — ` +
     `${singleLine(entry.finding.summary)}\n\n_${attribution(entry.reviewers)}_`;
-  if (entry.finding.suggestion === undefined) return head;
-  return `${head}\n\n\`\`\`suggestion\n${fenceSafe(entry.finding.suggestion)}\n\`\`\``;
+  const marker = fingerprintMarker(entry.fingerprint);
+  if (
+    entry.finding.suggestedFix === undefined ||
+    !existingCodeAnchors(entry.finding, diff)
+  ) {
+    return `${head}\n\n${marker}`;
+  }
+  return (
+    `${head}\n\n\`\`\`suggestion\n${fenceSafe(entry.finding.suggestedFix)}\n\`\`\`` +
+    `\n\n${marker}`
+  );
 }
 
 function countLine(findings: readonly AggregatedFinding[]): string {
@@ -175,8 +218,9 @@ function countLine(findings: readonly AggregatedFinding[]): string {
 export function aggregateReview(
   passes: readonly ReviewerPass[],
   diff: PullRequestDiff,
+  alreadyPosted: ReadonlySet<string> = new Set(),
 ): PullRequestReviewDraft {
-  const collected = collect(passes);
+  const collected = collect(passes, alreadyPosted);
   const sections: string[] = [
     "## Code review",
     "",
@@ -217,7 +261,7 @@ export function aggregateReview(
     comments.push({
       path: entry.finding.file,
       line,
-      body: commentBody(entry),
+      body: commentBody(entry, diff),
     });
   }
 

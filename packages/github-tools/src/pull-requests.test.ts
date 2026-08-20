@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   changedLinesOf,
   fetchPullRequestDiff,
+  fetchPullRequestReviewComments,
   parsePullRequestUrl,
   postPullRequestReview,
 } from "./pull-requests";
@@ -23,6 +24,7 @@ function fakeFetch(
 const PULL_BODY = {
   title: "Add the review loop",
   body: "Closes the loop.",
+  user: { login: "octocat" },
   head: { sha: "headsha" },
   base: { sha: "basesha" },
   html_url: "https://github.com/acme/widgets/pull/7",
@@ -86,6 +88,7 @@ test("fetchPullRequestDiff returns metadata plus anchorable lines", async () => 
 
   expect(diff.title).toBe("Add the review loop");
   expect(diff.headSha).toBe("headsha");
+  expect(diff.author).toBe("octocat");
   expect(diff.files[0]?.changedLines).toEqual([1, 2, 3]);
   expect(requested.some((url) => url.includes("/pulls/7/files"))).toBe(true);
 });
@@ -170,6 +173,20 @@ test("postPullRequestReview posts one comment-only review at the head sha", asyn
       { path: "src/loop.ts", line: 2, side: "RIGHT", body: "This breaks." },
     ],
   });
+});
+
+test("fetchPullRequestReviewComments returns each comment's body", async () => {
+  const bodies = await fetchPullRequestReviewComments(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch(() =>
+        Promise.resolve(jsonResponse([{ body: "first" }, { body: "second" }])),
+      ),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(bodies).toEqual(["first", "second"]);
 });
 
 test("postPullRequestReview refuses an empty body", async () => {
