@@ -20,18 +20,16 @@ export const BUILD_TOOLS = [
   DISPATCH_TASK_TOOL,
 ] as const;
 
-// The two names below do NOT pin against a real manager-tools bundle.
-// `@corbits/github-tools` now ships a write path (CL-6340 Code Review
-// MVP, PR #62) — `GITHUB_POST_PULL_REQUEST_REVIEW_TOOL` in
-// pull-request-tools.ts — but under a different name and a different
-// shape: one aggregated review per PR posted by the workflow run
-// itself, not N per-reviewer-attributed comments from three separate
-// agent definitions, and no merge-class tool exists at all (posting is
-// comment-only by design). The names below still document what the
-// CL-6322 §8.2 case's scorers were written to expect; a scorer
-// referencing one of these will never see a matching tool call until
-// either the case is rewritten against the real shape or a per-reviewer
-// attributed posting path is added — see packages/evals/README.md's
-// scoreboard for the current call.
-export const GITHUB_POST_REVIEW_COMMENT_TOOL = "github_post_review_comment";
+// The shipped GitHub write path (CL-6340 Code Review MVP, PR #62):
+// one diff read and one aggregated comment-only review per PR, posted
+// by the code-review workflow run itself. Pinned against
+// `@corbits/github-tools`' own exports in tool-names.test.ts.
+export const GITHUB_PULL_REQUEST_DIFF_TOOL = "github_pull_request_diff";
+export const GITHUB_POST_PR_REVIEW_TOOL = "github_post_pr_review";
+
+// Merge-class action name the owner ruling parks behind explicit human
+// approval. No such tool exists in `@corbits/github-tools` today —
+// posting is comment-only by design — so the parked-merge half of
+// `outwardGitHubActionsRespectGrantBoundary` is vacuously satisfiable
+// until one ships; the constant names what the scorer watches for.
 export const GITHUB_MERGE_PULL_REQUEST_TOOL = "github_merge_pull_request";

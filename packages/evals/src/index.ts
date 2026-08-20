@@ -19,6 +19,7 @@ export type {
   WorldConnection,
   WorldRoutine,
   WorldSnapshot,
+  WorldWebhookTrigger,
 } from "./types.ts";
 export { defineEval } from "./define-eval.ts";
 export { runEval, runMatrix } from "./runner.ts";
@@ -60,6 +61,7 @@ export {
   type McpFakeToolDefinition,
   type RecordedCall,
 } from "./fakes/recording.ts";
+export { GITHUB_MCP_FAKE_RECORDING } from "./fakes/recordings.ts";
 export { startMcpFake, type McpFakeHandle } from "./fakes/mcp-fake-server.ts";
 export {
   fireRoutineNow,
@@ -80,6 +82,7 @@ export type {
   EvalHubHandle,
   EvalSpawnedApp,
   MyraTargetInfra,
+  MyraTargetMcpFake,
 } from "./targets/real-target.ts";
 export { newToolCallsSince, readAllToolCalls } from "./targets/trace.ts";
 export type { SqlClientLike } from "./targets/trace.ts";

@@ -16,6 +16,7 @@
     "@corbits/agent-directory": "workspace:*",
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/routines": "workspace:*",
+    "@corbits/webhook-triggers": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@corbits/agent-directory-tools": "workspace:*",
     "@corbits/connections-tools": "workspace:*",
+    "@corbits/github-tools": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/memory-tools": "workspace:*",
     "@corbits/routines-tools": "workspace:*",

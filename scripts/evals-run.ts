@@ -27,10 +27,12 @@ import {
   applyEvalsMigrations,
   bootMyraTarget,
   createPostgresEvalRunStore,
+  GITHUB_MCP_FAKE_RECORDING,
   renderResultsMarkdown,
   runMatrix,
   type EvalRunResult,
   type MyraTargetInfra,
+  type MyraTargetMcpFake,
   type RunConfig,
 } from "@corbits/evals";
 import { resetSchema, setupDatabase } from "./db-setup.ts";
@@ -120,12 +122,20 @@ async function main(): Promise<void> {
   ];
   const configByName = new Map(configs.map((config) => [config.name, config]));
 
+  // The recorded GitHub MCP fake (CL-6338) rides every run: connected
+  // through the same `POST /mcp-servers` route real users use, so a
+  // live run's connect/GitHub tool calls hit the fixture instead of
+  // nothing; plumbing-only runs never call a tool, so it is inert there.
+  const mcpFakes: readonly MyraTargetMcpFake[] = [
+    { server: "github", recording: GITHUB_MCP_FAKE_RECORDING },
+  ];
+
   const results = await runMatrix(ALL_EVALS, configs, async (configName) => {
     const config = configByName.get(configName);
     if (config === undefined) {
       throw new Error(`no RunConfig registered for "${configName}"`);
     }
-    return bootMyraTarget(config, infra);
+    return bootMyraTarget(config, infra, mcpFakes);
   });
 
   if (!live) {
