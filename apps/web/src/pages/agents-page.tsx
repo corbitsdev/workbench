@@ -38,10 +38,12 @@ import {
 import { purposeAgentDefinitions } from "../agents-directory";
 import { useBench } from "../bench-context";
 import { rowActivationProps } from "../activatable-row";
+import { Link } from "../navigation";
 import { useBenchActivity } from "../shell/bench-activity";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { workbenchSettingsPath } from "../workbench-path";
 import { CreateAgentPanel } from "./create-agent-panel";
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
@@ -49,33 +51,47 @@ const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
   stopped: "neutral",
 };
 
-/** Definitions this bench's chats are launched against, counted per
- * definition id — the roster's "Workbenches" column. `chats` comes from
- * `useBenchActivity`, the same agent-DM listing the sidebar itself reads;
- * a definition's count here is exactly how many rows the sidebar would
- * show for it before CL-6271's dedupe-by-title collapses same-named DMs
- * across ancestor tenants. */
-function workbenchCountsByDefinition(
-  chats: readonly { readonly definitionId?: string | null }[],
-): ReadonlyMap<string, number> {
-  const counts = new Map<string, number>();
+/** A workbench instance running a given agent definition — just enough to
+ * link to its own settings Agents tab (`workbenchSettingsPath`), which
+ * takes the workbench's own id directly, never a tenant id. */
+export type DefinitionWorkbenchInstance = {
+  readonly id: string;
+  readonly title: string;
+};
+
+/** Definitions this bench's chats are launched against, grouped by
+ * definition id — the roster's "Workbenches" column and detail panel.
+ * `chats` comes from `useBenchActivity`, the same agent-DM listing the
+ * sidebar itself reads; the list here is exactly which rows the sidebar
+ * would show for a definition before CL-6271's dedupe-by-title collapses
+ * same-named DMs across ancestor tenants. */
+export function workbenchesByDefinition(
+  chats: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly definitionId?: string | null;
+  }[],
+): ReadonlyMap<string, readonly DefinitionWorkbenchInstance[]> {
+  const byDefinition = new Map<string, DefinitionWorkbenchInstance[]>();
   for (const chat of chats) {
     if (chat.definitionId === null || chat.definitionId === undefined) {
       continue;
     }
-    counts.set(chat.definitionId, (counts.get(chat.definitionId) ?? 0) + 1);
+    const list = byDefinition.get(chat.definitionId) ?? [];
+    list.push({ id: chat.id, title: chat.title });
+    byDefinition.set(chat.definitionId, list);
   }
-  return counts;
+  return byDefinition;
 }
 
 function AgentDetailPanel({
   tenantId,
   definition,
-  workbenchCount,
+  workbenches,
 }: {
   readonly tenantId: string;
   readonly definition: AgentDefinition;
-  readonly workbenchCount: number;
+  readonly workbenches: readonly DefinitionWorkbenchInstance[];
 }) {
   const [capabilities, setCapabilities] = useState<
     | { readonly status: "loading" }
@@ -139,9 +155,26 @@ function AgentDetailPanel({
               : null}
           </dd>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">Workbenches</dt>
-          <dd>{workbenchCount}</dd>
+          <dd>
+            {workbenches.length === 0 ? (
+              <span className="text-muted-foreground">0</span>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {workbenches.map((workbench) => (
+                  <li key={workbench.id} className="truncate">
+                    <Link
+                      to={workbenchSettingsPath(workbench.id, "agents")}
+                      className="text-foreground underline underline-offset-2 hover:text-muted-foreground"
+                    >
+                      {workbench.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
         </div>
       </dl>
     </aside>
@@ -160,7 +193,7 @@ function AgentDetailPanel({
 export function AgentsPage({
   tenantId,
   definitions,
-  workbenchCounts,
+  workbenches,
   selectedId,
   onSelect,
   createOpen,
@@ -169,7 +202,10 @@ export function AgentsPage({
 }: {
   readonly tenantId: string | null;
   readonly definitions: readonly AgentDefinition[];
-  readonly workbenchCounts: ReadonlyMap<string, number>;
+  readonly workbenches: ReadonlyMap<
+    string,
+    readonly DefinitionWorkbenchInstance[]
+  >;
   readonly selectedId: string | null;
   readonly onSelect: (id: string | null) => void;
   readonly createOpen: boolean;
@@ -239,7 +275,7 @@ export function AgentsPage({
                             : "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {workbenchCounts.get(definition.id) ?? 0}
+                          {workbenches.get(definition.id)?.length ?? 0}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -254,7 +290,7 @@ export function AgentsPage({
             <AgentDetailPanel
               tenantId={tenantId}
               definition={selected}
-              workbenchCount={workbenchCounts.get(selected.id) ?? 0}
+              workbenches={workbenches.get(selected.id) ?? []}
             />
           </div>
         ) : null}
@@ -318,7 +354,7 @@ export function AgentsRoute({
   }
 
   const definitions = purposeAgentDefinitions(directory.data.definitions);
-  const workbenchCounts = workbenchCountsByDefinition(
+  const workbenches = workbenchesByDefinition(
     activity.kind === "ready" ? activity.chats : [],
   );
 
@@ -326,7 +362,7 @@ export function AgentsRoute({
     <AgentsPage
       tenantId={selectedTenantId}
       definitions={definitions}
-      workbenchCounts={workbenchCounts}
+      workbenches={workbenches}
       selectedId={selectedId}
       onSelect={(id) =>
         navigate(
