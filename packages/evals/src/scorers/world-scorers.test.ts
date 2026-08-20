@@ -18,6 +18,7 @@ function worldCtx(world: Partial<WorldSnapshot>): ScorerContext {
       agentDefinitions: [],
       routines: [],
       connections: [],
+      webhookTriggers: [],
       fakeReceipts: [],
       ...world,
     },
