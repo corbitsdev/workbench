@@ -18,6 +18,7 @@ import {
   resolveCredentialByName,
 } from "@intx/db";
 import {
+  asset as assetTable,
   grant as grantTable,
   model,
   modelPricing,
@@ -161,6 +162,8 @@ import {
   workbenchTemplateLibraryEntries,
 } from "@corbits/workflow-catalog";
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
+import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
+import { renderWorkflowSourceTree } from "@corbits/workflow-source";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -2008,6 +2011,91 @@ export async function createHub(config: HubConfig) {
           type: "chat.settings",
           data: { updatedBy: principalId, settings: row.settings },
         });
+      },
+    }),
+  );
+  // Template block workflows (CL-6405): the instantiate path's
+  // `deployBlockWorkflow` port lands here — the same source-form
+  // materialization `deployAgentDefinition` below runs for a
+  // participant agent (asset + `@corbits/workflow-source` tree +
+  // `ensureWorkflowDefinitionForAsset`), applied to a template's
+  // referenced block definition (`code-review` today).
+  app.route(
+    `${TENANT_PREFIX}/template-blocks`,
+    createTemplateBlockRoutes({
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      log: (line) => log.info`${line}`,
+      inferencePreferences: (tenantId) =>
+        workbenchHostInferencePreferencesResolver(tenantId),
+      deployWorkflowSource: async ({
+        tenantId,
+        principalId,
+        assetName,
+        displayName,
+        workflowJson,
+      }) => {
+        const existing = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.tenantId, tenantId),
+            eq(workflowDefinition.name, assetName),
+            eq(workflowDefinition.status, "deployed"),
+          ),
+          columns: { id: true },
+        });
+        if (existing !== undefined) {
+          return { id: existing.id, created: false };
+        }
+
+        // A prior attempt may have created the asset but died before the
+        // definition projected — reuse the shell instead of 409ing the
+        // retry, the same recovery `createAgentDefinitionCore` documents.
+        let assetId: string;
+        try {
+          const created = await assetService.createAsset({
+            tenantId,
+            kind: "workflow",
+            name: assetName,
+            displayName,
+            creatorPrincipalId: principalId,
+          });
+          assetId = created.id;
+        } catch (cause) {
+          const shell = await db.query.asset.findFirst({
+            where: and(
+              eq(assetTable.tenantId, tenantId),
+              eq(assetTable.kind, "workflow"),
+              eq(assetTable.name, assetName),
+            ),
+            columns: { id: true },
+          });
+          if (shell === undefined) throw cause;
+          assetId = shell.id;
+        }
+
+        await assetService.populateAsset({
+          assetId,
+          ref: DEFAULT_ASSET_REF,
+          principal: { kind: "hub" },
+          tree: {
+            files: renderWorkflowSourceTree({
+              packageName: `@workbench-template/${assetName}`,
+              workflowJson,
+            }),
+            message: `Deploy template block ${assetName}`,
+          },
+        });
+
+        const wireHash = await computeWireDefinitionHash(
+          JSON.parse(workflowJson),
+        );
+        const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
+          assetId,
+          wireHash,
+        });
+        return { id: definitionId, created: true };
       },
     }),
   );

@@ -46,6 +46,7 @@
     "@corbits/turn-artifacts": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
+    "@corbits/workflow-source": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",

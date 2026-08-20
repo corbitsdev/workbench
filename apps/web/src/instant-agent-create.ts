@@ -31,7 +31,10 @@ import {
   templateSettingsPatch,
 } from "@corbits/workflow-catalog";
 
-import { fetchWorkbenchTemplateManifest } from "./workbench-templates-api";
+import {
+  deployWorkbenchTemplateBlock,
+  fetchWorkbenchTemplateManifest,
+} from "./workbench-templates-api";
 
 import { launchAgentChat } from "./agent-chat-launch";
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
@@ -167,6 +170,9 @@ export async function createWorkbenchFromTemplate(
       async createParticipantAgent(request) {
         const created = await createAgentDefinition(tenantId, request);
         return { id: created.id };
+      },
+      async deployBlockWorkflow(block) {
+        return deployWorkbenchTemplateBlock(tenantId, block.assetName);
       },
       async recordPendingConnections(pendingConnections) {
         await patchWorkbenchSettings(
