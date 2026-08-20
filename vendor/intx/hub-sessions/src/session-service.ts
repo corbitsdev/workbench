@@ -204,6 +204,18 @@ export type DeployWorkflowFromSourceParams = {
    */
   definitionAssetId: string;
   /**
+   * WORKBENCH DELTA (see VENDORED.md): the git ref inside the source
+   * asset that carries `source.package.commitSha`. Upstream assumes one
+   * deployable tree per asset, living on the asset's default ref, and
+   * packs that ref; workbench mints a fresh source tree PER RUN into a
+   * shared definition asset on its own `refs/heads/runs/<runId>` ref, so
+   * packing the default ref would ship a history the pinned commit is
+   * not reachable from and the sidecar's closure materialization would
+   * fail "could not find <sha>". Omitted, the default ref is packed,
+   * exactly as upstream.
+   */
+  sourceRef?: string;
+  /**
    * Harness config shared across the deployment. Its `sources`/`defaultSource`
    * are the operator-supplied inference chain; the method pins each top-level
    * step to one approved source from it.
@@ -229,6 +241,8 @@ export type InstallAndApproveWorkflowSourceParams = {
   pin?: string;
   /** The `workflow`-kind asset the frozen definition projects a definition over. */
   definitionAssetId: string;
+  /** WORKBENCH DELTA (see VENDORED.md): see `DeployWorkflowFromSourceParams.sourceRef`. */
+  sourceRef?: string;
 };
 
 /**
@@ -1300,6 +1314,7 @@ export function createSessionService(
   function bindAssetAttachmentResolver(
     assetId: string,
     repoKind: RepoKind,
+    sourceRef: string,
   ): ResolveAssetAttachmentFn {
     return async (requestedAssetId) => {
       if (requestedAssetId !== assetId) {
@@ -1311,17 +1326,17 @@ export function createSessionService(
       const commitSha = await agentRepoStore.repoStore.resolveRef(
         HUB_PRINCIPAL,
         repoId,
-        DEFAULT_ASSET_REF,
+        sourceRef,
       );
       if (commitSha === null) {
         throw new Error(
-          `deployWorkflowFromSource: source asset ${assetId} has no commit on ${DEFAULT_ASSET_REF}`,
+          `deployWorkflowFromSource: source asset ${assetId} has no commit on ${sourceRef}`,
         );
       }
       const { pack, ref } = await agentRepoStore.repoStore.createPack(
         HUB_PRINCIPAL,
         repoId,
-        DEFAULT_ASSET_REF,
+        sourceRef,
       );
       return { pack, ref, commitSha };
     };
@@ -1432,11 +1447,13 @@ export function createSessionService(
   // source, so a prepared deploy reconstructs it from the frozen `source`.
   function bindSourceAttachmentResolver(
     source: WorkflowDefinitionSource,
+    sourceRef: string,
   ): ResolveAssetAttachmentFn | null {
     return source.kind === "asset"
       ? bindAssetAttachmentResolver(
           source.assetId,
           source.package.format === "source" ? "workflow" : "package-registry",
+          sourceRef,
         )
       : null;
   }
@@ -1452,7 +1469,10 @@ export function createSessionService(
     approved: InstallAndApproveResult;
     resolveAttachment: ResolveAssetAttachmentFn | null;
   }> {
-    const resolveAttachment = bindSourceAttachmentResolver(params.source);
+    const resolveAttachment = bindSourceAttachmentResolver(
+      params.source,
+      params.sourceRef ?? DEFAULT_ASSET_REF,
+    );
     const installArgs = await buildInstallArgs(params, resolveAttachment);
     const approved = await installAndApproveWorkflowDefinition(installArgs);
     return { approved, resolveAttachment };
@@ -1730,7 +1750,10 @@ export function createSessionService(
     }
     const allocationRouter = requireAllocationRouter();
     const source = params.source;
-    const resolveAttachment = bindSourceAttachmentResolver(source);
+    const resolveAttachment = bindSourceAttachmentResolver(
+      source,
+      DEFAULT_ASSET_REF,
+    );
 
     // Re-pin every top-level step's inference source from the re-resolved chain
     // under the frozen approval -- the same pin the shared deploy computes.

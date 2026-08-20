@@ -19,7 +19,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliError } from "./errors";
-import type { PushOutcome, WorkflowPusher } from "./seed";
+import type { WorkflowPusher } from "./seed";
 
 const ENTRY_PATH = "workflow.js";
 /** The `interchange.workflow` entry a code-sourced deploy names. */
