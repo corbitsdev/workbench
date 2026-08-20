@@ -384,7 +384,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         <div className="onboarding-phase" key="finishing-setup">
           <h1 className="onboarding-title">Setting up your workbench…</h1>
           <p className="onboarding-subtitle">
-            Key added — setting up your workbench.
+            Hooking up your agents. This takes about ten seconds.
           </p>
           <div className="onboarding-content">
             <WorkbenchLoadingState
@@ -401,7 +401,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="provisioning-error">
-          <h1 className="onboarding-title">Couldn't set up your workbench</h1>
           <div className="onboarding-content">
             <EmptyState
               icon={<WarningCircle />}
@@ -414,7 +413,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                     {state.message}
                     <br />
                     <span className="onboarding-error-refid">
-                      Reference: {state.refId}
+                      If you tell us about this, mention {state.refId}.
                     </span>
                   </>
                 )
@@ -448,12 +447,12 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         <h1 className="onboarding-title">
           {resumingUnseeded
             ? "Finish setting up your workbench"
-            : "Add an inference credential"}
+            : "Bring your own AI"}
         </h1>
         <p className="onboarding-subtitle">
           {resumingUnseeded
             ? "Connect a provider below to finish setup."
-            : "Connect OpenRouter in one click, or pick a provider and paste your own key."}
+            : "Connect in one click, or paste a key you already have. Your key stays yours — Workbench only uses it to run your agents, and you can pull it any time."}
         </p>
         <div className="onboarding-content">
           <div className="onboarding-connect-row">

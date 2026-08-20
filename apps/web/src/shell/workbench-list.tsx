@@ -2,8 +2,8 @@
 // own tenancy under the hood) as a flat run of rows — no kind sections, no
 // per-page variants. Pinned rows float to the top; everything else keeps
 // the order the platform returns. The "Working" group above the rows is the
-// signed-in user's running tasks (spawn-and-return; results land in the
-// Inbox), not a workbench kind.
+// signed-in user's running tasks (spawn-and-return; selecting one opens its
+// workbench, or its run in Insights when it has none), not a workbench kind.
 
 import {
   Badge,
@@ -386,8 +386,8 @@ export function WorkbenchList({
     return (
       <EmptyState
         icon={<Hash />}
-        title="Nothing selected"
-        description="Pick a workbench from the switcher below to get started."
+        title="No workbenches yet"
+        description="Start a new one with the + above."
       />
     );
   }
@@ -410,7 +410,13 @@ export function WorkbenchList({
           <WorkingTaskRow
             key={task.id}
             task={task}
-            onSelect={() => onNavigate("/inbox")}
+            onSelect={() =>
+              onNavigate(
+                task.workbenchId !== null
+                  ? workbenchPath(task.workbenchId)
+                  : `/insights/runs/${encodeURIComponent(task.runId)}`,
+              )
+            }
           />
         ))}
       </div>

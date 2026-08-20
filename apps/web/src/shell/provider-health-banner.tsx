@@ -49,8 +49,8 @@ function providerDisplayName(provider: string): string {
 const CATEGORY_COPY: Readonly<
   Record<ClassifiedInferenceFailureCategory, string>
 > = {
-  credential_failure: "rejected this key. Reconnect it in Plugins.",
-  quota_exhausted: "reports this key's quota is used up.",
+  credential_failure: "turned down your key.",
+  quota_exhausted: "says this key is out of credit.",
 };
 
 function bannerMessage(banner: ProviderHealthBannerState): string {
@@ -107,7 +107,7 @@ export function ProviderHealthBanner() {
           >
             <Warning className="provider-health-banner-icon" aria-hidden />
             <p className="provider-health-banner-text">
-              Your {bannerMessage(cachedBanner)}
+              {bannerMessage(cachedBanner)}
             </p>
             <Button size="sm" variant="primary" onClick={handleFix}>
               Fix it

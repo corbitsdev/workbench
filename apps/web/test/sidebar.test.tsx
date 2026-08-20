@@ -389,9 +389,9 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("Nothing selected")) break;
+      if (container.innerHTML.includes("No workbenches yet")) break;
     }
-    expect(container.innerHTML).toContain("Nothing selected");
+    expect(container.innerHTML).toContain("No workbenches yet");
     act(() => root.unmount());
     container.remove();
   });

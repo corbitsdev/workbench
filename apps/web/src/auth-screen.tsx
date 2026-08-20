@@ -120,7 +120,8 @@ export function AuthScreen({
           <>
             {authConfigUnavailable && (
               <p className="auth-config-notice">
-                Sign-in options couldn't be loaded.{" "}
+                Google and GitHub sign-in aren't loading. Email and password
+                still work.{" "}
                 <button
                   type="button"
                   className="auth-switch"

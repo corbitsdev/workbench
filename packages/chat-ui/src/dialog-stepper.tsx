@@ -1,5 +1,7 @@
 import type * as React from "react";
 
+import { Check } from "@corbits/icons";
+
 // The guided-dialog progress affordance: an uppercase step label, a thin
 // segmented rail filled in the host's accent color, and one calm sentence
 // of per-step guidance underneath. This is generic dialog chrome with no
@@ -104,7 +106,7 @@ export function DialogStepAccordion({
         >
           <div className="dialog-step-accordion-header">
             <span className="dialog-step-accordion-index" aria-hidden="true">
-              {s.status === "completed" ? "✓" : index + 1}
+              {s.status === "completed" ? <Check /> : index + 1}
             </span>
             <div className="dialog-step-accordion-heading">
               <span className="dialog-step-accordion-label">{s.label}</span>

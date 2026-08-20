@@ -158,7 +158,7 @@ describe("WorkbenchList — Working group", () => {
     expect(el.textContent).not.toContain("Working");
   });
 
-  test("clicking a working task navigates to the Inbox", async () => {
+  test("clicking a working task opens its workbench", async () => {
     stubFetch({ tasks: [runningTask()] });
     let navigatedTo: string | null = null;
     const el = await mount((to) => {
@@ -169,7 +169,21 @@ describe("WorkbenchList — Working group", () => {
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigatedTo as string | null).toBe("/inbox");
+    expect(navigatedTo as string | null).toBe("/w/ch_1");
+  });
+
+  test("clicking a working task with no workbench opens its run in Insights", async () => {
+    stubFetch({ tasks: [runningTask({ workbenchId: null })] });
+    let navigatedTo: string | null = null;
+    const el = await mount((to) => {
+      navigatedTo = to;
+    });
+    const button = el.querySelector("button");
+    expect(button).not.toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigatedTo as string | null).toBe("/insights/runs/run_1");
   });
 });
 

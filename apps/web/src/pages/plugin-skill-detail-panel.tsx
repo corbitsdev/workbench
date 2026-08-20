@@ -170,10 +170,10 @@ export function PluginSkillDetailPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {state.versions.map((version) => (
+                {state.versions.map((version, index) => (
                   <TableRow key={version.commitSha}>
-                    <TableCell className="font-mono text-xs">
-                      {version.commitSha.slice(0, 8)}
+                    <TableCell className="text-sm" title={version.commitSha}>
+                      {`Version ${state.versions.length - index}`}
                       {version.current ? (
                         <Badge tone="success" className="ml-2">
                           current

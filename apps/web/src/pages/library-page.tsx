@@ -82,7 +82,7 @@ function ArtifactRows({
   readonly onSelect: (id: string) => void;
 }) {
   return (
-    <Table aria-label="Artifacts">
+    <Table aria-label="Files">
       <TableHeader>
         <TableRow>
           <TableHead>Title</TableHead>
@@ -175,7 +175,7 @@ function PreviewPane({
             <p className="truncate text-xs text-muted-foreground">
               {artifactKindLabel(detail.kind)}
               {detail.ownerName !== null ? ` · ${detail.ownerName}` : ""}
-              {` · v${detail.version}`}
+              {` · Version ${detail.version}`}
             </p>
           ) : null}
           {detail !== null ? <ProvenanceLine source={detail.source} /> : null}
@@ -305,7 +305,7 @@ export function LibraryPage({
         title={selectedSummary === null ? "Files" : selectedSummary.title}
         subtitle={
           selectedSummary === null
-            ? `${artifacts.length} artifacts`
+            ? `${artifacts.length} files`
             : artifactKindLabel(selectedSummary.kind)
         }
         actions={
@@ -333,7 +333,7 @@ export function LibraryPage({
           type="file"
           multiple
           className="sr-only"
-          aria-label="Upload artifacts"
+          aria-label="Upload files"
           onChange={(event) => {
             const list = event.target.files;
             if (list !== null && list.length > 0) {
@@ -345,7 +345,7 @@ export function LibraryPage({
       ) : null}
       <div className="page-toolbar">
         <LibrarySearchInput
-          label="Search artifacts"
+          label="Search files"
           value={activeQuery}
           onChange={setActiveQuery}
         />
@@ -382,14 +382,14 @@ export function LibraryPage({
             {artifacts.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
-                title="No artifacts yet"
-                description="Upload a file or wait for agents and workflows to produce artifacts — they land here as soon as they exist."
+                title="No files yet"
+                description="Upload a file, or let your agents drop their work here — it lands the moment it exists."
               />
             ) : visible.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
                 title="Nothing matches"
-                description={`No artifact matches "${activeQuery}".`}
+                description={`No file matches "${activeQuery}".`}
               />
             ) : viewMode === "rows" ? (
               <div className="px-4 pb-5 sm:px-7">
@@ -488,7 +488,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
           <RichEmptyState
             icon={<Stack />}
             title="Select a workbench"
-            description="Pick a workbench from the switcher to browse the artifacts it owns."
+            description="Open a workbench to browse the files it owns."
           />
         </PageShell>
       </div>
@@ -522,10 +522,10 @@ export function LibraryRoute({ path }: { readonly path: string }) {
           ) : (
             <RichEmptyState
               icon={<Stack />}
-              title="Couldn't load artifacts"
+              title="Couldn't load your files"
               description={describeApiError(
                 { status: page.status },
-                "loading your artifacts",
+                "loading your files",
               )}
             />
           )}
@@ -535,7 +535,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }
 
   return (
-    <QueryView query={page} label="library artifacts" skeleton="rows">
+    <QueryView query={page} label="your files" skeleton="rows">
       {(rows) => {
         const artifacts = mapArtifactListToSummaries(rows.data).filter((row) =>
           artifactMatchesLibraryKindSegment(row, kindSegment),
@@ -556,7 +556,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
               detail.kind === "error" && selectedId !== null
                 ? describeApiError(
                     { status: detail.status },
-                    "loading this artifact",
+                    "loading this file",
                   )
                 : null
             }

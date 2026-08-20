@@ -364,6 +364,11 @@ function profileActions(
     ];
   }
 
+  // No "Grants" hop here: settings-ui's Grants section has no deep-link
+  // filter to land on this person's rules specifically, and a profile
+  // card action that lands on the unfiltered, everyone's-rules list is
+  // worse than not offering it — same reasoning the agent branch above
+  // uses to drop "Edit agent".
   return [
     message,
     mention,
@@ -374,15 +379,6 @@ function profileActions(
       onClick: () => {
         onClose();
         onNavigate("/insights");
-      },
-    },
-    {
-      id: "grants",
-      label: "Grants",
-      tone: "outline",
-      onClick: () => {
-        onClose();
-        onNavigate("/settings");
       },
     },
   ];

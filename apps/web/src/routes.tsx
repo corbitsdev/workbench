@@ -285,7 +285,6 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
  * deep-link-reachable.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
-  WORKBENCH_PATH_PREFIX,
   "/routines",
   "/files",
   "/skills",

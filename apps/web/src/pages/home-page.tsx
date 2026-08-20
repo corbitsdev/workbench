@@ -13,6 +13,7 @@ import { WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
+import { describeApiError } from "@corbits/api-query";
 
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
@@ -43,7 +44,7 @@ export function HomeRoute() {
               if (cancelled) return;
               setState({
                 kind: "error",
-                message: cause instanceof Error ? cause.message : String(cause),
+                message: describeApiError(cause, "opening Myra"),
               });
             },
           );
@@ -62,7 +63,7 @@ export function HomeRoute() {
         if (cancelled) return;
         setState({
           kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: describeApiError(cause, "opening Myra"),
         });
       },
     );
@@ -102,7 +103,7 @@ export function HomeRoute() {
         <EmptyState
           icon={<WarningCircle />}
           title="No workbench selected"
-          description="Pick a workbench from the switcher, then Myra will open here."
+          description="Nothing to open yet — start a new workbench and Myra will be waiting in it."
         />
       </PageShell>
     );
