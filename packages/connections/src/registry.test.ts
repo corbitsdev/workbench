@@ -168,3 +168,41 @@ describe("connectorDescriptors", () => {
     }
   });
 });
+
+describe("gmail connector", () => {
+  test("is a pure oauth-code connector with a hosted-app env pair", () => {
+    const descriptor = CONNECTOR_REGISTRY["gmail"];
+    expect(descriptor?.authKind).toBe("oauth-code");
+    expect(descriptor?.credentialPlugin).toBe("http");
+    expect(descriptor?.oauth).toBeDefined();
+    expect(
+      descriptor?.oauth?.clientId?.({ gmailClientId: "client-1" }),
+    ).toBe("client-1");
+    expect(
+      descriptor?.oauth?.clientSecret?.({ gmailClientSecret: "secret-1" }),
+    ).toBe("secret-1");
+    expect(descriptor?.oauth?.clientId?.({})).toBeUndefined();
+  });
+
+  test("asks Google for offline access and the gmail scope with PKCE", () => {
+    const descriptor = CONNECTOR_REGISTRY["gmail"];
+    const url = descriptor?.oauth?.buildAuthorizeUrl({
+      callbackUrl: "https://bench.example.com/callback",
+      state: "state-1",
+      codeChallenge: "challenge-1",
+      clientId: "client-1",
+    });
+    if (url === undefined) throw new Error("no authorize url");
+    expect(url.origin).toBe("https://accounts.google.com");
+    expect(url.searchParams.get("client_id")).toBe("client-1");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://bench.example.com/callback",
+    );
+    expect(url.searchParams.get("response_type")).toBe("code");
+    expect(url.searchParams.get("scope")).toContain("gmail");
+    expect(url.searchParams.get("state")).toBe("state-1");
+    expect(url.searchParams.get("access_type")).toBe("offline");
+    expect(url.searchParams.get("code_challenge")).toBe("challenge-1");
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+});
