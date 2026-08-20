@@ -1695,6 +1695,7 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      log: (line) => log.info`${line}`,
       resolveGithubConfig: async (tenantId) => {
         const row = await resolveCredentialByName(db, tenantId, "GitHub");
         if (row === null) return undefined;

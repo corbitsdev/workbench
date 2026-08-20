@@ -25,6 +25,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import {
   fetchAuthenticatedLogin,
@@ -36,15 +37,12 @@ import {
 import { startReviewingRepos } from "./connect-github-setup";
 import { templateReposSettingsPatch } from "./settings";
 
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
-
 // `startReviewingRepos`' own selected-repo mismatch throw and a GitHub
 // client failure both carry provider/internal detail (a rejected repo id,
 // an HTTP status line) that a person pasting a token never needs to read —
-// the CL-6360 idiom this route follows throughout: log the real cause,
-// answer with one honest, actionable sentence.
+// the CL-6360 idiom this route follows throughout via
+// `@workbench/hub-client`'s `makeErrorEnvelope`: log the real cause behind
+// a `refId`, answer with one honest, actionable `userMessage`.
 const REPOS_UNREADABLE_MESSAGE =
   "Couldn't read your GitHub repositories. Try reconnecting.";
 const START_REVIEWING_FAILED_MESSAGE =
@@ -61,6 +59,12 @@ export type ConnectGithubTemplateSettings = {
 
 export type ConnectGithubRoutesDeps = {
   requireGrant: RequireGrant;
+  /** Where a failure's real cause goes — the CL-6360 idiom: the client
+   * only ever sees `{code, userMessage, refId}`; the raw detail (a
+   * GitHub HTTP status line, a `startReviewingRepos` mismatch) is
+   * logged here, keyed by the same `refId`, so an operator can look it
+   * up without the client having seen it. */
+  log: (line: string) => void;
   /** The tenant's decrypted GitHub PAT, ready to hand `@corbits/github-tools`
    * — `undefined` when no `github` credential resolves for this tenant
    * (nothing connected yet). A host binds this to `resolveCredentialByName`
@@ -138,13 +142,15 @@ export function createConnectGithubRoutes(
         runListRepos(config),
       ]);
       return { ok: true, orgName, repos };
-    } catch {
+    } catch (cause) {
       // The GitHub client's own errors (transport, HTTP status, shape
       // mismatch) carry no actionable detail for the person who pasted a
-      // token — see this module's own `REPOS_UNREADABLE_MESSAGE` comment.
-      // `tenantId` is accepted for a future host-side log line; this route
-      // has no logger port today.
-      void tenantId;
+      // token — see this module's own `REPOS_UNREADABLE_MESSAGE` comment
+      // — so only the log line below carries the real cause.
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(
+        `connect-github: reading GitHub state failed for tenant ${tenantId}: ${message}`,
+      );
       return { ok: false };
     }
   }
@@ -190,7 +196,10 @@ export function createConnectGithubRoutes(
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", "Pick at least one repository."),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "Pick at least one repository.",
+          }),
           400,
         );
       }
@@ -202,7 +211,10 @@ export function createConnectGithubRoutes(
       const config = await deps.resolveGithubConfig(tenant.id);
       if (config === undefined) {
         return c.json(
-          ErrorEnvelope("not_connected", "Connect GitHub first."),
+          makeErrorEnvelope({
+            code: "not_connected",
+            userMessage: "Connect GitHub first.",
+          }),
           409,
         );
       }
@@ -210,7 +222,10 @@ export function createConnectGithubRoutes(
       const state = await readGithubState(tenant.id, config);
       if (!state.ok) {
         return c.json(
-          ErrorEnvelope("upstream_unavailable", REPOS_UNREADABLE_MESSAGE),
+          makeErrorEnvelope({
+            code: "upstream_unavailable",
+            userMessage: REPOS_UNREADABLE_MESSAGE,
+          }),
           502,
         );
       }
@@ -220,10 +235,11 @@ export function createConnectGithubRoutes(
       );
       if (codeReviewDefinitionId === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "not_found",
-            "This workbench's code-review workflow isn't set up yet.",
-          ),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage:
+              "This workbench's code-review workflow isn't set up yet.",
+          }),
           404,
         );
       }
@@ -258,12 +274,19 @@ export function createConnectGithubRoutes(
           { startedTriggerCount: result.createdTriggerIds.length },
           200,
         );
-      } catch {
+      } catch (cause) {
         // A repoId `state.repos` doesn't carry means the card's own
         // selection state is stale against a live re-list — never
         // something a raw stack trace helps the person fix.
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(
+          `connect-github: start-reviewing failed for tenant ${tenant.id}, workbench ${workbenchId}: ${message}`,
+        );
         return c.json(
-          ErrorEnvelope("bad_request", START_REVIEWING_FAILED_MESSAGE),
+          makeErrorEnvelope({
+            code: "start_reviewing_failed",
+            userMessage: START_REVIEWING_FAILED_MESSAGE,
+          }),
           400,
         );
       }

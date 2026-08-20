@@ -70,6 +70,7 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
 
   const deps: ConnectGithubRoutesDeps = {
     requireGrant: allowAll,
+    log: () => {},
     resolveGithubConfig: async () => githubConfig,
     resolveCodeReviewDefinitionId: async () => "wfd_code_review",
     mintRepoGrant: async (tenantId, repo) => {
