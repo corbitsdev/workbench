@@ -165,6 +165,27 @@ export function createSkill(
   }).then((page) => page.skill);
 }
 
+/**
+ * Republishes a skill's description/body as a new version on its same
+ * asset — scope untouched, name untouched (only the author may rename by
+ * creating a differently-named skill). Mirrors `createSkill`'s shape minus
+ * `name`/`scope`.
+ */
+export function updateSkill(
+  tenantId: string,
+  name: string,
+  input: { readonly description: string; readonly body: string },
+): Promise<SkillSummary> {
+  return request(
+    `${base(tenantId)}/${encodeURIComponent(name)}`,
+    SkillResponse,
+    {
+      method: "PUT",
+      body: { description: input.description, body: input.body },
+    },
+  ).then((page) => page.skill);
+}
+
 export function restoreSkillVersion(
   tenantId: string,
   name: string,
