@@ -298,6 +298,7 @@ export function routineView(row: RoutineRow) {
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     consecutiveFailures: row.consecutiveFailures,
     deadLetteredAt: row.deadLetteredAt?.toISOString() ?? null,
+    presetKey: row.presetKey,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -628,7 +629,7 @@ export function createRoutineRoutes(
       const deliveryWorkbenchId =
         body.deliveryWorkbenchId ?? provisionedSpace?.workbenchId ?? null;
 
-      let row: RoutineRow;
+      let row: RoutineRow | undefined;
       let created = true;
       try {
         if (body.presetKey !== undefined) {
@@ -639,12 +640,18 @@ export function createRoutineRoutes(
             trigger: body.trigger,
             scope: body.scope,
             input: body.input ?? {},
+            // A seeded preset is born disabled: a schedule must never
+            // start firing (or announce itself) just because a bench
+            // was minted — the member enabling it is the announcement.
+            enabled: false,
             deliveryWorkbenchId,
             createdBy: principal.id,
             presetKey: body.presetKey,
           });
-          row = result.row;
-          created = result.created;
+          if (result.outcome !== "tombstoned") {
+            row = result.row;
+            created = result.outcome === "created";
+          }
         } else {
           row = await deps.store.createRoutine({
             tenantId: tenant.id,
@@ -685,6 +692,26 @@ export function createRoutineRoutes(
       // whatever delivery workbench it resolved to. No fire, no notice:
       // both already happened (or are about to happen) on the winning
       // request.
+      // A member deleted this preset's routine: absence is their
+      // choice, so nothing is (re-)created — 204, and any space this
+      // request just provisioned is compensated like a lost race.
+      if (row === undefined) {
+        if (provisionedSpace !== undefined) {
+          try {
+            await provisionedSpace.compensate();
+          } catch (compensationErr) {
+            log.error(
+              "Compensation failed for orphaned space {workbenchId} " +
+                "after refusing to resurrect a member-deleted preset " +
+                "routine; this space now has no routine pointing at it " +
+                "and requires manual cleanup",
+              { workbenchId: provisionedSpace.workbenchId, compensationErr },
+            );
+          }
+        }
+        return c.body(null, 204);
+      }
+
       if (!created) {
         if (provisionedSpace !== undefined) {
           try {

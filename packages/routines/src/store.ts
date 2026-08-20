@@ -3,7 +3,7 @@
 // persistence from `routes.ts`. `RoutineStore` is the seam the route
 // layer depends on; `createDrizzleRoutineStore` is its one production
 // implementation, over the tables in `./schema.ts`.
-import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
 
@@ -73,19 +73,25 @@ export interface CreateRoutineInput {
 /** `createRoutineIfAbsent`'s own input: `presetKey` is the whole point
  * of this call (mandatory, unlike `CreateRoutineInput`'s optional
  * field), since it is the identity the create-if-absent conflict
- * target matches on. */
+ * target matches on. `enabled` is explicit here — a seeded preset is
+ * born disabled, never flipped after the fact — where a plain create
+ * is always born enabled. */
 export type CreateRoutineIfAbsentInput = Omit<
   CreateRoutineInput,
   "presetKey"
-> & { readonly presetKey: string };
+> & { readonly presetKey: string; readonly enabled: boolean };
 
-export interface CreateRoutineIfAbsentResult {
-  readonly row: RoutineRow;
-  /** `false` when a row for this `(tenantId, presetKey)` already
-   * existed — including one created by a request that raced this one —
-   * and this call is the loser that must not re-announce or re-fire. */
-  readonly created: boolean;
-}
+/**
+ * `existing` is any call that found a live row for this
+ * `(tenantId, presetKey)` — including the loser of a genuine race —
+ * which must not re-announce or re-fire. `tombstoned` means a member
+ * deleted this preset's routine: absence is their choice, and the
+ * create is refused rather than resurrecting the row.
+ */
+export type CreateRoutineIfAbsentResult =
+  | { readonly outcome: "created"; readonly row: RoutineRow }
+  | { readonly outcome: "existing"; readonly row: RoutineRow }
+  | { readonly outcome: "tombstoned" };
 
 export interface UpdateRoutineInput {
   readonly name?: string;
@@ -118,9 +124,10 @@ export interface RoutineStore {
    * `routine_tenant_preset_key_idx`, migrations.ts' 0005), never a
    * check-then-insert. Two overlapping calls with the same
    * `(tenantId, presetKey)` — including genuinely concurrent ones — are
-   * guaranteed exactly one winner (`created: true`) and any number of
-   * losers (`created: false`, returning the winner's own row), never
-   * two rows.
+   * guaranteed exactly one winner (`created`) and any number of losers
+   * (`existing`, returning the winner's own row), never two rows. A
+   * soft-deleted row for the key is a tombstone: the create is refused
+   * (`tombstoned`) rather than resurrecting what a member deleted.
    */
   createRoutineIfAbsent(
     input: CreateRoutineIfAbsentInput,
@@ -281,6 +288,40 @@ export function createDrizzleRoutineStore<
     },
 
     async createRoutineIfAbsent(input) {
+      // A tombstone means a member deleted this preset's routine:
+      // absence is their choice, and the create is refused rather than
+      // resurrecting the row. A live row still outranks a tombstone
+      // (delete-then-reseed-then-delete leaves both) — the insert's own
+      // conflict target settles that case below. Tombstones are never
+      // un-deleted, so this read cannot go stale against the insert.
+      const [tombstone] = await db
+        .select({ id: routine.id })
+        .from(routine)
+        .where(
+          and(
+            eq(routine.tenantId, input.tenantId),
+            eq(routine.presetKey, input.presetKey),
+            isNotNull(routine.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (tombstone !== undefined) {
+        const [live] = await db
+          .select()
+          .from(routine)
+          .where(
+            and(
+              eq(routine.tenantId, input.tenantId),
+              eq(routine.presetKey, input.presetKey),
+              isNull(routine.deletedAt),
+            ),
+          )
+          .limit(1);
+        return live === undefined
+          ? { outcome: "tombstoned" }
+          : { outcome: "existing", row: mapRoutineRow(live) };
+      }
+
       const now = new Date();
       const [inserted] = await db
         .insert(routine)
@@ -292,7 +333,7 @@ export function createDrizzleRoutineStore<
           trigger: input.trigger,
           scope: input.scope,
           input: input.input,
-          enabled: true,
+          enabled: input.enabled,
           deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
           createdBy: input.createdBy,
           nextFireAt: computeNextFireAt(input.trigger, now),
@@ -310,7 +351,7 @@ export function createDrizzleRoutineStore<
         })
         .returning();
       if (inserted !== undefined) {
-        return { row: mapRoutineRow(inserted), created: true };
+        return { outcome: "created", row: mapRoutineRow(inserted) };
       }
 
       // Lost the race (or a genuine re-seed): the winner's row is the
@@ -332,7 +373,7 @@ export function createDrizzleRoutineStore<
             `${JSON.stringify(input.presetKey)} but no existing row was found`,
         );
       }
-      return { row: mapRoutineRow(existing), created: false };
+      return { outcome: "existing", row: mapRoutineRow(existing) };
     },
 
     async getRoutine(tenantId, routineId) {
@@ -630,14 +671,16 @@ export function createInMemoryRoutineStore(): RoutineStore {
     },
 
     async createRoutineIfAbsent(input) {
-      const existing = [...routinesById.values()].find(
+      const rowsForKey = [...routinesById.values()].filter(
         (row) =>
-          row.tenantId === input.tenantId &&
-          row.presetKey === input.presetKey &&
-          row.deletedAt === null,
+          row.tenantId === input.tenantId && row.presetKey === input.presetKey,
       );
+      const existing = rowsForKey.find((row) => row.deletedAt === null);
       if (existing !== undefined) {
-        return { row: existing, created: false };
+        return { outcome: "existing", row: existing };
+      }
+      if (rowsForKey.some((row) => row.deletedAt !== null)) {
+        return { outcome: "tombstoned" };
       }
       const now = new Date();
       const row: RoutineRow = {
@@ -648,7 +691,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         trigger: input.trigger,
         scope: input.scope,
         input: input.input,
-        enabled: true,
+        enabled: input.enabled,
         deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
         createdBy: input.createdBy,
         nextFireAt: computeNextFireAt(input.trigger, now),
@@ -661,7 +704,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         presetKey: input.presetKey,
       };
       routinesById.set(row.id, row);
-      return { row, created: true };
+      return { outcome: "created", row };
     },
 
     async getRoutine(tenantId, routineId) {

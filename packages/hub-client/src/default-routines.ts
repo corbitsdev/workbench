@@ -41,6 +41,9 @@ const RoutineListItem = type({
   name: "string",
   enabled: "boolean",
   deliveryWorkbenchId: "string | null",
+  presetKey: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
 });
 
 /**
@@ -117,12 +120,20 @@ async function resolveDeployedDefinitionId(
 }
 
 /**
- * Plants `DEFAULT_ROUTINE_PRESETS` for one already-seeded tenant: every
- * preset whose workflow is deployed and not already present (by name)
- * gets a routine row, created enabled (the store's own default) and
- * immediately disabled. Every preset after the first reuses the first
- * preset's own delivery workbench — "the workbench's own workbench" is
- * whichever space the delivery-precedence chain
+ * Reconciles `DEFAULT_ROUTINE_PRESETS` for one already-seeded tenant:
+ * every preset whose workflow is deployed and not already present (by
+ * `presetKey`, falling back to name for rows planted before the key
+ * existed) gets a routine row, born disabled server-side. A preset the
+ * member deleted stays deleted (the hub answers 204 and no row is
+ * re-created), and a routine for a preset that no longer ships is
+ * deleted only while pristine — never patched since it was planted
+ * (`updatedAt` still equals `createdAt`); a member-touched row is the
+ * member's and is kept. Existing rows are never updated to a preset's
+ * current shape: once planted, the schedule, input, and name belong to
+ * the bench, and a moved preset only shapes freshly-planted rows.
+ * Every preset after the first reuses the first preset's own delivery
+ * workbench — "the workbench's own workbench" is whichever space the
+ * delivery-precedence chain
  * (`namedWorkbenchId ?? homeWorkbenchId ?? provisionedSpace?.workbenchId ??
  * null`, `packages/routines/src/routes.ts`) resolves the first preset
  * to, since no workbench is named and no run-scoped home workbench exists
@@ -150,8 +161,14 @@ export async function ensureDefaultRoutines(
     existing.find((routine) => routine.deliveryWorkbenchId !== null)
       ?.deliveryWorkbenchId ?? undefined;
 
+  await pruneDroppedPresetRoutines(api, cookies, tenantId, existing, log);
+
   for (const preset of DEFAULT_ROUTINE_PRESETS) {
-    const already = existing.find((routine) => routine.name === preset.name);
+    const already = existing.find(
+      (routine) =>
+        routine.presetKey === preset.assetName ||
+        (routine.presetKey === null && routine.name === preset.name),
+    );
     if (already !== undefined) {
       log(`routine "${preset.name}" already exists (skipped)`);
       continue;
@@ -205,11 +222,16 @@ export async function ensureDefaultRoutines(
       );
       continue;
     }
-    // 201: this call genuinely minted the row. 200: `presetKey` already
-    // resolved to an existing row (this preset's own prior seed, or the
-    // winner of a race against another overlapping seed call) — the
-    // server already skipped the "Created routine" notice and any
-    // fire, so there is nothing left to do but note it and move on.
+    // 201: this call genuinely minted the row, born disabled with no
+    // notice and no fire. 200: `presetKey` already resolved to an
+    // existing row (this preset's own prior seed, or the winner of a
+    // race against another overlapping seed call). 204: a member
+    // deleted this preset's routine and the hub refused to resurrect
+    // it — their choice stands.
+    if (created.status === 204) {
+      log(`routine "${preset.name}" was removed by a member (respected)`);
+      continue;
+    }
     if (created.status !== 201 && created.status !== 200) {
       throw new CliError(
         `the hub rejected creation of the default routine "${preset.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
@@ -230,19 +252,51 @@ export async function ensureDefaultRoutines(
       continue;
     }
 
-    const disabled = await api(
-      "PATCH",
-      `/api/tenants/${tenantId}/routines/${row.id}`,
-      { enabled: false },
+    log(`seeded routine "${preset.name}" (disabled)`);
+  }
+}
+
+/**
+ * Deletes routine rows whose `presetKey` no longer names a shipped
+ * preset — but only pristine ones, never patched since they were
+ * planted (`updatedAt` still equals `createdAt`; any member PATCH, and
+ * any recorded fire failure, moves `updatedAt`). A touched row is the
+ * member's and is kept, as is any pre-`presetKey` legacy row (there is
+ * no honest way to tell it apart from a person-authored routine).
+ */
+async function pruneDroppedPresetRoutines(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  existing: readonly (typeof RoutineListItem.infer)[],
+  log: (line: string) => void,
+): Promise<void> {
+  const shippedKeys = new Set(
+    DEFAULT_ROUTINE_PRESETS.map((preset) => preset.assetName),
+  );
+  for (const routine of existing) {
+    if (routine.presetKey === null || shippedKeys.has(routine.presetKey)) {
+      continue;
+    }
+    if (routine.updatedAt !== routine.createdAt) {
+      log(
+        `routine "${routine.name}" outlived its preset but was touched ` +
+          `by a member (kept)`,
+      );
+      continue;
+    }
+    const deleted = await api(
+      "DELETE",
+      `/api/tenants/${tenantId}/routines/${routine.id}`,
+      undefined,
       cookies,
     );
-    if (disabled.status !== 200) {
+    if (deleted.status !== 204) {
       throw new CliError(
-        `the hub rejected disabling the freshly-seeded routine "${preset.name}" with status ${disabled.status}: ${JSON.stringify(disabled.data)}`,
+        `the hub rejected deleting the retired preset routine "${routine.name}" with status ${deleted.status}: ${JSON.stringify(deleted.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
     }
-
-    log(`seeded routine "${preset.name}" (disabled)`);
+    log(`routine "${routine.name}" retired (its preset no longer ships)`);
   }
 }
