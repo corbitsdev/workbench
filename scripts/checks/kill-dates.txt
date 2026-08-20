@@ -17,12 +17,12 @@ apps/sidecar | sawyer | 2026-09-14
 vendor/intx/agent | sawyer | 2026-09-14 | 797f8aa6a6fb3986c3c8c3e4df396e1378294b21411a24089e8ddb19d5df304e
 vendor/intx/authz | sawyer | 2026-09-14 | 9d760ef9b5037cead31a2224821e5913c8e7eb66d851271d36a473d4a0e68337
 vendor/intx/crypto | sawyer | 2026-09-14 | 7280b002b09da04b81a53d413580c88c8786f02310408a67f1187b9ca519aba5
-vendor/intx/db | sawyer | 2026-09-14 | 8c8f5379799d6549daba0237db0a830f91fed4ccdbcdde015b645f4d714781bc
+vendor/intx/db | sawyer | 2026-09-14 | fda685c284697c10e8a5e637d86df49c8d7c95169949580d299c08cf80fe475c
 vendor/intx/harness | sawyer | 2026-09-14 | af9b270a297ae1dc6d8684da9005ec9d3d6220d1679e5f569086ef313e17f371
 vendor/intx/hub-agent | sawyer | 2026-09-14 | 6402193dfe48dce3525c9b233bd6974e566df57ff5bc209128633af92abe8b17
 vendor/intx/hub-api | sawyer | 2026-09-14 | 7d82a625c852b9e9bb13fd59e71c6c45be792bcbb9ebb5994586e97840dc66c1
 vendor/intx/hub-common | sawyer | 2026-09-14 | 0e2d71d4754713538d7fd6451c8648c6b277390abfc888e605499fc004ce0349
-vendor/intx/hub-sessions | sawyer | 2026-09-05 | c82d2299012bd13c40df17920fd8d5f07df0e9d94b42ea4bd01b4da5c908ebf8
+vendor/intx/hub-sessions | sawyer | 2026-09-05 | 036dd7dd7761bb62939332f3a602c8e62d743aafeed058b2ce904e32cc0ab1df
 vendor/intx/inference | sawyer | 2026-09-14 | 8714c2ee0f800caadb770db70ed1c66018dccde1b2bd62408c4899b1839b6ea9
 vendor/intx/inference-catalog | sawyer | 2026-09-14 | 6e2ef3af83eafafdf1b773725afcb724cbb712604266919ecd1d67d50ff8016a
 vendor/intx/log | sawyer | 2026-09-14 | 17ba64f2ff751b640dd2db9eb034450876c435f43641b022fbc4a2e9aa9da04d
