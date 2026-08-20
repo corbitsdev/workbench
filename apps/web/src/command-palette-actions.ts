@@ -4,12 +4,12 @@
 // `library-upload.ts` established: the palette can fire from any page,
 // before the target page (and its window-event listener) has mounted, so
 // a same-tick `dispatchEvent` would be a race the listener always loses.
-// `pending-dialog-request.ts` generalizes that pattern; the target section
-// (skills-settings-section.tsx) consumes the pending flag on mount. Skills
-// moved from its own route into a Settings section (CL-5990) — "New
-// skill" lands on `/settings/skills`. "New task" and the Inbox page it
-// used to open are gone (CL-6151, owner decision): tasks are dispatched
-// by Myra from inside a workbench now.
+// `pending-dialog-request.ts` generalizes that pattern; the target page
+// (skills-page.tsx) consumes the pending flag on mount. Skills moved from
+// its own route into a Settings section (CL-5990) and back out to its own
+// rail destination (CL-6355) — "New skill" lands on `/skills`. "New task"
+// and the Inbox page it used to open are gone (CL-6151, owner decision):
+// tasks are dispatched by Myra from inside a workbench now.
 //
 // Workbench creation is not one of those — there is no dialog to race, no
 // page to mount first: "new-workbench" and "new-agent" both navigate
@@ -112,7 +112,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "upload-artifact",
     title: "Upload artifact",
-    subtitle: "Library · open dialog",
+    subtitle: "Files · open dialog",
   },
   { id: "toggle-theme", title: "Toggle theme", subtitle: "Light / dark" },
   {
@@ -170,9 +170,8 @@ export async function runActionCommand(
     case "new-skill": {
       newSkillRequest.request({
         alreadyOnTargetRoute:
-          ctx.path === "/settings/skills" ||
-          ctx.path.startsWith("/settings/skills/"),
-        navigateToTargetRoute: () => ctx.navigate("/settings/skills"),
+          ctx.path === "/skills" || ctx.path.startsWith("/skills/"),
+        navigateToTargetRoute: () => ctx.navigate("/skills"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
       });
       return;
@@ -180,8 +179,8 @@ export async function runActionCommand(
     case "upload-artifact": {
       requestLibraryUpload({
         alreadyOnLibrary:
-          ctx.path === "/library" || ctx.path.startsWith("/library/"),
-        navigateToLibrary: () => ctx.navigate("/library"),
+          ctx.path === "/files" || ctx.path.startsWith("/files/"),
+        navigateToLibrary: () => ctx.navigate("/files"),
       });
       return;
     }

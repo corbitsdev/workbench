@@ -301,7 +301,7 @@ export function LibraryPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        title={selectedSummary === null ? "Library" : selectedSummary.title}
+        title={selectedSummary === null ? "Files" : selectedSummary.title}
         subtitle={
           selectedSummary === null
             ? `${artifacts.length} artifacts`
@@ -439,7 +439,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // `/library/a/:id` (CL-6015) — a chat artifact chip's "Open in Library"
+  // `/files/a/:id` (CL-6015) — a chat artifact chip's "Open in Files"
   // deep link, distinct from the kind-nav segments below. It only ever
   // sets the initial selection; the user's own clicks stay local state,
   // the same way kind-nav selection already worked before this route
@@ -482,7 +482,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (selectedTenantId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Library" />
+        <StageTopBar title="Files" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<FileStack />}
@@ -497,12 +497,12 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Library" />
+        <StageTopBar title="Files" />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<FileStack />}
-            title="Library not configured"
-            description="Library isn't set up yet. Ask your workbench admin to finish setup."
+            title="Files not configured"
+            description="Files isn't set up yet. Ask your workbench admin to finish setup."
           />
         </PageShell>
       </div>
@@ -512,7 +512,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind !== "ready") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar title="Library" />
+        <StageTopBar title="Files" />
         <PageShell width="full" className="page-fill">
           {page.kind === "loading" ? (
             <ListSkeleton />

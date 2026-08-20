@@ -15,11 +15,17 @@ import { App } from "../src/app";
 import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
 
-/** Legacy routes that only redirect - `/agents` and `/skills` bounce to
- * their Settings section (`pages/legacy-settings-redirects.tsx`), `/inbox`
- * bounces home (the Inbox page is gone, CL-6151) - none has a stable panel
- * title to assert via the generic render loop below. */
-const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills", "/inbox"]);
+/** Legacy routes that only redirect - `/library` bounces to `/files`
+ * (CL-6353), `/settings/agents` and `/settings/skills` bounce to `/agents`
+ * and `/skills` (CL-6354/CL-6355 moved both off Settings), `/inbox` bounces
+ * home (the Inbox page is gone, CL-6151) - none has a stable panel title to
+ * assert via the generic render loop below. */
+const LEGACY_REDIRECT_PATHS = new Set([
+  "/library",
+  "/settings/agents",
+  "/settings/skills",
+  "/inbox",
+]);
 
 const noNavigate = () => undefined;
 const noop = () => undefined;
@@ -107,6 +113,9 @@ function activeFooterLabel(markup: string): string | undefined {
 }
 
 const FOOTER_LABELS: Record<string, string> = {
+  "/files": "Files",
+  "/skills": "Skills",
+  "/agents": "Agents",
   "/plugins": "Plugins",
   "/insights": "Insights",
 };
@@ -119,20 +128,25 @@ describe("route table", () => {
       "/w",
       "/inbox",
       "/routines",
+      "/files",
       "/library",
       "/agents",
+      "/settings/agents",
       "/skills",
+      "/settings/skills",
       "/insights",
       "/plugins",
       "/settings",
     ]);
   });
 
-  test("palette pages are Workbenches, Routines, Library, Insights, Settings", () => {
+  test("palette pages are Workbenches, Routines, Files, Skills, Agents, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Workbenches",
       "Routines",
-      "Library",
+      "Files",
+      "Skills",
+      "Agents",
       "Insights",
       "Settings",
     ]);
@@ -150,11 +164,31 @@ describe("route table", () => {
     expect(matchesRoute("/settings", "/settings-lookalike")).toBe(false);
   });
 
-  test("legacy /agents and /skills stay routable (redirect-only, off the palette pages)", () => {
+  test("/agents/:id and /skills/:id stay on their own roster route", () => {
     expect(matchesRoute("/agents", "/agents/wfd_1")).toBe(true);
     expect(matchesRoute("/skills", "/skills/skill_1")).toBe(true);
-    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/agents");
-    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/skills");
+    expect(NAV_ROUTES.map((route) => route.path)).toContain("/agents");
+    expect(NAV_ROUTES.map((route) => route.path)).toContain("/skills");
+  });
+
+  test("legacy /settings/agents and /settings/skills stay routable (redirect-only, off the palette pages)", () => {
+    expect(matchesRoute("/settings/agents", "/settings/agents/wfd_1")).toBe(
+      true,
+    );
+    expect(matchesRoute("/settings/skills", "/settings/skills/skill_1")).toBe(
+      true,
+    );
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain(
+      "/settings/agents",
+    );
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain(
+      "/settings/skills",
+    );
+  });
+
+  test("legacy /library stays routable (redirect-only) but is off the palette pages", () => {
+    expect(matchesRoute("/library", "/library/a/art_1")).toBe(true);
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/library");
   });
 
   test("/inbox stays routable (redirect-only) but is off the palette pages", () => {

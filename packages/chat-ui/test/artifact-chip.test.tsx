@@ -58,14 +58,14 @@ describe("ArtifactChip", () => {
     expect(markup).toContain("text/plain");
   });
 
-  test("offers Open in Library when artifactId and onOpenInLibrary are both set", () => {
+  test("offers Open in Files when artifactId and onOpenInLibrary are both set", () => {
     const markup = renderToStaticMarkup(
       <ArtifactChip
         part={filePart({ artifactId: "art_1" })}
         onOpenInLibrary={() => {}}
       />,
     );
-    expect(markup).toContain('aria-label="Open in Library"');
+    expect(markup).toContain('aria-label="Open in Files"');
   });
 
   test("has no Library affordance for a blob-only part (no artifactId)", () => {
@@ -76,7 +76,7 @@ describe("ArtifactChip", () => {
         onOpenInLibrary={() => {}}
       />,
     );
-    expect(markup).not.toContain("Open in Library");
+    expect(markup).not.toContain("Open in Files");
   });
 
   test("has no Library affordance when onOpenInLibrary is not supplied", () => {
@@ -86,6 +86,6 @@ describe("ArtifactChip", () => {
         onOpen={() => {}}
       />,
     );
-    expect(markup).not.toContain("Open in Library");
+    expect(markup).not.toContain("Open in Files");
   });
 });

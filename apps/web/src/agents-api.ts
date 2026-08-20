@@ -224,6 +224,27 @@ export function createAgentDefinition(
   );
 }
 
+const AgentCapabilitiesResponse = type({
+  name: "string",
+  "model?": "string",
+});
+export type AgentCapabilities = typeof AgentCapabilitiesResponse.infer;
+
+/** `GET /api/tenants/:t/agent-definitions/:id` — the same route
+ * `@corbits/chat-ui`'s per-workbench Agents section reads for its model
+ * picker. Fetched lazily, per definition, only once its row is expanded on
+ * the Agents roster — the paginated definitions list itself carries no
+ * model field. */
+export function getAgentCapabilities(
+  tenantId: string,
+  definitionId: string,
+): Promise<AgentCapabilities> {
+  return getJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
+    AgentCapabilitiesResponse,
+  );
+}
+
 const DefinitionSkillsMap = type({ skills: { "[string]": "string[]" } });
 
 /** Every attached-skill list for the given definitions, keyed by definition

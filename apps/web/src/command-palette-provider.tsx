@@ -432,7 +432,7 @@ export function CommandPaletteProvider({
       { id: "runs", heading: "Runs", items: runItems },
       { id: "routines", heading: "Routines", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
-      { id: "library", heading: "Library", items: libraryItems },
+      { id: "library", heading: "Files", items: libraryItems },
       {
         id: "people",
         heading: "People & agents",
@@ -517,7 +517,7 @@ export function CommandPaletteProvider({
         const agentId = id.slice("entity:agents:".length);
         const title =
           agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(`/settings/agents/${encodeURIComponent(agentId)}`);
+        navigate(`/agents/${encodeURIComponent(agentId)}`);
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
@@ -529,15 +529,15 @@ export function CommandPaletteProvider({
         const skillId = id.slice("entity:skills:".length);
         const title =
           skillItems.find((item) => item.id === id)?.title ?? skillId;
-        navigate(`/settings/skills/${encodeURIComponent(skillId)}`);
+        navigate(`/skills/${encodeURIComponent(skillId)}`);
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:library:")) {
-        // Library detail is local page state, not a route — see the PR
-        // description flag. This opens the Library list.
+        // Files detail is local page state, not a route — see the PR
+        // description flag. This opens the Files list.
         const title =
-          libraryItems.find((item) => item.id === id)?.title ?? "Library";
-        navigate("/library");
-        pushRecent({ kind: "library", id, title, subtitle: "Library" });
+          libraryItems.find((item) => item.id === id)?.title ?? "Files";
+        navigate("/files");
+        pushRecent({ kind: "library", id, title, subtitle: "Files" });
       }
       setOpen(false);
     },

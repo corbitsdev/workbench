@@ -1,6 +1,8 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// utility icon row (plugins, insights), and below it the account row —
+// utility icon row (Files, Skills, Agents, Plugins, Insights — CL-6353/
+// CL-6354/CL-6355 moved the first three out of Settings and onto this row),
+// and below it the account row —
 // avatar + name, the whole row is the trigger for a menu that pops upward
 // with weekly usage, settings, feedback, and log out. Always present;
 // there is no collapse affordance and no second nav column. Approvals
@@ -30,13 +32,16 @@ import {
   SidebarPanelFooter,
 } from "@corbits/react-ui";
 import {
+  Bot,
   ChartColumn,
   ChevronRight,
+  Library,
   LogOut,
   MessageSquarePlus,
   Plug,
   Plus,
   SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import { useMemo } from "react";
 
@@ -137,9 +142,40 @@ export function Sidebar({
       </SidebarPanelBody>
 
       <SidebarPanelFooter>
-        {/* Footer order: Plugins, Insights, then the account row anchors
-            everything else (weekly usage, Settings, Log out) in its
-            pop-up menu — a single footer, never two stacked rows. */}
+        {/* Footer order: Files, Skills, Agents, Plugins, Insights, then the
+            account row anchors everything else (weekly usage, Settings, Log
+            out) in its pop-up menu — a single footer, never two stacked
+            rows. */}
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/files", path) ? "true" : undefined}
+          aria-current={matchesRoute("/files", path) ? "page" : undefined}
+          onClick={() => onNavigate("/files")}
+        >
+          <Library />
+          <span>Files</span>
+        </button>
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/skills", path) ? "true" : undefined}
+          aria-current={matchesRoute("/skills", path) ? "page" : undefined}
+          onClick={() => onNavigate("/skills")}
+        >
+          <Sparkles />
+          <span>Skills</span>
+        </button>
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/agents", path) ? "true" : undefined}
+          aria-current={matchesRoute("/agents", path) ? "page" : undefined}
+          onClick={() => onNavigate("/agents")}
+        >
+          <Bot />
+          <span>Agents</span>
+        </button>
         <button
           type="button"
           className="shell-sidebar-footer-row"

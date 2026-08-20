@@ -1,5 +1,5 @@
 // A skill's detail, docked on the right of the Plugins gallery (CL-6090):
-// the same registry reads and mutations `SkillsSettingsSection` already
+// the same registry reads and mutations `SkillsPage` already
 // calls (`../skills-api.ts`) — share/make private, restore an older
 // version — just in the gallery's docked-panel shape instead of Settings'
 // master-detail list. Nothing here forks that section; it is a second,

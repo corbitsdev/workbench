@@ -1,8 +1,10 @@
-// Settings · Skills, over the workbench's real skill registry
-// (`@corbits/skills`, via `../skills-api.ts`). This replaced the
-// session-local store CL-5991 shipped: a skill now lives in a native
-// `kind:"skill"` hub asset the moment it is created, and its version
-// history is that asset's git history.
+// Skills: a standalone rail destination (CL-6355), over the workbench's
+// real skill registry (`@corbits/skills`, via `../skills-api.ts`). Used to
+// be a Settings section (CL-5990); the owner moved it back out to its own
+// page — this is the only surface left, there is no Settings duplicate.
+// This replaced the session-local store CL-5991 shipped before that: a
+// skill now lives in a native `kind:"skill"` hub asset the moment it is
+// created, and its version history is that asset's git history.
 //
 // Two states a skill can be in, both visible here:
 //   private  — visible only to the person who wrote it (the default)
@@ -13,6 +15,7 @@
 // that visibility toggle, not an install step.
 
 import {
+  PageShell,
   Badge,
   Button,
   EmptyState,
@@ -48,6 +51,9 @@ import {
   CreateSkillDialog,
   type SkillCreateInput,
 } from "./create-skill-dialog";
+import { useBench } from "../bench-context";
+import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
+import { StageTopBar } from "../shell/stage-top-bar";
 
 type RegistryState =
   | { readonly status: "loading" }
@@ -258,11 +264,13 @@ function SkillDetailView({
 }
 
 /**
- * Settings · Skills. `navigate` and `entityId` come from the settings
- * section context (see `../settings-everyone-sections.tsx`); `tenantId`
- * is the registry every read and write is scoped to.
+ * The Skills page's content: master-detail over one workbench's skill
+ * registry. `tenantId` is the registry every read and write is scoped to;
+ * `navigate`/`entityId` drive the `/skills/:name` deep link when passed
+ * (see `SkillsRoute` below), or stay local to the component otherwise —
+ * same optional-controlled-selection contract `AgentsSection` uses.
  */
-export function SkillsSettingsSection({
+export function SkillsPage({
   tenantId,
   navigate,
   entityId,
@@ -308,8 +316,8 @@ export function SkillsSettingsSection({
     setSelected(name);
     navigate?.(
       name === null
-        ? "/settings/skills"
-        : `/settings/skills/${encodeURIComponent(name)}`,
+        ? SKILLS_PATH_PREFIX
+        : `${SKILLS_PATH_PREFIX}/${encodeURIComponent(name)}`,
     );
   }
 
@@ -452,6 +460,38 @@ export function SkillsSettingsSection({
         </div>
       )}
       {createDialog}
+    </div>
+  );
+}
+
+/**
+ * Skills stage: full-page mount at `/skills` (CL-6355), same shell as
+ * Files and Agents (`StageTopBar` + full-width `PageShell`). `path` drives
+ * the `/skills/:name` deep link the same way `LibraryRoute` drives
+ * `/files/:id`.
+ */
+export function SkillsRoute({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
+  const { selectedTenantId } = useBench();
+  const entityId = skillIdFromPath(path);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar title="Skills" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <SkillsPage
+            tenantId={selectedTenantId}
+            navigate={navigate}
+            entityId={entityId}
+          />
+        </PageShell>
+      </div>
     </div>
   );
 }

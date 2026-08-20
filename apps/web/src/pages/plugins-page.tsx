@@ -12,7 +12,7 @@
 // Skills gets the same gallery treatment as plugins (owner ruling): cards,
 // not the Settings section's list rows — reusing `../skills-api.ts`'s data
 // and mutations through `PluginSkillDetailPanel`, never forking
-// `SkillsSettingsSection` itself.
+// `SkillsPage` itself.
 
 import {
   Button,
