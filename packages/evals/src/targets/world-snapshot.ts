@@ -57,26 +57,28 @@ async function readAgentDefinitions(
     ),
   });
 
-  const definitions = [];
-  for (const row of rows) {
-    if (row.assetId === null) continue;
-    const workflowJson = new TextDecoder().decode(
-      await assetService.readAssetBlob({
-        assetId: row.assetId,
-        ref: DEFAULT_ASSET_REF,
-        path: AGENT_DEFINITION_ASSET_PATH,
-      }),
-    );
-    const capabilities = readAgentCapabilities(workflowJson);
-    definitions.push({
-      id: row.id,
-      name: row.description ?? row.name,
-      toolPackagePins: capabilities.toolPackagePins.map((pin) => pin.name),
-      skills: [] as readonly string[],
-      model: capabilities.model ?? null,
-    });
-  }
-  return definitions;
+  const deployable = rows.filter(
+    (row): row is typeof row & { assetId: string } => row.assetId !== null,
+  );
+  return Promise.all(
+    deployable.map(async (row) => {
+      const workflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          ref: DEFAULT_ASSET_REF,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+      const capabilities = readAgentCapabilities(workflowJson);
+      return {
+        id: row.id,
+        name: row.description ?? row.name,
+        toolPackagePins: capabilities.toolPackagePins.map((pin) => pin.name),
+        skills: [] as readonly string[],
+        model: capabilities.model ?? null,
+      };
+    }),
+  );
 }
 
 async function readRoutines(db: DB["db"], tenantId: string) {
