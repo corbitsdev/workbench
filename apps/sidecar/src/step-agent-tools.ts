@@ -166,7 +166,17 @@ export function attachStepCredentials(
   Reflect.set(env, STEP_CREDENTIALS, context);
 }
 
-function getStepCredentialContext(
+/**
+ * Read back the credential context `attachStepCredentials` set on the
+ * per-step env. Exported (alongside `packageFromToolId` below) so
+ * `action-tool-handler.ts` can shape the same consumer-scoped
+ * `credentials` capability for an action's tool dispatch that
+ * `createToolBearingAgentFactory` shapes for a deterministic/inference
+ * step's tools -- action dispatch has no agent reactor to route
+ * through, so it reads this slot directly rather than through the
+ * `agentFactory` seam.
+ */
+export function getStepCredentialContext(
   env: object,
 ): StepCredentialContext | undefined {
   const value: unknown = Reflect.get(env, STEP_CREDENTIALS);
@@ -208,7 +218,7 @@ function getStepCredentialContext(
  * a real gap for a future untrusted-tool-package story; it is filed and
  * tracked separately from this wiring, not solved here.
  */
-function packageFromToolId(id: string): string {
+export function packageFromToolId(id: string): string {
   const lastSlash = id.lastIndexOf("/");
   if (lastSlash <= 0) {
     throw new Error(
