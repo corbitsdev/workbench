@@ -1,10 +1,16 @@
 // The one turn input every reviewer sees: the pull request's title,
-// description, and per-file patches. Each patch is capped so a large
-// change still fits one turn; a truncated patch says so in place rather
-// than ending mid-hunk as if that were the whole file.
+// description, and per-file patches.
+//
+// Two budgets, because a real pull request blows past a turn otherwise —
+// a 100-file change renders half a million characters of patch. Each
+// patch is capped on its own, and the prompt stops adding files once the
+// total budget is spent. Both cuts are stated in the prompt: a reviewer
+// that was shown part of a change must know that, or it will report a
+// gap it never looked at as if the change had none.
 import type { PullRequestDiff } from "@corbits/github-tools";
 
 const MAX_PATCH_CHARS = 12000;
+const MAX_TOTAL_PATCH_CHARS = 120000;
 
 function renderPatch(patch: string): string {
   if (patch.length <= MAX_PATCH_CHARS) return patch;
@@ -29,16 +35,31 @@ export function renderReviewPrompt(diff: PullRequestDiff): string {
     "",
   ].join("\n");
 
-  const files = diff.files.map((file) => {
+  const rendered: string[] = [];
+  const omitted: string[] = [];
+  let spent = 0;
+  for (const file of diff.files) {
     const heading =
       `--- ${file.path} (${file.status}, +${String(file.additions)} ` +
       `-${String(file.deletions)})`;
+    if (spent >= MAX_TOTAL_PATCH_CHARS) {
+      omitted.push(file.path);
+      continue;
+    }
     const body =
       file.patch === undefined
         ? "(no patch available for this file)"
         : renderPatch(file.patch);
-    return `${heading}\n${body}`;
-  });
+    spent += body.length;
+    rendered.push(`${heading}\n${body}`);
+  }
 
-  return `${header}Diff:\n${files.join("\n\n")}\n`;
+  const tail =
+    omitted.length === 0
+      ? ""
+      : `\nNot shown to you (the change is too large for one turn): ` +
+        `${omitted.join(", ")}. Say that these files were not shown ` +
+        "rather than reviewing them unseen.\n";
+
+  return `${header}Diff:\n${rendered.join("\n\n")}\n${tail}`;
 }
