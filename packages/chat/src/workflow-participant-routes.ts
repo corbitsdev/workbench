@@ -41,6 +41,7 @@
 // invite into a workbench it is not itself in.
 import { Hono } from "hono";
 import { type } from "arktype";
+import { DefinitionAssetUnresolvableError } from "@corbits/folded-runs";
 
 import {
   launchAndJoinAgent,
@@ -161,22 +162,35 @@ export function createWorkflowParticipantRoutes(
       );
     }
 
-    const joined = await launchAndJoinAgent(
-      {
-        store: deps.store,
-        platform: deps.platform,
-        roomMessages: deps.roomMessages,
-        publish: deps.publish,
-      },
-      {
-        tenantId: scope.tenantId,
-        principalId: scope.principalId,
-        workbenchId: workbench.workbenchId,
-        definitionId: body.definitionId,
-        existingSettings: workbench.settings,
-        invitable: await deps.platform.listInvitableDefinitions(scope.tenantId),
-      },
-    );
+    let joined: Awaited<ReturnType<typeof launchAndJoinAgent>>;
+    try {
+      joined = await launchAndJoinAgent(
+        {
+          store: deps.store,
+          platform: deps.platform,
+          roomMessages: deps.roomMessages,
+          publish: deps.publish,
+        },
+        {
+          tenantId: scope.tenantId,
+          principalId: scope.principalId,
+          workbenchId: workbench.workbenchId,
+          definitionId: body.definitionId,
+          existingSettings: workbench.settings,
+          invitable: await deps.platform.listInvitableDefinitions(
+            scope.tenantId,
+          ),
+        },
+      );
+    } catch (err) {
+      // CL-6357: named, consumer-facing 4xx — never an unhandled 500 —
+      // when every asset candidate for the definition has gone
+      // unresolvable (DB/blob drift).
+      if (err instanceof DefinitionAssetUnresolvableError) {
+        return c.json(errorEnvelope("not_launchable", err.guidance), 409);
+      }
+      throw err;
+    }
 
     return c.json(
       {
