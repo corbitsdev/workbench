@@ -14,10 +14,17 @@
 // what CL-6201 asks of the previously-stranded last-30-days-research
 // definition.
 //
-// Idempotent by name, the same convention `seed.ts`'s own
-// `ensureCatalogOffering`/`ensureWorkflowAsset` use: a re-seed lists
-// existing routines first and skips any preset already present, never
-// creating a duplicate.
+// Idempotent by a stable `presetKey` (each preset's own `assetName`),
+// enforced server-side by `@corbits/routines`' `createRoutineIfAbsent`
+// (a real `INSERT ... ON CONFLICT DO NOTHING`, unique per
+// `(tenantId, presetKey)` — see packages/routines/src/store.ts and
+// migrations.ts' 0005). The list-then-skip check below is only a fast
+// path that avoids a redundant deploy lookup and API round trip on the
+// common case; it is never the thing that prevents a duplicate. Two
+// overlapping `ensureDefaultRoutines` calls (e.g. two "finish setup"
+// requests racing, as `pending-seed.ts` explicitly allows) can both
+// pass this check and both POST — the server-side conflict target is
+// what guarantees exactly one row and one "Created routine" notice.
 import { paginatedSchema } from "@intx/types";
 import { type } from "arktype";
 import { CliError } from "./errors";
@@ -170,6 +177,8 @@ export async function ensureDefaultRoutines(
       trigger: preset.trigger,
       scope: "bench",
       input: preset.input,
+      // The create-if-absent identity — see this file's header comment.
+      presetKey: preset.assetName,
     };
     if (sharedDeliveryWorkbenchId !== undefined) {
       body.deliveryWorkbenchId = sharedDeliveryWorkbenchId;
@@ -196,7 +205,12 @@ export async function ensureDefaultRoutines(
       );
       continue;
     }
-    if (created.status !== 201) {
+    // 201: this call genuinely minted the row. 200: `presetKey` already
+    // resolved to an existing row (this preset's own prior seed, or the
+    // winner of a race against another overlapping seed call) — the
+    // server already skipped the "Created routine" notice and any
+    // fire, so there is nothing left to do but note it and move on.
+    if (created.status !== 201 && created.status !== 200) {
       throw new CliError(
         `the hub rejected creation of the default routine "${preset.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
@@ -209,6 +223,11 @@ export async function ensureDefaultRoutines(
       row.deliveryWorkbenchId !== null
     ) {
       sharedDeliveryWorkbenchId = row.deliveryWorkbenchId;
+    }
+
+    if (created.status === 200) {
+      log(`routine "${preset.name}" already exists (skipped)`);
+      continue;
     }
 
     const disabled = await api(

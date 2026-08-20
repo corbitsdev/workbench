@@ -3,7 +3,7 @@
 // persistence from `routes.ts`. `RoutineStore` is the seam the route
 // layer depends on; `createDrizzleRoutineStore` is its one production
 // implementation, over the tables in `./schema.ts`.
-import { and, desc, eq, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
 
@@ -53,6 +53,9 @@ export interface RoutineRow {
   readonly deadLetteredAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /** See `schema.ts`' `preset_key` column doc comment. `null` for an
+   * ordinary, person-authored routine. */
+  readonly presetKey: string | null;
 }
 
 export interface CreateRoutineInput {
@@ -64,6 +67,24 @@ export interface CreateRoutineInput {
   readonly input: Record<string, unknown>;
   readonly deliveryWorkbenchId?: string | null;
   readonly createdBy: string;
+  readonly presetKey?: string | null;
+}
+
+/** `createRoutineIfAbsent`'s own input: `presetKey` is the whole point
+ * of this call (mandatory, unlike `CreateRoutineInput`'s optional
+ * field), since it is the identity the create-if-absent conflict
+ * target matches on. */
+export type CreateRoutineIfAbsentInput = Omit<
+  CreateRoutineInput,
+  "presetKey"
+> & { readonly presetKey: string };
+
+export interface CreateRoutineIfAbsentResult {
+  readonly row: RoutineRow;
+  /** `false` when a row for this `(tenantId, presetKey)` already
+   * existed — including one created by a request that raced this one —
+   * and this call is the loser that must not re-announce or re-fire. */
+  readonly created: boolean;
 }
 
 export interface UpdateRoutineInput {
@@ -91,6 +112,19 @@ export interface MarkFailedFireResult {
 
 export interface RoutineStore {
   createRoutine(input: CreateRoutineInput): Promise<RoutineRow>;
+  /**
+   * Real create-if-absent, keyed on `(tenantId, presetKey)`: a single
+   * atomic `INSERT ... ON CONFLICT DO NOTHING` (backed by
+   * `routine_tenant_preset_key_idx`, migrations.ts' 0005), never a
+   * check-then-insert. Two overlapping calls with the same
+   * `(tenantId, presetKey)` — including genuinely concurrent ones — are
+   * guaranteed exactly one winner (`created: true`) and any number of
+   * losers (`created: false`, returning the winner's own row), never
+   * two rows.
+   */
+  createRoutineIfAbsent(
+    input: CreateRoutineIfAbsentInput,
+  ): Promise<CreateRoutineIfAbsentResult>;
   /** `undefined` for an unknown OR a soft-deleted routine. */
   getRoutine(
     tenantId: string,
@@ -196,6 +230,7 @@ function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
     deadLetteredAt: row.deadLetteredAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    presetKey: row.presetKey ?? null,
   };
 }
 
@@ -236,12 +271,68 @@ export function createDrizzleRoutineStore<
           deadLetteredAt: null,
           createdAt: now,
           updatedAt: now,
+          presetKey: input.presetKey ?? null,
         })
         .returning();
       if (row === undefined) {
         throw new Error("createRoutine: insert returned no row");
       }
       return mapRoutineRow(row);
+    },
+
+    async createRoutineIfAbsent(input) {
+      const now = new Date();
+      const [inserted] = await db
+        .insert(routine)
+        .values({
+          id: generateId("workflowRun"),
+          tenantId: input.tenantId,
+          name: input.name,
+          definitionId: input.definitionId,
+          trigger: input.trigger,
+          scope: input.scope,
+          input: input.input,
+          enabled: true,
+          deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
+          createdBy: input.createdBy,
+          nextFireAt: computeNextFireAt(input.trigger, now),
+          lastFireAt: null,
+          deletedAt: null,
+          consecutiveFailures: 0,
+          deadLetteredAt: null,
+          createdAt: now,
+          updatedAt: now,
+          presetKey: input.presetKey,
+        })
+        .onConflictDoNothing({
+          target: [routine.tenantId, routine.presetKey],
+          where: sql`${routine.presetKey} is not null and ${routine.deletedAt} is null`,
+        })
+        .returning();
+      if (inserted !== undefined) {
+        return { row: mapRoutineRow(inserted), created: true };
+      }
+
+      // Lost the race (or a genuine re-seed): the winner's row is the
+      // one this `(tenantId, presetKey)` now resolves to.
+      const [existing] = await db
+        .select()
+        .from(routine)
+        .where(
+          and(
+            eq(routine.tenantId, input.tenantId),
+            eq(routine.presetKey, input.presetKey),
+            isNull(routine.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing === undefined) {
+        throw new Error(
+          `createRoutineIfAbsent: insert conflicted for preset key ` +
+            `${JSON.stringify(input.presetKey)} but no existing row was found`,
+        );
+      }
+      return { row: mapRoutineRow(existing), created: false };
     },
 
     async getRoutine(tenantId, routineId) {
@@ -532,9 +623,45 @@ export function createInMemoryRoutineStore(): RoutineStore {
         deadLetteredAt: null,
         createdAt: now,
         updatedAt: now,
+        presetKey: input.presetKey ?? null,
       };
       routinesById.set(row.id, row);
       return row;
+    },
+
+    async createRoutineIfAbsent(input) {
+      const existing = [...routinesById.values()].find(
+        (row) =>
+          row.tenantId === input.tenantId &&
+          row.presetKey === input.presetKey &&
+          row.deletedAt === null,
+      );
+      if (existing !== undefined) {
+        return { row: existing, created: false };
+      }
+      const now = new Date();
+      const row: RoutineRow = {
+        id: generateId("workflowRun"),
+        tenantId: input.tenantId,
+        name: input.name,
+        definitionId: input.definitionId,
+        trigger: input.trigger,
+        scope: input.scope,
+        input: input.input,
+        enabled: true,
+        deliveryWorkbenchId: input.deliveryWorkbenchId ?? null,
+        createdBy: input.createdBy,
+        nextFireAt: computeNextFireAt(input.trigger, now),
+        lastFireAt: null,
+        deletedAt: null,
+        consecutiveFailures: 0,
+        deadLetteredAt: null,
+        createdAt: now,
+        updatedAt: now,
+        presetKey: input.presetKey,
+      };
+      routinesById.set(row.id, row);
+      return { row, created: true };
     },
 
     async getRoutine(tenantId, routineId) {

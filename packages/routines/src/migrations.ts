@@ -91,6 +91,24 @@ export const routineMigrations: readonly RoutineMigration[] = [
       ALTER TABLE "routines"."routine_draft" RENAME COLUMN "delivery_channel_id" TO "delivery_workbench_id";
     `,
   },
+  // CL-6375: a template-minted routine (e.g. a `DEFAULT_ROUTINE_PRESETS`
+  // entry) carries a stable `preset_key`, unique per tenant while the
+  // row is live. This is what makes re-seeding a genuine create-if-absent
+  // rather than the app-level "list, then create if missing" race that
+  // let two overlapping seed calls each insert their own "Daily digest"
+  // routine (and each provision its own delivery workbench) — the
+  // partial index below is what a concurrent `INSERT ... ON CONFLICT DO
+  // NOTHING` targets.
+  {
+    name: "0005_routine_preset_key",
+    sql: `
+      ALTER TABLE "routines"."routine"
+        ADD COLUMN IF NOT EXISTS "preset_key" text;
+      CREATE UNIQUE INDEX IF NOT EXISTS "routine_tenant_preset_key_idx"
+        ON "routines"."routine" ("tenant_id", "preset_key")
+        WHERE "preset_key" IS NOT NULL AND "deleted_at" IS NULL;
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

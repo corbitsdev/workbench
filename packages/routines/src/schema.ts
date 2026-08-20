@@ -38,6 +38,13 @@ export const routine = routinesSchema.table("routine", {
   enabled: boolean("enabled").notNull().default(true),
   deliveryWorkbenchId: text("delivery_workbench_id"),
   createdBy: text("created_by").notNull(),
+  // A stable identity for a routine minted from a fixed template (e.g.
+  // a `DEFAULT_ROUTINE_PRESETS` entry) — `null` for an ordinary,
+  // person-authored routine. Enforced unique per tenant (see
+  // migrations.ts' 0005), so re-running the same seed/mint call twice —
+  // including two overlapping calls racing each other — is a real
+  // create-if-absent, not a check-then-insert that can double-create.
+  presetKey: text("preset_key"),
   // The due-fire clock: the next minute this routine's trigger matches,
   // recomputed on create, on every trigger/enabled change, and on each
   // fire. A scheduler tests `nextFireAt <= now`, not "does this exact
