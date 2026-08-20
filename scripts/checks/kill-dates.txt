@@ -22,7 +22,7 @@ vendor/intx/harness | sawyer | 2026-09-14 | af9b270a297ae1dc6d8684da9005ec9d3d62
 vendor/intx/hub-agent | sawyer | 2026-09-14 | 6402193dfe48dce3525c9b233bd6974e566df57ff5bc209128633af92abe8b17
 vendor/intx/hub-api | sawyer | 2026-09-14 | 7d82a625c852b9e9bb13fd59e71c6c45be792bcbb9ebb5994586e97840dc66c1
 vendor/intx/hub-common | sawyer | 2026-09-14 | 0e2d71d4754713538d7fd6451c8648c6b277390abfc888e605499fc004ce0349
-vendor/intx/hub-sessions | sawyer | 2026-09-05 | 036dd7dd7761bb62939332f3a602c8e62d743aafeed058b2ce904e32cc0ab1df
+vendor/intx/hub-sessions | sawyer | 2026-09-05 | a7d4baa0c6c6ed7616a733eb022bf927125d3cead42ec7ce835144f02d76dcf9
 vendor/intx/inference | sawyer | 2026-09-14 | 8714c2ee0f800caadb770db70ed1c66018dccde1b2bd62408c4899b1839b6ea9
 vendor/intx/inference-catalog | sawyer | 2026-09-14 | 6e2ef3af83eafafdf1b773725afcb724cbb712604266919ecd1d67d50ff8016a
 vendor/intx/log | sawyer | 2026-09-14 | 17ba64f2ff751b640dd2db9eb034450876c435f43641b022fbc4a2e9aa9da04d
