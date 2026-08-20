@@ -11,6 +11,7 @@ import {
   isOrphanedInstance as isOrphanedInstanceShared,
   purposeAgentDefinitions as purposeAgentDefinitionsShared,
   purposeAgentInstances as purposeAgentInstancesShared,
+  withDisplayName as withDisplayNameShared,
   withDisplayNames as withDisplayNamesShared,
   type WithDisplayName,
 } from "@corbits/agent-directory/client";
@@ -22,6 +23,14 @@ import type { AgentDefinition, AgentInstance } from "./agents-api";
  * humanized reading of its immutable `name` slug. `name` itself stays the
  * slug throughout; nothing here mutates it. */
 export type AgentDefinitionWithDisplayName = WithDisplayName<AgentDefinition>;
+
+/** One definition's display name derived the same way the roster's are, so
+ * the same agent never reads under two different names across screens. */
+export function withAgentDisplayName(
+  definition: AgentDefinition,
+): AgentDefinitionWithDisplayName {
+  return withDisplayNameShared(definition);
+}
 
 export function purposeAgentDefinitions(
   definitions: readonly AgentDefinition[],

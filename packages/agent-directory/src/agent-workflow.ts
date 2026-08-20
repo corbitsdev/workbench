@@ -244,6 +244,25 @@ export function withAgentModel(workflowJson: string, model: string): string {
   return JSON.stringify(definition);
 }
 
+/** Clears a definition's model preference, leaving every other step field
+ * untouched: with no inference source, launch-time resolution falls to
+ * whatever catalog default the tenant has seeded — exactly the state a
+ * definition created without a model lands in. The inverse of
+ * `withAgentModel`, so a person who pinned a model can un-pin it. */
+export function withoutAgentModel(workflowJson: string): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to clear a model on: ${definition.summary}`,
+    );
+  }
+  for (const step of Object.values(definition.steps)) {
+    step.agent.inference = { sources: [] };
+  }
+  return JSON.stringify(definition);
+}
+
 /** Everything a hand-authored agent definition needs baked in at
  * creation time. */
 export interface AgentDefinitionWorkflowInput {

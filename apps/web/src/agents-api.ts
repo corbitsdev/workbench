@@ -79,7 +79,7 @@ async function postJSON<T>(
   path: string,
   schema: Validator<T>,
   body: unknown,
-  method: "POST" | "PUT" = "POST",
+  method: "POST" | "PUT" | "DELETE" = "POST",
 ): Promise<T> {
   let response: Response;
   try {
@@ -245,6 +245,20 @@ export function getAgentCapabilities(
   );
 }
 
+/** `GET /agent-definitions/by-name/:slug` — one definition resolved by its
+ * immutable slug, server-side. A slug-addressed page reads this instead of
+ * scanning the paginated definitions listing, so an agent past that
+ * listing's ceiling still answers on its own URL. */
+export function getAgentDefinitionBySlug(
+  tenantId: string,
+  slug: string,
+): Promise<AgentDefinition> {
+  return getJSON(
+    `/api/tenants/${tenantId}/agent-definitions/by-name/${encodeURIComponent(slug)}`,
+    WorkflowDefinitionResponse,
+  );
+}
+
 const AgentDefinitionDetailResponse = type({
   name: "string",
   systemPrompt: "string",
@@ -302,6 +316,21 @@ export function setAgentModel(
     `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities`,
     AgentCapabilitiesWriteResponse,
     { kind: "model", canonicalName },
+  );
+}
+
+/** Un-pins a definition's model, returning it to the bench default. Its own
+ * verb rather than `setAgentModel("")`: "no model" is not a name the
+ * capability route's inventory check could ever accept. */
+export function clearAgentModel(
+  tenantId: string,
+  definitionId: string,
+): Promise<{ readonly model?: string }> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities/model`,
+    AgentCapabilitiesWriteResponse,
+    {},
+    "DELETE",
   );
 }
 

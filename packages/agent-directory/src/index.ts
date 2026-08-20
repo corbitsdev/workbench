@@ -5,6 +5,7 @@ export {
   reindexPinnedSkills,
   withAgentModel,
   withAgentToolPackagePin,
+  withoutAgentModel,
   createAgentDefinitionCore,
   DuplicateAgentHandleError,
   AGENT_DEFINITION_STEP_ID,
