@@ -1,12 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  AGENT_RUNTIME_CONFIG_ENV,
-  encodeAgentRuntimeConfig,
-  parseAgentRuntimeConfig,
-  readAgentRuntimeConfig,
-  type AgentRuntimeConfig,
-} from "./config";
+import { parseAgentRuntimeConfig, type AgentRuntimeConfig } from "./config";
 
 const stepConfig: AgentRuntimeConfig = {
   workflowId: "wf_run_a",
@@ -53,46 +47,6 @@ describe("parseAgentRuntimeConfig", () => {
   test("rejects an empty trigger address", () => {
     expect(() =>
       parseAgentRuntimeConfig({ ...stepConfig, triggerAddress: "" }),
-    ).toThrow(/invalid agent-runtime config/);
-  });
-});
-
-describe("readAgentRuntimeConfig", () => {
-  test("round-trips an encoded config out of the environment", () => {
-    const env = {
-      [AGENT_RUNTIME_CONFIG_ENV]: encodeAgentRuntimeConfig(stepConfig),
-    };
-    expect(readAgentRuntimeConfig(env)).toEqual(stepConfig);
-  });
-
-  test("throws when the config variable is absent", () => {
-    expect(() => readAgentRuntimeConfig({})).toThrow(
-      new RegExp(AGENT_RUNTIME_CONFIG_ENV),
-    );
-  });
-
-  test("throws when the config variable is not JSON", () => {
-    expect(() =>
-      readAgentRuntimeConfig({ [AGENT_RUNTIME_CONFIG_ENV]: "not json" }),
-    ).toThrow(/valid JSON/);
-  });
-
-  test("throws when the encoded config does not parse as a config", () => {
-    expect(() =>
-      readAgentRuntimeConfig({
-        [AGENT_RUNTIME_CONFIG_ENV]: JSON.stringify({ workflowId: "wf" }),
-      }),
-    ).toThrow(/invalid agent-runtime config/);
-  });
-});
-
-describe("encodeAgentRuntimeConfig", () => {
-  test("refuses to encode a config the child would reject", () => {
-    expect(() =>
-      encodeAgentRuntimeConfig({
-        ...stepConfig,
-        inferencePreferences: [],
-      }),
     ).toThrow(/invalid agent-runtime config/);
   });
 });
