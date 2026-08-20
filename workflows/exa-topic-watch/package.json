@@ -1,0 +1,32 @@
+{
+  "name": "@corbits/exa-topic-watch-workflow",
+  "private": true,
+  "description": "Scheduled web topic watch: searches the live web for one topic each run and publishes a short digest, held for approval",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "exa-topic-watch",
+      "displayName": "Web topic watch",
+      "automatable": true
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
