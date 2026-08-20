@@ -108,6 +108,65 @@ const InertWorkflowStepSchema = type({
   },
 });
 
+/**
+ * The launch-relevant subset of an inert projection's `onTrigger`
+ * primitive (CL-6329's per-turn section shape,
+ * `@corbits/agent-runtime`'s `buildSectionWorkflow`): the agent-bearing
+ * step lives one level down, inside the section's inline body, not on
+ * the section step itself. `readFoldedBody` below reads through this
+ * shape the same way it reads a bare `step` primitive.
+ */
+const InertOnTriggerStepSchema = type({
+  kind: "'onTrigger'",
+  body: {
+    inline: {
+      stepOrder: "string[]",
+      steps: "Record<string, unknown>",
+    },
+  },
+});
+
+/**
+ * Extracts the agent-bearing step primitive `readFoldedBody` needs,
+ * whichever of the two shapes a projection's launch step takes — a
+ * bare `step` (the folded conversational shape) or an `onTrigger`
+ * section whose inline body carries the one step that answers each
+ * turn. One reader for both shapes: neither call site duplicates the
+ * other's parsing.
+ */
+function extractAgentBearingStep(
+  rawStep: unknown,
+  definitionId: string,
+  stepId: string,
+): typeof InertWorkflowStepSchema.infer {
+  const asStep = InertWorkflowStepSchema(rawStep);
+  if (!(asStep instanceof type.errors)) {
+    return asStep;
+  }
+  const asSection = InertOnTriggerStepSchema(rawStep);
+  if (asSection instanceof type.errors) {
+    throw new Error(
+      `definition ${definitionId} step ${stepId} is not a step primitive: ${asStep.summary}`,
+    );
+  }
+  const body = asSection.body.inline;
+  const [bodyStepId, ...bodyRest] = body.stepOrder;
+  if (bodyStepId === undefined || bodyRest.length > 0) {
+    throw new Error(
+      `definition ${definitionId} section ${stepId}'s body is not ` +
+        `single-step (${String(body.stepOrder.length)} steps)`,
+    );
+  }
+  const bodyStep = InertWorkflowStepSchema(body.steps[bodyStepId]);
+  if (bodyStep instanceof type.errors) {
+    throw new Error(
+      `definition ${definitionId} section ${stepId} body step ` +
+        `${bodyStepId} is not a step primitive: ${bodyStep.summary}`,
+    );
+  }
+  return bodyStep;
+}
+
 /** The launch-relevant subset of an inert projection itself. */
 const InertWorkflowDefinitionSchema = type({
   id: "string",
@@ -176,12 +235,11 @@ export function readFoldedBody(
       )} steps)`,
     );
   }
-  const step = InertWorkflowStepSchema(definition.steps[stepId]);
-  if (step instanceof type.errors) {
-    throw new Error(
-      `definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
-    );
-  }
+  const step = extractAgentBearingStep(
+    definition.steps[stepId],
+    definition.id,
+    stepId,
+  );
   const foldedBody = FoldedBodySchema({
     systemPrompt: step.agent.systemPrompt,
     toolPackagePins: step.agent.toolPackagePins ?? [],
