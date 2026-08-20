@@ -12,6 +12,13 @@ export {
   SidecarUnavailableError,
 } from "./errors";
 export { cookiesFromHeader } from "./cookies";
+export {
+  ErrorEnvelopeShape,
+  generateRefId,
+  makeErrorEnvelope,
+  parseErrorEnvelope,
+} from "./error-envelope";
+export type { ErrorEnvelope } from "./error-envelope";
 export type {
   DefaultWorkflow,
   EnsureCredentialArgs,
