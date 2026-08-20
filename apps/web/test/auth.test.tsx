@@ -5,7 +5,7 @@
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -55,11 +55,11 @@ const user = { id: "user_1", name: "ada", email: "ada@example.com" };
 
 const noop = () => undefined;
 
-function renderApp(session: SessionState): string {
+function renderApp(session: SessionState, path = "/"): string {
   return renderToStaticMarkup(
     <ThemeProvider>
       <App
-        path="/"
+        path={path}
         navigate={noop}
         session={session}
         onSignedIn={noop}
@@ -102,20 +102,26 @@ describe("session probe", () => {
   });
 });
 
-/** Mirrors `main.tsx`'s `Root`'s own probe-on-mount wiring, minus history
- * and provisioning — the minimum needed to prove a real DOM mount, driven
- * by the real `fetchSession`, never renders the shell for an invalid
- * session. */
+/** Mirrors `main.tsx`'s `Root`'s own probe-on-mount wiring, minus
+ * provisioning — the minimum needed to prove a real DOM mount, driven by
+ * the real `fetchSession`, never renders the shell for an invalid session.
+ * `/login` is a real route now (CL-6369): an invalid session redirects
+ * there rather than swapping in the auth screen at whatever path was
+ * requested, so this mounts a real `navigate` to follow that redirect. */
 function ProbedApp() {
+  const [path, setPath] = useState("/");
   const [session, setSession] = useState<SessionState>({ kind: "loading" });
+  const navigate = useCallback((to: string) => {
+    setPath(new URL(to, "http://localhost").pathname);
+  }, []);
   useEffect(() => {
     void fetchSession().then(setSession);
   }, []);
   return (
     <ThemeProvider>
       <App
-        path="/"
-        navigate={noop}
+        path={path}
+        navigate={navigate}
         session={session}
         onSignedIn={noop}
         onSignOut={noop}
@@ -202,9 +208,9 @@ describe("email and password calls", () => {
 });
 
 describe("the gate", () => {
-  test("signed out renders the auth screen and fires no authenticated fetch", () => {
+  test("signed out at /login renders the auth screen and fires no authenticated fetch", () => {
     const calls = stubFetch();
-    const markup = renderApp({ kind: "signed-out" });
+    const markup = renderApp({ kind: "signed-out" }, "/login");
     expect(calls).toHaveLength(0);
     expect(markup).toContain("Email");
     expect(markup).toContain("Password");
