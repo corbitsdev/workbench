@@ -141,6 +141,90 @@ test("GET /:name/versions/:commitSha for an unknown commit is a 404", async () =
   expect(response.status).toBe(404);
 });
 
+async function headSha(app: Hono<TenantEnv>): Promise<string> {
+  const versions = (await (await app.request("/triage/versions")).json()) as {
+    versions: { commitSha: string }[];
+  };
+  return versions.versions[0]?.commitSha ?? "";
+}
+
+test("PUT /:name with the current head as expectedHeadSha saves", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  const response = await app.request("/triage", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Sorts inbound issues.",
+      body: "Read the report. Pick a severity label.",
+      expectedHeadSha: await headSha(app),
+    }),
+  });
+  expect(response.status).toBe(200);
+});
+
+test("PUT /:name is a 409 when the skill moved on since the edit started", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  const staleSha = await headSha(app);
+
+  // Somebody else saves first.
+  await app.request("/triage", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Sorts inbound issues.",
+      body: "Their version.",
+    }),
+  });
+
+  const response = await app.request("/triage", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Sorts inbound issues.",
+      body: "My version, written against the old head.",
+      expectedHeadSha: staleSha,
+    }),
+  });
+  expect(response.status).toBe(409);
+
+  // The other person's version is still the current one — nothing buried.
+  const current = (await (await app.request("/triage")).json()) as {
+    skill: { body: string };
+  };
+  expect(current.skill.body).toBe("Their version.");
+});
+
+test("PUT /:name with a malformed expectedHeadSha is a 400", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  const response = await app.request("/triage", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      description: "Sorts inbound issues.",
+      body: "x",
+      expectedHeadSha: "not a sha",
+    }),
+  });
+  expect(response.status).toBe(400);
+});
+
+test("GET /:name/versions/:commitSha refuses a version id that isn't one", async () => {
+  const app = buildApp();
+  await createSkill(app);
+  // Path-shaped and over-long ids are refused at the boundary; a
+  // well-shaped id that simply isn't in this skill's history is a 404.
+  expect(
+    (await app.request("/triage/versions/..%2F..%2Fetc%2Fpasswd")).status,
+  ).toBe(400);
+  expect((await app.request(`/triage/versions/${"a".repeat(65)}`)).status).toBe(
+    400,
+  );
+  expect((await app.request("/triage/versions/commit9999")).status).toBe(404);
+});
+
 test("PUT /:name for an unknown skill is a 404", async () => {
   const app = buildApp();
   const response = await app.request("/does-not-exist", {
