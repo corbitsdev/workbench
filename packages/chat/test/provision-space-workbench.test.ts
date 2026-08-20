@@ -1,25 +1,22 @@
 // `provisionSpaceWorkbench`'s own contract: mints a new `kind: "workbench"`
-// space exactly the way `POST /workbenches` does (mint tenant, launch host,
-// compensate on launch failure), used by a caller — a routine's create
-// route, chiefly — that needs a fresh destination handed back rather than
-// collected from a picker first.
+// space exactly the way `POST /workbenches` does (mint tenant, write base
+// settings — a workbench is data, nothing launches), used by a caller — a
+// routine's create route, chiefly — that needs a fresh destination handed
+// back rather than collected from a picker first.
 import { describe, expect, test } from "bun:test";
 
 import { provisionSpaceWorkbench } from "../src/workbench-service";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryChatStore } from "../src/store";
-import { fakePlatform, TENANT } from "./test-support";
-
-const TURN_TIMEOUT_MS = 60_000;
+import { TENANT } from "./test-support";
 
 describe("provisionSpaceWorkbench", () => {
-  test("mints a workbench tenant, launches its host, and writes base settings", async () => {
+  test("mints a workbench tenant and writes base settings", async () => {
     const tenancy = createInMemoryWorkbenchTenancyStore();
     const store = createInMemoryChatStore();
-    const platform = fakePlatform();
 
     const result = await provisionSpaceWorkbench(
-      { tenancy, platform, store, turnTimeoutMs: TURN_TIMEOUT_MS },
+      { tenancy, store },
       {
         tenantId: TENANT.id,
         tenantDomain: TENANT.domain,
@@ -41,18 +38,16 @@ describe("provisionSpaceWorkbench", () => {
     expect(settings?.settings["chat/name"]).toBe("Morning digest");
   });
 
-  test("compensates (deletes) the minted tenant when the host launch fails", async () => {
+  test("compensates (deletes) the minted tenant when the settings write fails", async () => {
     const tenancy = createInMemoryWorkbenchTenancyStore();
     const store = createInMemoryChatStore();
-    const platform = fakePlatform({
-      launchWorkbench: async () => {
-        throw new Error("launch failed");
-      },
-    });
+    store.createWorkbenchSettings = async () => {
+      throw new Error("settings write failed");
+    };
 
     await expect(
       provisionSpaceWorkbench(
-        { tenancy, platform, store, turnTimeoutMs: TURN_TIMEOUT_MS },
+        { tenancy, store },
         {
           tenantId: TENANT.id,
           tenantDomain: TENANT.domain,
@@ -61,10 +56,9 @@ describe("provisionSpaceWorkbench", () => {
           name: "Doomed space",
         },
       ),
-    ).rejects.toThrow("launch failed");
+    ).rejects.toThrow("settings write failed");
 
-    // Nothing settled: no settings row was ever written for a tenant
-    // that never finished launching.
+    // Nothing settled: the minted tenant was compensated away.
     const links = await tenancy.listChildWorkbenchTenancies(TENANT.id);
     expect(links).toHaveLength(0);
   });
@@ -72,10 +66,9 @@ describe("provisionSpaceWorkbench", () => {
   test("the returned compensate() undoes the mint", async () => {
     const tenancy = createInMemoryWorkbenchTenancyStore();
     const store = createInMemoryChatStore();
-    const platform = fakePlatform();
 
     const result = await provisionSpaceWorkbench(
-      { tenancy, platform, store, turnTimeoutMs: TURN_TIMEOUT_MS },
+      { tenancy, store },
       {
         tenantId: TENANT.id,
         tenantDomain: TENANT.domain,

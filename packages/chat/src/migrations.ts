@@ -395,6 +395,18 @@ export const chatMigrations: readonly ChatMigration[] = [
         ("tenant_id", "workbench_id", "agent_address", "occurrence");
     `,
   },
+  {
+    // CL-6330: the workbench-host anchor is gone — a workbench is data,
+    // only invited agents have launch rows. Host rows (the anchor arm)
+    // are deleted before the discriminating column is dropped.
+    name: "0023_drop_workbench_host_arm",
+    sql: `
+      DELETE FROM "chat"."workbench_launch" WHERE "noop_inference" = true;
+
+      ALTER TABLE "chat"."workbench_launch"
+        DROP COLUMN IF EXISTS "noop_inference";
+    `,
+  },
 ];
 
 /**

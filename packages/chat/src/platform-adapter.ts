@@ -5,19 +5,17 @@
 // `@corbits/folded-runs` (launch/wake/mail machinery for folded
 // interactive runs, shared with any other host that launches them)
 // plus the concerns that are chat's own: `workbench_launch` persistence,
-// asset naming, invitable listing, and participant/fromWorkbenchId
-// send semantics.
+// invitable listing, and participant/fromWorkbenchId send semantics.
+// A workbench itself is data — only invited agents have runs here.
 import { and, desc, eq } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createCryptoProviderCache,
   domainOf,
-  findFoldedRunById,
   launchFoldedRun,
   mintFoldedRun,
   readDefinitionProjection,
   readFoldedBody,
-  readLiveFoldedBody,
   resolveFoldedRunSessionId,
   resolveNewestProjectedDefinition,
   sendFoldedMail,
@@ -25,7 +23,6 @@ import {
   type FoldedRunMode,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
-  type SourcesOverride,
 } from "@corbits/folded-runs";
 import {
   isBeyondWake,
@@ -40,7 +37,6 @@ import {
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
-import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
   sessionMail,
@@ -51,26 +47,15 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { extractPartByPath } from "@intx/mime";
 import { workbenchLaunch } from "./schema";
-import {
-  workbenchHostAssetName,
-  isWorkbenchHostDefinitionName,
-} from "./workbench-host-naming";
-import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
-import type {
-  AssetService,
-  EventCollectorRegistry,
-  SidecarRouter,
-} from "@intx/hub-sessions";
+import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
+import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
-import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
-import { type } from "arktype";
 import {
   AgentUnreachableError,
   type ChatWorkbenchEvent,
   type ChatPlatform,
   type InvitableDefinition,
-  type LaunchedWorkbench,
   type LaunchedInvite,
   type SentMail,
 } from "./platform-port";
@@ -78,7 +63,7 @@ import {
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
   sessionService: FoldedRunsDeps["sessionService"];
-  assetService: AssetService;
+  assetService: FoldedRunsDeps["assetService"];
   sidecarRouter: SidecarRouter;
   /** See `FoldedRunsDeps.toolGrantsForPins`. */
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
@@ -87,37 +72,23 @@ export type CreateHubChatPlatformDeps = {
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
-   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. A workbench
-   * host never needs it (its launch is pinned to `noopInferenceBaseUrl`,
-   * never the catalog), but every invited-agent launch and wake does.
+   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`; every
+   * invited-agent launch and wake needs it.
    * Omitted, `resolveDefinitionSources` falls back to a noop cipher and
    * hands the raw stored secret to the provider unchanged — correct only
    * when the credential was itself written unencrypted.
    */
   credentialCipher?: FoldedRunsDeps["credentialCipher"];
   /**
-   * The hub's own noop-inference endpoint (see `./noop-inference.ts`),
-   * reachable over HTTP from the sidecar — never the catalog. Every
-   * workbench-HOST launch and wake pins its `InferenceSource` here
-   * instead of resolving against the tenant catalog: a workbench
-   * anchor's mailbox is the timeline and its system prompt forbids
-   * replying, so the real inference turn the ordinary launch path
-   * would otherwise run on every message is pure waste. Invited-agent
-   * launches and wakes are unaffected — they still resolve against the
-   * tenant catalog, since an invited agent's replies are real.
-   */
-  noopInferenceBaseUrl: string;
-  /**
    * Every caller of `createHubChatPlatform` builds this via
    * `createEventCollectorRegistry` and passes it through — without it,
-   * an anchor's runtime status/readiness (health, SSE replay) reads as
+   * an agent's runtime status/readiness (health, SSE replay) reads as
    * permanently "not_ready", and the idle-sweep's `isBusy` guard (see
    * the lifecycle construction below) has no signal at all.
    */
   eventCollectors: EventCollectorRegistry;
   /**
-   * Opt-in idle-sleep for every launched instance (workbench hosts and
-   * invited agents alike): absent here, the adapter keeps today's
+   * Opt-in idle-sleep for every launched instance: absent here, the adapter keeps today's
    * behavior exactly (nothing ever sleeps, no interval runs). When
    * present, this adapter builds a `@corbits/agent-lifecycle` instance
    * from it, wiring its `isRoutable`/`undeploy`/`wake` ports onto
@@ -136,8 +107,8 @@ export type CreateHubChatPlatformDeps = {
    */
   reclaimRetryDelaysMs?: readonly number[];
   /**
-   * Same resolver `./routes.ts`'s `workbenchHostInferencePreferences` dep
-   * takes (see its own doc), reused here for `launchInvite`: a
+   * The invite-launch model fallback (see `./inference-preferences.ts`'s
+   * `createWorkbenchHostInferencePreferencesResolver`): a
    * hand-authored definition that declares no model requirements of
    * its own (e.g. a `create_agent` definition created without a
    * `model` — see `@corbits/agent-directory`'s `createAgentDefinitionCore`)
@@ -158,20 +129,6 @@ export type CreateHubChatPlatformDeps = {
   relaunchNotice?: RelaunchNoticePort;
 };
 
-// Workbench-host asset naming lives in `./workbench-host-naming` — a
-// browser-safe module shared with the UIs that filter anchor runs out
-// of workflow listings — so the derivation and the predicate over the
-// resulting names can never drift apart.
-
-// The `InferenceSource.id`/`InferenceSource.model` a workbench-host pin
-// carries — never read by anything (the noop endpoint ignores both),
-// but `InferenceSource` requires non-empty strings, and a workbench
-// host's `foldedBody.model` is `null` whenever no catalog source was
-// ever resolved for it (see `buildWorkbenchHostWorkflow`'s
-// `inferencePreferences` — empty when the hub has seeded none).
-const NOOP_INFERENCE_SOURCE_ID = "noop";
-const NOOP_INFERENCE_MODEL_FALLBACK = "noop";
-
 /**
  * How many launch rows one relaunch sweep will look at. A sweep is a
  * best-effort recovery pass, and every relaunch it performs is a real
@@ -180,52 +137,6 @@ const NOOP_INFERENCE_MODEL_FALLBACK = "noop";
  * somebody writes into them, through the same send-triggered path.
  */
 const RELAUNCH_SWEEP_LIMIT = 100;
-
-/**
- * The `SourcesOverride` every workbench-HOST launch and wake pins
- * instead of resolving against the tenant catalog (see
- * `CreateHubChatPlatformDeps.noopInferenceBaseUrl`'s doc). Invited
- * agents never get this — they still resolve normally.
- */
-function noopSourcesOverride(
-  noopInferenceBaseUrl: string,
-  foldedBody: FoldedBody,
-): SourcesOverride {
-  return {
-    sources: [
-      {
-        id: NOOP_INFERENCE_SOURCE_ID,
-        provider: "anthropic",
-        baseURL: noopInferenceBaseUrl,
-        apiKey: "noop",
-        model: foldedBody.model ?? NOOP_INFERENCE_MODEL_FALLBACK,
-      },
-    ],
-    defaultSource: NOOP_INFERENCE_SOURCE_ID,
-  };
-}
-
-/**
- * The workbench-host step's `input` selector. Every other folded run reads
- * its step's default `{ from: "trigger.payload" }` — the triggering
- * mail's real content, which an inference-driven agent needs. The
- * workbench host never does: it never replies, comments, or acts on
- * anything sent to it (see `workbench-workflow.ts`'s
- * `WORKBENCH_HOST_SYSTEM_PROMPT`), so its step
- * has no use for `trigger.payload` at all. Pinning a literal here — not
- * just leaving the field alone — matters because `trigger.payload` is
- * bare mail `content`, which is legitimately empty for attachments-only
- * mail (`@corbits/chat`'s `encodeParts` leaves `content` empty for an
- * event-only send, e.g. `workbench.agent-joined`); the default selector
- * would feed that empty string straight into `agent.send`, which throws
- * on it, killing the anchor before it ever opens (CL-6164). The exact
- * value is never read by anything — the anchor's whole job is holding
- * the mailbox, not processing input.
- */
-const WORKBENCH_HOST_MODE: FoldedRunMode = {
-  kind: "step",
-  literalInput: "workbench-host anchor turn",
-};
 
 /**
  * Every agent invited into a room deploys as an `onTrigger` section
@@ -238,9 +149,6 @@ const WORKBENCH_HOST_MODE: FoldedRunMode = {
  * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
  * records a failed occurrence and leaves the section subscribed, so one
  * bad turn kills neither the agent nor the room.
- *
- * The workbench host keeps `WORKBENCH_HOST_MODE` above: it holds a
- * mailbox and never takes a turn, so it has no occurrences to name.
  */
 const ROOM_AGENT_MODE: FoldedRunMode = {
   kind: "section",
@@ -370,7 +278,7 @@ export function createHubChatPlatform(
   async function resolveFallbackModel(
     binding: AgentBinding,
   ): Promise<string | undefined> {
-    if (binding.noopInference || binding.foldedBody.model !== null) {
+    if (binding.foldedBody.model !== null) {
       return undefined;
     }
     const preferences =
@@ -380,25 +288,12 @@ export function createHubChatPlatform(
 
   /**
    * The per-deploy pins a binding carries, identical for a wake and a
-   * relaunch: a workbench host pins the noop inference source and the
-   * literal-input step mode, an invited agent resolves the tenant
-   * catalog with a fallback model when its definition declares none.
+   * relaunch: an agent resolves the tenant catalog, with a fallback
+   * model when its definition declares none.
    */
   async function deployShapeFor(
     binding: AgentBinding,
-  ): Promise<
-    | { sources: SourcesOverride; mode: FoldedRunMode }
-    | { mode: FoldedRunMode; fallbackModel?: string }
-  > {
-    if (binding.noopInference) {
-      return {
-        sources: noopSourcesOverride(
-          deps.noopInferenceBaseUrl,
-          binding.foldedBody,
-        ),
-        mode: WORKBENCH_HOST_MODE,
-      };
-    }
+  ): Promise<{ mode: FoldedRunMode; fallbackModel?: string }> {
     const fallbackModel = await resolveFallbackModel(binding);
     return fallbackModel !== undefined
       ? { mode: ROOM_AGENT_MODE, fallbackModel }
@@ -625,67 +520,6 @@ export function createHubChatPlatform(
   }
 
   const platform: ChatPlatform = {
-    async launchWorkbench(input): Promise<LaunchedWorkbench> {
-      // Validates the address shape early, mirroring every other path
-      // here that reads a domain off an agent address.
-      domainOf(input.triggerAddress);
-      const asset = await deps.assetService.createAsset({
-        tenantId: input.tenantId,
-        kind: "workflow",
-        name: workbenchHostAssetName(input.workbenchId),
-        creatorPrincipalId: input.creatorPrincipalId,
-      });
-      let definitionJSON: unknown;
-      try {
-        definitionJSON = JSON.parse(input.definition);
-      } catch (cause) {
-        throw new Error("workbench definition is not valid JSON", { cause });
-      }
-      const wireHash = await computeWireDefinitionHash(definitionJSON);
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(deps.db, {
-        assetId: asset.id,
-        wireHash,
-      });
-
-      const foldedBody = readLiveFoldedBody(definitionJSON);
-
-      // Mint only — DB rows, no sidecar, no deploy. The host deploys
-      // through `wakeByAddress` on its first traffic (the join event or
-      // the canned greeting, moments later), so workbench creation
-      // returns in database time instead of deploy time. The wake pins
-      // the noop inference source per `noopInference: true` below: a
-      // workbench host never replies — its mailbox is the timeline and
-      // its system prompt forbids answering — so it never resolves
-      // against the tenant catalog and launches with zero sources
-      // seeded.
-      await mintFoldedRun(foldedRunsDeps, {
-        tenantId: input.tenantId,
-        instanceId: input.workbenchId,
-        triggerAddress: input.triggerAddress,
-        definitionId,
-        // The launch body is persisted with the mint itself, in the
-        // same transaction, so a wake can rebuild the deploy config
-        // without reaching for the definition's asset — a workbench
-        // host's asset never holds a workflow.json, so this row is
-        // the only wake-time source. Chat owns this table; folded-runs
-        // never imports it. `noopInference: true` records this mint
-        // as a host, so its wake pins the noop source rather than
-        // re-deriving "is this a host" from anything else.
-        persistExtra: async (tx) => {
-          await tx.insert(workbenchLaunch).values({
-            tenantId: input.tenantId,
-            instanceId: input.workbenchId,
-            currentRunId: input.workbenchId,
-            foldedBody,
-            createdAt: new Date(),
-            noopInference: true,
-          });
-        },
-      });
-
-      return { instanceId: input.workbenchId };
-    },
-
     async launchInvite(input): Promise<LaunchedInvite> {
       const definitionRow = await deps.db.query.workflowDefinition.findFirst({
         where: and(
@@ -765,9 +599,11 @@ export function createHubChatPlatform(
       // explicit `ensureAwake` pre-warm), so an invite returns in
       // database time. Its inference sources — including the catalog
       // fallback a definition with no model of its own needs — resolve
-      // fresh inside the wake, per `noopInference: false` below: an
-      // invited agent's replies are real, so it resolves against the
-      // tenant catalog on every deploy.
+      // fresh inside the wake against the tenant catalog on every
+      // deploy. The launch body is persisted with the mint itself, in
+      // the same transaction, so a wake can rebuild the deploy config
+      // without reaching for the definition's asset. Chat owns this
+      // table; folded-runs never imports it.
       await mintFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,
         instanceId,
@@ -783,7 +619,6 @@ export function createHubChatPlatform(
             currentRunId: instanceId,
             foldedBody,
             createdAt: new Date(),
-            noopInference: false,
           });
         },
       });
@@ -855,7 +690,7 @@ export function createHubChatPlatform(
       // The stable id names the room's participant; the run it resolves
       // to is whichever one is alive right now, which is a different
       // run (and a different address) after every relaunch.
-      const { binding, run } = await requireLive(input.workbenchId);
+      const { binding } = await requireLive(input.workbenchId);
       const liveAddress = binding.liveAddress;
 
       // Wake before send: a sleeping instance (the lifecycle package's
@@ -893,12 +728,13 @@ export function createHubChatPlatform(
 
       const sessionId = await resolveFoldedRunSessionId(deps.db, delivery.run);
       const domain = domainOf(deliveryAddress);
+      // `fromWorkbenchId` names the room a dispatch speaks for. A room
+      // is data — it has no run — so its address is derived, never
+      // resolved: `<workbenchId>@<domain>`, the same shape every
+      // participant address carries.
       let from: string;
-      let originAddress: string | undefined;
       if (input.fromWorkbenchId !== undefined) {
-        const origin = await requireLive(input.fromWorkbenchId);
-        from = origin.binding.liveAddress;
-        originAddress = origin.binding.liveAddress;
+        from = formatRunAddress(input.fromWorkbenchId, domain);
       } else if (input.principalId !== undefined) {
         from = `${input.principalId}@${domain}`;
       } else {
@@ -936,7 +772,6 @@ export function createHubChatPlatform(
       );
 
       lifecycle?.recordActivity(deliveryAddress);
-      if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
 
       return sent;
     },

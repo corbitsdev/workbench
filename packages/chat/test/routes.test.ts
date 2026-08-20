@@ -31,7 +31,7 @@ import {
 } from "./test-support";
 
 describe("POST /workbenches", () => {
-  test("does not expose an agent chat until its host run is minted", async () => {
+  test("does not expose an agent chat until its agent run is minted", async () => {
     let finishHostLaunch: (() => void) | undefined;
     const hostLaunch = new Promise<void>((resolve) => {
       finishHostLaunch = resolve;
@@ -40,9 +40,12 @@ describe("POST /workbenches", () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
-        launchWorkbench: async () => {
+        launchInvite: async () => {
           await hostLaunch;
-          return { instanceId: "launched" };
+          return {
+            instanceId: "ins_invited1",
+            address: "ins_invited1@acme.example",
+          };
         },
       }),
       runPostMintDelivery: (work) => {
@@ -471,12 +474,11 @@ describe("POST /workbenches", () => {
     );
   });
 
-  test("a host mint failure compensates the workbench", async () => {
+  test("an agent mint failure compensates the workbench", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
-        launchWorkbench: () =>
-          Promise.reject(new Error("database unavailable")),
+        launchInvite: () => Promise.reject(new Error("database unavailable")),
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -2400,8 +2402,8 @@ describe("workbench tenancy", () => {
       },
     };
     const platform = fakePlatform({
-      launchWorkbench: async () => {
-        throw new Error("workbench host launch failed");
+      launchInvite: async () => {
+        throw new Error("agent launch failed");
       },
     });
     const deps = buildDeps({ tenancy: uncompensatableTenancy, platform });
@@ -2426,12 +2428,12 @@ describe("workbench tenancy", () => {
     const response = await app.request("/workbenches", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "workbench", name: "Doomed" }),
+      body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
     });
 
     expect(response.status).toBe(500);
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe("workbench host launch failed");
+    expect((caught as Error).message).toBe("agent launch failed");
 
     // The tenant this mint created is now an orphan the compensation
     // could not clean up — that is the accepted, loudly-logged

@@ -27,7 +27,6 @@ import type { FoldedRunsDeps } from "@corbits/folded-runs";
 import {
   agentSession,
   asset,
-  principal,
   sessionMail,
   workflowDefinition,
   workflowDefinitionVersion,
@@ -47,10 +46,6 @@ import {
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
-import {
-  buildWorkbenchHostWorkflow,
-  serializeWorkbenchHostWorkflow,
-} from "../src/workbench-workflow";
 
 const actualHubApi = await import("@intx/hub-api");
 
@@ -627,13 +622,13 @@ function createFakeSidecarRouter(
   };
 }
 
-const WORKBENCH_WORKFLOW_JSON = serializeWorkbenchHostWorkflow(
-  buildWorkbenchHostWorkflow({
-    triggerAddress: "ins_workbench1@ten1.workbench.test",
-    inferencePreferences: [{ provider: "anthropic", model: "claude-sonnet-5" }],
-    turnTimeoutMs: 60_000,
-  }),
-);
+// An inert stand-in blob for the asset service: wakes rebuild their
+// deploy config from the persisted launch body, never this blob.
+const WORKBENCH_WORKFLOW_JSON = JSON.stringify({
+  id: "wf_test",
+  trigger: { type: "mail", to: "ins_workbench1@ten1.workbench.test" },
+  steps: {},
+});
 
 /**
  * The frozen inert wire projection shape `loadFrozenWireProjection`
@@ -679,161 +674,7 @@ function inertProjection(
 }
 
 describe("createHubChatPlatform", () => {
-  test("launchWorkbench mints immediately and ensureAwake deploys with the noop source", async () => {
-    resolveDefinitionSourcesCalls.length = 0;
-    // Deliberately left `ok: false`: a host launch must never reach
-    // `resolveDefinitionSources` at all, so this stub result — which
-    // would fail the launch if it were ever consulted — proves the
-    // catalog path was skipped, not merely that it happened to
-    // succeed.
-    resolveDefinitionSourcesResult = {
-      ok: false,
-      message: "the catalog must not be consulted for a workbench host",
-    };
-
-    const db = createFakeDb({
-      assetRow: {
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        name: "workbench-1",
-        displayName: null,
-      },
-      definitionId: "wfd_workbench1",
-    });
-    const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
-    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
-    const eventCollectors = createFakeEventCollectors();
-
-    const platform = createHubChatPlatform({
-      toolGrantsForPins: () => [],
-      // Fake db, not a real drizzle instance.
-      db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-      sessionService,
-      assetService,
-      sidecarRouter,
-      eventCollectors,
-    });
-
-    const launched = await platform.launchWorkbench({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      workbenchId: "ins_workbench1",
-      triggerAddress: "ins_workbench1@ten1.workbench.test",
-      definition: WORKBENCH_WORKFLOW_JSON,
-    });
-
-    expect(launched.instanceId).toBe("ins_workbench1");
-
-    expect(eventCollectors.createCalls).toEqual([]);
-    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
-    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
-
-    await platform.ensureAwake("ins_workbench1@ten1.workbench.test");
-
-    // The asynchronous wake opens the collector before deploying.
-    expect(eventCollectors.createCalls).toEqual([
-      [
-        "ins_workbench1@ten1.workbench.test",
-        "ten_1",
-        expect.any(String),
-        "ins_workbench1",
-      ],
-    ]);
-    expect(eventCollectors.abandonCalls).toEqual([]);
-
-    expect(assetService.createAssetCalls).toEqual([
-      {
-        tenantId: "ten_1",
-        kind: "workflow",
-        name: "ins-workbench1",
-        creatorPrincipalId: "prin_creator",
-      },
-    ]);
-
-    // The catalog was never consulted — the noop pin is used verbatim.
-    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
-
-    // The folded launch path, never the native workflow-deploy path.
-    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-    const deployed = sessionService.adoptedDeployCalls[0] as {
-      agentAddress: string;
-      anchorRunId: string;
-      config: {
-        systemPrompt: string;
-        sources: {
-          id: string;
-          provider: string;
-          baseURL: string;
-          apiKey: string;
-          model: string;
-        }[];
-        defaultSource: string;
-        agentAddress: string;
-        tenantId: string;
-      };
-    };
-    expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
-    expect(deployed.anchorRunId).toBe("ins_workbench1");
-    expect(deployed.config.systemPrompt.length).toBeGreaterThan(0);
-    expect(deployed.config.sources).toEqual([
-      {
-        id: "noop",
-        provider: "anthropic",
-        baseURL: "https://hub.invalid/api/chat/noop-inference",
-        apiKey: "noop",
-        model: "claude-sonnet-5",
-      },
-    ]);
-    expect(deployed.config.defaultSource).toBe("noop");
-    expect(deployed.config.tenantId).toBe("ten_1");
-
-    // The launch row records this as a host launch, so a later wake
-    // pins the same noop source rather than resolving against the
-    // catalog.
-    const workbenchLaunchInsert = db.inserted.find(
-      (row) => row.table === workbenchLaunch,
-    );
-    expect(workbenchLaunchInsert?.values).toMatchObject({
-      noopInference: true,
-    });
-
-    // The run is written in the folded shape: no deploymentId, a real
-    // principal, and a session keyed off that shared principal --
-    // never a manual `session_<workbenchId>` insert.
-    const principalInsert = db.inserted.find((row) => row.table === principal);
-    expect(principalInsert?.values).toMatchObject({
-      tenantId: "ten_1",
-      kind: "workflow",
-      refId: "ins_workbench1",
-      status: "active",
-    });
-
-    const runInsert = db.inserted.find((row) => row.table === workflowRun);
-    expect(runInsert?.values).toMatchObject({
-      id: "ins_workbench1",
-      definitionId: "wfd_workbench1",
-      anchorRunId: "ins_workbench1",
-      tenantId: "ten_1",
-      address: "ins_workbench1@ten1.workbench.test",
-      status: "running",
-    });
-
-    const sessionInsert = db.inserted.find((row) => row.table === agentSession);
-    const principalId = (principalInsert?.values as { id: string }).id;
-    expect(sessionInsert?.values).toMatchObject({
-      tenantId: "ten_1",
-      agentId: "wfd_workbench1",
-      principalId,
-      status: "active",
-    });
-    expect((runInsert?.values as { principalId: string }).principalId).toBe(
-      principalId,
-    );
-  });
-
-  test("a failed host wake keeps the minted run retryable and abandons its collector", async () => {
+  test("a failed wake keeps the minted run retryable and abandons its collector", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -856,6 +697,26 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: "prin_run1",
+      },
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        foldedBody: {
+          systemPrompt: "be helpful",
+          model: "claude-sonnet-5",
+          toolPackagePins: [],
+          grantRequirements: [],
+          credentialBindings: [],
+        },
+      },
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_run1", principalId: "prin_run1" },
     });
     const sessionService = createFakeSessionService();
     const deployError = new Error("sidecar unreachable");
@@ -869,20 +730,12 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
       eventCollectors,
     });
 
-    await platform.launchWorkbench({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      workbenchId: "ins_workbench1",
-      triggerAddress: "ins_workbench1@ten1.workbench.test",
-      definition: WORKBENCH_WORKFLOW_JSON,
-    });
     await expect(
       platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
     ).rejects.toThrow(deployError);
@@ -900,7 +753,7 @@ describe("createHubChatPlatform", () => {
     expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
   });
 
-  test("a failed host wake keeps the run retryable even when a child leaked", async () => {
+  test("a failed wake keeps the run retryable even when a child leaked", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       sources: [
@@ -923,6 +776,26 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: "prin_run1",
+      },
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        foldedBody: {
+          systemPrompt: "be helpful",
+          model: "claude-sonnet-5",
+          toolPackagePins: [],
+          grantRequirements: [],
+          credentialBindings: [],
+        },
+      },
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_run1", principalId: "prin_run1" },
     });
     const sessionService = createFakeSessionService();
     sessionService.deployAdoptedWorkflowFromSource = async () => {
@@ -935,20 +808,12 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
       eventCollectors,
     });
 
-    await platform.launchWorkbench({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      workbenchId: "ins_workbench1",
-      triggerAddress: "ins_workbench1@ten1.workbench.test",
-      definition: WORKBENCH_WORKFLOW_JSON,
-    });
     await expect(
       platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
     ).rejects.toThrow(SessionLaunchError);
@@ -1009,7 +874,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService: createFakeAssetService(),
       sidecarRouter,
@@ -1091,7 +955,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -1133,16 +996,6 @@ describe("createHubChatPlatform", () => {
     // Sources were resolved against the tenant catalog, not pinned to
     // the noop endpoint — only a workbench host gets that pin.
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-
-    // The launch row records this as not a host, so a later wake
-    // resolves against the catalog rather than pinning the noop
-    // source.
-    const workbenchLaunchInsert = db.inserted.find(
-      (row) => row.table === workbenchLaunch,
-    );
-    expect(workbenchLaunchInsert?.values).toMatchObject({
-      noopInference: false,
-    });
 
     // CL-6329: a room agent deploys as an `onTrigger` section, so every
     // message it is asked to answer is an occurrence with its own child
@@ -1208,7 +1061,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -1250,7 +1102,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1314,7 +1165,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1376,7 +1226,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1407,7 +1256,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1455,7 +1303,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1521,7 +1368,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1575,7 +1421,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1633,7 +1478,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1668,7 +1512,6 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -1767,7 +1610,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService,
         sidecarRouter,
@@ -1863,7 +1705,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService,
         sidecarRouter,
@@ -1882,106 +1723,6 @@ describe("createHubChatPlatform", () => {
       expect(sessionService.adoptedDeployCalls).toHaveLength(0);
       expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-    });
-
-    test("waking a host launch pins the noop source again, never touching the catalog", async () => {
-      resolveDefinitionSourcesCalls.length = 0;
-      // Forced to fail if ever consulted, same posture as the
-      // launchWorkbench test above: proves the wake path skips the
-      // catalog entirely for a host launch, rather than merely
-      // happening to succeed against it.
-      resolveDefinitionSourcesResult = {
-        ok: false,
-        message: "the catalog must not be consulted for a host wake",
-      };
-
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address: "ins_workbench1@ten1.workbench.test",
-          principalId: "prin_run1",
-          definitionId: "wfd_workbench1",
-        },
-        workflowDefinitionRow: {
-          id: "wfd_workbench1",
-          tenantId: "ten_1",
-          status: "deployed",
-          assetId: "asst_workbench1",
-        },
-        workbenchLaunchRow: {
-          tenantId: "ten_1",
-          instanceId: "ins_workbench1",
-          noopInference: true,
-          foldedBody: {
-            systemPrompt: "host prompt",
-            model: "claude-sonnet-5",
-            toolPackagePins: [],
-            grantRequirements: [],
-            credentialBindings: [],
-          },
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const sessionService = createFakeSessionService();
-      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
-      const eventCollectors = createFakeEventCollectors();
-      const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      });
-
-      const platform = createHubChatPlatform({
-        toolGrantsForPins: () => [],
-        db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
-        sessionService,
-        assetService,
-        sidecarRouter,
-        eventCollectors,
-        lifecycle: { idleSleepMs: 60_000 },
-      });
-
-      await platform.sendMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        principalId: "prin_sender",
-        content: { content: "wake up" },
-      });
-
-      expect(resolveDefinitionSourcesCalls).toHaveLength(0);
-      expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-      const deployed = sessionService.adoptedDeployCalls[0] as {
-        config: {
-          sources: {
-            id: string;
-            provider: string;
-            baseURL: string;
-            apiKey: string;
-            model: string;
-          }[];
-          defaultSource: string;
-        };
-      };
-      expect(deployed.config.sources).toEqual([
-        {
-          id: "noop",
-          provider: "anthropic",
-          baseURL: "https://hub.invalid/api/chat/noop-inference",
-          apiKey: "noop",
-          model: "claude-sonnet-5",
-        },
-      ]);
-      expect(deployed.config.defaultSource).toBe("noop");
     });
 
     test("the idle sweep never undeploys an address the event collector reports as busy", async () => {
@@ -2030,7 +1771,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter,
@@ -2096,7 +1836,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter,
@@ -2164,7 +1903,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter,
@@ -2209,7 +1947,6 @@ describe("createHubChatPlatform", () => {
         createHubChatPlatform({
           toolGrantsForPins: () => [],
           db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
@@ -2244,7 +1981,6 @@ describe("createHubChatPlatform", () => {
         createHubChatPlatform({
           toolGrantsForPins: () => [],
           db: db as never,
-          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
@@ -2292,7 +2028,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({
@@ -2307,6 +2042,19 @@ describe("createHubChatPlatform", () => {
     });
 
     test("redeploys a non-routable address when lifecycle is configured", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
       const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
@@ -2324,7 +2072,6 @@ describe("createHubChatPlatform", () => {
         workbenchLaunchRow: {
           tenantId: "ten_1",
           instanceId: "ins_workbench1",
-          noopInference: true,
           foldedBody: {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
@@ -2343,7 +2090,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2357,6 +2103,19 @@ describe("createHubChatPlatform", () => {
     });
 
     test("redeploys a non-routable address when lifecycle is not configured", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
       const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
@@ -2374,7 +2133,6 @@ describe("createHubChatPlatform", () => {
         workbenchLaunchRow: {
           tenantId: "ten_1",
           instanceId: "ins_workbench1",
-          noopInference: true,
           foldedBody: {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
@@ -2393,7 +2151,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2418,7 +2175,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2490,7 +2246,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
@@ -2536,7 +2291,6 @@ describe("createHubChatPlatform", () => {
       const platform = createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService: createFakeAssetService(),
         // Not in the sidecar's routable set: the instance is asleep, so
@@ -2614,7 +2368,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
     const platform = createHubChatPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService: createFakeAssetService(),
       // Routable, and dead anyway: that combination is exactly what the

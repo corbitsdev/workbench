@@ -111,7 +111,6 @@ function createPlatform(db: never) {
   return createHubChatPlatform({
     db,
     toolGrantsForPins: () => [],
-    noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
     sessionService: {} as never,
     assetService: {} as never,
     sidecarRouter: { getRoutableAddresses: () => [] } as never,

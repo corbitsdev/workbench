@@ -7,7 +7,6 @@
 // identifiers, not foreign keys, so referencing platform tenant/principal
 // ids works identically from a named schema.
 import {
-  boolean,
   index,
   integer,
   jsonb,
@@ -82,15 +81,13 @@ export const workbenchReadState = chatSchema.table(
 
 /**
  * The folded launch body of every instance this package launches —
- * workbench hosts and invited agents alike — written in the launch
- * transaction and read back to wake a slept instance. A workbench host's
- * definition exists nowhere else (its workflow asset is never pushed
- * a workflow.json), so this row is the single wake-time source for
- * both launch kinds.
+ * one row per invited agent — written in the launch transaction and
+ * read back to wake a slept instance without reaching for the
+ * definition's asset.
  *
  * This row is also the address→run mapping the whole room depends on.
- * `instanceId` is the STABLE participant id — the room's own workbench
- * id for a host, the id an invited agent was first minted under — and
+ * `instanceId` is the STABLE participant id — the id an invited agent
+ * was first minted under — and
  * `formatRunAddress(instanceId, domain)` is the address the room
  * addresses this agent by forever (participant records, message
  * `senderAddress`, mention handles). `currentRunId` is the run actually
@@ -122,16 +119,6 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-  /**
-   * Set at launch time, never re-derived: `true` for a workbench host
-   * (`launchWorkbench`), `false` for an invited agent (`launchInvite`).
-   * A wake (`wakeByAddress` in `platform-adapter.ts`) reads this to
-   * decide whether to pin the noop inference source again or resolve
-   * against the tenant catalog — the launch row is the only place
-   * that decision is recorded, so a wake never has to re-derive "is
-   * this a host" from the asset name or any other proxy.
-   */
-  noopInference: boolean("noop_inference").notNull().default(false),
 });
 
 /**

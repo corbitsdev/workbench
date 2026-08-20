@@ -11,8 +11,6 @@
 // `./platform-port`, the settings vocabulary in `./workbench-settings`,
 // join/fan-out orchestration in `./workbench-service`, and the SSE
 // subscriber registry in `./workbench-events`.
-import { formatRunAddress } from "@intx/types";
-import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { Hono } from "hono";
@@ -46,10 +44,6 @@ import {
   handleFromName,
 } from "./participants";
 import type { ParticipantRecord } from "./participants";
-import {
-  buildWorkbenchHostWorkflow,
-  serializeWorkbenchHostWorkflow,
-} from "./workbench-workflow";
 import {
   WORKBENCH_CONTROL_NAMESPACE,
   applyControlPayload,
@@ -121,7 +115,6 @@ export type {
   ChatWorkbenchEvent,
   ChatPlatform,
   InvitableDefinition,
-  LaunchedWorkbench,
   LaunchedInvite,
   SentMail,
 } from "./platform-port";
@@ -150,25 +143,8 @@ export type CreateChatRoutesDeps = {
    * schedulable workflows masquerade as chat partners.
    */
   isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
-  /** Per-occurrence timeout for the workbench host's step. */
+  /** Per-turn timeout, the default write-claim TTL. */
   turnTimeoutMs: number;
-  /**
-   * Resolves the provider/model chain a newly created workbench's host
-   * declares, for the tenant the workbench is being created in — see
-   * `@corbits/chat`'s `createWorkbenchHostInferencePreferencesResolver`,
-   * which derives it from that tenant's actually-connected catalog
-   * providers rather than a fixed list, so a bench with no Anthropic
-   * credential still gets a working host. A folded interactive-instance
-   * launch resolves and pins a real inference source chain against the
-   * tenant catalog before it will launch at all (see
-   * `platform-adapter.ts`), so the resolved list must name a model a
-   * seeded catalog source can resolve — omitting the dep, or resolving
-   * to an empty list, is valid up front, but `launchWorkbench` then fails
-   * loud at creation time.
-   */
-  workbenchHostInferencePreferences?: (
-    tenantId: string,
-  ) => Promise<readonly InferencePreference[]>;
   /**
    * Resolves a principal to the display name a greeting can use. The
    * hub wires this to its user table; omitted, the canned greeting
@@ -256,8 +232,7 @@ export type CreateChatRoutesDeps = {
    * The `/name args` and `@name args` command registry — see
    * `@corbits/commands`. Omitted entirely, a message is always posted
    * verbatim regardless of a leading "/" or "@"; every deployment that
-   * wants the command system wires this the same way it wires
-   * `workbenchHostInferencePreferences`, by injecting a fully-composed
+   * wants the command system wires this by injecting a fully-composed
    * registry (its workflow-command plugin already bound to this same
    * `publish`, via `workbenchSubscribers.publish` below — a
    * command-started workflow's workbench event then reaches the same
@@ -1084,10 +1059,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // tenant row carries the same readable name instead of the raw
       // workbench id. An unknown definition leaves this undefined; the
       // post-join handle fallback below still names the chat then.
-      // Independent reads run concurrently — each is cheap alone, but the
-      // mint path pays every serial await twice over (two launches follow).
-      const inferencePreferencesPromise =
-        deps.workbenchHostInferencePreferences?.(tenant.id);
       const invitable = isChatWithDefinition(body)
         ? await deps.platform.listInvitableDefinitions(tenant.id)
         : [];
@@ -1098,25 +1069,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ? invitable.find((definition) => definition.id === body.definitionId)
               ?.description
           : undefined);
-      const triggerAddress = formatRunAddress(workbenchId, tenant.domain);
-      const inferencePreferences = (await inferencePreferencesPromise) ?? [];
-      const definition = serializeWorkbenchHostWorkflow(
-        buildWorkbenchHostWorkflow({
-          triggerAddress,
-          inferencePreferences,
-          turnTimeoutMs: deps.turnTimeoutMs,
-        }),
-      );
 
       // A workbench is a child tenant of the bench it is created in from
-      // the moment it exists — minted before the workbench host is.
+      // the moment it exists.
       // The mint itself is one transaction (see `workbench-tenancy.ts`),
-      // so it never lands half-seeded; but the host mint that follows it
-      // is a separate transaction against separate tables, so a failure
-      // there is compensated for explicitly below rather than trusted
-      // to ordering alone. The creator becomes the child tenant's
-      // native owner exactly as the native tenant-creation route seeds
-      // its own creator (see `workbench-tenancy.ts`).
+      // so it never lands half-seeded; but the agent mint that follows
+      // it is a separate transaction against separate tables, so a
+      // failure there is compensated for explicitly below rather than
+      // trusted to ordering alone. The creator becomes the child
+      // tenant's native owner exactly as the native tenant-creation
+      // route seeds its own creator (see `workbench-tenancy.ts`).
       const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
         parentTenantId: tenant.id,
         workbenchId,
@@ -1164,16 +1126,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      async function mintHost() {
-        await deps.platform.launchWorkbench({
-          tenantId: tenant.id,
-          creatorPrincipalId: principal.id,
-          workbenchId,
-          triggerAddress,
-          definition,
-        });
-      }
-
       const preset = presetForKind(body.kind);
       // Initial participants arrive as bare addresses; each gets a
       // handle derived from its own local part, de-duplicated the same
@@ -1210,25 +1162,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         updatedBy: principal.id,
       });
 
-      // Everything on the request path below is database work — host
-      // and agent launches are mints (see `WorkbenchLauncher`'s own
-      // docs), so the 201 returns in database time with the agent
-      // already a participant. The deploys ride the post-mint delivery
-      // chain: the join event's send wakes the host, the greeting
-      // follows it, and an explicit pre-warm deploys the agent ahead
-      // of the member's first message.
+      // Everything on the request path below is database work — an
+      // agent launch is a mint (see `WorkbenchLauncher`'s own docs), so
+      // the 201 returns in database time with the agent already a
+      // participant. The deploy rides the post-mint delivery chain: the
+      // greeting posts as data, and an explicit pre-warm deploys the
+      // agent ahead of the member's first message.
       if (!isChatWithPrincipal(body) && isChatWithDefinition(body)) {
         const definitionId = body.definitionId;
         const runPostMintDelivery =
           deps.runPostMintDelivery ??
           ((work: () => Promise<void>) => void work());
-
-        try {
-          await mintHost();
-        } catch (err) {
-          await compensateMint(err, "host mint");
-          throw err;
-        }
 
         let joined: Awaited<ReturnType<typeof launchAndJoinAgent>>;
         try {
@@ -1336,13 +1280,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ),
           201,
         );
-      }
-
-      try {
-        await mintHost();
-      } catch (err) {
-        await compensateMint(err, "host mint");
-        throw err;
       }
 
       if (isChatWithPrincipal(body)) {

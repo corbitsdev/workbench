@@ -19,10 +19,6 @@
 // convenience type the hub actually implements and injects.
 import type { MailContent } from "./codec";
 
-export interface LaunchedWorkbench {
-  readonly instanceId: string;
-}
-
 export interface LaunchedInvite {
   readonly instanceId: string;
   readonly address: string;
@@ -46,30 +42,15 @@ export interface ChatWorkbenchEvent {
   readonly data: unknown;
 }
 
-/** Launching a workbench host and inviting an already-deployed agent
- * into one. */
+/** Inviting an already-deployed agent into a workbench. A workbench
+ * itself is data (settings, tenancy, timeline rows) — nothing launches
+ * when one is created. */
 export interface WorkbenchLauncher {
   /**
-   * Mints the workbench host's own run — DB rows only, addressable but
-   * not yet deployed. The host deploys through the platform's wake
-   * choke point on its first traffic, so this returns in database
-   * time; a caller that wants the deploy started ahead of traffic
-   * pre-warms with `ensureAwake`.
-   */
-  launchWorkbench(input: {
-    readonly tenantId: string;
-    readonly creatorPrincipalId: string;
-    readonly workbenchId: string;
-    readonly triggerAddress: string;
-    readonly definition: string;
-  }): Promise<LaunchedWorkbench>;
-
-  /**
    * Mints an interactive instance of an already-deployed workflow
-   * definition — the invited agent's own run, distinct from the
-   * workbench's own anchor run — and returns its mail address. Like
-   * `launchWorkbench`, this writes DB rows only; the instance deploys
-   * on its first inbound mail or an explicit `ensureAwake` pre-warm.
+   * definition — the invited agent's own run — and returns its mail
+   * address. This writes DB rows only; the instance deploys on its
+   * first inbound mail or an explicit `ensureAwake` pre-warm.
    */
   launchInvite(input: {
     readonly tenantId: string;

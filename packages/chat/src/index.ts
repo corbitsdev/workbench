@@ -30,14 +30,6 @@ export type {
 } from "./codec";
 
 export {
-  WORKBENCH_HOST_WORKFLOW_ID,
-  WORKBENCH_HOST_STEP_ID,
-  WORKBENCH_HOST_SYSTEM_PROMPT,
-  buildWorkbenchHostWorkflow,
-  serializeWorkbenchHostWorkflow,
-} from "./workbench-workflow";
-export type { WorkbenchHostWorkflowInput } from "./workbench-workflow";
-export {
   workbenchHostAssetName,
   isWorkbenchHostDefinitionName,
 } from "./workbench-host-naming";
@@ -132,7 +124,6 @@ export type {
   ChatPlatform,
   ChatWorkbenchEvent,
   InvitableDefinition,
-  LaunchedWorkbench,
   LaunchedInvite,
   SentMail,
 } from "./platform-port";
@@ -203,6 +194,7 @@ export type {
 } from "./client-ids";
 
 export { createNoopInferenceRoutes } from "./noop-inference";
+
 export { joinRunParticipant } from "./run-participant";
 export type {
   JoinRunParticipantDeps,

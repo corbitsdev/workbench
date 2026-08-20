@@ -43,7 +43,6 @@ export interface AgentBinding {
   /** Every run this participant used to be, oldest first. */
   readonly priorRunIds: readonly string[];
   readonly foldedBody: FoldedBody;
-  readonly noopInference: boolean;
 }
 
 /**
@@ -98,7 +97,6 @@ function bindingFrom(row: LaunchRow, domain: string): AgentBinding {
     liveAddress: formatRunAddress(row.currentRunId, domain),
     priorRunIds: priorRunIdsFrom(row),
     foldedBody: parsed,
-    noopInference: row.noopInference,
   };
 }
 

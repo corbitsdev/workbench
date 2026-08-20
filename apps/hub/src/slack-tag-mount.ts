@@ -15,25 +15,21 @@ import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import type { DB } from "@intx/db";
 import { principal, tenant } from "@intx/db/schema";
-import { formatRunAddress } from "@intx/types";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { createMemoryState } from "@chat-adapter/state-memory";
 import type { AppEnv } from "@intx/hub-api";
 
 import {
-  buildWorkbenchHostWorkflow,
   launchAndJoinAgent,
   presetForKind,
   sendWorkbenchMessage,
-  serializeWorkbenchHostWorkflow,
   type WorkbenchSubscriberRegistry,
   type WorkbenchTenancyStore,
   type WorkbenchTurnQueue,
   type ChatPlatform,
   type ChatStore,
   type RoomMessageStore,
-  type CreateChatRoutesDeps,
 } from "@corbits/chat";
 import {
   createAutoProvisionPrincipalResolver,
@@ -70,8 +66,6 @@ export type MountWorkbenchSlackTagDeps = {
    * send and a person's own message for the same channel serialize
    * against each other too. */
   readonly turnQueue: WorkbenchTurnQueue;
-  readonly workbenchHostInferencePreferences?: CreateChatRoutesDeps["workbenchHostInferencePreferences"];
-  readonly turnTimeoutMs: number;
 };
 
 export type MountedWorkbenchSlackTag = { readonly mounted: boolean };
@@ -147,30 +141,12 @@ export async function mountWorkbenchSlackTag(
       }
 
       const channelId = generateId("workflowRun");
-      const triggerAddress = formatRunAddress(channelId, tenantRow.domain);
-      const inferencePreferences =
-        (await deps.workbenchHostInferencePreferences?.(tenantRow.id)) ?? [];
-      const definition = serializeWorkbenchHostWorkflow(
-        buildWorkbenchHostWorkflow({
-          triggerAddress,
-          inferencePreferences,
-          turnTimeoutMs: deps.turnTimeoutMs,
-        }),
-      );
 
       const channelTenant = await deps.chatTenancy.createWorkbenchTenant({
         parentTenantId: tenantRow.id,
         workbenchId: channelId,
         name: input.name,
         creatorUserId: creatorPrincipal.refId,
-      });
-
-      await deps.chatPlatform.launchWorkbench({
-        tenantId: tenantRow.id,
-        creatorPrincipalId: input.creatorPrincipalId,
-        workbenchId: channelId,
-        triggerAddress,
-        definition,
       });
 
       const preset = presetForKind("chat");

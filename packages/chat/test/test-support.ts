@@ -42,13 +42,6 @@ export function principal(id: string) {
 export function fakePlatform(
   opts: {
     invitable?: { id: string; name: string; description?: string }[];
-    launchWorkbench?: (input: {
-      tenantId: string;
-      creatorPrincipalId: string;
-      workbenchId: string;
-      triggerAddress: string;
-      definition: string;
-    }) => Promise<{ instanceId: string }>;
     launchInvite?: (input: {
       tenantId: string;
       creatorPrincipalId: string;
@@ -118,11 +111,6 @@ export function fakePlatform(
     launchInviteCalls,
     ensureAwakeCalls,
     refreshCalls,
-    async launchWorkbench(input) {
-      if (opts.launchWorkbench !== undefined)
-        return opts.launchWorkbench(input);
-      return { instanceId: "launched" };
-    },
     async launchInvite(input) {
       launchInviteCalls.push(input);
       if (opts.launchInvite !== undefined) return opts.launchInvite(input);
@@ -231,9 +219,6 @@ export function buildDeps(
     },
     isInvitableDefinition: () => true,
     turnTimeoutMs: 60_000,
-    workbenchHostInferencePreferences: async () => [
-      { provider: "anthropic", model: "claude-sonnet-5" },
-    ],
     onMessageFanout: (fanoutDelivered) => {
       startedFanouts.push(fanoutDelivered);
     },
