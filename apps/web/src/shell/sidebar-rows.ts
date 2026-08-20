@@ -4,11 +4,32 @@
 // conversation act, not a standing nav item.
 
 import type { Workbench } from "@corbits/chat-ui";
+import { isAgentAddress } from "@corbits/chat/mentions";
 
 export type SidebarRow = {
   readonly kind: "workbench";
   readonly workbench: Workbench;
 };
+
+/**
+ * The stable identity a DM chat collapses on: an agent participant's
+ * mention `handle` is the same immutable slug
+ * (`buildAgentDefinitionWorkflow`'s `input.handle`) regardless which
+ * ancestor tenant minted the definition, so two chats DM'ing "the same"
+ * agent across tenants share this key even though their `definitionId`s
+ * genuinely differ. `title` is a display-only fallback for a chat with no
+ * recorded agent participant (a pre-participant-record legacy row) — never
+ * the primary key, since a display title can be produced two different
+ * ways for two entirely different agents (CL-6413's `humanizeSlug`
+ * backfill, or simply two creators picking the same human name) and must
+ * never be mistaken for identity.
+ */
+function agentIdentityKey(chat: Workbench): string {
+  const agentParticipant = chat.participants.find((participant) =>
+    isAgentAddress(participant.address),
+  );
+  return agentParticipant?.handle ?? chat.title;
+}
 
 /**
  * Collapse agent-DM chats down to one row per agent identity (CL-6271).
@@ -19,9 +40,9 @@ export type SidebarRow = {
  * ends up with one durable `Workbench` row per instance — the dedupe
  * there never runs again once a chat exists. Group every agent-DM chat
  * (identified by `definitionId` being set — a group workbench never
- * carries one) by its title and keep only the most recently active row
- * per group; the rest are stale siblings of an identity the caller only
- * ever needs to see once.
+ * carries one) by `agentIdentityKey` and keep only the most recently
+ * active row per group; the rest are stale siblings of an identity the
+ * caller only ever needs to see once.
  */
 function dedupeAgentChatsByTitle(chats: readonly Workbench[]): Workbench[] {
   const groupChats = chats.filter(
@@ -31,9 +52,10 @@ function dedupeAgentChatsByTitle(chats: readonly Workbench[]): Workbench[] {
     (chat) => chat.definitionId !== null && chat.definitionId !== undefined,
   );
 
-  const newestByTitle = new Map<string, Workbench>();
+  const newestByIdentity = new Map<string, Workbench>();
   for (const chat of agentChats) {
-    const current = newestByTitle.get(chat.title);
+    const key = agentIdentityKey(chat);
+    const current = newestByIdentity.get(key);
     const chatActivity = chat.lastActivityAt
       ? Date.parse(chat.lastActivityAt)
       : 0;
@@ -41,11 +63,11 @@ function dedupeAgentChatsByTitle(chats: readonly Workbench[]): Workbench[] {
       ? Date.parse(current.lastActivityAt)
       : 0;
     if (current === undefined || chatActivity > currentActivity) {
-      newestByTitle.set(chat.title, chat);
+      newestByIdentity.set(key, chat);
     }
   }
 
-  return [...groupChats, ...newestByTitle.values()];
+  return [...groupChats, ...newestByIdentity.values()];
 }
 
 function recencyOf(row: SidebarRow): number {

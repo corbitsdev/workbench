@@ -49,9 +49,11 @@ export function humanizeSlug(slug: string): string {
 /**
  * The display name a definition should render as: its own description
  * when one was set at creation, otherwise a humanized reading of its
- * immutable slug. Throws on a shape that isn't at least `{ name }` — this
- * is a trust boundary, not a formatting helper, so a malformed record
- * fails loudly rather than rendering "undefined".
+ * immutable slug. A whitespace-only description reads as absent — never
+ * a blank display name — since it carries nothing a person actually
+ * typed. Throws on a shape that isn't at least `{ name }` — this is a
+ * trust boundary, not a formatting helper, so a malformed record fails
+ * loudly rather than rendering "undefined".
  */
 export function deriveDisplayName(definition: {
   readonly name: string;
@@ -63,8 +65,8 @@ export function deriveDisplayName(definition: {
       `deriveDisplayName: invalid agent definition: ${parsed.summary}`,
     );
   }
-  const { description } = parsed;
-  return description !== undefined && description !== null && description !== ""
+  const description = parsed.description?.trim();
+  return description !== undefined && description !== ""
     ? description
     : humanizeSlug(parsed.name);
 }
