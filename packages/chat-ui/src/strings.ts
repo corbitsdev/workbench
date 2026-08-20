@@ -145,13 +145,9 @@ export const CHAT_STRINGS = {
   blockUnsupportedBody: (type: string) =>
     `This "${type}" block can't be shown here yet.`,
   blockApproveAction: "Approve",
-  blockDenyAction: "Deny",
-  blockRiskLabel: (risk: "low" | "medium" | "high") =>
-    risk === "low"
-      ? "Low risk"
-      : risk === "medium"
-        ? "Medium risk"
-        : "High risk",
+  blockDenyAction: "Not now",
+  blockApproveAllowStanding: (offer: { verb: string; resource: string }) =>
+    `Allow ${offer.verb} for ${offer.resource}`,
   blockFormSubmit: "Submit",
   blockApproveStatusLoading: "Checking status…",
   blockApproveStatusApproved: "Approved",
@@ -160,16 +156,15 @@ export const CHAT_STRINGS = {
   blockApproveStatusExpired: "Expired",
   blockApproveStatusNotFound: "This approval could not be found.",
   blockApproveStatusLoadError: "Couldn't load this approval's status.",
-  blockApproveSpectatorNote:
-    "Only an approver on this workbench can act on this.",
+  blockApproveSpectatorNote: "This one isn't yours to decide.",
   blockApproveUndeterminedNote:
-    "Your access to act on this could not be confirmed yet — try Approve or Deny to find out.",
+    "We're still checking whether this is yours to decide.",
   blockApproveApproving: "Approving…",
   blockApproveRejecting: "Denying…",
   blockApproveActionForbidden: "You do not have permission to act on this.",
   blockApproveActionError: "Couldn't reach the approval — try again.",
   blockApprovePlatformRequestedBy: (agentName: string) =>
-    `Requested by ${agentName}`,
+    `${agentName} is asking to`,
   blockApproveAgentNoteLabel: "Agent's note",
   blockApproveConflictNote:
     "Someone else already resolved this while you were deciding.",
