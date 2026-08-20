@@ -402,6 +402,7 @@ follow-up, since it depends on the run-child binding field existing first.
 src/adapters/blob-substrate.ts` already has inline (private `writeBlob`/
 `readBlob` helpers) rather than reconciling the two into one shared helper —
 left as a known follow-up per the port scope report, not a blocker.
+
 ## CL-6324 re-pin: `59f5e7b9` → `4ed8baf4` (the workflow.json retirement)
 
 The vendored trees are re-copied at upstream `main` tip `4ed8baf4`
@@ -681,3 +682,100 @@ stopped at the folded launch. What it found, in the order it found it:
    prompt moved into the rendered bytes, the tool manifest did not.
    `stageWorkflowStep` is the seam that still writes one; wiring it into
    `deployAtHead` is the shape of the fix, unproven until (4) clears.
+
+## CL-6324: the persisted projection, and what the second real boot found
+
+The design blocker from the run above is closed. The ruling — the hub
+persists a definition's evaluated inert projection, stored WITH the
+definition, keyed to the approved wire hash — landed at the **freeze**
+rather than at the deploy front, because that is where the projection and
+the hash it is addressed by are already written in one transaction:
+`createDbFrozenApprovalWriter` now stamps a `wire_projection` jsonb
+column onto `workflow_definition_version` beside `approved_wire_hash` and
+`grant_snapshot`, and `loadFrozenWireProjection` reads it back validated
+as a `WorkflowProjectionDefinition`. Both code-sourced deploy fronts
+consume `args.approved.projection`, which IS that value, so nothing can
+drift between what the hub stores and what the sidecar re-verifies.
+
+`packages/folded-runs/src/definition.ts` is now the single reader of that
+projection: `readDefinitionProjection` (one definition),
+`resolveNewestProjectedDefinition` (the newest sibling that actually
+carries one — the DB-side successor to CL-6357's asset-drift walk), and
+`readFoldedBody(projection, grantRequirements)`. A pre-cutover row with
+no stored projection fails as the named `DefinitionProjectionMissingError`
+carrying re-deploy guidance, mapped to a 4xx at every chat route
+boundary, never a raw 500.
+
+Two shape facts the conversion turned up, both load-bearing:
+
+- The inert projector **renames and flattens** the agent's inference
+  chain: `agent.inference.sources` becomes a top-level
+  `agent.modelSources: { provider, model }[]`. A reader written against
+  the live shape silently sees no step primitive at all.
+- The projector **drops `grantRequirements` entirely** — it is not in the
+  projection and therefore not in the wire hash. Its hub-side home is the
+  `workflow_definition.grant_requirements` column, so the folded body
+  reader takes it as a second argument rather than reading it off the
+  projection.
+
+One live-shape reader survives, deliberately: `readLiveFoldedBody`, for
+the workbench host, which builds its definition in process
+(`buildWorkbenchHostWorkflow`) and launches it in the same breath without
+ever round-tripping through a deploy freeze.
+
+### What the second real boot found
+
+1. **The rendered per-run tree could never resolve its own dependency.**
+   `renderAgentRuntimeSourceTree` pinned `@corbits/agent-runtime` at
+   `workspace:*`, but an asset tree is a standalone codebase with no
+   workspace root, so `resolveSourceWorkflowClosure` rejected every
+   folded deploy outright. Fixed by rendering the tree the way the seed's
+   default workflows already render theirs (`renderWorkflowSourceTree`):
+   the hub evaluates `buildAgentRuntimeWorkflow` at render time and
+   writes the definition out as a JSON literal, so the closure is the two
+   files and nothing else. The config-IS-the-bytes property is unchanged.
+2. **The per-run tree lives on a per-run ref, and the pack shipped the
+   default one.** A folded run commits its source into the shared
+   definition asset on `refs/heads/runs/<runId>`;
+   `bindAssetAttachmentResolver` packed `DEFAULT_ASSET_REF`, so the
+   sidecar got a history the pinned commit was not reachable from and
+   failed "could not find <sha>". `DeployWorkflowFromSourceParams` now
+   carries an optional `sourceRef` (a ledgered vendored delta) that
+   `deployAtHead` sets; omitted, the default ref is packed exactly as
+   upstream.
+3. **The tool manifest is now staged.** `deployAtHead` calls
+   `stageWorkflowStep` before the deploy frame, writing the step's
+   `deploy/tool-packages-manifest.json` where `materializeStepTools`
+   reads it. This is workbench's deliberate divergence: upstream's
+   source-ref front stages no per-step tree at all, but the sidecar's
+   tool loader still reads pins off one. With it wired, a real turn comes
+   back naming its own pinned tools.
+4. **STILL OPEN — a folded `step`-mode run publishes no `RunStarted`.**
+   With everything above in place a real boot reaches: seed fully green
+   by source-ref, chat minted, probe answered, closure materialized for
+   real on the sidecar (`materialized workflow-probe closure for
+folded-run-<runId>`), definition loaded from that closure, run grants
+   written into the workflow-run repo, the anchor row flipped
+   `deployed` → `running`, and a real Ollama reply to a real message. But
+   `GET /workflows/<runId>/runs/<runId>/events` stays empty: the folded
+   conversational shape is one unbounded step servicing every inbound
+   mail, and its per-message bracket is the `message.run.started` AGENT
+   event (`packages/folded-runs/src/agent-events.ts`), not a
+   workflow-host `RunStarted` in the run's durable event log. The
+   milestone's RunStarted assertion is therefore an assertion about
+   CL-6329's `section` mode — where every message is an `onTrigger`
+   occurrence with its own child run id and event log — not about the
+   `step` mode every launcher deploys today. Proving it means either
+   flipping the default mode or asserting the section shape directly;
+   `scripts/e2e/cl-6324-launch-proof.ts` keeps the assertion as written
+   rather than weakening it to something the current shape happens to
+   satisfy.
+5. **STILL OPEN — the agent-directory authoring lineage still writes the
+   retired envelope.** `createAgentDefinitionCore` and the read/modify/
+   write routes in `routes.ts`, `workflow-capability-routes.ts`, and
+   `workflow-skill-pin-routes.ts` all populate a `workflow`-kind asset
+   with a bare `workflow.json`, which `workflowKindHandler.validatePush`
+   now refuses. That lineage is authoring, not launching — a projection
+   is a read-only artefact and cannot be written back through — so it
+   needs its own cutover to the codebase form, and none of the four
+   proofs exercise it.

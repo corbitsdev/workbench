@@ -150,7 +150,22 @@ no credential cipher; `deployPreparedCodeSourcedWorkflow` updates a
 pre-existing row and threads the cipher but only under the
 allocation-ownership lock, so it cannot run on shared capacity. The new front
 composes the same private halves and follows the prepared front's semantics
-minus that lock. `vendor/intx/inference-catalog`'s own local
+minus that lock. `vendor/intx/db` and `vendor/intx/hub-sessions` (CL-6324) together
+persist a definition's evaluated inert projection at approval time:
+`workflow_definition_version` gains a `wire_projection` jsonb column
+(migration `0084_workflow_definition_version_wire_projection.sql`),
+`createDbFrozenApprovalWriter` stamps it in the SAME transaction that
+writes `approved_wire_hash`, and `loadFrozenWireProjection` reads it back
+validated as a `WorkflowProjectionDefinition`. Upstream carries no
+hub-side record of a deployed definition's body at all — under the
+`workflow.json` retirement the body is whatever the source closure
+evaluates to on the sidecar, and a source-format asset holds no envelope
+to read it back from — so every hub-side launch that needs the body (a
+folded run's system prompt, tool pins, model, credential bindings) had
+nowhere to get it. Keyed to the approved wire hash and stored beside it,
+this is one store per concept, not a second copy: the projection and the
+hash that addresses it are written and read together.
+`vendor/intx/inference-catalog`'s own local
 modification also repoints the `./models` subpath's exports, not just the
 root export.
 Each package's `VENDORED-FROM` file restates its own delta.
