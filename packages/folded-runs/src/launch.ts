@@ -19,6 +19,7 @@ import type { CredentialBinding } from "@intx/types";
 import {
   agentSession,
   principal as principalTable,
+  workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
 import { foldedRun } from "./schema";
@@ -27,11 +28,13 @@ import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
 import { InferenceSource } from "@intx/types/runtime";
 import type { WireGrantRule } from "@intx/types/grant-wire";
+import type { FoldedBody } from "@intx/workflow-deploy";
 import {
-  buildSingleStepAgentDefinition,
-  type FoldedBody,
-} from "@intx/workflow-deploy";
-import { defineWorkflow, step, type Selector } from "@intx/workflow";
+  AGENT_RUNTIME_ENTRY_PATH,
+  AGENT_RUNTIME_PACKAGE_RANGE,
+  renderAgentRuntimeSourceTree,
+  type AgentRuntimeConfig,
+} from "@corbits/agent-runtime";
 import type { FoldedRunsDeps } from "./types";
 
 /**
@@ -87,15 +90,84 @@ export function parseSourcesOverride(
 }
 
 /**
+ * The `mode` a folded run's deployed definition takes. `step` is the
+ * folded conversational shape every launcher gets today; `section` is
+ * CL-6329's per-turn `onTrigger` shape, selected by the caller alone —
+ * `deployAtHead` never branches on which one it is deploying, because
+ * the mode travels inside the rendered config.
+ */
+export type FoldedRunMode = AgentRuntimeConfig["mode"];
+
+/**
+ * The ref a folded run's per-run workflow source tree is committed to
+ * inside its definition asset. Per-run rather than the asset's default
+ * branch because one definition asset backs many runs — a chat's
+ * workbench host, an invited agent's every launch — and each run's tree
+ * carries its OWN config in its bytes. The deploy pins the resulting
+ * `commitSha`, so the ref is bookkeeping, never the pin.
+ */
+export function foldedRunSourceRef(instanceId: string): string {
+  return `refs/heads/runs/${instanceId}`;
+}
+
+/** The rendered per-run package's own name; it never leaves the asset. */
+function foldedRunPackageName(instanceId: string): string {
+  return `folded-run-${instanceId}`;
+}
+
+/**
+ * The mail domain a run's deployment addresses live under. The deploy
+ * front re-derives `<anchorRunId>@<deploymentDomain>` and refuses a pair
+ * that does not name the same run, so this must be the trigger
+ * address's own domain and nothing else.
+ */
+function domainOfAddress(address: string): string {
+  const domain = address.split("@")[1];
+  if (domain === undefined || domain.length === 0) {
+    throw new Error(`folded run address "${address}" carries no mail domain`);
+  }
+  return domain;
+}
+
+/**
+ * The `workflow`-kind asset backing this run's definition — the asset
+ * the launching host already minted for it (`@corbits/chat`'s
+ * `launchWorkbench`, `@corbits/agent-directory`'s create route). The
+ * per-run source tree is committed INTO that asset on its own ref
+ * rather than into a second asset minted per deploy.
+ */
+async function resolveRunDefinitionAssetId(
+  db: FoldedRunsDeps["db"],
+  instanceId: string,
+): Promise<string> {
+  const row = await db
+    .select({ assetId: workflowDefinition.assetId })
+    .from(workflowRun)
+    .innerJoin(
+      workflowDefinition,
+      eq(workflowDefinition.id, workflowRun.definitionId),
+    )
+    .where(eq(workflowRun.id, instanceId))
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (row === undefined || row.assetId === null) {
+    throw new Error(
+      `folded run ${instanceId} has no workflow-kind definition asset to commit its per-run source tree into`,
+    );
+  }
+  return row.assetId;
+}
+
+/**
  * The deploy-only step shared by a fresh launch (`launchFoldedRun`)
  * and a wake (re-deploying an instance the sidecar no longer has
  * resident): resolve inference sources against the tenant catalog,
- * (re)open the event collector, and call `deployInstanceAtHead`.
- * Callers that just wrote new principal/session/run rows
- * (`launchFoldedRun`) still own their own failure-path rollback of
- * those rows — this function only throws.
+ * (re)open the event collector, render the run's own workflow source
+ * package, commit it, and deploy it onto the run's pre-minted anchor
+ * through the adopting code-sourced front. Callers that just wrote new
+ * principal/session/run rows (`launchFoldedRun`) still own their own
+ * failure-path rollback of those rows — this function only throws.
  */
-const FOLDED_STEP_ID = "default";
 
 export async function deployAtHead(
   deps: Pick<
@@ -105,7 +177,7 @@ export async function deployAtHead(
     | "sidecarRouter"
     | "eventCollectors"
     | "credentialCipher"
-    | "hubPublicKey"
+    | "assetService"
     | "toolGrantsForPins"
     | "mcpCredentialBindingsFor"
   >,
@@ -138,23 +210,13 @@ export async function deployAtHead(
      */
     fallbackModel?: string;
     /**
-     * Overrides the step's default input selector (`{ from:
-     * "trigger.payload" }`, `defineWorkflow`'s standard first-step
-     * default). The default reads the triggering mail's bare `content`
-     * verbatim and feeds it straight into `agent.send`, which throws on
-     * an empty string — and `content` is legitimately empty for
-     * attachments-only mail (an event-only send, e.g.
-     * `workbench.agent-joined`; see `@corbits/chat`'s `encodeParts`).
-     * A folded run that genuinely ignores its input (the workbench host:
-     * its system prompt forbids ever acting on what it receives) should
-     * pin a `{ literal: ... }` selector here instead of reading
-     * `trigger.payload`, so an attachments-only mail landing in its
-     * inbox — its very first message, in the common case — cannot crash
-     * the run before it ever opens (CL-6164). Absent, behavior is
-     * unchanged: the step reads the real trigger payload, as every
-     * inference-driven agent must.
+     * The shape the run's deployed definition takes. Defaults to the
+     * folded conversational step every launcher uses today; CL-6329's
+     * per-turn swap passes `{ kind: "section", turnTimeoutMs }` and
+     * nothing else about this call changes, because the mode is config
+     * data rendered into the deployed bytes rather than a branch here.
      */
-    stepInput?: Selector;
+    mode?: FoldedRunMode;
   },
 ): Promise<void> {
   const sourcesOverride = parseSourcesOverride(params.sources);
@@ -227,9 +289,11 @@ export async function deployAtHead(
     ...mcpBindings,
   ];
 
-  let credentials: Parameters<
-    FoldedRunsDeps["sessionService"]["deploySingleStepAtHead"]
-  >[0]["credentials"];
+  // The deploy front resolves the credential MATERIAL itself from the
+  // deployed definition's own bindings under `credentialCipher`. What it
+  // does not derive is the `credential:` use grants this run's principal
+  // needs in its own `grants.json`, so the delivery is still walked here
+  // — for `bindingGrants` alone.
   if (credentialBindings.length > 0) {
     if (deps.credentialCipher === undefined) {
       throw new Error(
@@ -249,7 +313,6 @@ export async function deployAtHead(
         `${params.launchLabel}: credential binding resolution failed: ${delivery.reason.message}`,
       );
     }
-    credentials = delivery.delivery;
     for (const bindingGrant of delivery.bindingGrants) {
       grants.push({
         id: generateId("grant"),
@@ -277,65 +340,74 @@ export async function deployAtHead(
     sources: resolution.sources,
     defaultSource: resolution.defaultSource,
   };
-  const deployContent = { systemPrompt: params.foldedBody.systemPrompt };
-  // A folded run is a conversation: its one step must service every
-  // inbound mail as another turn, never complete after the first. A wrap
-  // with the platform's default trigger budget of 1 (batch) is exactly what
-  // made every chat go silent after its first real reply — so the folded
-  // launch builds the single-step agent itself, with the budget declared,
-  // and deploys it through the same head deploy. The launch pins its tools
-  // as packages rather than factories, so the step agent carries none.
-  const foldedSteps = {
-    [FOLDED_STEP_ID]: step({
-      agent: buildSingleStepAgentDefinition({
-        id: config.agentId,
-        systemPrompt: deployContent.systemPrompt,
-        inferencePreferences: config.sources.map((source) => ({
-          provider: source.provider,
-          model: source.model,
-        })),
-        toolFactories: [],
-      }),
-      triggers: "unbounded",
-      ...(params.stepInput !== undefined ? { input: params.stepInput } : {}),
-    }),
-  };
-  // The workflow-host's per-step credential snapshot
+  // Everything that differs per run, in one literal. The deployed
+  // definition is whatever this run's own pinned bytes evaluate to, and
+  // the approved wire hash covers every field below — the trigger
+  // address, the system prompt, the (provider, model) pairs, the tool
+  // package pins, the credential bindings — so the config cannot ride
+  // beside the bytes as an env var or a staged file. It IS the bytes:
+  // `renderAgentRuntimeSourceTree` writes it into the entry module the
+  // approval probe and the run child each evaluate independently.
+  //
+  // The definition's own `credentialBindings` are what the workflow
+  // host's per-step credential snapshot
   // (`vendor/intx/workflow-host/src/supervisor/credentials.ts`) derives
-  // its bindings from the deployed *definition*'s own
-  // `credentialBindings`, not from `buildCredentialDelivery`'s output —
-  // that delivery only seeds the credential material itself. Mirror
-  // `buildAgentDefinitionWorkflow`'s same conditional shape so a folded
-  // run's synthesized definition carries the same combined bindings
-  // (the definition's own plus the pinned-package MCP bindings folded in
-  // above) the delivered material was resolved against; without this the
-  // sidecar's `consumerBindings` finds nothing for `mcp:<slug>` and every
-  // resolve() fails "not connected" even though the material was
-  // delivered.
-  const definition =
-    credentialBindings.length > 0
-      ? defineWorkflow({
-          id: `wf_${params.instanceId}`,
-          trigger: { type: "mail", to: params.triggerAddress },
-          credentialBindings,
-          steps: foldedSteps,
-        })
-      : defineWorkflow({
-          id: `wf_${params.instanceId}`,
-          trigger: { type: "mail", to: params.triggerAddress },
-          steps: foldedSteps,
-        });
-  await deps.sessionService.deploySingleStepAtHead({
-    agentAddress: params.triggerAddress,
+  // its consumer bindings from, which is why the pinned-package MCP
+  // bindings folded in above have to reach the rendered config and not
+  // just the delivery: without them `env.credentials.resolve("mcp:<slug>")`
+  // fails "not connected" even when the material was delivered.
+  const runtimeConfig: AgentRuntimeConfig = {
+    workflowId: `wf_${params.instanceId}`,
     agentId: params.instanceId,
-    runId: params.instanceId,
+    triggerAddress: params.triggerAddress,
+    systemPrompt: params.foldedBody.systemPrompt,
+    inferencePreferences: resolution.sources.map((source) => ({
+      provider: source.provider,
+      model: source.model,
+    })),
+    toolPackagePins: [...params.foldedBody.toolPackagePins],
+    credentialBindings,
+    mode: params.mode ?? { kind: "step" },
+  };
+  const definitionAssetId = await resolveRunDefinitionAssetId(
+    deps.db,
+    params.instanceId,
+  );
+  const { commitSha } = await deps.assetService.populateAsset({
+    assetId: definitionAssetId,
+    ref: foldedRunSourceRef(params.instanceId),
+    principal: { kind: "hub" },
+    tree: {
+      files: renderAgentRuntimeSourceTree({
+        packageName: foldedRunPackageName(params.instanceId),
+        runtimeVersion: AGENT_RUNTIME_PACKAGE_RANGE,
+        config: runtimeConfig,
+      }),
+      message: `Deploy folded run ${params.instanceId}`,
+    },
+  });
+
+  // The adopting front is the only code-sourced deploy a folded run can
+  // use: its anchor `workflow_run` row was minted before this call
+  // (`mintFoldedRun`), so the inserting front would collide on the
+  // primary key, and the prepared front hard-requires an exclusive
+  // allocation this run does not have.
+  await deps.sessionService.deployAdoptedWorkflowFromSource({
+    tenantId: params.tenantId,
+    anchorRunId: params.instanceId,
+    deploymentDomain: domainOfAddress(params.triggerAddress),
+    agentAddress: params.triggerAddress,
+    source: {
+      kind: "asset",
+      assetId: definitionAssetId,
+      package: { format: "source", commitSha },
+    },
+    entry: AGENT_RUNTIME_ENTRY_PATH,
+    definitionAssetId,
     config,
-    deployContent,
-    definition,
-    sources: { [FOLDED_STEP_ID]: resolution.sources },
-    hubPublicKey: deps.hubPublicKey,
-    toolPackagePins: params.foldedBody.toolPackagePins,
-    ...(credentials !== undefined ? { credentials } : {}),
+    ...(deps.credentialCipher !== undefined
+      ? { credentialCipher: deps.credentialCipher }
+      : {}),
   });
 
   // Produce the run's `run.grants` frame, the same contract upstream's hub
@@ -379,7 +451,7 @@ export type LaunchFoldedRunParams = {
   /** See `deployAtHead`'s own doc on the same field. */
   fallbackModel?: string;
   /** See `deployAtHead`'s own doc on the same field. */
-  stepInput?: Selector;
+  mode?: FoldedRunMode;
   /**
    * Invoked inside the same launch transaction, immediately after the
    * principal/session/run rows are written, so a caller-owned table
@@ -548,9 +620,7 @@ export async function launchFoldedRun(
       ...(params.fallbackModel !== undefined
         ? { fallbackModel: params.fallbackModel }
         : {}),
-      ...(params.stepInput !== undefined
-        ? { stepInput: params.stepInput }
-        : {}),
+      ...(params.mode !== undefined ? { mode: params.mode } : {}),
     });
   } catch (err) {
     // Mirrors the reference route's failure-path cleanup: a deploy

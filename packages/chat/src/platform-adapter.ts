@@ -22,12 +22,12 @@ import {
   sendFoldedMail,
   wakeFoldedRun,
   FoldedBodySchema,
+  type FoldedRunMode,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
   type SourcesOverride,
 } from "@corbits/folded-runs";
 import type { FoldedBody } from "@intx/workflow-deploy";
-import type { Selector } from "@intx/workflow";
 import type { DB } from "@intx/db";
 import {
   agentSession,
@@ -50,7 +50,6 @@ import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import type {
   AssetService,
   EventCollectorRegistry,
-  SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
@@ -71,11 +70,9 @@ import {
 
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
-  sessionService: SessionService;
+  sessionService: FoldedRunsDeps["sessionService"];
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
-  /** See `FoldedRunsDeps.hubPublicKey`. */
-  hubPublicKey: string;
   /** See `FoldedRunsDeps.toolGrantsForPins`. */
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
   /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
@@ -202,8 +199,9 @@ function noopSourcesOverride(
  * value is never read by anything — the anchor's whole job is holding
  * the mailbox, not processing input.
  */
-const WORKBENCH_HOST_STEP_INPUT: Selector = {
-  literal: "workbench-host anchor turn",
+const WORKBENCH_HOST_MODE: FoldedRunMode = {
+  kind: "step",
+  literalInput: "workbench-host anchor turn",
 };
 
 /**
@@ -246,7 +244,6 @@ export function createHubChatPlatform(
     assetService: deps.assetService,
     sidecarRouter: deps.sidecarRouter,
     eventCollectors: deps.eventCollectors,
-    hubPublicKey: deps.hubPublicKey,
     toolGrantsForPins: deps.toolGrantsForPins,
     ...(deps.credentialCipher !== undefined
       ? { credentialCipher: deps.credentialCipher }
@@ -372,7 +369,7 @@ export function createHubChatPlatform(
               deps.noopInferenceBaseUrl,
               parsedFoldedBody,
             ),
-            stepInput: WORKBENCH_HOST_STEP_INPUT,
+            mode: WORKBENCH_HOST_MODE,
           }
         : {
             ...wakeParams,

@@ -11,6 +11,7 @@ import type {
 } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type {
+  AdoptingWorkflowDeployer,
   AssetService,
   EventCollectorRegistry,
   SessionService,
@@ -81,7 +82,13 @@ export type McpCredentialBindingsFor = (
 
 export type FoldedRunsDeps = {
   db: DB["db"];
-  sessionService: SessionService;
+  /**
+   * The session service, narrowed to include the adopting code-sourced
+   * deploy front `deployAtHead` uses: a folded run's anchor row is
+   * minted before any deployment attaches to it, which is the one
+   * combination the inserting and prepared fronts cannot serve.
+   */
+  sessionService: SessionService & AdoptingWorkflowDeployer;
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
   eventCollectors: EventCollectorRegistry;
@@ -97,13 +104,6 @@ export type FoldedRunsDeps = {
    * ciphertext to the provider as its API key.
    */
   credentialCipher?: CredentialCipher;
-  /**
-   * The hub's hex-encoded Ed25519 signing public key — the same value the
-   * sidecar router is created with. `deployAtHead` deploys a folded run
-   * as an explicit single-step workflow (so it can declare the step's
-   * `triggers: "unbounded"` budget) and that deploy carries the hub key.
-   */
-  hubPublicKey: string;
   /** See `ToolGrantsForPins`'s own doc. */
   toolGrantsForPins: ToolGrantsForPins;
   /**
