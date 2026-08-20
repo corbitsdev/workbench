@@ -202,7 +202,9 @@ describe("ensureDefaultRoutines", () => {
           },
         };
       }
-      throw new Error(`must not touch routines on a re-seed: ${method} ${path}`);
+      throw new Error(
+        `must not touch routines on a re-seed: ${method} ${path}`,
+      );
     };
 
     await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);

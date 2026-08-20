@@ -124,9 +124,10 @@ export interface RoutineStore {
    * `routine_tenant_preset_key_idx`, migrations.ts' 0005), never a
    * check-then-insert. Two overlapping calls with the same
    * `(tenantId, presetKey)` — including genuinely concurrent ones — are
-   * guaranteed exactly one winner (`created: true`) and any number of
-   * losers (`created: false`, returning the winner's own row), never
-   * two rows.
+   * guaranteed exactly one winner (`created`) and any number of losers
+   * (`existing`, returning the winner's own row), never two rows. A
+   * soft-deleted row for the key is a tombstone: the create is refused
+   * (`tombstoned`) rather than resurrecting what a member deleted.
    */
   createRoutineIfAbsent(
     input: CreateRoutineIfAbsentInput,
@@ -672,8 +673,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
     async createRoutineIfAbsent(input) {
       const rowsForKey = [...routinesById.values()].filter(
         (row) =>
-          row.tenantId === input.tenantId &&
-          row.presetKey === input.presetKey,
+          row.tenantId === input.tenantId && row.presetKey === input.presetKey,
       );
       const existing = rowsForKey.find((row) => row.deletedAt === null);
       if (existing !== undefined) {

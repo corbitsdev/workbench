@@ -152,7 +152,10 @@ const fakeDb = {
   transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn({}),
 } as unknown as Parameters<typeof seedTemplateLibrary>[0]["db"];
 
-const CODE_REVIEW_ENTRY = { id: "code-review", content: '{"id":"code-review"}' };
+const CODE_REVIEW_ENTRY = {
+  id: "code-review",
+  content: '{"id":"code-review"}',
+};
 const GTM_ENTRY = { id: "gtm", content: '{"id":"gtm"}' };
 const ENTRIES = [CODE_REVIEW_ENTRY, GTM_ENTRY];
 
@@ -214,7 +217,12 @@ describe("seedTemplateLibrary", () => {
 
   test("a user-edited template is never clobbered by a moved manifest", async () => {
     const { engine, rows, userEdit } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     userEdit("code-review", '{"id":"code-review","mine":true}');
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
@@ -232,17 +240,28 @@ describe("seedTemplateLibrary", () => {
 
   test("a manifest change after an untouched earlier revision still converges", async () => {
     const { engine, rows } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
     await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
+      entries: ENTRIES,
+      engine,
+    });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: [
+        { id: "code-review", content: '{"id":"code-review","v":2}' },
+        GTM_ENTRY,
+      ],
       engine,
     });
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":3}' }, GTM_ENTRY],
+      entries: [
+        { id: "code-review", content: '{"id":"code-review","v":3}' },
+        GTM_ENTRY,
+      ],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "revised" });
@@ -253,7 +272,12 @@ describe("seedTemplateLibrary", () => {
 
   test("a template dropped from the manifest is retired (archived), not deleted", async () => {
     const { engine, rows } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
@@ -268,7 +292,12 @@ describe("seedTemplateLibrary", () => {
 
   test("a user-edited template dropped from the manifest is kept visible", async () => {
     const { engine, rows, userEdit } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     userEdit("code-review", '{"id":"code-review","mine":true}');
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
@@ -282,12 +311,25 @@ describe("seedTemplateLibrary", () => {
 
   test("a retired template re-added to the manifest is restored to the current content", async () => {
     const { engine, rows } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: [GTM_ENTRY], engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: [GTM_ENTRY],
+      engine,
+    });
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
+      entries: [
+        { id: "code-review", content: '{"id":"code-review","v":2}' },
+        GTM_ENTRY,
+      ],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "restored" });
@@ -299,7 +341,12 @@ describe("seedTemplateLibrary", () => {
 
   test("a template the user archived themselves stays archived", async () => {
     const { engine, rows, userArchive } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     userArchive("code-review");
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
@@ -308,12 +355,19 @@ describe("seedTemplateLibrary", () => {
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "kept" });
-    expect(rows.find((r) => r.title === "code-review")?.archivedAt).not.toBeNull();
+    expect(
+      rows.find((r) => r.title === "code-review")?.archivedAt,
+    ).not.toBeNull();
   });
 
   test("a legacy seeded row without a seed marker adopts one when content matches", async () => {
     const { engine, rows } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     for (const row of rows) {
       row.source = { origin: "template-library-seed", templateId: row.title };
     }
@@ -327,7 +381,10 @@ describe("seedTemplateLibrary", () => {
     const moved = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
+      entries: [
+        { id: "code-review", content: '{"id":"code-review","v":2}' },
+        GTM_ENTRY,
+      ],
       engine,
     });
     expect(moved).toContainEqual({ id: "code-review", outcome: "revised" });
@@ -335,7 +392,12 @@ describe("seedTemplateLibrary", () => {
 
   test("a legacy seeded row whose content differs without a marker is preserved", async () => {
     const { engine, rows } = memoryEngine();
-    await seedTemplateLibrary({ db: fakeDb, scope: SCOPE, entries: ENTRIES, engine });
+    await seedTemplateLibrary({
+      db: fakeDb,
+      scope: SCOPE,
+      entries: ENTRIES,
+      engine,
+    });
     for (const row of rows) {
       row.source = { origin: "template-library-seed", templateId: row.title };
     }
@@ -345,7 +407,10 @@ describe("seedTemplateLibrary", () => {
     const outcomes = await seedTemplateLibrary({
       db: fakeDb,
       scope: SCOPE,
-      entries: [{ id: "code-review", content: '{"id":"code-review","v":2}' }, GTM_ENTRY],
+      entries: [
+        { id: "code-review", content: '{"id":"code-review","v":2}' },
+        GTM_ENTRY,
+      ],
       engine,
     });
     expect(outcomes).toContainEqual({ id: "code-review", outcome: "kept" });

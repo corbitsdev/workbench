@@ -49,12 +49,7 @@ export type TemplateLibraryEntry = {
 export type TemplateSeedOutcome = {
   readonly id: string;
   readonly outcome:
-    | "created"
-    | "unchanged"
-    | "revised"
-    | "kept"
-    | "retired"
-    | "restored";
+    "created" | "unchanged" | "revised" | "kept" | "retired" | "restored";
 };
 
 export type SeededTemplateRow = {
