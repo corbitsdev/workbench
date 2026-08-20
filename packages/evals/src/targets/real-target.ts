@@ -908,13 +908,23 @@ export async function bootMyraTarget(
           body: rawBody,
         },
       );
-      const data: unknown = await response.json();
+      // Read as text first: a failed launch surfaces as the hub's own
+      // non-JSON 500 body, which must land in the recorded turn rather
+      // than die as a JSON parse crash that hides the status. A non-202
+      // is recorded honestly (the same convention as the runner's
+      // no-trigger miss) so the step's scorers grade red with the real
+      // failure instead of the whole run crashing.
+      const rawResponse = await response.text();
       if (response.status !== 202) {
-        throw new Error(
-          `fireWebhook("${triggerId}"): ingress returned ` +
-            `${String(response.status)}: ${JSON.stringify(data)}`,
-        );
+        return {
+          human: `(harness) fire webhook trigger ${triggerId}`,
+          replyText:
+            `webhook delivery failed: ingress returned ` +
+            `${String(response.status)}: ${rawResponse.slice(0, 2_000)}`,
+          toolCalls: [],
+        };
       }
+      const data: unknown = JSON.parse(rawResponse);
       return {
         human: `(harness) fire webhook trigger ${triggerId}`,
         replyText:
