@@ -46,11 +46,16 @@
 // the caller; this module does not synthesize that registry itself
 // because the loader is the layer that owns package materialization.
 // An unresolvable director surfaces on `unresolvedDirectors` rather
-// than raising -- the orchestrator translates that into a deploy-time
+// than raising -- the deploy flow translates that into a deploy-time
 // `"unresolvable director"` failure when it wires this output into
 // approval flow.
 
-import type { AgentDefinition, BaseEnv, DirectorRegistry } from "@intx/agent";
+import type {
+  AgentDefinition,
+  BaseEnv,
+  DirectorRegistry,
+  ToolDeclaration,
+} from "@intx/agent";
 import {
   effectiveDirectorRef,
   toolApprovalEffect,
@@ -80,7 +85,7 @@ export interface GrantDeclarations {
 /**
  * The capability walk's result. `perStep` keys are workflow step ids;
  * `unresolvedDirectors` lists every director id the supplied registry
- * could not resolve across the whole walk, so the orchestrator can
+ * could not resolve across the whole walk, so the deploy flow can
  * surface a single deploy-time failure rather than tearing down per
  * step.
  *
@@ -92,6 +97,22 @@ export interface CapabilityWalkResult {
   readonly perStep: ReadonlyMap<string, GrantDeclarations>;
   readonly unresolvedDirectors: readonly string[];
 }
+
+/**
+ * Static tool declarations a plugin package contributes, keyed by the
+ * plugin-package name an agent names in `AgentDefinition.plugins`. A
+ * plugin package contributes NO agent-visible tool factory (its tools reach
+ * the agent through `env.plugins` at run time), so the walk cannot read the
+ * plugin's tool grant surface off the definition alone. The caller (the
+ * probe, over the materialized closure) loads each declared plugin's static
+ * `definitions` and threads them here so the walk emits `tool:<name>` grants
+ * for plugin-contributed tools alongside factory-contributed ones. Empty
+ * when the walked closure declares no plugin package.
+ */
+export type PluginToolDefinitions = ReadonlyMap<
+  string,
+  readonly ToolDeclaration[]
+>;
 
 /**
  * Mutable accumulator threaded through the collectors while a single
@@ -135,6 +156,7 @@ function freezeDeclarations(
 export function walkCapabilities(
   workflow: WorkflowDefinition,
   registry: DirectorRegistry,
+  pluginDefs: PluginToolDefinitions = new Map(),
 ): CapabilityWalkResult {
   const triggerGrants = collectTriggerGrants(workflow);
   const unresolved = new Set<string>();
@@ -147,30 +169,20 @@ export function walkCapabilities(
         `capability walk: step ${stepId} listed in stepOrder is missing from steps`,
       );
     }
-    const agent = extractAgent(primitive);
-    if (agent === null) {
-      // Non-agent primitives carry no agent grants. An `action`
-      // additionally contributes its declared `effect:<cap>` grants, and
-      // a `loop` contributes the union of its body's grants (so the
-      // approval gate sees every agent/action the loop can run); every
-      // other non-agent primitive gets only the trigger-derived grants.
-      const collected: GrantSet = {
-        grants: new Set<string>(),
-        effects: new Map(),
-      };
-      for (const grant of collectActionGrants(primitive)) {
-        collected.grants.add(grant);
-      }
-      collectLoopBodyGrants(primitive, registry, unresolved, collected);
-      collectOnTriggerBodyGrants(primitive, registry, unresolved, collected);
-      perStep.set(stepId, freezeDeclarations(collected, triggerGrants));
-      continue;
-    }
+    // Every top-level step gets a fresh grant set; `collectPrimitiveGrants`
+    // routes the step and any nested bodies it carries through one dispatch,
+    // so an approval covers every agent, action, and effect the step can run.
     const collected: GrantSet = {
       grants: new Set<string>(),
       effects: new Map(),
     };
-    collectAgentGrants(agent, registry, unresolved, collected);
+    collectPrimitiveGrants(
+      primitive,
+      registry,
+      pluginDefs,
+      unresolved,
+      collected,
+    );
     perStep.set(stepId, freezeDeclarations(collected, triggerGrants));
   }
 
@@ -216,86 +228,129 @@ function collectActionGrants(
 }
 
 /**
- * Collect the union of a loop body's grants (agent grants for its step /
- * map steps, effect grants for its action steps) into `collected` so the
- * loop node's approval covers every agent and effect the loop can run.
- * The body-ban forbids a nested loop, so this does not recurse further.
+ * Union a single primitive's grants into `collected`: its agent grants (when
+ * it carries an agent), its action `effect:<cap>` grants, and -- for a
+ * body-bearing primitive -- the grants of every step of its nested body. A
+ * loop, an inline onTrigger section, and an inline childWorkflow each run their
+ * body per the deployment, so the operator must approve everything the body can
+ * run. The walk descends into the authored `{ inline }` form; a `{ ref }` body
+ * is a separately-declared asset whose grants were folded in from its own
+ * inline form, so it is skipped here.
  *
- * Duplicate-name handling is scoped per body step: `collectAgentGrants`
- * throws on a duplicate within a single agent, but two DIFFERENT body
- * steps that each mint the same `tool:<name>` are distinct runtime
- * agents (the runtime builds one agent per step), so the union across
- * body steps is not a duplicate-name error.
+ * The nesting switch is EXHAUSTIVE: a newly-added primitive kind fails the
+ * `never` assignment below at compile time, forcing the walk to decide how to
+ * treat it rather than silently dropping a nested closure's grants. A miss here
+ * is a silent, fail-open authorization gap because `director:` is not re-gated
+ * at runtime -- so the compiler, not a remembered call site, owns coverage.
  */
-function collectLoopBodyGrants(
+function collectPrimitiveGrants(
   primitive: WorkflowDefinition["steps"][string],
   registry: DirectorRegistry,
+  pluginDefs: PluginToolDefinitions,
   unresolved: Set<string>,
   collected: GrantSet,
 ): void {
-  if (primitive.kind !== "loop") {
-    return;
+  const agent = extractAgent(primitive);
+  if (agent !== null) {
+    collectAgentGrants(agent, registry, pluginDefs, unresolved, collected);
   }
-  for (const bodyStepId of primitive.body.stepOrder) {
-    const bodyPrimitive = primitive.body.steps[bodyStepId];
-    if (bodyPrimitive === undefined) {
-      throw new Error(
-        `capability walk: loop body step ${bodyStepId} listed in stepOrder is missing from steps`,
+  for (const grant of collectActionGrants(primitive)) {
+    collected.grants.add(grant);
+  }
+  switch (primitive.kind) {
+    case "loop":
+      collectBodyGrants(
+        primitive.body,
+        registry,
+        pluginDefs,
+        unresolved,
+        collected,
       );
-    }
-    const bodyAgent = extractAgent(bodyPrimitive);
-    if (bodyAgent !== null) {
-      collectAgentGrants(bodyAgent, registry, unresolved, collected);
-    }
-    for (const grant of collectActionGrants(bodyPrimitive)) {
-      collected.grants.add(grant);
+      return;
+    case "onTrigger":
+      if ("inline" in primitive.body) {
+        collectBodyGrants(
+          primitive.body.inline,
+          registry,
+          pluginDefs,
+          unresolved,
+          collected,
+        );
+      }
+      return;
+    case "childWorkflow":
+      if ("inline" in primitive.definition) {
+        collectBodyGrants(
+          primitive.definition.inline,
+          registry,
+          pluginDefs,
+          unresolved,
+          collected,
+        );
+      }
+      return;
+    case "step":
+    case "map":
+    case "action":
+    case "gate":
+    case "escalation":
+    case "awaitSignal":
+    case "sleep":
+      // Leaf primitives: no nested body to descend into.
+      return;
+    default: {
+      const exhaustive: never = primitive;
+      throw new Error(
+        `capability walk: unhandled primitive kind ${JSON.stringify(
+          (exhaustive as { kind: string }).kind,
+        )}`,
+      );
     }
   }
 }
 
 /**
- * Union an onTrigger section body's agent/action grants into the section's
- * declaration set, so the approval gate sees every agent and action the
- * section can run per event. The walk runs before the deploy step extracts
- * the body into its own asset, so it sees the authored `{ inline }` form; a
- * deployed `{ ref }` body is an independent asset with its own declarations
- * and is skipped here. A section body may itself contain a loop, whose body
- * grants are collected too; a nested onTrigger is forbidden at definition
- * time, so there is no section-within-section recursion to handle.
+ * Walk every step of a nested body (a loop body, an inline onTrigger section
+ * body, or an inline childWorkflow definition) and union its grants into
+ * `collected`. Each step routes through `collectPrimitiveGrants`, so a body
+ * that itself nests another body is covered by the same single dispatch and
+ * the loop-body ban (a validator-owned invariant) simply means the recursion
+ * never encounters a nesting primitive inside a loop body.
+ *
+ * Duplicate-name handling is scoped per body step: `collectAgentGrants` throws
+ * on a duplicate within a single agent, but two DIFFERENT body steps that each
+ * mint the same `tool:<name>` are distinct runtime agents (the runtime builds
+ * one agent per step), so the union across body steps is not a duplicate-name
+ * error.
  */
-function collectOnTriggerBodyGrants(
-  primitive: WorkflowDefinition["steps"][string],
+function collectBodyGrants(
+  body: WorkflowDefinition,
   registry: DirectorRegistry,
+  pluginDefs: PluginToolDefinitions,
   unresolved: Set<string>,
   collected: GrantSet,
 ): void {
-  if (primitive.kind !== "onTrigger") {
-    return;
-  }
-  if (!("inline" in primitive.body)) {
-    return;
-  }
-  for (const bodyStepId of primitive.body.inline.stepOrder) {
-    const bodyPrimitive = primitive.body.inline.steps[bodyStepId];
+  for (const bodyStepId of body.stepOrder) {
+    const bodyPrimitive = body.steps[bodyStepId];
     if (bodyPrimitive === undefined) {
       throw new Error(
-        `capability walk: onTrigger body step ${bodyStepId} listed in stepOrder is missing from steps`,
+        `capability walk: body step ${bodyStepId} listed in stepOrder is missing from steps`,
       );
     }
-    const bodyAgent = extractAgent(bodyPrimitive);
-    if (bodyAgent !== null) {
-      collectAgentGrants(bodyAgent, registry, unresolved, collected);
-    }
-    for (const grant of collectActionGrants(bodyPrimitive)) {
-      collected.grants.add(grant);
-    }
-    collectLoopBodyGrants(bodyPrimitive, registry, unresolved, collected);
+    collectPrimitiveGrants(
+      bodyPrimitive,
+      registry,
+      pluginDefs,
+      unresolved,
+      collected,
+    );
   }
 }
 
 function collectAgentGrants(
   agent: AgentDefinition<BaseEnv>,
   registry: DirectorRegistry,
+  pluginDefs: PluginToolDefinitions,
   unresolved: Set<string>,
   collected: GrantSet,
 ): void {
@@ -319,21 +374,29 @@ function collectAgentGrants(
         throw new DuplicateWalkToolError(definition.name, factory.id);
       }
       seenToolNames.add(definition.name);
-      const grant = `tool:${definition.name}`;
-      collected.grants.add(grant);
-      // Ask-wins merge. `collected` is one GrantSet shared across every
-      // body step of a loop, so two body steps declaring the same bare
-      // tool name write the same `tool:<name>` key here. A plain overwrite
-      // would let a later unmarked declaration downgrade an earlier `ask`
-      // to `allow`; keep `ask` if either the existing or the incoming
-      // effect asks, so a same-named sibling can never silently drop the
-      // approval gate.
-      const incoming = toolApprovalEffect(definition);
-      const existing = collected.effects.get(grant);
-      collected.effects.set(
-        grant,
-        existing === "ask" || incoming === "ask" ? "ask" : incoming,
+      emitToolGrant(definition, collected);
+    }
+  }
+  // Plugin-contributed tools. A plugin package (`agent.plugins`) exposes
+  // its tools through `env.plugins` at run time, so they never appear in
+  // `agent.toolFactories`; the loaded static `definitions` supplied by the
+  // caller carry the tool names to authorize. A plugin tool sharing a name
+  // with a factory tool (or another plugin's tool) is a real collision --
+  // both dispatch under the same bare runtime name -- so it flows through
+  // the SAME `seenToolNames` guard.
+  for (const pluginName of agent.plugins ?? []) {
+    const definitions = pluginDefs.get(pluginName);
+    if (definitions === undefined) {
+      throw new Error(
+        `capability walk: agent ${JSON.stringify(agent.id)} declares plugin ${JSON.stringify(pluginName)} but no static tool definitions were loaded for it; a declared plugin whose grant surface cannot be resolved must fail closed`,
       );
+    }
+    for (const definition of definitions) {
+      if (seenToolNames.has(definition.name)) {
+        throw new DuplicateWalkToolError(definition.name, pluginName);
+      }
+      seenToolNames.add(definition.name);
+      emitToolGrant(definition, collected);
     }
   }
   for (const capability of agent.capabilities) {
@@ -350,6 +413,27 @@ function collectAgentGrants(
     if (!(cause instanceof UnknownDirectorIdError)) throw cause;
     unresolved.add(ref.id);
   }
+}
+
+/**
+ * Add a tool's `tool:<name>` grant and its authorization effect to the
+ * collected set, applying the ask-wins merge. `collected` is one GrantSet
+ * shared across every body step of a loop, so two body steps declaring the
+ * same bare tool name write the same `tool:<name>` key; a plain overwrite
+ * would let a later unmarked declaration downgrade an earlier `ask` to
+ * `allow`, so keep `ask` if either the existing or incoming effect asks.
+ * Shared by the factory-declared and plugin-contributed tool paths so both
+ * derive the effect through the one canonical `toolApprovalEffect` mapping.
+ */
+function emitToolGrant(definition: ToolDeclaration, collected: GrantSet): void {
+  const grant = `tool:${definition.name}`;
+  collected.grants.add(grant);
+  const incoming = toolApprovalEffect(definition);
+  const existing = collected.effects.get(grant);
+  collected.effects.set(
+    grant,
+    existing === "ask" || incoming === "ask" ? "ask" : incoming,
+  );
 }
 
 function collectTriggerGrants(workflow: WorkflowDefinition): string[] {

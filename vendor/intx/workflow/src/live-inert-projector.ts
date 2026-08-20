@@ -96,6 +96,13 @@ export interface InertAgent {
   readonly director?: DirectorRef;
   readonly capabilities: readonly string[];
   readonly toolFactories: readonly InertToolFactory[];
+  /**
+   * Plugin-package names the agent declares (`AgentDefinition.plugins`).
+   * Part of the hashed grant surface: a plugin package contributes tool
+   * grants (via its static `definitions`) that the operator approves, so a
+   * tampered plugin set must move the wire hash and fail re-verify.
+   */
+  readonly plugins?: readonly string[];
   readonly modelSources: readonly InertModelSource[];
   readonly tags?: Readonly<Record<string, string>>;
   readonly toolPackagePins?: readonly ToolPackagePin[];
@@ -150,11 +157,30 @@ export interface InertOnTrigger {
   readonly after?: readonly string[];
 }
 
-// The gate/awaitSignal/sleep/childWorkflow/escalation/action primitives
-// carry no functions or arktype `Type` values -- they are already pure
-// plain data -- so their inert form is structurally identical to the live
-// primitive. They are reconstructed field by field below rather than
-// aliased so the projection is a self-contained tree.
+/** Plain-data mirror of `ChildWorkflowBody`: an inline child definition
+ * projects recursively to an `InertWorkflowDefinition`, and the internal
+ * extracted-body `{ ref }` handle passes through. Mirrors
+ * {@link InertOnTriggerBody}. */
+export type InertChildWorkflowBody =
+  | { readonly inline: InertWorkflowDefinition }
+  | { readonly ref: string };
+
+export interface InertChildWorkflow {
+  readonly kind: "childWorkflow";
+  readonly id: string;
+  readonly definition: InertChildWorkflowBody;
+  readonly input?: Selector;
+  readonly drainBehavior?: DrainBehavior;
+  readonly after?: readonly string[];
+}
+
+// The gate/awaitSignal/sleep/escalation/action primitives carry no functions
+// or arktype `Type` values -- they are already pure plain data -- so their
+// inert form is structurally identical to the live primitive. They are
+// reconstructed field by field below rather than aliased so the projection is
+// a self-contained tree. `childWorkflow` carries an inline child definition
+// (a live `WorkflowDefinition`), so it projects recursively like `onTrigger`
+// rather than aliasing the live primitive.
 export type InertStep =
   | InertStepStep
   | InertMap
@@ -164,7 +190,7 @@ export type InertStep =
   | GatePrimitive
   | AwaitSignalPrimitive
   | SleepPrimitive
-  | ChildWorkflowPrimitive
+  | InertChildWorkflow
   | EscalationPrimitive;
 
 export interface InertWorkflowDefinition {
@@ -421,11 +447,18 @@ function projectSleep(primitive: SleepPrimitive): SleepPrimitive {
 
 function projectChildWorkflow(
   primitive: ChildWorkflowPrimitive,
-): ChildWorkflowPrimitive {
+): InertChildWorkflow {
+  // Mirror `projectOnTrigger`: an inline child definition projects recursively
+  // (its grant surface must survive the child->hub boundary just like the
+  // parent's own steps), the internal `{ ref }` handle passes through.
+  const definition: InertChildWorkflowBody =
+    "inline" in primitive.definition
+      ? { inline: projectDefinition(primitive.definition.inline) }
+      : { ref: primitive.definition.ref };
   return {
     kind: "childWorkflow",
     id: primitive.id,
-    definitionRef: primitive.definitionRef,
+    definition,
     ...(primitive.input !== undefined ? { input: primitive.input } : {}),
     ...(primitive.drainBehavior !== undefined
       ? { drainBehavior: primitive.drainBehavior }
@@ -465,6 +498,7 @@ function projectAgent(agent: AgentDefinition): InertAgent {
     ...(agent.director !== undefined ? { director: agent.director } : {}),
     capabilities: [...agent.capabilities],
     toolFactories: agent.toolFactories.map(projectToolFactory),
+    ...(agent.plugins !== undefined ? { plugins: [...agent.plugins] } : {}),
     modelSources: agent.inference.sources.map(projectModelSource),
     ...(agent.tags !== undefined ? { tags: { ...agent.tags } } : {}),
     ...(agent.toolPackagePins !== undefined
