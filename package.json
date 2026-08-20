@@ -100,6 +100,7 @@
     "@intx/types": "0.3.0",
     "@intx/workflow": "0.3.0",
     "@intx/workflow-deploy": "0.3.0",
-    "@intx/workflow-host": "0.3.0"
+    "@intx/workflow-host": "0.3.0",
+    "better-auth": "1.6.29"
   }
 }
