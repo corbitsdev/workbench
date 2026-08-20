@@ -39,6 +39,21 @@ const MOVE_DESTINATION_ACTION = "manage";
 const SYSTEM_ROLES = ["owner", "admin", "member"] as const;
 
 /**
+ * The member role's room grant pair (CL-6332): every workbench tenant's
+ * `member` role carries `room:*` read AND write from the moment it is
+ * minted, mirroring the pair `seed.ts` plants beside the run pair for
+ * seeded principals (PR #95) — but on the role itself, not one
+ * principal at a time, so a member-role principal (however it comes to
+ * hold that role — the mint's own creator-adjacent seeding today, an
+ * invite tomorrow) carries room write for its workbench by construction,
+ * with no separate per-principal grant to mint or fall out of sync.
+ */
+const MEMBER_ROOM_GRANTS = [
+  { resource: "room:*", action: "read" },
+  { resource: "room:*", action: "write" },
+] as const;
+
+/**
  * A defensive ceiling on how many ancestors `tenantIsDescendantOf`
  * will walk before giving up. The tenant hierarchy this rollout can
  * observe is shallow (a bench and its workbenches), so a real chain this
@@ -144,6 +159,7 @@ export interface TenantPrincipal {
   readonly id: string;
   readonly kind: "user" | "agent" | "workflow";
   readonly status: "active" | "suspended" | "invited" | "deactivated";
+  readonly refId: string;
 }
 
 export interface WorkbenchTenancyStore {
@@ -257,6 +273,27 @@ export interface WorkbenchTenancyStore {
     tenantId: string,
     refId: string,
   ): Promise<TenantPrincipal | undefined>;
+
+  /**
+   * Invites `refId` into `workbenchId`'s own child tenant as a `member`
+   * — the CL-6332 mint precedent (mirroring `createWorkbenchTenant`'s
+   * own owner mint, above) applied to a second, non-creator principal.
+   * The member role already carries the `room:*` read/write pair by
+   * construction (see `MEMBER_ROOM_GRANTS`), so this one insert is the
+   * whole invite: no separate grant to mint alongside it. Idempotent —
+   * a `refId` that already holds a principal in this tenant (the
+   * creator inviting themselves again, or a double-submit) is returned
+   * as-is, never duplicated. Returns `undefined` for a workbench with
+   * no tenancy link at all (a legacy workbench predating workbench
+   * tenancy — see `docs/workbench-tenancy.md` — has no child tenant to
+   * invite anyone into).
+   */
+  addWorkbenchMember(input: {
+    readonly workbenchId: string;
+    readonly refId: string;
+  }): Promise<
+    { readonly tenantId: string; readonly principalId: string } | undefined
+  >;
 }
 
 export interface WorkbenchTenancyAuthzDeps {
@@ -400,6 +437,19 @@ export function createDrizzleWorkbenchTenancyStore<
           createdAt: now,
           updatedAt: now,
         });
+        await tx.insert(grant).values(
+          MEMBER_ROOM_GRANTS.map((seed) => ({
+            id: generateId("grant"),
+            tenantId,
+            roleId: roleIds.member,
+            resource: seed.resource,
+            action: seed.action,
+            effect: "allow" as const,
+            origin: "system" as const,
+            createdAt: now,
+            updatedAt: now,
+          })),
+        );
 
         await tx.insert(workbenchTenancy).values({
           workbenchId: input.workbenchId,
@@ -611,6 +661,7 @@ export function createDrizzleWorkbenchTenancyStore<
           id: principal.id,
           kind: principal.kind,
           status: principal.status,
+          refId: principal.refId,
         })
         .from(principal)
         .where(
@@ -626,6 +677,7 @@ export function createDrizzleWorkbenchTenancyStore<
           id: principal.id,
           kind: principal.kind,
           status: principal.status,
+          refId: principal.refId,
         })
         .from(principal)
         .where(
@@ -633,6 +685,61 @@ export function createDrizzleWorkbenchTenancyStore<
         )
         .limit(1);
       return row as TenantPrincipal | undefined;
+    },
+
+    async addWorkbenchMember({ workbenchId, refId }) {
+      const [link] = await db
+        .select()
+        .from(workbenchTenancy)
+        .where(eq(workbenchTenancy.workbenchId, workbenchId))
+        .limit(1);
+      if (link === undefined) return undefined;
+
+      return db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select({ id: principal.id })
+          .from(principal)
+          .where(
+            and(
+              eq(principal.tenantId, link.tenantId),
+              eq(principal.refId, refId),
+            ),
+          )
+          .limit(1);
+        if (existing !== undefined) {
+          return { tenantId: link.tenantId, principalId: existing.id };
+        }
+
+        const [memberRole] = await tx
+          .select({ id: role.id })
+          .from(role)
+          .where(and(eq(role.tenantId, link.tenantId), eq(role.name, "member")))
+          .limit(1);
+        if (memberRole === undefined) {
+          throw new Error(
+            `Workbench tenant "${link.tenantId}" has no "member" system role`,
+          );
+        }
+
+        const now = new Date();
+        const principalId = generateId("principal");
+        await tx.insert(principal).values({
+          id: principalId,
+          tenantId: link.tenantId,
+          kind: "user",
+          refId,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        });
+        await tx.insert(principalRole).values({
+          principalId,
+          roleId: memberRole.id,
+          createdAt: now,
+        });
+
+        return { tenantId: link.tenantId, principalId };
+      });
     },
   };
 }
@@ -658,10 +765,7 @@ export function createDrizzleWorkbenchTenancyStore<
 export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
   registerExistingTenant(tenantId: string, parentTenantId?: string): void;
   grantManageInTenant(refId: string, tenantId: string): void;
-  registerPrincipal(
-    tenantId: string,
-    principal: TenantPrincipal & { refId?: string },
-  ): void;
+  registerPrincipal(tenantId: string, principal: TenantPrincipal): void;
 } {
   const byWorkbenchId = new Map<string, WorkbenchTenancyRow>();
   const existingTenants = new Set<string>();
@@ -735,6 +839,7 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
         id: ownerPrincipalId,
         kind: "user",
         status: "active",
+        refId: input.creatorUserId,
       };
       principalsByKey.set(
         principalKey(tenantId, ownerPrincipalId),
@@ -794,12 +899,10 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
         principalKey(tenantId, principalRow.id),
         principalRow,
       );
-      if (principalRow.refId !== undefined) {
-        principalsByRefKey.set(
-          refKey(tenantId, principalRow.refId),
-          principalRow,
-        );
-      }
+      principalsByRefKey.set(
+        refKey(tenantId, principalRow.refId),
+        principalRow,
+      );
     },
 
     async getTenantPrincipal(tenantId, principalId) {
@@ -839,6 +942,30 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
       byWorkbenchId.set(workbenchId, moved);
       parentOf.set(existing.tenantId, newParentTenantId);
       return { kind: "moved" as const, row: moved };
+    },
+
+    async addWorkbenchMember({ workbenchId, refId }) {
+      const link = byWorkbenchId.get(workbenchId);
+      if (link === undefined) return undefined;
+
+      const existing = principalsByRefKey.get(refKey(link.tenantId, refId));
+      if (existing !== undefined) {
+        return { tenantId: link.tenantId, principalId: existing.id };
+      }
+
+      const principalId = generateId("principal");
+      const memberPrincipal: TenantPrincipal = {
+        id: principalId,
+        kind: "user",
+        status: "active",
+        refId,
+      };
+      principalsByKey.set(
+        principalKey(link.tenantId, principalId),
+        memberPrincipal,
+      );
+      principalsByRefKey.set(refKey(link.tenantId, refId), memberPrincipal);
+      return { tenantId: link.tenantId, principalId };
     },
   };
 }

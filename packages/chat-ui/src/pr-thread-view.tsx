@@ -72,6 +72,14 @@ export type PrThreadFailedTurn = {
   readonly repo: string;
   readonly onRetry: () => void;
   readonly onWhatHappened: () => void;
+  /** Overrides the PR-review copy (`prThreadFailedTitle`/`-Sub`, both
+   * scoped to "review"/"repo" language) for a non-PR consumer of this
+   * same strip — the general chat timeline's own failed-turn notice
+   * (CL-6332), which has neither. `repo` stays required so every
+   * existing PR-thread caller is untouched; these two just take
+   * priority over it when present. */
+  readonly titleText?: string;
+  readonly subText?: string;
 };
 
 export type PrThreadNextReviewer = {
@@ -248,9 +256,13 @@ export function PrFailedTurnStrip({
   return (
     <div className="chat-pr-failed" role="status">
       <span className="chat-pr-failed-text">
-        <strong>{CHAT_STRINGS.prThreadFailedTitle(failedTurn.sender)}</strong>
+        <strong>
+          {failedTurn.titleText ??
+            CHAT_STRINGS.prThreadFailedTitle(failedTurn.sender)}
+        </strong>
         <span className="chat-pr-failed-sub">
-          {CHAT_STRINGS.prThreadFailedSub(failedTurn.repo)}
+          {failedTurn.subText ??
+            CHAT_STRINGS.prThreadFailedSub(failedTurn.repo)}
         </span>
       </span>
       <Button

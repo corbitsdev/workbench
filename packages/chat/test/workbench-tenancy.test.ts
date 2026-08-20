@@ -322,12 +322,14 @@ test("getTenantPrincipal returns a registered principal scoped to its tenant", a
     id: "prn_bob",
     kind: "user",
     status: "active",
+    refId: "prn_bob",
   });
 
   expect(await tenancy.getTenantPrincipal("tnt_bench_a", "prn_bob")).toEqual({
     id: "prn_bob",
     kind: "user",
     status: "active",
+    refId: "prn_bob",
   });
   // Same principal id, wrong tenant — not found.
   expect(
@@ -336,5 +338,62 @@ test("getTenantPrincipal returns a registered principal scoped to its tenant", a
   // Unregistered principal id — not found.
   expect(
     await tenancy.getTenantPrincipal("tnt_bench_a", "prn_ghost"),
+  ).toBeUndefined();
+});
+
+test("addWorkbenchMember mints a member-role principal in the workbench's own tenant", async () => {
+  const tenancy = createInMemoryWorkbenchTenancyStore();
+  const minted = await tenancy.createWorkbenchTenant({
+    parentTenantId: "tnt_bench_a",
+    workbenchId: "ins_general",
+    name: "General",
+    creatorUserId: "usr_alice",
+  });
+
+  const result = await tenancy.addWorkbenchMember({
+    workbenchId: "ins_general",
+    refId: "usr_bob",
+  });
+
+  expect(result).toEqual({
+    tenantId: minted.tenantId,
+    principalId: expect.stringMatching(/^prn_/) as unknown as string,
+  });
+  const member = await tenancy.getTenantPrincipalByRefId(
+    minted.tenantId,
+    "usr_bob",
+  );
+  expect(member?.status).toBe("active");
+  expect(member?.kind).toBe("user");
+});
+
+test("addWorkbenchMember is idempotent for a refId already holding a principal in that tenant", async () => {
+  const tenancy = createInMemoryWorkbenchTenancyStore();
+  await tenancy.createWorkbenchTenant({
+    parentTenantId: "tnt_bench_a",
+    workbenchId: "ins_general",
+    name: "General",
+    creatorUserId: "usr_alice",
+  });
+
+  const first = await tenancy.addWorkbenchMember({
+    workbenchId: "ins_general",
+    refId: "usr_bob",
+  });
+  const second = await tenancy.addWorkbenchMember({
+    workbenchId: "ins_general",
+    refId: "usr_bob",
+  });
+
+  expect(second).toEqual(first);
+});
+
+test("addWorkbenchMember returns undefined for a legacy workbench with no tenancy", async () => {
+  const tenancy = createInMemoryWorkbenchTenancyStore();
+  expect(
+    await tenancy.addWorkbenchMember({
+      workbenchId: "ins_legacy",
+      refId: "usr_bob",
+    }),
   ).toBeUndefined();
 });

@@ -7,6 +7,13 @@ import { type } from "arktype";
 export const TextPart = type({
   kind: "'text'",
   text: "string",
+  /** Set only on the undelivered-turn notice `postUndeliveredNotice`
+   * posts in an unreachable agent's own voice (CL-6332) — the client's
+   * one signal that this particular text bubble is a failed turn's
+   * notice, not an ordinary reply, so it renders the failed-turn strip
+   * (`PrFailedTurnStrip`) instead of a plain bubble. Absent on every
+   * other text part. */
+  "turnFailed?": "boolean",
 });
 export type TextPart = typeof TextPart.infer;
 
