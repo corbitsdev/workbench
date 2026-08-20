@@ -36,6 +36,8 @@
     "eval": "bun run scripts/evals-run.ts"
   },
   "devDependencies": {
+    "@corbits/code-review": "workspace:*",
+    "@corbits/github-tools": "workspace:*",
     "@eslint/js": "^10.0.0",
     "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
