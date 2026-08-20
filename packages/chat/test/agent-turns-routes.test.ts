@@ -120,6 +120,92 @@ describe("GET /workbenches/:id/turns/:turnId", () => {
     expect(turn.error).toBe("the agent never answered");
   });
 
+  test("a running turn carries a catch-up textSnapshot from the injected reader", async () => {
+    const agentTurns = createInMemoryAgentTurnStore();
+    const deps = buildDeps({
+      agentTurns,
+      turnTextSnapshot: async ({ runId }) =>
+        runId === "turn__0" ? "streamed so far" : null,
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const workbenchId = (
+      await createWorkbench(app, { kind: "workbench", name: "room" })
+    ).body.id;
+
+    const opened = await agentTurns.startTurn({
+      tenantId: TENANT.id,
+      workbenchId,
+      agentAddress: "ins_echo1@acme.example",
+      requestMessageIds: ["msg_1"],
+    });
+
+    const res = await app.request(
+      `/workbenches/${workbenchId}/turns/${opened.id}`,
+    );
+    const turn = (await res.json()) as AgentTurn & {
+      textSnapshot: string | null;
+    };
+    expect(turn.status).toBe("running");
+    expect(turn.textSnapshot).toBe("streamed so far");
+  });
+
+  test("a settled turn never carries a textSnapshot — its reply is already a message", async () => {
+    const agentTurns = createInMemoryAgentTurnStore();
+    const deps = buildDeps({
+      agentTurns,
+      turnTextSnapshot: async () => "should never be read",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const workbenchId = (
+      await createWorkbench(app, { kind: "workbench", name: "room" })
+    ).body.id;
+
+    const opened = await agentTurns.startTurn({
+      tenantId: TENANT.id,
+      workbenchId,
+      agentAddress: "ins_echo1@acme.example",
+      requestMessageIds: ["msg_1"],
+    });
+    await agentTurns.finishTurn({
+      tenantId: TENANT.id,
+      turnId: opened.id,
+      status: "completed",
+      replyMessageId: "msg_reply",
+    });
+
+    const res = await app.request(
+      `/workbenches/${workbenchId}/turns/${opened.id}`,
+    );
+    const turn = (await res.json()) as AgentTurn & {
+      textSnapshot: string | null;
+    };
+    expect(turn.textSnapshot).toBeNull();
+  });
+
+  test("a running turn with no reader injected reads back a null textSnapshot", async () => {
+    const agentTurns = createInMemoryAgentTurnStore();
+    const deps = buildDeps({ agentTurns });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const workbenchId = (
+      await createWorkbench(app, { kind: "workbench", name: "room" })
+    ).body.id;
+
+    const opened = await agentTurns.startTurn({
+      tenantId: TENANT.id,
+      workbenchId,
+      agentAddress: "ins_echo1@acme.example",
+      requestMessageIds: ["msg_1"],
+    });
+
+    const res = await app.request(
+      `/workbenches/${workbenchId}/turns/${opened.id}`,
+    );
+    const turn = (await res.json()) as AgentTurn & {
+      textSnapshot: string | null;
+    };
+    expect(turn.textSnapshot).toBeNull();
+  });
+
   test("a turn belonging to another workbench is not found here", async () => {
     const agentTurns = createInMemoryAgentTurnStore();
     const deps = buildDeps({ agentTurns });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  hydrateStreamingReplyFromTurn,
   nextStreamingReplyState,
   openPendingReply,
   typingAgentNames,
@@ -243,5 +244,23 @@ describe("typingAgentNames", () => {
 
   test("no agent participant on the workbench means nobody is named", () => {
     expect(typingAgentNames({ text: "" }, [HUMAN])).toEqual([]);
+  });
+});
+
+describe("hydrateStreamingReplyFromTurn (CL-6380: reattach snapshot)", () => {
+  test("no running turn resumes to nothing", () => {
+    expect(hydrateStreamingReplyFromTurn(null)).toBeNull();
+  });
+
+  test("a running turn with committed text opens the reply carrying it", () => {
+    expect(
+      hydrateStreamingReplyFromTurn({ textSnapshot: "streamed so far" }),
+    ).toEqual({ text: "streamed so far" });
+  });
+
+  test("a running turn with no text yet opens the same empty pending pulse as openPendingReply", () => {
+    expect(hydrateStreamingReplyFromTurn({ textSnapshot: null })).toEqual({
+      text: "",
+    });
   });
 });

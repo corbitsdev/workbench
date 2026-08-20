@@ -1236,6 +1236,81 @@ export function patchBenchChatSettings(
   );
 }
 
+// The turn projection's read surface (CL-6329/CL-6380): what a client
+// reattaching to a workbench (page navigation, tab refocus, a dropped SSE
+// connection) uses to find whether a turn is still running and, if so,
+// replay whatever text it has already committed before the live stream's
+// tail resumes — see `GET /workbenches/:id/turns[/:turnId]` in
+// `packages/chat/src/routes.ts`.
+const AgentTurnWire = type({
+  id: "string",
+  workbenchId: "string",
+  agentAddress: "string",
+  childRunId: "string",
+  status: "'running' | 'completed' | 'failed'",
+  "replyMessageId?": "string | null",
+});
+export type AgentTurnSummary = typeof AgentTurnWire.infer;
+
+const AgentTurnsListWire = type({ items: AgentTurnWire.array() });
+
+function turnsPath(tenantId: string, workbenchId: string): string {
+  return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/turns`;
+}
+
+export function listWorkbenchTurns(
+  tenantId: string,
+  workbenchId: string,
+): Promise<readonly AgentTurnSummary[]> {
+  return request(turnsPath(tenantId, workbenchId), AgentTurnsListWire).then(
+    (body) => body.items,
+  );
+}
+
+const AgentTurnDetailWire = AgentTurnWire.and({
+  "textSnapshot?": "string | null",
+});
+export type AgentTurnDetail = typeof AgentTurnDetailWire.infer;
+
+export function getWorkbenchTurn(
+  tenantId: string,
+  workbenchId: string,
+  turnId: string,
+): Promise<AgentTurnDetail> {
+  return request(
+    `${turnsPath(tenantId, workbenchId)}/${turnId}`,
+    AgentTurnDetailWire,
+  );
+}
+
+/**
+ * The newest still-`running` turn for `agentAddress`, or `null` if none —
+ * what a remounting workbench asks on mount to know whether to hydrate its
+ * streaming indicator immediately rather than wait for the next live event.
+ * A 404 (no turn store injected on this deployment) reads the same as "no
+ * running turn": the feature is simply unavailable, never an error the
+ * caller needs to handle.
+ */
+export async function fetchRunningTurn(
+  tenantId: string,
+  workbenchId: string,
+  agentAddress: string,
+): Promise<AgentTurnDetail | null> {
+  let turns: readonly AgentTurnSummary[];
+  try {
+    turns = await listWorkbenchTurns(tenantId, workbenchId);
+  } catch (cause) {
+    if (cause instanceof ChatApiError && cause.status === 404) return null;
+    throw cause;
+  }
+  const running = turns.find(
+    (turn) => turn.status === "running" && turn.agentAddress === agentAddress,
+  );
+  if (running === undefined) return null;
+  const detail = await getWorkbenchTurn(tenantId, workbenchId, running.id);
+  return { ...detail, textSnapshot: detail.textSnapshot ?? null };
+}
+
 /**
  * A readable name for a run, since the runs listing carries no name field:
  * the asset id's final path segment with any extension stripped, e.g.

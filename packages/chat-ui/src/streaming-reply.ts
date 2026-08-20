@@ -133,6 +133,23 @@ export function openPendingReply(
   return current ?? { text: "" };
 }
 
+/**
+ * The catch-up snapshot a client reattaching mid-turn (a fresh mount after
+ * navigating away and back, CL-6380) hydrates its streaming reply with,
+ * before the live SSE tail resumes: a running turn with committed text
+ * opens the reply already carrying it; a running turn with none yet (still
+ * in its first inference call) opens the same empty pending state
+ * `openPendingReply` would; no running turn at all means there's nothing to
+ * resume. Never called once a live event has already produced state — see
+ * `resumeFromTurn`'s own guard below.
+ */
+export function hydrateStreamingReplyFromTurn(
+  runningTurn: { readonly textSnapshot?: string | null } | null,
+): StreamingReplyState {
+  if (runningTurn === null) return null;
+  return { text: runningTurn.textSnapshot ?? "" };
+}
+
 /** How long an empty pending reply may sit with no tokens before the
  * indicator clears itself — the backstop for a turn whose stream events
  * never arrive (agent down, SSE dropped mid-reconnect). */
@@ -157,6 +174,10 @@ export function useStreamingReply(
   readonly replyTimedOut: boolean;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
   readonly noteAwaitingReply: () => void;
+  /** See `resumeFromTurn`'s own doc comment below. */
+  readonly resumeFromTurn: (
+    runningTurn: { readonly textSnapshot?: string | null } | null,
+  ) => void;
 } {
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
@@ -244,11 +265,32 @@ export function useStreamingReply(
     );
   }
 
+  /**
+   * Applies a fetched turn-state snapshot (see `api.ts`'s
+   * `fetchRunningTurn`) on a fresh mount, before any live event has
+   * arrived. Guarded to only ever fill an empty (`null`) state — a stream
+   * event that already opened or grew the reply always wins, since it is
+   * strictly newer than a snapshot fetched moments earlier over a separate
+   * request. A `null` turn (nothing running) is a no-op, not a reset: it
+   * must never clear a reply a fast SSE `reactor.start` already opened
+   * while the snapshot fetch was in flight.
+   */
+  function resumeFromTurn(
+    runningTurn: { readonly textSnapshot?: string | null } | null,
+  ) {
+    if (runningTurn === null) return;
+    setReplyTimedOut(false);
+    setStreamingReply(
+      (current) => current ?? hydrateStreamingReplyFromTurn(runningTurn),
+    );
+  }
+
   return {
     streamingReply,
     replyTimedOut,
     handleStreamEvent,
     noteAwaitingReply,
+    resumeFromTurn,
   };
 }
 
