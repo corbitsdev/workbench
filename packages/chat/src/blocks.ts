@@ -115,6 +115,35 @@ export const QuestionBlockData = type({
 }).onDeepUndeclaredKey("delete");
 export type QuestionBlockData = typeof QuestionBlockData.infer;
 
+// A template room's inline GitHub connect card (CL-6345). Like
+// `ApproveBlockData`, this carries only the agent/server-authored
+// framing that decided the card exists at all — which connector the
+// template still needs, and (once connected) the display-only org
+// login. It never carries the live repo list, the person's selection,
+// or a connected/disconnected verdict beyond what the room's own
+// settings say: an agent authoring this block could otherwise spoof
+// "already connected" or plant a fake repo list next to live buttons,
+// exactly the confused-deputy failure mode this file's other blocks
+// guard against. The card's actual live state — repos, selection, and
+// the connected verdict itself — comes from a host-supplied actions
+// port at render time, resolved against the room's real connection and
+// settings, never from this data.
+const ConnectGithubDisconnectedData = type({
+  requiredForTemplate: "string > 0",
+  state: "'disconnected'",
+}).onDeepUndeclaredKey("delete");
+
+const ConnectGithubConnectedData = type({
+  requiredForTemplate: "string > 0",
+  state: "'connected'",
+  orgName: "string",
+}).onDeepUndeclaredKey("delete");
+
+export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(
+  ConnectGithubConnectedData,
+);
+export type ConnectGithubBlockData = typeof ConnectGithubBlockData.infer;
+
 export type Block =
   | { readonly type: "approve"; readonly data: ApproveBlockData }
   | { readonly type: "steps"; readonly data: StepsBlockData }
@@ -122,7 +151,8 @@ export type Block =
   | { readonly type: "poll"; readonly data: PollBlockData }
   | { readonly type: "form"; readonly data: FormBlockData }
   | { readonly type: "stream"; readonly data: StreamBlockData }
-  | { readonly type: "question"; readonly data: QuestionBlockData };
+  | { readonly type: "question"; readonly data: QuestionBlockData }
+  | { readonly type: "connect-github"; readonly data: ConnectGithubBlockData };
 
 export type BlockParseResult =
   | { readonly ok: true; readonly block: Block }
@@ -184,6 +214,13 @@ export function parseBlock(envelope: BlockPart["block"]): BlockParseResult {
         return { ok: false, type: envelope.type, summary: data.summary };
       }
       return { ok: true, block: { type: "question", data } };
+    }
+    case "connect-github": {
+      const data = ConnectGithubBlockData(envelope.data);
+      if (data instanceof type.errors) {
+        return { ok: false, type: envelope.type, summary: data.summary };
+      }
+      return { ok: true, block: { type: "connect-github", data } };
     }
     default:
       return {
