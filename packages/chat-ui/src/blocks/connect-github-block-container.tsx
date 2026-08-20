@@ -49,7 +49,11 @@ export function ConnectGithubBlockContainer({
       <ConnectGithubBlockView
         kind="disconnected"
         onConnect={() => actions?.requestConnect()}
-        onUseAccessToken={() => actions?.requestConnect()}
+        onSubmitAccessToken={(token) =>
+          actions !== undefined
+            ? actions.submitAccessToken(token)
+            : Promise.resolve({ ok: false, message: "Not available." })
+        }
       />
     );
   }

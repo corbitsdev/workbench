@@ -69,6 +69,7 @@ import {
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import type { ConnectGithubBlockData } from "./blocks";
 import {
   postCannedGreeting,
   joinHumanParticipant,
@@ -328,6 +329,18 @@ const CreateWorkbenchBody = type({
    * room's actual job. Omitted mints exactly like an untemplated chat.
    */
   "templatePromise?": "string",
+  /**
+   * The template's own display name, present exactly when this chat's
+   * template needs a GitHub connection before it can run
+   * (`WorkbenchTemplateManifest.requiredConnections` naming `"github"` —
+   * see `apps/web/src/instant-agent-create.ts`). Posts one
+   * `connect-github` block (`./blocks.ts`) right after the canned
+   * greeting, in `state: "disconnected"` — this package owns the block
+   * vocabulary generically (the same way `chat-orchestrator.ts` posts an
+   * `approve` block), but has no notion of *why* a template needs GitHub,
+   * so the caller supplies the one line the card is allowed to show.
+   */
+  "connectGithubRequiredFor?": "string",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -1244,6 +1257,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           invitable.find((definition) => definition.id === definitionId)
             ?.description ?? joined.handle;
         const templatePromise = body.templatePromise;
+        const connectGithubRequiredFor = body.connectGithubRequiredFor;
         runPostMintDelivery(async () => {
           const senderName =
             deps.resolvePrincipalName !== undefined
@@ -1265,6 +1279,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               ...(templatePromise !== undefined ? { templatePromise } : {}),
             },
           );
+          if (connectGithubRequiredFor !== undefined) {
+            const data: ConnectGithubBlockData = {
+              requiredForTemplate: connectGithubRequiredFor,
+              state: "disconnected",
+            };
+            await postRoomMessage(
+              { roomMessages: deps.roomMessages, publish },
+              {
+                tenantId: tenant.id,
+                workbenchId,
+                sender: { name: null, address: agentAddress },
+                runId: localPartOf(agentAddress),
+                parts: [
+                  { kind: "block", block: { type: "connect-github", data } },
+                ],
+              },
+            );
+          }
           await deps.platform
             .ensureAwake(agentAddress)
             .catch((err: unknown) => {

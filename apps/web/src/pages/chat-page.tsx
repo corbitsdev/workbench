@@ -13,6 +13,7 @@ import { useCallback, useMemo } from "react";
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
+import { createChatConnectGithubActions } from "../connect-github-actions";
 import { useBench } from "../bench-context";
 import { useSignOut } from "../navigation";
 import {
@@ -84,6 +85,13 @@ export function ChatPage({
       tenantId === null || workbenchId === null
         ? undefined
         : createChatBlockResponseActions(tenantId, workbenchId),
+    [tenantId, workbenchId],
+  );
+  const connectGithubActions = useMemo(
+    () =>
+      tenantId === null || workbenchId === null
+        ? undefined
+        : createChatConnectGithubActions(tenantId, workbenchId),
     [tenantId, workbenchId],
   );
 
@@ -217,6 +225,7 @@ export function ChatPage({
       onFixConnection={handleFixConnection}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
+      {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
       listMembers={listMembers}
       // The header's Routines affordance and `/run`: the panel's default
       // list view, beside this conversation — never a `/routines` hop

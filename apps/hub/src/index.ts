@@ -14,10 +14,13 @@ import {
   createSidecarAllocationStore,
   createWorkflowRunDispatchStore,
   listVisibleOfferings,
+  resolveCredentialByName,
 } from "@intx/db";
 import {
+  grant as grantTable,
   model,
   modelPricing,
+  role as roleTable,
   tenant as tenantTable,
   workflowDefinition,
 } from "@intx/db/schema";
@@ -29,6 +32,7 @@ import {
 } from "@intx/crypto";
 import { authorize, timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
+import { credentialAad } from "@intx/types";
 import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
@@ -136,6 +140,7 @@ import {
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
   createWebhookTriggerRoutes,
+  generateWebhookSecret,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
@@ -145,6 +150,7 @@ import {
   workflowCatalogEntry,
   workflowDisplayName,
 } from "@corbits/workflow-catalog";
+import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -1674,6 +1680,119 @@ export async function createHub(config: HubConfig) {
       providerHealth: providerHealthStore,
       listConnectedProviders: (tenantId) =>
         listConnectedProviders(db, tenantId),
+    }),
+  );
+  // GitHub connect card (CL-6344): the code-review template's inline
+  // room card reads its live state and starts reviews through here.
+  // Connecting the PAT itself stays on `connections` above (`github` is
+  // already registered in `CONNECTOR_REGISTRY`) — this route only owns
+  // what needs the decrypted secret, the live repo list, and a real
+  // grant/webhook-trigger/settings write.
+  app.route(
+    `${TENANT_PREFIX}/workbenches`,
+    createConnectGithubRoutes({
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      resolveGithubConfig: async (tenantId) => {
+        const row = await resolveCredentialByName(db, tenantId, "GitHub");
+        if (row === null) return undefined;
+        const apiKey = await credentialCipher.decrypt(
+          row.secret,
+          credentialAad(row.id, "secret"),
+        );
+        return { apiKey };
+      },
+      resolveCodeReviewDefinitionId: async (tenantId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.tenantId, tenantId),
+            eq(workflowDefinition.name, "code-review"),
+            eq(workflowDefinition.status, "deployed"),
+          ),
+          columns: { id: true },
+        });
+        return row?.id;
+      },
+      mintRepoGrant: async (tenantId, repo) => {
+        const memberRole = await db.query.role.findFirst({
+          where: and(
+            eq(roleTable.tenantId, tenantId),
+            eq(roleTable.name, "member"),
+          ),
+          columns: { id: true },
+        });
+        if (memberRole === undefined) {
+          throw new Error(
+            `tenant ${tenantId} has no system "member" role to scope a repo grant to`,
+          );
+        }
+        const now = new Date();
+        await db.insert(grantTable).values({
+          id: generateId("grant"),
+          tenantId,
+          roleId: memberRole.id,
+          resource: `repo:${repo.name}`,
+          action: "read",
+          effect: "allow",
+          origin: "system",
+          createdAt: now,
+          updatedAt: now,
+        });
+      },
+      createWebhookTrigger: async (
+        tenantId,
+        principalId,
+        codeReviewDefinitionId,
+        repo,
+      ) => {
+        const row = await webhookTriggerStore.create({
+          id: generateId("workflowRun"),
+          tenantId,
+          name: `${repo.name} pull-request-opened`,
+          workflowDefinitionId: codeReviewDefinitionId,
+          inputTemplate: `Review the pull request at {{pull_request.html_url}}`,
+          secret: generateWebhookSecret(),
+          createdBy: principalId,
+        });
+        return { id: row.id };
+      },
+      getTemplateSettings: async (tenantId, workbenchId) => {
+        const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
+        const settings = row?.settings ?? {};
+        const pendingConnections = settings["template/pendingConnections"];
+        const selectedRepos = settings["template/selectedRepos"];
+        return {
+          pendingConnections: Array.isArray(pendingConnections)
+            ? (pendingConnections as string[])
+            : [],
+          selectedRepos: Array.isArray(selectedRepos)
+            ? (selectedRepos as string[])
+            : [],
+        };
+      },
+      persistSelectedRepos: async (
+        tenantId,
+        workbenchId,
+        principalId,
+        patch,
+      ) => {
+        const existing = await chatStore.getWorkbenchSettings(
+          tenantId,
+          workbenchId,
+        );
+        const row = await chatStore.updateWorkbenchSettings({
+          tenantId,
+          workbenchId,
+          settings: { ...(existing?.settings ?? {}), ...patch },
+          updatedBy: principalId,
+        });
+        workbenchSubscribers.publish(workbenchId, {
+          type: "chat.settings",
+          data: { updatedBy: principalId, settings: row.settings },
+        });
+      },
     }),
   );
   // MCP servers: the tenant-scoped connect/list/disconnect surface

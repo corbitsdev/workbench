@@ -51,6 +51,22 @@ export type ConnectGithubActions = {
    * holds open — never a return value the card would have to poll.
    */
   readonly requestConnect: () => void;
+  /**
+   * Submits a pasted personal access token — the actual PAT-first
+   * connect path (CL-6345/CL-6344's follow-up slice): the host tests
+   * and stores it through `@workbench/connections`' generic
+   * `github/complete` route, then clears this room's own
+   * `template/pendingConnections` entry for `"github"` so the same
+   * `subscribeConnectState` channel `requestConnect`'s own doc
+   * describes reflects the new connected state. Resolves `{ ok: false,
+   * message }` on a rejected token rather than throwing, so the card's
+   * inline field can show the failure without a modal.
+   */
+  readonly submitAccessToken: (
+    token: string,
+  ) => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly message: string }
+  >;
   /** Mints a grant and a live webhook trigger per repo id, then
    * records the selection — `@corbits/workflow-catalog`'s
    * `startReviewingRepos`, called through the host's own binding. */

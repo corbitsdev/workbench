@@ -16,7 +16,8 @@
 // layout around it (name left, open-PR count right) is workbench-specific
 // composition and stays local.
 
-import { Button, Checkbox } from "@corbits/react-ui";
+import { useState } from "react";
+import { Button, Checkbox, Input } from "@corbits/react-ui";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
@@ -31,7 +32,17 @@ export type ConnectGithubCardProps =
   | {
       readonly kind: "disconnected";
       readonly onConnect: () => void;
-      readonly onUseAccessToken: () => void;
+      /** Submits a pasted personal access token — the only connect path
+       * this repo builds today (CL-6345's PAT-first card; a GitHub
+       * App/OAuth `onConnect` path is CL-6343, out of scope). Resolves
+       * `{ ok: false, message }` on a rejected token rather than
+       * throwing, so the inline field can show the failure without a
+       * modal. */
+      readonly onSubmitAccessToken: (
+        token: string,
+      ) => Promise<
+        { readonly ok: true } | { readonly ok: false; readonly message: string }
+      >;
     }
   | {
       readonly kind: "connected";
@@ -53,22 +64,104 @@ function repoMetaLabel(openPullRequestCount: number): string {
 
 function DisconnectedBody({
   onConnect,
-  onUseAccessToken,
+  onSubmitAccessToken,
 }: {
   readonly onConnect: () => void;
-  readonly onUseAccessToken: () => void;
+  readonly onSubmitAccessToken: (
+    token: string,
+  ) => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly message: string }
+  >;
 }) {
+  const [fieldOpen, setFieldOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  function openField() {
+    onConnect();
+    setFieldOpen(true);
+  }
+
+  async function submit() {
+    if (token.trim() === "" || submitting) return;
+    setSubmitting(true);
+    setError(undefined);
+    const result = await onSubmitAccessToken(token.trim());
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setToken("");
+    setFieldOpen(false);
+  }
+
+  if (fieldOpen) {
+    return (
+      <>
+        <p className="chat-block-text">
+          {CHAT_STRINGS.blockConnectGithubIntro}
+        </p>
+        <label
+          className="chat-block-text chat-block-connect-token-label"
+          htmlFor="connect-github-token"
+        >
+          {CHAT_STRINGS.blockConnectGithubTokenFieldLabel}
+        </label>
+        <Input
+          id="connect-github-token"
+          type="password"
+          value={token}
+          placeholder={CHAT_STRINGS.blockConnectGithubTokenFieldPlaceholder}
+          onChange={(event) => {
+            setToken(event.target.value);
+          }}
+          disabled={submitting}
+        />
+        {error !== undefined ? (
+          <p className="chat-block-text chat-block-connect-token-error">
+            {error}
+          </p>
+        ) : null}
+        <div className="chat-block-actions">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void submit()}
+            disabled={submitting || token.trim() === ""}
+          >
+            {submitting
+              ? CHAT_STRINGS.blockConnectGithubTokenSubmitting
+              : CHAT_STRINGS.blockConnectGithubTokenSubmit}
+          </Button>
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => {
+              setFieldOpen(false);
+              setToken("");
+              setError(undefined);
+            }}
+          >
+            {CHAT_STRINGS.blockConnectGithubTokenCancel}
+          </Button>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <p className="chat-block-text">{CHAT_STRINGS.blockConnectGithubIntro}</p>
       <div className="chat-block-actions">
-        <Button type="button" variant="primary" onClick={onConnect}>
+        <Button type="button" variant="primary" onClick={openField}>
           {CHAT_STRINGS.blockConnectGithubAction}
         </Button>
       </div>
       <p className="chat-block-text chat-block-connect-helper">
         {CHAT_STRINGS.blockConnectGithubTokenPrompt}{" "}
-        <Button type="button" variant="link" onClick={onUseAccessToken}>
+        <Button type="button" variant="link" onClick={openField}>
           {CHAT_STRINGS.blockConnectGithubTokenLink}
         </Button>
         {CHAT_STRINGS.blockConnectGithubTokenTrust}
@@ -166,7 +259,7 @@ export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
       <BlockCard title={CHAT_STRINGS.blockConnectGithubHeadline}>
         <DisconnectedBody
           onConnect={props.onConnect}
-          onUseAccessToken={props.onUseAccessToken}
+          onSubmitAccessToken={props.onSubmitAccessToken}
         />
       </BlockCard>
     );
