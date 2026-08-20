@@ -81,6 +81,35 @@ describe("testGitHubCredential", () => {
     );
     expect(result.ok).toBe(true);
   });
+
+  test("targets api.github.com by default (CL-6403)", async () => {
+    const requested: string[] = [];
+    const fetchImpl: FetchLike = async (input) => {
+      requested.push(String(input));
+      return new Response(JSON.stringify({ login: "octocat" }), {
+        status: 200,
+      });
+    };
+    await testGitHubCredential("test-key", fetchImpl);
+    expect(requested).toEqual(["https://api.github.com/user"]);
+  });
+
+  test("targets an override baseUrl when the caller sets one (CL-6403)", async () => {
+    const requested: string[] = [];
+    const fetchImpl: FetchLike = async (input) => {
+      requested.push(String(input));
+      return new Response(JSON.stringify({ login: "octocat" }), {
+        status: 200,
+      });
+    };
+    const result = await testGitHubCredential(
+      "test-key",
+      fetchImpl,
+      "http://fake-github.test",
+    );
+    expect(requested).toEqual(["http://fake-github.test/user"]);
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("testLinearCredential", () => {

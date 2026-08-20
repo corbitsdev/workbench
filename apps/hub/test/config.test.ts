@@ -229,6 +229,26 @@ describe("readHubConfig", () => {
     expect(config.huggingfaceOAuthClientId).toBe("hf-client-1");
   });
 
+  test("githubApiBaseUrl is absent by default", () => {
+    expect(readHubConfig(validEnv).githubApiBaseUrl).toBeUndefined();
+  });
+
+  test("GITHUB_API_BASE_URL overrides the github connector's API origin", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      GITHUB_API_BASE_URL: "http://fake-github.test",
+    });
+    expect(config.githubApiBaseUrl).toBe("http://fake-github.test");
+  });
+
+  test("GITHUB_API_BASE_URL rejects a non-http(s) value", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      GITHUB_API_BASE_URL: "not-a-url",
+    });
+    expect(message).toContain("GITHUB_API_BASE_URL");
+  });
+
   test("CREDENTIAL_ENCRYPTION_KEY absent by default", () => {
     expect(readHubConfig(validEnv).credentialEncryptionKeyHex).toBeUndefined();
   });
