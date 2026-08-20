@@ -32,7 +32,9 @@ function DetailPlaceholder({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar title={entity} subtitle={slug} />
+      <StageTopBar
+        crumbs={[{ label: rosterLabel, href: rosterPath }, { label: slug }]}
+      />
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={icon}

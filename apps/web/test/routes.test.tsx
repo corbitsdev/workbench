@@ -344,16 +344,15 @@ describe("routes render", () => {
   }
 
   test.each([
-    ["/agents/triage-bot", "Agent", "Agents"],
-    ["/skills/pr-review", "Skill", "Skills"],
-    ["/plugins/linear", "Plugin", "Plugins"],
-    ["/routines/weekly-digest", "Routine", "Routines"],
+    ["/agents/triage-bot", "triage-bot", "Agents"],
+    ["/skills/pr-review", "pr-review", "Skills"],
+    ["/plugins/linear", "linear", "Plugins"],
+    ["/routines/weekly-digest", "weekly-digest", "Routines"],
   ])(
-    "%s renders the %s detail placeholder with its roster row lit",
-    async (path, title, footerLabel) => {
+    "%s titles the detail placeholder %s with its roster row lit",
+    async (path, slug, footerLabel) => {
       const markup = await renderApp(path);
-      expect(stagePageTitle(markup)).toBe(title);
-      expect(markup).toContain(path.split("/")[2] ?? "");
+      expect(stagePageTitle(markup)).toBe(slug);
       expect(markup).toContain(`Back to ${footerLabel}`);
       expect(activeFooterLabel(markup)).toBe(footerLabel);
     },
