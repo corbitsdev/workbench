@@ -184,17 +184,19 @@ describeIfDb("folded-run backfill", () => {
       }
 
       await sql.unsafe(
-        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
+        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "current_run_id", "folded_body") VALUES ($1, $2, $3, $4)`,
         [
           TENANT,
+          "run_workbench_host_old",
           "run_workbench_host_old",
           JSON.stringify({ systemPrompt: "host" }),
         ],
       );
       await sql.unsafe(
-        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "folded_body") VALUES ($1, $2, $3)`,
+        `INSERT INTO "chat"."workbench_launch" ("tenant_id", "instance_id", "current_run_id", "folded_body") VALUES ($1, $2, $3, $4)`,
         [
           TENANT,
+          "run_invited_agent_old",
           "run_invited_agent_old",
           JSON.stringify({ systemPrompt: "invited" }),
         ],

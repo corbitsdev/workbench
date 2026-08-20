@@ -42,7 +42,8 @@ import {
   freePort,
   hop,
   provisionSidecar,
-  pushWorkflowJson,
+  pushWorkflowSource,
+  workflowDeployBody,
   startHub,
   startSidecar,
   type HubHandle,
@@ -108,7 +109,7 @@ async function deployWorkflow(args: {
   );
   expectStatus(`mint git token for ${args.assetName}`, minted, 201);
 
-  await pushWorkflowJson({
+  const pushed = await pushWorkflowSource({
     baseUrl: args.hubBaseUrl,
     tenantId: args.tenantId,
     assetName: args.assetName,
@@ -118,19 +119,15 @@ async function deployWorkflow(args: {
 
   const sourceId = `src-recurring-task-e2e-${args.assetName}`;
   assertNeverRealProvider(args.noopBaseUrl, "workflow deploy source baseURL");
-  const body = {
+  const body = workflowDeployBody({
     assetId,
-    sources: [
-      {
-        id: sourceId,
-        provider: "anthropic",
-        baseURL: args.noopBaseUrl,
-        apiKey: "noop",
-        model: "noop",
-      },
-    ],
-    defaultSource: sourceId,
-  };
+    commitSha: pushed.commitSha,
+    sourceId: sourceId,
+    provider: "anthropic",
+    baseURL: args.noopBaseUrl,
+    apiKey: "noop",
+    model: "noop",
+  });
   const deadline = Date.now() + 60_000;
   for (;;) {
     if (args.sidecar.exited()) {

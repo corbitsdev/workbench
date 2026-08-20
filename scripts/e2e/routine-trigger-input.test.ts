@@ -35,7 +35,8 @@ import {
   freePort,
   hop,
   provisionSidecar,
-  pushWorkflowJson,
+  pushWorkflowSource,
+  workflowDeployBody,
   startHub,
   startSidecar,
   type HubHandle,
@@ -251,63 +252,62 @@ describe.skipIf(databaseUrl === undefined)(
       });
 
       const assetName = "heartbeat";
-      const assetId = await hop("workflow asset publication", async () => {
-        const created = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/assets`,
-          { kind: "workflow", name: assetName },
-          cookies,
-        );
-        expectStatus("create workflow asset", created, 201);
-        const id = stringField(created.data, "id", "create workflow asset");
+      const { assetId, commitSha } = await hop(
+        "workflow asset publication",
+        async () => {
+          const created = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenantId}/assets`,
+            { kind: "workflow", name: assetName },
+            cookies,
+          );
+          expectStatus("create workflow asset", created, 201);
+          const id = stringField(created.data, "id", "create workflow asset");
 
-        const minted = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/git-tokens`,
-          {
-            name: "e2e-routine-trigger-input-push",
-            resource: "asset:*",
-            refPattern: "**",
-            actions: ["can_read", "can_push"],
-            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-          },
-          cookies,
-        );
-        expectStatus("mint git token", minted, 201);
+          const minted = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenantId}/git-tokens`,
+            {
+              name: "e2e-routine-trigger-input-push",
+              resource: "asset:*",
+              refPattern: "**",
+              actions: ["can_read", "can_push"],
+              expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+            },
+            cookies,
+          );
+          expectStatus("mint git token", minted, 201);
 
-        const definition = buildHeartbeatWorkflow({
-          triggerAddress: `heartbeat@${slug}.localhost`,
-          inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-          turnTimeoutMs: 30_000,
-        });
-        await pushWorkflowJson({
-          baseUrl: hub.baseUrl,
-          tenantId,
-          assetName,
-          tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeHeartbeatWorkflow(definition),
-        });
-        return id;
-      });
+          const definition = buildHeartbeatWorkflow({
+            triggerAddress: `heartbeat@${slug}.localhost`,
+            inferencePreferences: [{ provider: "anthropic", model: "noop" }],
+            turnTimeoutMs: 30_000,
+          });
+          const pushed = await pushWorkflowSource({
+            baseUrl: hub.baseUrl,
+            tenantId,
+            assetName,
+            tokenSecret: stringField(minted.data, "secret", "mint git token"),
+            workflowJson: serializeHeartbeatWorkflow(definition),
+          });
+          return { assetId: id, commitSha: pushed.commitSha };
+        },
+      );
 
       const definitionId = await hop("workflow deploy", async () => {
         const sourceId = "src-routine-trigger-input-e2e";
         assertNeverRealProvider(noopBaseUrl, "workflow deploy source baseURL");
-        const body = {
+        const body = workflowDeployBody({
           assetId,
-          sources: [
-            {
-              id: sourceId,
-              provider: "anthropic",
-              baseURL: noopBaseUrl,
-              apiKey: "noop",
-              model: "noop",
-            },
-          ],
-          defaultSource: sourceId,
-        };
+          commitSha,
+          sourceId: sourceId,
+          provider: "anthropic",
+          baseURL: noopBaseUrl,
+          apiKey: "noop",
+          model: "noop",
+        });
         const deadline = Date.now() + 60_000;
         for (;;) {
           if (sidecar.exited()) {

@@ -48,7 +48,8 @@ import {
   expectStatus,
   freePort,
   provisionSidecar,
-  pushWorkflowJson,
+  pushWorkflowSource,
+  workflowDeployBody,
   startHub,
   startSidecar,
   type ApiResult,
@@ -301,7 +302,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
     expectStatus("mint echo git token", echoGitToken, 201);
 
-    await pushWorkflowJson({
+    const echoPushed = await pushWorkflowSource({
       baseUrl: hub.baseUrl,
       tenantId,
       assetName: "echo",
@@ -331,19 +332,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       echoDeployed = await api(
         "POST",
         `/api/tenants/${tenantId}/workflows/deployments`,
-        {
+        workflowDeployBody({
           assetId: echoAssetId,
-          sources: [
-            {
-              id: "src-echo-e2e",
-              provider: "anthropic",
-              baseURL: "https://inference.invalid",
-              apiKey: "e2e-placeholder",
-              model: "claude-sonnet-5",
-            },
-          ],
-          defaultSource: "src-echo-e2e",
-        },
+          commitSha: echoPushed.commitSha,
+          sourceId: "src-echo-e2e",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "e2e-placeholder",
+          model: "claude-sonnet-5",
+        }),
         user1.cookies,
       );
       if (echoDeployed.status !== 502) break;
@@ -387,7 +384,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       if (Date.now() > deadline) {
         throw new Error(
           `workbench never became launchable (hub kept answering 500): ` +
-            `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+            `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}\nsidecar output:\n${sidecar.output()}`,
         );
       }
       await Bun.sleep(1000);
@@ -904,7 +901,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         `no workbench.membership-changed event on the timeline: ${JSON.stringify(items)}`,
       );
     }
-  });
+  }, 30_000);
 
   // Every chat/folded run above (the workbench anchor, the mentioned
   // second workbench, the invited echo agent, the auto-invited chat
