@@ -99,8 +99,8 @@ export interface DeliverySpacePort {
  * (CL-6247), a routine created enabled or flipped to enabled posts one
  * of these into its delivery workbench so the people in that workbench
  * learn what just started running, honestly, without digging into the
- * Routines panel first. Omitted: no notice is posted, unchanged from
- * before this port existed.
+ * global Routines page first (CL-6362). Omitted: no notice is posted,
+ * unchanged from before this port existed.
  */
 export interface WorkbenchNoticePort {
   postWorkbenchNotice(input: {
@@ -486,7 +486,7 @@ export async function postRoutineEnabledNotice(
   if (input.workbenchId === null || input.workbenchId === "") return;
   const text =
     `${input.verb} routine "${input.name}" — runs ` +
-    `${routineCadenceLabel(input.trigger)}. Disable it in the Routines panel.`;
+    `${routineCadenceLabel(input.trigger)}. Manage it from Routines.`;
   try {
     await deps.workbenchNotice.postWorkbenchNotice({
       tenantId: input.tenantId,

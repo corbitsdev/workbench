@@ -321,8 +321,6 @@ export const Composer = forwardRef<
     readonly onInviteAgent: () => void;
     /** `/agents` — opens this workbench's settings, Agents section. */
     readonly onOpenAgentsSettings: () => void;
-    /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
-    readonly onOpenRoutines: () => void;
     /** `/routine` — opens the New Routine panel with this workbench
      * pre-bound as its destination. */
     readonly onCreateRoutineInSpace: () => void;
@@ -338,7 +336,6 @@ export const Composer = forwardRef<
     onSend,
     onInviteAgent,
     onOpenAgentsSettings,
-    onOpenRoutines,
     onCreateRoutineInSpace,
     placeholder = CHAT_STRINGS.composerPlaceholder,
   },
@@ -445,9 +442,6 @@ export const Composer = forwardRef<
         return;
       case "agents":
         onOpenAgentsSettings();
-        return;
-      case "run":
-        onOpenRoutines();
         return;
       case "routine":
         onCreateRoutineInSpace();

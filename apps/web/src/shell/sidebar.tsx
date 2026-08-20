@@ -42,6 +42,7 @@ import {
   Plus,
   SlidersHorizontal,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import { useMemo } from "react";
 
@@ -142,10 +143,21 @@ export function Sidebar({
       </SidebarPanelBody>
 
       <SidebarPanelFooter>
-        {/* Footer order: Files, Skills, Agents, Plugins, Insights, then the
-            account row anchors everything else (weekly usage, Settings, Log
-            out) in its pop-up menu — a single footer, never two stacked
-            rows. */}
+        {/* Footer order: Routines, Files, Skills, Agents, Plugins, Insights,
+            then the account row anchors everything else (weekly usage,
+            Settings, Log out) in its pop-up menu — a single footer, never
+            two stacked rows. Routines (CL-6362) is global-only here — no
+            per-workbench routines chrome remains. */}
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/routines", path) ? "true" : undefined}
+          aria-current={matchesRoute("/routines", path) ? "page" : undefined}
+          onClick={() => onNavigate("/routines")}
+        >
+          <Workflow />
+          <span>Routines</span>
+        </button>
         <button
           type="button"
           className="shell-sidebar-footer-row"
