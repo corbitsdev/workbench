@@ -34,7 +34,8 @@ import {
   freePort,
   hop,
   provisionSidecar,
-  pushWorkflowJson,
+  pushWorkflowSource,
+  workflowDeployBody,
   startHub,
   startSidecar,
   type ApiResult,
@@ -171,52 +172,55 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     });
 
     // Hop: workflow asset. The echo workflow definition, built by its
-    // own package, published as a workflow asset whose workflow.json
+    // own package, published as a workflow asset whose source tree
     // arrives over the platform's git smart-HTTP surface — the only
     // surface that writes asset tree content.
     const assetName = "echo";
-    const assetId = await hop("workflow asset publication", async () => {
-      const created = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenantId}/assets`,
-        { kind: "workflow", name: assetName },
-        user.cookies,
-      );
-      expectStatus("create workflow asset", created, 201);
-      const id = stringField(created.data, "id", "create workflow asset");
+    const { assetId, commitSha } = await hop(
+      "workflow asset publication",
+      async () => {
+        const created = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/assets`,
+          { kind: "workflow", name: assetName },
+          user.cookies,
+        );
+        expectStatus("create workflow asset", created, 201);
+        const id = stringField(created.data, "id", "create workflow asset");
 
-      const minted = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenantId}/git-tokens`,
-        {
-          name: "e2e-workflow-push",
-          resource: "asset:*",
-          refPattern: "**",
-          actions: ["can_read", "can_push"],
-          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-        },
-        user.cookies,
-      );
-      expectStatus("mint git token", minted, 201);
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/git-tokens`,
+          {
+            name: "e2e-workflow-push",
+            resource: "asset:*",
+            refPattern: "**",
+            actions: ["can_read", "can_push"],
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          },
+          user.cookies,
+        );
+        expectStatus("mint git token", minted, 201);
 
-      const definition = buildEchoWorkflow({
-        triggerAddress: `echo@${slug}.localhost`,
-        inferencePreferences: [
-          { provider: "anthropic", model: "claude-sonnet-5" },
-        ],
-        turnTimeoutMs: 60_000,
-      });
-      await pushWorkflowJson({
-        baseUrl: hub.baseUrl,
-        tenantId,
-        assetName,
-        tokenSecret: stringField(minted.data, "secret", "mint git token"),
-        workflowJson: serializeEchoWorkflow(definition),
-      });
-      return id;
-    });
+        const definition = buildEchoWorkflow({
+          triggerAddress: `echo@${slug}.localhost`,
+          inferencePreferences: [
+            { provider: "anthropic", model: "claude-sonnet-5" },
+          ],
+          turnTimeoutMs: 60_000,
+        });
+        const pushed = await pushWorkflowSource({
+          baseUrl: hub.baseUrl,
+          tenantId,
+          assetName,
+          tokenSecret: stringField(minted.data, "secret", "mint git token"),
+          workflowJson: serializeEchoWorkflow(definition),
+        });
+        return { assetId: id, commitSha: pushed.commitSha };
+      },
+    );
 
     // Hop: workflow deploy via the native deploy API. Retries while
     // the hub still answers 502 (the sidecar's dial-in may not have
@@ -224,19 +228,15 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     // source is a placeholder — deployment does not call inference.
     const deploymentId = await hop("workflow deploy", async () => {
       const sourceId = "src-echo-e2e";
-      const body = {
+      const body = workflowDeployBody({
         assetId,
-        sources: [
-          {
-            id: sourceId,
-            provider: "anthropic",
-            baseURL: "https://inference.invalid",
-            apiKey: "e2e-placeholder",
-            model: "claude-sonnet-5",
-          },
-        ],
-        defaultSource: sourceId,
-      };
+        commitSha,
+        sourceId: sourceId,
+        provider: "anthropic",
+        baseURL: "https://inference.invalid",
+        apiKey: "e2e-placeholder",
+        model: "claude-sonnet-5",
+      });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;
       for (;;) {

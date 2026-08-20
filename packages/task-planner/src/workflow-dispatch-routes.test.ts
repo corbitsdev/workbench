@@ -52,6 +52,32 @@ const AGENT_WORKFLOW_JSON = {
   },
 };
 
+/**
+ * The frozen inert wire projection the launch path reads a definition's
+ * body out of (`loadFrozenWireProjection` -> `readFoldedBody`). The live
+ * `AGENT_WORKFLOW_JSON` above is the asset's authored shape; this is the
+ * projected one, where the inference chain is flattened to
+ * `modelSources`.
+ */
+const AGENT_WIRE_PROJECTION = {
+  id: "wfd_agent",
+  triggers: [],
+  stepOrder: ["agent"],
+  steps: {
+    agent: {
+      kind: "step",
+      agent: {
+        systemPrompt: "You summarize incidents.",
+        toolPackagePins: [],
+        modelSources: [
+          { provider: "anthropic", model: "declared-default-model" },
+        ],
+      },
+    },
+  },
+  credentialBindings: [],
+};
+
 const DEFINITION_ROW = {
   id: "wfd_agent",
   tenantId: "tnt_1",
@@ -81,6 +107,16 @@ function createFakeDb() {
     query: {
       workflowDefinition: { findFirst: async () => DEFINITION_ROW },
       tenant: { findFirst: async () => TENANT_ROW },
+    },
+    select() {
+      return {
+        from: () => ({
+          where: () => ({
+            limit: () =>
+              Promise.resolve([{ wireProjection: AGENT_WIRE_PROJECTION }]),
+          }),
+        }),
+      };
     },
     insert(table: unknown) {
       return { values: (values: unknown) => insertOn(table, values) };

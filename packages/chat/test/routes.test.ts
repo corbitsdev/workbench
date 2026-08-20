@@ -563,6 +563,38 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     expect(chats).toHaveLength(1);
   });
 
+  test("reuses the chat when the agent's definition was re-projected under a new id over the same asset", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_echo_v1", name: "Echo" },
+          { id: "wfd_echo_v2", name: "Echo" },
+        ],
+        resolveDefinitionAssetId: async (definitionId: string) =>
+          definitionId.startsWith("wfd_echo") ? "ast_echo" : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const first = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo_v1",
+      reuseExisting: true,
+    });
+    expect(first.response.status).toBe(201);
+
+    const second = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo_v2",
+      reuseExisting: true,
+    });
+
+    expect(second.response.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(1);
+  });
+
   test("a new agent chat records its definitionId for future dedup", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),

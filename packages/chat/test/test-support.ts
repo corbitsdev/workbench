@@ -59,6 +59,9 @@ export function fakePlatform(
       workbenchId: string,
       blobId: string,
     ) => Promise<string | Uint8Array>;
+    resolveDefinitionAssetId?: (
+      definitionId: string,
+    ) => Promise<string | undefined>;
     resolveDefinitionIdByAddress?: (
       address: string,
     ) => Promise<string | undefined>;
@@ -137,6 +140,12 @@ export function fakePlatform(
     },
     async listInvitableDefinitions() {
       return opts.invitable ?? [];
+    },
+    async resolveDefinitionAssetId(definitionId: string) {
+      if (opts.resolveDefinitionAssetId !== undefined) {
+        return opts.resolveDefinitionAssetId(definitionId);
+      }
+      return undefined;
     },
     async resolveDefinitionIdByAddress(address) {
       if (opts.resolveDefinitionIdByAddress !== undefined) {

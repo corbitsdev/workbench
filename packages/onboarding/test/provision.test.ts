@@ -22,7 +22,10 @@ const MODEL = {
   apiKey: "sk-test",
 };
 
-const noopPush: WorkflowPusher = async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) });
+const noopPush: WorkflowPusher = async () => ({
+  outcome: "pushed" as const,
+  commitSha: "a".repeat(40),
+});
 const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {

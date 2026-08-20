@@ -932,9 +932,18 @@ describe.skipIf(databaseUrl === undefined)(
             definitionsBefore,
             200,
           );
-          const definitionCountBefore = (
-            definitionsBefore.data as { data: unknown[] }
-          ).data.length;
+          // Agent identity is the definition NAME, not the row id: a
+          // code-sourced deploy re-projects a definition row per frozen
+          // wire projection, so Myra's own planning run adds a row under
+          // her existing "assistant" name every time she runs. A failed
+          // dispatch deploying the agent it was going to create would
+          // show up as a name that was not there before, which is what
+          // this gate is about.
+          const definitionNamesBefore = new Set(
+            (definitionsBefore.data as { data: { name: string }[] }).data.map(
+              (row) => row.name,
+            ),
+          );
 
           const inboxBefore = await api(
             hub.baseUrl,
@@ -982,10 +991,12 @@ describe.skipIf(databaseUrl === undefined)(
             definitionsAfter,
             200,
           );
-          const definitionCountAfter = (
-            definitionsAfter.data as { data: unknown[] }
-          ).data.length;
-          expect(definitionCountAfter).toBe(definitionCountBefore);
+          const agentsAdded = (
+            definitionsAfter.data as { data: { name: string }[] }
+          ).data
+            .map((row) => row.name)
+            .filter((name) => !definitionNamesBefore.has(name));
+          expect(JSON.stringify(agentsAdded)).toBe("[]");
 
           const inboxAfter = await api(
             hub.baseUrl,
