@@ -28,6 +28,7 @@ export const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/pinned": type("boolean"),
   "chat/participants": ParticipantsSetting,
   "chat/contextWindow": type("number | null"),
+  "chat/visibility": type("'bench' | 'members'"),
 };
 
 // The bench-wide chat defaults vocabulary: currently just the default
@@ -206,6 +207,22 @@ export function resolveContextWindow(
     return { value: clampedDefault, source: "inherit" };
   }
   return { value: override, source: "override" };
+}
+
+export type WorkbenchVisibility = "bench" | "members";
+
+/**
+ * A workbench's visibility, read off its settings the same way `kindOf`
+ * reads kind: `"bench"` — every member of the owning bench opens it —
+ * unless the creator has explicitly flipped it to `"members"` (CL-6332),
+ * where only principals the workbench's own child tenant has minted may.
+ * Defaults to `"bench"` for any other or absent value, never fails
+ * closed to `"members"` from a malformed setting.
+ */
+export function visibilityOf(
+  settings: Record<string, unknown>,
+): WorkbenchVisibility {
+  return settings["chat/visibility"] === "members" ? "members" : "bench";
 }
 
 export function participantsOf(

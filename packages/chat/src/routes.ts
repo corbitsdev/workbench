@@ -65,6 +65,7 @@ import {
   SettingsValidationError,
   validateBenchSettingsPatch,
   validateSettingsPatch,
+  visibilityOf,
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
@@ -514,13 +515,59 @@ async function checkGrant(
   return (await requireGrant(resource, action)(c, async () => {})) ?? undefined;
 }
 
+/**
+ * A bench member may open a workbench its own bench owns when either
+ * the workbench is bench-visible (the default — every member of the
+ * owning bench opens it, which reaching this check at all already
+ * proves the caller is) or, for a members-only workbench, the caller's
+ * own auth identity (`refId`) holds an active principal in the
+ * workbench's own child tenant — the native "invited" signal (CL-6332):
+ * a workbench IS a tenant and mints one for whoever it's shared with,
+ * with no separate membership table to fall out of sync with it. A
+ * legacy workbench with no tenancy link at all (predates workbench
+ * tenancy) has no such tenant to check membership against, so it stays
+ * bench-visible regardless of its `chat/visibility` setting.
+ */
+async function benchCallerCanOpenWorkbench(
+  deps: CreateChatRoutesDeps,
+  benchTenantId: string,
+  workbenchId: string,
+  principalRefId: string,
+): Promise<boolean> {
+  const settings = await deps.store.getWorkbenchSettings(
+    benchTenantId,
+    workbenchId,
+  );
+  if (settings === undefined || visibilityOf(settings.settings) === "bench") {
+    return true;
+  }
+  const link = await deps.tenancy.getWorkbenchTenancy(workbenchId);
+  if (link === undefined) return true;
+  const member = await deps.tenancy.getTenantPrincipalByRefId(
+    link.tenantId,
+    principalRefId,
+  );
+  return member !== undefined && member.status === "active";
+}
+
 async function resolveWorkbenchAccess(
   deps: CreateChatRoutesDeps,
   actingTenantId: string,
   workbenchId: string,
   principalId: string,
+  principalRefId: string,
 ): Promise<{ ownerTenantId: string } | undefined> {
   if (await workbenchInTenant(deps.store, actingTenantId, workbenchId)) {
+    if (
+      !(await benchCallerCanOpenWorkbench(
+        deps,
+        actingTenantId,
+        workbenchId,
+        principalRefId,
+      ))
+    ) {
+      return undefined;
+    }
     return { ownerTenantId: actingTenantId };
   }
   if (deps.shares === undefined) return undefined;
@@ -1682,7 +1729,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.get(
     "/workbenches/:id/messages",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -1694,6 +1741,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -1761,7 +1809,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // to the caller, which already has it from the message `Part`.
   app.get(
     "/workbenches/:id/blobs/:blobId",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -1773,6 +1821,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
+          principal.refId,
         )) === undefined
       ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -1793,7 +1842,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/workbenches/:id/messages",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       const raw = await c.req.json().catch(() => undefined);
       // Clean cutover: body is always { parts, threadId?, inReplyToMessageId? }.
@@ -1832,6 +1881,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2088,7 +2138,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/workbenches/:id/messages/:messageId/blocks/:blockId/responses",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.blockResponses === undefined) {
         return c.json(
@@ -2108,6 +2158,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2206,7 +2257,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.get(
     "/workbenches/:id/messages/:messageId/blocks/:blockId/responses",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       if (deps.blockResponses === undefined) {
         return c.json(
@@ -2226,6 +2277,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2252,7 +2304,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/workbenches/:id/messages/:messageId/reactions/toggle",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.reactions === undefined) {
         return c.json(
@@ -2271,6 +2323,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2340,7 +2393,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/workbenches/:id/messages/:messageId/pin",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
         return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
@@ -2356,6 +2409,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2399,7 +2453,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.delete(
     "/workbenches/:id/messages/:messageId/pin",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
         return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
@@ -2415,6 +2469,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -2437,7 +2492,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.get(
     "/workbenches/:id/pins",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       if (deps.pins === undefined) {
         return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
@@ -2452,6 +2507,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3234,7 +3290,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.get(
     "/workbenches/:id/read-state",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -3244,6 +3300,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3265,7 +3322,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.put(
     "/workbenches/:id/read-state",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       const body = PutReadStateBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
@@ -3287,6 +3344,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
+        principal.refId,
       );
       if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3309,7 +3367,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/workbenches/:id/typing",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -3320,6 +3378,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
+          principal.refId,
         )) === undefined
       ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3341,7 +3400,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // connection on this workbench rather than fabricating one.
   app.post(
     "/workbenches/:id/presence",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -3352,6 +3411,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
+          principal.refId,
         )) === undefined
       ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3381,7 +3441,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.get(
     "/workbenches/:id/stream",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
@@ -3392,6 +3452,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
+          principal.refId,
         )) === undefined
       ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
@@ -3409,6 +3470,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               tenant.id,
               workbenchId,
               principal.id,
+              principal.refId,
             ).then((access) => access !== undefined),
           presence: { registry: presence, principalId: principal.id },
         });

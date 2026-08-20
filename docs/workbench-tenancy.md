@@ -210,6 +210,49 @@ so deleting it (cascading through `role`, `principal`, `principal_role`,
 `grant`) is safe once confirmed orphaned; there is no data recovery
 question, only cleanup.
 
+## Room access and visibility
+
+A workbench's timeline (`chat.workbench_messages`, CL-6327) is no longer
+mail addressed to a run, so its routes no longer gate on a `workflow-run`
+grant either (CL-6346): `GET`/`POST .../messages`, the thread-read and
+delivery-thread routes, block responses, reactions, pins, read-state,
+typing, presence, and the SSE stream all check `idResource("room", "id")`
+instead —
+a plain rename in the grant grammar, not a new grammar feature, since
+`vendor/intx/authz`'s pattern matching already treats a resource type as an
+arbitrary `"<type>:<id>"` string; the system `owner`/`admin`/`member`
+grants every tenant (bench or workbench) is seeded with already match it
+via their `resource: "*"` wildcard. Route-level lifecycle actions —
+settings, invite, participant removal, move, shares — are unaffected and
+still gate on `workflow-run`, since those remain about the workbench host's
+own run, not the room.
+
+That coarse per-route grant check answers "can this principal act on
+_some_ room in this tenant at all"; it says nothing about _which_
+workbench. `resolveWorkbenchAccess` (`packages/chat/src/routes.ts`) is
+the finer-grained authz check every message route also runs, and as of
+CL-6346 it folds in the workbench's own **visibility** setting
+(`chat/visibility`, `"bench" | "members"`, defaulting to `"bench"`):
+
+- **`"bench"`** (the default) — every principal already authenticated in
+  the owning bench's tenant may open the workbench; reaching the check at
+  all already proves that.
+- **`"members"`** — only a principal the workbench's own child tenant has
+  minted may open it. Membership is native principals, never a bespoke
+  `workbench_member` table (CL-6332): whoever is invited gets a real
+  principal row in the workbench's own tenant (the creator already does,
+  from `createWorkbenchTenant`'s owner mint), and
+  `WorkbenchTenancyStore.getTenantPrincipalByRefId` resolves whether the
+  caller's own auth identity (`principal.refId`, stable across every
+  tenant it holds a principal in) is one of them.
+
+A legacy workbench with no `workbench_tenancy` link has no child tenant to
+check membership against, so it stays bench-visible regardless of its
+`chat/visibility` setting — the same "no fallback, stay honest" treatment
+`GET .../chat/workbenches`'s `legacy` field gives it elsewhere in this
+document. Invite flow and `chat/participants` trimming onto this same
+membership model are Phase 1.6's own slice (CL-6332), not this change's.
+
 ## What still lives in the parent bench
 
 The workbench host's workflow run, its `workbench_settings` row, and its
