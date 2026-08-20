@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { ownsWorkflowRunRepo } from "./hub-session-lookups";
+import {
+  anchorAddressForPackSource,
+  ownsWorkflowRunRepo,
+} from "./hub-session-lookups";
 
 describe("ownsWorkflowRunRepo", () => {
   const anchor = {
@@ -29,5 +32,42 @@ describe("ownsWorkflowRunRepo", () => {
 
   test("rejects an anchor with no address", () => {
     expect(ownsWorkflowRunRepo({ ...anchor, address: null })).toBe(false);
+  });
+});
+
+describe("anchorAddressForPackSource", () => {
+  const runId = "run_5554796211fb7e08f1748bd9db41f71f";
+  const domain = "workbench.localhost";
+
+  test("resolves a base deployment address to itself", () => {
+    expect(anchorAddressForPackSource(`${runId}@${domain}`)).toBe(
+      `${runId}@${domain}`,
+    );
+  });
+
+  test("peels a per-step address back to its base run's anchor address", () => {
+    // Mirrors deriveStepAddress in
+    // vendor/intx/workflow-deploy/src/orchestrator.ts:837.
+    expect(anchorAddressForPackSource(`${runId}-write@${domain}`)).toBe(
+      `${runId}@${domain}`,
+    );
+  });
+
+  test("peels a step id that itself contains dashes", () => {
+    expect(
+      anchorAddressForPackSource(`${runId}-fetch-and-write@${domain}`),
+    ).toBe(`${runId}@${domain}`);
+  });
+
+  test("returns null for an address with no run_ prefix", () => {
+    expect(anchorAddressForPackSource(`not-a-run@${domain}`)).toBe(null);
+  });
+
+  test("returns null for a malformed address parseRunAddress rejects", () => {
+    expect(anchorAddressForPackSource("no-at-sign")).toBe(null);
+  });
+
+  test("returns null for a run id shorter than the minted hex length", () => {
+    expect(anchorAddressForPackSource(`run_deadbeef@${domain}`)).toBe(null);
   });
 });

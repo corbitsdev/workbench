@@ -23,7 +23,7 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
-import { parseRunAddress, signalName } from "@intx/types";
+import { formatRunAddress, parseRunAddress, signalName } from "@intx/types";
 import { SignalDeliverFrame } from "@intx/types/sidecar";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
@@ -62,6 +62,42 @@ export function ownsWorkflowRunRepo(
     anchor.address !== null &&
     anchor.anchorRunId === anchor.id
   );
+}
+
+const RUN_ID_HEX_LENGTH = 32;
+const RUN_ID_PATTERN = new RegExp(`^run_[0-9a-f]{${RUN_ID_HEX_LENGTH}}`);
+
+/**
+ * Recover the deployment anchor's routing address from a workflow-run pack's
+ * source address. A deployment's one addressable anchor run stores its own
+ * `<runId>@<domain>` address (`isTopLevelRun`); a multi-step deployment's
+ * per-step agents push under `deriveStepAddress`'s `<runId>-<stepId>@<domain>`
+ * instead (`vendor/intx/workflow-deploy/src/orchestrator.ts:837`), which never
+ * matches any `workflow_run.address` row -- only the anchor row carries one.
+ * Peel the step suffix back to the run id so a step's pack resolves to the
+ * SAME anchor its base run owns.
+ *
+ * Run ids are minted `run_` + 32 lowercase hex chars
+ * (`generateId("workflowRun")`, `vendor/intx/hub-common/src/ids.ts`), a fixed
+ * length disjoint from the free-form `stepId` (`[a-zA-Z0-9_-]+`), so the
+ * boundary parses unambiguously: the characters immediately after
+ * `run_<32 hex>` are either the end of the local part (a base address) or a
+ * `-` (a step address). Matching from the left avoids splitting on `-`
+ * generally, since a `stepId` may itself contain dashes.
+ *
+ * Returns null for an address `parseRunAddress` itself rejects or whose local
+ * part is not `run_`-prefixed hex, so a malformed address fails the later
+ * ownership lookup closed rather than silently resolving to a fabricated
+ * anchor.
+ */
+export function anchorAddressForPackSource(
+  agentAddress: string,
+): string | null {
+  const parsed = parseRunAddress(agentAddress);
+  if (parsed === null) return null;
+  const match = RUN_ID_PATTERN.exec(parsed.runId);
+  if (match === null) return null;
+  return formatRunAddress(match[0], parsed.domain);
 }
 
 export type HubSessionLookupsDeps = {
@@ -381,6 +417,9 @@ export function createHubSessionLookups(
         logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address does not own the repository`;
         return { accepted: false, reason: "path_violation" as const };
       }
+      const anchorLookupAddress =
+        anchorAddressForPackSource(source.agentAddress) ??
+        source.agentAddress;
       const [anchor] = await db
         .select({
           id: workflowRun.id,
@@ -388,7 +427,7 @@ export function createHubSessionLookups(
           anchorRunId: workflowRun.anchorRunId,
         })
         .from(workflowRun)
-        .where(eq(workflowRun.address, source.agentAddress))
+        .where(eq(workflowRun.address, anchorLookupAddress))
         .limit(1);
       if (!ownsWorkflowRunRepo(anchor)) {
         logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no deployment anchor it owns`;
