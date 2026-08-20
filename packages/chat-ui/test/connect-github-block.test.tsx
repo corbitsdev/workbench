@@ -1,8 +1,10 @@
-// DOM tests for the GitHub connect card (CL-6342 screen 2). This block is
-// not wired into the registry yet -- there is no server-side `Block`
-// variant for it -- so these tests mount `ConnectGithubBlockView` directly,
-// the same standalone-mount shape `approve-card-state.test.ts` uses for its
-// pure derivation before a block has a live host port. Covers: the
+// DOM tests for the GitHub connect card's pure presentational shape
+// (CL-6342 screen 2). These mount `ConnectGithubBlockView` directly --
+// the same standalone-mount shape `approve-card-state.test.ts` uses --
+// to prove out the view in isolation from any host port; the real
+// registry wiring (a server-side `Block` variant, the live
+// `ConnectGithubActions` round-trip) is covered end to end by
+// `connect-github-flow.test.tsx`. Covers: the
 // disconnected state's copy and its two actions, the connected state's
 // connected line, repo rows, selection counting, "Select all", the
 // permission helper sentence, and that focus/labels hold up for keyboard
