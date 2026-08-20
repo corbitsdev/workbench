@@ -887,7 +887,7 @@
   min-width: 0.95rem;
   height: 0.95rem;
   padding: 0 0.1rem;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1.5px solid var(--background);
   background: var(--chat-agent-accent, var(--primary));
   color: var(--primary-foreground);
@@ -922,10 +922,12 @@
   padding: 0;
 }
 
+/* Mock has no bubble — every message, own or not, is the same flat
+   avatar+row treatment. Own messages carry no distinct fill or radius. */
 .chat-bubble[data-own="true"] {
-  background: color-mix(in srgb, var(--foreground) 7%, transparent);
-  padding: 0.4rem 0.75rem;
-  border-radius: 1.15rem 1.15rem 0.25rem 1.15rem;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
 }
 
 .chat-bubble-head {
@@ -2690,7 +2692,7 @@
   align-items: center;
   gap: 0.3rem;
   border: 1px solid var(--border, transparent);
-  border-radius: 999px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
   padding: 0.1rem 0.5rem;
   font-size: 0.75rem;

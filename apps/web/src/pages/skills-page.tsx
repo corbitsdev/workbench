@@ -33,6 +33,7 @@ import {
 import { Lightning, Plus } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
+import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import {
   createSkill,
@@ -441,7 +442,7 @@ export function SkillsPage({
                 <TableRow
                   key={skill.assetId}
                   className="cursor-pointer"
-                  onClick={() => select(skill.name)}
+                  {...rowActivationProps(() => select(skill.name))}
                 >
                   <TableCell className="font-medium">{skill.name}</TableCell>
                   <TableCell className="text-muted-foreground">
