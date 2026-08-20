@@ -25,6 +25,8 @@ import { hexEncode } from "@intx/types";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 import type { SubprocessSpawner } from "@intx/workflow-host";
+import { defineWorkflow, step, type WorkflowDefinition } from "@intx/workflow";
+import { buildSingleStepAgentDefinition } from "@intx/workflow-deploy";
 import {
   createSidecarDeployRouter,
   deriveDeploymentId,
@@ -51,6 +53,14 @@ type RouterFixture = {
   spawnedBinaries: string[];
   rejectedSources: InferenceSource[];
 };
+
+/**
+ * The closure a stubbed materializer evaluates to, keyed by the deployment id
+ * the router derives. A source-ref deploy has no inline definition on the wire,
+ * so a test that wants a specific definition registers it here rather than
+ * publishing a real package.
+ */
+const closureDefinitions = new Map<string, WorkflowDefinition>();
 
 async function makeRouter(dataDir: string): Promise<RouterFixture> {
   const signingKey = await generateKeyPair();
@@ -85,6 +95,22 @@ async function makeRouter(dataDir: string): Promise<RouterFixture> {
     registerDeployment: () => undefined,
     unregisterDeployment: () => undefined,
     multistepSubstrateEnv: { SIDECAR_DATA_DIR: dataDir },
+    // Stand in for the real fetch + SRI-verify + layout + evaluate pass: a
+    // test cannot publish a package, so the pinned code's evaluation result is
+    // registered by deployment id instead.
+    materializeDeploymentClosure: ({ deploymentId }) => {
+      const definition = closureDefinitions.get(deploymentId);
+      if (definition === undefined) {
+        throw new Error(
+          `test closure materializer: no definition registered for ${deploymentId}`,
+        );
+      }
+      return Promise.resolve({
+        definition,
+        packageDir: path.join(dataDir, "closure-package", deploymentId),
+        deployDir: path.join(dataDir, "closure-deploy", deploymentId),
+      });
+    },
     multistepSubprocessSpawner: recordingSpawner,
     multistepBinaryPath: path.join(dataDir, "workflow-child-sentinel"),
   });
@@ -104,6 +130,46 @@ function makeHarnessConfig(agentAddress: string): HarnessConfig {
     sources: [],
     defaultSource: "source-1",
   };
+}
+
+/**
+ * The source-ref pin every workflow frame now carries. Its `closure` is never
+ * fetched in these tests -- the injected materializer answers from
+ * `closureDefinitions` -- so an empty frozen manifest is the honest fixture.
+ */
+const SOURCE_REF: NonNullable<AgentDeployFrame["workflow"]>["sourceRef"] = {
+  source: { kind: "registry", registry: "npm" },
+  closure: { schemaVersion: "1", topLevel: [], entries: [] },
+};
+
+/**
+ * Register the definition the pinned closure evaluates to for `agentAddress`
+ * and return the live shape the router's projection gate runs against.
+ */
+function stageClosureDefinition(
+  agentAddress: string,
+  stepOrder: string[],
+): void {
+  const steps: Record<string, ReturnType<typeof step>> = {};
+  for (const stepId of stepOrder) {
+    steps[stepId] = step({
+      agent: buildSingleStepAgentDefinition({
+        id: stepId,
+        systemPrompt: "",
+        inferencePreferences: [],
+        toolFactories: [],
+      }),
+      triggers: "unbounded",
+    });
+  }
+  closureDefinitions.set(
+    deriveDeploymentId(agentAddress),
+    defineWorkflow({
+      id: "definition-1",
+      trigger: { type: "mail", to: "definition-1@example.com" },
+      steps,
+    }),
+  );
 }
 
 function makeSource(provider: string): InferenceSource {
@@ -166,15 +232,13 @@ test("an unbuildable inference provider rejects the deploy before any spawn", as
     config: makeHarnessConfig("ins_dep_1@example.com"),
     hubPublicKey: hexEncode(hubKey.publicKey),
     workflow: {
-      definition: {
-        id: "definition-1",
-        triggers: [],
-        stepOrder: ["step-1"],
-        steps: { "step-1": {} },
-      },
       sources: { "step-1": [makeSource("unbuildable")] },
+      approvedWireHash: "d".repeat(64),
+      sourceRef: SOURCE_REF,
     },
   };
+
+  stageClosureDefinition("ins_dep_1@example.com", ["step-1"]);
 
   await expect(router.deploy(frame)).rejects.toThrow(/not registered/);
   expect(rejectedSources).toHaveLength(1);
@@ -182,7 +246,10 @@ test("an unbuildable inference provider rejects the deploy before any spawn", as
   expect(router.activeAddresses()).toEqual([]);
 });
 
-test("a malformed workflow projection is refused at the router edge", async () => {
+// The deploy frame no longer carries a definition, so its arktype `narrow`
+// cannot check that the sources table covers every step. That coverage is now
+// checked against the CLOSURE-derived definition, after the apply.
+test("a closure-derived definition whose step has no sources entry is refused", async () => {
   const dataDir = await makeDataDir();
   const { router, spawnedBinaries } = await makeRouter(dataDir);
   const hubKey = await generateKeyPair();
@@ -193,17 +260,15 @@ test("a malformed workflow projection is refused at the router edge", async () =
     config: makeHarnessConfig("ins_dep_1@example.com"),
     hubPublicKey: hexEncode(hubKey.publicKey),
     workflow: {
-      definition: {
-        id: "definition-1",
-        triggers: [],
-        stepOrder: [],
-        steps: {},
-      },
       sources: {},
+      approvedWireHash: "d".repeat(64),
+      sourceRef: SOURCE_REF,
     },
   };
 
-  await expect(router.deploy(frame)).rejects.toThrow(/stepOrder/);
+  stageClosureDefinition("ins_dep_1@example.com", ["step-1"]);
+
+  await expect(router.deploy(frame)).rejects.toThrow(/sources/);
   expect(spawnedBinaries).toEqual([]);
 });
 
@@ -238,15 +303,13 @@ test("a single-step deploy writes the self-anchored run's grants before spawning
     config: { ...makeHarnessConfig(agentAddress), grants: [grant] },
     hubPublicKey: hexEncode(hubKey.publicKey),
     workflow: {
-      definition: {
-        id: "definition-1",
-        triggers: [],
-        stepOrder: ["step-1"],
-        steps: { "step-1": {} },
-      },
       sources: { "step-1": [makeSource("openai")] },
+      approvedWireHash: "d".repeat(64),
+      sourceRef: SOURCE_REF,
     },
   };
+
+  stageClosureDefinition(agentAddress, ["step-1"]);
 
   await expect(router.deploy(frame)).rejects.toThrow(
     /refuses to launch a real child/,

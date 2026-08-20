@@ -20,6 +20,15 @@ const baseRecord: WorkflowDeploymentRecord = {
   agentAddress: "run_parked-test@example.com",
   definitionId: "def_1",
   sources: {},
+  approvedWireHash: "d".repeat(64),
+  sourceRef: {
+    source: { kind: "registry", registry: "npm" },
+    closure: {
+      schemaVersion: "1",
+      topLevel: [{ name: "@x/wf", version: "1.0.0" }],
+      entries: [],
+    },
+  },
 };
 
 describe("markWorkflowDeploymentRecordParked", () => {
