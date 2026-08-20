@@ -134,6 +134,14 @@ export type CreateOnboardingRoutesDeps = {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
     connectCredential?: typeof testAndPersistCredential;
   };
+  /** The GitHub OAuth App id/secret from github.com/settings/apps (see
+   * .env.example). Absent leaves the one-click GitHub connect path
+   * reporting `not_configured` — the PAT paste form stays available
+   * either way (CL-6386). Read here so this package's own `/oauth`
+   * mount decides the same thing `@workbench/connections`' tenant-
+   * scoped `GET .../oauth-configured` route already reports. */
+  githubAppClientId?: string;
+  githubAppClientSecret?: string;
   /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
   ensureSeededFn?: typeof ensureSeeded;
   /** Test seam for `POST /complete`'s own success path — defaults to the
@@ -655,7 +663,11 @@ export function createOnboardingRoutes(
       log: deps.log,
       credentialCipher,
       registry: oauthRegistry,
-      oauthEnv: { huggingfaceClientId: deps.huggingfaceClientId },
+      oauthEnv: {
+        huggingfaceClientId: deps.huggingfaceClientId,
+        githubAppClientId: deps.githubAppClientId,
+        githubAppClientSecret: deps.githubAppClientSecret,
+      },
       connectCredential,
       recentlyConnected,
       afterConnected,

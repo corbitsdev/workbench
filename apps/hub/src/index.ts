@@ -253,7 +253,10 @@ import {
   createConnectionRoutes,
   createMcpOAuthRoutes,
   createMcpServerRoutes,
+  createOAuthConnectRoutes,
+  createTenantConnectCredential,
   createWorkflowConnectionRoutes,
+  DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
 } from "@workbench/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
@@ -1753,6 +1756,36 @@ export async function createHub(config: HubConfig) {
         listConnectedProviders(db, tenantId),
     }),
   );
+  // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
+  // (`@workbench/connections`) was exported but never mounted here — every
+  // provider whose descriptor sets `oauth` (OpenRouter, Hugging Face, and
+  // the GitHub App path) needs this to complete a one-click connect from
+  // the settings surface above. Follows #115's `mcp-servers/oauth` mount
+  // just below: state-param CSRF (real `state()` + exact-match callback
+  // validation) lives entirely inside the factory; this mount only wires
+  // the tenant already resolved by the platform's tenant middleware
+  // through to `createTenantConnectCredential`.
+  app.route(
+    `${TENANT_PREFIX}/connections/oauth`,
+    createOAuthConnectRoutes({
+      hubUrl: config.baseUrl,
+      log: (line) => log.info`${line}`,
+      credentialCipher,
+      // Same env bag `GET .../connections/oauth-configured` reads above.
+      oauthEnv: {
+        huggingfaceClientId: config.huggingfaceOAuthClientId,
+        githubAppClientId: config.githubAppClientId,
+        githubAppClientSecret: config.githubAppClientSecret,
+      },
+      connectCredential: createTenantConnectCredential({
+        hubUrl: config.baseUrl,
+        log: (line) => log.info`${line}`,
+        providerHealth: providerHealthStore,
+      }),
+      defaultReturnPath: "/settings/connections",
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins"],
+    }),
+  );
   // GitHub connect card (CL-6344): the code-review template's inline
   // room card reads its live state and starts reviews through here.
   // Connecting the PAT itself stays on `connections` above (`github` is
@@ -2990,6 +3023,10 @@ export async function createHub(config: HubConfig) {
     onboardingDeps.seedModel = config.seedModel;
   if (config.huggingfaceOAuthClientId !== undefined)
     onboardingDeps.huggingfaceClientId = config.huggingfaceOAuthClientId;
+  if (config.githubAppClientId !== undefined)
+    onboardingDeps.githubAppClientId = config.githubAppClientId;
+  if (config.githubAppClientSecret !== undefined)
+    onboardingDeps.githubAppClientSecret = config.githubAppClientSecret;
 
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
 

@@ -76,6 +76,10 @@ export {
   type OAuthStoreOutcome,
 } from "./oauth-routes";
 export {
+  createTenantConnectCredential,
+  type CreateTenantConnectCredentialDeps,
+} from "./oauth-tenant-connect";
+export {
   CONNECT_STATE_TTL_MS as OPENROUTER_CONNECT_STATE_TTL_MS,
   exchangeCodeForKey,
   OPENROUTER_AUTH_URL,
