@@ -12,6 +12,11 @@
 // "did not report" and the posted review names it, which is honest about
 // coverage; dropping it silently would let a review read as complete
 // when it was not.
+//
+// A run on a bot's own pull request is skipped outright, before any
+// inference or posting happens — the bot-loop guard the workflow entry
+// needs so a bot pushing a change never sets off a review that something
+// downstream reacts to, which pushes again.
 import type {
   PostedPullRequestReview,
   PullRequestDiff,
@@ -20,6 +25,8 @@ import type {
 } from "@corbits/github-tools";
 
 import { aggregateReview, type ReviewerPass } from "./aggregate";
+import { isBotAuthor } from "./bot-guard";
+import { fingerprintsIn } from "./fingerprint";
 import { renderReviewPrompt } from "./prompt";
 import { CODE_REVIEW_REVIEWERS, type ReviewerDefinition } from "./reviewers";
 
@@ -31,6 +38,8 @@ export interface CodeReviewGitHub {
     headSha: string,
     review: PullRequestReviewDraft,
   ): Promise<PostedPullRequestReview>;
+  /** Bodies of every review comment already posted, for the fingerprint scan. */
+  listPostedComments(ref: PullRequestRef): Promise<readonly string[]>;
 }
 
 /** Runs one reviewer's turn and returns its raw reply. */
@@ -46,12 +55,22 @@ export interface RunPullRequestReviewDeps {
   readonly reviewers?: readonly ReviewerDefinition[];
 }
 
-export interface PullRequestReviewResult {
+export interface PullRequestReviewRun {
+  readonly skipped: false;
   readonly diff: PullRequestDiff;
   readonly passes: readonly ReviewerPass[];
   readonly review: PullRequestReviewDraft;
   readonly posted: PostedPullRequestReview;
 }
+
+/** A run skipped before any inference or posting happened, and why. */
+export interface PullRequestReviewSkipped {
+  readonly skipped: true;
+  readonly reason: string;
+}
+
+export type PullRequestReviewResult =
+  PullRequestReviewRun | PullRequestReviewSkipped;
 
 function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -73,7 +92,8 @@ async function runOne(
 /**
  * Reviews one pull request end to end and posts the result. Throws only
  * when the diff cannot be read or the review cannot be posted — the two
- * failures that mean no review happened at all.
+ * failures that mean no review happened at all. Returns `skipped: true`,
+ * with no inference and no post, when the author reads as a bot.
  */
 export async function runPullRequestReview(
   deps: RunPullRequestReviewDeps,
@@ -84,11 +104,20 @@ export async function runPullRequestReview(
     throw new Error("a pull-request review needs at least one reviewer");
   }
   const diff = await deps.github.fetchDiff(ref);
+  if (isBotAuthor(diff.author)) {
+    return {
+      skipped: true,
+      reason: `"${diff.author}" reads as a bot author; skipping to avoid a review loop`,
+    };
+  }
   const prompt = renderReviewPrompt(diff);
+  const alreadyPosted = fingerprintsIn(
+    await deps.github.listPostedComments(ref),
+  );
   const passes = await Promise.all(
     reviewers.map((reviewer) => runOne(deps, reviewer, prompt)),
   );
-  const review = aggregateReview(passes, diff);
+  const review = aggregateReview(passes, diff, alreadyPosted);
   const posted = await deps.github.postReview(ref, diff.headSha, review);
-  return { diff, passes, review, posted };
+  return { skipped: false, diff, passes, review, posted };
 }

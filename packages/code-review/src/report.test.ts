@@ -46,3 +46,18 @@ test("a wrong severity is rejected rather than coerced", () => {
   );
   expect(parsed.ok).toBe(false);
 });
+
+test("existingCode and suggestedFix parse as a before/after code pair", () => {
+  const parsed = parseReviewerReport(
+    '{"summary":"x","findings":[{"severity":"blocking","file":"a.ts",' +
+      '"line":2,"summary":"off by one","existingCode":"for (let i = 0; ' +
+      'i <= n; i++) {","suggestedFix":"for (let i = 0; i < n; i++) {"}]}',
+  );
+  if (!parsed.ok) throw new Error(parsed.reason);
+  expect(parsed.report.findings[0]?.existingCode).toBe(
+    "for (let i = 0; i <= n; i++) {",
+  );
+  expect(parsed.report.findings[0]?.suggestedFix).toBe(
+    "for (let i = 0; i < n; i++) {",
+  );
+});

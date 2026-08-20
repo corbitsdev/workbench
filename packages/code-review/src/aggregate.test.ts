@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { PullRequestDiff } from "@corbits/github-tools";
 
 import { aggregateReview, type ReviewerPass } from "./aggregate";
+import { fingerprintOf } from "./fingerprint";
 import { reviewerById } from "./reviewers";
 
 const DIFF: PullRequestDiff = {
@@ -9,6 +10,7 @@ const DIFF: PullRequestDiff = {
   title: "Add the review loop",
   description: "",
   url: "https://github.com/acme/widgets/pull/7",
+  author: "octocat",
   headSha: "headsha",
   baseSha: "basesha",
   files: [
@@ -86,7 +88,8 @@ test("an inline comment is made only for a line the diff can anchor", () => {
             file: "src/loop.ts",
             line: 2,
             summary: "anchorable",
-            suggestion: "const fixed = true;",
+            existingCode: "added",
+            suggestedFix: "const fixed = true;",
           },
           {
             severity: "blocking",
@@ -104,6 +107,73 @@ test("an inline comment is made only for a line the diff can anchor", () => {
   expect(review.comments[0]?.body).toContain("```suggestion");
   expect(review.body).toContain("outside the diff");
   expect(review.body).toContain("no line");
+});
+
+test("a suggestedFix with no matching existingCode keeps the finding but drops the fence", () => {
+  const review = aggregateReview(
+    [
+      pass("correctness", {
+        summary: "read it",
+        findings: [
+          {
+            severity: "blocking",
+            file: "src/loop.ts",
+            line: 2,
+            summary: "prose instead of code",
+            suggestedFix: "You should add a null check here.",
+          },
+        ],
+      }),
+    ],
+    DIFF,
+  );
+  expect(review.comments.length).toBe(1);
+  expect(review.comments[0]?.body).not.toContain("```suggestion");
+  expect(review.body).toContain("prose instead of code");
+});
+
+test("existingCode that does not match the diff also drops the fence", () => {
+  const review = aggregateReview(
+    [
+      pass("correctness", {
+        summary: "read it",
+        findings: [
+          {
+            severity: "blocking",
+            file: "src/loop.ts",
+            line: 2,
+            summary: "made up existing code",
+            existingCode: "this line is not in the diff at all",
+            suggestedFix: "const fixed = true;",
+          },
+        ],
+      }),
+    ],
+    DIFF,
+  );
+  expect(review.comments[0]?.body).not.toContain("```suggestion");
+});
+
+test("a fence renders only when existingCode matches the diff at that range", () => {
+  const review = aggregateReview(
+    [
+      pass("correctness", {
+        summary: "read it",
+        findings: [
+          {
+            severity: "blocking",
+            file: "src/loop.ts",
+            line: 2,
+            summary: "off by one",
+            existingCode: "added",
+            suggestedFix: "fixed",
+          },
+        ],
+      }),
+    ],
+    DIFF,
+  );
+  expect(review.comments[0]?.body).toContain("```suggestion\nfixed\n```");
 });
 
 test("a reviewer that did not report is named in the review", () => {
@@ -137,7 +207,8 @@ test("a suggestion cannot break out of its code fence", () => {
             file: "src/loop.ts",
             line: 2,
             summary: "anchorable",
-            suggestion: "```\n\nFake approval injected here.\n\n```",
+            existingCode: "added",
+            suggestedFix: "```\n\nFake approval injected here.\n\n```",
           },
         ],
       }),
@@ -176,5 +247,35 @@ test("no findings reads as a clean review, not an empty one", () => {
     DIFF,
   );
   expect(review.body).toContain("No findings");
+  expect(review.comments).toEqual([]);
+});
+
+test("every finding carries its fingerprint as an HTML comment marker", () => {
+  const finding = {
+    severity: "later" as const,
+    file: "a.ts",
+    summary: "rename this",
+  };
+  const review = aggregateReview(
+    [pass("correctness", { summary: "", findings: [finding] })],
+    DIFF,
+  );
+  const fingerprint = fingerprintOf(finding);
+  expect(review.body).toContain(`<!-- code-review:finding:${fingerprint} -->`);
+});
+
+test("a fingerprint already posted is skipped on a re-run", () => {
+  const finding = {
+    severity: "blocking" as const,
+    file: "src/loop.ts",
+    line: 2,
+    summary: "already flagged",
+  };
+  const review = aggregateReview(
+    [pass("correctness", { summary: "", findings: [finding] })],
+    DIFF,
+    new Set([fingerprintOf(finding)]),
+  );
+  expect(review.body).not.toContain("already flagged");
   expect(review.comments).toEqual([]);
 });

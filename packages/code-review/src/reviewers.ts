@@ -15,13 +15,33 @@ export const REVIEWER_REPORT_CONTRACT =
   "Reply with JSON and nothing else — no prose before or after, no code " +
   'fence. Shape: {"summary": string, "findings": [{"severity": ' +
   '"blocking" | "should-fix" | "later", "file": string, "line": number, ' +
-  '"summary": string, "suggestion": string}]}. `summary` is one or two ' +
-  "sentences on what you looked at and what you concluded. Each finding " +
-  "names the file it is about; include `line` only when you can point at " +
-  "a specific right-hand line in the diff, and `suggestion` only when " +
-  "you can write the replacement for that one line. An empty `findings` " +
-  "list is a real answer when the change is genuinely fine — say so in " +
-  "`summary` rather than inventing something to report.";
+  '"summary": string, "existingCode": string, "suggestedFix": string}]}. ' +
+  "`summary` is one or two sentences on what you looked at and what you " +
+  "concluded. Each finding names the file it is about; include `line` " +
+  "only when you can point at a specific right-hand line in the diff.\n\n" +
+  "Report at most 5 findings — the ones that most matter. If you have " +
+  "more, keep the 5 most important and leave the rest unsaid rather than " +
+  "padding the report.\n\n" +
+  'Triage every finding honestly. `"blocking"` means the change should ' +
+  "not ship as-is: a defect, a broken invariant, a security or data-loss " +
+  'risk, or a signature drift a caller depends on. `"should-fix"` is a ' +
+  'real problem that does not have to block this merge. "later" is a ' +
+  "good idea with no urgency. Do not mark something blocking to make it " +
+  "more likely to get read — an honest severity is worth more than a " +
+  "louder one.\n\n" +
+  "Skip typos, docstring wording, import ordering, and formatting or " +
+  "style nits entirely — do not report them even as `later`. They are " +
+  "noise a person filters out on sight, so leaving them out is the " +
+  "correct answer.\n\n" +
+  "`existingCode` and `suggestedFix` are optional and only make sense " +
+  "together: `existingCode` is the exact lines quoted verbatim from the " +
+  "diff that `suggestedFix` replaces, so it can be checked against the " +
+  "diff before anything is posted. `suggestedFix` is the literal " +
+  "replacement lines, never instructions or prose — if you cannot write " +
+  "the actual replacement code, leave both out and say what is wrong in " +
+  "`summary` instead. An empty `findings` list is a real answer when the " +
+  "change is genuinely fine — say so in `summary` rather than inventing " +
+  "something to report.";
 
 export interface ReviewerDefinition {
   /** Stable id used in aggregation, attribution, and step naming. */

@@ -23,6 +23,7 @@ function diffOf(files: readonly PullRequestFileDiff[]): PullRequestDiff {
     title: "Big change",
     description: "",
     url: "https://github.com/acme/widgets/pull/7",
+    author: "octocat",
     headSha: "headsha",
     baseSha: "basesha",
     files,

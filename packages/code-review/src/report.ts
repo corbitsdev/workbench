@@ -11,7 +11,10 @@ const ReviewerFinding = type({
   file: "string > 0",
   "line?": "number > 0",
   summary: "string > 0",
-  "suggestion?": "string > 0",
+  /** The exact lines from the diff a suggestedFix would replace. */
+  "existingCode?": "string > 0",
+  /** The literal replacement lines — never instructions or prose. */
+  "suggestedFix?": "string > 0",
 });
 
 const ReviewerReport = type({
