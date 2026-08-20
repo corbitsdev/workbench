@@ -30,15 +30,22 @@ export { runPersonaStep } from "./persona-runner.ts";
 export { renderResultsMarkdown } from "./report.ts";
 export {
   agentCreatedInWorkbench,
+  agentDefinitionsHaveToolGrants,
   approvalGated,
   asksQuestions,
+  githubConnectedViaConnectionsLayer,
   judge,
   memoryWritten,
   namesRequiredTools,
   noBuildBeforeAnswers,
   noToolCalls,
+  outwardGitHubActionsRespectGrantBoundary,
+  reviewCommentsAttributable,
   routineCreated,
   routineCreatedOnlyAfterOk,
+  suggestedFixesStructurallyValid,
+  triggerIsWebhookPerPr,
+  wholeRunInspectable,
 } from "./scorers/scorers.ts";
 export {
   agentHasTools,
@@ -62,6 +69,7 @@ export {
   ALL_EVALS,
   aiDailyResearchEval,
   docsOnSdkChangeEval,
+  githubPrReviewFactoryEval,
 } from "./cases/index.ts";
 export type { EvalRunStore } from "./store/store.ts";
 export { createPostgresEvalRunStore } from "./store/pg-store.ts";
