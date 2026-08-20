@@ -9,7 +9,11 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   AGENT_DEFINITION_STEP_ID,
   buildAgentDefinitionWorkflow,
+  readAgentCapabilities,
+  readAgentSystemPrompt,
   serializeAgentDefinitionWorkflow,
+  withAgentModel,
+  withoutAgentModel,
 } from "../src/agent-workflow";
 
 const INPUT = {
@@ -98,4 +102,26 @@ test("serialization round-trips through JSON byte-faithfully", () => {
   const definition = buildAgentDefinitionWorkflow(INPUT);
   const json = serializeAgentDefinitionWorkflow(definition);
   expect(JSON.parse(json)).toEqual(JSON.parse(JSON.stringify(definition)));
+});
+
+test("a pinned model can be un-pinned, leaving the prompt and pins untouched", () => {
+  const pinned = withAgentModel(
+    serializeAgentDefinitionWorkflow(buildAgentDefinitionWorkflow(INPUT)),
+    "anthropic/claude-sonnet",
+  );
+  expect(readAgentCapabilities(pinned).model).toBe("anthropic/claude-sonnet");
+
+  const cleared = withoutAgentModel(pinned);
+  expect(readAgentCapabilities(cleared).model).toBeUndefined();
+  expect(readAgentSystemPrompt(cleared)).toBe(INPUT.systemPrompt);
+  expect(readAgentCapabilities(cleared).toolPackagePins).toEqual(
+    readAgentCapabilities(pinned).toolPackagePins,
+  );
+});
+
+test("un-pinning a model on a definition that never had one is a no-op", () => {
+  const json = serializeAgentDefinitionWorkflow(
+    buildAgentDefinitionWorkflow(INPUT),
+  );
+  expect(readAgentCapabilities(withoutAgentModel(json)).model).toBeUndefined();
 });
