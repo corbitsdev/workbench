@@ -360,6 +360,32 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("whoever delegated it and to the main");
   });
 
+  // CL-6350: every drafted agent's systemPrompt must carry an explicit
+  // output contract and name its own tools, matching the prompt
+  // discipline Myra's own system prompt already follows.
+  test("the drafting brief requires an explicit output contract and named tools in the drafted systemPrompt", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_3c",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+
+    expect(sentPrompt).toContain("explicit output");
+    expect(sentPrompt).toContain("contract");
+    expect(sentPrompt).toContain("Name");
+    expect(sentPrompt).toContain("agent's own tools in the systemPrompt");
+  });
+
   test("the prompt tells the model request_capability is pinned automatically, only when @corbits/capability-tools is offered", async () => {
     let sentPrompt = "";
     const drafting = createMyraAgentDefinitionDrafting(
