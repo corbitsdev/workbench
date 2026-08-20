@@ -458,12 +458,12 @@ one on the old pin leaves the frame contract split down the middle.
 
 Open conversion sites:
 
-| Site                                                                                    | What it needs                                                                                     |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| ~~`packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`~~                    | **Done** — see "Conversion step 2" below.                                                         |
-| `apps/sidecar/src/workflow-host-wiring/index.ts`, `asset-materialization.ts`            | Stop writing `workflow.json` and stop reading `projection.definition`; stage the closure instead. |
-| `apps/sidecar/src/workflow-substrate-factory/index.ts`, `child-runtime.ts`, `config.ts` | Drop `WORKFLOW_DEFINITION_REPO_ID`/`_REF`; in-memory child spawn; `closurePackageDir` plumbing.   |
-| `apps/sidecar/src/workflow-deployment-record.ts`                                        | Drop `referencedDefinitionHashes`; carry the grant-walk snapshot.                                 |
+| Site                                                                                        | What it needs                             |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| ~~`packages/folded-runs/src/launch.ts` (`deployAtHead`), `wake.ts`~~                        | **Done** — see "Conversion step 2" below. |
+| ~~`apps/sidecar/src/workflow-host-wiring/index.ts`, `asset-materialization.ts`~~            | **Done** — see "Conversion step 3" below. |
+| ~~`apps/sidecar/src/workflow-substrate-factory/index.ts`, `child-runtime.ts`, `config.ts`~~ | **Done** — see "Conversion step 3" below. |
+| ~~`apps/sidecar/src/workflow-deployment-record.ts`~~                                        | **Done** — see "Conversion step 3" below. |
 
 Upstream's own diff over the same span is the reference implementation:
 `apps/sidecar/src/workflow-substrate-factory.ts` and
@@ -568,3 +568,73 @@ Nothing caught this before because the in-memory definition was never
 parsed. Either the handle shape changes here (and with it the
 `env.credentials.resolve("mcp:<slug>")` key `@corbits/mcp-tools` uses) or
 upstream widens the handle grammar; it is not fixed in this change.
+
+#### Conversion step 3: the sidecar is on closures
+
+The execution host is converted. A deploy no longer writes a definition
+into the deploy tree and reads it back: it materializes the frame's frozen
+closure, evaluates the pinned code, and runs that. The boot-time restore
+replays the same pin through the same helper, so both paths reach the
+runnable definition by one computation rather than two that can drift.
+
+What moved:
+
+- **Closure staging.** `workflow-host-wiring/closure-staging.ts` owns the
+  durable per-deployment source stores (plain-file and indexed-git,
+  siblings of the reclaimed instance dir so they survive a restart with no
+  re-delivery), the `assetId -> mount` resolution both paths derive from
+  the pin alone, and the apply. It is an injectable router dependency, so
+  a test stands in for fetch + SRI-verify + layout + evaluate without
+  publishing a package.
+- **`CLOSURE_PACKAGE_DIR` exists.** It is threaded on the frozen substrate
+  env, so the run child evaluates the pinned code and re-verifies its own
+  projection against `DEFINITION_HASH` — which is now the hub's
+  `approvedWireHash`, never a sidecar recompute. A frame carrying no
+  approved hash fails closed rather than substituting one.
+- **The probe answers.** `createWorkflowProbeExecutor` is wired at the boot
+  edge against a closure materializer rooted in the sidecar data dir, so
+  `workflow.probe.request` returns a real inert projection, its advisory
+  grant set, and its wire hash instead of `workflow.probe.error`.
+- **Child spawns are in-memory.** `createWorkflowSpawnChild` /
+  `createWorkflowSpawnSuspendableChild` are gone. A rung lifts its inline
+  children to refs and serves grandchildren from that map, so no rung reads
+  a definition off disk at any depth. An onTrigger body's `sources.json` is
+  still staged (a body child is in-process and loses its env across a
+  restart); its definition is not.
+- **The deployment record carries the pin.** `referencedDefinitionHashes`
+  is gone; `approvedWireHash` and `sourceRef` are required, so a record
+  that cannot be restored fails at the scan boundary rather than
+  half-restoring.
+- **`WORKFLOW_DEFINITION_REPO_ID`/`_REF` are gone.** What survives is
+  `WORKFLOW_DEFINITION_ID`: identity for the run-authenticated
+  capabilities route a step tool calls, never a repo to read from.
+
+Four modules are near-verbatim copies of upstream's own sidecar at
+`4ed8baf4` — the probe handler, the closure materializer, the closure
+apply, and the inline source-asset delivery — plus `bin/workflow-probe-child`.
+`VENDORED.md` records them and the two adaptations the fork's module layout
+forced.
+
+##### What is still unproven
+
+`bun run typecheck` is green repo-wide and the sidecar, folded-runs, and
+chat suites pass, but **no run has executed end to end on these rails**.
+The remaining wire, in order:
+
+1. **The MCP credential-handle defect from step 2 still stands.** Any
+   MCP-pinned launch fails closed at render time (`mcp:<slug>` is not a
+   legal `ToolCredentialHandle`). It gates a real chat launch, not the
+   deploy path itself.
+2. **Nothing has published or committed a real per-run source package
+   through the deploy.** Every test injects the closure materializer, so
+   the fetch/SRI/layout/evaluate path itself is exercised only by
+   upstream's own tests at the vendored pin, never against a
+   `renderAgentRuntimeSourceTree` output.
+3. **The probe has never been driven by a hub.** The executor is wired and
+   typechecks; nothing has sent it a `workflow.probe.request` frame.
+4. **The pinned tool-package arm is untouched, deliberately.** Upstream
+   went all-source-tools (`req.agent.toolFactories`); workbench's
+   `agent-runtime` pins tool packages instead, so the sidecar keeps
+   `materializeStepTools`. Whether the source-format deploy still stages a
+   `tool-packages-manifest.json` for those pins is the first thing an
+   end-to-end run will answer.
