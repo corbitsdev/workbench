@@ -102,11 +102,6 @@ import {
   createPreferencesRoutes,
 } from "@corbits/preferences";
 import {
-  applyConfigProfilesMigrations,
-  createConfigProfileRoutes,
-  createDrizzleConfigProfileStore,
-} from "@corbits/config-profiles";
-import {
   applyBenchMigrations,
   createBenchRoutes,
   createPostgresBenchSettingsStore,
@@ -295,7 +290,7 @@ import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
-// `packages/artifact-tools`) are unpublished to npm and stay that way:
+// `packages/skills-tools`) are unpublished to npm and stay that way:
 // they are workbench-specific integration bundles, not general-purpose
 // npm packages, so publishing them to a public registry would be the
 // wrong distribution surface for what they are. `@intx/hub-sessions`
@@ -1322,24 +1317,6 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-    }),
-  );
-  // Config profiles: named, workspace-level pre-built inference
-  // configurations a workbench can attach in one action. Package-owned
-  // table, migrated at hub start like insights and preferences.
-  // `/apply` and `/capture` self-call this same hub's native catalog
-  // routes (see `@corbits/config-profiles`' `routes.ts`), so they need
-  // this hub's own externally-reachable base URL.
-  await applyConfigProfilesMigrations(config.databaseUrl);
-  app.route(
-    `${TENANT_PREFIX}/config-profiles`,
-    createConfigProfileRoutes({
-      store: createDrizzleConfigProfileStore(db),
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      hubBaseUrl: config.baseUrl,
     }),
   );
   // Bench purpose/type: benches are Interchange tenants, so this is a

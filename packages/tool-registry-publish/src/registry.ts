@@ -32,4 +32,5 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../interaction-tools", import.meta.url).pathname,
   new URL("../../skills-tools", import.meta.url).pathname,
   new URL("../../mcp-tools", import.meta.url).pathname,
+  new URL("../../tools-skills", import.meta.url).pathname,
 ];
