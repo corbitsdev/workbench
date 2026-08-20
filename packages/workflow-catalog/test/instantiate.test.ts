@@ -71,7 +71,7 @@ test("instantiating the code-review template skips a reviewer that already exist
   expect(ports.created).not.toContain("architecture-reviewer");
 });
 
-test("instantiating the code-review template names an honest TODO for its unbuilt webhook trigger", async () => {
+test("instantiating the code-review template names an honest pending note for its not-yet-scoped webhook trigger", async () => {
   const ports = fakePorts();
   const result = await instantiateWorkbenchTemplate(
     CODE_REVIEW_TEMPLATE,
@@ -79,7 +79,7 @@ test("instantiating the code-review template names an honest TODO for its unbuil
   );
   expect(result.webhookTriggerTodos).toHaveLength(1);
   expect(result.webhookTriggerTodos[0]).toContain("pull-request-opened");
-  expect(result.webhookTriggerTodos[0]).toContain("TODO(CL-6345)");
+  expect(result.webhookTriggerTodos[0]).toContain("connect-github-setup");
 });
 
 test("instantiating a manifest with a participant outside the reviewer roster throws rather than silently skipping it", () => {

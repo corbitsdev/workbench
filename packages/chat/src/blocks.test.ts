@@ -368,3 +368,59 @@ describe("parseBlock — question", () => {
     ).toBeUndefined();
   });
 });
+
+describe("parseBlock connect-github", () => {
+  test("parses the disconnected framing", () => {
+    const result = parseBlock({
+      type: "connect-github",
+      data: { requiredForTemplate: "github", state: "disconnected" },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "connect-github") throw new Error("wrong type");
+    expect(result.block.data.state).toBe("disconnected");
+  });
+
+  test("parses the connected framing with an orgName", () => {
+    const result = parseBlock({
+      type: "connect-github",
+      data: {
+        requiredForTemplate: "github",
+        state: "connected",
+        orgName: "octocat",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    if (result.block.type !== "connect-github") throw new Error("wrong type");
+    if (result.block.data.state !== "connected") {
+      throw new Error("expected connected state");
+    }
+    expect(result.block.data.orgName).toBe("octocat");
+  });
+
+  test("rejects a connected framing with no orgName", () => {
+    const result = parseBlock({
+      type: "connect-github",
+      data: { requiredForTemplate: "github", state: "connected" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("strips undeclared keys — an agent can't plant a fake repo list", () => {
+    const result = parseBlock({
+      type: "connect-github",
+      data: {
+        requiredForTemplate: "github",
+        state: "connected",
+        orgName: "octocat",
+        repos: [{ id: "1", name: "acme/widgets", openPullRequestCount: 99 }],
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.summary);
+    expect(
+      (result.block.data as Record<string, unknown>)["repos"],
+    ).toBeUndefined();
+  });
+});

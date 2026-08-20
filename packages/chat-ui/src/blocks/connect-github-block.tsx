@@ -3,9 +3,11 @@
 // every other block uses -- there is no settings page or dialog for this.
 // Selection is controlled: like `PollBlockView` never keeps its own tally,
 // this view never owns which repos are picked -- it renders what it's given
-// and reports toggles upward. Wiring these callbacks to the real GitHub
-// connection API is the next slice; this one is pure and props-driven so it
-// can be exercised and reviewed without a server.
+// and reports toggles upward. It stays pure and props-driven so it can be
+// exercised and reviewed without a server; `./connect-github-block-container.tsx`
+// is what wires these callbacks to a live `ConnectGithubActions` port
+// (CL-6345), the same way `PollBlockView`'s own container wires it to
+// `BlockResponseActions`.
 //
 // The repo row's control is `@corbits/react-ui`'s own `Checkbox` (bare
 // mode) rather than a hand-rolled input -- AGENTS.md puts generic controls

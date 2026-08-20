@@ -106,6 +106,11 @@ export type {
   FormResponsePayload,
   QuestionResponsePayload,
 } from "./blocks/block-responses";
+export type {
+  ConnectGithubActions,
+  ConnectGithubQuery,
+} from "./blocks/connect-github-actions";
+export { applyConnectGithubSettingsEvent } from "./blocks/connect-github-stream";
 
 export {
   TextPart,

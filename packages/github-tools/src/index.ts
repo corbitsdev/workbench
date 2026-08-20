@@ -1,5 +1,7 @@
 export { searchGitHubActivity } from "./client";
 export type { GitHubActivityItem, GitHubClientConfig } from "./client";
+export { fetchAuthenticatedLogin, listRepos } from "./repos";
+export type { GitHubRepoSummary } from "./repos";
 export {
   changedLinesOf,
   fetchPullRequestDiff,

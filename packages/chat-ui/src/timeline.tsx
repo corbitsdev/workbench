@@ -51,6 +51,7 @@ import { REACTION_EMOJI } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
+import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import { BlockPartView } from "./blocks/registry";
 import { isClassifiedInferenceFailureText } from "./inference-failure";
 import { Markdown } from "./markdown";
@@ -1064,6 +1065,7 @@ function MessageParts({
   onFixConnection,
   approvalActions,
   blockResponses,
+  connectGithubActions,
   reactionActions,
   pinActions,
   pendingActions,
@@ -1089,6 +1091,10 @@ function MessageParts({
   readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
+  /** The connect-github block's live round-trip — see
+   * `ConnectGithubActions`. Undefined renders the card in its
+   * pre-round-trip disconnected framing. */
+  readonly connectGithubActions?: ConnectGithubActions;
   readonly reactionActions?: ReactionActions;
   readonly pinActions?: PinActions;
   /** This reader's own failed send's inline Retry/Discard — see
@@ -1211,6 +1217,9 @@ function MessageParts({
               messageId={item.id}
               {...(approvalActions !== undefined ? { approvalActions } : {})}
               {...(blockResponses !== undefined ? { blockResponses } : {})}
+              {...(connectGithubActions !== undefined
+                ? { connectGithubActions }
+                : {})}
             />
           );
         }
@@ -1421,6 +1430,7 @@ export function WorkbenchTimeline({
   onFixConnection,
   approvalActions,
   blockResponses,
+  connectGithubActions,
   reactionActions,
   pinActions,
   pendingActions,
@@ -1463,6 +1473,10 @@ export function WorkbenchTimeline({
    * against `@corbits/chat`'s response routes. Undefined renders every
    * poll/form card in its pre-round-trip fixed-disabled framing. */
   readonly blockResponses?: BlockResponseActions;
+  /** The connect-github block's live round-trip — see
+   * `ConnectGithubActions`. Undefined renders every connect-github card
+   * in its pre-round-trip disconnected framing. */
+  readonly connectGithubActions?: ConnectGithubActions;
   /** The reaction chip row's live round-trip — see `ReactionActions`.
    * Undefined renders no chips and no "add reaction" trigger at all,
    * the same "no port, no feature" contract `blockResponses` follows. */
@@ -1644,6 +1658,9 @@ export function WorkbenchTimeline({
               : {})}
             {...(approvalActions !== undefined ? { approvalActions } : {})}
             {...(blockResponses !== undefined ? { blockResponses } : {})}
+            {...(connectGithubActions !== undefined
+              ? { connectGithubActions }
+              : {})}
             {...(reactionActions !== undefined ? { reactionActions } : {})}
             {...(pinActions !== undefined ? { pinActions } : {})}
             {...(pendingActions !== undefined ? { pendingActions } : {})}
