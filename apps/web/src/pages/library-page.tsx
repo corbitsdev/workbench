@@ -63,7 +63,7 @@ import {
   useAPIQuery,
   type ArtifactDetail,
 } from "../api";
-import { isRowActivationKey } from "../activatable-row";
+import { isAdditiveSelectClick, isRowActivationKey } from "../activatable-row";
 import { useBench } from "../bench-context";
 import { readLastWorkbenchId } from "../last-workbench";
 import {
@@ -78,6 +78,7 @@ import { useBenchActivity } from "../shell/bench-activity";
 import {
   artifactUploadToast,
   copyArtifactLinks,
+  copyArtifactLinksActionLabel,
   copyArtifactLinksToastLabel,
   isArtifactsUnavailableStatus,
   LIBRARY_BULK_OPERATION_IDS,
@@ -112,6 +113,14 @@ function ArtifactRows({
       : allSelected
         ? true
         : "indeterminate";
+  // `useListSelection` hands back ids in toggle/insertion order, not row
+  // order — a bottom-up shift-select would otherwise join/copy links out of
+  // visible order. Sort against this row order before handing ids to any
+  // bulk operation (copy links here, the context menu's `ids` below).
+  const visibleOrder = useMemo(
+    () => new Map(artifacts.map((artifact, index) => [artifact.id, index])),
+    [artifacts],
+  );
 
   return (
     <Table aria-label="Files">
@@ -139,7 +148,10 @@ function ArtifactRows({
           const isSelected = selection.isSelected(artifact.id);
           const selectionIds =
             isSelected && selection.selectedCount > 1
-              ? [...selection.selectedIds]
+              ? [...selection.selectedIds].sort(
+                  (a, b) =>
+                    (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
+                )
               : [artifact.id];
           return (
             <TableRow
@@ -151,7 +163,7 @@ function ArtifactRows({
               role="button"
               tabIndex={0}
               onClick={(event: ReactMouseEvent) => {
-                if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                if (event.shiftKey || isAdditiveSelectClick(event)) {
                   selection.toggle(artifact.id, { shiftKey: event.shiftKey });
                   return;
                 }
@@ -371,7 +383,21 @@ export function LibraryPage({
     () => visible.map((artifact) => artifact.id),
     [visible],
   );
+  // A row filtered out of `visibleIds` drops out of `selection.selectedIds`
+  // immediately (the hook reconciles against `ids` on every read) but
+  // `useListSelection` keeps it in its own internal state, so the row comes
+  // back selected if the filter that hid it is cleared. Deliberate: it
+  // matches Finder/Sheets ("clearing a filter doesn't lose your picks") and
+  // needs no bookkeeping here.
   const selection = useListSelection({ ids: visibleIds });
+
+  // Rows and cards render selection differently — only rows has checkboxes
+  // — so a selection made in one view has nothing to anchor to in the
+  // other. Clearing on view change is simpler than teaching the card view
+  // its own checkboxes for a selection UI it doesn't otherwise need.
+  useEffect(() => {
+    selection.clear();
+  }, [viewMode, selection.clear]);
 
   const openPicker = useCallback(() => {
     if (uploading === true) return;
@@ -563,7 +589,9 @@ export function LibraryPage({
           variant="outline"
           data-bulk-action={LIBRARY_BULK_OPERATION_IDS[0]}
           onClick={() => {
-            const ids = [...selection.selectedIds];
+            const ids = [...selection.selectedIds].sort(
+              (a, b) => visibleIds.indexOf(a) - visibleIds.indexOf(b),
+            );
             void copyArtifactLinks(ids).then(
               () => toast(copyArtifactLinksToastLabel(ids.length)),
               () => toast("Couldn't copy the link"),
@@ -571,7 +599,7 @@ export function LibraryPage({
           }}
         >
           <LinkIcon aria-hidden="true" />
-          {selection.selectedCount > 1 ? "Copy links" : "Copy link"}
+          {copyArtifactLinksActionLabel(selection.selectedCount)}
         </Button>
       </BulkActionBar>
     </div>

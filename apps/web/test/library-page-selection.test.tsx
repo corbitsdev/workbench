@@ -66,11 +66,16 @@ function render() {
   });
 }
 
-function checkboxFor(title: string): HTMLButtonElement {
+function rowFor(title: string): HTMLTableRowElement {
   const row = [...container.querySelectorAll("tbody tr")].find((candidate) =>
     candidate.textContent?.includes(title),
   );
   if (row === undefined) throw new Error(`no row for "${title}"`);
+  return row as HTMLTableRowElement;
+}
+
+function checkboxFor(title: string): HTMLButtonElement {
+  const row = rowFor(title);
   const button = row.querySelector('button[role="checkbox"]');
   if (button === null) throw new Error(`no checkbox for "${title}"`);
   return button as HTMLButtonElement;
@@ -161,6 +166,66 @@ describe("LibraryPage selection", () => {
       (node) => node.getAttribute("data-bulk-action"),
     );
     expect(ids).toEqual([...LIBRARY_BULK_OPERATION_IDS]);
+  });
+
+  test("cmd-click on a row adds it to the selection instead of activating it", () => {
+    render();
+    const row = rowFor("Alpha");
+    act(() => {
+      row.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, metaKey: true }),
+      );
+    });
+    expect(checkboxFor("Alpha").getAttribute("aria-checked")).toBe("true");
+  });
+
+  test("ctrl-click on a Mac does not toggle selection (it's the context-menu gesture)", () => {
+    // happy-dom reports a Darwin navigator.platform, so this exercises the
+    // Mac branch of isAdditiveSelectClick.
+    render();
+    const row = rowFor("Alpha");
+    act(() => {
+      row.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, ctrlKey: true }),
+      );
+    });
+    expect(checkboxFor("Alpha").getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("bottom-up selection still copies links in visible row order", async () => {
+    render();
+    click(checkboxFor("Charlie"));
+    click(checkboxFor("Alpha"), { shiftKey: true });
+    const button = container.querySelector(
+      '[data-bulk-action="copy-link"]',
+    ) as HTMLButtonElement;
+    act(() => button.click());
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/files/a/art_1\n${window.location.origin}/files/a/art_2\n${window.location.origin}/files/a/art_3`,
+    );
+  });
+
+  test("bottom-up selection exposes context-menu ids in visible row order", () => {
+    render();
+    click(checkboxFor("Charlie"));
+    click(checkboxFor("Alpha"), { shiftKey: true });
+    expect(rowFor("Bravo").getAttribute("data-ctx-artifact-selected-ids")).toBe(
+      "art_1,art_2,art_3",
+    );
+  });
+
+  test("switching to the cards view clears the selection and its bulk bar", () => {
+    render();
+    click(checkboxFor("Alpha"));
+    expect(bulkActionBar()).not.toBeNull();
+    const cardsToggle = container.querySelector(
+      'button[aria-label="Grid view"]',
+    ) as HTMLButtonElement | null;
+    if (cardsToggle === null) throw new Error("no grid view toggle");
+    act(() => cardsToggle.click());
+    expect(bulkActionBar()).toBeNull();
   });
 
   test("the bulk copy-link action copies every selected file's canonical link", async () => {

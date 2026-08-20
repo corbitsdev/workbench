@@ -28,6 +28,7 @@ import { toast } from "@corbits/react-ui";
 
 import {
   copyArtifactLinks,
+  copyArtifactLinksActionLabel,
   copyArtifactLinksToastLabel,
 } from "../library-artifacts";
 import { workbenchPath } from "../../workbench-path";
@@ -197,7 +198,7 @@ function artifactMenu(
     entries: [
       contextMenuItem({
         id: "copy-link",
-        label: count > 1 ? `Copy ${count} links` : "Copy link",
+        label: copyArtifactLinksActionLabel(count),
         icon: <LinkIcon />,
         onSelect: () => {
           void copyArtifactLinks(target.ids).then(

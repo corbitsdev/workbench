@@ -1,6 +1,29 @@
 import { describe, expect, test } from "bun:test";
 
-import { isRowActivationKey, rowActivationProps } from "./activatable-row";
+import {
+  isAdditiveSelectClick,
+  isRowActivationKey,
+  rowActivationProps,
+} from "./activatable-row";
+
+describe("isAdditiveSelectClick", () => {
+  // The test DOM reports a Darwin platform, so these exercise the Mac rules.
+  test("cmd-click is additive", () => {
+    expect(isAdditiveSelectClick({ metaKey: true, ctrlKey: false })).toBe(true);
+  });
+
+  test("ctrl-click is not additive on Mac (it's the context-menu gesture)", () => {
+    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: true })).toBe(
+      false,
+    );
+  });
+
+  test("a plain click is not additive", () => {
+    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: false })).toBe(
+      false,
+    );
+  });
+});
 
 describe("isRowActivationKey", () => {
   test("Enter and Space activate", () => {

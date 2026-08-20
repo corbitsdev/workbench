@@ -144,3 +144,9 @@ export async function copyArtifactLinks(ids: readonly string[]): Promise<void> {
 export function copyArtifactLinksToastLabel(count: number): string {
   return count === 1 ? "Link copied" : `${count} links copied`;
 }
+
+/** The action's own label — shared by the bulk action bar and the context
+ * menu so both surfaces say the same count-aware thing. */
+export function copyArtifactLinksActionLabel(count: number): string {
+  return count > 1 ? `Copy ${count} links` : "Copy link";
+}
