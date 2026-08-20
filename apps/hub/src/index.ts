@@ -56,6 +56,7 @@ import {
 } from "@corbits/agent-directory";
 
 import {
+  AGENT_SECTION_MODE,
   CHAT_TURN_TIMEOUT_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
@@ -87,6 +88,7 @@ import {
   provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
+  workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -1724,6 +1726,8 @@ export async function createHub(config: HubConfig) {
             toolGrantsForPins,
             mcpCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
+            launchMode: AGENT_SECTION_MODE,
+            persistLaunch: workbenchLaunchPersistExtra,
           },
           trigger,
           payload,

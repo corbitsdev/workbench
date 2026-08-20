@@ -1119,7 +1119,7 @@ export type DispatchTurnInput = {
  * timeline) and the execution plane.
  *
  * A room agent deploys as an `onTrigger` section (CL-6329, see
- * `./platform-adapter.ts`'s `ROOM_AGENT_MODE`), so this fires that
+ * `./standalone-launch.ts`'s `AGENT_SECTION_MODE`), so this fires that
  * section's trigger: one occurrence, running as its own child run
  * (`turn__<n>`) with its own event log, against the one warm run the
  * (agent, workbench) pair already holds. The trigger is a mail trigger —
