@@ -1127,6 +1127,20 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
     expect(response.status).toBe(404);
   });
 
+  test("400s for a malformed address escape instead of throwing", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "Test Workbench",
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/participants/%E0%A4%A`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(400);
+  });
+
   test("404s for a participant that isn't in the workbench", async () => {
     const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {

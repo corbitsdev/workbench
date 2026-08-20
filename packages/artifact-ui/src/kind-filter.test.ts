@@ -133,4 +133,9 @@ describe("libraryArtifactPath / libraryArtifactIdFromPath", () => {
   test("is null when the artifact segment is empty", () => {
     expect(libraryArtifactIdFromPath("/files/a/")).toBeNull();
   });
+
+  test("a malformed escape reads as no selection, not a throw", () => {
+    expect(() => libraryArtifactIdFromPath("/files/a/%E0%A4%A")).not.toThrow();
+    expect(libraryArtifactIdFromPath("/files/a/%E0%A4%A")).toBeNull();
+  });
 });

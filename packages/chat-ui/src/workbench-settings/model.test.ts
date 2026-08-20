@@ -1,6 +1,23 @@
 import { describe, expect, test } from "bun:test";
 
-import { workbenchSettingsSections } from "./model";
+import {
+  isWorkbenchSettingsSectionId,
+  workbenchSettingsSections,
+  WORKBENCH_SETTINGS_SECTION_IDS,
+} from "./model";
+
+describe("isWorkbenchSettingsSectionId", () => {
+  test("is true for exactly the known section ids", () => {
+    for (const id of WORKBENCH_SETTINGS_SECTION_IDS) {
+      expect(isWorkbenchSettingsSectionId(id)).toBe(true);
+    }
+  });
+
+  test("is false for a value that isn't a section id", () => {
+    expect(isWorkbenchSettingsSectionId("not-a-real-section")).toBe(false);
+    expect(isWorkbenchSettingsSectionId("")).toBe(false);
+  });
+});
 
 describe("workbenchSettingsSections", () => {
   test("workbenches expose the full settings surface: General/Agents/Plugins in Shared, Notifications in Personal", () => {
