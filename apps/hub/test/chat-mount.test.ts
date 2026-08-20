@@ -11,6 +11,11 @@ import path from "node:path";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
 
+// DB-gated: skipped when DATABASE_URL is unset, matching this repo's
+// convention for tests that talk to a real Postgres.
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const describeIfDb = databaseUrl === "" ? describe.skip : describe;
+
 const root = mkdtempSync(path.join(tmpdir(), "hub-chat-mount-"));
 const staticDir = path.join(root, "static");
 mkdirSync(staticDir, { recursive: true });
@@ -18,7 +23,7 @@ writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
 mkdirSync(path.join(root, "data"), { recursive: true });
 
 const config: HubConfig = {
-  databaseUrl: "postgres://workbench:workbench@localhost:5432/workbench",
+  databaseUrl,
   baseUrl: "http://localhost:3000",
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
@@ -49,7 +54,7 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("chat mount", () => {
+describeIfDb("chat mount", () => {
   test("chat routes mount inside the native tenant middleware", async () => {
     const hub = await createHub(config);
     closers.push(hub.close);

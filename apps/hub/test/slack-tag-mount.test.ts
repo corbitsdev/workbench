@@ -20,7 +20,10 @@ import postgres from "postgres";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
 
-const DATABASE_URL = "postgres://workbench:workbench@localhost:5432/workbench";
+// DB-gated: skipped when DATABASE_URL is unset, matching this repo's
+// convention for tests that talk to a real Postgres.
+const DATABASE_URL = process.env["DATABASE_URL"] ?? "";
+const describeIfDb = DATABASE_URL === "" ? describe.skip : describe;
 const SLACK_WEBHOOK_PATH = "/api/tag/slack/webhook";
 const TENANT_SLUG = `slack-tag-test-${crypto.randomUUID().slice(0, 8)}`;
 
@@ -80,6 +83,7 @@ async function unseedTenant(id: string): Promise<void> {
 }
 
 beforeAll(async () => {
+  if (DATABASE_URL === "") return;
   tenantId = await seedTenant();
 });
 
@@ -111,7 +115,7 @@ async function bootHub(): Promise<Awaited<ReturnType<typeof createHub>>> {
   return hub;
 }
 
-describe("Slack tag ingress env-gate", () => {
+describeIfDb("Slack tag ingress env-gate", () => {
   test("absent SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET never registers the webhook route", async () => {
     for (const key of SLACK_ENV_KEYS) Reflect.deleteProperty(process.env, key);
 

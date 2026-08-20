@@ -1,9 +1,9 @@
 // Exercises the hub's own wiring: platform routes answering at boot,
 // the echo extension mounted inside the native tenant middleware, and
 // same-origin static serving. Platform behavior behind the mounted
-// routes belongs to its own packages and is not re-proven here. No test
-// needs a database: every asserted path fails or answers before a query
-// would run.
+// routes belongs to its own packages and is not re-proven here. Booting
+// the hub runs package migrations, so a reachable DATABASE_URL is
+// required and the suite skips without one.
 
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -11,6 +11,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
+
+// DB-gated: skipped when DATABASE_URL is unset, matching this repo's
+// convention for tests that talk to a real Postgres.
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const describeIfDb = databaseUrl === "" ? describe.skip : describe;
 
 const root = mkdtempSync(path.join(tmpdir(), "hub-composition-"));
 const staticDir = path.join(root, "static");
@@ -20,7 +25,7 @@ writeFileSync(path.join(staticDir, "assets", "app.css"), "body{}");
 mkdirSync(path.join(root, "data"), { recursive: true });
 
 const config: HubConfig = {
-  databaseUrl: "postgres://workbench:workbench@localhost:5432/workbench",
+  databaseUrl,
   baseUrl: "http://localhost:3000",
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
@@ -57,7 +62,7 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("boot", () => {
+describeIfDb("boot", () => {
   test("serves platform health, auth-gated routes, and the interface", async () => {
     const hub = await bootHub();
 
@@ -85,7 +90,7 @@ describe("boot", () => {
   });
 });
 
-describe("shutdown", () => {
+describeIfDb("shutdown", () => {
   test("close() cancels the pending sidecar allocation reconciliation timer", async () => {
     const setTimeoutSpy = spyOn(global, "setTimeout");
     const clearTimeoutSpy = spyOn(global, "clearTimeout");
@@ -113,7 +118,7 @@ describe("shutdown", () => {
   });
 });
 
-describe("extension mounting", () => {
+describeIfDb("extension mounting", () => {
   test("echo mounts inside the native tenant middleware", async () => {
     const hub = await bootHub();
 
