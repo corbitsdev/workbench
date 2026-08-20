@@ -2080,15 +2080,27 @@ async function runOnTrigger(
     }
     await flush(env, runId);
 
-    if (terminalStatus !== "completed") {
-      // Terminal-is-final: a body run that failed or was cancelled ends the
-      // whole section run. Throwing lands the parent terminal via
-      // `runPrimitiveSafe`; the run does not relaunch.
+    if (terminalStatus === "cancelled") {
+      // Terminal-is-final, unconditionally: a cancelled body run always ends
+      // the section. Cancellation reflects a drain/operator decision, not a
+      // turn-level error, so `onBodyFailure` never swallows it.
       throw new Error(
-        `onTrigger ${primitive.id} body run ${childRunId} ended ` +
-          `${terminalStatus}`,
+        `onTrigger ${primitive.id} body run ${childRunId} ended cancelled`,
       );
     }
+    if (terminalStatus === "failed" && primitive.onBodyFailure !== "continue") {
+      // Terminal-is-final (default): a failed body run ends the whole
+      // section run. Throwing lands the parent terminal via
+      // `runPrimitiveSafe`; the run does not relaunch.
+      throw new Error(
+        `onTrigger ${primitive.id} body run ${childRunId} ended failed`,
+      );
+    }
+    // terminalStatus is "completed", or "failed" with onBodyFailure:
+    // "continue" -- the failed occurrence is already recorded (the
+    // ChildCompleted commit above this block carries
+    // `terminalStatus: "failed"`, the run's durable audit event for it); fall
+    // through to the same re-arm every completed occurrence takes.
 
     // Re-arm: park on a fresh input channel for the next event. The park is
     // snapshot-less (`kind: "input"`); the run's owner delivers the next
@@ -2395,20 +2407,29 @@ function planOnTriggerResume(
   // is already owned -- a body that then completed is caught HERE (reawait-
   // input), not by the in-flight throw. Inverting the order would wrongly fail a
   // post-abandon-completed body.
+  if (child.terminalStatus === "cancelled") {
+    return {
+      kind: "terminal-is-final",
+      eventIndex,
+      terminalStatus: "cancelled",
+    };
+  }
   if (
-    child.terminalStatus === "failed" ||
-    child.terminalStatus === "cancelled"
+    child.terminalStatus === "failed" &&
+    primitive.onBodyFailure !== "continue"
   ) {
     return {
       kind: "terminal-is-final",
       eventIndex,
-      terminalStatus: child.terminalStatus,
+      terminalStatus: "failed",
     };
   }
   const container = state.steps.get(primitive.id);
-  if (child.terminalStatus === "completed") {
-    // The event's body finished; the section is idle on its input re-arm. Re-
-    // adopt the durable input park if it was committed, else re-arm fresh.
+  if (child.terminalStatus === "completed" || child.terminalStatus === "failed") {
+    // The event's body finished -- completed, or failed with
+    // `onBodyFailure: "continue"`, both of which are "the event is over" --
+    // the section is idle on its input re-arm. Re-adopt the durable input
+    // park if it was committed, else re-arm fresh.
     if (
       container !== undefined &&
       container.phase === "awaiting-signal" &&

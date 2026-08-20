@@ -30,6 +30,8 @@ import type { Trigger } from "./triggers";
 
 export type DrainBehavior = "cancel" | "wait";
 
+export type BodyFailurePolicy = "end" | "continue";
+
 export interface RetryPolicy {
   /** Maximum number of attempts including the first. */
   maxAttempts: number;
@@ -239,13 +241,15 @@ export interface LoopPrimitive extends PrimitiveBase {
  * `trigger.payload`.
  *
  * The section never self-completes: the workflow stays running while
- * subscribed and terminates only on a body error or an explicit
- * end-of-workflow, and a terminated run is final -- never relaunched. The
- * first occurrence is the run's own firing trigger (its
- * `RunStarted.trigger.payload`); each later occurrence arrives as an input
- * signal carrying the next payload. `defineWorkflow` collects every `on`
- * into the workflow's `triggers`, so `on` is the first-class binding
- * between a trigger and the section it drives.
+ * subscribed and terminates only on a body run ending `cancelled`, a body
+ * run ending `failed` under the default `onBodyFailure: "end"` policy, or
+ * an explicit end-of-workflow -- `onBodyFailure: "continue"` keeps the
+ * section alive through a failed occurrence -- and a terminated run is
+ * final -- never relaunched. The first occurrence is the run's own firing
+ * trigger (its `RunStarted.trigger.payload`); each later occurrence
+ * arrives as an input signal carrying the next payload. `defineWorkflow`
+ * collects every `on` into the workflow's `triggers`, so `on` is the
+ * first-class binding between a trigger and the section it drives.
  *
  * `drainBehavior` defaults to `"wait"`: a live interactive section is not
  * abandoned mid-conversation at redeploy unless the author opts into
@@ -256,6 +260,17 @@ export interface OnTriggerPrimitive extends PrimitiveBase {
   on: Trigger;
   body: OnTriggerBody;
   drainBehavior?: DrainBehavior;
+  /**
+   * How a body run that ends `failed` affects the section. Absent (or
+   * `"end"`) preserves terminal-is-final: a failed body run ends the
+   * whole section run, exactly as before this field existed. `"continue"`
+   * records the failed occurrence and keeps the section subscribed --
+   * the next occurrence spawns and runs normally. A body run that ends
+   * `cancelled` is unaffected by this field and always ends the section:
+   * cancellation reflects a drain/operator decision, not a turn-level
+   * error.
+   */
+  onBodyFailure?: BodyFailurePolicy;
 }
 
 /**
@@ -575,6 +590,7 @@ export interface OnTriggerOpts {
   on: Trigger;
   body: WorkflowDefinition;
   drainBehavior?: DrainBehavior;
+  onBodyFailure?: BodyFailurePolicy;
   after?: readonly string[];
 }
 
@@ -587,6 +603,9 @@ export function onTrigger(opts: OnTriggerOpts): OnTriggerPrimitive {
     // Authored inline; the deploy step rewrites this to `{ ref }`.
     body: { inline: opts.body },
     drainBehavior,
+    ...(opts.onBodyFailure !== undefined
+      ? { onBodyFailure: opts.onBodyFailure }
+      : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
   };
 }
