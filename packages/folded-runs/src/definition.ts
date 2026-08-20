@@ -16,6 +16,11 @@
 // therefore outside the wire hash. Its hub-side home is the
 // `workflow_definition.grant_requirements` column, so it is passed in
 // alongside the projection rather than read off it.
+//
+// A definition carries its one agent step in either of the two shapes
+// the platform authors: directly, or inside an `onTrigger` section
+// (CL-6329's per-turn room agents). Both readers below unwrap the
+// section, so a launch body reads the same either way.
 import type { DB } from "@intx/db";
 import { loadFrozenWireProjection } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -153,6 +158,57 @@ export const FoldedBodySchema = type({
 });
 
 /**
+ * An `onTrigger` section carrying its body inline. Section mode
+ * (`@corbits/agent-runtime`'s `buildAgentRuntimeWorkflow`) wraps the one
+ * agent step in a section so every message becomes its own occurrence,
+ * so a run's launch body lives one level down. The wrapper carries no
+ * launch body of its own: everything `FoldedBodySchema` needs is on the
+ * agent step inside.
+ */
+const OnTriggerSectionSchema = type({
+  kind: "'onTrigger'",
+  body: {
+    inline: {
+      stepOrder: "string[]",
+      steps: "Record<string, unknown>",
+    },
+  },
+});
+
+/**
+ * The one agent-bearing step of a definition that carries exactly one:
+ * the step itself in folded mode, the section body's step in section
+ * mode. `label` names the shape being read so a failure says which
+ * reader saw it.
+ */
+function soleStep(
+  definitionId: string,
+  stepOrder: readonly string[],
+  steps: Record<string, unknown>,
+  label: string,
+): { stepId: string; step: unknown } {
+  const [stepId, ...rest] = stepOrder;
+  if (stepId === undefined || rest.length > 0) {
+    throw new Error(
+      `${label} ${definitionId} is not single-step (${String(
+        stepOrder.length,
+      )} steps)`,
+    );
+  }
+  const step = steps[stepId];
+  const section = OnTriggerSectionSchema(step);
+  if (section instanceof type.errors) {
+    return { stepId, step };
+  }
+  return soleStep(
+    definitionId,
+    section.body.inline.stepOrder,
+    section.body.inline.steps,
+    label,
+  );
+}
+
+/**
  * Reads the launch body back out of a definition's frozen inert
  * projection — the same fields `@intx/workflow-deploy`'s
  * `extractFoldedBody` reads off a live `WorkflowDefinition`, read here
@@ -168,15 +224,14 @@ export function readFoldedBody(
   if (definition instanceof type.errors) {
     throw new Error(`inert projection is malformed: ${definition.summary}`);
   }
-  const [stepId, ...rest] = definition.stepOrder;
-  if (stepId === undefined || rest.length > 0) {
-    throw new Error(
-      `definition ${definition.id} is not single-step (${String(
-        definition.stepOrder.length,
-      )} steps)`,
-    );
-  }
-  const step = InertWorkflowStepSchema(definition.steps[stepId]);
+  const sole = soleStep(
+    definition.id,
+    definition.stepOrder,
+    definition.steps,
+    "definition",
+  );
+  const stepId = sole.stepId;
+  const step = InertWorkflowStepSchema(sole.step);
   if (step instanceof type.errors) {
     throw new Error(
       `definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
@@ -208,15 +263,14 @@ export function readLiveFoldedBody(raw: unknown): FoldedBody {
   if (definition instanceof type.errors) {
     throw new Error(`live definition is malformed: ${definition.summary}`);
   }
-  const [stepId, ...rest] = definition.stepOrder;
-  if (stepId === undefined || rest.length > 0) {
-    throw new Error(
-      `live definition ${definition.id} is not single-step (${String(
-        definition.stepOrder.length,
-      )} steps)`,
-    );
-  }
-  const step = LiveWorkflowStepSchema(definition.steps[stepId]);
+  const sole = soleStep(
+    definition.id,
+    definition.stepOrder,
+    definition.steps,
+    "live definition",
+  );
+  const stepId = sole.stepId;
+  const step = LiveWorkflowStepSchema(sole.step);
   if (step instanceof type.errors) {
     throw new Error(
       `live definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,

@@ -862,6 +862,11 @@ const MoveWorkbenchBody = type({
  * Matches forward, by the `chat/definitionId` every agent chat has
  * carried in its settings since this landed, and falls back to
  * `matchesLegacyAgentChat` for a chat minted before that key existed.
+ * The comparison is on the definition's ASSET, not the row id: a
+ * code-sourced deploy projects a new `workflow_definition` row per
+ * frozen wire projection, so the id a chat recorded at creation and the
+ * id the picker offers later are routinely different rows over the one
+ * asset that IS the agent.
  * More than one match (duplicates this same gap already let through)
  * resolves to the oldest by its workbench-tenancy `createdAt` — the
  * original conversation, not whichever the caller happens to hit first —
@@ -874,12 +879,14 @@ export async function findExistingAgentChat(
   definitionId: string,
 ): Promise<WorkbenchSettingsRow | undefined> {
   const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
+  const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
   const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
   for (const row of chats) {
     const storedDefinitionId = row.settings["chat/definitionId"];
     const isMatch =
       storedDefinitionId !== undefined
-        ? storedDefinitionId === definitionId
+        ? typeof storedDefinitionId === "string" &&
+          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
         : await matchesLegacyAgentChat(deps, row, definitionId);
     if (!isMatch) continue;
     const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
@@ -888,6 +895,25 @@ export async function findExistingAgentChat(
   if (matches.length === 0) return undefined;
   matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return matches[0]?.row;
+}
+
+/**
+ * Whether two definition ids name the same agent: the same row, or two
+ * rows projected over the same workflow asset. An unresolvable asset (a
+ * definition row that no longer exists) never matches by asset, so a
+ * stale recorded id falls back to plain id equality alone.
+ */
+async function sameAgent(
+  deps: Pick<CreateChatRoutesDeps, "platform">,
+  storedDefinitionId: string,
+  definitionId: string,
+  assetId: string | undefined,
+): Promise<boolean> {
+  if (storedDefinitionId === definitionId) return true;
+  if (assetId === undefined) return false;
+  const storedAssetId =
+    await deps.platform.resolveDefinitionAssetId(storedDefinitionId);
+  return storedAssetId === assetId;
 }
 
 /**

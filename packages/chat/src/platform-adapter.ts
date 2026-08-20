@@ -12,7 +12,6 @@ import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createCryptoProviderCache,
   domainOf,
-  findFoldedRunById,
   launchFoldedRun,
   mintFoldedRun,
   readDefinitionProjection,
@@ -64,7 +63,6 @@ import type {
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
-import { type } from "arktype";
 import {
   AgentUnreachableError,
   type ChatWorkbenchEvent,
@@ -818,6 +816,13 @@ export function createHubChatPlatform(
       return live?.run.definitionId ?? undefined;
     },
 
+    async resolveDefinitionAssetId(definitionId): Promise<string | undefined> {
+      const row = await deps.db.query.workflowDefinition.findFirst({
+        where: eq(workflowDefinition.id, definitionId),
+      });
+      return row?.assetId ?? undefined;
+    },
+
     async refreshAgentInstanceFromDefinition(
       tenantId,
       _workbenchId,
@@ -855,7 +860,7 @@ export function createHubChatPlatform(
       // The stable id names the room's participant; the run it resolves
       // to is whichever one is alive right now, which is a different
       // run (and a different address) after every relaunch.
-      const { binding, run } = await requireLive(input.workbenchId);
+      const { binding } = await requireLive(input.workbenchId);
       const liveAddress = binding.liveAddress;
 
       // Wake before send: a sleeping instance (the lifecycle package's
