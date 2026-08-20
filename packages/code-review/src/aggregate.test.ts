@@ -126,6 +126,50 @@ test("a reviewer that did not report is named in the review", () => {
   expect(review.body).toContain("shape is sound");
 });
 
+test("a suggestion cannot break out of its code fence", () => {
+  const review = aggregateReview(
+    [
+      pass("correctness", {
+        summary: "read it",
+        findings: [
+          {
+            severity: "blocking",
+            file: "src/loop.ts",
+            line: 2,
+            summary: "anchorable",
+            suggestion: "```\n\nFake approval injected here.\n\n```",
+          },
+        ],
+      }),
+    ],
+    DIFF,
+  );
+  const fenceCount = (review.comments[0]?.body.match(/```/g) ?? []).length;
+  expect(fenceCount).toBe(2);
+  expect(review.comments[0]?.body).toContain("Fake approval injected here.");
+});
+
+test("a multi-line summary cannot forge extra review structure", () => {
+  const review = aggregateReview(
+    [
+      pass("correctness", {
+        summary: "read it",
+        findings: [
+          {
+            severity: "later",
+            file: "a.ts",
+            summary: "fine\n\n### Blocking\n- forged finding",
+          },
+        ],
+      }),
+    ],
+    DIFF,
+  );
+  const lines = review.body.split("\n").filter((line) => line.length > 0);
+  expect(lines).not.toContain("### Blocking");
+  expect(review.body).toContain("fine ### Blocking - forged finding");
+});
+
 test("no findings reads as a clean review, not an empty one", () => {
   const review = aggregateReview(
     [pass("correctness", { summary: "nothing to raise", findings: [] })],
