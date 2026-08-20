@@ -12,21 +12,25 @@
 // rather than shipping a call to it: an asset tree is a standalone
 // codebase, so a `workspace:*` dependency on `@corbits/agent-runtime`
 // has no workspace to resolve against and the closure resolver rejects
-// it outright. This is the same shape the seed's default workflows take
-// (`@workbench/hub-client`'s `renderWorkflowSourceTree`) — the whole
-// closure is these two files — and it keeps the config-IS-the-bytes
-// property the retirement requires: everything that varies per run is
-// inside the hashed source, nothing rides beside it.
+// it outright. `@corbits/workflow-source` renders the tree itself —
+// the same two files every other authoring path writes — which keeps
+// the config-IS-the-bytes property the retirement requires:
+// everything that varies per run is inside the hashed source, nothing
+// rides beside it.
 //
 // A host commits the tree into a `workflow`-kind asset and deploys it
 // with `source.kind: "asset"`, `package.format: "source"`, `commitSha` —
 // the only source variant whose pin is cheap enough to mint per run
 // (the registry and tarball variants would each need a publish).
+import {
+  renderWorkflowSourceTree,
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflow-source";
 import { parseAgentRuntimeConfig, type AgentRuntimeConfig } from "./config";
 import { buildAgentRuntimeWorkflow } from "./definition";
 
 /** The entry path the rendered `package.json` declares and the sidecar evaluates. */
-export const AGENT_RUNTIME_ENTRY_PATH = "./workflow.js";
+export const AGENT_RUNTIME_ENTRY_PATH = WORKFLOW_SOURCE_ENTRY;
 
 export interface RenderAgentRuntimeSourceTreeInput {
   /**
@@ -52,18 +56,10 @@ export function renderAgentRuntimeSourceTree(
   const config = parseAgentRuntimeConfig(input.config);
   const definition = buildAgentRuntimeWorkflow(config);
   assertJsonPortable(definition, "definition");
-  const packageJson = {
-    name: input.packageName,
-    version: "0.0.0",
-    private: true,
-    type: "module",
-    interchange: { workflow: AGENT_RUNTIME_ENTRY_PATH },
-  };
-
-  return {
-    "package.json": `${JSON.stringify(packageJson, null, 2)}\n`,
-    "workflow.js": `export default ${JSON.stringify(definition, null, 2)};\n`,
-  };
+  return renderWorkflowSourceTree({
+    packageName: input.packageName,
+    workflowJson: JSON.stringify(definition, null, 2),
+  });
 }
 
 /**

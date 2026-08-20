@@ -15,6 +15,13 @@ export {
   type CreateAgentDefinitionCoreResult,
 } from "./agent-workflow";
 export {
+  agentDefinitionSourceTree,
+  parseAgentDefinitionEntry,
+  readAgentDefinitionWorkflowJson,
+  AGENT_DEFINITION_ENTRY_PATH,
+  RetiredWorkflowEnvelopeError,
+} from "./definition-asset";
+export {
   createDrizzleDefinitionSkillsStore,
   createInMemoryDefinitionSkillsStore,
   type DefinitionSkillsStore,

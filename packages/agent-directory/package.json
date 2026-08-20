@@ -17,6 +17,7 @@
     "@corbits/chat": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
+    "@corbits/workflow-source": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",

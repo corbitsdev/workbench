@@ -53,7 +53,7 @@ import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
 } from "@corbits/tool-registry-publish";
-import { WORKFLOW_SOURCE_ENTRY } from "./workflow-push";
+import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflow-source";
 import { CliError, SidecarUnavailableError } from "./errors";
 import { DEFAULT_SKILLS } from "./default-skills";
 import { ensureDefaultRoutines } from "./default-routines";

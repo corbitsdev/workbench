@@ -61,12 +61,13 @@ import {
   CapabilityOutOfInventoryError,
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
+import {
+  agentDefinitionSourceTree,
+  readAgentDefinitionWorkflowJson,
+  RetiredWorkflowEnvelopeError,
+} from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
-
-/** Where a definition's serialized `WorkflowDefinition` lives in its
- * asset tree — same path `./routes.ts` reads/writes. */
-const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 /**
  * The tenant + principal + run a presented sidecar token and run
@@ -134,6 +135,9 @@ export function createWorkflowCapabilityRoutes(
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
       return c.json(errorEnvelope("bad_request", err.message), 400);
+    }
+    if (err instanceof RetiredWorkflowEnvelopeError) {
+      return c.json(errorEnvelope("conflict", err.message), 409);
     }
     throw err;
   });
@@ -217,11 +221,9 @@ export function createWorkflowCapabilityRoutes(
     // tenant-session route's own fail-closed check.
     assertCapabilityInInventory(body, inventory);
 
-    const workflowJson = new TextDecoder().decode(
-      await deps.assetService.readAssetBlob({
-        assetId: row.assetId,
-        path: AGENT_DEFINITION_ASSET_PATH,
-      }),
+    const workflowJson = await readAgentDefinitionWorkflowJson(
+      deps.assetService,
+      row.assetId,
     );
 
     let nextWorkflowJson: string;
@@ -266,7 +268,10 @@ export function createWorkflowCapabilityRoutes(
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
-        files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
+        files: agentDefinitionSourceTree({
+          handle: row.name,
+          workflowJson: nextWorkflowJson,
+        }),
         message,
       },
     });
