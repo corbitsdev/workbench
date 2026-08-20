@@ -99,14 +99,28 @@ const PAGE_SIZE = 50;
 
 const PREVIEW_MAX_LENGTH = 80;
 
-/** Time-ordered: the mint time leads, so ids sort the way the timeline
- * reads and two messages a second apart never tie-break on randomness.
- * Messages minted inside the same millisecond are genuinely
- * simultaneous, and order between them by the random tail. */
+let lastMintedAt = 0;
+let mintsThisMillisecond = 0;
+
+/**
+ * Time-ordered: the mint time leads and a per-millisecond counter
+ * follows, so ids sort the way the timeline reads even for a burst
+ * written inside one clock tick — a join notice and the greeting behind
+ * it never render in the wrong order. The random tail keeps ids
+ * unguessable and separates two hubs minting in the same millisecond.
+ */
 function newMessageId(): string {
-  const mintedAt = Date.now().toString(16).padStart(12, "0");
-  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-  return `msg_${mintedAt}${random}`;
+  const now = Date.now();
+  if (now === lastMintedAt) {
+    mintsThisMillisecond += 1;
+  } else {
+    lastMintedAt = now;
+    mintsThisMillisecond = 0;
+  }
+  const mintedAt = now.toString(16).padStart(12, "0");
+  const sequence = mintsThisMillisecond.toString(16).padStart(4, "0");
+  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  return `msg_${mintedAt}${sequence}${random}`;
 }
 
 /**

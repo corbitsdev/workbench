@@ -97,7 +97,6 @@ import type { WorkbenchShareStore } from "./workbench-share";
 import { monogramFromName } from "./workbench-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
-import { AgentUnreachableError } from "./platform-port";
 import { isAgentAddress } from "./mentions";
 
 export type {
@@ -1977,38 +1976,28 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json({ command: commandResult }, 201);
       }
 
-      let sent;
-      try {
-        sent = await sendWorkbenchMessage(
-          {
-            store: deps.store,
-            platform: deps.platform,
-            roomMessages: deps.roomMessages,
-            publish,
-          },
-          {
-            tenantId: ownerTenantId,
-            principalId: principal.id,
-            senderAddress: senderAddressOf(c),
-            workbenchId,
-            messageParts,
-            ...(parsed.inReplyToMessageId !== undefined
-              ? { inReplyToMessageId: parsed.inReplyToMessageId }
-              : {}),
-          },
-        );
-      } catch (err) {
-        if (err instanceof AgentUnreachableError) {
-          return c.json(
-            ErrorEnvelope(
-              "agent_unreachable",
-              "The agent is reconnecting after a restart — try again in a moment.",
-            ),
-            503,
-          );
-        }
-        throw err;
-      }
+      // No unreachable-agent branch: the message is a room write, and
+      // reaching an agent happens off this path — an agent that cannot
+      // be reached answers with a notice on the timeline in its own
+      // voice (see `sendWorkbenchMessage`), never a failed send.
+      const sent = await sendWorkbenchMessage(
+        {
+          store: deps.store,
+          platform: deps.platform,
+          roomMessages: deps.roomMessages,
+          publish,
+        },
+        {
+          tenantId: ownerTenantId,
+          principalId: principal.id,
+          senderAddress: senderAddressOf(c),
+          workbenchId,
+          messageParts,
+          ...(parsed.inReplyToMessageId !== undefined
+            ? { inReplyToMessageId: parsed.inReplyToMessageId }
+            : {}),
+        },
+      );
       deps.onMessageFanout?.(sent.fanoutDelivered);
 
       if (parsed.clientId !== undefined && deps.clientIds !== undefined) {
