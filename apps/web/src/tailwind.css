@@ -16,6 +16,17 @@
 
 @import "tailwindcss";
 
+/* react-ui's README documents this exact pairing for a consumer that already
+   runs its own Tailwind v4 build: import the theme source (not just the
+   prebuilt stylesheet) so this build's own @theme registers --success,
+   --destructive, and the rest of react-ui's semantic tokens as real Tailwind
+   theme colors. Without it those tokens only exist as plain :root custom
+   properties inherited from the prebuilt sheet, so Tailwind has no theme
+   color to generate bg-success / bg-destructive utilities from — a data
+   attribute variant like data-[state=connected]:bg-success compiles to
+   nothing, silently. */
+@import "@corbits/react-ui/theme.css";
+
 /* The import above re-emits Tailwind's default font tokens after react-ui's
    prebuilt sheet declared the brand stacks — same layer, later order, so the
    defaults were winning and the whole app fell back to system fonts. Declare
@@ -32,6 +43,7 @@
 @source "../../../packages/artifact-ui/src";
 @source "../../../packages/bench-ui/src";
 @source "../../../packages/chat-ui/src";
+@source "../../../packages/context-menu/src";
 @source "../../../packages/plugins-ui/src";
 @source "../../../packages/settings-ui/src";
 @source "../../../packages/tasks-ui/src";
