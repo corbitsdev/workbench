@@ -56,6 +56,19 @@ test("create_agent's description does not say a human must approve before anythi
   );
 });
 
+test("create_agent's modelPreference field tells the model to omit it rather than guess a name", () => {
+  const bundle = agentDirectoryTools(testEnv());
+  const definition = bundle.definitions[1] as unknown as {
+    inputSchema: {
+      properties: { modelPreference: { description: string } };
+    };
+  };
+  const description =
+    definition.inputSchema.properties.modelPreference.description;
+  expect(description).toMatch(/omit/i);
+  expect(description).toMatch(/do not (guess|invent)/i);
+});
+
 test("create_agent's input schema requires name and systemPrompt only", () => {
   const bundle = agentDirectoryTools(testEnv());
   const definition = bundle.definitions[1] as unknown as {
@@ -142,9 +155,10 @@ test("create_agent creates then invites by default, in one call sequence", async
           id: "def_1",
           name: "Research Buddy",
           description: null,
-          currentVersion: 1,
+          currentVersion: "1",
           status: "deployed",
           skills: [],
+          modelNote: null,
         }),
         { status: 201 },
       );
@@ -189,9 +203,10 @@ test("create_agent with invite: false creates but never calls the invite route",
         id: "def_1",
         name: "Research Buddy",
         description: null,
-        currentVersion: 1,
+        currentVersion: "1",
         status: "deployed",
         skills: [],
+        modelNote: null,
       }),
       { status: 201 },
     );
@@ -225,9 +240,10 @@ test("create_agent reports a create-succeeded/invite-failed half-failure honestl
           id: "def_1",
           name: "Research Buddy",
           description: null,
-          currentVersion: 1,
+          currentVersion: "1",
           status: "deployed",
           skills: [],
+          modelNote: null,
         }),
         { status: 201 },
       );
@@ -265,9 +281,10 @@ test("create_agent maps modelPreference to the create route's model field", asyn
           id: "def_1",
           name: "Research Buddy",
           description: null,
-          currentVersion: 1,
+          currentVersion: "1",
           status: "deployed",
           skills: [],
+          modelNote: null,
         }),
         { status: 201 },
       );
@@ -294,6 +311,53 @@ test("create_agent maps modelPreference to the create route's model field", asyn
     expect((seenBody as { model?: string }).model).toBe(
       "anthropic/claude-sonnet-5",
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("create_agent surfaces a model fallback note in its content, and still completes the invite, rather than producing a silently dead agent", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    if (String(url).endsWith("/definitions")) {
+      return new Response(
+        JSON.stringify({
+          id: "def_1",
+          name: "Research Buddy",
+          description: null,
+          currentVersion: "1",
+          status: "deployed",
+          skills: [],
+          modelNote:
+            'Requested model "gpt-4o" is not in this workbench\'s catalog; used the workspace default "ollama/llama3" instead.',
+        }),
+        { status: 201 },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        address: "ins_1@acme.example",
+        definitionId: "def_1",
+        handle: "research-buddy",
+      }),
+      { status: 201 },
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = agentDirectoryTools(testEnv());
+    const result = await bundle.run(
+      callFor(CREATE_AGENT_TOOL, {
+        name: "Research Buddy",
+        systemPrompt: "You are a careful research assistant.",
+        modelPreference: "gpt-4o",
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/Created "Research Buddy"/);
+    expect(result.content).toMatch(/invited/);
+    expect(result.content).toMatch(/gpt-4o/);
+    expect(result.content).toMatch(/ollama\/llama3/);
   } finally {
     globalThis.fetch = originalFetch;
   }
