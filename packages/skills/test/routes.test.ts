@@ -56,6 +56,57 @@ async function createSkill(app: Hono<TenantEnv>): Promise<void> {
   expect(response.status).toBe(201);
 }
 
+test("POST / with a source SKILL.md creates a skill whose fields match the file", async () => {
+  const app = buildApp();
+  const response = await app.request("/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      source: [
+        "---",
+        "name: triage",
+        "description: 'Sorts inbound issues.'",
+        "---",
+        "",
+        "Read the report. Pick one label.",
+        "",
+      ].join("\n"),
+      scope: "private",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const created = (await response.json()) as {
+    skill: { name: string; description: string };
+  };
+  expect(created.skill.name).toBe("triage");
+  expect(created.skill.description).toBe("Sorts inbound issues.");
+
+  const loaded = (await (await app.request("/triage")).json()) as {
+    skill: { body: string };
+  };
+  expect(loaded.skill.body).toBe("Read the report. Pick one label.");
+});
+
+test("POST / with a malformed source SKILL.md is a 400 and creates nothing", async () => {
+  const app = buildApp();
+  const response = await app.request("/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      source: "not a skill file at all",
+      scope: "private",
+    }),
+  });
+  expect(response.status).toBe(400);
+  const payload = (await response.json()) as { error: { message: string } };
+  expect(payload.error.message).toContain("frontmatter delimiter");
+
+  const list = (await (await app.request("/")).json()) as {
+    skills: unknown[];
+  };
+  expect(list.skills).toHaveLength(0);
+});
+
 test("PUT /:name creates a new version and leaves the prior one restorable", async () => {
   const app = buildApp();
   await createSkill(app);

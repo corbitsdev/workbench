@@ -14,6 +14,7 @@ import {
   type SkillRegistry,
   type SkillRegistryErrorReason,
 } from "./registry";
+import { parseSkillMd, SkillContentError } from "./skill-md";
 
 /** Which workflow definitions pin a given skill. */
 export type PinnedByResolver = {
@@ -25,12 +26,24 @@ export type PinnedByResolver = {
   >;
 };
 
-const CreateSkillBody = type({
+/** The paste path: identity and body already split into fields. */
+const CreateSkillFieldsBody = type({
   name: "string",
   description: "string",
   body: "string",
   scope: skillAccessScopeSchema,
 });
+
+/** The upload path: a whole SKILL.md, parsed at this boundary with the
+ * exact same `parseSkillMd` the registry uses to read a skill back — so a
+ * round trip through upload lands on the same fields a paste of the same
+ * content would have. */
+const CreateSkillFileBody = type({
+  source: "string",
+  scope: skillAccessScopeSchema,
+});
+
+const CreateSkillBody = CreateSkillFieldsBody.or(CreateSkillFileBody);
 
 /** A commit id, as the asset store hands them out: one bounded opaque
  * token, never a path or free text. The store owns the exact alphabet, so
@@ -112,10 +125,27 @@ export function createSkillRoutes({
         400,
       );
     }
+    let fields: { name: string; description: string; body: string };
+    if ("source" in body) {
+      try {
+        fields = parseSkillMd(body.source);
+      } catch (cause) {
+        if (cause instanceof SkillContentError) {
+          return c.json(errorEnvelope("bad_request", cause.message), 400);
+        }
+        throw cause;
+      }
+    } else {
+      fields = {
+        name: body.name,
+        description: body.description,
+        body: body.body,
+      };
+    }
     const skill = await registry.create(caller(c), {
-      name: body.name,
-      description: body.description,
-      body: body.body,
+      name: fields.name,
+      description: fields.description,
+      body: fields.body,
       scope: body.scope,
     });
     return c.json({ skill }, 201);
