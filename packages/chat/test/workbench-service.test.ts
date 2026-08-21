@@ -9,6 +9,7 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
+import { workbenchTemplate } from "@corbits/workflow-catalog";
 import { cannedGreeting, postCannedGreeting } from "../src/workbench-service";
 import {
   buildDeps,
@@ -65,7 +66,7 @@ describe("postCannedGreeting (CL-6126)", () => {
     ]);
   });
 
-  test("the greeting names the opener and the agent, and asks a question — never a menu or the workbench title", () => {
+  test("the greeting names the opener and the agent, asks a question, and never names the workbench title", () => {
     const greeting = cannedGreeting({
       workbenchId: "chan_1",
       agentName: "Myra",
@@ -75,6 +76,28 @@ describe("postCannedGreeting (CL-6126)", () => {
     expect(greeting).toContain("Myra");
     expect(greeting).toMatch(/\?$/);
     expect(greeting).not.toContain("undefined");
+  });
+
+  test("a blank room's greeting names the templates read live off the catalog, never a frozen string", () => {
+    const codeReviewTitle = workbenchTemplate("code-review")?.title;
+    const dueDiligenceTitle = workbenchTemplate("due-diligence")?.title;
+    if (codeReviewTitle === undefined || dueDiligenceTitle === undefined) {
+      throw new Error("expected both offer templates to carry a title");
+    }
+
+    for (const workbenchId of ["chan_0", "chan_1", "chan_2", "chan_3"]) {
+      const greeting = cannedGreeting({ workbenchId, agentName: "Myra" });
+      expect(greeting).toContain(codeReviewTitle);
+      expect(greeting).toContain(dueDiligenceTitle);
+    }
+  });
+
+  test("a blank room's greeting points at the templates rather than claiming to build one", () => {
+    const greeting = cannedGreeting({
+      workbenchId: "chan_1",
+      agentName: "Myra",
+    });
+    expect(greeting).not.toMatch(/I('ll| will) (set up|spin up|create|build)/i);
   });
 
   test("the same chat always gets the same variation", () => {

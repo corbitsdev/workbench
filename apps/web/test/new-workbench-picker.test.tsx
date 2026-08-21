@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
   serializeWorkbenchTemplateManifest,
 } from "@corbits/workflow-catalog";
 import { act } from "react";
@@ -142,6 +143,51 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Just start talking");
     expect(container?.textContent).toContain("More kinds soon");
+  });
+
+  // The library seeds every shipped template (`createTemplateLibrarySeeder`),
+  // so a bench whose library serves due-diligence too offers it as a real
+  // row, not just an entry in the static row catalog with nothing to back it.
+  test("due-diligence is offered as a selectable row once the library serves it", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.endsWith("/library/templates")) {
+        return Promise.resolve(
+          json({
+            data: [
+              {
+                id: "code-review",
+                content:
+                  serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+              },
+              {
+                id: "due-diligence",
+                content: serializeWorkbenchTemplateManifest(
+                  DUE_DILIGENCE_TEMPLATE,
+                ),
+              },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    }) as typeof fetch;
+    await renderPicker();
+
+    const radios = Array.from(
+      container?.querySelectorAll('[role="radio"]') ?? [],
+    );
+    expect(radios.length).toBe(3);
+    const dueDiligence = radios.find((row) =>
+      row.textContent?.includes("Research & due diligence"),
+    );
+    expect(dueDiligence).not.toBeUndefined();
+    expect(dueDiligence?.textContent).toContain(
+      "Scout researches the web and what your team already knows",
+    );
   });
 
   // CL-6458: the picker offers what the bench's library can actually
