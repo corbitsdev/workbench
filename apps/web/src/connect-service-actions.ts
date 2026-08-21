@@ -23,7 +23,11 @@ import {
   listProviders,
   oauthStartHref,
 } from "@corbits/settings-ui";
-import { connectMcpPreset, listMcpPresets } from "@corbits/plugins-ui";
+import {
+  connectMcpPreset,
+  listMcpPresets,
+  McpServersApiError,
+} from "@corbits/plugins-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { mcpPresetBySlug } from "@workbench/connections/mcp-presets";
 
@@ -50,9 +54,17 @@ export function createChatConnectServiceActions(
       const presets = await listMcpPresets(tenantId);
       const listed = presets.find((entry) => entry.slug === preset.slug);
       if (listed?.connected === true) return { kind: "connected" };
-      const affordance: ConnectAffordance =
-        preset.connectionMode === "keyless" ? "keyless" : "oauth";
-      return { kind: "disconnected", affordance };
+      if (preset.connectionMode === "keyless") {
+        return { kind: "disconnected", affordance: "keyless" };
+      }
+      if (preset.connectionMode === "token") {
+        return {
+          kind: "disconnected",
+          affordance: "api-key",
+          docsUrl: preset.docsUrl,
+        };
+      }
+      return { kind: "disconnected", affordance: "oauth" };
     }
 
     const descriptor = CONNECTOR_REGISTRY[slug];
@@ -123,6 +135,20 @@ export function createChatConnectServiceActions(
     },
     async submitKey(connectorId, key) {
       const slug = bareConnectorId(connectorId);
+      const preset = mcpPresetBySlug(slug);
+      if (preset !== undefined && preset.connectionMode === "token") {
+        try {
+          await connectMcpPreset(tenantId, preset.slug, key);
+        } catch (cause) {
+          const message =
+            cause instanceof McpServersApiError
+              ? cause.message
+              : "Couldn't connect with that token. Try again.";
+          return { ok: false, message };
+        }
+        fanOut(connectorId, { kind: "connected" });
+        return { ok: true };
+      }
       try {
         await completeConnectorCredential(tenantId, slug, key);
       } catch (cause) {

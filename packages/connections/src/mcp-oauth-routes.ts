@@ -164,6 +164,23 @@ export function createMcpOAuthRoutes(
           404,
         );
       }
+      const queryUrl = c.req.query("url");
+      const preset =
+        queryUrl === undefined || queryUrl.length === 0
+          ? mcpPresetBySlug(slugParam)
+          : undefined;
+      if (preset !== undefined && preset.connectionMode !== "oauth") {
+        // A keyless or token preset has no OAuth dance to start — refuse
+        // here rather than failing mid-dance at the provider (GitHub's
+        // MCP server, for one, offers no dynamic client registration).
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `${preset.displayName} doesn't connect with a sign-in here — connect it from Plugins instead.`,
+          ),
+          400,
+        );
+      }
 
       const principal = c.get("principal");
       const callbackUrl = new URL(

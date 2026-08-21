@@ -1,6 +1,12 @@
-import { siNotion, siPosthog, siRailway, siSentry } from "simple-icons";
+import {
+  siGithub,
+  siNotion,
+  siPosthog,
+  siRailway,
+  siSentry,
+} from "simple-icons";
 
-export type McpPresetConnectionMode = "oauth" | "keyless";
+export type McpPresetConnectionMode = "oauth" | "keyless" | "token";
 
 export type McpPreset = {
   readonly slug: string;
@@ -11,13 +17,20 @@ export type McpPreset = {
   readonly docsUrl: string;
   readonly icon?: { readonly path: string; readonly hex: string };
   readonly nativeConnectorId?: string;
+  /** Token presets only: the numbered walkthrough the connect card
+   * renders above the paste field — each step one action a person can
+   * take, ending with what happens to the token. */
+  readonly tokenSteps?: readonly string[];
 };
 
 /**
  * Curated remote MCP servers that Workbench can connect without asking a
  * person for a URL, API key, client id, or client secret. OAuth entries have
  * been verified to advertise OAuth discovery, PKCE, and dynamic client
- * registration; keyless entries can be probed and stored immediately.
+ * registration; keyless entries can be probed and stored immediately; token
+ * entries accept a pasted access token as the bearer (GitHub's MCP server
+ * does OAuth only for clients pre-registered with GitHub — it offers no
+ * dynamic client registration — so its connect here is the token walk).
  */
 export const MCP_PRESETS: readonly McpPreset[] = [
   {
@@ -46,6 +59,24 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     connectionMode: "oauth",
     docsUrl: "https://linear.app/docs/mcp",
     nativeConnectorId: "linear",
+  },
+  {
+    // Deliberately NOT slug "github" and NOT nativeConnectorId "github":
+    // the native GitHub connector (PAT/OAuth-App feeding
+    // @corbits/github-tools) stays its own card, and preset lookups by
+    // "github" must keep resolving to it, never here.
+    slug: "github-mcp",
+    displayName: "GitHub MCP",
+    description: "Search code, work with issues and pull requests.",
+    url: "https://api.githubcopilot.com/mcp/",
+    connectionMode: "token",
+    docsUrl: "https://github.com/settings/tokens",
+    icon: { path: siGithub.path, hex: siGithub.hex },
+    tokenSteps: [
+      "Open github.com/settings/tokens and generate a new token.",
+      "Give it the repo scope — that lets agents read code, issues, and pull requests.",
+      "Paste it below. It's stored encrypted, only your agents use it, and you can disconnect any time.",
+    ],
   },
   {
     slug: "notion",

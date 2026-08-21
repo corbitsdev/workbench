@@ -51,9 +51,10 @@ export type McpPreset = {
   readonly displayName: string;
   readonly description: string;
   readonly url: string;
-  readonly connectionMode: "oauth" | "keyless";
+  readonly connectionMode: "oauth" | "keyless" | "token";
   readonly docsUrl: string;
   readonly icon?: { readonly path: string; readonly hex: string };
+  readonly tokenSteps?: readonly string[];
   readonly connected: boolean;
 };
 
@@ -62,9 +63,10 @@ const McpPresetSchema = type({
   displayName: "string",
   description: "string",
   url: "string",
-  connectionMode: "'oauth' | 'keyless'",
+  connectionMode: "'oauth' | 'keyless' | 'token'",
   docsUrl: "string",
   "icon?": { path: "string", hex: "string" },
+  "tokenSteps?": "string[]",
   connected: "boolean",
 });
 

@@ -213,6 +213,9 @@ export function createMcpServerRoutes(
         connectionMode: preset.connectionMode,
         docsUrl: preset.docsUrl,
         ...(preset.icon === undefined ? {} : { icon: preset.icon }),
+        ...(preset.tokenSteps === undefined
+          ? {}
+          : { tokenSteps: preset.tokenSteps }),
         connected: credential !== undefined,
       };
     });
@@ -240,6 +243,18 @@ export function createMcpServerRoutes(
         ErrorEnvelope(
           "bad_request",
           `Unknown MCP server preset: "${parsed.presetSlug}"`,
+        ),
+        400,
+      );
+    }
+    if (
+      preset?.connectionMode === "token" &&
+      (parsed.token === undefined || parsed.token.length === 0)
+    ) {
+      return c.json(
+        ErrorEnvelope(
+          "token_required",
+          `${preset.displayName} needs an access token — create one at ${preset.docsUrl} and paste it in.`,
         ),
         400,
       );
