@@ -27,9 +27,7 @@ const INPUT = {
 function briefStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[DILIGENCE_BRIEF_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step named ${DILIGENCE_BRIEF_STEP_ID}`,
-    );
+    throw new Error(`definition has no step named ${DILIGENCE_BRIEF_STEP_ID}`);
   }
   return primitive;
 }
@@ -146,7 +144,9 @@ test("serialization fails loud on a function-valued field, naming its path", () 
     },
   } as unknown as WorkflowDefinition;
   expect(() => serializeDiligenceBriefWorkflow(poisoned)).toThrow(
-    new RegExp(`steps\\.${DILIGENCE_BRIEF_STEP_ID}\\.agent\\.toolFactories\\[0\\]`),
+    new RegExp(
+      `steps\\.${DILIGENCE_BRIEF_STEP_ID}\\.agent\\.toolFactories\\[0\\]`,
+    ),
   );
 });
 

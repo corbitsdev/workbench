@@ -352,7 +352,8 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Researches a company across web search and firm memory, and writes a cited diligence brief across five fixed sections, held for approval before it's saved.",
     requiredConnections: ["exa"],
-    exampleOutput: "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
+    exampleOutput:
+      "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
     typicalDuration: "1-2 minutes, plus review and approval time",
     // Mirrors workflows/diligence-brief/src/index.ts's system prompt
     // exactly: "the trigger carries a `company` and an optional `focus`" —

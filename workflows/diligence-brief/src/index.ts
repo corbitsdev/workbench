@@ -94,7 +94,10 @@ export const DILIGENCE_BRIEF_SECTIONS = [
   "Risks & Open Questions",
 ] as const;
 
-export const DILIGENCE_BRIEF_WIRED_SOURCES = ["Web search", "Firm memory"] as const;
+export const DILIGENCE_BRIEF_WIRED_SOURCES = [
+  "Web search",
+  "Firm memory",
+] as const;
 
 /**
  * Tool packages this definition pins (CL-5999 shape, matching
@@ -114,14 +117,15 @@ export const DILIGENCE_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
  * populated for every workflow step directly, the same as
  * `@corbits/artifact-tools`' trio.
  */
-export const DILIGENCE_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
-  {
-    package: "@corbits/web-search-tools",
-    handle: "exa",
-    provider: "exa",
-    locator: "tenant",
-  },
-];
+export const DILIGENCE_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
+  [
+    {
+      package: "@corbits/web-search-tools",
+      handle: "exa",
+      provider: "exa",
+      locator: "tenant",
+    },
+  ];
 
 const SECTION_LINES = DILIGENCE_BRIEF_SECTIONS.map(
   (heading, index) => `${String(index + 1)}. ${heading}`,
@@ -133,15 +137,15 @@ export const DILIGENCE_BRIEF_SYSTEM_PROMPT =
   "\n" +
   "## Reading the request\n" +
   "The triggering mail names a `company` (the subject of the brief) and " +
-  "an optional `focus` narrowing which angle to dig into (e.g. \"go-to-" +
-  "market\" or \"founder track record\"). If no company is named, say so " +
+  'an optional `focus` narrowing which angle to dig into (e.g. "go-to-' +
+  'market" or "founder track record"). If no company is named, say so ' +
   "in one plain sentence and stop — never draft a brief with no subject.\n" +
   "\n" +
   "## Research order\n" +
   "First call memory_search for the company name: firm memory may " +
   "already hold notes from an earlier brief or conversation. Then call " +
   "web_search (at least twice, with distinct queries — e.g. the company " +
-  "name alone, and the company name plus \"funding\" or \"founders\") to " +
+  'name alone, and the company name plus "funding" or "founders") to ' +
   "gather current, public information. A tool call that comes back as " +
   "an error (missing credential, rate limit, failed request) means that " +
   "source is not reachable right now — note it plainly and move on; " +
@@ -153,9 +157,9 @@ export const DILIGENCE_BRIEF_SYSTEM_PROMPT =
   "## Writing the brief\n" +
   `Structure the brief under these five headings, in order:\n${SECTION_LINES}\n` +
   "Ground every claim in a specific tool result — cite it inline (e.g. " +
-  "\"per web_search: ...\") rather than asserting facts with no source. " +
+  '"per web_search: ...") rather than asserting facts with no source. ' +
   "Where evidence is thin or absent for a section, say so plainly " +
-  "(\"insufficient evidence in the sources gathered\") rather than " +
+  '("insufficient evidence in the sources gathered") rather than ' +
   "padding it with generic industry prose. Never fabricate a founder " +
   "name, a funding round, a metric, or a competitor that no source " +
   "actually named.\n" +

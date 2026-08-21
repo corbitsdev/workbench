@@ -52,7 +52,7 @@ with anyone who has used the original:
   (`assemble-brief`). This repo's execution host has never wired the
   `action` primitive that parallel/assembled step graph assumes (the
   same gap `last-30-days-research`'s own header documents). Folding
-  seven sections into seven *serial* reasoning steps would multiply run
+  seven sections into seven _serial_ reasoning steps would multiply run
   time and per-step timeout risk for a first port, so this port instead
   follows `code-review`'s single-step shape: one agent, one turn,
   everything — research, drafting, all five sections — in one pass.
