@@ -1054,6 +1054,12 @@ export async function createHub(config: HubConfig) {
     assetService,
     repoStore: agentRepoStore.repoStore,
     maxTarballBytes: MAX_TARBALL_BYTES,
+    // Lets a workflow-run agent deploy through the same
+    // `/workflows/deployments` route a human session uses (see
+    // `@intx/hub-api`'s `workflow-run-deploy-auth` middleware) -- the same
+    // sidecar-bearer + run-address credential every other workflow-run write
+    // surface below already authenticates with.
+    workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
     sidecarWsHandler: upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {

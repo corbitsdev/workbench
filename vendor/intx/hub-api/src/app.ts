@@ -73,6 +73,10 @@ import {
   createAgentStateReceivePackDeny,
 } from "./routes/agent-state-git";
 import { createGitTokenAuth } from "./middleware/git-token-auth";
+import {
+  createWorkflowRunDeployAuth,
+  type WorkflowRunAuthenticator,
+} from "./middleware/workflow-run-deploy-auth";
 
 const log = getLogger(["hub", "app"]);
 
@@ -143,6 +147,15 @@ export type MountHubRoutesDeps = {
    * asset surface supply their own cap.
    */
   maxTarballBytes: number;
+  /**
+   * Resolves a sidecar bearer token + run address to the tenant/principal
+   * it acts as. When supplied, `POST/GET .../workflows/deployments`
+   * additionally accepts a bearer-authenticated workflow-run caller (see
+   * `./middleware/workflow-run-deploy-auth.ts`), mirroring every other
+   * workflow-run write surface. Omitted in tests that have no reason to
+   * exercise that path -- the session-cookie path is unaffected either way.
+   */
+  workflowRunAuthenticator?: WorkflowRunAuthenticator;
 };
 
 /**
@@ -238,6 +251,23 @@ export function mountHubRoutes(
     app.use(
       "/api/tenants/:tenantId/workflows/runs/:runId/state.git/*",
       createGitTokenAuth({ db }),
+    );
+  }
+
+  // The workflow deploy route's bearer mirror. Shares the literal
+  // `/deployments` path with the session-cookie route below -- it is NOT a
+  // disjoint git-smart-HTTP subtree like the two bearer mounts above, since
+  // both a human (session) and a workflow-run agent (bearer) deploy through
+  // the same endpoint. Must mount before `resolveTenant` so a bearer request
+  // populates `principal`/`tenant` first and short-circuits the session
+  // check; a request with no bearer credential falls through unchanged.
+  if (repoStore !== null && opts.workflowRunAuthenticator !== undefined) {
+    app.use(
+      "/api/tenants/:tenantId/workflows/deployments",
+      createWorkflowRunDeployAuth({
+        db,
+        authenticator: opts.workflowRunAuthenticator,
+      }),
     );
   }
 
@@ -517,6 +547,8 @@ export type CreateAppOpts = {
    * (or its config default) and supplies a concrete value.
    */
   maxTarballBytes: number;
+  /** See `MountHubRoutesDeps.workflowRunAuthenticator`. */
+  workflowRunAuthenticator?: WorkflowRunAuthenticator;
 };
 
 export function createApp({
@@ -537,6 +569,7 @@ export function createApp({
   assetService,
   repoStore,
   maxTarballBytes,
+  workflowRunAuthenticator,
 }: CreateAppOpts) {
   const app = new Hono<AppEnv>();
 
@@ -566,6 +599,9 @@ export function createApp({
     assetService,
     repoStore,
     maxTarballBytes,
+    ...(workflowRunAuthenticator !== undefined
+      ? { workflowRunAuthenticator }
+      : {}),
     ...(grantStore ? { grantStore } : {}),
     ...(approvalStore ? { approvalStore } : {}),
     ...(signalCorrelationStore ? { signalCorrelationStore } : {}),
