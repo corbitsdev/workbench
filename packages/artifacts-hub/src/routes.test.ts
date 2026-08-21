@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { RequireGrant } from "@intx/hub-api";
+import type { ArtifactDb, ArtifactRow, ContentStore } from "@corbits/artifacts";
 import { Hono } from "hono";
 
 import {
   createArtifactRoutes,
   createUnavailableArtifactRoutes,
+  resolvePreviewableContent,
   type ArtifactPreviewResult,
   type ArtifactRoutesStore,
   type ArtifactUploadInput,
@@ -248,6 +250,25 @@ describe("artifact routes", () => {
     expect(res.status).toBe(400);
   });
 
+  test("POST /upload rejects a file over the per-file byte limit instead of storing it empty", async () => {
+    const oversized = new Uint8Array(10 * 1024 * 1024 + 1);
+    const form = new FormData();
+    form.append(
+      "file",
+      new File([oversized], "huge.txt", { type: "text/plain" }),
+    );
+    const res = await app.request("/artifacts/upload", {
+      method: "POST",
+      body: form,
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("payload_too_large");
+    // The whole point: an oversized file never reaches the store at all, so
+    // there is no empty/partial artifact row left behind to look uploaded.
+    expect(store.rows).toHaveLength(0);
+  });
+
   test("GET /counts is all zero for a tenant with no artifacts", async () => {
     const res = await app.request("/artifacts/counts");
     expect(res.status).toBe(200);
@@ -440,5 +461,98 @@ describe("unavailable artifact routes", () => {
       const body = (await res.json()) as { error: { code: string } };
       expect(body.error.code).toBe("unavailable");
     }
+  });
+});
+
+describe("resolvePreviewableContent", () => {
+  const NOT_CALLED: ArtifactDb = undefined as unknown as ArtifactDb;
+
+  function blobBackedRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
+    return {
+      id: "a1",
+      tenantId: "tenant_a",
+      principalId: "prin_1",
+      ownerPrincipalId: "prin_1",
+      kind: "file",
+      title: "SKILL.md",
+      content: "",
+      source: { origin: "library-upload", upload: { id: "up_1" } },
+      version: 1,
+      archivedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      ...overrides,
+    } as ArtifactRow;
+  }
+
+  function contentStoreReturning(
+    blob: { filename: string; mimeType: string; bytes: Uint8Array } | null,
+  ): ContentStore {
+    return {
+      put: () => {
+        throw new Error(
+          "put should not be called by resolvePreviewableContent",
+        );
+      },
+      get: async () => blob,
+    };
+  }
+
+  test("inlines the out-of-band blob when it decodes as text", async () => {
+    const bytes = new TextEncoder().encode("---\nname: SKILL\n---\nbody");
+    const store = contentStoreReturning({
+      filename: "SKILL.md",
+      mimeType: "text/markdown",
+      bytes,
+    });
+    const content = await resolvePreviewableContent(
+      NOT_CALLED,
+      store,
+      blobBackedRow(),
+    );
+    expect(content).toBe("---\nname: SKILL\n---\nbody");
+  });
+
+  test("leaves content empty for a non-text-decodable blob instead of decoding garbage", async () => {
+    const store = contentStoreReturning({
+      filename: "photo.png",
+      mimeType: "image/png",
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    });
+    const content = await resolvePreviewableContent(
+      NOT_CALLED,
+      store,
+      blobBackedRow({ title: "photo.png" }),
+    );
+    expect(content).toBe("");
+  });
+
+  test("never touches the content store when the row already carries inline content", async () => {
+    const store: ContentStore = {
+      put: () => {
+        throw new Error("put should not be called");
+      },
+      get: () => {
+        throw new Error(
+          "get should not be called when content is already inline",
+        );
+      },
+    };
+    const content = await resolvePreviewableContent(
+      NOT_CALLED,
+      store,
+      blobBackedRow({ content: "already inline", source: {} }),
+    );
+    expect(content).toBe("already inline");
+  });
+
+  test("leaves content empty when the referenced blob cannot be found", async () => {
+    const store = contentStoreReturning(null);
+    const content = await resolvePreviewableContent(
+      NOT_CALLED,
+      store,
+      blobBackedRow(),
+    );
+    expect(content).toBe("");
   });
 });

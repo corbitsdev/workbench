@@ -18,6 +18,17 @@ export type ArtifactRenderProps = {
    * never distinguished from "not fetched yet" (the host's own loading
    * state handles that before this component ever mounts). */
   readonly content: string;
+  /**
+   * True when `content` is empty NOT because the artifact is genuinely
+   * blank, but because its real bytes are stored out-of-band (a file
+   * upload) in a format this renderer can't decode as text — a binary
+   * `.docx`/`.xlsx`, an image, a real PDF. Empty `content` alone can't
+   * carry that distinction, so the host that fetched the artifact passes
+   * it explicitly. Swaps the per-kind "no content yet" copy for an honest
+   * "couldn't read this file" message — the artifact was NOT uploaded
+   * empty, its contents just can't be shown here.
+   */
+  readonly contentUnavailable?: boolean;
   /** Overrides the default "unsupported" copy with something specific to
    * why this content can't be shown (e.g. a binary MIME type). */
   readonly unavailableReason?: string;
@@ -67,9 +78,23 @@ function parseDocLines(content: string): readonly DocLine[] {
     });
 }
 
-function DocRenderer({ content }: { readonly content: string }) {
+function DocRenderer({
+  content,
+  contentUnavailable,
+}: {
+  readonly content: string;
+  readonly contentUnavailable: boolean;
+}) {
   if (content === "") {
-    return <EmptyContent message="This document has no content yet." />;
+    return (
+      <EmptyContent
+        message={
+          contentUnavailable
+            ? "We couldn't read this file's contents for preview."
+            : "This document has no content yet."
+        }
+      />
+    );
   }
   const lines = parseDocLines(content);
   const HeadingTag = ["h1", "h2", "h3"] as const;
@@ -97,9 +122,23 @@ function DocRenderer({ content }: { readonly content: string }) {
   );
 }
 
-function SheetRenderer({ content }: { readonly content: string }) {
+function SheetRenderer({
+  content,
+  contentUnavailable,
+}: {
+  readonly content: string;
+  readonly contentUnavailable: boolean;
+}) {
   if (content === "") {
-    return <EmptyContent message="This sheet has no rows yet." />;
+    return (
+      <EmptyContent
+        message={
+          contentUnavailable
+            ? "We couldn't read this file's contents for preview."
+            : "This sheet has no rows yet."
+        }
+      />
+    );
   }
   return <CsvTable text={content} caption="Sheet contents" />;
 }
@@ -111,13 +150,21 @@ function SheetRenderer({ content }: { readonly content: string }) {
 function PdfRenderer({
   title,
   content,
+  contentUnavailable,
 }: {
   readonly title: string;
   readonly content: string;
+  readonly contentUnavailable: boolean;
 }) {
   if (content === "") {
     return (
-      <EmptyContent message="No extracted text is stored for this PDF — inline preview isn't available yet." />
+      <EmptyContent
+        message={
+          contentUnavailable
+            ? "We couldn't read this file's contents for preview."
+            : "No extracted text is stored for this PDF — inline preview isn't available yet."
+        }
+      />
     );
   }
   return (
@@ -181,16 +228,33 @@ export function ArtifactRenderer({
   rendererKind,
   title,
   content,
+  contentUnavailable,
   unavailableReason,
   previewSrc,
 }: ArtifactRenderProps) {
   switch (rendererKind) {
     case "doc":
-      return <DocRenderer content={content} />;
+      return (
+        <DocRenderer
+          content={content}
+          contentUnavailable={contentUnavailable ?? false}
+        />
+      );
     case "sheet":
-      return <SheetRenderer content={content} />;
+      return (
+        <SheetRenderer
+          content={content}
+          contentUnavailable={contentUnavailable ?? false}
+        />
+      );
     case "pdf":
-      return <PdfRenderer title={title} content={content} />;
+      return (
+        <PdfRenderer
+          title={title}
+          content={content}
+          contentUnavailable={contentUnavailable ?? false}
+        />
+      );
     case "html":
       return (
         <HtmlPreviewRenderer

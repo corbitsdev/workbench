@@ -32,6 +32,7 @@ import {
   ArtifactRenderer,
   artifactMatchesLibraryKindSegment,
   filterArtifacts,
+  isTextDecodableMediaType,
   libraryArtifactIdFromPath,
   libraryKindSegmentFromPath,
   resolveArtifactRendererKind,
@@ -84,6 +85,7 @@ import {
   LIBRARY_BULK_OPERATION_IDS,
   mapArtifactListToSummaries,
   uploadArtifactFiles,
+  uploadMimeTypeFromSource,
 } from "../shell/library-artifacts";
 import { StageTopBar } from "../shell/stage-top-bar";
 
@@ -250,6 +252,19 @@ function PreviewPane({
     detail !== null && rendererKind === "html" && tenantId !== null
       ? artifactPreviewPath(tenantId, detail.id)
       : undefined;
+  // Empty `content` on a file artifact is ambiguous on its own: it's the
+  // honest "nothing here" for an inline-content artifact, but it's also
+  // what a real upload's row carries when its bytes live out-of-band and
+  // aren't text-decodable (an image, a real PDF, a legacy `.docx`/`.xlsx`).
+  // `source.upload.mimeType` disambiguates — present only when this
+  // artifact really does have stored bytes behind it.
+  const uploadMimeType =
+    detail !== null ? uploadMimeTypeFromSource(detail.source) : null;
+  const contentUnavailable =
+    detail !== null &&
+    detail.content === "" &&
+    uploadMimeType !== null &&
+    !isTextDecodableMediaType(uploadMimeType);
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-l border-border bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -301,6 +316,7 @@ function PreviewPane({
             rendererKind={rendererKind}
             title={detail.title}
             content={detail.content}
+            contentUnavailable={contentUnavailable}
             {...(previewSrc !== undefined ? { previewSrc } : {})}
           />
         ) : null}
