@@ -50,6 +50,7 @@ import {
 } from "../onboarding";
 import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
+import { markSetupInProgress } from "../shell/setup-progress-note";
 import type { SessionUser } from "../session";
 
 /** No naming step means provisioning always needs a name to send — this
@@ -296,6 +297,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     if (state.phase === "finishing-setup") {
       void completeSetup().then((outcome) => {
         if (outcome.kind === "connected") {
+          if (outcome.agentsPending) markSetupInProgress();
           navigate("/");
         } else if (outcome.kind === "unseeded") {
           setResumingUnseeded(true);
@@ -348,6 +350,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         // moves on now, and the warm loading state on the other side
         // covers whatever is still coming online.
         if (outcome.kind === "connected") {
+          if (outcome.agentsPending) markSetupInProgress();
           navigate("/");
         } else {
           setState(

@@ -61,7 +61,16 @@ export function WorkbenchLoadingState({
   const [visible, setVisible] = useState(delayMs <= 0);
 
   useEffect(() => {
-    if (delayMs <= 0) return;
+    // A surface that swaps its own `delayMs` — a route that starts out
+    // "still reading" (delayed) and becomes "known to be waiting"
+    // (immediate) — reconciles onto this same element rather than
+    // remounting it, so dropping to 0 has to show the loader outright.
+    // Returning early here instead left the loader hidden for good and
+    // rendered the wait as a blank page (CL-6462).
+    if (delayMs <= 0) {
+      setVisible(true);
+      return;
+    }
     const id = setTimeout(() => setVisible(true), delayMs);
     return () => clearTimeout(id);
   }, [delayMs]);

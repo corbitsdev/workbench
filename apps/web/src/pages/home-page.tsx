@@ -7,6 +7,17 @@
 // creates) the Myra workbench in the main stage, unchanged. Home as a
 // dashboard does not earn its keep — `/` only exists as this hop onto
 // `/w/:workbenchId`. Deep links to other pages are unchanged.
+//
+// Right after a provider connect this hop is also the wait (CL-6457's
+// deploys run in the background, so landing here can beat them). CL-6462
+// settled what that wait looks like: one warm loader and nothing else.
+// The land is simply attempted again every few seconds, because launching
+// Myra IS the test of whether the person can start — she is deployed
+// first (`SETUP_AGENT_ASSET_NAME` leads `DEFAULT_WORKFLOWS`), so the
+// moment she answers we go, with every other seeded workflow still
+// converging behind us. Readiness is read only to tell a wait from a
+// genuine failure, never to draw a progress number: a seed count is an
+// implementation detail, and "0 of 5" told a waiting person nothing.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { WarningCircle } from "@corbits/icons";
@@ -15,7 +26,7 @@ import { useEffect, useState } from "react";
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
 import { describeApiError } from "@corbits/api-query";
 
-import { fetchProvisioningProgress } from "../onboarding";
+import { fetchAgentReadiness } from "../onboarding";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
 import { createAgentAndLaunch } from "../instant-agent-create";
@@ -23,60 +34,73 @@ import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
 
 type LandState =
-  | { readonly kind: "checking" }
-  /** The bench exists and its credential is connected, but its agents
-   * are still being deployed in the background (CL-6457). Landing here
-   * is expected right after someone connects a provider — connecting
-   * deliberately no longer waits for deploys — so this is a warm wait
-   * with live progress, never an error. */
-  | {
-      readonly kind: "provisioning";
-      readonly live: number;
-      readonly total: number;
-    }
+  /** Working on it: the warm loader, whether we are reading the bench's
+   * workbenches or waiting for Myra to finish coming online. Both are
+   * the same thing to the person waiting. */
+  | { readonly kind: "opening" }
+  /** Myra has taken long enough that silence would read as a hang. Says
+   * so plainly and offers another go — never a frozen number. */
+  | { readonly kind: "slow" }
   | { readonly kind: "error"; readonly message: string };
 
-const PROVISIONING_POLL_MS = 3_000;
+const LAND_RETRY_MS = 3_000;
+const LAND_STALL_MS = 45_000;
 
-export function HomeRoute() {
+export function HomeRoute({
+  retryMs = LAND_RETRY_MS,
+  stallAfterMs = LAND_STALL_MS,
+}: {
+  /** Timing seams. Production passes neither. */
+  readonly retryMs?: number;
+  readonly stallAfterMs?: number;
+} = {}) {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
-  const [state, setState] = useState<LandState>({ kind: "checking" });
-  const [retryCount, setRetryCount] = useState(0);
+  const [state, setState] = useState<LandState>({ kind: "opening" });
+  const [attempt, setAttempt] = useState(0);
+  const [waitId, setWaitId] = useState(0);
+
+  const startOver = () => {
+    setState({ kind: "opening" });
+    setAttempt(0);
+    setWaitId((id) => id + 1);
+  };
 
   useEffect(() => {
     if (selectedTenantId === null) return;
     let cancelled = false;
-    setState({ kind: "checking" });
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const waitAndRetry = () => {
+      if (cancelled) return;
+      if ((attempt + 1) * retryMs >= stallAfterMs) {
+        setState({ kind: "slow" });
+        return;
+      }
+      retryTimer = setTimeout(() => setAttempt((count) => count + 1), retryMs);
+    };
+
+    // A land that failed is either "she isn't up yet" or a real problem,
+    // and only the bench itself can say which.
+    const classify = (cause: unknown) => {
+      void fetchAgentReadiness().then((readiness) => {
+        if (cancelled) return;
+        if (readiness.kind === "ready" || readiness.kind === "chat-ready") {
+          setState({
+            kind: "error",
+            message: describeApiError(cause, "opening Myra"),
+          });
+          return;
+        }
+        waitAndRetry();
+      });
+    };
+
     void listAllWorkbenches(selectedTenantId).then(
       (workbenches) => {
         if (cancelled) return;
         if (workbenches.length === 0) {
-          createAgentAndLaunch(selectedTenantId, navigate).catch(
-            (cause: unknown) => {
-              if (cancelled) return;
-              // Myra cannot be launched if she has not finished
-              // deploying yet. Rather than reading that off an error
-              // message, ask the bench where its agents actually are: a
-              // bench still provisioning is someone waiting, not someone
-              // broken.
-              void fetchProvisioningProgress().then((progress) => {
-                if (cancelled) return;
-                setState(
-                  progress.ready
-                    ? {
-                        kind: "error",
-                        message: describeApiError(cause, "opening Myra"),
-                      }
-                    : {
-                        kind: "provisioning",
-                        live: progress.live,
-                        total: progress.total,
-                      },
-                );
-              });
-            },
-          );
+          createAgentAndLaunch(selectedTenantId, navigate).catch(classify);
           return;
         }
         void ensureMyraWorkbench(selectedTenantId).then((result) => {
@@ -85,7 +109,7 @@ export function HomeRoute() {
             navigate(workbenchPath(result.workbenchId));
             return;
           }
-          setState({ kind: "error", message: result.message });
+          classify(new Error(result.message));
         });
       },
       (cause: unknown) => {
@@ -96,36 +120,12 @@ export function HomeRoute() {
         });
       },
     );
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedTenantId, navigate, retryCount]);
 
-  // While agents are still deploying, keep asking — and the moment the
-  // bench is ready, re-run the land so the person drops straight into
-  // Myra without touching anything.
-  useEffect(() => {
-    if (state.kind !== "provisioning") return;
-    let cancelled = false;
-    const timer = setInterval(() => {
-      void fetchProvisioningProgress().then((progress) => {
-        if (cancelled) return;
-        if (progress.ready) {
-          setRetryCount((count) => count + 1);
-          return;
-        }
-        setState({
-          kind: "provisioning",
-          live: progress.live,
-          total: progress.total,
-        });
-      });
-    }, PROVISIONING_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
     };
-  }, [state.kind]);
+  }, [selectedTenantId, navigate, attempt, waitId, retryMs, stallAfterMs]);
 
   if (memberships.kind === "loading") {
     return (
@@ -172,10 +172,7 @@ export function HomeRoute() {
           title="Couldn't open Myra"
           description={state.message}
           action={
-            <Button
-              variant="outline"
-              onClick={() => setRetryCount((count) => count + 1)}
-            >
+            <Button variant="outline" onClick={startOver}>
               Retry
             </Button>
           }
@@ -184,22 +181,26 @@ export function HomeRoute() {
     );
   }
 
-  if (state.kind === "provisioning") {
+  if (state.kind === "slow") {
     return (
-      <div className="page-fill shell-route-loading">
-        <WorkbenchLoadingState title="Getting your agents ready…" delayMs={0} />
-        <p className="shell-route-loading-note" role="status">
-          {state.total > 0
-            ? `${state.live} of ${state.total} ready`
-            : "This only takes a moment."}
-        </p>
-      </div>
+      <PageShell width="full" className="page-fill">
+        <EmptyState
+          icon={<WarningCircle />}
+          title="Myra is taking longer than usual"
+          description="She's still getting set up. Give it another moment, or try again."
+          action={
+            <Button variant="outline" onClick={startOver}>
+              Try again
+            </Button>
+          }
+        />
+      </PageShell>
     );
   }
 
   return (
     <div className="page-fill shell-route-loading">
-      <WorkbenchLoadingState />
+      <WorkbenchLoadingState delayMs={0} />
     </div>
   );
 }

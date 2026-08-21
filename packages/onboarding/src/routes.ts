@@ -13,6 +13,7 @@ import {
   createHubAPI,
   inferenceCredentialName,
   parseAs,
+  SETUP_AGENT_ASSET_NAME,
   supportedCredentialProviders,
   type ApiCall,
   type ModelSource,
@@ -189,13 +190,19 @@ export type CreateOnboardingRoutesDeps = {
  * bench's agents actually are, read from the bench's own asset and
  * deployment state rather than from anything a caller remembers. `ready`
  * means every default workflow is live; `provisioning` means the drain
- * still has work to do, and `deployed`/`pending` are what a waiting
- * surface renders as live progress instead of a static label.
+ * still has work to do.
+ *
+ * `setupAgentReady` is the only field a waiting surface should ever
+ * branch on (CL-6462): it says whether the one agent a person talks to
+ * is live, which is the real "can they start?" question. `deployed` and
+ * `pending` stay for operators and logs — a count of seed workflows is
+ * an implementation detail no person should be made to watch.
  */
 type ProvisioningStatusBody = {
   readonly kind: "ready" | "provisioning";
   readonly tenantId: string;
   readonly tenantSlug: string;
+  readonly setupAgentReady: boolean;
   readonly deployed: string[];
   readonly pending: string[];
 };
@@ -298,6 +305,7 @@ export function createOnboardingRoutes(
       kind: pending.length === 0 ? "ready" : "provisioning",
       tenantId: tenant.tenantId,
       tenantSlug: tenant.tenantSlug,
+      setupAgentReady: deployed.includes(SETUP_AGENT_ASSET_NAME),
       deployed,
       pending,
     };

@@ -211,8 +211,17 @@ function catalogAutomatable(assetName: string): boolean {
 }
 
 /**
- * The workflow set every real tenant starts with: the echo
- * walking-skeleton, the general-purpose assistant, and the workbench-digest
+ * The asset name of the agent a person actually talks to on a brand-new
+ * bench — Myra, the setup agent. Named here because deploy ORDER depends
+ * on it (see `DEFAULT_WORKFLOWS`) and because every surface that asks
+ * "can this person start yet?" answers by looking for this one asset,
+ * never by counting the whole set.
+ */
+export const SETUP_AGENT_ASSET_NAME = "assistant";
+
+/**
+ * The workflow set every real tenant starts with: the general-purpose
+ * assistant, the echo walking-skeleton, and the workbench-digest
  * automation the Routines picker can honestly offer. This is what
  * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
  * on first login for every real user — growing it is adding an entry
@@ -220,11 +229,33 @@ function catalogAutomatable(assetName: string): boolean {
  * never the place for a workflow that exists only to exercise the
  * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
  *
+ * Order is a product decision, not a formality (CL-6462): `seedTenant`
+ * deploys this array in sequence at roughly 20s each, and the setup
+ * agent is the only entry a person needs before they can start talking.
+ * It goes first so a fresh signup lands in a working conversation in
+ * seconds while the rest converge behind them; a signup that waited on
+ * the whole set stared at a progress screen for minutes.
+ *
  * workbench-digest is the seed automation: schedulable, not a chat host,
  * friendly display name. It uses the tenant's real model so a scheduled
  * run can produce a real digest line.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
+  {
+    assetName: SETUP_AGENT_ASSET_NAME,
+    displayName: catalogDisplayName(SETUP_AGENT_ASSET_NAME),
+    automatable: catalogAutomatable(SETUP_AGENT_ASSET_NAME),
+    buildJson: (tenantDomain, model) =>
+      serializeAssistantWorkflow(
+        buildAssistantWorkflow({
+          triggerAddress: `${SETUP_AGENT_ASSET_NAME}@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
   {
     assetName: "echo",
     displayName: catalogDisplayName("echo"),
@@ -237,21 +268,6 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: ECHO_TURN_TIMEOUT_MS,
-        }),
-      ),
-  },
-  {
-    assetName: "assistant",
-    displayName: catalogDisplayName("assistant"),
-    automatable: catalogAutomatable("assistant"),
-    buildJson: (tenantDomain, model) =>
-      serializeAssistantWorkflow(
-        buildAssistantWorkflow({
-          triggerAddress: `assistant@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
-          turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
   },
