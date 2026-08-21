@@ -12,6 +12,8 @@ import { InferenceResolutionError } from "@corbits/folded-runs";
 import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
+import { deriveDisplayName } from "./display-name";
+import { assertNoLeakedInternalId } from "./id-leak-guard";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
 import { mergeContextIntoParts } from "./workbench-context";
 import {
@@ -163,6 +165,12 @@ export type LaunchAndJoinAgentResult = {
   readonly address: string;
   readonly definitionId: string;
   readonly handle: string;
+  /** The agent's real, person-facing name — see `resolveInvitedDisplayName`.
+   * Never the mention handle: a caller that needs "Architecture reviewer"
+   * rather than "architecture-reviewer" (the canned greeting, chiefly)
+   * reads this instead of re-deriving it from a possibly-stale
+   * `invitable` snapshot (CL-6471). */
+  readonly displayName: string;
   readonly settings: Record<string, unknown>;
   /**
    * Settles when the timeline's `workbench.agent-joined` event has been
@@ -211,6 +219,41 @@ export async function findResidentAgentForDefinition(
 }
 
 /**
+ * Resolves the display name an invited definition should carry, the one
+ * source both the participant's mention handle and the canned greeting's
+ * "I'm ${agent}" read (CL-6471): the pre-fetched `invitable` snapshot
+ * when it has the definition, falling back to a live, authoritative
+ * lookup (`resolveDefinitionNameSource`) when it doesn't — a just-created
+ * or just-redeployed definition the snapshot predates. Never falls
+ * further than that: a definition this tenant genuinely has no row for
+ * is a loud error, never a raw address or run id standing in for a name.
+ */
+export async function resolveInvitedDisplayName(
+  platform: Pick<WorkbenchLauncher, "resolveDefinitionNameSource">,
+  invitable: readonly InvitableDefinition[],
+  definitionId: string,
+): Promise<string> {
+  const invitedDefinition = invitable.find(
+    (definition) => definition.id === definitionId,
+  );
+  const nameSource =
+    invitedDefinition ??
+    (await platform.resolveDefinitionNameSource(definitionId));
+  if (nameSource === undefined) {
+    throw new Error(
+      `cannot resolve a display name for definition "${definitionId}": ` +
+        "this tenant carries no such definition",
+    );
+  }
+  const displayName = deriveDisplayName(nameSource);
+  assertNoLeakedInternalId(
+    displayName,
+    `definition "${definitionId}"'s display name`,
+  );
+  return displayName;
+}
+
+/**
  * The invite core: launches the definition's own instance, derives
  * its friendly mention handle, appends the participant record, posts
  * the join event onto the workbench's timeline, and arms the reply
@@ -236,25 +279,18 @@ export async function launchAndJoinAgent(
     definitionId: input.definitionId,
   });
 
-  // The invited definition's human display name (`description`, e.g.
-  // "Myra" for the `assistant` asset) becomes the friendly mention
-  // handle, falling back to the asset name itself when the deploy
-  // carried no display name, and to the invited run's own unusable
-  // instance-id local part when the listing no longer carries the
-  // definition at all. The asset name (`.name`) is a wire identifier,
-  // never UI copy — it must never surface as a mention handle. Either
-  // way it is de-duplicated against every handle already in the
-  // workbench ("echo", "echo-2", ...).
-  const invitedDefinition = input.invitable.find(
-    (definition) => definition.id === input.definitionId,
+  // The invited definition's real display name becomes the friendly
+  // mention handle (see `resolveInvitedDisplayName`) — de-duplicated
+  // against every handle already in the workbench ("echo", "echo-2",
+  // ...). Never the asset name's raw slug, and never the run's own
+  // address/instance-id local part: a definition this snapshot missed
+  // is resolved live rather than degraded to an internal id (CL-6471).
+  const displayName = await resolveInvitedDisplayName(
+    deps.platform,
+    input.invitable,
+    input.definitionId,
   );
-  const desiredHandle =
-    invitedDefinition !== undefined
-      ? handleFromName(
-          invitedDefinition.description ?? invitedDefinition.name,
-          launched.address,
-        )
-      : localPartOf(launched.address);
+  const desiredHandle = handleFromName(displayName, launched.address);
 
   // The record is updated before the join event is posted, matching
   // the settings PATCH route's record-then-mail ordering: the
@@ -314,6 +350,7 @@ export async function launchAndJoinAgent(
     address: launched.address,
     definitionId: input.definitionId,
     handle: desiredHandle,
+    displayName,
     settings: row.settings,
     joinEventDelivered,
   };
@@ -397,6 +434,11 @@ function templateGreeting(who: string, agent: string, promise: string): string {
 }
 
 export function cannedGreeting(input: CannedGreetingInput): string {
+  // The agent states its own name here, verbatim — the exact spot
+  // CL-6471's "I'm run_737a058d…" leaked from. Guarded at the source
+  // rather than trusted, since every caller ultimately reaches this
+  // through `agentName` alone.
+  assertNoLeakedInternalId(input.agentName, "a greeting's agent name");
   const who =
     input.senderName !== undefined && input.senderName !== ""
       ? ` ${input.senderName}`

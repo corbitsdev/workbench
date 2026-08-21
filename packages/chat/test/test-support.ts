@@ -58,6 +58,11 @@ export function fakePlatform(
     resolveDefinitionIdByAddress?: (
       address: string,
     ) => Promise<string | undefined>;
+    resolveDefinitionNameSource?: (
+      definitionId: string,
+    ) => Promise<
+      { readonly name: string; readonly description?: string } | undefined
+    >;
     refreshAgentInstanceFromDefinition?: (
       tenantId: string,
       workbenchId: string,
@@ -140,6 +145,12 @@ export function fakePlatform(
         return opts.resolveDefinitionIdByAddress(address);
       }
       return undefined;
+    },
+    async resolveDefinitionNameSource(definitionId) {
+      if (opts.resolveDefinitionNameSource !== undefined) {
+        return opts.resolveDefinitionNameSource(definitionId);
+      }
+      return (opts.invitable ?? []).find((d) => d.id === definitionId);
     },
     async refreshAgentInstanceFromDefinition(tenantId, workbenchId, address) {
       refreshCalls.push({ tenantId, workbenchId, address });

@@ -666,6 +666,16 @@ export function createHubChatPlatform(
       return row?.assetId ?? undefined;
     },
 
+    async resolveDefinitionNameSource(definitionId) {
+      const row = await deps.db.query.workflowDefinition.findFirst({
+        where: eq(workflowDefinition.id, definitionId),
+      });
+      if (row === undefined) return undefined;
+      return typeof row.description === "string" && row.description !== ""
+        ? { name: row.name, description: row.description }
+        : { name: row.name };
+    },
+
     async refreshAgentInstanceFromDefinition(
       tenantId,
       _workbenchId,

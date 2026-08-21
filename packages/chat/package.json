@@ -15,7 +15,9 @@
     "./stream-events": "./src/stream-events.ts",
     "./blocks": "./src/blocks.ts",
     "./agent-address": "./src/agent-address.ts",
-    "./workbench-host-naming": "./src/workbench-host-naming.ts"
+    "./workbench-host-naming": "./src/workbench-host-naming.ts",
+    "./display-name": "./src/display-name.ts",
+    "./id-leak-guard": "./src/id-leak-guard.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

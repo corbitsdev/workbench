@@ -96,6 +96,24 @@ export interface WorkbenchLauncher {
   resolveDefinitionAssetId(definitionId: string): Promise<string | undefined>;
 
   /**
+   * Resolves a definition id directly to the name/description pair
+   * `@corbits/chat/display-name`'s `deriveDisplayName` reads — the
+   * authoritative source a caller falls back to when a definition it
+   * needs to name isn't present in an already-fetched
+   * `listInvitableDefinitions` snapshot (a just-created or just-redeployed
+   * definition the snapshot predates). Never used as the primary lookup —
+   * an `invitable` hit is cheaper and already in hand — only as the seam
+   * that keeps a stale-snapshot miss from ever degrading to a raw address
+   * or run id (CL-6471). Returns undefined only when the tenant truly has
+   * no such definition.
+   */
+  resolveDefinitionNameSource(
+    definitionId: string,
+  ): Promise<
+    { readonly name: string; readonly description?: string } | undefined
+  >;
+
+  /**
    * Recomputes an already-invited instance's folded launch body from
    * its definition's CURRENT asset content, and persists it so the
    * instance's next wake uses it. A wake replays whatever the launch
