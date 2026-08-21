@@ -84,12 +84,20 @@ export {
   X,
 } from "@phosphor-icons/react";
 
+/** `IconContext.Provider` replaces Phosphor's whole context value rather than
+ * merging with it, so this must restate every default the library ships
+ * (`size: "1em"`) alongside the one we're overriding (`weight: "bold"`) —
+ * dropping `size` silently un-sizes every glyph that has no ancestor CSS
+ * rule and no explicit `size=` prop, which is why the right-click menu and
+ * the search bar rendered at the browsers' unsized-<svg> fallback. */
+export const boldIconContextValue = { size: "1em", weight: "bold" } as const;
+
 /** Wraps a subtree so every Phosphor icon under it defaults to bold weight
  * without repeating `weight="bold"` at each call site. Mounted once at each
  * app's root (see `apps/web/src/app.tsx`). */
 export function BoldIconProvider({ children }: { children: ReactNode }) {
   return (
-    <IconContext.Provider value={{ weight: "bold" }}>
+    <IconContext.Provider value={boldIconContextValue}>
       {children}
     </IconContext.Provider>
   );
