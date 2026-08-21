@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { friendlyToolLabel, nextTurnActivityState } from "./turn-activity";
+import { nextTurnActivityState } from "./turn-activity";
 
 function agentEvent(inner: unknown) {
   return { eventType: "chat.agent", data: inner };
@@ -58,7 +58,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
   });
 
   describe("tool call lifecycle", () => {
-    test("inference.tool_call.start opens a running chip named after the tool", () => {
+    test("inference.tool_call.start opens a running row for the tool", () => {
       const state = nextTurnActivityState(
         null,
         agentEvent({
@@ -71,7 +71,8 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       expect(state?.toolCalls).toEqual([
         {
           callId: "c1",
-          label: "web_search",
+          name: "web_search",
+          input: undefined,
           status: "running",
           startedAtMs: 1000,
           doneAtMs: null,
@@ -79,7 +80,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       ]);
     });
 
-    test("inference.tool_call.end refines the label (e.g. mcp_read -> server.tool) without resetting startedAtMs", () => {
+    test("inference.tool_call.end attaches the call's arguments without resetting startedAtMs", () => {
       let state = nextTurnActivityState(
         null,
         agentEvent({
@@ -106,7 +107,8 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       expect(state?.toolCalls).toEqual([
         {
           callId: "c1",
-          label: "notion.search_pages",
+          name: "mcp_read",
+          input: { server: "notion", tool: "search_pages" },
           status: "running",
           startedAtMs: 1000,
           doneAtMs: null,
@@ -114,7 +116,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       ]);
     });
 
-    test("tool.start opens a chip directly (no preceding inference.tool_call.start) using the ToolCall's own arguments", () => {
+    test("tool.start opens a row directly (no preceding inference.tool_call.start) using the ToolCall's own arguments", () => {
       const state = nextTurnActivityState(
         null,
         agentEvent({
@@ -133,7 +135,8 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       expect(state?.toolCalls).toEqual([
         {
           callId: "c2",
-          label: "linear.save_issue",
+          name: "mcp_call",
+          input: { server: "linear", tool: "save_issue" },
           status: "running",
           startedAtMs: 500,
           doneAtMs: null,
@@ -141,7 +144,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       ]);
     });
 
-    test("tool.done marks the matching chip done and freezes its elapsed time", () => {
+    test("tool.done settles the matching row as a success and freezes its elapsed time", () => {
       let state = nextTurnActivityState(
         null,
         agentEvent({
@@ -163,12 +166,39 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       expect(state?.toolCalls).toEqual([
         {
           callId: "c1",
-          label: "search",
-          status: "done",
+          name: "search",
+          input: {},
+          status: "success",
           startedAtMs: 1000,
           doneAtMs: 4000,
         },
       ]);
+    });
+
+    test("tool.done with isError settles the row as failed, not as a quiet success", () => {
+      let state = nextTurnActivityState(
+        null,
+        agentEvent({
+          type: "tool.start",
+          seq: 1,
+          data: {
+            call: { id: "c1", name: "github__get_issue", arguments: {} },
+          },
+        }),
+        1000,
+      );
+      state = nextTurnActivityState(
+        state,
+        agentEvent({
+          type: "tool.done",
+          seq: 2,
+          data: {
+            result: { callId: "c1", content: "not found", isError: true },
+          },
+        }),
+        2000,
+      );
+      expect(state?.toolCalls[0]?.status).toBe("failed");
     });
 
     test("tool.done for an unknown callId is ignored rather than crashing", () => {
@@ -281,27 +311,5 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       thinking: { active: false, charCount: 0 },
       retryCount: 0,
     });
-  });
-});
-
-describe("friendlyToolLabel", () => {
-  test("an ordinary tool name is shown as-is", () => {
-    expect(friendlyToolLabel("web_search", undefined)).toBe("web_search");
-  });
-
-  test("mcp_read/mcp_call resolve to server.tool when arguments carry both", () => {
-    expect(
-      friendlyToolLabel("mcp_read", { server: "notion", tool: "search" }),
-    ).toBe("notion.search");
-    expect(
-      friendlyToolLabel("mcp_call", { server: "linear", tool: "save_issue" }),
-    ).toBe("linear.save_issue");
-  });
-
-  test("mcp_read/mcp_call fall back to the bare tool name when arguments are missing or malformed", () => {
-    expect(friendlyToolLabel("mcp_read", undefined)).toBe("mcp_read");
-    expect(friendlyToolLabel("mcp_call", { server: "notion" })).toBe(
-      "mcp_call",
-    );
   });
 });

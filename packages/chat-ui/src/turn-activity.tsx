@@ -15,12 +15,14 @@
 
 import { useEffect, useState } from "react";
 
-import { CHAT_STRINGS } from "./strings";
+import { describeToolCall, type ToolActivityRow } from "./tool-activity";
+import { LiveToolActivity } from "./tool-activity-view";
 
 export type ToolCallActivity = {
   readonly callId: string;
-  readonly label: string;
-  readonly status: "running" | "done";
+  readonly name: string;
+  readonly input: Record<string, unknown> | undefined;
+  readonly status: "running" | "success" | "failed";
   readonly startedAtMs: number;
   readonly doneAtMs: number | null;
 };
@@ -36,29 +38,6 @@ const EMPTY_ACTIVITY: NonNullable<TurnActivityState> = {
   thinking: { active: false, charCount: 0 },
   retryCount: 0,
 };
-
-/**
- * Resolves a tool call's display name. `mcp_read`/`mcp_call` are the
- * generic MCP dispatch tools (`packages/mcp-tools/src/tool.ts`) — every
- * downstream call looks identical ("mcp_read") unless its own `{server,
- * tool}` arguments are surfaced, so this shows the underlying
- * `server.tool` when both are present and falls back to the bare tool
- * name for everything else (an ordinary tool, or a malformed/absent
- * argument bag).
- */
-export function friendlyToolLabel(
-  name: string,
-  args: Record<string, unknown> | undefined,
-): string {
-  if (name === "mcp_read" || name === "mcp_call") {
-    const server = args?.server;
-    const tool = args?.tool;
-    if (typeof server === "string" && typeof tool === "string") {
-      return `${server}.${tool}`;
-    }
-  }
-  return name;
-}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
@@ -117,12 +96,18 @@ function parseToolStart(data: unknown): {
   return { callId, name, arguments: asRecord(call.arguments) ?? undefined };
 }
 
-function parseToolDone(data: unknown): { callId: string } | null {
+/** A settled tool call, with the one thing the old reading dropped: whether
+ * it actually worked. A failed call used to land in the strip as a quiet
+ * check mark, indistinguishable from a success. */
+function parseToolDone(
+  data: unknown,
+): { callId: string; isError: boolean } | null {
   const inner = innerData(data);
   const result = inner === null ? null : asRecord(inner.result);
   if (result === null) return null;
   const callId = result.callId;
-  return typeof callId === "string" ? { callId } : null;
+  if (typeof callId !== "string") return null;
+  return { callId, isError: result.isError === true };
 }
 
 /**
@@ -158,37 +143,54 @@ function parseRetry(data: unknown): { attempt: number } | null {
   return typeof attempt === "number" ? { attempt } : null;
 }
 
-/** Sets (or refines) one tool call's label, opening a new running chip if
+/** Records (or refines) one tool call, opening a new running row if
  * `callId` hasn't been seen yet this turn. Never touches `startedAtMs`,
  * `status`, or `doneAtMs` on an existing entry — `inference.tool_call.end`
- * and `tool.start` only ever add a better label to a chip already opened
- * by an earlier event for the same call. */
-function upsertToolCallLabel(
+ * and `tool.start` only ever add the arguments a row already opened by an
+ * earlier event was missing. */
+function upsertToolCall(
   toolCalls: readonly ToolCallActivity[],
-  callId: string,
-  label: string,
+  call: {
+    callId: string;
+    name: string;
+    input: Record<string, unknown> | undefined;
+  },
   nowMs: number,
 ): readonly ToolCallActivity[] {
-  const existing = toolCalls.find((call) => call.callId === callId);
+  const existing = toolCalls.find((entry) => entry.callId === call.callId);
   if (existing === undefined) {
     return [
       ...toolCalls,
-      { callId, label, status: "running", startedAtMs: nowMs, doneAtMs: null },
+      {
+        callId: call.callId,
+        name: call.name,
+        input: call.input,
+        status: "running",
+        startedAtMs: nowMs,
+        doneAtMs: null,
+      },
     ];
   }
-  return toolCalls.map((call) =>
-    call.callId === callId ? { ...call, label } : call,
+  return toolCalls.map((entry) =>
+    entry.callId === call.callId
+      ? { ...entry, name: call.name, input: call.input ?? entry.input }
+      : entry,
   );
 }
 
-function markToolCallDone(
+function settleToolCall(
   toolCalls: readonly ToolCallActivity[],
   callId: string,
+  isError: boolean,
   nowMs: number,
 ): readonly ToolCallActivity[] {
   return toolCalls.map((call) =>
     call.callId === callId
-      ? { ...call, status: "done" as const, doneAtMs: call.doneAtMs ?? nowMs }
+      ? {
+          ...call,
+          status: isError ? ("failed" as const) : ("success" as const),
+          doneAtMs: call.doneAtMs ?? nowMs,
+        }
       : call,
   );
 }
@@ -247,10 +249,9 @@ export function nextTurnActivityState(
     return {
       ...base,
       thinking,
-      toolCalls: upsertToolCallLabel(
+      toolCalls: upsertToolCall(
         base.toolCalls,
-        parsed.callId,
-        friendlyToolLabel(parsed.name, undefined),
+        { callId: parsed.callId, name: parsed.name, input: undefined },
         nowMs,
       ),
     };
@@ -261,10 +262,13 @@ export function nextTurnActivityState(
     return {
       ...base,
       thinking,
-      toolCalls: upsertToolCallLabel(
+      toolCalls: upsertToolCall(
         base.toolCalls,
-        parsed.callId,
-        friendlyToolLabel(parsed.name, parsed.arguments),
+        {
+          callId: parsed.callId,
+          name: parsed.name,
+          input: parsed.arguments,
+        },
         nowMs,
       ),
     };
@@ -275,10 +279,13 @@ export function nextTurnActivityState(
     return {
       ...base,
       thinking,
-      toolCalls: upsertToolCallLabel(
+      toolCalls: upsertToolCall(
         base.toolCalls,
-        parsed.callId,
-        friendlyToolLabel(parsed.name, parsed.arguments),
+        {
+          callId: parsed.callId,
+          name: parsed.name,
+          input: parsed.arguments,
+        },
         nowMs,
       ),
     };
@@ -289,7 +296,12 @@ export function nextTurnActivityState(
     return {
       ...base,
       thinking,
-      toolCalls: markToolCallDone(base.toolCalls, parsed.callId, nowMs),
+      toolCalls: settleToolCall(
+        base.toolCalls,
+        parsed.callId,
+        parsed.isError,
+        nowMs,
+      ),
     };
   }
   if (innerType === "inference.retry") {
@@ -361,11 +373,38 @@ function elapsedSeconds(startedAtMs: number, endMs: number): number {
 }
 
 /**
- * The live strip: one chip per tool call this turn (a pulsing square while
- * running, a quiet check once done, plus elapsed seconds), a "Thinking…"
- * row while thinking deltas are flowing, and a retry note if the model's
- * own request needed one. Renders nothing once the turn ends — the
- * persisted message takes over from there (v1 has no persisted trace).
+ * This turn's tool calls as the rows the conversation renders everywhere
+ * else — same sentences, same statuses. A call still running says so in
+ * the present tense and carries how long it has been going; a settled one
+ * drops the timer, since a finished step's duration is noise.
+ */
+export function toolActivityRows(
+  activity: NonNullable<TurnActivityState>,
+  nowMs: number,
+): readonly ToolActivityRow[] {
+  return activity.toolCalls.map((call) => {
+    const isRunning = call.status === "running";
+    const base = {
+      key: call.callId,
+      toolName: call.name,
+      phrase: describeToolCall(
+        call.name,
+        call.input,
+        isRunning ? "present" : "past",
+      ),
+      detail: undefined,
+      status: call.status,
+    };
+    if (!isRunning) return base;
+    return { ...base, meta: `${elapsedSeconds(call.startedAtMs, nowMs)}s` };
+  });
+}
+
+/**
+ * The live strip: one row per tool call this turn, a "Thinking…" row while
+ * thinking deltas are flowing, and a retry note if the model's own request
+ * needed one. Renders nothing once the turn ends — the persisted message
+ * takes over from there, in the same row idiom.
  */
 export function TurnActivityStrip({
   activity,
@@ -383,36 +422,12 @@ export function TurnActivityStrip({
   }, [hasRunningToolCall]);
 
   if (activity === null) return null;
-  const { toolCalls, thinking, retryCount } = activity;
-  if (toolCalls.length === 0 && !thinking.active && retryCount === 0) {
-    return null;
-  }
 
   return (
-    <div className="chat-turn-activity" role="status">
-      {toolCalls.map((call) => (
-        <div
-          key={call.callId}
-          className="chat-turn-activity-row"
-          data-status={call.status}
-        >
-          <span className="chat-turn-activity-marker" aria-hidden="true" />
-          <span className="chat-turn-activity-label">{call.label}</span>
-          <span className="chat-turn-activity-elapsed">
-            {elapsedSeconds(call.startedAtMs, call.doneAtMs ?? Date.now())}s
-          </span>
-        </div>
-      ))}
-      {thinking.active ? (
-        <div className="chat-turn-activity-row chat-turn-activity-thinking">
-          {CHAT_STRINGS.turnActivityThinking}
-        </div>
-      ) : null}
-      {retryCount > 0 ? (
-        <div className="chat-turn-activity-row chat-turn-activity-retry">
-          {CHAT_STRINGS.turnActivityRetry(retryCount)}
-        </div>
-      ) : null}
-    </div>
+    <LiveToolActivity
+      rows={toolActivityRows(activity, Date.now())}
+      thinking={activity.thinking.active}
+      retryCount={activity.retryCount}
+    />
   );
 }

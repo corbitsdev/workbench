@@ -176,6 +176,35 @@ connected — never a generic verb applied to a state where nothing has
 been set up yet, and never invented synonyms for the same action across
 screens. One action, one verb, everywhere that action appears.
 
+## Tool Activity in the Conversation
+
+What an agent did between question and answer renders as sentences, never
+as the material it was made from. A tool call is described by what it
+accomplished — "Searched the web for 'pricing'", "Wrote a file —
+report.md", "Posted a message in Slack #general" — never by its
+identifier, its namespace, or a humanised spelling of either. A result is
+plain text: the prose the tool returned, or a count when it returned a
+list. Raw JSON never reaches a reader, expanded or not; the only
+exception is code the user actually asked for, which is prose, not
+machinery.
+
+Tense follows state: a call still running speaks in the present
+("Searching…"), a settled one in the past ("Searched…"). The same rows
+render mid-turn and in the persisted transcript, so nothing restyles
+itself the moment a turn ends.
+
+Consecutive calls fold into one round on a single line — the step
+currently working while the turn is open, then a count of steps once it
+settles. Rounds stay collapsed by default, including while running: the
+answer is what the reader is waiting for, and a transcript that expands
+its own machinery pushes the answer off screen. Detail opens on demand,
+one click, and a row with nothing to show offers no disclosure at all.
+
+A failure says so plainly, in words, and opens itself — it is the one
+state where the detail is the point. A tool that failed without saying
+why still says that much. Failure is the only state in this strip that
+earns colour; everything else is quiet chrome.
+
 ## State Pills
 
 Status indicators (ok / warn / error / running) use semantic colors that

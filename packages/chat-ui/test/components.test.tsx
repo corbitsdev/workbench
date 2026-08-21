@@ -66,12 +66,11 @@ describe("WorkbenchTimeline", () => {
   // CL-6318: the timeline used to render text, event, file and block and
   // drop `reasoning` and `tool-trace` on the floor — the agent's thinking
   // and every tool call it made were invisible in the product.
-  test("renders a tool call, naming the tool and marking it finished", () => {
+  test("renders a tool call as a sentence, with the tool id nowhere in sight", () => {
     const markup = renderToStaticMarkup(<WorkbenchTimeline items={items} />);
-    expect(markup).toContain('data-slot="tool-block"');
-    // react-ui presents the raw tool id in human phrasing.
-    expect(markup).toContain("Search");
-    expect(markup).toContain('data-status="output-available"');
+    expect(markup).toContain("chat-tool-activity");
+    expect(markup).toContain("Searched for &quot;x&quot;");
+    expect(markup).toContain('data-status="success"');
   });
 
   test("renders reasoning as a disclosure rather than dropping it", () => {
@@ -107,9 +106,9 @@ describe("WorkbenchTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(<WorkbenchTimeline items={running} />);
-    expect(markup).toContain("Deploy");
+    expect(markup).toContain("Deploying");
     expect(markup).toContain('data-status="running"');
-    expect(markup).not.toContain('data-status="output-available"');
+    expect(markup).not.toContain('data-status="success"');
   });
 
   test("shows the sender's name when present", () => {
