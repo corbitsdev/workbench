@@ -1,8 +1,8 @@
 // CL-6463: a successful PAT submit must flip the connect-github card to
 // connected on its own — never leaning on a host that happens to fan the
-// change out through `subscribeConnectState` (real hosts vary, and
-// `chat.settings` never carries the credential-save path at all; see
-// `connect-github-stream.ts`'s own header). These fakes deliberately never
+// change out through `subscribeConnectState` (real hosts vary: the real
+// `createChatConnectGithubActions` only fans out after its own actions,
+// never off a live `chat.settings` push). These fakes deliberately never
 // call the subscriber from `submitAccessToken`, so a pass here proves the
 // container drove its own state from the submit's own result — not from a
 // side channel a differently-wired host might forget.

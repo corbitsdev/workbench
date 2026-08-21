@@ -6,14 +6,14 @@
 // framing every other block's "no port, no feature" fallback uses.
 //
 // CL-6463: a card's own successful PAT submit is the one change this
-// container never waits on a fold for. `subscribeConnectState` folds
-// whatever a host chooses to publish, and the room's `chat.settings`
-// event (the only thing `connect-github-stream.ts` can fold) is written
-// by the later, unrelated repo-review PATCH — never by the credential
-// save itself. So `submitAccessToken` gets its own explicit
-// `getConnectState` refetch here, run once as the direct consequence of
-// that one submit — not a poll, and not a second source of truth
-// alongside the fold; the fold keeps handling every other update.
+// container never waits on the host to fan out on its own — a credential
+// saved through *this* card's field gets its own explicit `getConnectState`
+// refetch below, run once as the direct consequence of that one submit
+// (not a poll). A credential saved anywhere else (the Plugins page,
+// another tab) settles through `packages/chat/src/connect-pending.ts`'s
+// `settleConnectedService`, which clears this room's own
+// `template/pendingConnections` entry — so this card's next mount already
+// reads connected without needing a push while it sits open.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
 
