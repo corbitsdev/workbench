@@ -38,12 +38,25 @@ export interface GifSearchEnv extends BaseEnv {
   readonly credentials?: CredentialCapability;
 }
 
+/** The wire shape `@corbits/connections`' `missingCredentialDetail` defines
+ * (`{kind: "missing-credential", connectorId}`) — reproduced here rather
+ * than imported, per that module's own doc comment: any tool package can
+ * write this shape onto a `ToolResult` with no dependency on the
+ * `connections` package, since only the chat orchestrator's reader needs
+ * to parse it. `@corbits/github-tools`' `pull-request-tools.ts` follows
+ * the same convention. This is what turns the plain error message below
+ * into a real "Connect Giphy" button in chat instead of a dead end. */
+function missingCredentialDetail(connectorId: string) {
+  return { kind: "missing-credential", connectorId } as const;
+}
+
 function notConnectedResult(callId: string): ToolResult {
   return {
     callId,
     content:
       "Connect Giphy to let Jimmy search for GIFs — this workspace has no Giphy credential yet.",
     isError: true,
+    detail: missingCredentialDetail(GIPHY_CREDENTIAL_HANDLE),
   };
 }
 
