@@ -201,15 +201,17 @@ const HubEnv = type({
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
 // better-auth's own built-in special rule for /sign-in* is 3 attempts per
-// 10 seconds, keyed per client IP. That's the bucket the shared-IP-fallback
-// bug (CL-6494) starves: when the IP can't be resolved every signed-out
-// visitor -- in production, or the one developer on a local box -- shares
-// it. Raising it here, applied the same in every environment rather than
-// branched on NODE_ENV (this file already rejects inferring auth behavior
-// from NODE_ENV — see `rateLimit.enabled` below), gives real users room to
-// mistype a password and gives a lone local developer room to keep working
-// even while the IP genuinely can't be resolved, without loosening
-// production brute-force resistance in any meaningful way.
+// 10 seconds, keyed per client IP -- too tight for a bucket that can end up
+// shared (CL-6494): when the IP can't be resolved, or is forged, every
+// signed-out visitor, or an attacker replaying the same forged header, can
+// starve it. index.ts now disables that built-in rule for sign-in entirely
+// (see sign-in-rate-limit.ts) and uses these knobs to configure its
+// account-keyed replacement instead, applied the same in every environment
+// rather than branched on NODE_ENV (this file already rejects inferring
+// auth behavior from NODE_ENV — see `rateLimit.enabled` below). This gives
+// real users room to mistype a password, and a lone local developer room
+// to keep working even while no IP can be resolved, without loosening
+// brute-force resistance.
 const DEFAULT_SIGNIN_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNIN_RATE_LIMIT_MAX = 10;
 
