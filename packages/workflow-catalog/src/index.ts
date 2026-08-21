@@ -344,6 +344,41 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    assetName: "diligence-brief",
+    displayName: "Diligence brief",
+    automatable: false,
+    conversational: false,
+    deliveryMode: "workbench",
+    whatItDoes:
+      "Researches a company across web search and firm memory, and writes a cited diligence brief across five fixed sections, held for approval before it's saved.",
+    requiredConnections: ["exa"],
+    exampleOutput:
+      "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
+    typicalDuration: "1-2 minutes, plus review and approval time",
+    // Mirrors workflows/diligence-brief/src/index.ts's system prompt
+    // exactly: "the trigger carries a `company` and an optional `focus`" —
+    // company is required (the prompt refuses to draft with no subject),
+    // focus narrows which angle to dig into and is skippable.
+    triggerFields: [
+      {
+        key: "company",
+        kind: "text",
+        label: "Company",
+        placeholder: "Acme Corp",
+        required: true,
+        help: "The company this brief is about.",
+      },
+      {
+        key: "focus",
+        kind: "text",
+        label: "Focus",
+        placeholder: "Founder track record",
+        required: false,
+        help: "Optional — narrows which angle to dig into.",
+      },
+    ],
+  },
+  {
     assetName: "exa-topic-watch",
     displayName: "Web topic watch",
     automatable: true,

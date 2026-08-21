@@ -37,10 +37,11 @@ describe("connections pinned-by", () => {
     );
   });
 
-  test("exa pins both web-search workflows", () => {
+  test("exa pins every web-search workflow", () => {
     expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual([
       "last-30-days-research",
       "exa-topic-watch",
+      "diligence-brief",
     ]);
   });
 

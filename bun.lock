@@ -1753,6 +1753,20 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/diligence-brief": {
+      "name": "@corbits/diligence-brief-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/echo": {
       "name": "@corbits/echo-workflow",
       "version": "0.0.1",
@@ -2070,6 +2084,8 @@
     "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
 
     "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
+
+    "@corbits/diligence-brief-workflow": ["@corbits/diligence-brief-workflow@workspace:workflows/diligence-brief"],
 
     "@corbits/docker-provisioner": ["@corbits/docker-provisioner@workspace:packages/docker-provisioner"],
 
