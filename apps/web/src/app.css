@@ -719,15 +719,18 @@ select:disabled,
   margin-left: auto;
 }
 
-/* The one search entry point: a magnifier that morphs in place into the
-   palette's inline bar. Width is the animated property, so both states have
-   to be the same element — never a swap between two boxes. The transition is
-   authored here rather than as Tailwind utilities: react-ui ships a prebuilt
-   stylesheet, and `duration-standard`/`ease-*` compile to classes only in
-   react-ui's own build, so a utility class would be inert here. `--ease-in-out`
-   is react-ui's documented curve for something growing in place — a spring's
-   overshoot would jitter the whole top bar. Reduced motion is already handled
-   by that stylesheet's global transition-duration collapse. */
+/* A page's per-page filter (DECISIONS.md → Search): a magnifier that morphs
+   in place into a plain text input scoped to that page. Width is the
+   animated property, so both states have to be the same element — never a
+   swap between two boxes. The transition is authored here rather than as
+   Tailwind utilities: react-ui ships a prebuilt stylesheet, and
+   `duration-standard`/`ease-*` compile to classes only in react-ui's own
+   build, so a utility class would be inert here. `--ease-in-out` is
+   react-ui's documented curve for something growing in place — a spring's
+   overshoot would jitter the whole top bar. Reduced motion is already
+   handled by that stylesheet's global transition-duration collapse. This is
+   never the global command palette — see `command-palette-provider.tsx`,
+   mounted on its own. */
 .stage-search {
   display: flex;
   flex-shrink: 0;
@@ -770,22 +773,7 @@ select:disabled,
   color: var(--foreground);
 }
 
-.stage-search [data-slot="command-palette-inline"] {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-}
-
-.stage-search [data-slot="command-palette-inline-field"] {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.stage-search [data-slot="command-palette-input"] {
+.stage-search-input {
   min-width: 0;
   flex: 1;
   border: 0;
@@ -794,7 +782,7 @@ select:disabled,
   color: var(--foreground);
 }
 
-.stage-search [data-slot="command-palette-input"]::placeholder {
+.stage-search-input::placeholder {
   color: var(--muted-foreground);
 }
 

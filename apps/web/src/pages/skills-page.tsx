@@ -20,7 +20,6 @@ import {
   Badge,
   Button,
   EmptyState,
-  LibrarySearchInput,
   RichEmptyState,
   Table,
   TableBody,
@@ -123,10 +122,23 @@ export function SkillsPage({
 
   const crumbs = [{ label: "Skills" }];
 
-  function stage(actions: ReactNode, body: ReactNode) {
+  function stage(
+    actions: ReactNode,
+    body: ReactNode,
+    filter?: {
+      readonly value: string;
+      readonly onChange: (value: string) => void;
+    },
+  ) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar crumbs={crumbs} actions={actions} />
+        <StageTopBar
+          crumbs={crumbs}
+          {...(filter === undefined
+            ? {}
+            : { filter: { label: "Filter skills", ...filter } })}
+          actions={actions}
+        />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <PageShell width="full" className="page-fill">
             {body}
@@ -194,14 +206,7 @@ export function SkillsPage({
         );
 
   return stage(
-    <>
-      <LibrarySearchInput
-        label="Search skills"
-        value={query}
-        onChange={setQuery}
-      />
-      {newSkillButton}
-    </>,
+    newSkillButton,
     <div className="flex flex-col gap-4">
       {filtered.length === 0 ? (
         <EmptyState
@@ -245,6 +250,7 @@ export function SkillsPage({
       )}
       {createDialog}
     </div>,
+    { value: query, onChange: setQuery },
   );
 }
 

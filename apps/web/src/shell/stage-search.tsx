@@ -1,47 +1,49 @@
-// The one way into search from chrome (DESIGN.md → Search): a magnifier that
-// morphs in place into an inline bar and hands the query to the command
-// palette — the product's single search surface. There is no second search
-// implementation behind this control; it opens the same palette cmd+K does,
-// and its expanded/collapsed state IS the palette's open state
-// (`command-palette-open-store`), so the two can never disagree.
+// The stage top bar's per-page filter (DECISIONS.md → Search): a magnifier
+// that morphs in place into a plain text input scoped to whatever the page
+// is showing — Files filters files, Skills filters skills. It never reaches
+// the global command palette; `Cmd+K` is a separate surface entirely
+// (`command-palette-provider.tsx`), mounted on its own rather than out of
+// this control.
 //
-// The palette itself is react-ui's non-modal `CommandPaletteInline`: the
-// field it renders IS the real, focusable search input, anchored to this
-// control, with its results hanging directly beneath — never a centered
-// dialog the magnifier merely opens. `leading` carries the magnifier button
-// itself, so the collapsed control and the expanded bar are one continuous
-// element rather than a button and a separate window.
+// A page hands in the filter it already owns (`value`/`onChange`); this
+// component only supplies the chrome — the button, the morph, and the input
+// that drives that state directly. `StageTopBar` renders it only when a page
+// passes a filter, so a page with nothing to filter shows no magnifier.
 //
 // Motion is the width transition authored on `.stage-search` in app.css
-// (react-ui's `--duration-standard` and `--ease-in-out`, the curve its
-// theme documents for something growing in place). Reduced motion needs
-// nothing here: react-ui's stylesheet already collapses every transition
-// duration under `prefers-reduced-motion`, which makes the swap instant.
+// (react-ui's `--duration-standard` and `--ease-in-out`). Reduced motion
+// needs nothing here: react-ui's stylesheet already collapses every
+// transition duration under `prefers-reduced-motion`.
 
 import { MagnifyingGlass } from "@corbits/icons";
-import { CommandPaletteInline } from "@corbits/react-ui";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { useCommandPaletteRender } from "../command-palette-provider";
-import {
-  openCommandPalette,
-  setCommandPaletteOpen,
-  setCommandPaletteQuery,
-  useCommandPaletteOpen,
-  useCommandPaletteQuery,
-} from "../command-palette-open-store";
+export type StageSearchProps = {
+  /** Accessible name for both the button and the input, and the default
+   * placeholder — e.g. "Filter files". Never "Search …": this is a filter,
+   * not the product's search surface. */
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+};
 
-export function StageSearch() {
-  const open = useCommandPaletteOpen();
-  const query = useCommandPaletteQuery();
-  const render = useCommandPaletteRender();
+export function StageSearch({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: StageSearchProps) {
+  const [open, setOpen] = useState(value.length > 0);
+  const wasOpen = useRef(open);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // A query the page already carries in (a prefilled filter) keeps the bar
+  // expanded even before anyone has focused it.
+  const expanded = open || value.length > 0;
 
-  // Whichever way the palette closed — Escape, an outside click, the
-  // store — focus comes back to the control the morph came out of, instead
-  // of being dropped on the document.
   useEffect(() => {
+    if (open) inputRef.current?.focus();
     if (wasOpen.current && !open) buttonRef.current?.focus();
     wasOpen.current = open;
   }, [open]);
@@ -50,37 +52,38 @@ export function StageSearch() {
     <div
       className="stage-search"
       data-testid="stage-search"
-      data-expanded={open}
+      data-expanded={expanded}
     >
-      <CommandPaletteInline
-        open={open}
-        onOpenChange={setCommandPaletteOpen}
-        query={query}
-        onQueryChange={setCommandPaletteQuery}
-        groups={render.groups}
-        onSelect={render.onSelect}
-        loading={render.loading}
-        {...(render.error === undefined ? {} : { error: render.error })}
-        hasMore={render.hasMore}
-        {...(render.onLoadMore === undefined
-          ? {}
-          : { onLoadMore: render.onLoadMore })}
-        placeholder="Search agents, skills, files, actions…"
-        footer={render.footer}
-        leading={
-          <button
-            ref={buttonRef}
-            type="button"
-            className="stage-search-button"
-            aria-label="Search"
-            aria-expanded={open}
-            aria-keyshortcuts="Meta+K Control+K"
-            onClick={openCommandPalette}
-          >
-            <MagnifyingGlass aria-hidden="true" />
-          </button>
-        }
-      />
+      <button
+        ref={buttonRef}
+        type="button"
+        className="stage-search-button"
+        aria-label={label}
+        aria-expanded={expanded}
+        onClick={() => setOpen(true)}
+      >
+        <MagnifyingGlass aria-hidden="true" />
+      </button>
+      {expanded ? (
+        <input
+          ref={inputRef}
+          type="search"
+          className="stage-search-input"
+          aria-label={label}
+          placeholder={placeholder ?? label}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            if (value.length === 0) setOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            if (value.length > 0) onChange("");
+            else setOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

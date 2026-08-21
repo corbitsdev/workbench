@@ -1,5 +1,6 @@
 import {
   artifactKindLabel,
+  CommandPalette,
   useCommandShortcut,
   useTheme,
 } from "@corbits/react-ui";
@@ -24,9 +25,7 @@ import {
 } from "@corbits/command-palette";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -43,6 +42,7 @@ import {
 import {
   openCommandPalette,
   setCommandPaletteOpen,
+  setCommandPaletteQuery,
   useCommandPaletteOpen,
   useCommandPaletteQuery,
 } from "./command-palette-open-store";
@@ -71,44 +71,12 @@ const STATIC_COMMANDS = buildStaticCommands(
 );
 
 /**
- * The data `StageSearch` renders — everything react-ui's `CommandPaletteInline`
- * needs, computed once here rather than re-derived at the one place it is
- * consumed. `StageSearch` owns the surface (the morphing bar, the input,
- * the dropdown); this provider owns what fills it.
- */
-export type CommandPaletteRenderProps = {
-  readonly groups: readonly CommandPaletteGroup[];
-  readonly onSelect: (id: string) => void;
-  readonly loading: boolean;
-  readonly error?: string;
-  readonly hasMore: boolean;
-  readonly onLoadMore?: () => void;
-  readonly footer: string;
-};
-
-/** `StageTopBar` mounts in isolation across the page test suite (no
- * workbench, no query client, nothing search needs) — an inert palette
- * that renders a magnifier with no results is the honest fallback there.
- * The real app always mounts `CommandPaletteProvider` above `AppShell`
- * (`app.tsx`), so production code never sees this default. */
-const INERT_RENDER_PROPS: CommandPaletteRenderProps = {
-  groups: [],
-  onSelect: () => undefined,
-  loading: false,
-  hasMore: false,
-  footer: "",
-};
-
-const CommandPaletteRenderContext =
-  createContext<CommandPaletteRenderProps>(INERT_RENDER_PROPS);
-
-/** Read by `StageSearch`, mounted anywhere under `CommandPaletteProvider`. */
-export function useCommandPaletteRender(): CommandPaletteRenderProps {
-  return useContext(CommandPaletteRenderContext);
-}
-
-/**
- * Wires the data-driven react-ui command palette into the app shell.
+ * Wires the data-driven react-ui command palette into the app shell, and
+ * renders it — the global surface `Cmd+K` (and a context-menu item) opens,
+ * as its own modal dialog (`CommandPalette`), never anchored to the stage
+ * top bar's per-page filter magnifier. Mounted once in `app.tsx`'s `Shell`,
+ * above `AppShell`, so it works from every route — including one that
+ * matches no page and renders no stage top bar of its own.
  *
  * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
  * `@corbits/command-palette` (`buildCommandPaletteGroups`) — this file only
@@ -118,11 +86,6 @@ export function useCommandPaletteRender(): CommandPaletteRenderProps {
  * `useEntitySearch` paging this provider already used; routines, skills and
  * library artifacts are small per-bench catalogs fetched once and filtered
  * client-side, the same way the static route list already is.
- *
- * This provider computes the data and hands it down through context; it
- * renders no search surface itself. `StageSearch` (the top bar's magnifier)
- * is the one place that data becomes UI — react-ui's `CommandPaletteInline`,
- * anchored in place, never a centered dialog.
  */
 export function CommandPaletteProvider({
   path,
@@ -136,8 +99,8 @@ export function CommandPaletteProvider({
   const { memberships, selectedTenantId, selectTenant } = useBench();
   const queryClient = useQueryClient();
   // Open state and query live in the shared store, not in this component:
-  // the top nav's magnifier morphs into this very surface and has to read
-  // the same state (`command-palette-open-store`).
+  // Cmd+K and a context-menu item both open this surface from outside the
+  // React tree (`command-palette-open-store`).
   const open = useCommandPaletteOpen();
   const query = useCommandPaletteQuery();
   const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
@@ -645,24 +608,23 @@ export function CommandPaletteProvider({
     ],
   );
 
-  const renderProps = useMemo<CommandPaletteRenderProps>(
-    () => ({
-      groups,
-      onSelect: handleSelect,
-      loading,
-      // `exactOptionalPropertyTypes` distinguishes an absent key from an
-      // explicit `undefined`, so the key only appears when there is an error.
-      ...(error ? { error: "Search failed. Try again." } : {}),
-      hasMore,
-      onLoadMore: loadMore,
-      footer: "# workbenches · @ people · > actions · / pages",
-    }),
-    [groups, handleSelect, loading, error, hasMore, loadMore],
-  );
-
   return (
-    <CommandPaletteRenderContext.Provider value={renderProps}>
+    <>
       {children}
-    </CommandPaletteRenderContext.Provider>
+      <CommandPalette
+        open={open}
+        onOpenChange={setCommandPaletteOpen}
+        query={query}
+        onQueryChange={setCommandPaletteQuery}
+        groups={groups}
+        onSelect={handleSelect}
+        loading={loading}
+        {...(error ? { error: "Search failed. Try again." } : {})}
+        hasMore={hasMore}
+        onLoadMore={loadMore}
+        placeholder="Search or jump to…"
+        footer="# workbenches · @ people · > actions · / pages"
+      />
+    </>
   );
 }
