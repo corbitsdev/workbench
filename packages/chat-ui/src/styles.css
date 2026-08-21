@@ -819,37 +819,6 @@
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-/* Own messages pack to the right like an outgoing iMessage. */
-.chat-bubble-row[data-own="true"] {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
-}
-
-.chat-bubble-row[data-own="true"]:hover {
-  background: transparent;
-}
-
-.chat-bubble-row[data-own="true"] .chat-bubble {
-  position: relative;
-  flex: 0 1 auto;
-  max-width: min(72ch, 78%);
-  align-items: flex-end;
-}
-
-/* Name/time stay in the DOM for tests and AT; the filled bubble is just
-   the text, top-aligned with the avatar like an outgoing iMessage. */
-.chat-bubble-row[data-own="true"] .chat-bubble-head {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* The message header's avatar chip — sizing, tone color, and initials
    come from react-ui's `Avatar`; this only positions it within the row. */
 .chat-sender-avatar {
@@ -920,14 +889,6 @@
   border-radius: 0;
   background: transparent;
   padding: 0;
-}
-
-/* Mock has no bubble — every message, own or not, is the same flat
-   avatar+row treatment. Own messages carry no distinct fill or radius. */
-.chat-bubble[data-own="true"] {
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
 }
 
 .chat-bubble-head {
@@ -1050,20 +1011,6 @@
 .chat-bubble-row[data-grouped="true"]:hover .chat-bubble-time-grouped,
 .chat-bubble-row[data-grouped="true"]:focus-within .chat-bubble-time-grouped {
   opacity: 1;
-}
-
-.chat-bubble-row[data-own="true"][data-grouped="true"] {
-  padding-left: 0.45rem;
-  padding-right: calc(0.45rem + 2.15rem + 0.65rem);
-}
-
-.chat-bubble-row[data-own="true"][data-grouped="true"]
-  .chat-bubble-time-grouped {
-  left: auto;
-  right: 0.45rem;
-  text-align: left;
-  padding-right: 0;
-  padding-left: 0.3rem;
 }
 
 /* CL-6092: a classified inference failure's reply already says what went
@@ -1770,16 +1717,15 @@
 }
 
 /* Composer chrome — a single bordered input row with room to breathe.
-   Cap reading width to the message column so a wide stage does not stretch
-   the prompt into a wall; the @ / slash popover then matches that same box. */
+   Docked at the chat column's full working width, independent of the
+   72ch prose measure the bubble text uses; the @ / slash popover then
+   matches that same full-width box. */
 .chat-composer-stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   flex-shrink: 0;
   width: 100%;
-  max-width: 42rem;
-  margin-inline: auto;
   border-top: 1px solid var(--border);
   padding: 0.45rem 0.75rem 0.7rem;
   box-sizing: border-box;
@@ -2060,7 +2006,7 @@
 
 .chat-tool-activity-marker[data-status="running"],
 .chat-tool-activity-marker[data-status="pending"] {
-  background: var(--primary);
+  background: var(--muted-foreground);
   opacity: 1;
   animation: chat-block-pulse 1.6s ease infinite;
 }
@@ -2818,13 +2764,6 @@
   max-width: 100%;
 }
 
-.chat-message-group[data-own="true"] .chat-message-actions,
-.chat-message-group[data-own="true"] .chat-thread-affordance {
-  margin-left: 0;
-  margin-right: calc(0.45rem + 2.15rem + 0.65rem);
-  justify-content: flex-end;
-}
-
 .chat-reaction-row {
   display: flex;
   flex-wrap: wrap;
@@ -2972,11 +2911,6 @@
   pointer-events: none;
   box-shadow: 0 2px 10px color-mix(in srgb, black 14%, transparent);
   transition: opacity 120ms var(--chat-ease);
-}
-
-.chat-message-group[data-own="true"] .chat-hover-toolbar {
-  right: auto;
-  left: 0.4rem;
 }
 
 .chat-message-group:hover .chat-hover-toolbar,
