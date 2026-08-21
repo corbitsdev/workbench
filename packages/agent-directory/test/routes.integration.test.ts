@@ -25,7 +25,11 @@ import { eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
-import { createDB } from "@intx/db";
+import {
+  createDB,
+  loadFrozenGrantSnapshot,
+  loadFrozenWireProjection,
+} from "@intx/db";
 import {
   asset as assetTable,
   principal as principalTable,
@@ -39,6 +43,7 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { applyAgentDirectoryMigrations } from "../src/migrations";
 import { definitionSkills } from "../src/schema";
 import { createAgentDefinitionRoutes } from "../src/routes";
+import { createDefinitionFreezer } from "@corbits/workflow-freeze";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import { createDrizzleDefinitionSkillsStore } from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
@@ -138,6 +143,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       history: fakeHistory,
       capabilityInventory: fakeCapabilityInventory,
       requireGrant: allowAllRequireGrant,
+      definitionFreezer: createDefinitionFreezer(db),
     });
     const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
       c.set("tenant", TENANT);
@@ -204,5 +210,42 @@ describeIfDb("agent-directory routes against a real assetService", () => {
     const gotAfter = await app.request(`/${definitionId}`);
     const gotAfterBody = (await gotAfter.json()) as { skills: string[] };
     expect(gotAfterBody.skills).toEqual([]);
+  });
+
+  test("a created definition is launch-resolvable: its projection and grant snapshot are frozen (CL-6447)", async () => {
+    const handle = `launchable-${suffix}`;
+    const created = await post(app, {
+      name: "Launchable",
+      handle,
+      systemPrompt: "You answer launch checks.",
+      skills: [],
+    });
+    expect(created.status).toBe(201);
+    const { id: definitionId } = (await created.json()) as { id: string };
+
+    // The exact reads the chat invite path (`readDefinitionProjection`)
+    // and the mail-triggered turn path (`loadFrozenGrantSnapshot`) fail
+    // closed on: both must be frozen at create or the agent 409s
+    // `not_launchable` forever.
+    const projection = await loadFrozenWireProjection(db, definitionId);
+    expect(projection).not.toBeNull();
+    expect(JSON.stringify(projection)).toContain("You answer launch checks.");
+    expect(await loadFrozenGrantSnapshot(db, definitionId)).not.toBeNull();
+
+    // An instructions save re-freezes in place: the frozen projection
+    // follows the edit under the same definition id.
+    const updated = await app.request(`/${definitionId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Launchable",
+        systemPrompt: "You answer edited launch checks.",
+      }),
+    });
+    expect(updated.status).toBe(200);
+    const refrozen = await loadFrozenWireProjection(db, definitionId);
+    expect(JSON.stringify(refrozen)).toContain(
+      "You answer edited launch checks.",
+    );
   });
 });

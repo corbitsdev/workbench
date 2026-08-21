@@ -30,6 +30,7 @@ import {
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 
 import {
   createAgentDefinitionCore,
@@ -90,6 +91,11 @@ export type CreateAgentDefinitionRoutesDeps = {
   history: DefinitionAssetHistory;
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
+  /** Freezes/re-freezes the definition's wire projection on every
+   * content write; the composition root binds
+   * `@corbits/workflow-freeze`'s `createDefinitionFreezer` to its own
+   * `db`. */
+  definitionFreezer: DefinitionFreezer;
   tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
@@ -134,6 +140,7 @@ export function createAgentDefinitionRoutes({
   history,
   capabilityInventory,
   requireGrant,
+  definitionFreezer,
   tenantDefaultModel,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
@@ -203,6 +210,7 @@ export function createAgentDefinitionRoutes({
           assetService,
           skillIndex,
           skillsStore,
+          definitionFreezer,
           ...(tenantDefaultModel !== undefined ? { tenantDefaultModel } : {}),
         },
         coreInput,
@@ -456,6 +464,10 @@ export function createAgentDefinitionRoutes({
           message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
         },
       });
+      await definitionFreezer.refreeze({
+        definitionId: row.id,
+        workflowJson: restoredWorkflowJson,
+      });
 
       const capabilities = readAgentCapabilities(restoredWorkflowJson);
       const skills = await skillsStore.getSkills(row.assetId);
@@ -557,6 +569,10 @@ export function createAgentDefinitionRoutes({
           message,
         },
       });
+      await definitionFreezer.refreeze({
+        definitionId: row.id,
+        workflowJson: nextWorkflowJson,
+      });
       if (nextSkills !== null) {
         await skillsStore.setSkills(row.assetId, nextSkills);
       }
@@ -608,6 +624,10 @@ export function createAgentDefinitionRoutes({
       // safely if they fail after this succeeds (see the catch below) —
       // the reverse order would leave a renamed row pointing at
       // instructions that were never actually written.
+      const nextWorkflowJson = withAgentSystemPrompt(
+        workflowJson,
+        body.systemPrompt,
+      );
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
@@ -615,13 +635,14 @@ export function createAgentDefinitionRoutes({
         tree: {
           files: agentDefinitionSourceTree({
             handle: row.name,
-            workflowJson: withAgentSystemPrompt(
-              workflowJson,
-              body.systemPrompt,
-            ),
+            workflowJson: nextWorkflowJson,
           }),
           message: `Update agent instructions for ${row.name}`,
         },
+      });
+      await definitionFreezer.refreeze({
+        definitionId: row.id,
+        workflowJson: nextWorkflowJson,
       });
 
       const now = new Date();
@@ -814,6 +835,10 @@ export function createAgentDefinitionRoutes({
         row.assetId,
       );
 
+      const nextWorkflowJson = reindexPinnedSkills(
+        workflowJson,
+        await skillIndex.resolve(tenant.id, principal.id, body.skills),
+      );
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
@@ -821,13 +846,14 @@ export function createAgentDefinitionRoutes({
         tree: {
           files: agentDefinitionSourceTree({
             handle: row.name,
-            workflowJson: reindexPinnedSkills(
-              workflowJson,
-              await skillIndex.resolve(tenant.id, principal.id, body.skills),
-            ),
+            workflowJson: nextWorkflowJson,
           }),
           message: `Update agent skills for ${row.name}`,
         },
+      });
+      await definitionFreezer.refreeze({
+        definitionId: row.id,
+        workflowJson: nextWorkflowJson,
       });
       await skillsStore.setSkills(row.assetId, body.skills);
 

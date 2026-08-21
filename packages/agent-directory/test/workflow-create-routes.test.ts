@@ -148,6 +148,25 @@ const authenticateAsRun: WorkflowRunAuthenticator = {
     ),
 };
 
+/** Records freeze/re-freeze calls instead of running the real
+ * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
+ * half); routes here are asserted to invoke it on every content write. */
+function recordingDefinitionFreezer() {
+  const freezes: { assetId: string; workflowJson: string }[] = [];
+  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+  return {
+    freezes,
+    refreezes,
+    freeze: (input: { assetId: string; workflowJson: string }) => {
+      freezes.push(input);
+      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
+    },
+    refreeze: (input: { definitionId: string; workflowJson: string }) => {
+      refreezes.push(input);
+      return Promise.resolve({ wireHash: "hash_2" });
+    },
+  };
+}
 function buildApp(
   opts: Partial<CreateWorkflowAgentCreateRoutesDeps> = {},
 ): Hono {
@@ -158,6 +177,7 @@ function buildApp(
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsRun,
+    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
     ...(opts.tenantDefaultModel !== undefined
       ? { tenantDefaultModel: opts.tenantDefaultModel }
       : {}),

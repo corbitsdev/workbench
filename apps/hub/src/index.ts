@@ -167,6 +167,10 @@ import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-git
 import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
 import { renderWorkflowSourceTree } from "@corbits/workflow-source";
 import {
+  createDefinitionFreezer,
+  freezeInertWorkflowDefinition,
+} from "@corbits/workflow-freeze";
+import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
   createMyraRoutineDrafting,
@@ -222,7 +226,6 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
-  ensureWorkflowDefinitionForAsset,
   type AgentRepoStore,
   type EventCollectorRegistry,
   type WsHandle,
@@ -231,7 +234,6 @@ import { createLaunchCaches } from "./launch-caches";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
-import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import {
   createNeedsYouRoutes,
   createToolAllowanceRegistry,
@@ -1682,11 +1684,13 @@ export async function createHub(config: HubConfig) {
     },
   };
 
+  const definitionFreezer = createDefinitionFreezer(db);
   app.route(
     `${TENANT_PREFIX}/agent-definitions`,
     createAgentDefinitionRoutes({
       db,
       assetService,
+      definitionFreezer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       history: createDefinitionAssetHistory({
@@ -1716,6 +1720,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowAgentCreateRoutes({
       db,
       assetService,
+      definitionFreezer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -1737,6 +1742,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowCapabilityRoutes({
       db,
       assetService,
+      definitionFreezer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -1753,6 +1759,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowSkillPinRoutes({
       db,
       assetService,
+      definitionFreezer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       authenticator: createWorkflowRunAuthenticator({ db }),
@@ -2058,7 +2065,7 @@ export async function createHub(config: HubConfig) {
   // `deployBlockWorkflow` port lands here — the same source-form
   // materialization `deployAgentDefinition` below runs for a
   // participant agent (asset + `@corbits/workflow-source` tree +
-  // `ensureWorkflowDefinitionForAsset`), applied to a template's
+  // `freezeInertWorkflowDefinition`), applied to a template's
   // referenced block definition (`code-review` today).
   app.route(
     `${TENANT_PREFIX}/template-blocks`,
@@ -2128,12 +2135,12 @@ export async function createHub(config: HubConfig) {
           },
         });
 
-        const wireHash = await computeWireDefinitionHash(
-          JSON.parse(workflowJson),
-        );
-        const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
+        // Freeze, not a bare ensure: without the frozen wire projection
+        // the block's definition can never launch (CL-6439, the same
+        // disease CL-6447 fixed for the Agents page create path).
+        const { definitionId } = await freezeInertWorkflowDefinition(db, {
           assetId,
-          wireHash,
+          workflowJson,
         });
         return { id: definitionId, created: true };
       },
@@ -2911,7 +2918,7 @@ export async function createHub(config: HubConfig) {
    * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
    * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
    * when skills are present → `createAsset` + `populateAsset` →
-   * `ensureWorkflowDefinitionForAsset`), reusing the exact `db`,
+   * `freezeInertWorkflowDefinition`), reusing the exact `db`,
    * `assetService`, and `skills.skillIndex` already in scope — never a
    * second instance of any of them. The one addition beyond that route's
    * own input is `toolPackagePins`, which the REST boundary deliberately
@@ -2994,10 +3001,11 @@ export async function createHub(config: HubConfig) {
     });
     await definitionSkillsStore.setSkills(created.id, input.skills);
 
-    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
-    const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
+    // Freeze, not a bare ensure — see `createAgentDefinitionCore`'s own
+    // freeze call for the why (CL-6447).
+    const { definitionId } = await freezeInertWorkflowDefinition(db, {
       assetId: created.id,
-      wireHash,
+      workflowJson,
     });
     return { definitionId };
   }

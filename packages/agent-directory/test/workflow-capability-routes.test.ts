@@ -130,12 +130,32 @@ const authenticateAsOwnRun: WorkflowRunAuthenticator = {
     ),
 };
 
+/** Records freeze/re-freeze calls instead of running the real
+ * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
+ * half); routes here are asserted to invoke it on every content write. */
+function recordingDefinitionFreezer() {
+  const freezes: { assetId: string; workflowJson: string }[] = [];
+  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+  return {
+    freezes,
+    refreezes,
+    freeze: (input: { assetId: string; workflowJson: string }) => {
+      freezes.push(input);
+      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
+    },
+    refreeze: (input: { definitionId: string; workflowJson: string }) => {
+      refreezes.push(input);
+      return Promise.resolve({ wireHash: "hash_2" });
+    },
+  };
+}
 function buildApp(opts: {
   assetService?: AssetService;
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
   capabilityInventory?: CapabilityInventoryProvider;
   skillsStore?: DefinitionSkillsStore;
+  definitionFreezer?: ReturnType<typeof recordingDefinitionFreezer>;
 }): Hono {
   return createWorkflowCapabilityRoutes({
     db: opts.db ?? fakeDb(),
@@ -144,6 +164,7 @@ function buildApp(opts: {
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsOwnRun,
+    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
   }) as unknown as Hono;
 }
 
@@ -211,6 +232,7 @@ test("a run targeting another definition's capabilities is a 403", async () => {
 test("a run may add a capability to its own definition without any grant check", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
+  const freezer = recordingDefinitionFreezer();
   const app = buildApp({
     assetService: fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -220,12 +242,17 @@ test("a run may add a capability to its own definition without any grant check",
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
+    definitionFreezer: freezer,
   });
   const response = await postCapability(app, OWN_DEFINITION_ID, {
     kind: "toolPackage",
     name: "@corbits/capability-tools",
   });
   expect(response.status).toBe(200);
+  // The rewrite re-freezes the definition's projection so the next
+  // launch carries the added capability (CL-6447).
+  expect(freezer.refreezes).toHaveLength(1);
+  expect(freezer.refreezes[0]?.definitionId).toBe(OWN_DEFINITION_ID);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe(
     "Add @corbits/capability-tools to research-buddy",

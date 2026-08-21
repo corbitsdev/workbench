@@ -36,8 +36,8 @@ export class DefinitionProjectionMissingError extends Error {
   readonly guidance: string;
   constructor(definitionName: string) {
     const guidance =
-      "This agent was deployed before the hub started recording its " +
-      "launch body — re-deploy it (run seed / republish) and try again.";
+      "This agent isn't finished setting up. Open it in Agents, save " +
+      "its instructions, and try again — or recreate it.";
     super(
       `No stored launch body for definition "${definitionName}" (${guidance})`,
     );
