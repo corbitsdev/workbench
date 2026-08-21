@@ -200,6 +200,8 @@ export {
   workbenchSettingsSections,
   contextWindowControlState,
   contextWindowPatchValue,
+  isWorkbenchSettingsSectionId,
+  WORKBENCH_SETTINGS_SECTION_IDS,
 } from "./workbench-settings";
 export type {
   WorkbenchSettingsSection,

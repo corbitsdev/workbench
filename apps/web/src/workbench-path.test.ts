@@ -24,6 +24,11 @@ describe("workbenchPath helpers", () => {
     expect(workbenchIdFromPath("/routines")).toBeNull();
   });
 
+  test("workbenchIdFromPath reads a malformed escape as no selection", () => {
+    expect(workbenchIdFromPath("/w/%E0%A4%A")).toBeNull();
+    expect(workbenchIdFromPath("/chat/%")).toBeNull();
+  });
+
   test("isWorkbenchPath covers both prefixes", () => {
     expect(isWorkbenchPath("/w")).toBe(true);
     expect(isWorkbenchPath("/w/ch_1")).toBe(true);
@@ -93,6 +98,12 @@ describe("workbench settings path helpers", () => {
     expect(workbenchSettingsSectionFromPath("/w/ch_1")).toBeUndefined();
   });
 
+  test("workbenchSettingsSectionFromPath reads an unrecognized section id as no section", () => {
+    expect(
+      workbenchSettingsSectionFromPath("/w/ch_1/settings/not-a-real-section"),
+    ).toBeUndefined();
+  });
+
   test("workbenchSettingsSectionFromPath ignores a trailing entity id", () => {
     expect(
       workbenchSettingsSectionFromPath("/w/ch_1/settings/agents/wfd_myra"),
@@ -126,6 +137,21 @@ describe("workbench settings path helpers", () => {
     ).toBeNull();
     expect(
       workbenchSettingsEntityIdFromPath("/w/ch_1/settings", "agents"),
+    ).toBeNull();
+  });
+
+  test("workbenchSettingsSectionFromPath reads a malformed escape as no section", () => {
+    expect(
+      workbenchSettingsSectionFromPath("/w/ch_1/settings/%E0%A4%A"),
+    ).toBeUndefined();
+  });
+
+  test("workbenchSettingsEntityIdFromPath reads a malformed escape as no entity", () => {
+    expect(
+      workbenchSettingsEntityIdFromPath(
+        "/w/ch_1/settings/agents/%E0%A4%A",
+        "agents",
+      ),
     ).toBeNull();
   });
 });

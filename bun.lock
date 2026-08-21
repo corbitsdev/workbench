@@ -61,6 +61,7 @@
         "@corbits/tasks": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
         "@corbits/turn-artifacts": "workspace:*",
+        "@corbits/url-path": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
@@ -149,6 +150,7 @@
         "@corbits/shell-layout": "workspace:*",
         "@corbits/slug": "workspace:*",
         "@corbits/tasks-ui": "workspace:*",
+        "@corbits/url-path": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/types": "0.3.0",
         "@radix-ui/react-dialog": "^1.1.15",
@@ -298,6 +300,7 @@
       "dependencies": {
         "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#a3932c8ffa04addcb06fe8d0a9b55501434c4380",
+        "@corbits/url-path": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "yjs": "^13.6.32",
@@ -404,6 +407,7 @@
         "@corbits/folded-runs": "workspace:*",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
         "@corbits/turn-artifacts": "workspace:*",
+        "@corbits/url-path": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/authz": "0.3.0",
@@ -1328,6 +1332,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/url-path": {
+      "name": "@corbits/url-path",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/web-search-tools": {
       "name": "@corbits/web-search-tools",
       "version": "0.0.3",
@@ -2016,6 +2028,8 @@
     "@corbits/tools-skills": ["@corbits/tools-skills@workspace:packages/tools-skills"],
 
     "@corbits/turn-artifacts": ["@corbits/turn-artifacts@workspace:packages/turn-artifacts"],
+
+    "@corbits/url-path": ["@corbits/url-path@workspace:packages/url-path"],
 
     "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:packages/web-search-tools"],
 
@@ -3289,6 +3303,8 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
+    "@corbits/artifacts-hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#81049ed", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-81049ed", "sha512-oTE0iFDyQdz0ifG1epo39pwaCaYaw19YcKXwfaZqAEQ56a1g9YIozXwH9CG4NaUTwcJKUeYGuNls6oJsMPisCw=="],
+
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
@@ -3310,6 +3326,8 @@
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.6", "", {}, "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw=="],
+
+    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#81049ed", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-81049ed", "sha512-oTE0iFDyQdz0ifG1epo39pwaCaYaw19YcKXwfaZqAEQ56a1g9YIozXwH9CG4NaUTwcJKUeYGuNls6oJsMPisCw=="],
 
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 

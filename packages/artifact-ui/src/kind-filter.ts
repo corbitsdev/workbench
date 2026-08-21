@@ -8,6 +8,8 @@
 // visible list) and the hub (computing honest per-kind counts server-side)
 // share one mapping instead of two copies drifting apart.
 
+import { decodedOrNull } from "@corbits/url-path";
+
 import { titleExtension } from "./title-extension";
 import type { ArtifactSummary } from "./types";
 
@@ -49,7 +51,7 @@ export function libraryArtifactIdFromPath(path: string): string | null {
   if (!path.startsWith(prefix)) return null;
   const rest = path.slice(prefix.length).split("/")[0];
   if (rest === undefined || rest === "") return null;
-  return decodeURIComponent(rest);
+  return decodedOrNull(rest);
 }
 
 /**
