@@ -97,12 +97,25 @@ describe.skipIf(databaseUrl === undefined)(
 
         const recent = await store.recent("ai-daily-research", 5);
         expect(recent).toHaveLength(1);
+        expect(recent[0]?.id).toBe(id);
         expect(recent[0]?.evalName).toBe("ai-daily-research");
         expect(recent[0]?.configName).toBe("default");
         expect(recent[0]?.steps).toEqual(fixtureResult().steps);
 
         const other = await store.recent("docs-on-sdk-change", 5);
         expect(other).toHaveLength(0);
+
+        const second = await store.save(
+          fixtureResult({ evalName: "docs-on-sdk-change" }),
+        );
+        const across = await store.recentAcrossEvals(10);
+        expect(across.map((r) => r.id).sort()).toEqual([id, second].sort());
+
+        const fetched = await store.get(id);
+        expect(fetched?.id).toBe(id);
+        expect(fetched?.evalName).toBe("ai-daily-research");
+
+        expect(await store.get("evalrun_does-not-exist")).toBeNull();
       } finally {
         await close();
       }

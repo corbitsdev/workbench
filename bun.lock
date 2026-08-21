@@ -644,6 +644,7 @@
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "0.3.0",
         "@intx/types": "0.3.0",
@@ -654,6 +655,7 @@
         "@workbench/onboarding": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
         "postgres": "catalog:",
       },
       "devDependencies": {
