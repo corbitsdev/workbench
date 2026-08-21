@@ -365,7 +365,7 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
 // planted at the wildcard scope the authz glob matcher resolves
 // against any concrete deployment (the deployment id is minted at
 // deploy time, so a concrete resource cannot be planted up front).
-const SEED_GRANTS: readonly { resource: string; action: string }[] = [
+export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "create" },
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
@@ -445,6 +445,34 @@ async function plantGrant(
     );
   }
   log(`granted ${args.resource}/${args.action}`);
+}
+
+/**
+ * Reconciles one tenant's grants to exactly `SEED_GRANTS`: every declared
+ * grant present, nothing beyond it. This is the one path that plants
+ * `SEED_GRANTS` — `seedTenant`'s full seed and `provisionPersonalTenantIfNeeded`'s
+ * already-seeded short-circuit both call this instead of each owning
+ * their own pass, so a grant added to `SEED_GRANTS` after a tenant was
+ * first seeded reaches that tenant the next time either path runs, not
+ * only on a brand-new signup. `plantGrant` is itself idempotent (it
+ * checks for an equivalent grant before creating one), so reconciling
+ * twice never duplicates a row.
+ */
+export async function reconcileSeedGrants(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  principalId: string,
+  log: (line: string) => void,
+): Promise<void> {
+  for (const grant of SEED_GRANTS) {
+    await plantGrant(
+      api,
+      cookies,
+      { tenantId, principalId, resource: grant.resource, action: grant.action },
+      log,
+    );
+  }
 }
 
 async function plantDefaultSkills(
@@ -797,19 +825,13 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
   }
 
-  for (const grant of SEED_GRANTS) {
-    await plantGrant(
-      api,
-      cookies,
-      {
-        tenantId: tenant.tenantId,
-        principalId: tenant.principalId,
-        resource: grant.resource,
-        action: grant.action,
-      },
-      log,
-    );
-  }
+  await reconcileSeedGrants(
+    api,
+    cookies,
+    tenant.tenantId,
+    tenant.principalId,
+    log,
+  );
 
   await plantDefaultSkills(api, cookies, tenant.tenantId, log);
 
