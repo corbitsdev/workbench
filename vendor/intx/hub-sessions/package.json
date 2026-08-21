@@ -23,6 +23,7 @@
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-common": "0.3.0",
+    "@intx/inference": "0.3.0",
     "@intx/log": "0.3.0",
     "@intx/mime": "0.3.0",
     "@intx/pack-transport": "0.3.0",
