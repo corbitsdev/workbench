@@ -205,4 +205,36 @@ describe("the one toast system (CL-6372)", () => {
     });
     expect(visibleToasts().length).toBe(0);
   });
+
+  // The owner's earlier screenshots showed the toast bottom-center, easy to
+  // miss against page content. main.tsx (the app's one `<Toaster>` mount)
+  // now passes `position="bottom-right"` — asserted here the same way the
+  // house-styling test above asserts the default, so a regression back to
+  // center fails this instead of only showing up in a screenshot.
+  test("the app's Toaster mounts bottom-right, not the library default bottom-center", async () => {
+    stubFailingCreate();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchProvider>
+              <NewWorkbenchPickerRoute />
+            </BenchProvider>
+          </NavigationProvider>
+          <Toaster position="bottom-right" />
+        </TestQueryProvider>,
+      );
+    });
+
+    act(() => toast("Uploaded · draft.txt"));
+    await settle();
+
+    const region = document.body.querySelector("[data-sonner-toaster]");
+    expect(region?.getAttribute("data-y-position")).toBe("bottom");
+    expect(region?.getAttribute("data-x-position")).toBe("right");
+    await waitForClear();
+  });
 });

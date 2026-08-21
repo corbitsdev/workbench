@@ -314,4 +314,54 @@ describe("LibraryPage top-nav action placement", () => {
     });
     expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
   });
+
+  test("the workbench-scope pair reads as one grouped control, distinct from the clear-selection action", () => {
+    act(() => {
+      root.render(
+        <LibraryPage
+          artifacts={artifacts}
+          selectedId="art_1"
+          onSelect={() => undefined}
+          workbenchScope={{ title: "Launch plan" }}
+          scope="all"
+          onScopeChange={() => undefined}
+        />,
+      );
+    });
+    const topBarActions = container.querySelector(
+      '[data-testid="stage-top-bar-actions"]',
+    );
+    // The two-state scope toggle is visually one control (a bordered
+    // segmented group, the same idiom `ViewToggle` already uses in this
+    // bar) rather than two stray buttons that read as independent chips.
+    const scopeGroup = topBarActions?.querySelector(
+      '[aria-label="Files scope"]',
+    );
+    expect(scopeGroup?.className).toContain("border");
+    expect(scopeGroup?.textContent).toContain("Launch plan");
+    expect(scopeGroup?.textContent).toContain("All workbenches");
+
+    // The clear-selection action is not a filter and must not read as one:
+    // no button labelled bare "All" sits beside "All workbenches".
+    const buttons = [...(topBarActions?.querySelectorAll("button") ?? [])];
+    expect(buttons.some((b) => b.textContent?.trim() === "All")).toBe(false);
+    expect(buttons.some((b) => b.textContent?.trim() === "Back to files")).toBe(
+      true,
+    );
+  });
+
+  test("the file detail pane fills the available height", () => {
+    act(() => {
+      root.render(
+        <LibraryPage
+          artifacts={artifacts}
+          selectedId="art_1"
+          onSelect={() => undefined}
+        />,
+      );
+    });
+    const pane = container.querySelector("aside");
+    expect(pane).not.toBeNull();
+    expect(pane?.className).toContain("h-full");
+  });
 });
