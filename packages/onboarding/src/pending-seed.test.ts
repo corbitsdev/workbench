@@ -124,6 +124,55 @@ describe("createInMemoryPendingSeedStore", () => {
     expect(read).toEqual(replacement);
   });
 
+  test("listDue answers every unexpired row, whoever owns it — the drain has no request to scope it", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
+    await store.put({
+      ...SEED,
+      userId: "user_2",
+      tenantId: "ten_2",
+      apiKey: "sk-or-v1-second",
+    });
+
+    const due = await store.listDue({});
+
+    expect(due).toHaveLength(2);
+    expect(due).toEqual(
+      expect.arrayContaining([
+        SEED,
+        { ...SEED, userId: "user_2", tenantId: "ten_2", apiKey: "sk-or-v1-second" },
+      ]),
+    );
+  });
+
+  test("listDue drops an expired row instead of handing the drain a dead key", async () => {
+    let clock = 0;
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED, { now: () => clock });
+    await store.put(
+      { ...SEED, userId: "user_2", tenantId: "ten_2" },
+      { now: () => clock, ttlMs: PENDING_SEED_TTL_MS * 2 },
+    );
+
+    clock = PENDING_SEED_TTL_MS + 1;
+    const due = await store.listDue({ now: () => clock });
+
+    expect(due).toEqual([{ ...SEED, userId: "user_2", tenantId: "ten_2" }]);
+    // Swept, not merely skipped — the expired row is gone for good.
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 })).toBeUndefined();
+  });
+
+  test("listDue honors its limit so one drain tick can never scan the whole table", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    for (let index = 0; index < 5; index += 1) {
+      await store.put({ ...SEED, userId: `user_${index}`, tenantId: `ten_${index}` });
+    }
+
+    const due = await store.listDue({ limit: 2 });
+
+    expect(due).toHaveLength(2);
+  });
+
   test("cleared on successful seed — the row is gone after clear", async () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     await store.put(SEED);

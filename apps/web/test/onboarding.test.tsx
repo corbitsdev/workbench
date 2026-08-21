@@ -272,28 +272,51 @@ describe("submitCredential", () => {
     });
   });
 
-  test("a seeded bench reports which routines were confirmed", async () => {
+  // CL-6457: connecting no longer waits for agents to deploy, so the
+  // success answer is "connected, and here is whether agents are still
+  // coming" — not a list of confirmed workflows.
+  test("a connected bench whose agents are still deploying reports connected, not an error", async () => {
     let requestBody: unknown = null;
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       requestBody = JSON.parse((init as RequestInit).body as string);
       return json({
-        kind: "seeded",
+        kind: "provisioning",
         tenantId: "ten_1",
         tenantSlug: "ada-user1",
-        workflows: ["echo", "assistant"],
+        deployed: ["echo"],
+        pending: ["assistant"],
       });
     }) as unknown as typeof fetch;
 
     const result = await submitCredential("google-genai", "AIza-good");
     expect(result).toEqual({
-      kind: "seeded",
+      kind: "connected",
       tenantId: "ten_1",
       tenantSlug: "ada-user1",
-      workflows: ["echo", "assistant"],
+      agentsPending: true,
     });
     expect(requestBody).toEqual({
       provider: "google-genai",
       apiKey: "AIza-good",
+    });
+  });
+
+  test("a bench whose agents are all live reports nothing pending", async () => {
+    globalThis.fetch = (async () =>
+      json({
+        kind: "ready",
+        tenantId: "ten_1",
+        tenantSlug: "ada-user1",
+        deployed: ["echo", "assistant"],
+        pending: [],
+      })) as unknown as typeof fetch;
+
+    const result = await submitCredential("google-genai", "AIza-good");
+    expect(result).toEqual({
+      kind: "connected",
+      tenantId: "ten_1",
+      tenantSlug: "ada-user1",
+      agentsPending: false,
     });
   });
 
@@ -715,13 +738,14 @@ describe("the OpenRouter connect card", () => {
     expect(markup).not.toContain("Your workbench is ready");
   });
 
-  test("a connected return finishes setup and hands off to `/` once completeSetup reports seeded", async () => {
+  test("a connected return finishes setup and hands off to `/` once completeSetup reports the bench connected", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/onboarding/complete-setup") {
         return json({
-          kind: "seeded",
+          kind: "ready",
           tenantSlug: "ada-user1",
-          workflows: ["echo", "assistant"],
+          deployed: ["echo", "assistant"],
+          pending: [],
         });
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -1001,13 +1025,14 @@ describe("the Hugging Face connect card", () => {
     expect(markup).not.toContain("Your workbench is ready");
   });
 
-  test("a connected return finishes setup and hands off to `/` once completeSetup reports seeded", async () => {
+  test("a connected return finishes setup and hands off to `/` once completeSetup reports the bench connected", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/onboarding/complete-setup") {
         return json({
-          kind: "seeded",
+          kind: "ready",
           tenantSlug: "ada-user1",
-          workflows: ["echo", "assistant"],
+          deployed: ["echo", "assistant"],
+          pending: [],
         });
       }
       throw new Error(`unexpected fetch: ${url}`);
