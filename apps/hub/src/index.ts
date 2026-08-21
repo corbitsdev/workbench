@@ -89,7 +89,6 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
-  provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
@@ -2849,18 +2848,6 @@ export async function createHub(config: HubConfig) {
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
-      // A routine created with no `deliveryWorkbenchId` gets a brand-new
-      // space of its own, named after it, rather than a dead-end
-      // 400 — the same workbench-provisioning core `POST /chat/workbenches`
-      // uses (`@corbits/chat`'s `provisionSpaceWorkbench`), reused here
-      // instead of reimplemented.
-      deliverySpace: {
-        createDeliverySpace: (input) =>
-          provisionSpaceWorkbench(
-            { tenancy: chatTenancy, store: chatStore },
-            input,
-          ),
-      },
       validateRoutineInput: routineInputValid,
     }),
   );
@@ -2937,23 +2924,6 @@ export async function createHub(config: HubConfig) {
           `${runId}@${row.domain}`,
         );
         return hit?.workbenchId;
-      },
-      deliverySpace: {
-        createDeliverySpace: (input) =>
-          provisionSpaceWorkbench(
-            { tenancy: chatTenancy, store: chatStore },
-            input,
-          ),
-      },
-      resolveTenantDomain: async (tenantId) => {
-        const row = await db.query.tenant.findFirst({
-          where: eq(tenantTable.id, tenantId),
-          columns: { domain: true },
-        });
-        if (row === undefined) {
-          throw new Error(`No tenant "${tenantId}"`);
-        }
-        return row.domain;
       },
       validateRoutineInput: routineInputValid,
     }),
