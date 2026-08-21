@@ -21,6 +21,11 @@ import {
   testProviderCredential,
   type SupportedCredentialProvider,
 } from "@workbench/hub-client/credential-test";
+export {
+  missingCredentialDetail,
+  parseMissingCredentialDetail,
+  type MissingCredentialDetail,
+} from "./missing-credential-detail";
 export type {
   ConnectorAuthKind,
   ConnectorDescriptor,
