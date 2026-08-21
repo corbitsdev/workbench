@@ -107,12 +107,16 @@ describe("computeInFlightRows", () => {
 
 describe("computeJumpBackRows", () => {
   test("drops a workbench with no recorded activity instead of inventing a time", () => {
-    const rows = computeJumpBackRows(
-      [workbench({ id: "silent", lastActivityAt: undefined })],
-      [],
-      [],
-      () => undefined,
-    );
+    // `lastActivityAt` is optional, and under `exactOptionalPropertyTypes`
+    // "no recorded activity" means the key is absent, not set to undefined.
+    const silent: Workbench = {
+      id: "silent",
+      title: "Launch plan",
+      kind: "workbench",
+      pinned: false,
+      participants: [],
+    };
+    const rows = computeJumpBackRows([silent], [], [], () => undefined);
     expect(rows).toEqual([]);
   });
 
