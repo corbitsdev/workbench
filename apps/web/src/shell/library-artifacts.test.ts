@@ -4,6 +4,7 @@ import {
   artifactUploadToast,
   copyArtifactLinksActionLabel,
   copyArtifactLinksToastLabel,
+  uploadMimeTypeFromSource,
 } from "./library-artifacts";
 
 describe("copy-link labels", () => {
@@ -29,5 +30,25 @@ describe("artifactUploadToast", () => {
     expect(artifactUploadToast(["a.png", "b.png", "c.png", "d.png"])).toBe(
       "Uploaded 4 files",
     );
+  });
+});
+
+describe("uploadMimeTypeFromSource", () => {
+  test("reads the mime type off a real upload's source", () => {
+    expect(
+      uploadMimeTypeFromSource({
+        origin: "library-upload",
+        upload: { id: "u1", mimeType: "text/markdown", filename: "a.md" },
+      }),
+    ).toBe("text/markdown");
+  });
+
+  test("is null for an artifact with no upload backing", () => {
+    expect(uploadMimeTypeFromSource({ origin: "chat" })).toBeNull();
+  });
+
+  test("is null when the upload field is malformed", () => {
+    expect(uploadMimeTypeFromSource({ upload: "not-an-object" })).toBeNull();
+    expect(uploadMimeTypeFromSource({ upload: { id: "u1" } })).toBeNull();
   });
 });

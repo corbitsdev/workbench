@@ -58,6 +58,60 @@ describe("ArtifactRenderer sheet cutover", () => {
   });
 });
 
+describe("ArtifactRenderer contentUnavailable — stored-but-unreadable file", () => {
+  test("doc renderer says the file couldn't be read, not that it's empty", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer
+        rendererKind="doc"
+        title="notes.docx"
+        content=""
+        contentUnavailable
+      />,
+    );
+    expect(markup).toContain(
+      "We couldn&#x27;t read this file&#x27;s contents for preview.",
+    );
+    expect(markup).not.toContain("This document has no content yet.");
+  });
+
+  test("sheet renderer says the file couldn't be read, not that it's empty", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer
+        rendererKind="sheet"
+        title="budget.xlsx"
+        content=""
+        contentUnavailable
+      />,
+    );
+    expect(markup).toContain(
+      "We couldn&#x27;t read this file&#x27;s contents for preview.",
+    );
+    expect(markup).not.toContain("This sheet has no rows yet.");
+  });
+
+  test("pdf renderer says the file couldn't be read, not that no text is stored", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer
+        rendererKind="pdf"
+        title="contract.pdf"
+        content=""
+        contentUnavailable
+      />,
+    );
+    expect(markup).toContain(
+      "We couldn&#x27;t read this file&#x27;s contents for preview.",
+    );
+    expect(markup).not.toContain("No extracted text is stored");
+  });
+
+  test("a genuinely empty doc still reads as empty, not unreadable", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactRenderer rendererKind="doc" title="Untitled" content="" />,
+    );
+    expect(markup).toContain("This document has no content yet.");
+  });
+});
+
 describe("ArtifactRenderer html preview", () => {
   test("renders a sandboxed iframe pointed at the preview route", () => {
     const markup = renderToStaticMarkup(
