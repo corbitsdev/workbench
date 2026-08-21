@@ -744,6 +744,11 @@ select:disabled,
   border-color: var(--border);
   background: var(--card);
   padding-right: 0.4rem;
+  /* The results panel is absolutely positioned against the palette's own
+     wrapper (a descendant of this element) and has to escape it to show
+     below the bar — the collapsed state keeps `overflow: hidden` above
+     since there is nothing but the button to clip. */
+  overflow: visible;
 }
 
 .stage-search-button {
@@ -762,17 +767,31 @@ select:disabled,
   color: var(--foreground);
 }
 
-.stage-search-field {
+.stage-search [data-slot="command-palette-inline"] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.stage-search [data-slot="command-palette-inline-field"] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.stage-search [data-slot="command-palette-input"] {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 0;
+  background: transparent;
   font-size: 0.78rem;
   color: var(--foreground);
 }
 
-.stage-search-field[data-placeholder="true"] {
+.stage-search [data-slot="command-palette-input"]::placeholder {
   color: var(--muted-foreground);
 }
 
