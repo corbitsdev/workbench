@@ -10,11 +10,12 @@
 import { and, desc, eq } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
+  authoredDefinitionCandidates,
   createCryptoProviderCache,
+  DefinitionProjectionMissingError,
   domainOf,
   launchFoldedRun,
   mintFoldedRun,
-  readDefinitionProjection,
   readFoldedBody,
   resolveFoldedRunSessionId,
   resolveNewestProjectedDefinition,
@@ -502,6 +503,48 @@ export function createHubChatPlatform(
     }
   }
 
+  // CL-6452: every run deploy ensures a same-named sibling definition
+  // over the agent's asset under its per-run wire hash — a frozen
+  // deploy record carrying whatever projection was current at that
+  // deploy. Launch bodies resolve only from the hub-authored row(s) of
+  // the asset, so a skill pin or instructions save (which refreezes
+  // the authored row in place) reaches every later launch instead of
+  // being shadowed by the newest clone. Raises the named
+  // `DefinitionProjectionMissingError` — mapped to a 4xx at the route
+  // boundary, never an unhandled 500 — when the asset has no authored
+  // definition or none of its authored rows carries a projection.
+  async function resolveAuthoredProjectedDefinition(
+    tenantId: string,
+    definitionAsset: { assetId: string; name: string },
+  ) {
+    const assetSiblingRows = await deps.db.query.workflowDefinition.findMany({
+      where: and(
+        eq(workflowDefinition.tenantId, tenantId),
+        eq(workflowDefinition.assetId, definitionAsset.assetId),
+        eq(workflowDefinition.status, "deployed"),
+      ),
+      orderBy: desc(workflowDefinition.createdAt),
+    });
+    const candidates = authoredDefinitionCandidates(assetSiblingRows);
+    if (candidates.length === 0) {
+      throw new DefinitionProjectionMissingError(definitionAsset.name);
+    }
+    const resolved = await resolveNewestProjectedDefinition(
+      deps.db,
+      candidates,
+    );
+    const row = candidates.find(
+      (candidate) => candidate.id === resolved.definitionId,
+    );
+    if (row === undefined) {
+      throw new Error(
+        `resolved definition "${resolved.definitionId}" is not among the ` +
+          `authored candidates for asset "${definitionAsset.assetId}"`,
+      );
+    }
+    return { row, projection: resolved.projection };
+  }
+
   const platform: ChatPlatform = {
     async launchInvite(input): Promise<LaunchedInvite> {
       const definitionRow = await deps.db.query.workflowDefinition.findFirst({
@@ -534,37 +577,14 @@ export function createHubChatPlatform(
         throw new Error(`No tenant "${input.tenantId}"`);
       }
 
-      // CL-6357: a long-lived DB can carry a definition row whose asset
-      // repo has gone unresolvable (DB/blob drift — a `.data` reset
-      // that never touched Postgres) while a newer, healthy sibling
-      // under the same name already exists (a re-seed, typically).
-      // Resolution tries every deployed sibling under this name
-      // newest-first and uses the first one that actually reads — the
-      // specifically requested (possibly stale) row never wins over a
-      // healthy newer one. `resolveNewestProjectedDefinition`
-      // raises the named `DefinitionProjectionMissingError` — mapped
-      // to a 4xx at the route boundary, never an unhandled 500 — only
-      // once every sibling has failed to resolve.
-      const siblingRows = await deps.db.query.workflowDefinition.findMany({
-        where: and(
-          eq(workflowDefinition.tenantId, input.tenantId),
-          eq(workflowDefinition.name, definitionRow.name),
-          eq(workflowDefinition.status, "deployed"),
-        ),
-        orderBy: desc(workflowDefinition.createdAt),
-      });
-      const candidates = siblingRows.length > 0 ? siblingRows : [definitionRow];
-
-      const resolved = await resolveNewestProjectedDefinition(
-        deps.db,
-        candidates,
-      );
-      const resolvedDefinitionRow =
-        candidates.find((row) => row.id === resolved.definitionId) ??
-        definitionRow;
+      const { row: resolvedDefinitionRow, projection } =
+        await resolveAuthoredProjectedDefinition(input.tenantId, {
+          assetId: definitionRow.assetId,
+          name: definitionRow.name,
+        });
 
       const foldedBody = readFoldedBody(
-        resolved.projection,
+        projection,
         resolvedDefinitionRow.grantRequirements,
       );
       if (foldedBody.systemPrompt === "") {
@@ -619,7 +639,10 @@ export function createHubChatPlatform(
         ),
         orderBy: desc(workflowDefinition.createdAt),
       });
-      return rows
+      // Only hub-authored definitions are invitable: the run-deploy
+      // clones sharing an agent's name are deploy records, and listing
+      // them would offer N stale copies of every agent that has run.
+      return authoredDefinitionCandidates(rows)
         .filter((row) => !isWorkbenchHostDefinitionName(row.name))
         .map((row) => {
           const base = { id: row.id, name: row.name };
@@ -664,10 +687,18 @@ export function createHubChatPlatform(
         return;
       }
 
-      const projection = await readDefinitionProjection(deps.db, definitionRow);
+      // The run's own definition row is the per-run clone the deploy
+      // repointed it to; the refresh recomputes from the hub-authored
+      // sibling so the saved edit — not the clone's frozen snapshot —
+      // is what the next wake replays.
+      const { row: authoredRow, projection } =
+        await resolveAuthoredProjectedDefinition(tenantId, {
+          assetId: definitionRow.assetId,
+          name: definitionRow.name,
+        });
       const foldedBody = readFoldedBody(
         projection,
-        definitionRow.grantRequirements,
+        authoredRow.grantRequirements,
       );
 
       await deps.db

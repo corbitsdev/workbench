@@ -265,7 +265,14 @@ function createFakeDb(opts: {
       },
       workflowDefinition: {
         findFirst: async () => opts.workflowDefinitionRow,
-        findMany: async () => opts.workflowDefinitionRows ?? [],
+        // The requested definition row is itself a deployed row of its
+        // asset, so the real asset-sibling query always returns at
+        // least it — the single-row default mirrors that.
+        findMany: async () =>
+          opts.workflowDefinitionRows ??
+          (opts.workflowDefinitionRow !== undefined
+            ? [opts.workflowDefinitionRow]
+            : []),
       },
       tenant: {
         findFirst: async () => opts.tenantRow,
@@ -949,6 +956,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_echo",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
@@ -1051,6 +1059,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_echo",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
@@ -1126,83 +1135,10 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(/not in a launchable state/);
   });
 
-  // CL-6357: a long-lived dev DB can carry a definition row with no
-  // frozen wire projection stored on it (a pre-cutover row) alongside a
-  // fresher, healthy sibling under the same name — a re-seed, say.
-  // Resolution must prefer that newest-healthy sibling rather than
-  // dying on the specific (possibly stale) row the caller asked for.
-  test("launchInvite resolves the newest healthy sibling definition over the requested definition's own stale one", async () => {
-    const db = createFakeDb({
-      assetRow: {
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        name: "workbench-1",
-        displayName: null,
-      },
-      definitionId: "wfd_workbench1",
-      workflowDefinitionRow: {
-        id: "wfd_stale",
-        tenantId: "ten_1",
-        status: "deployed",
-        assetId: "asst_stale",
-      },
-      workflowDefinitionRows: [
-        // Newest first, matching `orderBy: desc(createdAt)`.
-        {
-          id: "wfd_fresh",
-          tenantId: "ten_1",
-          status: "deployed",
-          name: "assistant",
-          assetId: "asst_fresh",
-        },
-        {
-          id: "wfd_stale",
-          tenantId: "ten_1",
-          status: "deployed",
-          name: "assistant",
-          assetId: "asst_stale",
-        },
-      ],
-      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
-      // The stale sibling carries no stored projection at all; the
-      // fresh one does — the newer definition must win.
-      wireProjectionsByDefinitionId: {
-        wfd_fresh: inertProjection({ id: "wfd_fresh" }),
-      },
-    });
-
-    const platform = createHubChatPlatform({
-      toolGrantsForPins: () => [],
-      db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
-      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
-      eventCollectors: createFakeEventCollectors(),
-    });
-
-    const launched = await platform.launchInvite({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      definitionId: "wfd_stale",
-    });
-
-    expect(launched.instanceId).toMatch(/^run_/);
-    // The minted run's definitionId is the resolved healthy sibling,
-    // not the stale requested id — every later wake reads the
-    // definition's projection through this row, so it must be one that
-    // actually resolves.
-    const runInsert = db.inserted.find((row) => row.table === workflowRun);
-    expect(runInsert?.values).toMatchObject({ definitionId: "wfd_fresh" });
-    // Resolution walked every deployed sibling under the name
-    // newest-first and used the fresh one — never fell back to
-    // re-reading the specifically requested (stale) row.
-    expect(db.wireProjectionCalls).toEqual(["wfd_fresh"]);
-  });
-
-  // A dev DB whose definition rows have all drifted (no sibling under
-  // the name carries a stored projection) must answer a named error a
-  // caller can map to a 4xx, never let the raw lookup failure escape as
-  // an unhandled 500.
+  // A dev DB whose authored definition has drifted (no stored
+  // projection) must answer a named error a caller can map to a 4xx,
+  // never let the raw lookup failure escape as an unhandled 500 — and
+  // never fall back to a run-deploy clone's frozen snapshot.
   test("launchInvite raises DefinitionProjectionMissingError, not a raw 500, when no sibling definition resolves", async () => {
     const db = createFakeDb({
       assetRow: {
@@ -1216,6 +1152,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_dead",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_dead",
       },
       workflowDefinitionRows: [
@@ -1223,6 +1160,7 @@ describe("createHubChatPlatform", () => {
           id: "wfd_dead",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           name: "assistant",
           assetId: "asst_dead",
         },
@@ -1446,6 +1384,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_echo",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
@@ -1513,6 +1452,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_echo",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
@@ -1566,6 +1506,7 @@ describe("createHubChatPlatform", () => {
         id: "wfd_echo",
         tenantId: "ten_1",
         status: "deployed",
+        origin: "authored",
         assetId: "asst_echo",
       },
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
@@ -1611,6 +1552,7 @@ describe("createHubChatPlatform", () => {
           id: "wfd_echo",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           name: "echo",
           description: "Echo",
         },
@@ -1618,12 +1560,14 @@ describe("createHubChatPlatform", () => {
           id: "wfd_host1",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
         },
         {
           id: "wfd_host2",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           name: "run-682bf127e22124c01b4b0996aabaab5f",
         },
       ],
@@ -1732,6 +1676,7 @@ describe("createHubChatPlatform", () => {
           id: "wfd_workbench1",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           assetId: "asst_workbench1",
         },
         workbenchLaunchRow: {
@@ -1827,6 +1772,7 @@ describe("createHubChatPlatform", () => {
           id: "wfd_workbench1",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           assetId: "asst_workbench1",
         },
         workbenchLaunchRow: {
@@ -2377,6 +2323,7 @@ describe("createHubChatPlatform", () => {
           id: "wfd_agent1",
           tenantId: "ten_1",
           status: "deployed",
+          origin: "authored",
           assetId: "asst_agent1",
         },
         workbenchLaunchRow: {

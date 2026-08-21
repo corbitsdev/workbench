@@ -52,6 +52,16 @@ export const workflowDefinition = pgTable(
     wireHash: text("wire_hash"),
     name: text("name").notNull(),
     description: text("description"),
+    // WORKBENCH DELTA (see VENDORED.md): which writer minted this row.
+    // "authored" is the hub-authored definition an agent's edits
+    // refreeze in place — the only row authoritative for launches.
+    // "run" (the default, so the vendored ensure helper needs no
+    // change) is the sibling every code-sourced run deploy ensures over
+    // the same asset under its per-run wire hash: a frozen deploy
+    // record, never a launch candidate (CL-6452).
+    origin: text("origin", { enum: ["authored", "run"] })
+      .notNull()
+      .default("run"),
     // Grant requirements manifest, resolved at launch into materialized grants.
     // Validated as GrantRequirement[] at parse time.
     grantRequirements: jsonb("grant_requirements"),

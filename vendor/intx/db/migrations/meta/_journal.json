@@ -596,6 +596,13 @@
       "when": 1787696000000,
       "tag": "0085_workflow_definition_version_wire_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1787810000000,
+      "tag": "0086_workflow_definition_origin",
+      "breakpoints": true
     }
   ]
 }
