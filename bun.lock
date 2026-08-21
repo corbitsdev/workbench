@@ -41,6 +41,7 @@
         "@corbits/credential-providers": "workspace:*",
         "@corbits/docker-provisioner": "workspace:*",
         "@corbits/e2b-sandbox-sidecar": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/evals": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/inbox": "workspace:*",
@@ -225,7 +226,7 @@
     },
     "packages/agent-directory-tools": {
       "name": "@corbits/agent-directory-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "0.3.0",
         "@intx/types": "0.3.0",
@@ -634,6 +635,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/error-sink": {
+      "name": "@corbits/error-sink",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/log": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@logtape/logtape": "^2.2.4",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/evals": {
       "name": "@corbits/evals",
       "version": "0.0.1",
@@ -687,6 +701,7 @@
         "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
@@ -847,6 +862,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/jimmy-agent": {
+      "name": "@corbits/jimmy-agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
       "version": "0.0.4",
@@ -941,6 +969,19 @@
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/ollama-adapter": {
+      "name": "@corbits/ollama-adapter",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/inference": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1991,6 +2032,8 @@
 
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 
+    "@corbits/error-sink": ["@corbits/error-sink@workspace:packages/error-sink"],
+
     "@corbits/evals": ["@corbits/evals@workspace:packages/evals"],
 
     "@corbits/exa-topic-watch-workflow": ["@corbits/exa-topic-watch-workflow@workspace:workflows/exa-topic-watch"],
@@ -2017,6 +2060,8 @@
 
     "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:packages/interaction-tools"],
 
+    "@corbits/jimmy-agent": ["@corbits/jimmy-agent@workspace:packages/jimmy-agent"],
+
     "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 
     "@corbits/linear-tools": ["@corbits/linear-tools@workspace:packages/linear-tools"],
@@ -2038,6 +2083,8 @@
     "@corbits/morning-brief-workflow": ["@corbits/morning-brief-workflow@workspace:workflows/morning-brief"],
 
     "@corbits/notify": ["@corbits/notify@workspace:packages/notify"],
+
+    "@corbits/ollama-adapter": ["@corbits/ollama-adapter@workspace:packages/ollama-adapter"],
 
     "@corbits/pain-point-collateral-workflow": ["@corbits/pain-point-collateral-workflow@workspace:workflows/pain-point-collateral"],
 

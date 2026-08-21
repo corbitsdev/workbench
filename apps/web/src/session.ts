@@ -64,6 +64,24 @@ export type AuthResult =
 
 const FailureBody = type({ message: "string" });
 
+/**
+ * better-auth answers a rate-limited request with a bare 429 and an
+ * `X-Retry-After` header (seconds). Every auth entry point in this file
+ * shares this so sign-in, sign-up, and social sign-in all tell the person
+ * what happened and when it's worth trying again, instead of surfacing
+ * better-auth's generic "Too many requests" body.
+ */
+function rateLimitedResult(response: Response): AuthResult {
+  const retryAfterSeconds = Number(response.headers.get("x-retry-after"));
+  return {
+    ok: false,
+    message:
+      Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? `Too many sign-in attempts. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}.`
+        : "Too many sign-in attempts. Please wait a moment and try again.",
+  };
+}
+
 async function postAuth(
   path: string,
   body: Record<string, string>,
@@ -74,6 +92,7 @@ async function postAuth(
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    if (response.status === 429) return rateLimitedResult(response);
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const failure = FailureBody(payload);
@@ -186,6 +205,7 @@ export async function signInSocial(
         callbackURL: window.location.origin,
       }),
     });
+    if (response.status === 429) return rateLimitedResult(response);
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const failure = FailureBody(payload);

@@ -35,8 +35,14 @@ artifacts without a database handle or a browser session.
 - `workflow-auth.ts` — `createWorkflowRunAuthenticator`: resolves a
   sidecar bearer token + run address pair to a tenant/principal/run scope.
 - `workflow-routes.ts` — `createWorkflowArtifactRoutes`: `POST /` (create,
-  rate-limited to 30/run/minute, 64k-char content cap) and `GET /recent`,
-  both scoped to the authenticated run.
+  rate-limited to 30/run/minute, 64k-char content cap), `GET /recent`,
+  `GET /:id` (read back one artifact's content — the render step of a
+  research/due-diligence run reading the Markdown brief it just saved),
+  and `POST /binary` (rate-limited alongside `POST /`, base64 body,
+  10 MiB decoded cap — same `MAX_UPLOAD_BYTES` ceiling and `ContentStore`
+  the tenant Library's own upload path uses, so a run can persist a
+  rendered PDF). All four are scoped to the authenticated run's own
+  tenant + principal.
 - `createUnavailableArtifactRoutes` / `createUnavailableWorkflowArtifactRoutes`
   — honest 503 surfaces when the artifacts plane isn't mounted, so the
   Library UI can distinguish "not configured" from "empty bench".

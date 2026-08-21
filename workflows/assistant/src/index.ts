@@ -44,7 +44,7 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
   { name: "@corbits/capability-tools", version: "0.0.3" },
   { name: "@corbits/routines-tools", version: "0.0.5" },
-  { name: "@corbits/agent-directory-tools", version: "0.0.3" },
+  { name: "@corbits/agent-directory-tools", version: "0.0.4" },
   { name: "@corbits/task-dispatch-tools", version: "0.0.3" },
   { name: "@corbits/connections-tools", version: "0.0.5" },
   { name: "@corbits/catalog-tools", version: "0.0.1" },
