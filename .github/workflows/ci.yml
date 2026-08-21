@@ -73,6 +73,9 @@ jobs:
       - run: bun run check:react-ui-drift
       - run: bun run check:react-ui-pin
       - run: bun run check:tool-package-pins
+      - run: bun run check:tool-package-freshness
+        env:
+          CHECK_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
   walking-skeleton:
     runs-on: ubuntu-latest

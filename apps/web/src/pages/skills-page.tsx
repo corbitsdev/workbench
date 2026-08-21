@@ -35,7 +35,12 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
-import { createSkill, listSkills, type SkillSummary } from "../skills-api";
+import {
+  createSkill,
+  createSkillFromFile,
+  listSkills,
+  type SkillSummary,
+} from "../skills-api";
 import {
   CreateSkillDialog,
   type SkillCreateInput,
@@ -107,7 +112,14 @@ export function SkillsPage({
 
   async function handleCreate(input: SkillCreateInput) {
     if (tenantId === null) return;
-    const skill = await createSkill(tenantId, input);
+    const skill =
+      input.kind === "file"
+        ? await createSkillFromFile(tenantId, input.source)
+        : await createSkill(tenantId, {
+            name: input.name,
+            description: input.description,
+            body: input.body,
+          });
     setCreateOpen(false);
     await reload();
     open(skill.name);

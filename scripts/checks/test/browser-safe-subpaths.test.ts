@@ -251,3 +251,26 @@ test("parseImportSpecifiers handles multi-line export-from lists", () => {
   );
   expect(specs).toEqual([{ specifier: "./group", typeOnly: false }]);
 });
+
+test("a comment mentioning import does not swallow a later type-only import", () => {
+  const parsed = parseImportSpecifiers(
+    [
+      "// The tool modules import `defineTool` from `@intx/agent`, whose",
+      "// module graph reaches `node:path`, so browser-reachable callers",
+      "// import from here instead.",
+      'import type { ToolPackagePin } from "@intx/types/tool-packages";',
+    ].join("\n"),
+  );
+  expect(parsed).toEqual([
+    { specifier: "@intx/types/tool-packages", typeOnly: true },
+  ]);
+});
+
+test("a block comment cannot hide a real value import", () => {
+  const parsed = parseImportSpecifiers(
+    ['/* import x from "commented-out"; */', 'import y from "real";'].join(
+      "\n",
+    ),
+  );
+  expect(parsed).toEqual([{ specifier: "real", typeOnly: false }]);
+});

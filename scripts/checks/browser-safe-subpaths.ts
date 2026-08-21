@@ -90,6 +90,19 @@ interface ImportSpecifier {
 }
 
 /**
+ * Blanks out line and block comments, preserving offsets and newlines so
+ * the patterns below cannot match prose. Without this, a comment
+ * mentioning the word `import` before a real import swallows the lines
+ * between them — `[^;]*?` spans newlines — and reports the file's genuine
+ * type-only import as a value import.
+ */
+export function stripComments(contents: string): string {
+  return contents
+    .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "))
+    .replace(/\/\/[^\n]*/g, (match) => " ".repeat(match.length));
+}
+
+/**
  * Extracts every static `from "..."` import/export specifier from a
  * source file, plus dynamic `import("...")` and bare side-effect
  * `import "...";` forms. A statement is `typeOnly` only when the whole
@@ -97,7 +110,8 @@ interface ImportSpecifier {
  * `import { type X, y } from "z"` is conservatively treated as a value
  * import, since `y` really is one.
  */
-export function parseImportSpecifiers(contents: string): ImportSpecifier[] {
+export function parseImportSpecifiers(source: string): ImportSpecifier[] {
+  const contents = stripComments(source);
   const results: ImportSpecifier[] = [];
 
   const fromPattern =

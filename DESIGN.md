@@ -213,6 +213,29 @@ all. A failure says so plainly, in words, on its own chip — it is the one
 state where colour appears; everything else in this strip is quiet
 chrome.
 
+## Message Alignment
+
+Own messages align right; everyone and everything else — other people,
+agents, system notices — aligns left. This is evaluated per viewer, never
+baked into the message itself: a shared bench is multiplayer, so the exact
+same message renders right for the person who sent it and left for every
+other reader of that same bench (CL-6558, reversing an earlier reading of
+the "Workbench UI Overhaul v1" mock that called for a single flat,
+never-mirrored layout).
+
+Alignment is the only thing that changes. No chat bubble, no border, no
+background fill on the message itself, and no change to the avatar/name/
+timestamp treatment beyond which edge it sits against — an own row mirrors
+(avatar right, header and text right-anchored) rather than growing new
+chrome.
+
+Tool-use chips and generative-UI blocks (approve, connect-service,
+connect-github, poll, form, steps) stay anchored under the left avatar
+gutter for every author, own messages included — they read as a stack of
+short tags or a card, and mirroring them to the right would land next to
+the composer and break the one consistent place a reader looks for
+approvals and tool activity.
+
 ## State Pills
 
 Status indicators (ok / warn / error / running) use semantic colors that

@@ -80,10 +80,26 @@ export function listVendoredPaths(root: string): string[] {
     const bucketPath = path.join(vendorRoot, bucket.name);
     for (const entry of readdirSync(bucketPath, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
+      // `vendor/intx/*` is a workspace glob, so `bun install` materializes a
+      // directory holding nothing but `node_modules` for every linked
+      // package — an install artifact, not a vendored tree. Only a
+      // directory carrying its own source is something the ledger owes a
+      // kill date.
+      if (!hasVendoredSource(path.join(bucketPath, entry.name))) continue;
       vendored.push(path.join("vendor", bucket.name, entry.name));
     }
   }
   return vendored.sort();
+}
+
+/**
+ * A vendored tree carries hand-copied source. A directory holding only
+ * `node_modules` is what a workspace glob leaves behind after an install.
+ */
+export function hasVendoredSource(directory: string): boolean {
+  return readdirSync(directory, { withFileTypes: true }).some(
+    (entry) => entry.name !== "node_modules",
+  );
 }
 
 /** Every vendored directory must carry a kill-date registry row. */

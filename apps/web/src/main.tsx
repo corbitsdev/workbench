@@ -114,7 +114,7 @@ function Root() {
         provisioningErrorRefId={provisioningError?.refId}
         onRetryProvisioning={handleRetryProvisioning}
       />
-      <Toaster />
+      <Toaster position="bottom-right" />
     </ThemeProvider>
   );
 }

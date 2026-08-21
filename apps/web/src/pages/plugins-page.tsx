@@ -37,7 +37,12 @@ import {
   usePendingConnectProvider,
 } from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { createSkill, listSkills, type SkillSummary } from "../skills-api";
+import {
+  createSkill,
+  createSkillFromFile,
+  listSkills,
+  type SkillSummary,
+} from "../skills-api";
 import {
   CreateSkillDialog,
   type SkillCreateInput,
@@ -145,7 +150,14 @@ export function PluginsRoute({
 
   async function handleCreateSkill(input: SkillCreateInput) {
     if (selectedTenantId === null) return;
-    const skill = await createSkill(selectedTenantId, input);
+    const skill =
+      input.kind === "file"
+        ? await createSkillFromFile(selectedTenantId, input.source)
+        : await createSkill(selectedTenantId, {
+            name: input.name,
+            description: input.description,
+            body: input.body,
+          });
     setCreateSkillOpen(false);
     reloadSkills();
     setOpenSkillName(skill.name);

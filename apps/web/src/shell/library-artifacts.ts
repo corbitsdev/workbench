@@ -150,3 +150,20 @@ export function copyArtifactLinksToastLabel(count: number): string {
 export function copyArtifactLinksActionLabel(count: number): string {
   return count > 1 ? `Copy ${count} links` : "Copy link";
 }
+
+/**
+ * The MIME type of a file artifact's out-of-band upload blob, read off
+ * `source.upload.mimeType` — present on every artifact minted through
+ * `createFileArtifact` (`@corbits/artifacts`), regardless of whether the
+ * hub could inline its bytes into `content` as text. Null for an artifact
+ * with no upload backing at all (e.g. a co-edited doc), which is the only
+ * case where an empty `content` genuinely means "nothing here yet."
+ */
+export function uploadMimeTypeFromSource(
+  source: Record<string, unknown>,
+): string | null {
+  const upload = source.upload;
+  if (typeof upload !== "object" || upload === null) return null;
+  const mimeType = (upload as Record<string, unknown>).mimeType;
+  return typeof mimeType === "string" ? mimeType : null;
+}
