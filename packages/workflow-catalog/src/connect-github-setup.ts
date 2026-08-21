@@ -31,9 +31,9 @@ export interface ConnectGithubSetupPorts {
    * Records which repos this room is reviewing — the `template/*`
    * settings namespace's `selectedRepos` key (`./settings.ts`'s
    * `templateReposSettingsPatch`). A host binds this to the room's
-   * existing settings PATCH route, whose own `chat.settings` stream
-   * event is what a connect-github card folds its connected state from
-   * — see `@corbits/chat-ui`'s `applyConnectGithubSettingsEvent`.
+   * existing settings PATCH route; the connect-github card refetches
+   * its own state as the direct consequence of the call that triggers
+   * this patch, never a fold off the resulting stream event.
    */
   persistSelectedRepos(repoIds: readonly string[]): Promise<void>;
 }

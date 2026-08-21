@@ -118,7 +118,6 @@ export type {
   ConnectServiceResult,
   ConnectAffordance,
 } from "./blocks/connect-service-actions";
-export { applyConnectGithubSettingsEvent } from "./blocks/connect-github-stream";
 
 export {
   TextPart,

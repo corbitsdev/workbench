@@ -50,6 +50,51 @@ describe("preferCompletionCapable", () => {
       [],
     );
   });
+
+  // CL-6477: "embeddinggemma" has no delimiter between "embedding" and
+  // "gemma", unlike every other embedding model name this filter has seen
+  // (nomic-embed-text, all-minilm, bge-m3, qwen3-embedding all delimit
+  // with "-" or "_"). A regex that required a trailing delimiter after
+  // "embed(ding)?" let it through, where it then won the alphabetical
+  // default-model tiebreak and answered every chat turn with "does not
+  // support chat".
+  test("drops an uncataloged embeddinggemma offering even with no delimiter after 'embedding'", () => {
+    const offerings = [noData("embeddinggemma:300m"), completion("qwen3:8b")];
+    expect(
+      preferCompletionCapable(offerings, capabilitiesOf, nameOf).map(
+        (o) => o.name,
+      ),
+    ).toEqual(["qwen3:8b"]);
+  });
+
+  test("still filters the delimited embedding-model names (no regression)", () => {
+    const offerings = [
+      noData("nomic-embed-text"),
+      noData("all-minilm"),
+      noData("bge-m3"),
+      noData("qwen3-embedding"),
+      completion("qwen3:8b"),
+    ];
+    expect(
+      preferCompletionCapable(offerings, capabilitiesOf, nameOf).map(
+        (o) => o.name,
+      ),
+    ).toEqual(["qwen3:8b"]);
+  });
+
+  test("prefers real capability data over the name fallback: a probed completion offering named like an embedding model is kept", () => {
+    const probedCompletion: Offering = {
+      name: "embeddinggemma:300m",
+      capabilities: ["plain-text"],
+    };
+    expect(
+      preferCompletionCapable(
+        [probedCompletion, noData("all-minilm")],
+        capabilitiesOf,
+        nameOf,
+      ).map((o) => o.name),
+    ).toEqual(["embeddinggemma:300m"]);
+  });
 });
 
 describe("hasCompletionCapableModel", () => {
@@ -71,5 +116,25 @@ describe("hasCompletionCapableModel", () => {
         nameOf,
       ),
     ).toBe(false);
+  });
+
+  test("false when the only offering is an uncataloged embeddinggemma pull (CL-6477)", () => {
+    expect(
+      hasCompletionCapableModel(
+        [noData("embeddinggemma:300m")],
+        capabilitiesOf,
+        nameOf,
+      ),
+    ).toBe(false);
+  });
+
+  test("a chat-capable model is selected as the default when both an embeddinggemma pull and a chat model are present", () => {
+    const offerings = [noData("embeddinggemma:300m"), completion("qwen3:8b")];
+    const chatDefault = preferCompletionCapable(
+      offerings,
+      capabilitiesOf,
+      nameOf,
+    )[0];
+    expect(chatDefault?.name).toBe("qwen3:8b");
   });
 });

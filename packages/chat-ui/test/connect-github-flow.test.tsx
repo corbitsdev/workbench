@@ -7,16 +7,14 @@
 //   1. `@corbits/workflow-catalog`'s real `startReviewingRepos` mints
 //      one grant and one webhook trigger per selected repo, and records
 //      the selection.
-//   2. The card settles into its connected state purely by folding a
-//      `chat.settings` stream event through the real
-//      `applyConnectGithubSettingsEvent` — never a second
-//      `getConnectState` fetch.
+//   2. The card settles into its connected state by the host fanning an
+//      update out to `subscribeConnectState`'s listener — the same
+//      channel a real host fans out on after any of its own actions.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { ChatSettingsEventData } from "@corbits/chat/stream-events";
 import {
   startReviewingRepos,
   type ConnectGithubSetupPorts,
@@ -28,7 +26,6 @@ import type {
   ConnectGithubQuery,
   ConnectGithubRepo,
 } from "../src/blocks/connect-github-actions";
-import { applyConnectGithubSettingsEvent } from "../src/blocks/connect-github-stream";
 import { WorkbenchTimeline } from "../src/timeline";
 
 const REPOS: readonly ConnectGithubRepo[] = [
@@ -60,10 +57,8 @@ function messageWithConnectGithubBlock(): MessageItem[] {
 /** The whole flow's fakes, wired the way a real host would wire them:
  * `ConnectGithubActions.startReviewing` calls the real
  * `startReviewingRepos` against fake grant/trigger/settings ports, then
- * simulates the room's settings-PATCH route publishing `chat.settings`
- * (the real plumbing every `template/*` write already rides — see
- * `packages/chat/src/routes.ts`), folded through the real
- * `applyConnectGithubSettingsEvent`. */
+ * fans the settled state out to `subscribeConnectState`'s listener —
+ * the same thing a real host does after any of its own actions. */
 function buildHarness() {
   const grantedRepos: string[] = [];
   const createdTriggerRepos: string[] = [];
@@ -123,20 +118,12 @@ function buildHarness() {
     },
     async startReviewing(repoIds) {
       const result = await startReviewingRepos(repoIds, REPOS, setupPorts);
-      const settingsEvent: ChatSettingsEventData = {
-        updatedBy: "prn_owner",
-        settings: {
-          "template/pendingConnections": [],
-          "template/selectedRepos": repoIds,
-        },
-      };
-      const folded = applyConnectGithubSettingsEvent(
-        settingsEvent,
-        "github",
-        "octocat",
-        REPOS,
-      );
-      if (folded !== undefined) subscriber?.(folded);
+      subscriber?.({
+        kind: "connected",
+        orgName: "octocat",
+        repos: REPOS,
+        selectedRepoIds: repoIds,
+      });
       return { startedTriggerCount: result.createdTriggerIds.length };
     },
     async skip() {},
@@ -193,7 +180,7 @@ describe("connect-github round trip (CL-6345)", () => {
     expect(el.querySelector(".chat-block-connect-repo-row")).toBeNull();
   });
 
-  test("connect -> list repos -> pick three -> start reviewing mints a grant and a webhook trigger per repo, and settles into the connected state via the stream, never a second fetch", async () => {
+  test("connect -> list repos -> pick three -> start reviewing mints a grant and a webhook trigger per repo, and settles into the connected state via the host's fan-out, never a second fetch", async () => {
     const harness = buildHarness();
     const el = await mount(harness.actions);
 

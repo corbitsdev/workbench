@@ -385,6 +385,9 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // wildcard owner unable to read or write its own workbenches.
   { resource: "room:*", action: "read" },
   { resource: "room:*", action: "write" },
+  // CL-6465: the eval-run read routes (`GET .../eval-runs/runs`,
+  // `GET .../eval-runs/runs/:runId`) gate on this resource.
+  { resource: "eval-run:*", action: "read" },
 ];
 
 // The grants table has no unique constraint and the create route is a

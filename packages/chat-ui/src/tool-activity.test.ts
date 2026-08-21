@@ -6,9 +6,9 @@ import type { Part, ToolTracePart } from "@corbits/chat/parts";
 
 import {
   describeToolCall,
-  describeToolRound,
   groupTimelineParts,
   plainTextOfOutput,
+  providerTile,
   resolveToolIdentity,
   summarizeToolOutput,
   toToolActivityRow,
@@ -202,50 +202,27 @@ describe("toToolActivityRow", () => {
   });
 });
 
-describe("describeToolRound", () => {
-  const settled = (status: "success" | "failed", phrase: string) => ({
-    key: phrase,
-    toolName: "t",
-    phrase,
-    detail: undefined,
-    status,
+describe("providerTile", () => {
+  test("a known provider gets its brand initials and color", () => {
+    expect(providerTile("linear")).toEqual({
+      initials: "Li",
+      color: "#5e6ad2",
+    });
+    expect(providerTile("github")).toEqual({
+      initials: "GH",
+      color: "#24292f",
+    });
   });
 
-  test("a round still working speaks as the step that is working", () => {
-    const round = describeToolRound([
-      settled("success", "Read a file"),
-      {
-        key: "b",
-        toolName: "t",
-        phrase: "Searching the web",
-        detail: undefined,
-        status: "running" as const,
-      },
-    ]);
-    expect(round.label).toBe("Searching the web");
-    expect(round.status).toBe("running");
-    expect(round.opensByDefault).toBe(false);
+  test("an unrecognized provider still gets a tile, neutral and initialed", () => {
+    const tile = providerTile("acme");
+    expect(tile.initials).toBe("Ac");
+    expect(tile.color).toBe("var(--muted-foreground)");
   });
 
-  test("a settled round counts its steps and stays closed", () => {
-    const round = describeToolRound([
-      settled("success", "a"),
-      settled("success", "b"),
-      settled("success", "c"),
-    ]);
-    expect(round.label).toBe("3 steps");
-    expect(round.opensByDefault).toBe(false);
-  });
-
-  test("a round with failures says so plainly and opens itself", () => {
-    const round = describeToolRound([
-      settled("success", "a"),
-      settled("failed", "b"),
-      settled("failed", "c"),
-    ]);
-    expect(round.label).toBe("3 steps, 2 didn't work");
-    expect(round.status).toBe("failed");
-    expect(round.opensByDefault).toBe(true);
+  test("a bare local tool with no provider namespace still gets a tile", () => {
+    const tile = providerTile(undefined);
+    expect(tile.initials.length).toBeGreaterThan(0);
   });
 });
 

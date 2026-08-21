@@ -128,6 +128,11 @@ import {
   createPostgresBenchSettingsStore,
 } from "@corbits/bench";
 import {
+  applyEvalsMigrations,
+  createEvalRunRoutes,
+  createPostgresEvalRunStore,
+} from "@corbits/evals";
+import {
   applyInferenceCatalogMigrations,
   createBenchModelPolicyRoutes,
   createPostgresBenchModelPolicyStore,
@@ -1593,6 +1598,22 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // Eval run history: read-only surface over the package-owned
+  // `evals.run` table, migrated at hub start like insights and
+  // bench-settings. Eval runs aren't tenant-owned (same as
+  // run-key-history), so the tenant prefix here is only the grant gate.
+  await applyEvalsMigrations(config.databaseUrl);
+  const evalRuns = createPostgresEvalRunStore(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/eval-runs`,
+    createEvalRunRoutes({
+      store: evalRuns.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   app.route(
     `${TENANT_PREFIX}/sidecar-placement`,
     createSidecarPlacementRoutes({
@@ -1953,6 +1974,20 @@ export async function createHub(config: HubConfig) {
   // already registered in `CONNECTOR_REGISTRY`) — this route only owns
   // what needs the decrypted secret, the live repo list, and a real
   // grant/webhook-trigger/settings write.
+  //
+  // CL-6463: the credential row this card reads must be named by the
+  // exact same `displayName` `persistConnectorCredential` (`@workbench
+  // /connections`) stores it under for the `github` connector — a second,
+  // hardcoded "GitHub" literal here silently drifts the moment either side
+  // changes, which is exactly what left this card stuck disconnected after
+  // a successful PAT submit. Reading the descriptor's own field instead of
+  // repeating the literal makes that impossible.
+  const githubConnectorDescriptor = CONNECTOR_REGISTRY["github"];
+  if (githubConnectorDescriptor === undefined) {
+    throw new Error(
+      'CONNECTOR_REGISTRY has no "github" entry — the room GitHub connect card has nothing to read a credential name from',
+    );
+  }
   app.route(
     `${TENANT_PREFIX}/workbenches`,
     createConnectGithubRoutes({
@@ -1962,7 +1997,11 @@ export async function createHub(config: HubConfig) {
       }),
       log: (line) => log.info`${line}`,
       resolveGithubConfig: async (tenantId) => {
-        const row = await resolveCredentialByName(db, tenantId, "GitHub");
+        const row = await resolveCredentialByName(
+          db,
+          tenantId,
+          githubConnectorDescriptor.displayName,
+        );
         if (row === null) return undefined;
         const apiKey = await credentialCipher.decrypt(
           row.secret,
@@ -3507,6 +3546,7 @@ export async function createHub(config: HubConfig) {
       await insightsLatency.close();
       await preferences.close();
       await benchSettings.close();
+      await evalRuns.close();
       await closeMailbox();
       await close();
     },

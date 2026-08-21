@@ -52,6 +52,14 @@ beforeEach(() => {
     configurable: true,
     value: { writeText: mock(() => Promise.resolve()) },
   });
+  // isAdditiveSelectClick's Mac/non-Mac branch reads navigator.platform,
+  // which happy-dom reports as whatever the host OS is — Darwin-flavored
+  // locally, something else on Linux CI. Pinned here so the ctrl-click
+  // test below exercises the Mac branch deterministically on any OS.
+  Object.defineProperty(navigator, "platform", {
+    configurable: true,
+    value: "MacIntel",
+  });
   toastMock.mockClear();
 });
 

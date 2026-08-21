@@ -120,6 +120,24 @@ function fakeEvent(overrides: Partial<TagEvent> = {}): TagEvent {
   };
 }
 
+/**
+ * Waits for a condition the dispatch resolves before, not with — the reply
+ * arrives on a later microtask, and how many turns of the loop that takes
+ * is an implementation detail no assertion should encode.
+ */
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 1000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 function fakeThread(): TagThread & { posts: string[]; subscribed: boolean } {
   const posts: string[] = [];
   return {
@@ -287,6 +305,10 @@ describe("dispatchWorkbenchSlackEvent", () => {
 
     const thread = fakeThread();
     await dispatchWorkbenchSlackEvent(deps, fakeEvent(), thread);
+    // The reply lands on a later microtask than the dispatch resolves, so
+    // wait for the post itself rather than assuming this turn of the loop
+    // already drained it.
+    await waitFor(() => thread.posts.length > 0);
 
     expect(thread.posts).toEqual(["Hi! How can I help?"]);
   });

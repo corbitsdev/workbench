@@ -7,15 +7,15 @@
 // The path proven: database setup (chat migrations apply) → hub boot
 // → sidecar boot → two sign-ups in one tenant (an invited principal
 // activated by the owner) → an inference catalog chain seeded with a
-// placeholder key → a workbench launched (the anchor instance boots
-// in-process, the go/no-go test) → both users posting messages and
+// placeholder key → a workbench created (data only since CL-6330 — no
+// host run, the go/no-go test) → both users posting messages and
 // reading back the converged, decoded timeline with sender identity →
-// a second message proving the anchor keeps accepting mail with no
-// relaunch → a settings patch that both updates the record and
-// appends an audit event to the timeline → independent per-user
-// read-state cursors → a second workbench's address mentioned in the
-// first, fanning a copy into the mentioned run's mailbox and driving
-// that run → the workbench kind filter.
+// a second message proving the room keeps accepting mail → a settings
+// patch that both updates the record and appends an audit event to
+// the timeline → independent per-user read-state cursors → mentioning
+// an already-resident agent participant twice, fanning each mention
+// into its existing run and never minting a sibling (CL-6451) → the
+// workbench kind filter.
 //
 // Structured as one shared-boot stack (`beforeAll`) with a separate
 // `test` per capability, rather than one long test: a real defect
@@ -29,7 +29,6 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-import { formatRunAddress } from "@intx/types";
 import {
   createHubAPI,
   seedCatalog,
@@ -581,40 +580,108 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
   });
 
+  // CL-6330 deleted the workbench-anchor machinery: a bare `kind:
+  // "workbench"` room mints only a child tenant and settings rows — no
+  // host workflow, no run, nothing `/workflows/runs/:runId/events` can
+  // ever resolve. Only an invited agent (`kind: "chat"` or `POST
+  // .../invite`) is backed by a real `workflow_run`. This test used to
+  // mention a second bare workbench and poll its (nonexistent) run,
+  // which is exactly the 404 CL-6436 tracks. It now proves the CL-6451
+  // contract this test was actually meant to guard: mentioning a
+  // participant already resident in the room drives that participant's
+  // existing run — twice, never minting a sibling.
+  // A dedicated `kind: "workbench"` room, never `kind: "chat"`: an agent
+  // chat this test minted for itself would sit in the tenant forever as
+  // a second, older "echo" conversation, and `findExistingAgentChat`'s
+  // tenant-wide dedup (below) would then find *this* leftover instead
+  // of the one the "reuses it" test just created and expects back
+  // (CL-6481 — this collision, introduced when this test was rewritten
+  // around a real resident agent, was the reuse test's actual failure).
+  // A plain workbench never enters that dedup's `kind: "chat"` listing,
+  // so it can host a resident participant to mention without leaving
+  // that trap behind.
   test("mention fan-out drives the mentioned run", async () => {
-    const secondWorkbench = await createWorkbench({
+    const mentionRoom = await createWorkbench({
       kind: "workbench",
-      name: "mentioned",
+      name: "mention fan-out room",
     });
-    expectStatus("create second workbench", secondWorkbench, 201);
-    const secondWorkbenchId = stringField(
-      secondWorkbench.data,
+    expectStatus("create mention fan-out room", mentionRoom, 201);
+    const mentionRoomId = stringField(
+      mentionRoom.data,
       "id",
-      "create second workbench",
+      "create mention fan-out room",
     );
-    const secondWorkbenchAddress = formatRunAddress(secondWorkbenchId, domain);
 
-    const patched = await api(
-      "PATCH",
-      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/settings`,
-      { "chat/participants": [secondWorkbenchAddress] },
+    const invited = await api(
+      "POST",
+      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/invite`,
+      { definitionId: await echoDefinitionId() },
       user1.cookies,
     );
-    expectStatus("add mentionable participant", patched, 200);
-
-    const before = highestSeq(
-      await runEvents(user1.cookies, secondWorkbenchId),
+    expectStatus("invite echo into mention fan-out room", invited, 201);
+    const echoAddress = stringField(
+      invited.data,
+      "address",
+      "invite echo into mention fan-out room",
     );
+    const echoLocalPart = echoAddress.split("@")[0];
+    if (echoLocalPart === undefined || echoLocalPart === "") {
+      throw new Error(`malformed echo address: ${echoAddress}`);
+    }
 
-    const mentionText = `hey @${secondWorkbenchId} take a look ${crypto.randomUUID()}`;
-    await postMessage(user1.cookies, workbenchId, mentionText);
-
-    const fresh = await waitForRunProgress(
+    const beforeFirst = highestSeq(
+      await runEvents(user1.cookies, echoLocalPart),
+    );
+    await postMessage(
       user1.cookies,
-      secondWorkbenchId,
-      before,
+      mentionRoomId,
+      `hey @echo take a look ${crypto.randomUUID()}`,
     );
-    expect(fresh.length).toBeGreaterThan(0);
+    const afterFirst = await waitForRunProgress(
+      user1.cookies,
+      echoLocalPart,
+      beforeFirst,
+    );
+    expect(afterFirst.length).toBeGreaterThan(0);
+
+    // The resident-reuse claim (CL-6451): a second mention of the same
+    // already-resident participant drives the SAME run id further —
+    // never mints a sibling — so this polls that same `echoLocalPart`
+    // run again rather than any newly-discovered address, and confirms
+    // the room still lists exactly the one agent participant.
+    const beforeSecond = highestSeq(
+      await runEvents(user1.cookies, echoLocalPart),
+    );
+    await postMessage(
+      user1.cookies,
+      mentionRoomId,
+      `hey @echo one more thing ${crypto.randomUUID()}`,
+    );
+    const afterSecond = await waitForRunProgress(
+      user1.cookies,
+      echoLocalPart,
+      beforeSecond,
+    );
+    expect(afterSecond.length).toBeGreaterThan(0);
+
+    const settingsAfterSecondMention = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/settings`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus(
+      "get settings after second mention",
+      settingsAfterSecondMention,
+      200,
+    );
+    const participantsAfterSecondMention = arrayField(
+      settingsAfterSecondMention.data,
+      "participants",
+      "get settings after second mention",
+    ) as { address: string; handle: string }[];
+    expect(participantsAfterSecondMention).toHaveLength(1);
+    expect(participantsAfterSecondMention[0]?.address).toBe(echoAddress);
   }, 90_000);
 
   test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
