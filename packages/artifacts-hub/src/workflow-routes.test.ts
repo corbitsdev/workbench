@@ -66,7 +66,11 @@ function fakeStore(overrides: Partial<WorkflowArtifactRoutesStore> = {}) {
  * seeded under another tenant, the same way the production store can't.
  */
 function fakeTenantScopedStore(
-  rows: readonly { id: string; tenantId: string; artifact: SerializedArtifact }[],
+  rows: readonly {
+    id: string;
+    tenantId: string;
+    artifact: SerializedArtifact;
+  }[],
 ) {
   const store: WorkflowArtifactRoutesStore = {
     async create() {
@@ -110,7 +114,8 @@ function twoTenantAuthenticator() {
   return {
     async resolve(token: string, address: string) {
       if (token === GOOD_TOKEN && address === GOOD_ADDRESS) return SCOPE;
-      if (token === OTHER_TOKEN && address === OTHER_ADDRESS) return OTHER_SCOPE;
+      if (token === OTHER_TOKEN && address === OTHER_ADDRESS)
+        return OTHER_SCOPE;
       return null;
     },
   };
@@ -354,7 +359,11 @@ describe("GET /:id (read back)", () => {
       content: "someone else's brief",
     });
     const store = fakeTenantScopedStore([
-      { id: "art_owned_by_other_tenant", tenantId: OTHER_SCOPE.tenantId, artifact },
+      {
+        id: "art_owned_by_other_tenant",
+        tenantId: OTHER_SCOPE.tenantId,
+        artifact,
+      },
     ]);
     const res = await appFor(store, twoTenantAuthenticator()).request(
       "/art_owned_by_other_tenant",
@@ -383,7 +392,9 @@ describe("GET /:id (read back)", () => {
 });
 
 describe("POST /binary (create binary artifact)", () => {
-  const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]); // "%PDF-1.4"
+  const pdfBytes = new Uint8Array([
+    0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34,
+  ]); // "%PDF-1.4"
 
   test("round-trips binary content through base64 to the store", async () => {
     const { store, createdBinary } = fakeStore();
