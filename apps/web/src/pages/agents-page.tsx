@@ -11,9 +11,11 @@
 
 import {
   Badge,
+  BulkActionBar,
   Button,
   PageShell,
   RichEmptyState,
+  SelectionCheckbox,
   Skeleton,
   Table,
   TableBody,
@@ -21,26 +23,30 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
+  useListSelection,
 } from "@corbits/react-ui";
-import type { BadgeTone } from "@corbits/react-ui";
-import { Robot } from "@corbits/icons";
-import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import type { BadgeTone, SelectionCheckboxState } from "@corbits/react-ui";
+import { Archive, Copy, FolderOpen, Plus, Robot, Trash } from "@corbits/icons";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { describeApiError, QueryView } from "@corbits/api-query";
 
 import {
   getAgentCapabilities,
+  listTopLevelRuns,
   useAgentDirectory,
   type AgentCapabilities,
   type AgentDefinition,
+  type AgentInstance,
 } from "../agents-api";
 import {
   purposeAgentDefinitions,
   type AgentDefinitionWithDisplayName,
 } from "../agents-directory";
 import { useBench } from "../bench-context";
-import { rowActivationProps } from "../activatable-row";
+import { isAdditiveSelectClick } from "../activatable-row";
 import { Link } from "../navigation";
 import { useBenchActivity } from "../shell/bench-activity";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
@@ -53,6 +59,109 @@ const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
   deployed: "success",
   stopped: "neutral",
 };
+
+/** The roster's Status column folds a definition's own deployed/stopped
+ * state together with its live instances' statuses — a stopped definition
+ * always reads Archived; a deployed one reads Running while any instance
+ * is actively running, Blocked while any instance is erroring, otherwise
+ * Idle. `instances` is expected to already be a tenant's top-level runs
+ * (`listTopLevelRuns`), never the folded per-workbench-host noise. */
+export type AgentRosterStatus = "running" | "idle" | "blocked" | "archived";
+
+const AGENT_ROSTER_STATUS_LABEL: Record<AgentRosterStatus, string> = {
+  running: "Running",
+  idle: "Idle",
+  blocked: "Blocked",
+  archived: "Archived",
+};
+
+const AGENT_ROSTER_STATUS_TONE: Record<AgentRosterStatus, BadgeTone> = {
+  running: "success",
+  idle: "neutral",
+  blocked: "danger",
+  archived: "neutral",
+};
+
+export function agentRosterStatus(
+  definition: AgentDefinition,
+  instances: readonly AgentInstance[],
+): AgentRosterStatus {
+  if (definition.status === "stopped") return "archived";
+  const own = instances.filter(
+    (instance) => instance.definitionId === definition.id,
+  );
+  if (own.some((instance) => instance.status === "running")) return "running";
+  if (own.some((instance) => instance.status === "error")) return "blocked";
+  return "idle";
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** How many of a definition's instances were created in the trailing 7
+ * days — the roster's "Runs · 7d" column. */
+export function runsInLast7Days(
+  definitionId: string,
+  instances: readonly AgentInstance[],
+  now: number,
+): number {
+  return instances.filter(
+    (instance) =>
+      instance.definitionId === definitionId &&
+      now - new Date(instance.createdAt).getTime() <= SEVEN_DAYS_MS,
+  ).length;
+}
+
+const AGENT_BULK_ACTIONS = [
+  { id: "duplicate", label: "Duplicate", icon: Copy },
+  { id: "archive", label: "Archive", icon: Archive },
+  { id: "move", label: "Move", icon: FolderOpen },
+  { id: "delete", label: "Delete", icon: Trash },
+] as const;
+
+/** The short model name for a definition's capabilities — fetched lazily,
+ * per row, the same route (and the same plain fetch-effect, no react-query
+ * client required) `AgentDetailPanel` below already uses; a load or fetch
+ * failure degrades to a dash rather than blocking the row. */
+function AgentModelCell({
+  tenantId,
+  definitionId,
+}: {
+  readonly tenantId: string;
+  readonly definitionId: string;
+}) {
+  const [capabilities, setCapabilities] = useState<
+    | { readonly status: "loading" }
+    | { readonly status: "ready"; readonly data: AgentCapabilities }
+    | { readonly status: "error" }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setCapabilities({ status: "loading" });
+    getAgentCapabilities(tenantId, definitionId)
+      .then((data) => {
+        if (!cancelled) setCapabilities({ status: "ready", data });
+      })
+      .catch(() => {
+        if (!cancelled) setCapabilities({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, definitionId]);
+
+  if (capabilities.status === "loading") {
+    return <Skeleton className="h-4 w-14" />;
+  }
+  if (capabilities.status === "error") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span className="font-mono text-xs text-muted-foreground">
+      {capabilities.data.model ?? "Default"}
+    </span>
+  );
+}
 
 /** A workbench instance running a given agent definition — just enough to
  * link to its own settings Agents tab (`workbenchSettingsPath`), which
@@ -191,17 +300,22 @@ function AgentDetailPanel({
 
 /**
  * The roster stage: a flat table of every definition this bench owns —
- * name, description, and how many open workbenches (agent DMs) currently
- * run it — rows, never cards, per the owner's "rows over grids" rule for
- * this slice. Selecting a row opens its detail alongside the table; "Create"
- * opens `CreateAgentPanel`. There is no second "New agent" mint action here
- * — creating an agent stays the one workbench-creation verb the rest of
- * the shell already offers.
+ * name, status, model, and how often it has run in the last week — rows,
+ * never cards, per the owner's "rows over grids" rule for this slice.
+ * Selecting a row opens its detail alongside the table; "New agent" opens
+ * `CreateAgentPanel`. Rows are also bulk-selectable (checkbox + shift/cmd
+ * range select, `useListSelection`) with a floating `BulkActionBar` for
+ * Duplicate/Archive/Move/Delete — none of those four mutate anything yet
+ * (the hub exposes no bulk endpoint for any of them), so each one is a
+ * clearly-labelled no-op toast rather than a button that lies about doing
+ * something.
  */
 export function AgentsPage({
   tenantId,
   definitions,
   workbenches,
+  instances,
+  now = Date.now(),
   selectedId,
   onSelect,
   createOpen,
@@ -214,6 +328,8 @@ export function AgentsPage({
     string,
     readonly DefinitionWorkbenchInstance[]
   >;
+  readonly instances: readonly AgentInstance[];
+  readonly now?: number;
   readonly selectedId: string | null;
   readonly onSelect: (id: string | null) => void;
   readonly createOpen: boolean;
@@ -221,6 +337,23 @@ export function AgentsPage({
   readonly onCreated: (definition: AgentDefinition) => void;
 }) {
   const selected = definitions.find((d) => d.id === selectedId) ?? null;
+  const definitionIds = useMemo(
+    () => definitions.map((definition) => definition.id),
+    [definitions],
+  );
+  const selection = useListSelection({ ids: definitionIds });
+  const allSelected =
+    definitions.length > 0 && selection.selectedCount === definitions.length;
+  const headerChecked: SelectionCheckboxState =
+    selection.selectedCount === 0
+      ? false
+      : allSelected
+        ? true
+        : "indeterminate";
+
+  function runBulkAction(label: string) {
+    toast(`${label} isn't wired to the hub yet.`);
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -234,7 +367,7 @@ export function AgentsPage({
               onClick={() => onCreateOpenChange(true)}
               aria-label="Create an agent"
             >
-              <Robot /> Create
+              <Plus /> New agent
             </Button>
           ) : null
         }
@@ -253,45 +386,120 @@ export function AgentsPage({
                 <Table aria-label="Agents">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Workbenches</TableHead>
+                      <TableHead className="w-10">
+                        <SelectionCheckbox
+                          checked={headerChecked}
+                          onToggle={() =>
+                            allSelected ? selection.clear() : selection.selectAll()
+                          }
+                          rowLabel="all agents"
+                          ariaLabel="Select all agents"
+                          className="opacity-100"
+                        />
+                      </TableHead>
+                      <TableHead>Agent</TableHead>
+                      <TableHead className="hidden lg:table-cell">
+                        Description
+                      </TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="hidden lg:table-cell">
+                        Model
+                      </TableHead>
+                      <TableHead className="hidden text-right lg:table-cell">
+                        Runs · 7d
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {definitions.map((definition) => (
-                      <TableRow
-                        key={definition.id}
-                        data-state={
-                          selectedId === definition.id ? "selected" : undefined
-                        }
-                        className="cursor-pointer"
-                        {...rowActivationProps(() =>
-                          onSelect(
-                            selectedId === definition.id ? null : definition.id,
-                          ),
-                        )}
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col">
-                            <span>{definition.displayName}</span>
-                            <span className="font-mono text-xs font-normal text-muted-foreground">
-                              {definition.name}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {definition.description !== null &&
-                          definition.description !== undefined &&
-                          definition.description !== ""
-                            ? definition.description
-                            : "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {workbenches.get(definition.id)?.length ?? 0}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {definitions.map((definition) => {
+                      const isSelected = selection.isSelected(definition.id);
+                      const status = agentRosterStatus(definition, instances);
+                      return (
+                        <TableRow
+                          key={definition.id}
+                          data-state={
+                            selectedId === definition.id
+                              ? "selected"
+                              : undefined
+                          }
+                          className="group cursor-pointer"
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            if (
+                              event.shiftKey ||
+                              isAdditiveSelectClick(event)
+                            ) {
+                              selection.toggle(definition.id, {
+                                shiftKey: event.shiftKey,
+                              });
+                              return;
+                            }
+                            onSelect(
+                              selectedId === definition.id
+                                ? null
+                                : definition.id,
+                            );
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") {
+                              return;
+                            }
+                            event.preventDefault();
+                            onSelect(
+                              selectedId === definition.id
+                                ? null
+                                : definition.id,
+                            );
+                          }}
+                        >
+                          <TableCell onClick={(event) => event.stopPropagation()}>
+                            <SelectionCheckbox
+                              checked={isSelected}
+                              onToggle={(modifiers) =>
+                                selection.toggle(definition.id, modifiers)
+                              }
+                              rowLabel={definition.displayName}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex flex-col">
+                              <span className="text-[13.5px] font-bold">
+                                {definition.displayName}
+                              </span>
+                              <span className="font-mono text-xs font-normal text-muted-foreground">
+                                {definition.name}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground lg:table-cell">
+                            {definition.description !== null &&
+                            definition.description !== undefined &&
+                            definition.description !== ""
+                              ? definition.description
+                              : "—"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge tone={AGENT_ROSTER_STATUS_TONE[status]}>
+                              {AGENT_ROSTER_STATUS_LABEL[status]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {tenantId !== null ? (
+                              <AgentModelCell
+                                tenantId={tenantId}
+                                definitionId={definition.id}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
+                            {runsInLast7Days(definition.id, instances, now)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -320,6 +528,21 @@ export function AgentsPage({
           }}
         />
       ) : null}
+      <BulkActionBar count={selection.selectedCount} onClear={selection.clear}>
+        {AGENT_BULK_ACTIONS.map(({ id, label, icon: Icon }) => (
+          <Button
+            key={id}
+            type="button"
+            size="sm"
+            variant="outline"
+            data-bulk-action={id}
+            onClick={() => runBulkAction(label)}
+          >
+            <Icon aria-hidden="true" />
+            {label}
+          </Button>
+        ))}
+      </BulkActionBar>
     </div>
   );
 }
@@ -335,6 +558,14 @@ export function AgentsRoute({
   const queryClient = useQueryClient();
   const directory = useAgentDirectory(selectedTenantId ?? undefined);
   const activity = useBenchActivity(selectedTenantId);
+  // Powers the roster's Status and "Runs · 7d" columns; a failed fetch here
+  // degrades those two columns to Idle/0 rather than blocking the page —
+  // the definitions listing above is what makes the page usable at all.
+  const runsQuery = useQuery({
+    queryKey: ["agent-top-level-runs", selectedTenantId],
+    queryFn: () => listTopLevelRuns(selectedTenantId as string),
+    enabled: selectedTenantId !== null,
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const selectedId = agentIdFromPath(path);
 
@@ -376,6 +607,7 @@ export function AgentsRoute({
       tenantId={selectedTenantId}
       definitions={definitions}
       workbenches={workbenches}
+      instances={runsQuery.data ?? []}
       selectedId={selectedId}
       onSelect={(id) =>
         navigate(

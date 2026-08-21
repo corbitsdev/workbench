@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 export type { Icon, IconProps };
 
 export {
+  Archive,
   ArrowBendUpLeft,
   ArrowClockwise,
   ArrowDown,
@@ -75,6 +76,7 @@ export {
   Stack,
   Star,
   SquaresFour,
+  Trash,
   User,
   UserCircle,
   UserPlus,
