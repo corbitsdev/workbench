@@ -80,6 +80,13 @@ test("surfaces a connect prompt, never a silent no-op, when Giphy is not connect
   const result = await bundle.run(CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/connect giphy/i);
+  // The `missing-credential-detail` contract (`@corbits/connections`):
+  // this is what lets the chat orchestrator render a real "Connect
+  // Giphy" button instead of just a plain error string.
+  expect(result.detail).toEqual({
+    kind: "missing-credential",
+    connectorId: "giphy",
+  });
 });
 
 test("surfaces the same connect prompt when the step carries no credentials capability at all", async () => {
@@ -87,6 +94,10 @@ test("surfaces the same connect prompt when the step carries no credentials capa
   const result = await bundle.run(CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/connect giphy/i);
+  expect(result.detail).toEqual({
+    kind: "missing-credential",
+    connectorId: "giphy",
+  });
 });
 
 test("rejects a missing query without calling the network", async () => {
