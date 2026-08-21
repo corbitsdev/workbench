@@ -29,12 +29,16 @@ export type ConnectGithubActions = {
    * message's own `ConnectGithubBlockData`. */
   readonly getConnectState: (messageId: string) => Promise<ConnectGithubQuery>;
   /**
-   * Folds this room's live stream straight into the card's state —
-   * never a second `getConnectState` call. The host wires this to the
-   * workbench's existing `chat.settings` SSE event (folded through
-   * `./connect-github-stream.ts`'s `applyConnectGithubSettingsEvent`),
-   * the same event `templateReposSettingsPatch` writes onto once a
-   * person starts reviewing repos. Returns an unsubscribe.
+   * Registers for this card's state updates — the host fans an update
+   * out to every subscriber after its own actions (`submitAccessToken`,
+   * `startReviewing`, `skip`) change something, re-reading
+   * `getConnectState`. A credential completed elsewhere (the Plugins
+   * page, another tab) settles this connector's entry on
+   * `@corbits/workflow-catalog`'s `template/pendingConnections`
+   * (CL-6463's `settleConnectedService`) so the *next* fresh
+   * `getConnectState` — e.g. on this card's next mount — already reads
+   * connected, since that read resolves against the real credential,
+   * never this setting. Returns an unsubscribe.
    */
   readonly subscribeConnectState: (
     messageId: string,

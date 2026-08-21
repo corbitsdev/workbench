@@ -101,8 +101,9 @@ export type ConnectGithubRoutesDeps = {
   ): Promise<ConnectGithubTemplateSettings>;
   /** Applies the settings PATCH `./settings.ts`'s
    * `templateReposSettingsPatch` builds and publishes the room's
-   * `chat.settings` stream event — the same event `applyConnectGithubSettingsEvent`
-   * (`@corbits/chat-ui`) folds the connect card's live state from. */
+   * `chat.settings` stream event — the connect card refetches its own
+   * state as the direct consequence of the `start-reviewing` call that
+   * triggers this patch, never a fold off the stream event itself. */
   persistSelectedRepos(
     tenantId: string,
     workbenchId: string,
