@@ -30,8 +30,6 @@ import {
   SCOUT_AGENT_DISPLAY_NAME,
   SCOUT_AGENT_DESCRIPTION,
 } from "@corbits/scout-agent/definition";
-import { JIMMY_AGENT_ID } from "@corbits/jimmy-agent/metadata";
-
 /** One workflow a template installs, pinned to the version it was
  * designed against. `assetName` matches a `WORKFLOW_CATALOG` entry. */
 export const WorkbenchTemplateBlock = type({
@@ -328,44 +326,10 @@ export const DUE_DILIGENCE_TEMPLATE: WorkbenchTemplateManifest = {
   openInputs: [],
 };
 
-/**
- * The default-teammates template (CL-6499): Myra plus Jimmy, the one
- * other standalone chat agent this catalog has today — "not necessarily
- * specialists, just a group of work" per the owner's own framing. Jimmy
- * needs a Giphy credential to actually find a GIF; his own tool degrades
- * to a plain "connect Giphy" reply rather than failing, so nothing here
- * blocks the create on a connection either.
- */
-export const DEFAULT_TEAMMATES_TEMPLATE: WorkbenchTemplateManifest = {
-  id: "default-teammates",
-  title: "Default teammates",
-  promise:
-    "Myra plus a couple of teammates to have around — start here and grow the room as you go.",
-  blocks: [],
-  requiredConnections: [],
-  optionalConnections: [],
-  routines: [],
-  webhookTriggers: [],
-  participants: [
-    {
-      handle: "myra",
-      displayName: "Myra",
-      role: "The teammate who helps you set the rest of this room up.",
-    },
-    {
-      handle: JIMMY_AGENT_ID,
-      displayName: "Jimmy",
-      role: "Mention him with a request and he replies with a GIF.",
-    },
-  ],
-  openInputs: [],
-};
-
 export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplateManifest[] = [
   GTM_TEMPLATE,
   CODE_REVIEW_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
-  DEFAULT_TEAMMATES_TEMPLATE,
 ];
 
 const templateById = new Map(

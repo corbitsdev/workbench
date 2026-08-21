@@ -8,9 +8,15 @@
 //
 // This resolves a manifest whose non-Myra participants are backed by
 // either `@corbits/code-review`'s reviewer roster (CL-6344's
-// `CODE_REVIEW_TEMPLATE`) or one of the standalone chat agents this
-// catalog installs the same way — Scout (`DUE_DILIGENCE_TEMPLATE`) and
-// Jimmy (`DEFAULT_TEAMMATES_TEMPLATE`), see `./participant-agent-requests.ts`.
+// `CODE_REVIEW_TEMPLATE`) or a standalone chat agent this catalog installs
+// the same way — Scout, for `DUE_DILIGENCE_TEMPLATE` (see
+// `./participant-agent-requests.ts`). Jimmy resolves through the identical
+// `ParticipantAgentRequest` shape (`jimmyAgentRequest()`), but CL-6499
+// dropped his template — he is not a "kind of workbench" — so no shipped
+// manifest names his handle today; `@corbits/chat-ui`'s "Add Jimmy"
+// quick-create row calls `jimmyAgentRequest()` directly instead. Kept
+// registered here too so a future template naming his handle resolves
+// without new plumbing.
 // A template like `GTM_TEMPLATE`, whose participants are backed by their
 // own deployed workflow definitions rather than an agent-directory
 // create request, needs its own resolution path — a later ticket, not

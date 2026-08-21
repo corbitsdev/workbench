@@ -4,7 +4,6 @@ import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 
 import {
   CODE_REVIEW_TEMPLATE,
-  DEFAULT_TEAMMATES_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
@@ -187,21 +186,15 @@ test("the due-diligence template blocks the create on nothing — Exa is offered
   expect(DUE_DILIGENCE_TEMPLATE.optionalConnections).toEqual(["exa"]);
 });
 
-test("the default-teammates template's participants are Myra and Jimmy, neither backed by a block", () => {
-  expect(workbenchTemplate("default-teammates")).toBe(
-    DEFAULT_TEAMMATES_TEMPLATE,
-  );
-  expect(
-    DEFAULT_TEAMMATES_TEMPLATE.participants.map(
-      (participant) => participant.handle,
-    ),
-  ).toEqual(["myra", "jimmy"]);
-  expect(templateBlockAssetNames(DEFAULT_TEAMMATES_TEMPLATE)).toEqual([]);
-});
-
-test("the default-teammates template blocks the create on nothing", () => {
-  expect(DEFAULT_TEAMMATES_TEMPLATE.requiredConnections).toEqual([]);
-  expect(DEFAULT_TEAMMATES_TEMPLATE.optionalConnections).toEqual([]);
+test("Jimmy is not a workbench template — the picker offers no such kind of workbench", () => {
+  expect(workbenchTemplate("default-teammates")).toBeUndefined();
+  for (const template of WORKBENCH_TEMPLATES) {
+    expect(
+      template.participants.some(
+        (participant) => participant.handle === "jimmy",
+      ),
+    ).toBe(false);
+  }
 });
 
 test("every shipped template survives the seed round trip verbatim", () => {

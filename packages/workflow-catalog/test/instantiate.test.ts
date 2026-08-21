@@ -3,7 +3,6 @@ import { CODE_REVIEW_REVIEWERS } from "@corbits/code-review/reviewers";
 
 import {
   CODE_REVIEW_TEMPLATE,
-  DEFAULT_TEAMMATES_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
 } from "../src/index";
@@ -181,25 +180,20 @@ test("Scout's create request carries its tool package pins", async () => {
   );
 });
 
-test("instantiating the default-teammates template creates Jimmy, never Myra", async () => {
+// CL-6499 dropped Jimmy's own template (he is not a "kind of workbench");
+// `@corbits/chat-ui`'s "Add Jimmy" quick-create row calls
+// `jimmyAgentRequest()` directly instead of going through a manifest. This
+// proves `instantiateWorkbenchTemplate`'s request map still resolves his
+// handle, so a future template naming him works with no new plumbing.
+test("a manifest naming Jimmy's handle still resolves and creates him", async () => {
+  const manifestNamingJimmy = {
+    ...DUE_DILIGENCE_TEMPLATE,
+    participants: [
+      { handle: "jimmy", displayName: "Jimmy", role: "Replies with a GIF." },
+    ],
+  };
   const ports = fakePorts();
-  const result = await instantiateWorkbenchTemplate(
-    DEFAULT_TEAMMATES_TEMPLATE,
-    ports,
-  );
+  const result = await instantiateWorkbenchTemplate(manifestNamingJimmy, ports);
   expect(result.createdHandles).toEqual(["jimmy"]);
   expect(ports.created).toEqual(["jimmy"]);
-  expect(ports.created).not.toContain("myra");
-  expect(result.pendingConnections).toEqual([]);
-});
-
-test("instantiating the default-teammates template skips Jimmy once he already exists", async () => {
-  const ports = fakePorts(["jimmy"]);
-  const result = await instantiateWorkbenchTemplate(
-    DEFAULT_TEAMMATES_TEMPLATE,
-    ports,
-  );
-  expect(result.skippedHandles).toEqual(["jimmy"]);
-  expect(result.createdHandles).toEqual([]);
-  expect(ports.created).toEqual([]);
 });
