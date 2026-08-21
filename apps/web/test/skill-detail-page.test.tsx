@@ -221,6 +221,43 @@ describe("SkillDetailPage", () => {
     expect(table.textContent).toContain("current");
   });
 
+  test("a save made through the product is attributed to it, never to an internal name", async () => {
+    stubs[`GET ${BASE}/versions`] = ok({
+      versions: [{ ...VERSIONS[0], author: "interchange-hub" }],
+    });
+    const el = await mount();
+    const table = versionTable(el);
+    expect(table.textContent).toContain("Workbench");
+    expect(table.textContent).not.toContain("interchange-hub");
+    expect(table.textContent).not.toContain("interch…");
+  });
+
+  test("version history is a full-width surface, not a crowded side column", async () => {
+    const el = await mount();
+    const aside = el.querySelector("aside");
+    expect(aside).toBeNull();
+    expect(versionTable(el).closest("aside")).toBeNull();
+  });
+
+  test("visibility says who can see the skill and what the action will do", async () => {
+    const el = await mount();
+    expect(el.textContent).toContain("Only you can use this skill.");
+    expect(buttonNamed(el, "Share with everyone here")).toBeDefined();
+    expect(el.textContent).not.toContain("Make private");
+  });
+
+  test("a shared skill says so in the same plain words", async () => {
+    stubs[`GET ${BASE}`] = ok({
+      skill: { ...SKILL, scope: "tenant" },
+      pinnedBy: [],
+    });
+    const el = await mount();
+    expect(el.textContent).toContain(
+      "Everyone in this workbench can use this skill.",
+    );
+    expect(buttonNamed(el, "Make it private to me")).toBeDefined();
+  });
+
   test("Save… is offered only once the editor differs from the published version", async () => {
     const el = await mount();
     const bar = el.querySelector('[data-testid="stage-top-bar-actions"]');
@@ -419,7 +456,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-body", "Read the report.\nMy unsaved edit.");
     });
-    await click(buttonNamed(el, "Share with workbench"));
+    await click(buttonNamed(el, "Share with everyone here"));
 
     expect(el.textContent).not.toContain("Couldn't load this skill");
     expect(el.textContent).not.toContain("hub is down");
