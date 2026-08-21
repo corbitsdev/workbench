@@ -322,6 +322,42 @@ describe("readHubConfig", () => {
     expect(message).toContain("ALLOW_PLAINTEXT_SECRETS");
   });
 
+  test("ALLOW_PLAINTEXT_SECRETS boots fine against a loopback BASE_URL", () => {
+    expect(
+      readHubConfig({
+        ...validEnv,
+        BASE_URL: "http://localhost:3000",
+        ALLOW_PLAINTEXT_SECRETS: "1",
+      }).allowPlaintextSecrets,
+    ).toBe(true);
+    expect(
+      readHubConfig({
+        ...validEnv,
+        BASE_URL: "http://127.0.0.1:3000",
+        ALLOW_PLAINTEXT_SECRETS: "1",
+      }).allowPlaintextSecrets,
+    ).toBe(true);
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS refuses to boot against a non-loopback BASE_URL", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      BASE_URL: "https://workbench.example.com",
+      ALLOW_PLAINTEXT_SECRETS: "1",
+    });
+    expect(message).toContain("ALLOW_PLAINTEXT_SECRETS");
+    expect(message).toContain("BASE_URL");
+  });
+
+  test("a non-loopback BASE_URL boots fine without ALLOW_PLAINTEXT_SECRETS", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      BASE_URL: "https://workbench.example.com",
+      CREDENTIAL_ENCRYPTION_KEY: "a".repeat(64),
+    });
+    expect(config.allowPlaintextSecrets).toBe(false);
+  });
+
   test("accepts postgresql:// and https:// URL forms", () => {
     const config = readHubConfig({
       ...validEnv,
