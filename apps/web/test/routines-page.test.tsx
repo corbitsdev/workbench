@@ -148,7 +148,10 @@ describe("nextRunLabel", () => {
 
   test("a disabled routine reads as paused, not as a stale countdown", () => {
     expect(
-      nextRunLabel(row({ routine: { ...routine, enabled: false } }), listProps.now),
+      nextRunLabel(
+        row({ routine: { ...routine, enabled: false } }),
+        listProps.now,
+      ),
     ).toBe("Paused");
   });
 });
