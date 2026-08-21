@@ -1959,53 +1959,138 @@
    row, and a retry note, shown above the composer while a turn streams.
    Square, zero-radius, hairline borders — matches `.chat-block`'s
    generative-UI language rather than the rounded typing-dot pill. */
-.chat-turn-activity {
+.chat-tool-activity {
   display: flex;
   flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.15rem 0;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+.chat-tool-activity-live {
   gap: 0.3rem;
   padding: 0.35rem 0.7rem;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
-.chat-turn-activity-row {
+.chat-tool-activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chat-tool-activity-row[data-indented="true"] {
+  padding-left: 0.85rem;
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  margin-left: 0.18rem;
+}
+
+/* A row with no detail is inert text, not a control: it lines up with the
+   triggers above and below it but never invites a click. */
+.chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)) {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  padding-block: 0.15rem;
+}
+
+.chat-tool-activity-trigger {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.72rem;
-  color: var(--muted-foreground);
+  width: 100%;
+  padding: 0.15rem 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.chat-turn-activity-marker {
+.chat-tool-activity-trigger:hover {
+  color: var(--foreground);
+}
+
+.chat-tool-activity-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.chat-tool-activity-marker {
   width: 0.4rem;
   height: 0.4rem;
   flex: none;
   border-radius: 0;
-  background: var(--primary);
-}
-
-.chat-turn-activity-row[data-status="running"] .chat-turn-activity-marker {
-  animation: chat-block-pulse 1.6s ease infinite;
-}
-
-.chat-turn-activity-row[data-status="done"] .chat-turn-activity-marker {
   background: var(--muted-foreground);
   opacity: 0.6;
 }
 
-.chat-turn-activity-label {
+.chat-tool-activity-marker[data-status="running"],
+.chat-tool-activity-marker[data-status="pending"] {
+  background: var(--primary);
+  opacity: 1;
+  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+/* A failure is the one state that earns colour here — everything else in
+   this strip is deliberately quiet chrome. */
+.chat-tool-activity-marker[data-status="failed"] {
+  background: var(--destructive, #b42318);
+  opacity: 1;
+}
+
+.chat-tool-activity-row[data-status="failed"] .chat-tool-activity-phrase {
+  color: var(--destructive, #b42318);
+}
+
+.chat-tool-activity-phrase {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
 }
 
-.chat-turn-activity-elapsed {
-  margin-left: auto;
+.chat-tool-activity-meta {
+  flex: none;
   font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
-.chat-turn-activity-thinking {
+.chat-tool-activity-caret {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  transition: transform 0.15s ease-out;
+}
+
+.chat-tool-activity-caret[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.chat-tool-activity-detail {
+  margin: 0 0 0.2rem 0.85rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+}
+
+.chat-tool-activity-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chat-tool-activity-thinking {
   font-style: italic;
 }
 
-.chat-turn-activity-retry {
+.chat-tool-activity-retry {
   color: var(--warn, #b7791f);
 }
 

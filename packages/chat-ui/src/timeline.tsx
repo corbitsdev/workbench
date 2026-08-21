@@ -22,11 +22,11 @@ import {
   Button,
   EmptyState,
   PartsRenderer,
-  ToolBlock,
   toast,
-  toolTraceToBlockState,
 } from "@corbits/react-ui";
-import { toReactUiReasoning, toReactUiToolTrace } from "./agent-part-adapter";
+import { toReactUiReasoning } from "./agent-part-adapter";
+import { groupTimelineParts } from "./tool-activity";
+import { ToolActivityGroup } from "./tool-activity-view";
 import {
   ArrowBendUpLeft,
   ChatCircle,
@@ -1234,8 +1234,12 @@ function MessageParts({
     >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       <div className="chat-message-row">
-        {item.parts.map((part, index) => {
-          const key = `${groupKey}-${index}`;
+        {groupTimelineParts(item.parts, groupKey).map((group) => {
+          const key = group.key;
+          if (group.kind === "tool-activity") {
+            return <ToolActivityGroup key={key} rows={group.rows} />;
+          }
+          const part = group.part;
           if (part.kind === "text" && part.turnFailed === true) {
             return (
               <FailedTurnStrip
@@ -1293,24 +1297,14 @@ function MessageParts({
               />
             );
           }
-          // The agent's own thinking and its tool calls (CL-6318). Both
-          // render through react-ui, which already owns this presentation —
-          // a reasoning disclosure and the tool-call lifecycle — so the
-          // workbench carries no second version of either.
+          // The agent's own thinking still renders through react-ui, which
+          // owns the reasoning disclosure. Tool calls no longer do: they
+          // arrive here already folded into rounds by `groupTimelineParts`
+          // above, and react-ui's `ToolBlock` renders one call at a time
+          // with its arguments and result as `JSON.stringify` output.
           if (part.kind === "reasoning") {
             return (
               <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />
-            );
-          }
-          if (part.kind === "tool-trace") {
-            const trace = toReactUiToolTrace(part, key);
-            return (
-              <ToolBlock
-                key={key}
-                name={trace.name}
-                state={toolTraceToBlockState(trace)}
-                input={trace.input}
-              />
             );
           }
           if (part.kind === "block") {
