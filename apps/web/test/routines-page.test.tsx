@@ -145,6 +145,12 @@ describe("nextRunLabel", () => {
       ),
     ).toBe("Not scheduled");
   });
+
+  test("a disabled routine reads as paused, not as a stale countdown", () => {
+    expect(
+      nextRunLabel(row({ routine: { ...routine, enabled: false } }), listProps.now),
+    ).toBe("Paused");
+  });
 });
 
 describe("GlobalRoutinesList", () => {
@@ -292,6 +298,46 @@ describe("GlobalRoutinesList", () => {
       });
       expect(calls).toHaveLength(1);
       expect(calls[0]?.[1]).toBe(false);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a paused routine's action reads Resume and re-enables it", () => {
+    const calls: [GlobalRoutineRow, boolean][] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(GlobalRoutinesList, {
+            rows: [row({ routine: { ...routine, enabled: false } })],
+            ...listProps,
+            onToggleEnabled: (r: GlobalRoutineRow, enabled: boolean) => {
+              calls.push([r, enabled]);
+            },
+          }),
+        }),
+      );
+    });
+    try {
+      const resumeButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Resume",
+      );
+      expect(resumeButton).not.toBeUndefined();
+      expect(
+        [...container.querySelectorAll("button")].some(
+          (button) => button.textContent?.trim() === "Run now",
+        ),
+      ).toBe(false);
+      act(() => {
+        resumeButton?.click();
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.[1]).toBe(true);
     } finally {
       act(() => root.unmount());
       container.remove();
