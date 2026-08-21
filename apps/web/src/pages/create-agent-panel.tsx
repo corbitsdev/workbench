@@ -453,6 +453,7 @@ export function CreateAgentPanel({
             <span>What should this agent do? (optional)</span>
             <Textarea
               id="create-agent-purpose"
+              className="bg-background text-[0.8125rem]"
               value={values.purpose}
               onChange={(event) => handlePurposeChange(event.target.value)}
               placeholder="Leave blank and teach it in conversation"
