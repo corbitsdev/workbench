@@ -69,13 +69,25 @@ a human sign-in, and are cached per user rather than minted per tick.
 
 ## What someone sees
 
-Connecting hands the person forward immediately. If they land before
-their agents exist, they get the warm loading state — "Getting your
-agents ready…" with live progress (how many agents are ready out of how
-many) — which resolves into their workbench on its own once the drain
-finishes.
+Connecting hands the person forward immediately, and the wait on the
+other side is as short as it can honestly be: the setup agent (Myra)
+leads `DEFAULT_WORKFLOWS`, so she is deployed before anything else, and
+the land hop drops the person into her room the moment she can answer.
+The digest, recurring-task and research seeds finish behind them —
+nobody needs a scheduled digest in their first second.
 
-Whether a bench is still provisioning is asked of the bench, never read
-off an error message: a bench still deploying is someone waiting, not
-someone broken. Any surface that still has to wait shows that progress
-rather than a static label.
+While she is still coming up, the shared warm loader is the whole
+screen: one honest headline and a rotating tip, never an internal count.
+How many workflows a bench seeds is an implementation detail, and "0 of
+5 ready" told a waiting person nothing they could act on. A wait that
+runs past a sensible interval says so plainly and offers another go,
+rather than showing an unchanging number.
+
+Once the person has landed, anything still deploying is at most a single
+dismissible line — never a screen that blocks them.
+
+Whether a bench can be started is asked of the bench, never read off an
+error message: `GET /api/onboarding/provisioning-status` answers with
+`setupAgentReady`, which is the only field a waiting surface should
+branch on. `deployed`/`pending` stay in the response for operators and
+logs.
