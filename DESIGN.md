@@ -97,16 +97,21 @@ as a document, and these are working surfaces.
 
 ## Search
 
-There is exactly one search surface in the product: the command-palette
-scope. It is reachable two ways that resolve to the same UI — cmd+K
-anywhere, or clicking the magnifier in the top nav, which morphs in place
-into an inline search bar over about 200ms with the in-place morph easing
-(see Motion). Esc collapses it back to the magnifier, with focus returning
-to the magnifier itself. There is no page-local
-search input that duplicates palette scope; a page that needs scoped
-filtering builds it as a filter control, not a second "search." See
-`docs/command-palette.md` for the palette's scoring and result-group
-contract — this section only fixes how it's invoked from chrome.
+Two separate surfaces, never merged, and neither opens the other (a
+decision re-litigated more than once — see `docs/DECISIONS.md` → Search):
+
+- **The magnifier in the stage top bar is a per-page filter.** It scopes to
+  whatever page it's on — Files filters files, Skills filters skills — and
+  never leaves that page. Clicking it morphs it in place into an inline
+  input over about 200ms with the in-place morph easing (see Motion); Esc
+  collapses it back, with focus returning to the magnifier. Where a page
+  already has its own filter, the magnifier drives that filter directly
+  rather than the page adding a second input. A page with nothing to filter
+  renders no magnifier at all.
+- **`Cmd+K` opens the global command palette**, reachable from anywhere
+  (including a route with no stage top bar of its own) and rendered as its
+  own surface, never anchored to the magnifier. See `docs/command-palette.md`
+  for the palette's scoring and result-group contract.
 
 ## Color, Type & Icons
 
