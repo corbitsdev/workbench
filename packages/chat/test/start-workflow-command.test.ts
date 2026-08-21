@@ -106,4 +106,96 @@ describe("startWorkflowCommand", () => {
       ),
     ).rejects.toThrow(/No workbench "chan_missing"/);
   });
+
+  // CL-6451: one room participant = one live run. A workflow command
+  // naming a definition already resident in the room delivers into the
+  // existing participant's run instead of minting a sibling.
+  test("reuses an existing participant launched from the same definition row", async () => {
+    const store = createInMemoryChatStore();
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "echo", description: "Myra" }],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_existing@acme.example" ? "wfd_echo" : undefined,
+    });
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_3",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [
+          { address: "ins_existing@acme.example", handle: "myra" },
+        ],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    const result = await startWorkflowCommand(
+      {
+        store,
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_3",
+        definitionId: "wfd_echo",
+        args: "again please",
+      },
+    );
+
+    expect(platform.launchInviteCalls).toHaveLength(0);
+    expect(result).toEqual({
+      handle: "myra",
+      address: "ins_existing@acme.example",
+    });
+    const opening = platform.sentMail.find(
+      (mail) => mail.workbenchId === "ins_existing",
+    );
+    expect(opening?.content.content).toBe("again please");
+  });
+
+  test("reuses an existing participant whose recorded definition row differs but projects the same asset", async () => {
+    const store = createInMemoryChatStore();
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo_v2", name: "echo" }],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_existing@acme.example" ? "wfd_echo_v1" : undefined,
+      resolveDefinitionAssetId: async (definitionId) =>
+        definitionId === "wfd_echo_v1" || definitionId === "wfd_echo_v2"
+          ? "ast_echo"
+          : undefined,
+    });
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_4",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [
+          { address: "ins_existing@acme.example", handle: "echo" },
+        ],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    const result = await startWorkflowCommand(
+      {
+        store,
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_4",
+        definitionId: "wfd_echo_v2",
+        args: "hi",
+      },
+    );
+
+    expect(platform.launchInviteCalls).toHaveLength(0);
+    expect(result.address).toBe("ins_existing@acme.example");
+  });
 });
