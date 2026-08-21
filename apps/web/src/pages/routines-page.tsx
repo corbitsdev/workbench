@@ -22,6 +22,7 @@ import {
   EmptyState,
   formatRelativeTime,
   RichEmptyState,
+  RUN_STATUS_TONE,
   RunNowButton,
   Switch,
   Table,
@@ -31,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import type { BadgeTone } from "@corbits/react-ui";
+import type { BadgeTone, RunStatus } from "@corbits/react-ui";
 import { Clock, PlayCircle, Plus } from "@corbits/icons";
 import type { KeyboardEvent } from "react";
 import {
@@ -58,12 +59,23 @@ import type { RoutineRun } from "../routines-api";
 
 export type { GlobalRoutineRow } from "../global-routines";
 
-const RUN_STATUS_TONE: Record<string, BadgeTone> = {
-  running: "info",
-  completed: "success",
-  failed: "danger",
-  cancelled: "neutral",
+/** Platform run status strings that don't spell their canonical
+ * `RunStatus` name the same way — everything else already matches
+ * react-ui's `RunStatus` vocabulary and passes through unchanged. */
+const RUN_STATUS_ALIAS: Readonly<Record<string, RunStatus>> = {
+  cancelled: "stopped",
+  queued: "provisioning",
+  pending: "provisioning",
 };
+
+/** Tone for a platform run status, normalized onto `RunStatus` first so
+ * this reads the same map every other surface does
+ * (`RUN_STATUS_TONE` in react-ui's `workflow-run.ts`) instead of a second,
+ * drifting opinion. */
+export function runStatusTone(status: string): BadgeTone {
+  const canonicalStatus = RUN_STATUS_ALIAS[status] ?? (status as RunStatus);
+  return RUN_STATUS_TONE[canonicalStatus] ?? "neutral";
+}
 
 /**
  * Recent-run rows deep-link to the workbench the routine delivers to — a
@@ -171,11 +183,7 @@ export function RunStatusCell({ run }: { readonly run: RoutineRun }) {
   if (typeof status !== "string") {
     return <span className="text-[var(--ui-fg-muted)]">—</span>;
   }
-  return (
-    <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>
-      {runStatusLabel(status)}
-    </Badge>
-  );
+  return <Badge tone={runStatusTone(status)}>{runStatusLabel(status)}</Badge>;
 }
 
 /** A routine's health, from the telemetry the scheduler already records —
