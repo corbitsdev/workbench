@@ -135,12 +135,15 @@ function domainOfAddress(address: string): string {
  * per-run source tree is committed INTO that asset on its own ref
  * rather than into a second asset minted per deploy.
  */
-async function resolveRunDefinitionAssetId(
+async function resolveRunDefinition(
   db: FoldedRunsDeps["db"],
   instanceId: string,
-): Promise<string> {
+): Promise<{ definitionId: string; assetId: string }> {
   const row = await db
-    .select({ assetId: workflowDefinition.assetId })
+    .select({
+      definitionId: workflowDefinition.id,
+      assetId: workflowDefinition.assetId,
+    })
     .from(workflowRun)
     .innerJoin(
       workflowDefinition,
@@ -154,7 +157,36 @@ async function resolveRunDefinitionAssetId(
       `folded run ${instanceId} has no workflow-kind definition asset to commit its per-run source tree into`,
     );
   }
-  return row.assetId;
+  return { definitionId: row.definitionId, assetId: row.assetId };
+}
+
+/**
+ * Mark the definition row a code-sourced deploy just minted for THIS
+ * run as a per-run clone (CL-6452).
+ *
+ * A folded run's deployed bytes carry per-run values (`wf_<runId>`, the
+ * run's trigger address), so their wire hash is unique to the run and
+ * the deploy's freeze ensures a fresh `workflow_definition` over the
+ * agent's asset, then repoints the run at it. That row is a frozen
+ * deploy record, not a definition anyone may launch from: left
+ * unmarked it would shadow the hub-authored row every agent edit
+ * refreezes, and no invite after the agent's first run would ever carry
+ * an updated prompt or skill pin.
+ *
+ * Only a row the deploy actually repointed to is marked, so a deploy
+ * that left the run on its original definition can never demote it.
+ */
+async function markRunDeployClone(
+  db: FoldedRunsDeps["db"],
+  instanceId: string,
+  definitionIdBeforeDeploy: string,
+): Promise<void> {
+  const { definitionId } = await resolveRunDefinition(db, instanceId);
+  if (definitionId === definitionIdBeforeDeploy) return;
+  await db
+    .update(workflowDefinition)
+    .set({ origin: "run" })
+    .where(eq(workflowDefinition.id, definitionId));
 }
 
 /**
@@ -369,10 +401,8 @@ export async function deployAtHead(
     credentialBindings,
     mode: params.mode ?? { kind: "step" },
   };
-  const definitionAssetId = await resolveRunDefinitionAssetId(
-    deps.db,
-    params.instanceId,
-  );
+  const { definitionId: definitionIdBeforeDeploy, assetId: definitionAssetId } =
+    await resolveRunDefinition(deps.db, params.instanceId);
   const { commitSha } = await deps.assetService.populateAsset({
     assetId: definitionAssetId,
     ref: foldedRunSourceRef(params.instanceId),
@@ -440,6 +470,12 @@ export async function deployAtHead(
       ? { credentialCipher: deps.credentialCipher }
       : {}),
   });
+
+  await markRunDeployClone(
+    deps.db,
+    params.instanceId,
+    definitionIdBeforeDeploy,
+  );
 
   // Produce the run's `run.grants` frame, the same contract upstream's hub
   // fires on every run birth: the sidecar writes it to

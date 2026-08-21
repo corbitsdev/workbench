@@ -136,30 +136,24 @@ export async function projectAndWalkInertDefinition(
  * path. Persists through `createDbFrozenApprovalWriter`, so the ensure
  * and the stamp are one transaction and the row can never exist in the
  * half-frozen state a bare `ensureWorkflowDefinitionForAsset` leaves.
- * Marks the row `origin: "authored"` in that same transaction: this is
- * the one writer of launch-authoritative definitions, everything the
- * run-deploy path ensures stays a `"run"` clone (CL-6452).
+ * The row keeps the schema's `origin: "authored"` default — only a
+ * folded run's own deploy demotes the sibling it mints to a per-run
+ * record (CL-6452, `@corbits/folded-runs`' `markRunDeployClone`).
  */
 export async function freezeInertWorkflowDefinition(
   db: DBExecutor,
   input: { readonly assetId: string; readonly workflowJson: string },
 ): Promise<{ definitionId: string; wireHash: string }> {
   const frozen = await projectAndWalkInertDefinition(input.workflowJson);
-  return db.transaction(async (tx) => {
-    const persist = createDbFrozenApprovalWriter(tx);
-    const { definitionId } = await persist({
-      assetId: input.assetId,
-      approvedWireHash: frozen.wireHash,
-      approvedGrants: frozen.grants,
-      grantSnapshot: frozen.grantSnapshot,
-      projection: frozen.projection,
-    });
-    await tx
-      .update(workflowDefinition)
-      .set({ origin: "authored" })
-      .where(eq(workflowDefinition.id, definitionId));
-    return { definitionId, wireHash: frozen.wireHash };
+  const persist = createDbFrozenApprovalWriter(db);
+  const { definitionId } = await persist({
+    assetId: input.assetId,
+    approvedWireHash: frozen.wireHash,
+    approvedGrants: frozen.grants,
+    grantSnapshot: frozen.grantSnapshot,
+    projection: frozen.projection,
   });
+  return { definitionId, wireHash: frozen.wireHash };
 }
 
 /**
