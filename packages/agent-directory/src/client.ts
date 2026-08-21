@@ -15,7 +15,6 @@ import {
   withDisplayNames,
   type WithDisplayName,
 } from "@corbits/chat/display-name";
-import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
 
 // `deriveDisplayName`/`humanizeSlug` (CL-6413) live in `@corbits/chat`
 // itself, not here: this package already depends on `@corbits/chat` (for
@@ -43,27 +42,16 @@ export type UserFacingAgentInstance = {
 };
 
 /** Every definition, minus the chat anchor machinery's workbench hosts —
- * those are internal plumbing, never a user-facing agent — and minus every
- * non-conversational workflow-catalog utility (`workbench-digest`/"Daily
- * digest", `last-30-days-research`/"Last 30 days research", …): those are
- * mail-triggered automations a routine schedules, never something a person
- * opens a chat with, so they belong on the Routines page only. The one
- * distinguishing property is `isConversationalWorkflowName` — "can this be
- * DMed" — the same test `listVisibleAgentDefinitions` already applies to the
- * sidebar's DM list; `automatable` (schedulable as a routine) is orthogonal
- * and never decides this. Definitions never need the run-id filter
- * `purposeAgentInstances` below takes: definition rows aren't run rows, so a
- * folded run's own id can never match here — an invited agent's real
- * `definitionId` stays a legitimate, reusable template even though its
- * *instance* is chat plumbing. */
+ * those are internal plumbing, never a user-facing agent. Definitions
+ * never need the run-id filter `purposeAgentInstances` below takes:
+ * definition rows aren't run rows, so a folded run's own id can never
+ * match here — an invited agent's real `definitionId` stays a
+ * legitimate, reusable template even though its *instance* is chat
+ * plumbing. */
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
-  return definitions.filter(
-    (d) =>
-      !isWorkbenchHostDefinitionName(d.name) &&
-      isConversationalWorkflowName(d.name),
-  );
+  return definitions.filter((d) => !isWorkbenchHostDefinitionName(d.name));
 }
 
 /**
