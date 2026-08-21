@@ -862,6 +862,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/jimmy-agent": {
+      "name": "@corbits/jimmy-agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
       "version": "0.0.4",
@@ -2030,6 +2043,8 @@
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
 
     "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:packages/interaction-tools"],
+
+    "@corbits/jimmy-agent": ["@corbits/jimmy-agent@workspace:packages/jimmy-agent"],
 
     "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 
