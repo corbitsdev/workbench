@@ -41,6 +41,7 @@ import {
   MenuTrigger,
   RunNowButton,
   Switch,
+  Textarea,
   toast,
 } from "@corbits/react-ui";
 import { listWorkbenchAgents } from "@corbits/chat-ui";
@@ -538,9 +539,9 @@ function RoutineEditorPanel({
           >
             What should this routine do each time it runs?
           </label>
-          <textarea
+          <Textarea
             id="routine-panel-instruction"
-            className="min-h-20 w-full rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-1.5 text-sm text-[var(--ui-fg)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+            className="min-h-20"
             value={instruction}
             disabled={busy}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>

@@ -8,6 +8,7 @@
 // nothing because there is nothing are very different outcomes.
 
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { Button, Checkbox } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 
 import { listSkills, type SkillSummary } from "../skills-api";
@@ -100,42 +101,32 @@ export function AgentSkillsPicker({
                 renamed it, or discarded it.
               </span>
             </span>
-            <button
+            <Button
               type="button"
-              className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              variant="link"
+              size="sm"
               disabled={disabled}
               onClick={() => toggle(name)}
             >
               Remove
-            </button>
+            </Button>
           </div>
         );
       })}
       {state.skills.map((skill) => {
         const id = `${idPrefix}-skill-${skill.name}`;
         return (
-          <label
+          <Checkbox
             key={skill.assetId}
-            htmlFor={id}
-            className="flex items-start gap-2 text-sm"
-          >
-            <input
-              id={id}
-              type="checkbox"
-              className="mt-0.5 size-4 rounded-none border border-input accent-[var(--primary)]"
-              checked={selected.includes(skill.name)}
-              disabled={disabled}
-              onChange={() => toggle(skill.name)}
-            />
-            <span className="flex flex-col">
-              <span className="font-medium">{skill.name}</span>
-              {skill.description !== "" && (
-                <span className="text-xs text-muted-foreground">
-                  {skill.description}
-                </span>
-              )}
-            </span>
-          </label>
+            id={id}
+            label={skill.name}
+            checked={selected.includes(skill.name)}
+            disabled={disabled}
+            onCheckedChange={() => toggle(skill.name)}
+            {...(skill.description !== ""
+              ? { description: skill.description }
+              : {})}
+          />
         );
       })}
     </div>
