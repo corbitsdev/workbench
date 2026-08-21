@@ -1,5 +1,4 @@
 import {
-  CommandPalette,
   artifactKindLabel,
   useCommandShortcut,
   useTheme,
@@ -24,7 +23,16 @@ import {
   type RecentEntry,
 } from "@corbits/command-palette";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { listAgentDefinitions } from "./agents-api";
 import {
@@ -35,7 +43,6 @@ import {
 import {
   openCommandPalette,
   setCommandPaletteOpen,
-  setCommandPaletteQuery,
   useCommandPaletteOpen,
   useCommandPaletteQuery,
 } from "./command-palette-open-store";
@@ -64,6 +71,43 @@ const STATIC_COMMANDS = buildStaticCommands(
 );
 
 /**
+ * The data `StageSearch` renders — everything react-ui's `CommandPaletteInline`
+ * needs, computed once here rather than re-derived at the one place it is
+ * consumed. `StageSearch` owns the surface (the morphing bar, the input,
+ * the dropdown); this provider owns what fills it.
+ */
+export type CommandPaletteRenderProps = {
+  readonly groups: readonly CommandPaletteGroup[];
+  readonly onSelect: (id: string) => void;
+  readonly loading: boolean;
+  readonly error?: string;
+  readonly hasMore: boolean;
+  readonly onLoadMore?: () => void;
+  readonly footer: string;
+};
+
+/** `StageTopBar` mounts in isolation across the page test suite (no
+ * workbench, no query client, nothing search needs) — an inert palette
+ * that renders a magnifier with no results is the honest fallback there.
+ * The real app always mounts `CommandPaletteProvider` above `AppShell`
+ * (`app.tsx`), so production code never sees this default. */
+const INERT_RENDER_PROPS: CommandPaletteRenderProps = {
+  groups: [],
+  onSelect: () => undefined,
+  loading: false,
+  hasMore: false,
+  footer: "",
+};
+
+const CommandPaletteRenderContext =
+  createContext<CommandPaletteRenderProps>(INERT_RENDER_PROPS);
+
+/** Read by `StageSearch`, mounted anywhere under `CommandPaletteProvider`. */
+export function useCommandPaletteRender(): CommandPaletteRenderProps {
+  return useContext(CommandPaletteRenderContext);
+}
+
+/**
  * Wires the data-driven react-ui command palette into the app shell.
  *
  * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
@@ -75,17 +119,19 @@ const STATIC_COMMANDS = buildStaticCommands(
  * library artifacts are small per-bench catalogs fetched once and filtered
  * client-side, the same way the static route list already is.
  *
- * react-ui's `CommandPalette` has no slot for a scope-chip badge or the
- * footer prefix legend the mock shows next to the input — see the PR
- * description for that flag; this provider ships everything its `groups` /
- * `items` API can express.
+ * This provider computes the data and hands it down through context; it
+ * renders no search surface itself. `StageSearch` (the top bar's magnifier)
+ * is the one place that data becomes UI — react-ui's `CommandPaletteInline`,
+ * anchored in place, never a centered dialog.
  */
 export function CommandPaletteProvider({
   path,
   navigate,
+  children,
 }: {
   readonly path: string;
   readonly navigate: Navigate;
+  readonly children: ReactNode;
 }) {
   const { memberships, selectedTenantId, selectTenant } = useBench();
   const queryClient = useQueryClient();
@@ -599,24 +645,22 @@ export function CommandPaletteProvider({
     ],
   );
 
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setCommandPaletteOpen(nextOpen);
-  }, []);
+  const renderProps = useMemo<CommandPaletteRenderProps>(
+    () => ({
+      groups,
+      onSelect: handleSelect,
+      loading,
+      error: error ? "Search failed. Try again." : undefined,
+      hasMore,
+      onLoadMore: loadMore,
+      footer: "# workbenches · @ people · > actions · / pages",
+    }),
+    [groups, handleSelect, loading, error, hasMore, loadMore],
+  );
 
   return (
-    <CommandPalette
-      open={open}
-      onOpenChange={handleOpenChange}
-      query={query}
-      onQueryChange={setCommandPaletteQuery}
-      groups={groups}
-      onSelect={handleSelect}
-      loading={loading}
-      error={error ? "Search failed. Try again." : undefined}
-      hasMore={hasMore}
-      onLoadMore={loadMore}
-      placeholder="Search or jump to…"
-      footer="# workbenches · @ people · > actions · / pages"
-    />
+    <CommandPaletteRenderContext.Provider value={renderProps}>
+      {children}
+    </CommandPaletteRenderContext.Provider>
   );
 }

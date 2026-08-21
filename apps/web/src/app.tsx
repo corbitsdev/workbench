@@ -108,14 +108,15 @@ function Shell({
           <ProviderHealthProvider>
             <ComposerInsertionProvider>
               <ShellChromeProvider path={path} navigate={navigate}>
-                <CommandPaletteProvider path={path} navigate={navigate} />
-                <AppShell path={path} user={user} onSignOut={onSignOut}>
-                  {route === undefined ? (
-                    <NotFoundPage />
-                  ) : (
-                    route.render(path, navigate)
-                  )}
-                </AppShell>
+                <CommandPaletteProvider path={path} navigate={navigate}>
+                  <AppShell path={path} user={user} onSignOut={onSignOut}>
+                    {route === undefined ? (
+                      <NotFoundPage />
+                    ) : (
+                      route.render(path, navigate)
+                    )}
+                  </AppShell>
+                </CommandPaletteProvider>
               </ShellChromeProvider>
             </ComposerInsertionProvider>
           </ProviderHealthProvider>
