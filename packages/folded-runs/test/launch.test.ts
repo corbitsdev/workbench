@@ -80,10 +80,21 @@ type InsertChain = {
   values(values: unknown): Promise<void>;
 };
 
-function createFakeDb(assetId: string | null = "ast_definition1") {
+/**
+ * `deployAtHead` reads the run's definition row twice: once before the
+ * deploy (for the asset its per-run tree is committed into) and once
+ * after, to see which row the deploy repointed the run at. `definitionIds`
+ * answers those reads in order — a second id different from the first is
+ * the per-run clone every real code-sourced deploy mints.
+ */
+function createFakeDb(
+  assetId: string | null = "ast_definition1",
+  definitionIds: readonly string[] = ["wfd_definition1", "wfd_definition1"],
+) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
   const deleted: { table: unknown }[] = [];
+  let definitionReadIndex = 0;
 
   function insertOn(table: unknown): InsertChain {
     return {
@@ -94,14 +105,17 @@ function createFakeDb(assetId: string | null = "ast_definition1") {
   }
 
   return {
-    // The one read `deployAtHead` does: the run's definition asset, the
-    // asset its per-run source tree is committed into.
     select() {
+      const definitionId =
+        definitionIds[definitionReadIndex] ??
+        definitionIds[definitionIds.length - 1];
+      definitionReadIndex += 1;
       return {
         from: () => ({
           innerJoin: () => ({
             where: () => ({
-              limit: async () => (assetId === null ? [] : [{ assetId }]),
+              limit: async () =>
+                assetId === null ? [] : [{ definitionId, assetId }],
             }),
           }),
         }),
@@ -1184,6 +1198,77 @@ describe("deployAtHead — mcp credential bindings", () => {
       credentials?: unknown;
     };
     expect(deployed.credentials).toBeUndefined();
+  });
+});
+
+// CL-6452: a folded run's deployed bytes carry per-run values, so their
+// wire hash is unique to the run and the deploy's freeze ensures a fresh
+// definition row over the agent's asset, then repoints the run at it.
+// That row is a frozen deploy record — marking it keeps it out of the
+// candidate set a launch resolves over, so the agent's own definition
+// (the one an instructions save or skill pin refreezes in place) is what
+// every later launch reads.
+describe("deployAtHead — per-run definition records", () => {
+  const SOURCES = {
+    ok: true as const,
+    sources: [
+      {
+        id: "off_1",
+        provider: "anthropic",
+        baseURL: "https://inference.invalid",
+        apiKey: "placeholder",
+        model: "claude-sonnet-5",
+      },
+    ],
+    defaultSource: "off_1",
+  };
+
+  const PARAMS = {
+    tenantId: "ten_1",
+    instanceId: "run_origin1",
+    triggerAddress: "run_origin1@ten1.workbench.test",
+    principalId: "prn_1",
+    sessionId: "ses_1",
+    foldedBody: FOLDED_BODY,
+    launchLabel: "the invited agent",
+  };
+
+  function makeDeps(db: ReturnType<typeof createFakeDb>) {
+    return {
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+      toolGrantsForPins: () => [],
+    };
+  }
+
+  test("marks the row the deploy repointed the run at as a per-run record", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    // The deploy minted a fresh definition for this run's bytes and
+    // repointed the run at it.
+    const db = createFakeDb("ast_agent", ["wfd_authored", "wfd_run_clone"]);
+
+    await deployAtHead(makeDeps(db), PARAMS);
+
+    const originUpdate = db.updated.find(
+      (row) => (row.values as { origin?: string }).origin !== undefined,
+    );
+    expect(originUpdate?.values).toEqual({ origin: "run" });
+  });
+
+  test("never demotes the agent's own definition when the deploy left the run on it", async () => {
+    resolveDefinitionSourcesResult = SOURCES;
+    const db = createFakeDb("ast_agent", ["wfd_authored", "wfd_authored"]);
+
+    await deployAtHead(makeDeps(db), PARAMS);
+
+    expect(
+      db.updated.find(
+        (row) => (row.values as { origin?: string }).origin !== undefined,
+      ),
+    ).toBeUndefined();
   });
 });
 
