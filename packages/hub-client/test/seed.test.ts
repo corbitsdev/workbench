@@ -1281,6 +1281,47 @@ describe("default skills seeding", () => {
 
     expect(lines.some((l) => l.includes("already exists"))).toBe(true);
   });
+
+  test("a skill the by-name GET misses but the create route rejects as a conflict is skipped, not fatal", async () => {
+    // Reproduces the live incident: a half-seeded tenant re-running
+    // `workbench seed` hit `409 already exists` on skill creation and
+    // aborted the whole run, even though the hub's own error advice was
+    // "re-run: workbench seed". A step that already succeeded must never
+    // kill a re-run.
+    const { lines, log } = collector();
+    const { push } = recordingPusher();
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      )
+        return { status: 404, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
+        return {
+          status: 409,
+          data: {
+            code: "conflict",
+            message: `a skill named "${DEFAULT_SKILLS[0]!.name}" already exists in this workbench`,
+          },
+        };
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      return workflowRoutes(method, path);
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(lines.some((l) => l.includes("already exists"))).toBe(true);
+  });
 });
 
 describe("seedCatalog", () => {
