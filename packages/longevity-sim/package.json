@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/longevity-sim",
+  "private": true,
+  "description": "Longevity simulation harness (CL-6440): drives a real workbench stack through time-compressed team life, checkpointing degradation metrics and self-improvement checks against a deterministic simulated sales campaign.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
