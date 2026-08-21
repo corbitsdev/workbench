@@ -310,8 +310,15 @@ function PreviewPane({
 }
 
 /**
- * Artifact gallery with dense cards (kind badge, title, owner · updated)
- * and an in-stage preview when a row is selected. Real data only.
+ * The Files stage: a row list of everything this workbench owns, with an
+ * in-stage preview when a row is selected. Real data only.
+ *
+ * Every control the page owns — the workbench lens, the name filter, sort,
+ * the rows/grid toggle, Upload — lives in `StageTopBar`'s action slot
+ * (DESIGN.md → Pages & Routing: the top nav owns the page's actions, and a
+ * page body never floats its own). The name filter is a filter control, not
+ * a second search: the product has exactly one search surface and it is the
+ * palette the top bar already carries (DESIGN.md → Search).
  */
 export function LibraryPage({
   artifacts,
@@ -440,6 +447,59 @@ export function LibraryPage({
                 All
               </Button>
             ) : null}
+            {workbenchScope !== null && onScopeChange !== undefined ? (
+              <div
+                role="group"
+                aria-label="Files scope"
+                className="hidden items-center gap-1 lg:flex"
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scope === "workbench" ? "outline" : "ghost"}
+                  aria-pressed={scope === "workbench"}
+                  onClick={() => onScopeChange("workbench")}
+                >
+                  {workbenchScope.title}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={scope === "all" ? "outline" : "ghost"}
+                  aria-pressed={scope === "all"}
+                  onClick={() => onScopeChange("all")}
+                >
+                  All workbenches
+                </Button>
+              </div>
+            ) : null}
+            <LibrarySearchInput
+              label="Filter files"
+              placeholder="Filter by name"
+              value={activeQuery}
+              onChange={setActiveQuery}
+            />
+            <Menu>
+              <MenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={SORT_LABEL[sort]}
+                  title={SORT_LABEL[sort]}
+                >
+                  <ArrowsDownUp />
+                </Button>
+              </MenuTrigger>
+              <MenuContent align="end">
+                {(Object.keys(SORT_LABEL) as ArtifactSort[]).map((option) => (
+                  <MenuItem key={option} onSelect={() => setSort(option)}>
+                    {SORT_LABEL[option]}
+                  </MenuItem>
+                ))}
+              </MenuContent>
+            </Menu>
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
             {onUpload !== undefined ? (
               <Button
                 size="sm"
@@ -468,60 +528,6 @@ export function LibraryPage({
           }}
         />
       ) : null}
-      <div className="page-toolbar">
-        {workbenchScope !== null && onScopeChange !== undefined ? (
-          <div
-            role="group"
-            aria-label="Files scope"
-            className="flex items-center gap-1"
-          >
-            <Button
-              type="button"
-              size="sm"
-              variant={scope === "workbench" ? "outline" : "ghost"}
-              aria-pressed={scope === "workbench"}
-              onClick={() => onScopeChange("workbench")}
-            >
-              {workbenchScope.title}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={scope === "all" ? "outline" : "ghost"}
-              aria-pressed={scope === "all"}
-              onClick={() => onScopeChange("all")}
-            >
-              All workbenches
-            </Button>
-          </div>
-        ) : null}
-        <LibrarySearchInput
-          label="Search files"
-          value={activeQuery}
-          onChange={setActiveQuery}
-        />
-        <Menu>
-          <MenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={SORT_LABEL[sort]}
-              title={SORT_LABEL[sort]}
-            >
-              <ArrowsDownUp />
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="end">
-            {(Object.keys(SORT_LABEL) as ArtifactSort[]).map((option) => (
-              <MenuItem key={option} onSelect={() => setSort(option)}>
-                {SORT_LABEL[option]}
-              </MenuItem>
-            ))}
-          </MenuContent>
-        </Menu>
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
       {uploadError !== undefined && uploadError !== null ? (
         <p className="px-4 pt-2 text-sm text-destructive sm:px-7" role="alert">
           {uploadError}
