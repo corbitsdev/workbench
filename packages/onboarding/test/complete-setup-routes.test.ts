@@ -301,6 +301,7 @@ describe("POST /complete-setup", () => {
         kind: string;
         tenantId: string;
         tenantSlug: string;
+        setupAgentReady: boolean;
         deployed: string[];
         pending: string[];
       };
@@ -308,6 +309,7 @@ describe("POST /complete-setup", () => {
         kind: "provisioning",
         tenantId: TENANT_ID,
         tenantSlug: TENANT_SLUG,
+        setupAgentReady: false,
         deployed: [],
         pending: DEFAULT_WORKFLOWS.map((w) => w.assetName),
       });
@@ -681,6 +683,7 @@ describe("POST /complete-setup", () => {
         kind: string;
         tenantId: string;
         tenantSlug: string;
+        setupAgentReady: boolean;
         deployed: string[];
         pending: string[];
       };
@@ -688,6 +691,9 @@ describe("POST /complete-setup", () => {
         kind: "provisioning",
         tenantId: TENANT_ID,
         tenantSlug: TENANT_SLUG,
+        // The one live workflow here IS the setup agent — she deploys
+        // first (CL-6462), so this bench is already chat-ready.
+        setupAgentReady: true,
         deployed: [liveWorkflow.assetName],
         pending: DEFAULT_WORKFLOWS.slice(1).map((w) => w.assetName),
       });

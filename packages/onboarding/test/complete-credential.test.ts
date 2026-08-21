@@ -4,7 +4,10 @@ import type {
   ToolRegistryPublisher,
   WorkflowPusher,
 } from "@workbench/hub-client";
-import { SidecarUnavailableError } from "@workbench/hub-client";
+import {
+  SETUP_AGENT_ASSET_NAME,
+  SidecarUnavailableError,
+} from "@workbench/hub-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -377,8 +380,8 @@ describe("completeCredentialSetup", () => {
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
       workflows: [
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -429,8 +432,8 @@ describe("completeCredentialSetup", () => {
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
       workflows: [
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -481,8 +484,8 @@ describe("completeCredentialSetup", () => {
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
       workflows: [
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -840,8 +843,8 @@ describe("completeCredentialSetup", () => {
     expect(result.kind).toBe("seeded");
     if (result.kind === "seeded") {
       expect(result.workflows).toEqual([
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -1393,8 +1396,8 @@ describe("completeCredentialSetup", () => {
       tenantDomain: "alice-user1.bench.local",
       deployed: [],
       pending: [
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -1602,8 +1605,8 @@ describe("ensureSeeded (the slow half)", () => {
     expect(result).toEqual({
       kind: "seeded",
       workflows: [
-        "echo",
         "assistant",
+        "echo",
         "workbench-digest",
         "recurring-task",
         "last-30-days-research",
@@ -1611,6 +1614,38 @@ describe("ensureSeeded (the slow half)", () => {
     });
     expectNoConfirmation(seedTenantCalls);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
+  });
+
+  test("deploys the setup agent before anything else, so a waiting person can start as soon as she is live", async () => {
+    // CL-6462. This is the deploy path the background drain runs
+    // (bench-provisioning's `runOnce` → `ensureSeeded` → `seedTenant`),
+    // and `seedTenant` works through the list in order at ~20s each — so
+    // the order handed in here is the order a fresh signup experiences.
+    const workflowOrder: string[] = [];
+
+    await ensureSeeded({
+      api: (async () => {
+        throw new Error(
+          "the real api must not be called — seedTenantFn is stubbed",
+        );
+      }) as ApiCall,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+      tenant: TENANT,
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      seedTenantFn: async (args) => {
+        for (const workflow of args.workflows ?? []) {
+          workflowOrder.push(workflow.assetName);
+        }
+      },
+    });
+
+    expect(workflowOrder[0]).toBe(SETUP_AGENT_ASSET_NAME);
+    expect(workflowOrder.length).toBeGreaterThan(1);
   });
 
   test("two overlapping calls for the same tenant never double-deploy — the same 409-then-list tolerance seedTenant already has", async () => {
@@ -1862,7 +1897,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded-pending-agents",
-      deployed: ["echo", "assistant"],
+      deployed: ["assistant", "echo"],
       pending: ["workbench-digest", "recurring-task", "last-30-days-research"],
       message: "Your workbench is ready — agents will come online shortly.",
     });

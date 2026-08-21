@@ -589,41 +589,45 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
 
 const ProvisioningStatus = type({
   kind: "'ready' | 'provisioning'",
-  deployed: "string[]",
-  pending: "string[]",
+  setupAgentReady: "boolean",
 });
 
-export type ProvisioningProgress = {
-  readonly ready: boolean;
-  /** How many of this bench's agents are live, and how many there are in
-   * total — the numbers a waiting surface shows so the wait reads as
-   * progress rather than a frozen label. */
-  readonly live: number;
-  readonly total: number;
-};
+/**
+ * Whether this account can start a conversation yet, and whether
+ * anything is still coming online behind it (CL-6462). Deliberately not
+ * a count: how many workflows a bench seeds is an implementation detail,
+ * and a person watching "0 of 5" learns nothing they can act on.
+ *
+ * - `ready` — everything this bench seeds is live.
+ * - `chat-ready` — Myra is live, so the person can start now; the rest
+ *   converge in the background.
+ * - `preparing` — Myra is not live yet; this is the only state worth
+ *   holding someone on a loader for.
+ * - `unknown` — we could not tell (offline, a hiccup, an account with no
+ *   personal bench). Never rendered as either progress or failure.
+ */
+export type AgentReadiness =
+  | { readonly kind: "ready" }
+  | { readonly kind: "chat-ready" }
+  | { readonly kind: "preparing" }
+  | { readonly kind: "unknown" };
 
 /**
  * Where this account's agents stand right now. Cheap and read-only, so a
- * surface that has to wait may poll it on a short interval. An
- * unreachable or unparseable answer reports "not ready yet" rather than
- * throwing: a hiccup in a progress check must never turn into an error
- * screen over work that is, in fact, still progressing fine.
+ * surface that has to wait may poll it on a short interval.
  */
-export async function fetchProvisioningProgress(): Promise<ProvisioningProgress> {
+export async function fetchAgentReadiness(): Promise<AgentReadiness> {
   try {
     const response = await fetch("/api/onboarding/provisioning-status");
+    if (!response.ok) return { kind: "unknown" };
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) return { ready: false, live: 0, total: 0 };
     const parsed = ProvisioningStatus(body);
-    if (parsed instanceof type.errors) {
-      return { ready: false, live: 0, total: 0 };
-    }
-    return {
-      ready: parsed.kind === "ready",
-      live: parsed.deployed.length,
-      total: parsed.deployed.length + parsed.pending.length,
-    };
+    if (parsed instanceof type.errors) return { kind: "unknown" };
+    if (parsed.kind === "ready") return { kind: "ready" };
+    return parsed.setupAgentReady
+      ? { kind: "chat-ready" }
+      : { kind: "preparing" };
   } catch {
-    return { ready: false, live: 0, total: 0 };
+    return { kind: "unknown" };
   }
 }

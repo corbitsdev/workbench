@@ -42,6 +42,7 @@ export {
   seedCatalog,
   seedTenant,
   isLiveDeploymentStatus,
+  SETUP_AGENT_ASSET_NAME,
 } from "./seed";
 export {
   CATALOG_SEEDS,

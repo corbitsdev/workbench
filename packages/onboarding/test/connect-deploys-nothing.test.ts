@@ -12,7 +12,10 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
-import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
+import {
+  DEFAULT_WORKFLOWS,
+  SETUP_AGENT_ASSET_NAME,
+} from "@workbench/hub-client";
 import { createOnboardingRoutes } from "../src/routes";
 import {
   createInMemoryPendingSeedStore,
@@ -304,6 +307,57 @@ describe("GET /provisioning-status", () => {
       expect(body.kind).toBe("provisioning");
       expect(body.deployed).toEqual(ALL_WORKFLOWS.slice(0, 2));
       expect(body.pending).toEqual(ALL_WORKFLOWS.slice(2));
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("says the setup agent is ready the moment she is live, while the rest are still pending", async () => {
+    // CL-6462: this one flag is what lets the land hop drop someone into
+    // a conversation without waiting out the whole seed set.
+    const { hub } = fakeHub({ seededWorkflows: [SETUP_AGENT_ASSET_NAME] });
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const store = createInMemoryPendingSeedStore(testCipher());
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes(
+          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+        ),
+      );
+
+      const response = await app.request("/api/onboarding/provisioning-status");
+      const body = (await response.json()) as {
+        kind: string;
+        setupAgentReady: boolean;
+        pending: string[];
+      };
+
+      expect(body.kind).toBe("provisioning");
+      expect(body.setupAgentReady).toBe(true);
+      expect(body.pending.length).toBeGreaterThan(0);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a bench whose other workflows landed first is not reported as chat-ready", async () => {
+    const others = ALL_WORKFLOWS.filter(
+      (name) => name !== SETUP_AGENT_ASSET_NAME,
+    );
+    const { hub } = fakeHub({ seededWorkflows: others });
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const store = createInMemoryPendingSeedStore(testCipher());
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes(
+          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+        ),
+      );
+
+      const response = await app.request("/api/onboarding/provisioning-status");
+      const body = (await response.json()) as { setupAgentReady: boolean };
+
+      expect(body.setupAgentReady).toBe(false);
     } finally {
       server.stop(true);
     }

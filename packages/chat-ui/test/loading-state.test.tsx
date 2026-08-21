@@ -56,6 +56,22 @@ describe("WorkbenchLoadingState", () => {
     expect(el.textContent).toContain("Loading routines…");
   });
 
+  test("a delayed loader that becomes immediate shows at once, never a blank page", () => {
+    // CL-6462: the land route mounts this while it is still reading (a
+    // delayed loader), then switches to an immediate one once it knows
+    // it is waiting on something. React reconciles rather than remounts,
+    // so the drop to 0 has to be honoured — a loader stuck invisible is
+    // what made the post-connect wait render as an empty screen.
+    const el = mount(<WorkbenchLoadingState delayMs={200} />);
+    expect(el.querySelector(".chat-workbench-loading")).toBeNull();
+
+    act(() => {
+      root?.render(<WorkbenchLoadingState delayMs={0} />);
+    });
+
+    expect(el.querySelector(".chat-workbench-loading")).not.toBeNull();
+  });
+
   test("renders nothing until the delay elapses (flash prevention)", async () => {
     const el = mount(<WorkbenchLoadingState delayMs={200} />);
 
