@@ -32,7 +32,7 @@ export const LINCOLN_AGENT_DESCRIPTION =
   "drafts from the conversation alone when it isn't.";
 
 export const LINCOLN_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/web-search-tools", version: "0.0.3" },
+  { name: "@corbits/web-search-tools", version: "0.0.4" },
 ];
 
 export const LINCOLN_SYSTEM_PROMPT =
