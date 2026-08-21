@@ -4,6 +4,8 @@ export type {
   CreateOllamaMockOptions,
   OllamaMockServer,
 } from "./mock";
+export { sequence } from "./scenarios";
+export type { AdversarialReplies } from "./scenarios";
 export { CapturedChatRequest, CapturedRequestLog } from "./capture";
 export type {
   OllamaCapability,
