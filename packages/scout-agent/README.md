@@ -39,7 +39,7 @@ infrastructure.
   (paginated open-by-ref) against Scout's own hub API.
   `@corbits/artifacts-hub`'s workflow-artifacts HTTP surface only offers
   create and list-recent (no search-by-field, no read-by-id, no
-  pagination), so `scout_save_artifact`/`scout_list_recent_artifacts` is
+  pagination), so `save_artifact`/`list_recent_artifacts` is
   what's actually available.
 - **No per-principal attribution.** The original attributed every
   read/write to the Slack-message's triggering principal
@@ -52,8 +52,8 @@ infrastructure.
 ## Requires connecting
 
 `web_search` needs the Exa MCP preset connected (keyless — no API key,
-just add it under Plugins). `scout_save_artifact`/
-`scout_list_recent_artifacts` need the Library/artifacts plane mounted
+just add it under Plugins). `save_artifact`/
+`list_recent_artifacts` need the Library/artifacts plane mounted
 (already true wherever CL-5291 landed). A missing connection surfaces as
 an honest `isError: true` tool result naming the gap — never a silent
 failure or a fabricated answer.

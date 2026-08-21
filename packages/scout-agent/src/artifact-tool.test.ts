@@ -35,7 +35,7 @@ describe("scoutArtifactTools", () => {
     expect(saveDef?.approval).toBe("ask");
   });
 
-  test("scout_save_artifact persists content and reports the artifact id", async () => {
+  test("save_artifact persists content and reports the artifact id", async () => {
     const result = await withMockFetch(
       () =>
         new Response(JSON.stringify({ data: { id: "art_9", version: 1 } }), {
@@ -63,7 +63,7 @@ describe("scoutArtifactTools", () => {
     });
   });
 
-  test("scout_save_artifact reports a failure honestly rather than fabricating success", async () => {
+  test("save_artifact reports a failure honestly rather than fabricating success", async () => {
     const result = await withMockFetch(
       () => new Response("nope", { status: 500 }),
       () => {
@@ -83,7 +83,7 @@ describe("scoutArtifactTools", () => {
     expect(String(result.content)).toContain("Failed to persist");
   });
 
-  test("scout_list_recent_artifacts returns the recent items", async () => {
+  test("list_recent_artifacts returns the recent items", async () => {
     const result = await withMockFetch(
       () =>
         new Response(

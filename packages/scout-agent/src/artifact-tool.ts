@@ -1,6 +1,6 @@
-// Scout's artifact tools: `scout_save_artifact` (persist, gated by human
+// Scout's artifact tools: `save_artifact` (persist, gated by human
 // approval — every external side effect sits behind approval per
-// AGENTS.md) and `scout_list_recent_artifacts` (read-only recall). Kept
+// AGENTS.md) and `list_recent_artifacts` (read-only recall). Kept
 // inside this package rather than a shared tool package, matching
 // `workflows/last-30-days-research/src/finalize-tool.ts`'s convention:
 // this is Scout-specific logic, not a reusable integration on its own.
@@ -18,8 +18,8 @@ import {
   listRecentScoutArtifacts,
 } from "./artifact-client";
 
-export const SCOUT_ARTIFACT_SAVE_TOOL = "scout_save_artifact";
-export const SCOUT_ARTIFACT_LIST_TOOL = "scout_list_recent_artifacts";
+export const SCOUT_ARTIFACT_SAVE_TOOL = "save_artifact";
+export const SCOUT_ARTIFACT_LIST_TOOL = "list_recent_artifacts";
 
 const SaveArgs = type({
   title: "string > 0",
