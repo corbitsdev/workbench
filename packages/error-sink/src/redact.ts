@@ -10,14 +10,33 @@ const SECRET_KEY_PATTERN =
 const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /bearer\s+\S+/gi,
   /authorization\s*:\s*\S+/gi,
-  /\b(sk|pk|rk|ghp|gho|ghu|ghs)-[a-z0-9]{8,}\b/gi,
+  // Provider key prefixes use either a hyphen (OpenAI's `sk-...`) or an
+  // underscore (GitHub's `ghp_...`) -- both must match.
+  /\b(sk|pk|rk|ghp|gho|ghu|ghs)[-_][a-z0-9]{8,}\b/gi,
+  // A raw JWT (header.payload.signature) carries no keyword prefix at all,
+  // but its base64url header always starts with the literal `eyJ` (base64
+  // of `{"`), which is distinctive enough to key off heuristically.
+  /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/g,
 ];
+
+// `token=`, `key=`, `access_token=`, ... assignments: covers both a raw
+// OAuth callback URL's query string (`?access_token=...&code=...`) and the
+// same shape typed into a free-text error message. Only the value is
+// replaced so the param name -- and the rest of the URL/message -- stays
+// readable for debugging.
+const SENSITIVE_ASSIGNMENT_PATTERN =
+  /\b(access_token|refresh_token|id_token|api[-_]?key|apikey|secret|password|passwd|token|code|credential|key)(\s*=\s*)([^\s&#]+)/gi;
 
 export function redactText(text: string): string {
   let redacted = text;
   for (const pattern of SECRET_VALUE_PATTERNS) {
     redacted = redacted.replace(pattern, "[redacted]");
   }
+  redacted = redacted.replace(
+    SENSITIVE_ASSIGNMENT_PATTERN,
+    (_match, name: string, separator: string) =>
+      `${name}${separator}[redacted]`,
+  );
   return redacted;
 }
 
