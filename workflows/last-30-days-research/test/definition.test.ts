@@ -10,12 +10,10 @@ import {
   LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
   LAST_30_DAYS_RESEARCH_PENDING_SOURCES,
   LAST_30_DAYS_RESEARCH_SECTIONS,
-  LAST_30_DAYS_RESEARCH_STEP_IDS,
+  LAST_30_DAYS_RESEARCH_STEP_ID,
+  LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS,
   LAST_30_DAYS_RESEARCH_WIRED_SOURCES,
   LAST_30_DAYS_RESEARCH_WORKFLOW_ID,
-  WRITER_INFERENCE_PREFERENCE,
-  WRITER_MODEL_ID,
-  WRITER_MODEL_PROVIDER,
   buildLast30DaysResearchWorkflow,
   serializeLast30DaysResearchWorkflow,
 } from "../src/index";
@@ -37,133 +35,56 @@ function stepPrimitive(
   return primitive;
 }
 
-test("the definition is a six-step pipeline with no intake gate", () => {
+test("the definition is a single-step pipeline — the only shape this repo's routine launcher can run", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  expect(LAST_30_DAYS_RESEARCH_STEP_IDS).toEqual([
-    "ground",
-    "gather",
-    "entities",
-    "gather2",
-    "curate",
-    "write",
+  expect(definition.stepOrder).toEqual([LAST_30_DAYS_RESEARCH_STEP_ID]);
+  expect(Object.keys(definition.steps)).toEqual([
+    LAST_30_DAYS_RESEARCH_STEP_ID,
   ]);
-  expect(definition.stepOrder).toEqual([...LAST_30_DAYS_RESEARCH_STEP_IDS]);
-  expect(Object.keys(definition.steps).sort()).toEqual(
-    [...LAST_30_DAYS_RESEARCH_STEP_IDS].sort(),
-  );
-  expect(definition.steps.intake).toBeUndefined();
 });
 
-test("ground is the first step and reads the triggering mail as topic/focus", () => {
+test("the one step is mail-triggered and reads the triggering mail as topic/focus via trigger.payload", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const ground = stepPrimitive(definition, "ground");
-  expect(ground.after).toEqual([]);
-  expect(ground.input).toEqual({ from: "trigger.payload" });
-});
-
-test("every reasoning step chains serially, ground through write", () => {
-  const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const expectedPredecessor: Record<string, string> = {
-    gather: "ground",
-    entities: "gather",
-    gather2: "entities",
-    curate: "gather2",
-    write: "curate",
-  };
-  for (const [id, predecessor] of Object.entries(expectedPredecessor)) {
-    expect(stepPrimitive(definition, id).after).toEqual([predecessor]);
-  }
-});
-
-test("every reasoning step carries an explicit per-turn timeout and inlines no tools", () => {
-  const definition = buildLast30DaysResearchWorkflow(INPUT);
-  for (const id of [
-    "ground",
-    "gather",
-    "entities",
-    "gather2",
-    "curate",
-    "write",
-  ]) {
-    const primitive = stepPrimitive(definition, id);
-    expect(primitive.timeout).toBe(INPUT.turnTimeoutMs);
-    expect(primitive.agent.toolFactories).toEqual([]);
-    expect(primitive.agent.capabilities).toEqual([]);
-  }
-});
-
-test("the workflow is triggered by mail to the given deployment address", () => {
-  const definition = buildLast30DaysResearchWorkflow(INPUT);
-  expect(definition.id).toBe(LAST_30_DAYS_RESEARCH_WORKFLOW_ID);
   expect(definition.triggers).toEqual([
     { type: "mail", to: INPUT.triggerAddress },
   ]);
 });
 
-test("grounding, gathering, and entity-extraction ride the deploy default — no writer preference", () => {
+test("the step carries an explicit per-turn timeout, no inline tools, and the two wired tool-package pins", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  for (const id of ["ground", "gather", "entities", "gather2"]) {
-    expect(stepPrimitive(definition, id).agent.inference.sources).toEqual([
-      ...INPUT.inferencePreferences,
-    ]);
-  }
+  const only = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID);
+  expect(only.timeout).toBe(INPUT.turnTimeoutMs);
+  expect(only.agent.toolFactories).toEqual([]);
+  expect(only.agent.capabilities).toEqual([]);
+  expect(LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/web-search-tools", version: "0.0.3" },
+    { name: "@corbits/github-tools", version: "0.0.5" },
+  ]);
+  expect(only.agent.toolPackagePins).toEqual(
+    LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS,
+  );
 });
 
-test("curate and write prepend the writer-tier preference ahead of the deploy default", () => {
+test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  expect(WRITER_INFERENCE_PREFERENCE).toEqual({
-    provider: WRITER_MODEL_PROVIDER,
-    model: WRITER_MODEL_ID,
-  });
-  expect(WRITER_MODEL_PROVIDER).toBe("anthropic");
-  expect(WRITER_MODEL_ID).toBe("claude-sonnet-5");
-  for (const id of ["curate", "write"]) {
-    expect(stepPrimitive(definition, id).agent.inference.sources).toEqual([
-      WRITER_INFERENCE_PREFERENCE,
-      ...INPUT.inferencePreferences,
-    ]);
-  }
+  expect(definition.id).toBe(LAST_30_DAYS_RESEARCH_WORKFLOW_ID);
 });
 
-test("each step's input selector chains off the prior step's output, plus the triggering mail where the prompt needs the topic/focus", () => {
+test("the step's turn rides the caller's own inference preferences, unmodified", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  expect(stepPrimitive(definition, "ground").input).toEqual({
-    from: "trigger.payload",
-  });
-  expect(stepPrimitive(definition, "gather").input).toEqual({
-    merge: [{ from: "trigger.payload" }, { from: "steps.ground.output" }],
-  });
-  expect(stepPrimitive(definition, "entities").input).toEqual({
-    merge: [{ from: "trigger.payload" }, { from: "steps.gather.output" }],
-  });
-  expect(stepPrimitive(definition, "gather2").input).toEqual({
-    merge: [{ from: "trigger.payload" }, { from: "steps.entities.output" }],
-  });
-  expect(stepPrimitive(definition, "curate").input).toEqual({
-    merge: [
-      { from: "trigger.payload" },
-      { from: "steps.gather.output" },
-      { from: "steps.gather2.output" },
-    ],
-  });
-  expect(stepPrimitive(definition, "write").input).toEqual({
-    merge: [{ from: "trigger.payload" }, { from: "steps.curate.output" }],
-  });
+  const only = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID);
+  expect(only.agent.inference.sources).toEqual([...INPUT.inferencePreferences]);
 });
 
-test("the grounding prompt tailors a query per wired source, never the raw topic verbatim", () => {
+test("the system prompt walks all six research phases and names every pending source, honestly", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, "ground").agent.systemPrompt;
-  expect(prompt).toContain('"web"');
-  expect(prompt).toContain('"github"');
-});
-
-test("the gathering prompt names the two wired tools and every pending source, honestly", () => {
-  const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, "gather").agent.systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
+    .systemPrompt;
   expect(LAST_30_DAYS_RESEARCH_WIRED_SOURCES).toEqual(["Web search", "GitHub"]);
   expect(prompt).toContain("web_search");
   expect(prompt).toContain("github_activity");
+  expect(prompt).toMatch(/phase 1/i);
+  expect(prompt).toMatch(/phase 6/i);
   expect(LAST_30_DAYS_RESEARCH_PENDING_SOURCES).toEqual([
     "Hacker News",
     "Reddit",
@@ -176,13 +97,12 @@ test("the gathering prompt names the two wired tools and every pending source, h
   }
   expect(prompt).toMatch(/not (yet )?connected/i);
   expect(prompt).not.toMatch(/bluesky/i);
-  expect(prompt).toMatch(/never fabricate/i);
-  expect(stepPrimitive(definition, "gather2").agent.systemPrompt).toBe(prompt);
 });
 
-test("the write step's prompt names the fixed report section headings, in order", () => {
+test("the prompt names the fixed report section headings, in order", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, "write").agent.systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
+    .systemPrompt;
   expect(LAST_30_DAYS_RESEARCH_SECTIONS).toEqual([
     "Overview",
     "Key findings",
@@ -197,17 +117,19 @@ test("the write step's prompt names the fixed report section headings, in order"
   }
 });
 
-test("the write step names the exact approval-gated finalize tool and commits to always finalizing", () => {
+test("the prompt names the exact approval-gated finalize tool and commits to always finalizing", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, "write").agent.systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
+    .systemPrompt;
   expect(prompt).toContain(LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME);
   expect(prompt).toMatch(/never end a run without finalizing/i);
   expect(prompt).toContain("exa");
 });
 
-test("the write step commits to a calm terminal reply on denial, not an error", () => {
+test("the prompt commits to a calm terminal reply on denial, not an error", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, "write").agent.systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
+    .systemPrompt;
   expect(prompt).toMatch(/not approved/i);
   expect(prompt).toMatch(/never present a denial as an error/i);
 });
