@@ -119,9 +119,7 @@ export async function createWorkbenchFromTemplate(
       : ((await fetchWorkbenchTemplateManifest(tenantId, templateId)) ??
         undefined);
   if (templateId !== "blank" && manifest === undefined) {
-    throw new Error(
-      `This bench can't set up a ${templateId} workbench yet — it isn't in the library.`,
-    );
+    throw new Error(`A ${templateId} workbench isn't available here yet.`);
   }
   const requiresGithub =
     manifest?.requiredConnections.includes("github") ?? false;

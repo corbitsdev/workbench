@@ -423,8 +423,8 @@ export function AgentDetailPage({
                 </Badge>
                 <span className="text-sm text-muted-foreground">
                   {archived
-                    ? "Archived — nobody can start a new chat with it until it is restored. Chats already running keep going."
-                    : "Active — anyone in this bench can start a chat with it."}
+                    ? "Archived — nobody can start a new conversation with it until it is restored. Conversations already running keep going."
+                    : "Active — anyone in this workbench can talk to it."}
                 </span>
               </div>
               <div className="flex flex-col gap-2">
@@ -637,7 +637,7 @@ export function AgentDetailRoute({
       <RichEmptyState
         icon={<Robot />}
         title="No such agent"
-        description={`Nothing in this bench answers to "${slug}". It may have been renamed, or belong to another workbench.`}
+        description={`Nothing here answers to "${slug}". It may have been renamed, or belong to another workbench.`}
         footer={
           <Button asChild variant="outline">
             <Link to={AGENTS_PATH_PREFIX}>Back to Agents</Link>
