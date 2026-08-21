@@ -48,6 +48,7 @@ import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 
 import {
   reindexPinnedSkills,
@@ -125,6 +126,10 @@ export type CreateWorkflowCapabilityRoutesDeps = {
   skillsStore: DefinitionSkillsStore;
   capabilityInventory: CapabilityInventoryProvider;
   authenticator: WorkflowRunAuthenticator;
+  /** Re-freezes the definition's wire projection after the rewrite; the
+   * composition root binds `@corbits/workflow-freeze`'s
+   * `createDefinitionFreezer` to its own `db`. */
+  definitionFreezer: Pick<DefinitionFreezer, "refreeze">;
 };
 
 export function createWorkflowCapabilityRoutes(
@@ -274,6 +279,10 @@ export function createWorkflowCapabilityRoutes(
         }),
         message,
       },
+    });
+    await deps.definitionFreezer.refreeze({
+      definitionId: row.id,
+      workflowJson: nextWorkflowJson,
     });
     if (nextSkills !== null) {
       await deps.skillsStore.setSkills(row.assetId, nextSkills);

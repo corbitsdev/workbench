@@ -19,13 +19,9 @@ import type { CredentialBinding } from "@intx/types";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
-import {
-  AssetServiceError,
-  DEFAULT_ASSET_REF,
-  ensureWorkflowDefinitionForAsset,
-} from "@intx/hub-sessions";
+import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
-import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
+import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 import {
   withAvailableSkills,
   type PinnedSkillIndexEntry,
@@ -390,6 +386,10 @@ export function serializeAgentDefinitionWorkflow(
 export type CreateAgentDefinitionCoreDeps = {
   readonly db: DB["db"];
   readonly assetService: AssetService;
+  /** Freezes the definition's wire projection at create; the
+   * composition root binds `@corbits/workflow-freeze`'s
+   * `createDefinitionFreezer` to its own `db`. */
+  readonly definitionFreezer: Pick<DefinitionFreezer, "freeze">;
   readonly skillIndex: {
     resolve(
       tenantId: string,
@@ -561,10 +561,14 @@ export async function createAgentDefinitionCore(
   });
   await deps.skillsStore.setSkills(assetId, input.skills);
 
-  const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
-  const { definitionId } = await ensureWorkflowDefinitionForAsset(deps.db, {
+  // Freeze, not a bare ensure: `ensureWorkflowDefinitionForAsset` alone
+  // leaves the version row's `wire_projection` NULL, and a definition
+  // without a frozen projection can never launch (CL-6447's 409
+  // `not_launchable`). The freeze projects, walks, and stamps in one
+  // transaction — the same machinery the sidecar probe deploy rides.
+  const { definitionId } = await deps.definitionFreezer.freeze({
     assetId,
-    wireHash,
+    workflowJson,
   });
 
   const row = await deps.db.query.workflowDefinition.findFirst({
