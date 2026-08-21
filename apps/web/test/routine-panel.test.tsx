@@ -80,6 +80,7 @@ function routineRecord(
     deliveryWorkbenchId: null,
     consecutiveFailures: 0,
     deadLetteredAt: null,
+    nextFireAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
@@ -592,7 +593,7 @@ describe("RoutinePanel", () => {
               (c["trigger"] as { kind: string } | undefined)?.kind === "daily",
           ),
       ).toBe(true);
-      expect(container.textContent).toContain("Daily at 09:00 UTC");
+      expect(container.textContent).toContain("At 09:00 (UTC)");
     });
   });
 });

@@ -34,9 +34,10 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 import {
   AGENTS_PATH_PREFIX,
   PLUGINS_PATH_PREFIX,
-  ROUTINES_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
+  ROUTINES_PATH_PREFIX,
   detailSlugFromPath,
+  routineSegmentFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
@@ -90,9 +91,8 @@ const PluginDetailPlaceholder = lazy(async () => ({
   default: (await import("./pages/detail-placeholders"))
     .PluginDetailPlaceholder,
 }));
-const RoutineDetailPlaceholder = lazy(async () => ({
-  default: (await import("./pages/detail-placeholders"))
-    .RoutineDetailPlaceholder,
+const RoutineDetailRoute = lazy(async () => ({
+  default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
 }));
 
 /** The signed-out screen (CL-6369) — a real route, not a conditional swap:
@@ -127,10 +127,36 @@ const SLUG_SEGMENT = "/:slug";
 export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const PLUGIN_DETAIL_PATH = `${PLUGINS_PATH_PREFIX}${SLUG_SEGMENT}`;
-export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${SLUG_SEGMENT}`;
+
+/**
+ * Routines are addressed by id, not by slug. DESIGN.md allows a slug in a
+ * route only where it is "immutable and tenant-unique, enforced as a hard
+ * database constraint — never a soft convention"; a routine has no slug
+ * column, so a name-derived one is exactly the soft convention that rule
+ * forbids, and the documented fallback is the opaque id. So this route
+ * claims any single segment under `/routines`: an id renders the page,
+ * and a name still resolves — `routine-detail-page.tsx` redirects it to
+ * the id path — which keeps human-typed and shared-by-name links working
+ * without making the fragile address canonical. A real slug column is
+ * ticketed separately.
+ */
+const ROUTINE_SEGMENT = "/:routine";
+export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${ROUTINE_SEGMENT}`;
 
 function slugForDetailRoute(routePath: string, path: string): Slug | null {
   return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
+}
+
+/** The routine detail route only ever renders for a path `matchesRoute`
+ * already accepted, which is what makes the segment non-null here. */
+function routineDetailSegment(path: string): string {
+  const segment = routineSegmentFromPath(path);
+  if (segment === null) {
+    throw new Error(
+      `${ROUTINE_DETAIL_PATH} rendered for a path with no routine: ${path}`,
+    );
+  }
+  return segment;
 }
 
 /** A detail route only ever renders for a path `matchesRoute` already
@@ -173,6 +199,10 @@ export type AppRoute = {
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
     return isWorkbenchPath(path) || path === "/";
+  }
+  if (routePath === ROUTINE_DETAIL_PATH) {
+    const segment = routineSegmentFromPath(path);
+    return segment !== null && !segment.includes("/");
   }
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
@@ -246,9 +276,10 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: ROUTINE_DETAIL_PATH,
     label: "Routine",
     icon: <FlowArrow />,
-    render: (path: string) => (
-      <RoutineDetailPlaceholder
-        slug={detailRouteSlug(ROUTINE_DETAIL_PATH, path)}
+    render: (path: string, navigate: (to: string) => void) => (
+      <RoutineDetailRoute
+        segment={routineDetailSegment(path)}
+        navigate={navigate}
       />
     ),
   },
@@ -256,8 +287,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/routines",
     label: "Routines",
     icon: <FlowArrow />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <RoutinesRoute path={path} navigate={navigate} />
+    render: (_path: string, navigate: (to: string) => void) => (
+      <RoutinesRoute navigate={navigate} />
     ),
   },
   {

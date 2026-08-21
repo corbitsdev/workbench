@@ -399,7 +399,7 @@ test("POST /routines posts an honest notice when created enabled", async () => {
     VALID_BODY.deliveryWorkbenchId,
   );
   expect(workbenchNotice.calls[0]?.text).toBe(
-    'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+    'Created routine "Morning digest" — At 09:00 (UTC). ' +
       "Manage it from Routines.",
   );
 });
@@ -430,7 +430,7 @@ test("PATCH /routines/:id posts an honest notice when flipped to enabled", async
   expect(response.status).toBe(200);
   expect(workbenchNotice.calls.length).toBe(1);
   expect(workbenchNotice.calls[0]?.text).toBe(
-    'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+    'Enabled routine "Morning digest" — At 09:00 (UTC). ' +
       "Manage it from Routines.",
   );
 });

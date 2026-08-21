@@ -21,11 +21,8 @@ import {
   OneShotDefinitionNotFoundError,
 } from "@corbits/folded-runs";
 
-import {
-  RoutineTrigger,
-  routineCadenceLabel,
-  type RoutineTriggerT,
-} from "./trigger";
+import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
+import { routineScheduleSentence } from "./schedule-language";
 import type {
   RoutineRow,
   RoutineRunRow,
@@ -298,6 +295,7 @@ export function routineView(row: RoutineRow) {
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     consecutiveFailures: row.consecutiveFailures,
     deadLetteredAt: row.deadLetteredAt?.toISOString() ?? null,
+    nextFireAt: row.nextFireAt?.toISOString() ?? null,
     presetKey: row.presetKey,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -491,9 +489,12 @@ export async function postRoutineEnabledNotice(
 ): Promise<void> {
   if (deps.workbenchNotice === undefined) return;
   if (input.workbenchId === null || input.workbenchId === "") return;
+  // The schedule is its own sentence rather than a clause: it is written
+  // for a reader ("At 09:00 (UTC)"), and splicing it mid-phrase would
+  // either capitalise oddly or lowercase the timezone into nonsense.
   const text =
-    `${input.verb} routine "${input.name}" — runs ` +
-    `${routineCadenceLabel(input.trigger)}. Manage it from Routines.`;
+    `${input.verb} routine "${input.name}" — ` +
+    `${routineScheduleSentence(input.trigger)}. Manage it from Routines.`;
   try {
     await deps.workbenchNotice.postWorkbenchNotice({
       tenantId: input.tenantId,

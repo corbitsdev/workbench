@@ -302,6 +302,35 @@ describe("createRoutineRoutes", () => {
     expect(due.find((r) => r.id === body["id"])).toBeUndefined();
   });
 
+  test("the wire view surfaces the scheduler's own next-fire clock, so a UI never has to re-derive it", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+    });
+
+    expect(typeof body["nextFireAt"]).toBe("string");
+
+    // The same instant the scheduler's own claim test compares against —
+    // not an independently rendered estimate.
+    const nextFireAt = new Date(body["nextFireAt"] as string);
+    expect(nextFireAt.getUTCHours()).toBe(9);
+    expect(nextFireAt.getUTCMinutes()).toBe(0);
+    expect(nextFireAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("a manual routine reports no next fire rather than omitting the field", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body } = await createRoutine(app, { ...VALID_BODY, trigger: null });
+
+    expect(body["nextFireAt"]).toBeNull();
+    // No `lastFireAt`: the store writes it only on a scheduled claim, so
+    // "last run" is read off the fire history instead (see health.ts).
+    expect(body["lastFireAt"]).toBeUndefined();
+  });
+
   test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");
@@ -419,7 +448,7 @@ describe("createRoutineRoutes", () => {
       VALID_BODY.deliveryWorkbenchId,
     );
     expect(workbenchNotice.calls[0]?.text).toBe(
-      'Created routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      'Created routine "Morning digest" — At 09:00 (UTC). ' +
         "Manage it from Routines.",
     );
   });
@@ -449,7 +478,7 @@ describe("createRoutineRoutes", () => {
     expect(response.status).toBe(200);
     expect(workbenchNotice.calls.length).toBe(1);
     expect(workbenchNotice.calls[0]?.text).toBe(
-      'Enabled routine "Morning digest" — runs Daily at 09:00 UTC. ' +
+      'Enabled routine "Morning digest" — At 09:00 (UTC). ' +
         "Manage it from Routines.",
     );
   });

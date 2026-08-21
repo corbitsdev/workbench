@@ -13,8 +13,46 @@ import {
   routineRunNowPath,
   routineRunStartedToast,
   routineRunsPath,
+  routineActionFailedToast,
+  routineSlug,
   routinesPath,
 } from "./client";
+
+describe("routineActionFailedToast", () => {
+  test("names the action that didn't happen, the routine, and why", () => {
+    expect(
+      routineActionFailedToast(
+        "pause",
+        "Morning brief",
+        "You don't have access to this.",
+      ),
+    ).toBe("Couldn't pause Morning brief. You don't have access to this.");
+  });
+
+  test("every lifecycle action has its own verb", () => {
+    const reason = "Try again.";
+    expect(routineActionFailedToast("run", "X", reason)).toContain(
+      "Couldn't start X",
+    );
+    expect(routineActionFailedToast("resume", "X", reason)).toContain(
+      "Couldn't resume X",
+    );
+    expect(routineActionFailedToast("schedule", "X", reason)).toContain(
+      "Couldn't reschedule X",
+    );
+  });
+});
+
+describe("routineSlug", () => {
+  test("derives the URL-facing name from the display name", () => {
+    expect(routineSlug("Morning brief")).toBe("morning-brief");
+    expect(routineSlug("Weekly Digest — Q3!")).toBe("weekly-digest-q3");
+  });
+
+  test("empty for a name that cannot name a URL, so a caller can skip the link", () => {
+    expect(routineSlug("🌅")).toBe("");
+  });
+});
 
 describe("routine toast copy", () => {
   test("create carries the routine's name", () => {
@@ -69,6 +107,29 @@ describe("wire schemas", () => {
       deliveryWorkbenchId: null,
       consecutiveFailures: 0,
       deadLetteredAt: null,
+      nextFireAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  test("Routine parses a payload from a hub that doesn't send nextFireAt yet", () => {
+    // Deploy skew: a browser on the new bundle can be talking to an
+    // un-upgraded hub for a release. A required field would make arktype
+    // reject the whole payload and blank every routines surface over a
+    // display-only value.
+    const out = Routine({
+      id: "r1",
+      name: "Morning brief",
+      definitionId: "wfd_1",
+      trigger: null,
+      scope: "personal",
+      input: {},
+      enabled: true,
+      deliveryWorkbenchId: null,
+      consecutiveFailures: 0,
+      deadLetteredAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
@@ -95,6 +156,7 @@ describe("wire schemas", () => {
       deliveryWorkbenchId: null,
       consecutiveFailures: 0,
       deadLetteredAt: null,
+      nextFireAt: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });

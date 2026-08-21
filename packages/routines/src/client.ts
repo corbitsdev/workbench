@@ -9,10 +9,34 @@
 // so a browser caller has one import for the whole client surface.
 
 import { type } from "arktype";
+import { slugify } from "@corbits/slug";
 
 import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
 export { suggestRoutineNameFromPrompt } from "./suggest-name";
+export {
+  cronHasWallClock,
+  cronSentence,
+  routineScheduleSentence,
+} from "./schedule-language";
+export {
+  fireNeverStarted,
+  runStatusLabel,
+  triggeredByLabel,
+} from "./run-language";
+export {
+  cleanFireStreak,
+  fireFailed,
+  lastFailedFire,
+  medianFireDurationMs,
+  routineHealth,
+} from "./health";
+export type {
+  RoutineFire,
+  RoutineHealth,
+  RoutineHealthState,
+  RoutineHealthSubject,
+} from "./health";
 export {
   RoutineTrigger,
   RoutineTriggerWire,
@@ -21,8 +45,6 @@ export {
   cronTriggerForWeekdays,
   isValidCronExpression,
   isValidTimeZone,
-  routineCadenceLabel,
-  routineCadenceSummary,
   routineMatchesModeFilter,
   routineTriggerCategory,
   ROUTINE_WEEKDAY_NAMES,
@@ -58,10 +80,46 @@ export const Routine = type({
   // — the scheduler stops claiming this routine until a person
   // re-enables or edits it. `null` means still scheduling normally.
   deadLetteredAt: "string | null",
+  // The scheduler's own due-fire clock, surfaced rather than recomputed:
+  // a UI that re-derives "next run" from the trigger is guessing, while
+  // this is the instant the scheduler will actually test against. `null`
+  // for a routine that never auto-fires (manual, webhook, run-once) or
+  // one that is disabled or dead-lettered.
+  //
+  // Optional for exactly one release, on purpose: a browser that has
+  // already loaded the new bundle can be talking to a hub that has not
+  // shipped this field yet, and a required field would make arktype
+  // reject the whole routines payload — blanking every routines surface
+  // over a display-only value. Tightening to required once the hub is
+  // known-upgraded is its own follow-up ticket; until then the reader
+  // treats absent and null alike ("not scheduled" is the honest reading
+  // of "the server didn't say").
+  //
+  // There is deliberately no `lastFireAt` here. The store writes it only
+  // on a scheduled claim, so a run-now-only routine would report "never
+  // run" beside a history table full of runs. "Last run" has one
+  // definition — the newest row of the fire history — and it lives in
+  // ./health.ts.
+  "nextFireAt?": "string | null",
   createdAt: "string",
   updatedAt: "string",
 });
 export type Routine = typeof Routine.infer;
+
+/**
+ * A routine's URL-facing name, for `/routines/<slug>`. Derived from the
+ * display name rather than stored: routines predate slug-addressed detail
+ * routes and carry no slug column, and DESIGN.md's rule for exactly this
+ * case is that a route without a guaranteed-unique slug falls back to an
+ * opaque id — which `/routines/<id>` already is, since an id (`rtn_1`) is
+ * not slug-shaped and so resolves to the roster instead. Empty string for
+ * a name with nothing sluggable in it (emoji, a non-Latin script); a
+ * caller renders that routine without a detail link rather than linking
+ * to a path that cannot resolve.
+ */
+export function routineSlug(name: string): string {
+  return slugify(name);
+}
 
 export const RoutinesResponse = type({ items: Routine.array() });
 
@@ -176,4 +234,30 @@ export function routineCreatedToast(name: string): string {
 
 export function routineRunStartedToast(name: string): string {
   return `Run started · ${name}`;
+}
+
+/**
+ * A routine action that didn't happen has to say so. Every lifecycle
+ * control on a routines surface is a write against a live hub that can
+ * refuse it — a revoked grant, a routine deleted in another tab, an
+ * expired session — and a control that swallows the refusal leaves a
+ * person believing a schedule changed when it did not. `reason` is a
+ * caller-supplied sentence (`describeApiError` in this repo's web app),
+ * never a raw status line or a request path.
+ */
+const ROUTINE_ACTION_VERBS = {
+  run: "start",
+  pause: "pause",
+  resume: "resume",
+  schedule: "reschedule",
+} as const;
+
+export type RoutineAction = keyof typeof ROUTINE_ACTION_VERBS;
+
+export function routineActionFailedToast(
+  action: RoutineAction,
+  name: string,
+  reason: string,
+): string {
+  return `Couldn't ${ROUTINE_ACTION_VERBS[action]} ${name}. ${reason}`;
 }

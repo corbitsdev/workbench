@@ -19,10 +19,10 @@ import {
 } from "@corbits/react-ui";
 import {
   cronTriggerForWeekdays,
+  routineScheduleSentence,
   ROUTINE_WEEKDAY_NAMES,
   type RoutineTriggerT,
 } from "@corbits/routines/client";
-import { cadenceLabel } from "./routine-trigger";
 
 type ScheduleTrigger = Exclude<RoutineTriggerT, null | { kind: "webhook" }>;
 
@@ -326,7 +326,7 @@ export function ScheduleEditor({
 
       {value !== null ? (
         <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          {cadenceLabel(value)}
+          {routineScheduleSentence(value)}
         </p>
       ) : null}
     </div>

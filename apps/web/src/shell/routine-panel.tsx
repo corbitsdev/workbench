@@ -49,7 +49,7 @@ import { Clock, X } from "@corbits/icons";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { ensureMyraWorkbench } from "../myra-workbench";
-import { cadenceLabel } from "../routine-trigger";
+import { routineScheduleSentence } from "@corbits/routines/client";
 import { ScheduleEditor } from "../routine-schedule";
 import {
   createRoutine,
@@ -87,7 +87,7 @@ function triggerRowSummary(
   sourceLabel: string | null,
 ): string {
   if (trigger.kind === "webhook") return sourceLabel ?? "On webhook";
-  return cadenceLabel(trigger);
+  return routineScheduleSentence(trigger);
 }
 
 /**
