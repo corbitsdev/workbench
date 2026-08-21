@@ -419,7 +419,7 @@ export function runsPerDay(
   runs: readonly InsightsRun[],
   days: readonly DayActivity[],
 ): number[] {
-  const counts = new Map(days.map((d) => [d.day, 0] as const));
+  const counts = new Map<string, number>(days.map((d) => [d.day, 0]));
   for (const run of runs) {
     const day = run.createdAt.slice(0, 10);
     const current = counts.get(day);
@@ -686,8 +686,10 @@ function InsightsLanding({
           value={tileValue(formatUsd(usage.costUsd), loading)}
           detail={`${formatCount(usage.tokens.total)} tokens`}
           loading={loading}
-          sparklineValues={costSparkline}
           sparklineLabel="Cost per day this week"
+          {...(costSparkline === undefined
+            ? {}
+            : { sparklineValues: costSparkline })}
         />
         <InsightsStat
           label="Activity"

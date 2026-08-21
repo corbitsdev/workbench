@@ -16,7 +16,10 @@ import { EMPTY_OVERALL_USAGE } from "@corbits/insights/client";
 import { InsightsPage, useInsightsWindow } from "./insights-page";
 import { BenchContext } from "../bench-context";
 import type { BenchState } from "../bench-context";
+import type { InsightsRun } from "../insights-api";
 import { NavigationProvider } from "../navigation";
+
+type RunsStub = { data: readonly InsightsRun[]; nextCursor: string | null };
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -47,7 +50,7 @@ function InsightsPageAtPath({
   runs = { data: [], nextCursor: null },
 }: {
   readonly path: string;
-  readonly runs?: { data: unknown[]; nextCursor: string | null };
+  readonly runs?: RunsStub;
 }) {
   const range = useInsightsWindow();
   return (
@@ -72,15 +75,17 @@ function InsightsPageAtPath({
   );
 }
 
-function render(
-  path: string,
-  runs?: { data: unknown[]; nextCursor: string | null },
-) {
+function render(path: string, runs?: RunsStub) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(<InsightsPageAtPath path={path} runs={runs} />);
+    root?.render(
+      <InsightsPageAtPath
+        path={path}
+        {...(runs === undefined ? {} : { runs })}
+      />,
+    );
   });
   return container;
 }
