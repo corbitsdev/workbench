@@ -66,7 +66,7 @@ export function AgentSkillsPicker({
 
   if (state.status === "error") {
     return (
-      <p className="text-sm text-danger-foreground" role="alert">
+      <p className="text-sm text-destructive" role="alert">
         Could not load skills: {state.message}
       </p>
     );
@@ -96,7 +96,7 @@ export function AgentSkillsPicker({
           <div key={id} className="flex items-start gap-2 text-sm">
             <span className="flex flex-1 flex-col">
               <span className="font-medium">{name}</span>
-              <span className="text-xs text-danger-foreground">
+              <span className="text-xs text-destructive">
                 No longer available — its author may have made it private,
                 renamed it, or discarded it.
               </span>
