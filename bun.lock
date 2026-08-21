@@ -11,6 +11,7 @@
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/artifacts-hub": "workspace:*",
         "@corbits/evals": "workspace:*",
+        "@corbits/ollama-adapter": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@eslint/js": "^10.0.0",
         "@intx/db": "workspace:*",
@@ -32,6 +33,7 @@
         "@chat-adapter/state-memory": "^4.35.0",
         "@corbits/agent-directory": "workspace:*",
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/agent-workflow-authoring": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/artifacts-hub": "workspace:*",
@@ -105,6 +107,7 @@
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
+        "@corbits/ollama-adapter": "workspace:*",
         "@corbits/workflow-host-actions": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/authz": "0.3.0",
@@ -258,6 +261,23 @@
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/agent-workflow-authoring": {
+      "name": "@corbits/agent-workflow-authoring",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/authz": "0.3.0",
+        "@intx/db": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -725,6 +745,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/gotenberg-render": {
+      "name": "@corbits/gotenberg-render",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/error-sink": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
       "version": "0.0.4",
@@ -802,6 +834,7 @@
       "name": "@corbits/inference-catalog",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/ollama-adapter": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/inference-catalog": "0.3.0",
@@ -852,6 +885,19 @@
     "packages/interaction-tools": {
       "name": "@corbits/interaction-tools",
       "version": "0.0.2",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/jimmy-agent": {
+      "name": "@corbits/jimmy-agent",
+      "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "0.3.0",
         "@intx/types": "0.3.0",
@@ -987,10 +1033,24 @@
         "typescript": "catalog:",
       },
     },
+    "packages/ollama-adapter": {
+      "name": "@corbits/ollama-adapter",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/inference": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/onboarding": {
       "name": "@workbench/onboarding",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "0.3.0",
@@ -1147,6 +1207,20 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/scout-agent": {
+      "name": "@corbits/scout-agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/web-search-tools": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1455,6 +1529,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workflow-authoring-tools": {
+      "name": "@corbits/workflow-authoring-tools",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workflow-catalog": {
       "name": "@corbits/workflow-catalog",
       "version": "0.0.1",
@@ -1695,6 +1782,20 @@
     },
     "workflows/collateral-generation": {
       "name": "@corbits/collateral-generation-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/diligence-brief": {
+      "name": "@corbits/diligence-brief-workflow",
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "0.3.0",
@@ -1979,6 +2080,8 @@
 
     "@corbits/agent-runtime": ["@corbits/agent-runtime@workspace:packages/agent-runtime"],
 
+    "@corbits/agent-workflow-authoring": ["@corbits/agent-workflow-authoring@workspace:packages/agent-workflow-authoring"],
+
     "@corbits/api-query": ["@corbits/api-query@workspace:packages/api-query"],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
@@ -2023,6 +2126,8 @@
 
     "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
 
+    "@corbits/diligence-brief-workflow": ["@corbits/diligence-brief-workflow@workspace:workflows/diligence-brief"],
+
     "@corbits/docker-provisioner": ["@corbits/docker-provisioner@workspace:packages/docker-provisioner"],
 
     "@corbits/e2b-sandbox-sidecar": ["@corbits/e2b-sandbox-sidecar@workspace:packages/e2b-sandbox-sidecar"],
@@ -2038,6 +2143,8 @@
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
     "@corbits/github-tools": ["@corbits/github-tools@workspace:packages/github-tools"],
+
+    "@corbits/gotenberg-render": ["@corbits/gotenberg-render@workspace:packages/gotenberg-render"],
 
     "@corbits/granola-call-workflow": ["@corbits/granola-call-workflow@workspace:workflows/granola-call"],
 
@@ -2056,6 +2163,8 @@
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
 
     "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:packages/interaction-tools"],
+
+    "@corbits/jimmy-agent": ["@corbits/jimmy-agent@workspace:packages/jimmy-agent"],
 
     "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 
@@ -2082,6 +2191,8 @@
     "@corbits/morning-brief-workflow": ["@corbits/morning-brief-workflow@workspace:workflows/morning-brief"],
 
     "@corbits/notify": ["@corbits/notify@workspace:packages/notify"],
+
+    "@corbits/ollama-adapter": ["@corbits/ollama-adapter@workspace:packages/ollama-adapter"],
 
     "@corbits/pain-point-collateral-workflow": ["@corbits/pain-point-collateral-workflow@workspace:workflows/pain-point-collateral"],
 
@@ -2110,6 +2221,8 @@
     "@corbits/run-key-history": ["@corbits/run-key-history@workspace:packages/run-key-history"],
 
     "@corbits/sandbox-sidecar": ["@corbits/sandbox-sidecar@workspace:packages/sandbox-sidecar"],
+
+    "@corbits/scout-agent": ["@corbits/scout-agent@workspace:packages/scout-agent"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 
@@ -2150,6 +2263,8 @@
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
+
+    "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
 

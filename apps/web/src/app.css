@@ -732,7 +732,7 @@ select:disabled,
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  width: 1.9rem;
+  width: 2.75rem;
   overflow: hidden;
   border: 1px solid transparent;
   transition: width var(--duration-standard) var(--ease-in-out);
@@ -744,14 +744,22 @@ select:disabled,
   border-color: var(--border);
   background: var(--card);
   padding-right: 0.4rem;
+  /* The results panel is absolutely positioned against the palette's own
+     wrapper (a descendant of this element) and has to escape it to show
+     below the bar — the collapsed state keeps `overflow: hidden` above
+     since there is nothing but the button to clip. */
+  overflow: visible;
 }
 
 .stage-search-button {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
+  /* 40px floor at the 15px root (2.667rem) for a primary chrome control's
+     hit target — this button is the only visible content when the search
+     bar is collapsed, so `.stage-search`'s width tracks it above. */
+  width: 2.75rem;
+  height: 2.75rem;
   border: 0;
   background: transparent;
   color: var(--muted-foreground);
@@ -762,17 +770,31 @@ select:disabled,
   color: var(--foreground);
 }
 
-.stage-search-field {
+.stage-search [data-slot="command-palette-inline"] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.stage-search [data-slot="command-palette-inline-field"] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.stage-search [data-slot="command-palette-input"] {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 0;
+  background: transparent;
   font-size: 0.78rem;
   color: var(--foreground);
 }
 
-.stage-search-field[data-placeholder="true"] {
+.stage-search [data-slot="command-palette-input"]::placeholder {
   color: var(--muted-foreground);
 }
 
@@ -1171,6 +1193,47 @@ select:disabled,
   width: 1.75rem;
   height: 1.75rem;
   color: var(--primary);
+}
+
+/* Mission Control — pinned above the footer rail as its own row (DESIGN.md),
+   never a 7th button mixed into Routines/Files/Skills/Agents/Plugins/
+   Insights below. The border-bottom is what reads it as a separate band
+   rather than the first row of that rail. */
+.shell-sidebar-mission-control {
+  flex-shrink: 0;
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+.shell-sidebar-mission-control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.shell-sidebar-mission-control-row svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--muted-foreground);
+}
+.shell-sidebar-mission-control-row:hover,
+.shell-sidebar-mission-control-row[data-active="true"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.shell-sidebar-mission-control-row[data-active="true"] {
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+.shell-sidebar-mission-control-row:focus-visible {
+  outline: 1px solid var(--foreground);
+  outline-offset: -1px;
 }
 
 /* Footer (reference shape): a Plugins row, then the account row that
@@ -2502,12 +2565,14 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
-/* react-ui's StatGridItem hardcodes rounded-[12px] (stat-grid.tsx) instead
-   of consuming var(--radius), so it never picks up the app-wide zero-radius
+/* react-ui's StatGridItem hardcodes rounded-lg (stat-grid.tsx) instead of
+   consuming var(--radius), so it never picks up the app-wide zero-radius
    re-assertion above — every KPI tile renders rounded while every
-   neighboring panel is square. Re-assert zero radius here, scoped to the
-   insights stat grids, until StatGridItem consumes var(--radius) upstream. */
-.insights-layout [data-slot="stat-grid-item"] {
+   neighboring panel is square. One global re-assertion here covers every
+   StatGridItem consumer (Insights, Mission Control, Evals, and whatever
+   page reaches for it next) instead of a per-page copy; drop this once
+   StatGridItem consumes var(--radius) upstream. */
+[data-slot="stat-grid-item"] {
   border-radius: 0;
 }
 
@@ -2555,6 +2620,73 @@ tr.insights-row-clickable:hover {
 
 .insights-data-table td {
   padding: 0.55rem 0.7rem;
+}
+
+/* "Running now" strip — real in-flight runs only (see RunningNowStrip),
+   scrollable so a busy tenant doesn't push the layout wide. */
+.insights-running-now {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.insights-running-now-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.insights-running-now-head h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.insights-running-now-count {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.insights-running-now-strip {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.1rem 0.05rem 0.35rem;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.insights-flight {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--card, var(--background));
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.insights-flight:hover {
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.insights-flight-name {
+  max-width: 14rem;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights-flight-elapsed {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
 }
 
 .insights-section {
@@ -3297,4 +3429,144 @@ tr.insights-row-clickable:hover {
 .new-workbench-picker-foot-note {
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+/* Mission Control (CL-6488/CL-6489) — stat strip, then a main column
+   (Needs you / In flight) beside a 320px rail (Jump back in / This week),
+   the same "stack under 1100px" rule DESIGN.md gives every right rail. */
+.mission-control-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  grid-template-areas:
+    "stats stats"
+    "main rail";
+  gap: 1rem;
+  width: 100%;
+}
+.mission-control-layout > .mission-control-stats {
+  grid-area: stats;
+}
+.mission-control-layout > .mission-control-panel {
+  grid-area: main;
+}
+.mission-control-layout > .mission-control-panel + .mission-control-panel {
+  margin-top: 1rem;
+}
+.mission-control-layout > .mission-control-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .mission-control-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "stats"
+      "main"
+      "rail";
+  }
+}
+
+.mission-control-panel {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--card, var(--background));
+  min-width: 0;
+}
+.mission-control-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.mission-control-panel-header h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.mission-control-hint {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+.mission-control-hint-link {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.mission-control-empty-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.mission-control-cell-primary {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.mission-control-cell-context {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+.mission-control-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+.mission-control-opt {
+  white-space: nowrap;
+}
+@media (max-width: 880px) {
+  .mission-control-opt {
+    display: none;
+  }
+}
+
+.mission-control-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.mission-control-jump-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.mission-control-jump-row:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.mission-control-rows > .mission-control-jump-row:last-child {
+  border-bottom: 0;
+}
+.mission-control-jump-row svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+.mission-control-jump-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mission-control-jump-when {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.mission-control-week-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
 }

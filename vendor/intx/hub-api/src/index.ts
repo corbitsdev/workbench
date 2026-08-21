@@ -15,6 +15,12 @@ export {
   type RequireGrant,
 } from "./middleware/grant";
 export {
+  createWorkflowRunDeployAuth,
+  type CreateWorkflowRunDeployAuthDeps,
+  type WorkflowRunAuthenticator,
+  type WorkflowRunDeployScope,
+} from "./middleware/workflow-run-deploy-auth";
+export {
   createResolveTenant,
   requireAuth,
   type CreateResolveTenantDeps,

@@ -10,6 +10,8 @@ const KEYS = [
   "EMBED_MODEL",
   "EMBED_API_STYLE",
   "EMBED_API_KEY",
+  "RERANK_BASE_URL",
+  "RERANK_MODEL",
 ] as const;
 
 type EnvKey = (typeof KEYS)[number];
@@ -80,6 +82,38 @@ describe("mountMemory", () => {
         conditionRegistry: {},
       }),
     ).rejects.toThrow(/EMBED_BASE_URL/);
+  });
+
+  test("throws when RERANK_BASE_URL is set without RERANK_MODEL, rather than reranking silently failing later", async () => {
+    stashEnv();
+    process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
+    process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
+    process.env["EMBED_MODEL"] = "test-embedding-model";
+    process.env["RERANK_BASE_URL"] = "http://localhost:8080";
+    const app = new Hono();
+    await expect(
+      mountMemory({
+        app,
+        grantStore: createInMemoryGrantStore([]),
+        conditionRegistry: {},
+      }),
+    ).rejects.toThrow(/RERANK_BASE_URL.*RERANK_MODEL/s);
+  });
+
+  test("throws when RERANK_MODEL is set without RERANK_BASE_URL", async () => {
+    stashEnv();
+    process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
+    process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
+    process.env["EMBED_MODEL"] = "test-embedding-model";
+    process.env["RERANK_MODEL"] = "bge-reranker-v2-m3";
+    const app = new Hono();
+    await expect(
+      mountMemory({
+        app,
+        grantStore: createInMemoryGrantStore([]),
+        conditionRegistry: {},
+      }),
+    ).rejects.toThrow(/RERANK_BASE_URL.*RERANK_MODEL/s);
   });
 });
 

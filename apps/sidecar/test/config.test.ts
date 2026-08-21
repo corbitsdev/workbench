@@ -9,6 +9,14 @@ const VALID_ENV = {
   PATH: "/usr/local/bin:/usr/bin",
 };
 
+const DEFAULT_MANIFEST = [
+  {
+    provider: "ollama",
+    specifier: "@corbits/ollama-adapter",
+    export: "createOllamaAdapter",
+  },
+];
+
 test("parses a complete environment into config", () => {
   const config = readSidecarConfig(VALID_ENV);
   expect(config).toEqual({
@@ -20,9 +28,60 @@ test("parses a complete environment into config", () => {
     home: undefined,
     tmpdir: undefined,
     toolRegistries: undefined,
+    adapterManifest: DEFAULT_MANIFEST,
     consumedRetentionMs: undefined,
     readyTimeoutMs: undefined,
   });
+});
+
+test("an unset SIDECAR_ADAPTER_MANIFEST defaults to the shipped Ollama adapter, not an empty registry", () => {
+  const config = readSidecarConfig(VALID_ENV);
+  expect(config.adapterManifest).toEqual(DEFAULT_MANIFEST);
+});
+
+test("an operator-set adapter manifest fully replaces the default rather than merging with it", () => {
+  const manifest = [
+    {
+      provider: "anthropic",
+      specifier: "@acme/custom-anthropic-adapter",
+      export: "createCustomAdapter",
+    },
+  ];
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    SIDECAR_ADAPTER_MANIFEST: JSON.stringify(manifest),
+  });
+  expect(config.adapterManifest).toEqual(manifest);
+});
+
+test("carries a valid adapter manifest through as its parsed form", () => {
+  const manifest = [
+    {
+      provider: "ollama",
+      specifier: "@corbits/ollama-adapter",
+      export: "createOllamaAdapter",
+    },
+  ];
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    SIDECAR_ADAPTER_MANIFEST: JSON.stringify(manifest),
+  });
+  expect(config.adapterManifest).toEqual(manifest);
+});
+
+test("a malformed adapter manifest fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({ ...VALID_ENV, SIDECAR_ADAPTER_MANIFEST: "{not json" }),
+  ).toThrow(/SIDECAR_ADAPTER_MANIFEST/);
+});
+
+test("an adapter manifest entry missing a required field fails boot", () => {
+  expect(() =>
+    readSidecarConfig({
+      ...VALID_ENV,
+      SIDECAR_ADAPTER_MANIFEST: JSON.stringify([{ provider: "ollama" }]),
+    }),
+  ).toThrow(/SIDECAR_ADAPTER_MANIFEST/);
 });
 
 test("carries operator overrides for consumedRetentionMs/readyTimeoutMs through when present", () => {

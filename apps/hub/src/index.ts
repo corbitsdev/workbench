@@ -38,6 +38,7 @@ import { credentialAad } from "@intx/types";
 import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
+  createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
   type AppEnv,
@@ -238,6 +239,7 @@ import {
   type WsHandle,
 } from "@intx/hub-sessions";
 import { createLaunchCaches } from "./launch-caches";
+import { hubErrorHandler } from "./hub-error-handler";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
@@ -319,6 +321,10 @@ import {
   createWorkflowMemoryStore,
 } from "@corbits/memory-hub";
 import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
+import {
+  createWorkflowAuthorRegistry,
+  createWorkflowAuthorRoutes,
+} from "@corbits/agent-workflow-authoring";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
 import {
@@ -326,6 +332,7 @@ import {
   createDrizzleCredentialExpirySweepStore,
 } from "./credential-expiry-sweep";
 
+import { type } from "arktype";
 import { betterAuth } from "better-auth";
 import { createBenchSessionMinter } from "./bench-session";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
@@ -375,6 +382,7 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const SIGN_IN_EMAIL_PATH = "/sign-in/email";
+const SignInEmailBody = type({ email: "string" });
 // Chat residents carry a real hub-driven idle-reap again (reversing
 // CL-5477's removal): the sidecar's own park/wake scheme it was meant to
 // replace has itself been retired in favor of a simpler reap-and-relaunch
@@ -655,8 +663,23 @@ export async function createHub(config: HubConfig) {
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ) => Promise<void>;
   } = {};
+  // CL-6499 (native multi-step routines): materializes a mail-triggered
+  // run's authorization grants from its deploy-approved snapshot, so
+  // ANY plain mail delivered to a workflow deployment's address — not
+  // only the dedicated `POST /workflows/:id/mail` HTTP trigger route,
+  // which stages this itself inline — starts a properly authorized
+  // run. Without this wired, `sidecarRouter.routeMail` alone would
+  // deliver the mail but leave the run's `runs/<runId>/grants.json`
+  // unwritten, and its `onRunStart` barrier would never resolve. This
+  // is the one piece of plumbing `apps/hub/src/native-workflow-routine-launch.ts`
+  // relies on to trigger a native multi-step deployment safely.
+  const mailTriggeredRunGrants = createMailTriggeredRunGrantsMaterializer({
+    db,
+    grantStore: createGrantStore(db),
+  });
   const lookups = {
     ...baseLookups,
+    materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ): Promise<void> {
@@ -1013,26 +1036,29 @@ export async function createHub(config: HubConfig) {
           }
         }
       }
-      // Account-keyed sign-in brute-force protection (CL-6494) — see
-      // `sign-in-rate-limit.ts` for why this fully replaces better-auth's
-      // own IP-keyed enforcement for this path instead of running beside
-      // it.
+      // Account-keyed sign-in brute-force protection (CL-6494, hardened
+      // CL-6521) — see `sign-in-rate-limit.ts` for why this fully replaces
+      // better-auth's own IP-keyed enforcement for this path instead of
+      // running beside it, and for why only failures ever consume budget.
       if (c.req.method === "POST" && c.req.path.endsWith(SIGN_IN_EMAIL_PATH)) {
-        let email = "";
+        let email: string | undefined;
         try {
           const body: unknown = await c.req.raw.clone().json();
-          if (
-            body !== null &&
-            typeof body === "object" &&
-            "email" in body &&
-            typeof (body as { email: unknown }).email === "string"
-          ) {
-            email = (body as { email: string }).email;
-          }
+          const parsed = SignInEmailBody(body);
+          if (!(parsed instanceof type.errors)) email = parsed.email;
         } catch {
-          email = "";
+          email = undefined;
         }
-        const decision = signInAttemptLimiter.consume(email);
+        // A body that doesn't parse to `{ email: string }` never touches
+        // the limiter at all — there is no account to key a bucket on,
+        // and better-auth will reject the request on its own terms.
+        const response = await auth.handler(c.req.raw);
+        if (email === undefined) return response;
+        if (response.status >= 200 && response.status < 300) {
+          signInAttemptLimiter.recordSuccess(email);
+          return response;
+        }
+        const decision = signInAttemptLimiter.recordFailure(email);
         if (!decision.allowed) {
           return c.json(
             {
@@ -1040,9 +1066,10 @@ export async function createHub(config: HubConfig) {
               message: `Too many sign-in attempts. Try again in ${decision.retryAfterSeconds} second${decision.retryAfterSeconds === 1 ? "" : "s"}.`,
             },
             429,
-            { "X-Retry-After": decision.retryAfterSeconds.toString() },
+            { "Retry-After": decision.retryAfterSeconds.toString() },
           );
         }
+        return response;
       }
       return auth.handler(c.req.raw);
     },
@@ -1053,6 +1080,12 @@ export async function createHub(config: HubConfig) {
     assetService,
     repoStore: agentRepoStore.repoStore,
     maxTarballBytes: MAX_TARBALL_BYTES,
+    // Lets a workflow-run agent deploy through the same
+    // `/workflows/deployments` route a human session uses (see
+    // `@intx/hub-api`'s `workflow-run-deploy-auth` middleware) -- the same
+    // sidecar-bearer + run-address credential every other workflow-run write
+    // surface below already authenticates with.
+    workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
     sidecarWsHandler: upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {
@@ -1068,6 +1101,11 @@ export async function createHub(config: HubConfig) {
       };
     }),
   });
+
+  // Without this, any exception escaping a route (extension or platform
+  // alike) falls through to Hono's built-in handler: a bare 500 with
+  // nothing logged. See `hubErrorHandler`'s own doc comment.
+  app.onError(hubErrorHandler(getLogger(["hub", "error"])));
 
   // Extension routes mount under the tenant prefix, inside the
   // platform's native tenant middleware, so every extension handler
@@ -1747,6 +1785,28 @@ export async function createHub(config: HubConfig) {
     createWorkflowSkillRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
       registry: skills.registry,
+    }),
+  );
+  // Agent-authored workflows (CL-agent-authored-workflows): an agent
+  // publishes a workflow codebase as a native `kind:"workflow"` asset
+  // through this workflow-run-authenticated surface, then deploys the
+  // resulting asset through the tenant-session `/workflows/deployments`
+  // route this hub already mounts (unchanged, below) — this package never
+  // reimplements that deploy gating. Unlike `/api/workflow-skills` above,
+  // every write here also runs a real `chatGrantStore` authorization
+  // check (`asset:*`/create, `asset:<id>`/write) before reaching
+  // `RepoStore`, because authoring is publishing executable code, not a
+  // markdown skill.
+  app.route(
+    "/api/workflow-workflow-authoring",
+    createWorkflowAuthorRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: createWorkflowAuthorRegistry({
+        db,
+        assetService,
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
     }),
   );
   // The guided-capability-add fail-closed check reuses the exact same
@@ -3545,7 +3605,10 @@ export async function createHub(config: HubConfig) {
       "/api/workflow-artifacts",
       createWorkflowArtifactRoutes({
         authenticator: createWorkflowRunAuthenticator({ db }),
-        store: createWorkflowArtifactDbStore(artifactsHandle.db),
+        store: createWorkflowArtifactDbStore(
+          artifactsHandle.db,
+          artifactsHandle.contentStore,
+        ),
       }),
     );
   } else {

@@ -26,6 +26,7 @@ const {
   readDefinitionProjection,
   resolveNewestProjectedDefinition,
   DefinitionProjectionMissingError,
+  MultiStepFoldUnsupportedError,
 } = await import("../src/definition");
 
 function inertProjection(overrides: Partial<Record<string, unknown>> = {}) {
@@ -133,6 +134,25 @@ describe("readFoldedBody", () => {
     ).toThrow(/not single-step/);
   });
 
+  // The fold's launch target (`@corbits/agent-runtime`'s
+  // `AgentRuntimeConfig`) renders exactly one `systemPrompt` into one
+  // mailbox-triggered turn -- it has no notion of step order, so a
+  // multi-step definition must raise the named, guidance-bearing error
+  // rather than a bare `Error` an HTTP boundary can't distinguish from
+  // any other bug (see `hubErrorHandler` in `apps/hub`).
+  test("raises the named MultiStepFoldUnsupportedError on a multi-step projection", () => {
+    try {
+      readFoldedBody(inertProjection({ stepOrder: ["host", "second"] }), []);
+      throw new Error("expected readFoldedBody to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(MultiStepFoldUnsupportedError);
+      const typed = err as InstanceType<typeof MultiStepFoldUnsupportedError>;
+      expect(typed.definitionId).toBe("wfd_1");
+      expect(typed.stepCount).toBe(2);
+      expect(typed.guidance.length).toBeGreaterThan(0);
+    }
+  });
+
   test("fails loud when the named step is not a step primitive", () => {
     expect(() =>
       readFoldedBody(
@@ -218,6 +238,12 @@ describe("readLiveFoldedBody", () => {
     expect(() => readLiveFoldedBody({ not: "a definition" })).toThrow(
       /live definition is malformed/,
     );
+  });
+
+  test("raises the named MultiStepFoldUnsupportedError on a multi-step live definition", () => {
+    expect(() =>
+      readLiveFoldedBody(liveDefinition({ stepOrder: ["host", "second"] })),
+    ).toThrow(MultiStepFoldUnsupportedError);
   });
 });
 

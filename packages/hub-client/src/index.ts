@@ -35,10 +35,12 @@ export type {
 export {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
+  SEED_GRANTS,
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
   ensureCredential,
   ensureProvider,
+  reconcileSeedGrants,
   seedCatalog,
   seedTenant,
   isLiveDeploymentStatus,

@@ -18,7 +18,7 @@ export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
     "collateral-generation",
   ],
   linear: ["morning-brief", "collateral-generation"],
-  exa: ["last-30-days-research", "exa-topic-watch"],
+  exa: ["last-30-days-research", "exa-topic-watch", "diligence-brief"],
   attio: ["attio-task-agent"],
   scrapecreators: ["reddit-opportunity-scanner"],
   github: ["code-review"],

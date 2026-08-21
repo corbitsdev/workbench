@@ -59,13 +59,48 @@ behind human approval.
   suites stay under a package `test/` tree (or top-level e2e).
 - Deployment is explicit via Pulumi (Railway); CI runs tests only — nothing
   auto-deploys on main.
+- A fresh worktree has no `node_modules` symlinks until `bun install` runs.
+  To check whether a workspace package exists, look in `packages/`, not
+  `node_modules` — an absent `node_modules` entry means "not installed
+  yet," not "doesn't exist."
+
+## Conventions a check enforces
+
+Prefer these over remembering the rule; each is backed by a `bun run
+check:*` script, so a violation fails CI rather than waiting for review.
+
+- Report every caught error through `reportError` from
+  `@corbits/error-sink` — never a bare `catch {}`, never a toast alone. It
+  attaches operation/tenant/room/agent context and a `refId` a person can
+  quote to support, and redacts secrets before anything reaches a log
+  sink.
+- A package's `browser-safe` subpath (e.g. `@corbits/routines/client`) may
+  never import a server-only dependency (`postgres`, `drizzle-orm`,
+  `hono`, any `@intx/*`) — `check:browser-safe-subpaths` walks the real
+  import graph from each declared entry point.
+- A `{ name, version }` tool-package pin literal must match the pinned
+  package's own `package.json` version — `check:tool-package-pins` catches
+  the mismatch, but **not** a package's `src/` changing without a version
+  bump (needs a merge-base diff, not a working-tree snapshot — currently
+  unchecked; ticket before relying on it).
+- Every package needs a `LICENSE` file (canonical LGPL-2.1-or-later text,
+  copy from any existing `packages/*/LICENSE`) — `check:licenses` fails
+  without one.
+- `tsconfig.base.json` sets `exactOptionalPropertyTypes: true`: an absent
+  key and an explicit `{ foo: undefined }` are different types. Assigning
+  `undefined` to an optional field the compiler expects omitted is a
+  recurring CI break — omit the key instead.
 
 ## Docs map
 
 - [README.md](README.md) — quickstart and repo layout
+- [PRODUCT.md](PRODUCT.md) — what Workbench is and why
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system structure
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) — concrete stack
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow and CLA
 - [LICENSE.md](LICENSE.md) — GPLv2 with AI Exception
 - [SECURITY.md](SECURITY.md) — how to report vulnerabilities
 - [VENDORED.md](VENDORED.md) — the vendoring ledger and its rules
-- [DESIGN.md](DESIGN.md) — the UI design system canon
+- [DESIGN.md](DESIGN.md) — the UI design system canon; a screen that
+  disagrees with it is wrong until a review changes the doc
 - `docs/` — architecture and design docs, added as the system grows

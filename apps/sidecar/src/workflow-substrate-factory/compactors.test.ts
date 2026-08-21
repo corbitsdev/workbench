@@ -7,8 +7,11 @@ import { expect, test } from "bun:test";
 import type { ConversationTurn, StrategyContext } from "@intx/types/runtime";
 
 import {
+  SUMMARIZE_BUDGETED_TURNS_NAME,
   SUMMARIZE_OLDER_TURNS_NAME,
+  createBudgetedContextCompactor,
   createSummarizeOlderTurnsCompactor,
+  estimateTurnsChars,
 } from "./compactors";
 
 function textTurn(
@@ -117,4 +120,122 @@ test("carries the compactor's name and a version for the manifest record", () =>
   const compactor = createSummarizeOlderTurnsCompactor({ keep: 12 });
   expect(compactor.name).toBe(SUMMARIZE_OLDER_TURNS_NAME);
   expect(compactor.version).toBe("1");
+});
+
+test("createBudgetedContextCompactor: a short conversation under budget is untouched", async () => {
+  const turns = Array.from({ length: 6 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `turn ${i}`, i),
+  );
+  const compactor = createBudgetedContextCompactor(
+    estimateTurnsChars(turns) + 1_000,
+  );
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  expect(result.output).toEqual(turns);
+  expect(result.record.reason).toBe("within-budget");
+});
+
+test("createBudgetedContextCompactor: a conversation past the budget is folded rather than resent whole", async () => {
+  const turns = Array.from({ length: 40 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `message number ${i}`, i),
+  );
+  // A budget generous enough for only the newest handful of turns.
+  const budgetChars = estimateTurnsChars(turns.slice(-6));
+  const compactor = createBudgetedContextCompactor(budgetChars);
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  expect(result.record.reason).toBe("folded-older-turns");
+  expect(result.record.strategy).toBe(SUMMARIZE_BUDGETED_TURNS_NAME);
+  expect(result.output.length).toBeLessThan(turns.length);
+  const [summary] = result.output;
+  expect(summary?.role).toBe("system");
+});
+
+test("estimateTurnsChars measures a tool_result's real content size, not a placeholder", () => {
+  const largeResult = "x".repeat(20_000);
+  const turn: ConversationTurn = {
+    role: "user",
+    timestamp: 0,
+    content: [
+      {
+        type: "tool_result",
+        callId: "call_1",
+        content: [{ type: "text", text: largeResult }],
+      },
+    ],
+  };
+
+  // The old estimator measured `excerptBlock`'s placeholder
+  // (`[tool_result call_1]`, ~20 chars) instead of the real payload.
+  expect(estimateTurnsChars([turn])).toBeGreaterThanOrEqual(20_000);
+});
+
+test("estimateTurnsChars measures a tool_call's real argument size, not a placeholder", () => {
+  const largeArgs = { query: "y".repeat(15_000) };
+  const turn: ConversationTurn = {
+    role: "assistant",
+    timestamp: 0,
+    content: [
+      { type: "tool_call", id: "c1", name: "search", arguments: largeArgs },
+    ],
+  };
+
+  expect(estimateTurnsChars([turn])).toBeGreaterThanOrEqual(15_000);
+});
+
+test("estimateTurnsChars: ten turns each carrying a 20,000-char tool_result sum to their real size, not 10 placeholders", () => {
+  const turns: ConversationTurn[] = Array.from({ length: 10 }, (_, i) => ({
+    role: "user" as const,
+    timestamp: i,
+    content: [
+      {
+        type: "tool_result" as const,
+        callId: `call_${String(i)}`,
+        content: [{ type: "text" as const, text: "z".repeat(20_000) }],
+      },
+    ],
+  }));
+
+  const chars = estimateTurnsChars(turns);
+
+  // A hard limit sized for real conversations (e.g. 32,000 chars) must
+  // see this as over budget -- the old placeholder-based estimator
+  // returned ~160 chars for the same turns and let it through silently.
+  expect(chars).toBeGreaterThan(32_000);
+  expect(chars).toBeGreaterThanOrEqual(200_000);
+});
+
+test("createBudgetedContextCompactor: folded output never exceeds the budget it folded to", async () => {
+  // Realistic scale (comparable to `resolveContextBudgetChars` at a
+  // small `numCtx`, e.g. ~4900 chars for numCtx=2048): a budget bigger
+  // than `maxSummaryChars` (4000) but not by much, the exact regime
+  // where an uncounted summary previously pushed the total over.
+  const turns = Array.from({ length: 40 }, (_, i) =>
+    textTurn(
+      i % 2 === 0 ? "user" : "assistant",
+      `message number ${i} `.repeat(25),
+      i,
+    ),
+  );
+  const budgetChars = 6_000;
+  const compactor = createBudgetedContextCompactor(budgetChars);
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  expect(result.record.reason).toBe("folded-older-turns");
+  expect(estimateTurnsChars(result.output)).toBeLessThanOrEqual(budgetChars);
+});
+
+test("createBudgetedContextCompactor: always keeps a minimum verbatim tail even under a near-zero budget", async () => {
+  const turns = Array.from({ length: 10 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `message ${i}`, i),
+  );
+  const compactor = createBudgetedContextCompactor(1);
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  // 1 synthetic summary turn + at least the floor of kept turns.
+  expect(result.output.length).toBeGreaterThanOrEqual(2);
 });

@@ -24,6 +24,7 @@ import {
   FlowArrow,
   FolderOpen,
   Lightning,
+  ListBullets,
   Robot,
   SlidersHorizontal,
   SquaresFour,
@@ -33,6 +34,7 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import {
   AGENTS_PATH_PREFIX,
+  EVALS_PATH_PREFIX,
   PLUGINS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
@@ -52,6 +54,9 @@ import {
 
 const HomeRoute = lazy(async () => ({
   default: (await import("./pages/home-page")).HomeRoute,
+}));
+const MissionControlRoute = lazy(async () => ({
+  default: (await import("./pages/mission-control-page")).MissionControlRoute,
 }));
 const NewWorkbenchPickerRoute = lazy(async () => ({
   default: (await import("./pages/new-workbench-picker"))
@@ -74,6 +79,9 @@ const SkillsRoute = lazy(async () => ({
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
+}));
+const EvalsRoute = lazy(async () => ({
+  default: (await import("./pages/evals-page")).EvalsRoute,
 }));
 const PluginsRoute = lazy(async () => ({
   default: (await import("./pages/plugins-page")).PluginsRoute,
@@ -110,6 +118,14 @@ export const ONBOARDING_PATH = "/onboarding";
 
 /** Settings path — sidebar footer + settings page. */
 export const SETTINGS_PATH = "/settings";
+
+/** Mission Control — the bench's dashboard (CL-6488/CL-6489). Pinned above
+ * the sidebar's footer rail as its own row (see DESIGN.md's Shell &
+ * Navigation section), reachable by direct URL and the command palette
+ * like everything else, but deliberately off `NAV_ROUTES`: it isn't a
+ * roster to browse, it's the one destination the sidebar always pins in
+ * view, the same way Plugins stays reachable without joining that list. */
+export const MISSION_CONTROL_PATH = "/mission-control";
 
 /** The template picker (CL-6342) — every "+ New workbench" affordance
  * (sidebar, command palette) hops here first; picking a row is what
@@ -215,6 +231,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/library" ||
     routePath === "/files" ||
     routePath === "/insights" ||
+    routePath === EVALS_PATH_PREFIX ||
     routePath === "/agents" ||
     routePath === "/skills" ||
     routePath === "/settings/agents" ||
@@ -246,6 +263,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     icon: <ChatCircle />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
+  },
+  {
+    path: MISSION_CONTROL_PATH,
+    label: "Mission Control",
+    icon: <SquaresFour />,
+    render: (_path: string, navigate: (to: string) => void) => (
+      <MissionControlRoute navigate={navigate} />
+    ),
   },
   {
     path: NEW_WORKBENCH_PATH,
@@ -369,6 +394,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
+    path: EVALS_PATH_PREFIX,
+    label: "Evals",
+    icon: <ListBullets />,
+    render: (path: string) => <EvalsRoute path={path} />,
+  },
+  {
     path: PLUGIN_DETAIL_PATH,
     label: "Plugin",
     icon: <SquaresFour />,
@@ -419,5 +450,6 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/skills",
   "/agents",
   "/insights",
+  EVALS_PATH_PREFIX,
   SETTINGS_PATH,
 ]);

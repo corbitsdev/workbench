@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/gotenberg-render",
+  "private": true,
+  "description": "Renders a Markdown Library artifact to PDF via an operator-configured Gotenberg server (CL-6499): config resolution that treats an unset endpoint as an absent capability, a thin Gotenberg HTTP client, and an orchestration step that reports failures through @corbits/error-sink",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/error-sink": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

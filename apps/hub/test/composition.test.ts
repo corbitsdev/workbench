@@ -184,6 +184,7 @@ describeIfDb(
       hub: Awaited<ReturnType<typeof createHub>>,
       email: string,
       forgedIp: string,
+      password = "wrong-password",
     ) {
       return hub.app.request("/api/auth/sign-in/email", {
         method: "POST",
@@ -191,8 +192,21 @@ describeIfDb(
           "content-type": "application/json",
           "x-forwarded-for": forgedIp,
         },
-        body: JSON.stringify({ email, password: "wrong-password" }),
+        body: JSON.stringify({ email, password }),
       });
+    }
+
+    async function signUpUser(
+      hub: Awaited<ReturnType<typeof createHub>>,
+      email: string,
+      password: string,
+    ) {
+      const signUp = await hub.app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password, name: "Test User" }),
+      });
+      expect(signUp.status).toBe(200);
     }
 
     test("a forged, rotating IP header per attempt cannot exceed the per-account budget", async () => {
@@ -254,9 +268,78 @@ describeIfDb(
       );
 
       expect(throttled.status).toBe(429);
-      expect(throttled.headers.get("x-retry-after")).not.toBeNull();
+      expect(throttled.headers.get("retry-after")).not.toBeNull();
       const body = (await throttled.json()) as { message: string };
       expect(body.message).toMatch(/\S/);
+    });
+
+    test("an attacker exhausting the account's budget with wrong guesses never blocks the owner's correct password, and a successful sign-in resets the budget", async () => {
+      const hub = await createHub({
+        ...config,
+        signupMode: "open",
+        signInRateLimit: { windowSeconds: 60, max: 2 },
+      });
+      closers.push(hub.close);
+
+      const email = `owner-${crypto.randomUUID()}@example.com`;
+      const password = "correct-horse-battery";
+      await signUpUser(hub, email, password);
+
+      // Two wrong guesses exhaust the account's failure budget — exactly
+      // what an attacker who doesn't know the password sends.
+      await signInAttempt(hub, email, "203.0.113.70");
+      await signInAttempt(hub, email, "203.0.113.71");
+      const thirdWrongGuess = await signInAttempt(hub, email, "203.0.113.72");
+      expect(thirdWrongGuess.status).toBe(429);
+
+      // The account owner's correct password still succeeds: only
+      // failures ever consume budget, so a correct attempt is never
+      // gated on how many wrong guesses came before it.
+      const genuineSignIn = await signInAttempt(
+        hub,
+        email,
+        "203.0.113.73",
+        password,
+      );
+      expect(genuineSignIn.status).toBe(200);
+
+      // That success cleared the bucket: the very next wrong guess is a
+      // fresh first failure, not an immediate 429 carried over from the
+      // attacker's earlier attempts.
+      const freshFailureAfterSuccess = await signInAttempt(
+        hub,
+        email,
+        "203.0.113.74",
+      );
+      expect(freshFailureAfterSuccess.status).not.toBe(429);
+    });
+
+    test("malformed sign-in bodies are never rate-limited together and never block a real account", async () => {
+      const hub = await createHub({
+        ...config,
+        signInRateLimit: { windowSeconds: 60, max: 1 },
+      });
+      closers.push(hub.close);
+
+      // No `email` field at all: doesn't parse, so it never touches the
+      // limiter — unrelated malformed requests must not share one bucket.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const malformed = await hub.app.request("/api/auth/sign-in/email", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: "whatever" }),
+        });
+        expect(malformed.status).not.toBe(429);
+      }
+
+      // A real account's first attempt is untouched by the malformed
+      // traffic above.
+      const fresh = await signInAttempt(
+        hub,
+        "never-touched@example.com",
+        "203.0.113.90",
+      );
+      expect(fresh.status).not.toBe(429);
     });
   },
 );

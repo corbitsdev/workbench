@@ -6,6 +6,7 @@ import { defaultDirectorFactory } from "@intx/agent";
 import { createCapabilities, createDefaultDirector } from "@intx/inference";
 import type {
   AssistantTurn,
+  ConversationTurn,
   ReactorAction,
   ReactorDirector,
   ReactorInboundEvent,
@@ -14,11 +15,11 @@ import type {
 } from "@intx/types/runtime";
 
 import {
+  CONTEXT_OVERFLOW_MESSAGE,
   EMPTY_TURN_REPLY,
   WORKBENCH_DIRECTOR_ID,
   createWorkbenchDirector,
   createWorkbenchDirectorRegistry,
-  workbenchDirectorFactory,
 } from "./workbench-director";
 
 const caps = createCapabilities();
@@ -66,6 +67,40 @@ function toolTurn(name: string): AssistantTurn {
     model: "test",
     timestamp: 0,
   };
+}
+
+function twoCallToolTurn(): AssistantTurn {
+  return {
+    role: "assistant",
+    content: [
+      { type: "tool_call", id: "call_1", name: "look_up", arguments: {} },
+      { type: "tool_call", id: "call_2", name: "look_up", arguments: {} },
+    ],
+    model: "test",
+    timestamp: 0,
+  };
+}
+
+function conversationTurn(text: string): ConversationTurn {
+  return { role: "user", content: [{ type: "text", text }], timestamp: 0 };
+}
+
+function toolResultTurn(payload: string, callId: string): ConversationTurn {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        callId,
+        content: [{ type: "text", text: payload }],
+      },
+    ],
+    timestamp: 0,
+  };
+}
+
+function stateWithTurns(turns: ConversationTurn[]): ReactorState {
+  return { ...state(), turns };
 }
 
 function inferenceDone(turn: AssistantTurn): ReactorInboundEvent {
@@ -191,8 +226,150 @@ test("a new message.received resets the empty-turn retry budget", async () => {
   expect(typesOf(actions)).toEqual(["checkpoint", "infer"]);
 });
 
+test("context budget: a short conversation under budget is untouched (infers normally)", async () => {
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 10_000,
+      hardLimitChars: 20_000,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  const shortState = stateWithTurns([conversationTurn("hi")]);
+
+  const actions = await director.decide(
+    { type: "message.received", message: { id: "m1", content: "hi" } as never },
+    shortState,
+    caps,
+  );
+
+  expect(typesOf(actions)).toEqual(["infer"]);
+});
+
+test("context budget: tool-heavy history past the hard limit is caught even though every turn's text excerpt is short", async () => {
+  // The reviewer's exact repro: 10 turns each carrying a 20,000-char
+  // tool_result. Measured by placeholder length this was ~160 chars
+  // total (invisible to a 32,000-char hard limit); measured by real
+  // payload size it is 200,000 chars, well past it.
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 16_000,
+      hardLimitChars: 32_000,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  const bigState = stateWithTurns(
+    Array.from({ length: 10 }, (_, i) =>
+      toolResultTurn("x".repeat(20_000), `call_${String(i)}`),
+    ),
+  );
+
+  const actions = await director.decide(
+    { type: "message.received", message: { id: "m1", content: "hi" } as never },
+    bigState,
+    caps,
+  );
+
+  expect(typesOf(actions)).toEqual(["checkpoint", "reply"]);
+  expect(replyOf(actions)).toBe(CONTEXT_OVERFLOW_MESSAGE);
+});
+
+test("context budget: history past the hard limit replies with the honest overflow message instead of inferring", async () => {
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 10,
+      hardLimitChars: 20,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  const bigState = stateWithTurns([
+    conversationTurn("a".repeat(1_000)),
+    conversationTurn("more content that pushes well past the hard limit"),
+  ]);
+
+  const actions = await director.decide(
+    { type: "message.received", message: { id: "m1", content: "hi" } as never },
+    bigState,
+    caps,
+  );
+
+  expect(typesOf(actions)).toEqual(["checkpoint", "reply"]);
+  expect(replyOf(actions)).toBe(CONTEXT_OVERFLOW_MESSAGE);
+});
+
+test("context budget: a non-final tool.done in a multi-call batch compacts instead of no-op when over budget", async () => {
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 10,
+      hardLimitChars: 1_000_000,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  await director.decide(inferenceDone(twoCallToolTurn()), state(), caps);
+
+  const bigState = stateWithTurns([
+    conversationTurn("a".repeat(200)),
+    conversationTurn("b".repeat(200)),
+  ]);
+  const firstDone: ReactorInboundEvent = {
+    type: "tool.done",
+    result: { callId: "call_1", content: "ok", isError: false },
+  };
+
+  const actions = await director.decide(firstDone, bigState, caps);
+
+  expect(typesOf(actions)).toEqual(["checkpoint", "compact"]);
+});
+
+test("context budget: a non-final tool.done under budget stays a no-op (regression)", async () => {
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 1_000_000,
+      hardLimitChars: 2_000_000,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  await director.decide(inferenceDone(twoCallToolTurn()), state(), caps);
+
+  const smallState = stateWithTurns([conversationTurn("hi")]);
+  const firstDone: ReactorInboundEvent = {
+    type: "tool.done",
+    result: { callId: "call_1", content: "ok", isError: false },
+  };
+
+  const actions = await director.decide(firstDone, smallState, caps);
+
+  expect(typesOf(actions)).toEqual([]);
+});
+
+test("context budget: with no contextBudget configured, behavior is unchanged", async () => {
+  const director = createWorkbenchDirector("you are a test agent");
+  const bigState = stateWithTurns([conversationTurn("a".repeat(100_000))]);
+
+  const actions = await director.decide(
+    { type: "message.received", message: { id: "m1", content: "hi" } as never },
+    bigState,
+    caps,
+  );
+
+  expect(typesOf(actions)).toEqual(["infer"]);
+});
+
 test("the factory is namespaced and is the sidecar registry default", () => {
-  expect(workbenchDirectorFactory.id).toBe(WORKBENCH_DIRECTOR_ID);
   const registry = createWorkbenchDirectorRegistry();
   expect(registry.defaultFactory().id).toBe(WORKBENCH_DIRECTOR_ID);
   expect(

@@ -17,6 +17,7 @@ import { type } from "arktype";
 import {
   DEFAULT_WORKFLOWS,
   parseAs,
+  reconcileSeedGrants,
   seedTenant,
   type ApiCall,
   type ModelSource,
@@ -24,6 +25,7 @@ import {
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@workbench/hub-client";
+import { reportError } from "@corbits/error-sink";
 import {
   checkSignupGate,
   resolvePendingInviteOnLogin,
@@ -266,6 +268,30 @@ export async function provisionPersonalTenantIfNeeded(
     // depending on a seed credential — recovery of a half-provisioned
     // bench must not hang forever just because no seed model is configured.
     if (own === undefined) return { kind: "existing-member" };
+
+    // SEED_GRANTS can grow after this tenant was first seeded (CL-6465
+    // added eval-run:*/read well after some tenants were provisioned) —
+    // reconcile it on every sign-in so a grant added later still reaches
+    // an already-seeded tenant, not only a brand-new one. Cheap and
+    // idempotent (`reconcileSeedGrants` skips any grant that already
+    // exists), and runs regardless of `fullySeeded` below, which tracks
+    // workflow deployments only and must never gate grant reconciliation.
+    // A failure here must never block sign-in for an otherwise healthy
+    // tenant, so it is reported rather than thrown.
+    try {
+      await reconcileSeedGrants(
+        args.api,
+        args.cookies,
+        own.tenantId,
+        own.principalId,
+        args.log,
+      );
+    } catch (cause) {
+      reportError(cause, {
+        operation: "reconcile_seed_grants",
+        tenantId: own.tenantId,
+      });
+    }
 
     const fullySeeded = await isFullySeeded(
       args.api,

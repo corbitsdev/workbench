@@ -10,9 +10,13 @@ import {
   BarChart,
   PageShell,
   RichEmptyState,
+  RUN_STATUS_DOT_TONE,
+  RUN_STATUS_LABEL,
+  RUN_STATUS_TONE,
   Skeleton,
   StatGrid,
   StatGridItem,
+  StatusDot,
   Table,
   TableBody,
   TableCell,
@@ -22,6 +26,8 @@ import {
   TimeSeriesChart,
   TokenMosaic,
   TraceWaterfall,
+  type BadgeTone,
+  type RunStatus,
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartBar } from "@corbits/icons";
@@ -46,6 +52,7 @@ import {
   type OverallUsage,
 } from "@corbits/insights/client";
 
+import type { WorkflowRunStatus } from "@intx/types";
 import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
 import {
   workbenchesQueryKey,
@@ -124,30 +131,23 @@ export function formatWhen(iso: string): string {
   });
 }
 
-export function statusTone(
-  status: string,
-): "success" | "warning" | "danger" | "neutral" | "info" {
-  switch (status) {
-    case "completed":
-    case "succeeded":
-    case "ok":
-    case "deployed":
-      return "success";
-    case "running":
-    case "pending":
-    case "awaiting":
-    case "updating":
-      return "info";
-    case "failed":
-    case "errored":
-    case "error":
-      return "danger";
-    case "cancelled":
-    case "stopped":
-      return "warning";
-    default:
-      return "neutral";
-  }
+/** A platform workflow run's status (`WorkflowRunStatus`) doesn't spell
+ * react-ui's `RunStatus` vocabulary the same way — normalize onto it here
+ * so the badge tone always comes from `RUN_STATUS_TONE`, the one source
+ * every run-status tone reads from, rather than a second opinion invented
+ * on this page. */
+const WORKFLOW_RUN_STATUS_ALIAS: Readonly<
+  Record<WorkflowRunStatus, RunStatus>
+> = {
+  deployed: "completed",
+  running: "running",
+  updating: "running",
+  error: "failed",
+  stopped: "stopped",
+};
+
+export function statusTone(status: WorkflowRunStatus): BadgeTone {
+  return RUN_STATUS_TONE[WORKFLOW_RUN_STATUS_ALIAS[status]];
 }
 
 function tileValue(value: string | number | null, loading: boolean): string {
@@ -249,12 +249,18 @@ function InsightsStat({
   detail,
   onClick,
   loading,
+  sparklineValues,
+  sparklineLabel,
 }: {
   readonly label: string;
   readonly value: string;
   readonly detail?: string;
   readonly onClick?: () => void;
   readonly loading?: boolean;
+  /** Real per-day series backing this tile's trend line — omitted (not
+   * padded/estimated) whenever the underlying window lacks one. */
+  readonly sparklineValues?: readonly number[];
+  readonly sparklineLabel?: string;
 }) {
   if (loading === true) {
     return (
@@ -272,6 +278,8 @@ function InsightsStat({
       value={value}
       {...(detail === undefined ? {} : { sub: detail })}
       {...(onClick === undefined ? {} : { onClick })}
+      {...(sparklineValues === undefined ? {} : { sparklineValues })}
+      {...(sparklineLabel === undefined ? {} : { sparklineLabel })}
     />
   );
 }
@@ -398,6 +406,99 @@ function tokensOverTimeSeries(days: readonly DayActivity[]) {
       (day) => day.byModel.find((m) => m.model === model)?.tokens ?? 0,
     ),
   }));
+}
+
+/** Real per-day run counts, bucketed onto `activityDays`' own UTC day keys —
+ * the Runs KPI's sparkline shape, built from the same run records the
+ * recent-runs/history tables render rather than a synthesized series. */
+export function runsPerDay(
+  runs: readonly InsightsRun[],
+  days: readonly DayActivity[],
+): number[] {
+  const counts = new Map<string, number>(days.map((d) => [d.day, 0]));
+  for (const run of runs) {
+    const day = run.createdAt.slice(0, 10);
+    const current = counts.get(day);
+    if (current !== undefined) counts.set(day, current + 1);
+  }
+  return days.map((d) => counts.get(d.day) ?? 0);
+}
+
+/** Real per-day cost, summed across models — the Cost KPI's sparkline
+ * shape. Callers only use this when every model's rate is known for the
+ * window (`modelsWithMissingRates` is empty); otherwise a day with an
+ * unpriced model would silently read as cheaper than it was. */
+export function costPerDay(days: readonly DayActivity[]): number[] {
+  return days.map((d) =>
+    d.byModel.reduce((sum, m) => sum + (m.costUsd ?? 0), 0),
+  );
+}
+
+/** Wall-clock time since a run started, in the same "2m 12s" form as the
+ * rest of this page (`durationLabel`) — never a fabricated live counter. */
+export function elapsedLabel(createdAt: string, now: number): string {
+  const startMs = Date.parse(createdAt);
+  if (Number.isNaN(startMs)) return "—";
+  return durationLabel(Math.max(0, now - startMs));
+}
+
+/**
+ * "Running now" — a horizontally scrolling strip of the runs actually in
+ * flight this instant (`status: running | updating`), not a fabricated
+ * live-metrics ticker. Renders nothing when nothing is running, same
+ * convention as react-ui's `WorkflowDock`: an empty "nothing running" strip
+ * is a permanent fixture reporting the normal case, not an empty state worth
+ * showing.
+ */
+function RunningNowStrip({
+  runs,
+  onOpenRun,
+}: {
+  readonly runs: readonly InsightsRun[];
+  readonly onOpenRun: (id: string) => void;
+}) {
+  const running = runs.filter(
+    (r) => r.status === "running" || r.status === "updating",
+  );
+  if (running.length === 0) return null;
+  const now = Date.now();
+
+  return (
+    <section className="insights-running-now" aria-label="Running now">
+      <div className="insights-running-now-head">
+        <h3>Running now</h3>
+        <span className="insights-running-now-count">
+          {formatCount(running.length)} in progress
+        </span>
+      </div>
+      <ul className="insights-running-now-strip">
+        {running.map((run) => (
+          <li key={run.id}>
+            <button
+              type="button"
+              className="insights-flight"
+              onClick={() => onOpenRun(run.id)}
+            >
+              <StatusDot
+                label={RUN_STATUS_LABEL.running}
+                tone={RUN_STATUS_DOT_TONE.running}
+                live
+              />
+              <span className="insights-flight-name">
+                {runDisplayName(run)}
+              </span>
+              <span className="insights-flight-elapsed">
+                {elapsedLabel(run.createdAt, now)}
+              </span>
+              <Badge tone={RUN_STATUS_TONE.running}>
+                {RUN_STATUS_LABEL.running}
+              </Badge>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function ModelCostTable({
@@ -565,6 +666,14 @@ function InsightsLanding({
   const tokensSeries = tokensOverTimeSeries(activityDays);
   const noUsageInWindow = !loading && usage.turns === 0;
 
+  // KPI sparklines: only ever a real per-day series already backing this
+  // window's other charts, never estimated to fill a gap.
+  const turnsSparkline = activityDays.map((d) => d.turns);
+  const tokensSparkline = activityDays.map((d) => d.tokens);
+  const runsSparkline = runsPerDay(purposeRuns, activityDays);
+  const costSparkline =
+    missingRates.length === 0 ? costPerDay(activityDays) : undefined;
+
   return (
     <div className="insights-layout">
       <StatGrid columns={4}>
@@ -573,12 +682,18 @@ function InsightsLanding({
           value={tileValue(formatUsd(usage.costUsd), loading)}
           detail={`${formatCount(usage.tokens.total)} tokens`}
           loading={loading}
+          sparklineLabel="Cost per day this week"
+          {...(costSparkline === undefined
+            ? {}
+            : { sparklineValues: costSparkline })}
         />
         <InsightsStat
           label="Activity"
           value={tileValue(formatCount(usage.turns), loading)}
           detail="turns"
           loading={loading}
+          sparklineValues={turnsSparkline}
+          sparklineLabel="Turns per day this week"
         />
         <InsightsStat
           label="Tokens in / out"
@@ -588,6 +703,8 @@ function InsightsLanding({
           )}
           detail="input / output"
           loading={loading}
+          sparklineValues={tokensSparkline}
+          sparklineLabel="Tokens per day this week"
         />
         <InsightsStat
           label="Runs"
@@ -595,6 +712,8 @@ function InsightsLanding({
           detail={runsDetailLabel(stats)}
           onClick={onOpenRuns}
           loading={loading}
+          sparklineValues={runsSparkline}
+          sparklineLabel="Runs per day this week"
         />
         {workbenches !== null ? (
           <InsightsStat
@@ -616,6 +735,8 @@ function InsightsLanding({
           />
         ) : null}
       </StatGrid>
+
+      <RunningNowStrip runs={purposeRuns} onOpenRun={onOpenRun} />
 
       {latency !== null && latency.total.samples > 0 ? (
         <StatGrid columns={4}>

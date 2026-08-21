@@ -32,10 +32,23 @@ let sendFoldedMailWithRetryResult: unknown = {
   mail: { id: "m_1", createdAt: new Date().toISOString() },
 };
 
+// "single" mirrors every shipped routine today (readFoldedBody
+// succeeds); "multi" simulates a code-sourced, multi-step definition —
+// readFoldedBody always throws for one of these, by construction (see
+// packages/folded-runs/src/definition.ts) — so the launcher's own
+// try/catch routing is what these tests exercise, not a fake that
+// picks its own outcome.
+let foldedBodyMode: "single" | "multi" = "single";
+
 mock.module("@corbits/folded-runs", () => ({
   ...actualFoldedRuns,
   readDefinitionProjection: async () => ({ __fake: true }),
-  readFoldedBody: () => FOLDED_BODY,
+  readFoldedBody: (_projection: unknown, _grantRequirements: unknown) => {
+    if (foldedBodyMode === "multi") {
+      throw new actualFoldedRuns.MultiStepFoldUnsupportedError("wfd_1", 3);
+    }
+    return FOLDED_BODY;
+  },
   launchFoldedRun: async (...args: unknown[]) => {
     launchFoldedRunCalls.push(args);
     return { instancePrincipalId: "prn_run1", sessionId: "ses_run1" };
@@ -49,7 +62,21 @@ mock.module("@corbits/folded-runs", () => ({
   }),
 }));
 
+// The multi-step native trigger is exercised for real here (not
+// mocked): `mock.module` replaces a module process-wide, and this
+// file's own `./native-workflow-routine-launch.test.ts` sibling needs
+// the genuine export it would otherwise shadow for the whole bun test
+// process. A fake db/sidecarRouter (below) is enough to drive it.
 const { createHubRoutineLauncher } = await import("./routine-launcher");
+
+const NATIVE_ANCHOR_ROW = {
+  id: "wfr_native1",
+  address: "wfr_native1@acme.workbench.test",
+  status: "deployed" as const,
+};
+
+let routeMailCalls: unknown[] = [];
+let routeMailShouldDeliver = true;
 
 const DEFINITION_ROW = {
   id: "wfd_1",
@@ -80,6 +107,18 @@ function createFakeDb(
           "tenant" in overrides ? overrides.tenant : TENANT_ROW,
       },
     },
+    // Drives `triggerNativeWorkflowRoutineRun`'s real anchor-run
+    // lookup for the multi-step tests below — see that module's own
+    // test file for coverage of its query shape in isolation.
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () => [NATIVE_ANCHOR_ROW],
+          }),
+        }),
+      }),
+    }),
   };
 }
 
@@ -114,7 +153,12 @@ function buildLauncher(overrides: { definition?: unknown } = {}) {
     db: createFakeDb(overrides) as never,
     sessionService: {} as never,
     assetService: {} as never,
-    sidecarRouter: {} as never,
+    sidecarRouter: {
+      routeMail: (address: string, base64: string, messageId: string) => {
+        routeMailCalls.push({ address, base64, messageId });
+        return routeMailShouldDeliver;
+      },
+    } as never,
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
@@ -421,5 +465,107 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
       launcher.launchRoutineRun(baseInput({ agent: "wfd_summarizer" })),
     ).rejects.toThrow(/prompt/);
     expect(dispatchTaskCalls).toHaveLength(0);
+  });
+});
+
+describe("createHubRoutineLauncher — multi-step native routing", () => {
+  test("routes a multi-step definition onto the native trigger instead of the folded launcher", async () => {
+    foldedBodyMode = "multi";
+    launchFoldedRunCalls = [];
+    routeMailCalls = [];
+    routeMailShouldDeliver = true;
+
+    const result = await buildLauncher().launchRoutineRun(
+      baseInput({ topic: "AI coding agents" }),
+    );
+
+    expect(result).toEqual({ runId: NATIVE_ANCHOR_ROW.id });
+    // The folded launcher never runs for a multi-step definition — no
+    // coexisting path silently folds it to one step.
+    expect(launchFoldedRunCalls).toHaveLength(0);
+    expect(routeMailCalls).toHaveLength(1);
+
+    const [call] = routeMailCalls as [
+      { address: string; base64: string; messageId: string },
+    ];
+    expect(call.address).toBe(NATIVE_ANCHOR_ROW.address);
+    expect(Buffer.from(call.base64, "base64").toString("utf-8")).toContain(
+      "AI coding agents",
+    );
+
+    foldedBodyMode = "single";
+  });
+
+  test("still fires the native trigger when the routine stored no input, rather than launching nothing", async () => {
+    foldedBodyMode = "multi";
+    routeMailCalls = [];
+    routeMailShouldDeliver = true;
+
+    const result = await buildLauncher().launchRoutineRun(baseInput({}));
+
+    expect(result).toEqual({ runId: NATIVE_ANCHOR_ROW.id });
+    expect(routeMailCalls).toHaveLength(1);
+
+    foldedBodyMode = "single";
+  });
+
+  test("joins the delivery workbench using the native deployment's own address", async () => {
+    foldedBodyMode = "multi";
+    routeMailShouldDeliver = true;
+    joinDeliveryWorkbenchCalls = [];
+
+    await buildLauncher().launchRoutineRun({
+      ...baseInput({}),
+      deliveryWorkbenchId: "chn_delivery",
+      routineName: "Native pipeline",
+    });
+
+    expect(joinDeliveryWorkbenchCalls).toEqual([
+      {
+        tenantId: "ten_1",
+        workbenchId: "chn_delivery",
+        principalId: "usr_1",
+        address: NATIVE_ANCHOR_ROW.address,
+        handle: "native-pipeline",
+      },
+    ]);
+
+    foldedBodyMode = "single";
+  });
+
+  test("throws when the multi-step definition has no live native deployment, rather than launching nothing", async () => {
+    foldedBodyMode = "multi";
+
+    const { NativeWorkflowDeploymentMissingError } =
+      await import("./native-workflow-routine-launch");
+    const launcher = createHubRoutineLauncher({
+      joinDeliveryWorkbench: async () => {},
+      db: {
+        query: {
+          workflowDefinition: { findFirst: async () => DEFINITION_ROW },
+          tenant: { findFirst: async () => TENANT_ROW },
+        },
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({ limit: async () => [] }),
+            }),
+          }),
+        }),
+      } as never,
+      sessionService: {} as never,
+      assetService: {} as never,
+      sidecarRouter: { routeMail: () => true } as never,
+      toolGrantsForPins: () => [],
+      eventCollectors: {} as never,
+      cryptoProviderCache: { get: async () => ({}) as never },
+      dispatchTask: dispatchTask as never,
+    });
+
+    await expect(launcher.launchRoutineRun(baseInput({}))).rejects.toThrow(
+      NativeWorkflowDeploymentMissingError,
+    );
+
+    foldedBodyMode = "single";
   });
 });

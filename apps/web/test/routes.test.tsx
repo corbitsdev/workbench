@@ -138,12 +138,14 @@ const FOOTER_LABELS: Record<string, string> = {
   "/agents": "Agents",
   "/plugins": "Plugins",
   "/insights": "Insights",
+  "/evals": "Evals",
 };
 
 describe("route table", () => {
   test("covers every screen the app can route to", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
+      "/mission-control",
       "/new",
       "/w",
       "/inbox",
@@ -158,19 +160,21 @@ describe("route table", () => {
       "/skills",
       "/settings/skills",
       "/insights",
+      "/evals",
       "/plugins/:slug",
       "/plugins",
       "/settings",
     ]);
   });
 
-  test("palette pages are Routines, Files, Skills, Agents, Insights, Settings", () => {
+  test("palette pages are Routines, Files, Skills, Agents, Insights, Evals, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
       "Insights",
+      "Evals",
       "Settings",
     ]);
   });

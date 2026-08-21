@@ -49,6 +49,7 @@ import {
 } from "@corbits/recurring-task-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
+import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
 import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
@@ -365,7 +366,7 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
 // planted at the wildcard scope the authz glob matcher resolves
 // against any concrete deployment (the deployment id is minted at
 // deploy time, so a concrete resource cannot be planted up front).
-const SEED_GRANTS: readonly { resource: string; action: string }[] = [
+export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "create" },
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
@@ -388,6 +389,23 @@ const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // CL-6465: the eval-run read routes (`GET .../eval-runs/runs`,
   // `GET .../eval-runs/runs/:runId`) gate on this resource.
   { resource: "eval-run:*", action: "read" },
+  // Agent-authored workflows (`@corbits/agent-workflow-authoring`'s
+  // `author`/`republish` routes): a seeded principal was never granted
+  // "create"/"write" on "asset:*" before, because no workflow-run write
+  // surface checked it — every prior workflow-run write route (skills,
+  // capabilities, agent-directory) either wrote as the "hub" RepoStore
+  // principal with no grant-store check, or was scoped narrowly enough
+  // to skip one (see those packages' own CL-6085-referencing doc
+  // comments). Authoring a workflow asset is deploying executable code,
+  // not a markdown skill, so this is the one write surface that adds a
+  // real per-write grant check rather than following that precedent.
+  // These are the SAME resource/verb the human-session asset routes
+  // already gate on (`requireGrant("asset:*", "create")` and the
+  // tarball routes' `requireGrant(idResource("asset", "assetId"),
+  // "write")`) — extended to workflow-run principals, not a new grant
+  // vocabulary.
+  { resource: "asset:*", action: "create" },
+  { resource: "asset:*", action: "write" },
 ];
 
 // The grants table has no unique constraint and the create route is a
@@ -445,6 +463,34 @@ async function plantGrant(
     );
   }
   log(`granted ${args.resource}/${args.action}`);
+}
+
+/**
+ * Reconciles one tenant's grants to exactly `SEED_GRANTS`: every declared
+ * grant present, nothing beyond it. This is the one path that plants
+ * `SEED_GRANTS` — `seedTenant`'s full seed and `provisionPersonalTenantIfNeeded`'s
+ * already-seeded short-circuit both call this instead of each owning
+ * their own pass, so a grant added to `SEED_GRANTS` after a tenant was
+ * first seeded reaches that tenant the next time either path runs, not
+ * only on a brand-new signup. `plantGrant` is itself idempotent (it
+ * checks for an equivalent grant before creating one), so reconciling
+ * twice never duplicates a row.
+ */
+export async function reconcileSeedGrants(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  principalId: string,
+  log: (line: string) => void,
+): Promise<void> {
+  for (const grant of SEED_GRANTS) {
+    await plantGrant(
+      api,
+      cookies,
+      { tenantId, principalId, resource: grant.resource, action: grant.action },
+      log,
+    );
+  }
 }
 
 async function plantDefaultSkills(
@@ -797,19 +843,13 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
   }
 
-  for (const grant of SEED_GRANTS) {
-    await plantGrant(
-      api,
-      cookies,
-      {
-        tenantId: tenant.tenantId,
-        principalId: tenant.principalId,
-        resource: grant.resource,
-        action: grant.action,
-      },
-      log,
-    );
-  }
+  await reconcileSeedGrants(
+    api,
+    cookies,
+    tenant.tenantId,
+    tenant.principalId,
+    log,
+  );
 
   await plantDefaultSkills(api, cookies, tenant.tenantId, log);
 
@@ -1264,18 +1304,21 @@ async function ensureCatalogOffering(
     providerId: string;
     priority: number;
     capabilities: readonly Capability[];
+    quirks?: Record<string, unknown>;
   },
   log: (line: string) => void,
 ): Promise<void> {
+  const body: Record<string, unknown> = {
+    modelId: args.modelId,
+    providerId: args.providerId,
+    priority: args.priority,
+    capabilities: args.capabilities,
+  };
+  if (args.quirks !== undefined) body["quirks"] = args.quirks;
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/catalog/offerings`,
-    {
-      modelId: args.modelId,
-      providerId: args.providerId,
-      priority: args.priority,
-      capabilities: args.capabilities,
-    },
+    body,
     cookies,
   );
   if (created.status === 201) {
@@ -1553,6 +1596,18 @@ export async function seedCatalog(
       canonicalName: model.canonicalName,
       capabilities,
     });
+    // Ollama's own openai-compatible endpoint otherwise falls back to a
+    // small built-in context window and `@intx/inference`'s built-in
+    // adapter falls back to 4096 output tokens -- both silent, both
+    // truncating a real conversation. `quirksForDeployment` resolves this
+    // model's real ceiling (or `undefined` for a provider outside this
+    // mechanism's scope, or a model this catalog has not vetted a ceiling
+    // for), landing on the offering's `quirks` column exactly the way
+    // `capabilitiesForDeployment` lands on its `capabilities` column.
+    const quirks = quirksForDeployment({
+      providerName: seed.provider.name,
+      canonicalName: model.canonicalName,
+    });
     await ensureCatalogOffering(
       api,
       cookies,
@@ -1562,6 +1617,7 @@ export async function seedCatalog(
         providerId: catalogProviderId,
         priority: offeringPriority,
         capabilities,
+        ...(quirks !== undefined ? { quirks } : {}),
       },
       log,
     );

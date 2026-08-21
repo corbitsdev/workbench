@@ -7,7 +7,28 @@
 
 import { type } from "arktype";
 
+import { AdapterManifest } from "@intx/inference";
+
 import { parseToolRegistries } from "./tool-materialization";
+
+/**
+ * The shipped default manifest: registers `@corbits/ollama-adapter`'s
+ * `createOllamaAdapter` for the `"ollama"` provider key so a seeded
+ * Ollama deployment's `quirks.numCtx` (see `@corbits/hub-client`'s
+ * seed and `./workflow-substrate-factory/context-budget`) actually
+ * reaches Ollama's `options.num_ctx` instead of silently falling back
+ * to the built-in adapter's defaults. An operator who sets
+ * `SIDECAR_ADAPTER_MANIFEST` explicitly gets exactly what they wrote --
+ * this default never merges with an operator value, only replaces the
+ * unset case.
+ */
+const DEFAULT_ADAPTER_MANIFEST: AdapterManifest = [
+  {
+    provider: "ollama",
+    specifier: "@corbits/ollama-adapter",
+    export: "createOllamaAdapter",
+  },
+];
 
 const WsURL = type("string").narrow((url, ctx) => {
   if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
@@ -38,6 +59,16 @@ const SidecarEnv = type({
   // workflow-process child's spawn env so per-step tool
   // materialization resolves the exact registries the operator pinned.
   "SIDECAR_TOOL_REGISTRIES?": "string",
+  // Optional JSON-encoded custom inference adapter manifest override
+  // (`AdapterManifestEntry[]`, `[{"provider","specifier","export"}]`).
+  // Unset resolves to `DEFAULT_ADAPTER_MANIFEST` (the shipped Ollama
+  // adapter); set, it replaces that default entirely rather than merging
+  // with it. Validated here so a malformed manifest kills the boot with
+  // the variable named, and threaded (as its parsed form) into both this
+  // process's own adapter registry and every workflow-process child's
+  // `SIDECAR_ADAPTER_MANIFEST` substrate-config entry, so a child
+  // resolves the exact adapters this boot edge resolved.
+  "SIDECAR_ADAPTER_MANIFEST?": "string",
   // Operator overrides for two workflow-supervisor timing bindings,
   // threaded verbatim to every deployment's supervisor
   // (`createSidecarWorkflowSupervisor`'s `consumedRetentionMs` /
@@ -84,6 +115,13 @@ export type SidecarConfig = {
    */
   readonly toolRegistries: string | undefined;
   /**
+   * The inference adapter manifest, already validated against
+   * {@link AdapterManifest}: {@link DEFAULT_ADAPTER_MANIFEST} unless the
+   * operator set `SIDECAR_ADAPTER_MANIFEST`, in which case it is exactly
+   * (and only) what the operator wrote.
+   */
+  readonly adapterManifest: AdapterManifest;
+  /**
    * Consumed-dedup retention horizon (ms), forwarded verbatim to every
    * deployment's supervisor. `undefined` means the operator did not
    * override it; the supervisor applies `DEFAULT_CONSUMED_RETENTION_MS`
@@ -97,6 +135,36 @@ export type SidecarConfig = {
    */
   readonly readyTimeoutMs: number | undefined;
 };
+
+/**
+ * Parse the optional `SIDECAR_ADAPTER_MANIFEST` env value into a validated
+ * {@link AdapterManifest}. Unset resolves to {@link DEFAULT_ADAPTER_MANIFEST}
+ * (the shipped Ollama adapter, so `num_ctx` reaches Ollama without operator
+ * configuration); a malformed value dies at boot with the variable named,
+ * rather than surfacing as a deep-stack `loadAdapterRegistry` import
+ * failure.
+ */
+export function parseSidecarAdapterManifest(
+  raw: string | undefined,
+): AdapterManifest {
+  if (raw === undefined) return DEFAULT_ADAPTER_MANIFEST;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(
+      "invalid sidecar environment: SIDECAR_ADAPTER_MANIFEST is not valid JSON",
+      { cause },
+    );
+  }
+  const validated = AdapterManifest(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `invalid sidecar environment: SIDECAR_ADAPTER_MANIFEST failed validation: ${validated.summary}`,
+    );
+  }
+  return validated;
+}
 
 /**
  * Parse the sidecar's configuration out of an environment map. Throws at
@@ -126,6 +194,9 @@ export function readSidecarConfig(
     home: parsed.HOME,
     tmpdir: parsed.TMPDIR,
     toolRegistries: parsed.SIDECAR_TOOL_REGISTRIES,
+    adapterManifest: parseSidecarAdapterManifest(
+      parsed.SIDECAR_ADAPTER_MANIFEST,
+    ),
     consumedRetentionMs: parsePositiveMsEnv(
       parsed.CONSUMED_RETENTION_MS,
       "CONSUMED_RETENTION_MS",

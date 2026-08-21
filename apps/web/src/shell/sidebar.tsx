@@ -1,8 +1,9 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// utility icon row (Files, Skills, Agents, Plugins, Insights — CL-6353/
-// CL-6354/CL-6355 moved the first three out of Settings and onto this row),
-// and below it the account row —
+// utility icon row (Files, Skills, Agents, Plugins, Insights, Evals —
+// CL-6353/CL-6354/CL-6355 moved the first three out of Settings and onto
+// this row; CL-6465 added Evals alongside Insights), and below it the
+// account row —
 // avatar + name, the whole row is the trigger for a menu that pops upward
 // with weekly usage, settings, feedback, and log out. Always present;
 // there is no collapse affordance and no second nav column. Approvals
@@ -37,12 +38,14 @@ import {
   ChatCircleDots,
   FolderOpen,
   Lightning,
+  ListBullets,
   Plus,
   PuzzlePiece,
   Robot,
   SignOut,
   Repeat,
   SlidersHorizontal,
+  SquaresFour,
 } from "@corbits/icons";
 import { useMemo } from "react";
 
@@ -56,7 +59,12 @@ import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
-import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
+import {
+  matchesRoute,
+  MISSION_CONTROL_PATH,
+  NEW_WORKBENCH_PATH,
+  SETTINGS_PATH,
+} from "../routes";
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
@@ -142,12 +150,33 @@ export function Sidebar({
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
+      {/* Mission Control is pinned above the footer rail as its own row
+          (DESIGN.md's Shell & Navigation) — not a 7th button inside the
+          rail below, which stays Routines/Files/Skills/Agents/Plugins/
+          Insights exactly as it was. */}
+      <div className="shell-sidebar-mission-control">
+        <button
+          type="button"
+          className="shell-sidebar-mission-control-row"
+          data-active={
+            matchesRoute(MISSION_CONTROL_PATH, path) ? "true" : undefined
+          }
+          aria-current={
+            matchesRoute(MISSION_CONTROL_PATH, path) ? "page" : undefined
+          }
+          onClick={() => onNavigate(MISSION_CONTROL_PATH)}
+        >
+          <SquaresFour />
+          <span>Mission Control</span>
+        </button>
+      </div>
+
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, Insights,
-            then the account row anchors everything else (weekly usage,
-            Settings, Log out) in its pop-up menu — a single footer, never
-            two stacked rows. Routines (CL-6362) is global-only here — no
-            per-workbench routines chrome remains. */}
+            Evals, then the account row anchors everything else (weekly
+            usage, Settings, Log out) in its pop-up menu — a single footer,
+            never two stacked rows. Routines (CL-6362) is global-only here —
+            no per-workbench routines chrome remains. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"
@@ -207,6 +236,16 @@ export function Sidebar({
         >
           <ChartBar />
           <span>Insights</span>
+        </button>
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/evals", path) ? "true" : undefined}
+          aria-current={matchesRoute("/evals", path) ? "page" : undefined}
+          onClick={() => onNavigate("/evals")}
+        >
+          <ListBullets />
+          <span>Evals</span>
         </button>
 
         <Menu>

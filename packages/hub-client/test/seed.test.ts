@@ -4,6 +4,8 @@ import {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   NOOP_MODEL_SOURCE,
+  reconcileSeedGrants,
+  SEED_GRANTS,
   seedCatalog,
   seedTenant,
   SETUP_AGENT_ASSET_NAME,
@@ -12,6 +14,7 @@ import {
 } from "../src/seed";
 import { DEFAULT_SKILLS } from "../src/default-skills";
 import { CATALOG_SEEDS } from "../src/catalog-seed-data";
+import { OLLAMA_MODEL_DEFAULTS } from "@corbits/inference-catalog/ollama-context-defaults";
 import {
   assetRow,
   collector,
@@ -93,6 +96,111 @@ function baseRoutes(method: string, path: string) {
     return { status: 200, data: { items: [] } };
   return undefined;
 }
+
+describe("reconcileSeedGrants", () => {
+  function grantsAPI(
+    granted: () => readonly { resource: string; action: string }[],
+    posted: { resource: string; action: string }[],
+  ) {
+    return fakeAPI((method, path, body) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        const resource = new URL(`http://x${path}`).searchParams.get(
+          "resource",
+        );
+        const rows = granted()
+          .filter((g) => g.resource === resource)
+          .map((g, index) => ({
+            id: `grt_${resource}_${index}`,
+            tenantId: TENANT_ID,
+            principalId: PRINCIPAL_ID,
+            resource: g.resource,
+            action: g.action,
+            effect: "allow" as const,
+            origin: "creator" as const,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }));
+        return { status: 200, data: { data: rows, nextCursor: null } };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const grant = body as { resource: string; action: string };
+        posted.push({ resource: grant.resource, action: grant.action });
+        return { status: 201, data: {} };
+      }
+      return undefined;
+    });
+  }
+
+  test("plants exactly the declared SEED_GRANTS set, nothing more", async () => {
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => [], posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual(
+      SEED_GRANTS.map((g) => ({ resource: g.resource, action: g.action })),
+    );
+  });
+
+  test("backfills a grant added to SEED_GRANTS after the tenant was already seeded", async () => {
+    // Simulates a tenant provisioned before eval-run:*/read existed
+    // (CL-6465): every grant except that one is already planted.
+    const alreadyGranted = SEED_GRANTS.filter(
+      (g) => !(g.resource === "eval-run:*" && g.action === "read"),
+    );
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => alreadyGranted, posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual([{ resource: "eval-run:*", action: "read" }]);
+  });
+
+  test("reconciling twice never duplicates a grant", async () => {
+    const granted: { resource: string; action: string }[] = [];
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => granted, posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+    granted.push(...posted);
+    expect(posted).toHaveLength(SEED_GRANTS.length);
+
+    posted.length = 0;
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual([]);
+  });
+});
 
 describe("seedTenant", () => {
   test("fresh run pushes, deploys, and confirms the echo workflow", async () => {
@@ -1277,6 +1385,92 @@ describe("seedCatalog", () => {
     expect(output).toContain("created catalog provider anthropic");
     expect(output).toContain("created catalog offering");
     expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
+  });
+
+  test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
+    const { log } = collector();
+    const offeringBodies: Record<string, unknown>[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "ollama") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "ollama-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const modelBody = body as { canonicalName: string };
+        return {
+          status: 201,
+          data: catalogModelRow(
+            `mdl_${modelBody.canonicalName}`,
+            modelBody.canonicalName,
+          ),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "ollama",
+            "cre_1",
+            "openai-compatible",
+            "http://127.0.0.1:1/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        offeringBodies.push(body as Record<string, unknown>);
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "ollama",
+      // Port 1 on loopback refuses instantly (nothing ever listens there),
+      // so this test's own `fetchOllamaModelCatalog` probe fails fast and
+      // falls back to the curated static seed, instead of depending on
+      // whatever Ollama instance (if any) happens to be reachable from
+      // wherever this test runs.
+      baseURLOverride: "http://127.0.0.1:1/v1",
+      apiKey: "unused",
+      log,
+    });
+
+    const gptOssDefault = OLLAMA_MODEL_DEFAULTS["gpt-oss:20b"];
+    const qwenDefault = OLLAMA_MODEL_DEFAULTS["qwen3.8:27b"];
+    if (gptOssDefault === undefined || qwenDefault === undefined) {
+      throw new Error("missing fixture entry");
+    }
+    const gptOss = offeringBodies.find(
+      (entry) => entry["modelId"] === "mdl_gpt-oss:20b",
+    );
+    expect(gptOss?.["quirks"]).toEqual({ default: gptOssDefault });
+    const qwen = offeringBodies.find(
+      (entry) => entry["modelId"] === "mdl_qwen3.8:27b",
+    );
+    expect(qwen?.["quirks"]).toEqual({ default: qwenDefault });
+    expect(
+      (qwen?.["quirks"] as { default: { numCtx: number } })?.default?.numCtx,
+    ).toBeLessThan(
+      (gptOss?.["quirks"] as { default: { numCtx: number } })?.default?.numCtx,
+    );
   });
 
   test("an oauth_token credential with metadata posts both through to the credential row", async () => {
