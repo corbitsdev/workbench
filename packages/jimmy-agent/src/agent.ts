@@ -11,7 +11,6 @@
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 
 import {
-  GIF_SEARCH_TOOL,
   JIMMY_AGENT_ID,
   JIMMY_SYSTEM_PROMPT,
   JIMMY_TOOL_PACKAGE_PINS,
