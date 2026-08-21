@@ -389,6 +389,23 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // CL-6465: the eval-run read routes (`GET .../eval-runs/runs`,
   // `GET .../eval-runs/runs/:runId`) gate on this resource.
   { resource: "eval-run:*", action: "read" },
+  // Agent-authored workflows (`@corbits/agent-workflow-authoring`'s
+  // `author`/`republish` routes): a seeded principal was never granted
+  // "create"/"write" on "asset:*" before, because no workflow-run write
+  // surface checked it — every prior workflow-run write route (skills,
+  // capabilities, agent-directory) either wrote as the "hub" RepoStore
+  // principal with no grant-store check, or was scoped narrowly enough
+  // to skip one (see those packages' own CL-6085-referencing doc
+  // comments). Authoring a workflow asset is deploying executable code,
+  // not a markdown skill, so this is the one write surface that adds a
+  // real per-write grant check rather than following that precedent.
+  // These are the SAME resource/verb the human-session asset routes
+  // already gate on (`requireGrant("asset:*", "create")` and the
+  // tarball routes' `requireGrant(idResource("asset", "assetId"),
+  // "write")`) — extended to workflow-run principals, not a new grant
+  // vocabulary.
+  { resource: "asset:*", action: "create" },
+  { resource: "asset:*", action: "write" },
 ];
 
 // The grants table has no unique constraint and the create route is a
