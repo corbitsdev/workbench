@@ -20,6 +20,12 @@
 //
 // The editor buffer is newline-normalized, so the bytes reviewed in the
 // diff are exactly the bytes the confirm writes.
+//
+// The page reads top to bottom in one column: who can see the skill, the
+// description agents match on, the body, then the full version history.
+// History was a narrow side column, which left every one of its columns
+// truncated to a stub — a table nobody can read teaches nothing, so it now
+// gets the full width it needs.
 
 import {
   Badge,
@@ -51,6 +57,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
+import { skillVersionSavedBy } from "../skill-version-author";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
   listSkillVersions,
@@ -323,10 +330,12 @@ export function SkillDetailPage({
             Updated {formatRelativeTime(skill.updatedAtIso, now)}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={shared ? "info" : "neutral"}>
-            {shared ? "Shared" : "Private"}
-          </Badge>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            {shared
+              ? "Everyone in this workbench can use this skill."
+              : "Only you can use this skill."}
+          </p>
           <Button
             type="button"
             size="sm"
@@ -342,7 +351,7 @@ export function SkillDetailPage({
               )
             }
           >
-            {shared ? "Make private" : "Share with workbench"}
+            {shared ? "Make it private to me" : "Share with everyone here"}
           </Button>
         </div>
       </header>
@@ -353,175 +362,172 @@ export function SkillDetailPage({
         </p>
       )}
 
-      <div className="flex flex-col gap-6 min-[1100px]:flex-row">
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <Section
-            title="Description"
-            description="Agents see this line — and only this line — when deciding whether to load the skill."
-          >
-            <Textarea
-              id="skill-description"
-              aria-label="Description"
-              value={draft.description}
-              rows={2}
-              onChange={(event) =>
-                setDraft({
-                  description: normalizeNewlines(event.target.value),
-                  body: draft.body,
-                })
-              }
-            />
-          </Section>
+      <div className="flex min-w-0 flex-col gap-6">
+        <Section
+          title="Description"
+          description="Agents see this line — and only this line — when deciding whether to load the skill."
+        >
+          <Textarea
+            id="skill-description"
+            aria-label="Description"
+            value={draft.description}
+            rows={2}
+            onChange={(event) =>
+              setDraft({
+                description: normalizeNewlines(event.target.value),
+                body: draft.body,
+              })
+            }
+          />
+        </Section>
 
-          <Section
-            title="Skill body"
-            description="The instructions, tools, and guardrails this skill packages. Saving publishes a new version."
-          >
-            <Textarea
-              id="skill-body"
-              aria-label="Skill body"
-              className="min-h-80 font-mono text-xs leading-relaxed"
-              value={draft.body}
-              rows={20}
-              onChange={(event) =>
-                setDraft({
-                  description: draft.description,
-                  body: normalizeNewlines(event.target.value),
-                })
-              }
-            />
-            {edited ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Unsaved changes — “Save…” shows what will change before it is
-                published.
-              </p>
-            ) : null}
-          </Section>
+        <Section
+          title="Skill body"
+          description="The instructions, tools, and guardrails this skill packages. Saving publishes a new version."
+        >
+          <Textarea
+            id="skill-body"
+            aria-label="Skill body"
+            className="min-h-80 font-mono text-xs leading-relaxed"
+            value={draft.body}
+            rows={20}
+            onChange={(event) =>
+              setDraft({
+                description: draft.description,
+                body: normalizeNewlines(event.target.value),
+              })
+            }
+          />
+          {edited ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Unsaved changes — “Save…” shows what will change before it is
+              published.
+            </p>
+          ) : null}
+        </Section>
 
-          {comparison === null ? null : (
-            <Section
-              title={`${versionLabel(
-                versions.length,
-                versions.findIndex(
-                  (entry) => entry.commitSha === comparison.version.commitSha,
-                ),
-              )} compared with the current version`}
-              description={comparison.version.message}
-            >
-              <div className="flex flex-col gap-2">
-                <DiffHeading
-                  beforeLabel={formatRelativeTime(
-                    comparison.version.committedAtIso,
-                    now,
-                  )}
-                  afterLabel="Current"
-                />
-                <DiffView
-                  before={comparison.body}
-                  after={skill.body}
-                  unchangedNotice="This version is identical to the current one."
-                />
-              </div>
-            </Section>
+        {comparison === null ? null : (
+          <Section
+            title={`${versionLabel(
+              versions.length,
+              versions.findIndex(
+                (entry) => entry.commitSha === comparison.version.commitSha,
+              ),
+            )} compared with the current version`}
+            description={comparison.version.message}
+          >
+            <div className="flex flex-col gap-2">
+              <DiffHeading
+                beforeLabel={formatRelativeTime(
+                  comparison.version.committedAtIso,
+                  now,
+                )}
+                afterLabel="Current"
+              />
+              <DiffView
+                before={comparison.body}
+                after={skill.body}
+                unchangedNotice="This version is identical to the current one."
+              />
+            </div>
+          </Section>
+        )}
+
+        <Section
+          title="Pinned by"
+          description="Agents that currently declare this skill."
+        >
+          {pinnedBy.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No agents pin this skill yet.
+            </p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {pinnedBy.map((entry) => (
+                <li key={entry.definitionId}>
+                  <Badge tone="neutral">{entry.name}</Badge>
+                </li>
+              ))}
+            </ul>
           )}
+        </Section>
 
-          <Section
-            title="Pinned by"
-            description="Agents that currently declare this skill."
-          >
-            {pinnedBy.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No agents pin this skill yet.
-              </p>
-            ) : (
-              <ul className="flex flex-wrap gap-2">
-                {pinnedBy.map((entry) => (
-                  <li key={entry.definitionId}>
-                    <Badge tone="neutral">{entry.name}</Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-        </div>
-
-        <aside className="min-[1100px]:w-96 min-[1100px]:shrink-0">
-          <Section
-            title="Versions"
-            description="Every saved version of this skill. Compare shows what changed; restore makes an older version the current one."
-          >
-            {versions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No saved versions yet.
-              </p>
-            ) : (
-              <Table aria-label="Versions">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Note</TableHead>
-                    <TableHead>Who</TableHead>
-                    <TableHead>When</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+        <Section
+          title="Version history"
+          description="Every saved version of this skill. Compare shows what changed; restore makes an older version the current one."
+        >
+          {versions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No saved versions yet.
+            </p>
+          ) : (
+            <Table aria-label="Versions">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-40">Version</TableHead>
+                  <TableHead>What changed</TableHead>
+                  <TableHead className="w-40">Saved by</TableHead>
+                  <TableHead className="w-36">When</TableHead>
+                  <TableHead className="w-56 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {versions.map((version, index) => (
+                  <TableRow key={version.commitSha}>
+                    <TableCell
+                      className="text-sm whitespace-nowrap"
+                      title={version.commitSha}
+                    >
+                      {versionLabel(versions.length, index)}
+                      {version.current ? (
+                        <Badge tone="success" className="ml-2">
+                          current
+                        </Badge>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm">{version.message}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
+                      {skillVersionSavedBy(version.author)}
+                    </TableCell>
+                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
+                      {formatRelativeTime(version.committedAtIso, now)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={version.current || busy}
+                          onClick={() => void compare(version)}
+                        >
+                          <GitDiff /> Compare
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={version.current || busy}
+                          onClick={() =>
+                            void runSideAction(() =>
+                              restoreSkillVersion(
+                                registryTenantId,
+                                skill.name,
+                                version.commitSha,
+                              ),
+                            )
+                          }
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {versions.map((version, index) => (
-                    <TableRow key={version.commitSha}>
-                      <TableCell className="text-sm" title={version.commitSha}>
-                        {versionLabel(versions.length, index)}
-                        {version.current ? (
-                          <Badge tone="success" className="ml-2">
-                            current
-                          </Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {version.message}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {version.author}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatRelativeTime(version.committedAtIso, now)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={version.current || busy}
-                            onClick={() => void compare(version)}
-                          >
-                            <GitDiff /> Compare
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={version.current || busy}
-                            onClick={() =>
-                              void runSideAction(() =>
-                                restoreSkillVersion(
-                                  registryTenantId,
-                                  skill.name,
-                                  version.commitSha,
-                                ),
-                              )
-                            }
-                          >
-                            Restore
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </Section>
-        </aside>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Section>
       </div>
 
       <Dialog
