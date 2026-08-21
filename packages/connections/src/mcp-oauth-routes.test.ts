@@ -457,6 +457,24 @@ describe("MCP OAuth connect flow", () => {
     expect(response.status).toBe(404);
   });
 
+  test("a preset that doesn't connect with OAuth is refused at start, not mid-dance", async () => {
+    const hub = fakeHub();
+    const routes = createMcpOAuthRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      credentialCipher: createNoopCredentialCipher(),
+      apiCall: hub.apiCall,
+    });
+    const app = mountAs(routes);
+    // github-mcp is a token preset (GitHub offers no dynamic client
+    // registration) and exa is keyless — neither has an OAuth dance.
+    for (const slug of ["github-mcp", "exa"]) {
+      const response = await app.request(`/${slug}/start`);
+      expect(response.status).toBe(400);
+    }
+  });
+
   test("CL-6371: a provider that echoes state back completes the round trip", async () => {
     const as = startStubAuthorizationServer({ echoState: true });
     try {
