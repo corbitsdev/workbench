@@ -23,11 +23,15 @@ import { displayNameFromHandle } from "./timeline";
  * - `"awaiting"` — a turn is in flight and its visible reply hasn't posted
  *   yet: an empty `text` renders the typing pulse, streamed tokens render
  *   the growing bubble.
- * - `"replied"` — this turn's `connector.reply` has posted. A live folded
- *   run PARKS after the turn (no `message.run.ended`), and its post-reply
- *   tool-only rounds (memory writes) still emit `inference.start`/
- *   `inference.done` — none of which may re-open the pulse. Renders
- *   nothing; only a genuinely new turn leaves it.
+ * - `"replied"` — this turn's reply has rendered: either its `chat.agent`
+ *   stream carried `connector.reply`, or (CL-false-no-reply) its `chat.message`
+ *   posted straight from the reply pipeline while awaiting — whichever is
+ *   observed first, since a parked folded run's `chat.agent` stream may
+ *   never carry the former at all. A live folded run PARKS after the turn
+ *   (no `message.run.ended`), and its post-reply tool-only rounds (memory
+ *   writes) still emit `inference.start`/`inference.done` — none of which
+ *   may re-open the pulse. Renders nothing; only a genuinely new turn
+ *   leaves it.
  * - `null` — idle, no turn in flight.
  */
 export type StreamingReplyState =
@@ -98,6 +102,29 @@ function hasTurnFailedPart(data: unknown): boolean {
   );
 }
 
+/** Whether a `chat.message` payload is the awaiting turn's own reply
+ * actually rendering on screen — the one observable fact this module can
+ * trust over any `chat.agent` lifecycle event. `postReply`
+ * (`chat-orchestrator.ts`) posts this event from its own dispatch
+ * pipeline, entirely separate from the raw `connector.reply` event
+ * `chat.agent` otherwise carries — so a dropped, delayed, or (parked
+ * folded run) never-sent `connector.reply` can no longer leave the
+ * backstop armed once the reply the reader is looking at has already
+ * posted. Requires an agent sender (never the reader's own echoed
+ * message) and at least one part; `postUndeliveredNotice` also posts from
+ * the agent's own address with a real text part, so `hasTurnFailedPart`
+ * rules that one out explicitly rather than by accident. */
+function isRenderedAgentReply(data: unknown): boolean {
+  if (hasTurnFailedPart(data)) return false;
+  if (typeof data !== "object" || data === null) return false;
+  const sender = (data as Record<string, unknown>).sender;
+  if (typeof sender !== "object" || sender === null) return false;
+  const address = (sender as Record<string, unknown>).address;
+  if (typeof address !== "string" || !isAgentAddress(address)) return false;
+  const parts = (data as Record<string, unknown>).parts;
+  return Array.isArray(parts) && parts.length > 0;
+}
+
 /**
  * The streaming reply's whole state machine, pure and turn-phase aware
  * (CL-6432 reopened). `message.run.started` — the harness's per-dequeued-
@@ -107,12 +134,17 @@ function hasTurnFailedPart(data: unknown): boolean {
  * open the empty pulse (never wiping streamed tokens), each
  * `inference.text.delta` replaces the text with its cumulative snapshot,
  * and a textless `inference.done` keeps the pulse up across pre-reply tool
- * rounds. `connector.reply` — the event the orchestrator posts the
- * persisted reply off — moves the turn to `"replied"`: a live folded run
- * PARKS here (no `message.run.ended`), and its post-reply tool-only rounds
- * (memory writes) still emit `inference.start`/`inference.done`, so in
- * `"replied"` every inference/reactor event is inert rather than
- * re-opening the pulse. The hard-terminal events —
+ * rounds. Two independent signals move the turn to `"replied"`:
+ * `connector.reply` on the `chat.agent` stream (the event the orchestrator
+ * posts the persisted reply off), and — CL-false-no-reply, since a parked
+ * folded run's `chat.agent` stream may never carry that event at all — an
+ * awaiting turn's own `chat.message` actually rendering the agent's reply
+ * (see `isRenderedAgentReply`). Whichever arrives first wins; the other is
+ * then a no-op against an already-`"replied"` turn. A live folded run
+ * PARKS after replying (no `message.run.ended`), and its post-reply
+ * tool-only rounds (memory writes) still emit `inference.start`/
+ * `inference.done`, so in `"replied"` every inference/reactor event is
+ * inert rather than re-opening the pulse. The hard-terminal events —
  * `reactor.done`/`reactor.error`, `message.run.ended`, `inference.error`,
  * and a `chat.message` carrying `postUndeliveredNotice`'s `turnFailed`
  * part (see `hasTurnFailedPart`, the one failure path with no `chat.agent`
@@ -124,7 +156,15 @@ export function nextStreamingReplyState(
   event: { readonly eventType: string; readonly data: unknown },
 ): StreamingReplyState {
   if (event.eventType === "chat.message") {
-    return hasTurnFailedPart(event.data) ? null : current;
+    if (hasTurnFailedPart(event.data)) return null;
+    if (
+      current !== null &&
+      current.phase === "awaiting" &&
+      isRenderedAgentReply(event.data)
+    ) {
+      return REPLIED;
+    }
+    return current;
   }
   if (event.eventType !== "chat.agent") return current;
 
