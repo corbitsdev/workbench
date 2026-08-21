@@ -73,9 +73,10 @@ export {
   docsOnSdkChangeEval,
   githubPrReviewFactoryEval,
 } from "./cases/index.ts";
-export type { EvalRunStore } from "./store/store.ts";
+export type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
 export { createPostgresEvalRunStore } from "./store/pg-store.ts";
 export { applyEvalsMigrations } from "./store/migrations.ts";
+export { createEvalRunRoutes, type CreateEvalRunRoutesDeps } from "./routes.ts";
 export { bootMyraTarget } from "./targets/real-target.ts";
 export type {
   EvalApiResult,
