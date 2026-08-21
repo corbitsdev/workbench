@@ -60,9 +60,11 @@ export function StageSearch() {
         groups={render.groups}
         onSelect={render.onSelect}
         loading={render.loading}
-        error={render.error}
+        {...(render.error === undefined ? {} : { error: render.error })}
         hasMore={render.hasMore}
-        onLoadMore={render.onLoadMore}
+        {...(render.onLoadMore === undefined
+          ? {}
+          : { onLoadMore: render.onLoadMore })}
         placeholder="Search agents, skills, files, actions…"
         footer={render.footer}
         leading={

@@ -650,7 +650,9 @@ export function CommandPaletteProvider({
       groups,
       onSelect: handleSelect,
       loading,
-      error: error ? "Search failed. Try again." : undefined,
+      // `exactOptionalPropertyTypes` distinguishes an absent key from an
+      // explicit `undefined`, so the key only appears when there is an error.
+      ...(error ? { error: "Search failed. Try again." } : {}),
       hasMore,
       onLoadMore: loadMore,
       footer: "# workbenches · @ people · > actions · / pages",
