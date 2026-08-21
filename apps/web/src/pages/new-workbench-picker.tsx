@@ -12,6 +12,8 @@ import { Button, toast } from "@corbits/react-ui";
 import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useState } from "react";
+import { getLogger } from "@corbits/client-log";
+import { ApiQueryError, describeApiError } from "@corbits/api-query";
 
 import type { ConnectGithubRepo } from "@corbits/chat-ui";
 
@@ -30,6 +32,24 @@ import {
   type WorkbenchTemplateId,
 } from "../workbench-templates";
 import { GithubRepoSelectDialog } from "./github-repo-select-dialog";
+
+const log = getLogger("web.new-workbench-picker");
+
+/**
+ * "Try again" is only honest advice for a transient failure (a bad
+ * connection, a 5xx) — `describeApiError` already speaks to that case.
+ * A missing setup agent or an unavailable template is a precondition
+ * this bench doesn't meet, not a fluke: `createWorkbenchFromTemplate`
+ * throws a plain `Error` with that exact, already-human message for
+ * those, and the honest move is to show it verbatim rather than
+ * flattening it into a generic retry prompt.
+ */
+export function describeWorkbenchCreateFailure(cause: unknown): string {
+  if (cause instanceof Error && !(cause instanceof ApiQueryError)) {
+    return cause.message;
+  }
+  return describeApiError(cause, "creating this workbench");
+}
 
 type RepoPickerState = {
   readonly orgName: string;
@@ -100,8 +120,13 @@ export function NewWorkbenchPickerRoute() {
         navigate,
         pickGithubRepos,
       );
-    } catch {
-      toast("Couldn't create the workbench — try again.");
+    } catch (cause) {
+      log.error("Couldn't create the workbench", {
+        message: cause instanceof Error ? cause.message : String(cause),
+        status: cause instanceof ApiQueryError ? cause.status : undefined,
+        path: cause instanceof ApiQueryError ? cause.path : undefined,
+      });
+      toast(describeWorkbenchCreateFailure(cause));
       setCreating(false);
     }
   }
