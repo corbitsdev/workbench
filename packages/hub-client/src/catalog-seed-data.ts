@@ -217,10 +217,13 @@ export const CATALOG_SEEDS: Readonly<
       baseURL: "http://localhost:11434/v1",
     },
     // Curated against a real instance's `/api/tags` (see this ticket's
-    // report): whichever of these two the person's own Ollama actually
-    // has loaded, `qwen3.8:27b` leads since it is the one confirmed to
-    // serve tool calls and thinking.
+    // report): whichever of these the person's own Ollama actually has
+    // loaded. `gpt-oss:20b` leads — CL-6477's overnight run confirmed it
+    // correct and tool-obedient, and 12-25x faster than `qwen3.8:27b` (8s
+    // vs 100-216s for the same task) — with `qwen3.8:27b` kept next as
+    // the prior confirmed-good default and `qwen3.5:9b-mlx` last.
     models: [
+      { canonicalName: "gpt-oss:20b", displayName: "GPT-OSS 20B (Ollama)" },
       { canonicalName: "qwen3.8:27b", displayName: "Qwen 3.8 27B (Ollama)" },
       {
         canonicalName: "qwen3.5:9b-mlx",

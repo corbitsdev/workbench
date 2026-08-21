@@ -198,9 +198,17 @@ export function hydrateStreamingReplyFromTurn(
   return awaiting(runningTurn.textSnapshot ?? "");
 }
 
-/** How long an empty pending reply may sit with no tokens before the
- * indicator clears itself — the backstop for a turn whose stream events
- * never arrive (agent down, SSE dropped mid-reconnect). */
+/** How long a turn may go without a single new token before it's declared
+ * dead — the backstop for both a turn whose stream events never arrive at
+ * all (agent down, SSE dropped mid-reconnect) and one that starts streaming
+ * and then stalls (model OOM, dropped Ollama connection, sidecar crash: all
+ * routine with local models, CL-6486). This measures the gap *since the
+ * last token*, not total turn duration — a healthy local model can
+ * legitimately run 200s+ end to end (round 1 measured ~216s on
+ * `qwen3.8:27b`), so a total-elapsed timeout would fire on working replies.
+ * 120s of dead air with zero new output, on the other hand, is never a
+ * healthy sign even for a slow model — it's long past any single decode
+ * step, tool round-trip, or reconnect a client is expected to ride out. */
 const PENDING_REPLY_CLEAR_MS = 120_000;
 
 /** Floor on how long the empty typing pulse stays up after it first
@@ -244,7 +252,16 @@ export function useStreamingReply(
   }, [workbenchId]);
 
   useEffect(() => {
-    if (!isPendingReply(streamingReply)) return;
+    // Arm for the whole "awaiting" phase, not just its tokenless prefix
+    // (CL-6486): a token still growing the reply is not evidence the turn
+    // is alive forever, only that it was alive as of that token. Every
+    // token produces a new `streamingReply` object (see `awaiting`), so
+    // this effect's own dependency below tears down the previous timer and
+    // arms a fresh one on each token — the window this constructs is
+    // therefore inter-token silence, never total elapsed time.
+    if (streamingReply === null || streamingReply.phase !== "awaiting") {
+      return;
+    }
     const timer = setTimeout(() => {
       // The dependency below re-arms this effect (clearing this exact
       // timer) the instant `streamingReply` changes, so this callback only

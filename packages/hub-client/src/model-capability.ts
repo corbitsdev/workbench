@@ -23,9 +23,24 @@
 // case this falls back to recognizing common embedding-model name
 // families by convention — the same signal CL-6351's first pass used
 // before the pinned catalog existed — rather than trusting an empty list
-// as "no data" and letting an embedding model win anyway.
+// as "no data" and letting an embedding model win anyway. Capability data
+// is always tried first; the name check below only ever runs as a
+// belt-and-braces fallback for the uncataloged case.
+//
+// CL-6477: `embed(ding)?` carries no required delimiter after it, unlike
+// the other families here. Google's `embeddinggemma:300m` — an
+// uncataloged Ollama pull with no capability data, same as any other
+// local embedding model — has no delimiter between "embedding" and the
+// "gemma" model family name, so a trailing-delimiter requirement lets it
+// slip past the filter entirely and then win the alphabetical
+// default-model tiebreak with a model that answers every chat turn with
+// "does not support chat" (CL-6351 reopened through a name its own fix
+// missed). The other short abbreviations here (`minilm`, `bge`, `gte`,
+// `e5`, `arctic-embed`) keep a required trailing delimiter: they are
+// short enough that matching them as a bare substring risks false
+// positives no real model name has exercised yet.
 const EMBEDDING_MODEL_NAME_PATTERN =
-  /(^|[-_/])(embed(ding)?|minilm|bge|gte|e5|arctic-embed)(-|_|:|$)/i;
+  /(^|[-_/])embed(ding)?|(^|[-_/])(minilm|bge|gte|e5|arctic-embed)(-|_|:|$)/i;
 
 function isEmbeddingModelName(canonicalName: string): boolean {
   return EMBEDDING_MODEL_NAME_PATTERN.test(canonicalName);

@@ -49,8 +49,8 @@ describe("resolveSeedWorkflows", () => {
       seedCatalogTestWorkflows: false,
     }).map((w) => w.assetName);
     expect(names).toEqual([
-      "echo",
       "assistant",
+      "echo",
       "workbench-digest",
       "recurring-task",
       "last-30-days-research",
@@ -62,8 +62,8 @@ describe("resolveSeedWorkflows", () => {
       seedCatalogTestWorkflows: true,
     }).map((w) => w.assetName);
     expect(names).toEqual([
-      "echo",
       "assistant",
+      "echo",
       "workbench-digest",
       "recurring-task",
       "last-30-days-research",

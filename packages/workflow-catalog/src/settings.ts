@@ -40,9 +40,10 @@ export function templateSettingsPatch(
  * `"github"` removed (this template needs nothing else, so that leaves
  * it empty) and `selectedRepos` naming exactly what got a live webhook
  * trigger. This patch rides the same `chat/*` settings PATCH route
- * every other `template/*` write does, so the room's existing
- * `chat.settings` stream event is what a connect-github card folds its
- * connected state from — no bespoke event, no refetch.
+ * every other `template/*` write does; the card itself refetches its
+ * state as the direct consequence of the `start-reviewing` call that
+ * triggers this patch, same as it does for its own PAT submit
+ * (`ConnectGithubBlockContainer`) — never a fold off this stream event.
  */
 export const TemplateReposSettingsPatch = type({
   "template/pendingConnections": "string[]",

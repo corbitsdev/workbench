@@ -163,14 +163,32 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.unmount();
   });
 
-  test("a token arriving before the backstop never marks it timed out", async () => {
+  test("a token resets the backstop window instead of clearing it (CL-6486)", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    await harness.settle(20);
+    // A token arrives just before the original deadline would have fired —
+    // it must push the deadline out from here, not merely have prevented
+    // the earlier one.
+    harness.send("chat.agent", delta("Hi"));
+    await harness.settle(20);
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hi" });
+    expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+
+  test("silence after a token still times out a mid-stream stall (CL-6486)", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     harness.send("chat.agent", delta("Hi"));
-
-    await harness.settle(60);
     expect(harness.get()).toEqual({ phase: "awaiting", text: "Hi" });
-    expect(harness.timedOut()).toBe(false);
+
+    // The model died mid-sentence: no further tokens, no terminal event.
+    // The backstop must still fire off the last token, not stay armed
+    // forever just because *some* text streamed.
+    await harness.settle(60);
+    expect(harness.get()).toBeNull();
+    expect(harness.timedOut()).toBe(true);
     harness.unmount();
   });
 

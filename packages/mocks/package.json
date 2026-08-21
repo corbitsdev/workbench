@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/mocks",
+  "private": true,
+  "description": "Deterministic mocks of the inference boundary — local providers first — for tests that need a scriptable model and a record of exactly what was sent",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ollama": "./src/ollama/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@workbench/hub-client": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

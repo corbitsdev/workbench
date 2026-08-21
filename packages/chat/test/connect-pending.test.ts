@@ -35,6 +35,27 @@ async function seedWorkbench(
   });
 }
 
+async function seedTemplateWorkbench(
+  store: ReturnType<typeof createInMemoryChatStore>,
+  workbenchId: string,
+  templatePending: readonly string[],
+) {
+  await store.createWorkbenchSettings({
+    tenantId: TENANT.id,
+    workbenchId,
+    settings: {
+      "chat/kind": "workbench",
+      "chat/participants": [
+        { address: HUMAN_ADDRESS, handle: "owner" },
+        { address: AGENT_ADDRESS, handle: "myra" },
+      ],
+      "template/id": "code-review",
+      "template/pendingConnections": templatePending,
+    },
+    updatedBy: "prn_owner",
+  });
+}
+
 function buildDeps() {
   const store = createInMemoryChatStore();
   const roomMessages = createInMemoryRoomMessageStore();
@@ -108,6 +129,36 @@ test("matches a pending mcp-prefixed entry when the preset connects under its ba
 
   const settled = await store.getWorkbenchSettings(TENANT.id, "chan_waiting");
   expect(settled?.settings["connections/pending"]).toEqual([]);
+});
+
+test("settles a room whose GitHub card is pending under the code-review template's own key — a credential created out of band (not through that card's own submit) still reaches it", async () => {
+  const { store, roomMessages, published, deps } = buildDeps();
+  await seedTemplateWorkbench(store, "chan_template", ["github"]);
+
+  await settleConnectedService(deps, {
+    tenantId: TENANT.id,
+    principalId: "prn_owner",
+    connectorId: "github",
+    displayName: "GitHub",
+  });
+
+  const settled = await store.getWorkbenchSettings(TENANT.id, "chan_template");
+  expect(settled?.settings["template/pendingConnections"]).toEqual([]);
+  expect(settled?.settings["template/id"]).toBe("code-review");
+  expect(
+    published.some(
+      (entry) =>
+        entry.workbenchId === "chan_template" &&
+        entry.event.type === "chat.settings",
+    ),
+  ).toBe(true);
+
+  const listed = await roomMessages.listMessages({
+    tenantId: TENANT.id,
+    workbenchId: "chan_template",
+  });
+  expect(listed.items).toHaveLength(1);
+  expect(JSON.stringify(listed.items[0]?.parts)).toContain("GitHub");
 });
 
 test("a connector no room is waiting on settles nothing", async () => {

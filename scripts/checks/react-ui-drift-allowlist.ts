@@ -44,4 +44,4 @@ export const REACT_UI_DRIFT_ALLOWLIST: readonly DriftAllowlistEntry[] = [
   },
 ];
 
-export const REACT_UI_DRIFT_SNAPSHOT = 52;
+export const REACT_UI_DRIFT_SNAPSHOT = 48;

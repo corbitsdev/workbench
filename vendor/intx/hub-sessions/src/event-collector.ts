@@ -17,6 +17,8 @@ import { type DB, parseTurnPartType } from "@intx/db";
 
 import { generateId } from "@intx/hub-common";
 
+import { sanitizeToolNameForPersistence } from "./sanitize-tool-name";
+
 const log = getLogger(["hub", "event-collector"]);
 
 export type TurnToolCall = {
@@ -318,16 +320,24 @@ export function createEventCollector(
           // string (observed: PROHIBITED_CONTENT).
           await insertPart("safety_rating", block.blockReason, null);
           break;
-        case "tool_call":
-          callNames.set(block.id, block.name);
+        case "tool_call": {
+          // block.name came through decodeToolName, which is deliberately
+          // total and returns a hallucinated or provider-mangled name
+          // verbatim. Persist only a name the next turn's request-builder
+          // can put back on the wire (see sanitize-tool-name.ts) so a bad
+          // tool-call name fails this turn cleanly instead of wedging the
+          // room forever (CL-6478).
+          const name = sanitizeToolNameForPersistence(block.name);
+          callNames.set(block.id, name);
           callArgs.set(block.id, block.arguments);
           await insertPart("tool", null, {
             kind: "call",
             callId: block.id,
-            name: block.name,
+            name,
             arguments: block.arguments,
           });
           break;
+        }
         case "tool_result":
           // Tool results in the content block are echoes of earlier
           // tool.done events. Skip to avoid duplication.

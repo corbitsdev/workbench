@@ -224,7 +224,7 @@ export const CHAT_STRINGS = {
     `You'll be sent to ${name} to approve access, then land right back here connected — nothing is shared until you approve.`,
   blockConnectServiceKeylessHelper: "One click — no account keys needed.",
   blockConnectServiceKeyHelper: (name: string) =>
-    `You'll paste a ${name} API key — it stays in your workspace and you can disconnect any time.`,
+    `You'll paste a ${name} API key — it stays in your workbench and you can disconnect any time.`,
   blockConnectServiceKeyFieldLabel: (name: string) => `${name} API key`,
   blockConnectServiceKeyFieldPlaceholder: "Paste your key",
   blockConnectServiceKeyWhere: (name: string) =>

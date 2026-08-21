@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   isAdditiveSelectClick,
@@ -6,16 +6,41 @@ import {
   rowActivationProps,
 } from "./activatable-row";
 
+// `isAdditiveSelectClick`'s Mac/non-Mac branch reads `navigator.platform`,
+// which happy-dom's `GlobalRegistrator` reports as whatever the *host* OS
+// is — Darwin-flavored on a Mac, something else on Linux CI. Each test
+// below pins the platform it means to exercise instead of inheriting the
+// host's, so both branches are deterministic on any OS.
+const originalPlatform = Object.getOwnPropertyDescriptor(navigator, "platform");
+
+function stubPlatform(platform: string): void {
+  Object.defineProperty(navigator, "platform", {
+    configurable: true,
+    value: platform,
+  });
+}
+
+afterEach(() => {
+  if (originalPlatform !== undefined) {
+    Object.defineProperty(navigator, "platform", originalPlatform);
+  }
+});
+
 describe("isAdditiveSelectClick", () => {
-  // The test DOM reports a Darwin platform, so these exercise the Mac rules.
   test("cmd-click is additive", () => {
     expect(isAdditiveSelectClick({ metaKey: true, ctrlKey: false })).toBe(true);
   });
 
   test("ctrl-click is not additive on Mac (it's the context-menu gesture)", () => {
+    stubPlatform("MacIntel");
     expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: true })).toBe(
       false,
     );
+  });
+
+  test("ctrl-click is additive on non-Mac", () => {
+    stubPlatform("Linux x86_64");
+    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: true })).toBe(true);
   });
 
   test("a plain click is not additive", () => {
