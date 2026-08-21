@@ -17,7 +17,36 @@ import { isAgentAddress } from "@corbits/chat/mentions";
 import type { ParticipantRecord } from "./api";
 import { displayNameFromHandle } from "./timeline";
 
-export type StreamingReplyState = { readonly text: string } | null;
+/**
+ * The current turn's reply state, phase-tagged (CL-6432 reopened):
+ *
+ * - `"awaiting"` — a turn is in flight and its visible reply hasn't posted
+ *   yet: an empty `text` renders the typing pulse, streamed tokens render
+ *   the growing bubble.
+ * - `"replied"` — this turn's `connector.reply` has posted. A live folded
+ *   run PARKS after the turn (no `message.run.ended`), and its post-reply
+ *   tool-only rounds (memory writes) still emit `inference.start`/
+ *   `inference.done` — none of which may re-open the pulse. Renders
+ *   nothing; only a genuinely new turn leaves it.
+ * - `null` — idle, no turn in flight.
+ */
+export type StreamingReplyState =
+  | { readonly phase: "awaiting"; readonly text: string }
+  | { readonly phase: "replied" }
+  | null;
+
+const REPLIED: StreamingReplyState = { phase: "replied" };
+
+function awaiting(text: string): StreamingReplyState {
+  return { phase: "awaiting", text };
+}
+
+/** Whether the state renders the tokenless typing pulse. The `"replied"`
+ * phase is deliberately not pending — it renders nothing and must never
+ * arm the pending-timeout backstop. */
+export function isPendingReply(state: StreamingReplyState): boolean {
+  return state !== null && state.phase === "awaiting" && state.text === "";
+}
 
 type InferenceDeltaEvent = {
   readonly type: "inference.text.delta";
@@ -70,18 +99,24 @@ function hasTurnFailedPart(data: unknown): boolean {
 }
 
 /**
- * The streaming reply's whole state machine, pure: an `inference.start`
- * opens an empty in-progress reply if nothing is showing yet (it never
- * wipes tokens already streamed), each `inference.text.delta` replaces it
- * with that delta's cumulative text, and the turn-terminal events clear
- * it — `reactor.done`/`reactor.error` for reactor-style runs,
- * `connector.reply`/`message.run.ended` for folded runs, which never emit
- * a per-turn `reactor.done` (CL-6432). `inference.done` only clears once tokens
- * have streamed (the persisted message takes over); an empty pending
- * survives so the typing pulse stays up across tool rounds. `inference.error`
- * always clears. A `chat.message` carrying `postUndeliveredNotice`'s
- * `turnFailed` part also clears it (see `hasTurnFailedPart`) — the one
- * failure path with no `chat.agent` events of its own. Every other event
+ * The streaming reply's whole state machine, pure and turn-phase aware
+ * (CL-6432 reopened). `message.run.started` — the harness's per-dequeued-
+ * message turn begin, the same event the chat orchestrator keys new turns
+ * off (see `chat-orchestrator.ts`'s use of `messageRunStarted`) — opens a
+ * fresh awaiting turn. While awaiting, `inference.start`/`reactor.start`
+ * open the empty pulse (never wiping streamed tokens), each
+ * `inference.text.delta` replaces the text with its cumulative snapshot,
+ * and a textless `inference.done` keeps the pulse up across pre-reply tool
+ * rounds. `connector.reply` — the event the orchestrator posts the
+ * persisted reply off — moves the turn to `"replied"`: a live folded run
+ * PARKS here (no `message.run.ended`), and its post-reply tool-only rounds
+ * (memory writes) still emit `inference.start`/`inference.done`, so in
+ * `"replied"` every inference/reactor event is inert rather than
+ * re-opening the pulse. The hard-terminal events —
+ * `reactor.done`/`reactor.error`, `message.run.ended`, `inference.error`,
+ * and a `chat.message` carrying `postUndeliveredNotice`'s `turnFailed`
+ * part (see `hasTurnFailedPart`, the one failure path with no `chat.agent`
+ * events of its own) — return to idle from any phase. Every other event
  * type (tool calls, thinking, usage) leaves the current state untouched.
  */
 export function nextStreamingReplyState(
@@ -94,27 +129,24 @@ export function nextStreamingReplyState(
   if (event.eventType !== "chat.agent") return current;
 
   const innerType = innerEventType(event.data);
-  if (innerType === "inference.start") return current ?? { text: "" };
+  if (innerType === "message.run.started") return awaiting("");
+  if (
+    innerType === "reactor.done" ||
+    innerType === "reactor.error" ||
+    innerType === "message.run.ended" ||
+    innerType === "inference.error"
+  ) {
+    return null;
+  }
+  if (innerType === "connector.reply") return REPLIED;
+  if (current !== null && current.phase === "replied") return current;
+
+  if (innerType === "inference.start") return current ?? awaiting("");
   // `reactor.start` is the earliest "the agent is on it" signal — it
   // fires before any tokens, often seconds before a slow model's
   // `inference.start` — so it opens the indicator without waiting for
   // the first inference call.
-  if (innerType === "reactor.start") return current ?? { text: "" };
-  if (innerType === "reactor.done" || innerType === "reactor.error") {
-    return null;
-  }
-  // A folded run (@corbits/folded-runs — every workbench agent) never
-  // emits a per-turn `reactor.done`: its turn is finalized by
-  // `connector.reply` (the very event the chat orchestrator posts the
-  // persisted reply off, see chat-orchestrator.ts) and bracket-closed by
-  // `message.run.ended` either way. Without these two clears, a tool-only
-  // follow-up round after the visible reply (memory writes) reopens the
-  // empty pending pulse via its `inference.start` and nothing ever shuts
-  // it (CL-6432).
-  if (innerType === "connector.reply" || innerType === "message.run.ended") {
-    return null;
-  }
-  if (innerType === "inference.error") return null;
+  if (innerType === "reactor.start") return current ?? awaiting("");
   if (innerType === "inference.done") {
     if (current === null || current.text === "") return current;
     return null;
@@ -122,7 +154,7 @@ export function nextStreamingReplyState(
 
   const delta = parseInferenceDeltaEvent(event.data);
   if (delta === null) return current;
-  return { text: delta.data.partial.text };
+  return awaiting(delta.data.partial.text);
 }
 
 /**
@@ -143,7 +175,10 @@ export function nextStreamingReplyState(
 export function openPendingReply(
   current: StreamingReplyState,
 ): StreamingReplyState {
-  return current ?? { text: "" };
+  // A `"replied"` previous turn is over — the send that called this opens
+  // the next one, so the pulse comes back.
+  if (current === null || current.phase === "replied") return awaiting("");
+  return current;
 }
 
 /**
@@ -160,7 +195,7 @@ export function hydrateStreamingReplyFromTurn(
   runningTurn: { readonly textSnapshot?: string | null } | null,
 ): StreamingReplyState {
   if (runningTurn === null) return null;
-  return { text: runningTurn.textSnapshot ?? "" };
+  return awaiting(runningTurn.textSnapshot ?? "");
 }
 
 /** How long an empty pending reply may sit with no tokens before the
@@ -209,7 +244,7 @@ export function useStreamingReply(
   }, [workbenchId]);
 
   useEffect(() => {
-    if (streamingReply === null || streamingReply.text !== "") return;
+    if (!isPendingReply(streamingReply)) return;
     const timer = setTimeout(() => {
       // The dependency below re-arms this effect (clearing this exact
       // timer) the instant `streamingReply` changes, so this callback only
@@ -227,16 +262,10 @@ export function useStreamingReply(
     current: StreamingReplyState,
   ): StreamingReplyState {
     const now = Date.now();
-    const becamePending =
-      next !== null &&
-      next.text === "" &&
-      (current === null || current.text !== "");
+    const becamePending = isPendingReply(next) && !isPendingReply(current);
     if (becamePending) pendingSinceRef.current = now;
 
-    const leavingPending =
-      current !== null &&
-      current.text === "" &&
-      (next === null || next.text !== "");
+    const leavingPending = isPendingReply(current) && !isPendingReply(next);
     if (
       leavingPending &&
       pendingSinceRef.current !== null &&
@@ -257,7 +286,7 @@ export function useStreamingReply(
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
-    if (next === null || next.text !== "") pendingSinceRef.current = null;
+    if (!isPendingReply(next)) pendingSinceRef.current = null;
     return next;
   }
 
@@ -321,10 +350,10 @@ export function typingAgentNames(
   streamingReply: StreamingReplyState,
   participants: readonly ParticipantRecord[],
 ): readonly string[] {
-  // Only the tokenless pending phase shows the typing line; once text
-  // streams, the growing timeline bubble is the signal — showing both
-  // would double-indicate the same turn.
-  if (streamingReply === null || streamingReply.text !== "") return [];
+  // Only the tokenless awaiting phase shows the typing line; once text
+  // streams, the growing timeline bubble is the signal, and a `"replied"`
+  // turn shows nothing at all.
+  if (!isPendingReply(streamingReply)) return [];
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
   );
