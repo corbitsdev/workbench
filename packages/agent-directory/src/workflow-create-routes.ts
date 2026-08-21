@@ -162,11 +162,16 @@ export function createWorkflowAgentCreateRoutes(
       );
     }
 
+    // Resolved once, unconditionally: every branch below already needed
+    // it (the pin check when pins are named, the baseline lookup when
+    // they aren't), and it is now also the source of truth for `model`
+    // validation just below.
+    const inventory = await deps.capabilityInventory.resolve({
+      tenantId: scope.tenantId,
+      principalId: scope.principalId,
+    });
+
     if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
-      const inventory = await deps.capabilityInventory.resolve({
-        tenantId: scope.tenantId,
-        principalId: scope.principalId,
-      });
       // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`
       // above — fail closed against exactly the inventory this call
       // just fetched, never a stale or wider one, for every named pin.
@@ -199,17 +204,37 @@ export function createWorkflowAgentCreateRoutes(
       systemPrompt: body.systemPrompt,
       skills,
     };
-    if (body.model !== undefined) coreInput.model = body.model;
+
+    // `body.model` is free text a language-model tool call supplied —
+    // untrusted input at a trust boundary (AGENTS.md). A name the
+    // tenant's own catalog doesn't offer can never resolve at launch,
+    // so it is never baked in verbatim: fall back to the tenant's
+    // catalog default and say so, rather than creating a dead agent
+    // (CL-6477). A name the catalog does offer is used exactly as
+    // asked, no fallback consulted.
+    let modelNote: string | null = null;
+    if (body.model !== undefined) {
+      const knownModel = inventory.models.some(
+        (entry) => entry.canonicalName === body.model,
+      );
+      if (knownModel) {
+        coreInput.model = body.model;
+      } else {
+        const fallback = await deps.tenantDefaultModel?.(scope.tenantId);
+        modelNote =
+          fallback !== undefined
+            ? `Requested model "${body.model}" is not in this workbench's catalog; used the workspace default "${fallback}" instead.`
+            : `Requested model "${body.model}" is not in this workbench's catalog, and the workspace has no default model to fall back to.`;
+        if (fallback !== undefined) coreInput.model = fallback;
+      }
+    }
+
     if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
       coreInput.toolPackagePins = body.toolPackagePins;
     } else {
       // No pins named: the specialist still gets the baseline set this
       // tenant can resolve, so a created "research agent" can actually
       // search, remember, and ask (CL-6206).
-      const inventory = await deps.capabilityInventory.resolve({
-        tenantId: scope.tenantId,
-        principalId: scope.principalId,
-      });
       const baseline = baselineAgentToolPins(inventory);
       if (baseline.length > 0) coreInput.toolPackagePins = baseline;
     }
@@ -236,6 +261,7 @@ export function createWorkflowAgentCreateRoutes(
         currentVersion: row.currentVersion,
         status: row.status,
         skills,
+        modelNote,
       },
       201,
     );

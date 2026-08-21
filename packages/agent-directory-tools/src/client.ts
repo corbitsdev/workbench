@@ -40,9 +40,19 @@ export interface CreatedAgentDefinition {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
-  readonly currentVersion: number;
+  /** The create route serializes `workflow_definition.current_version`,
+   * a `text` DB column, verbatim — always a string on the wire, never
+   * a number (CL-6480: parsing this as `"number"` made every genuine
+   * success fail this schema and read as a create failure). */
+  readonly currentVersion: string;
   readonly status: string;
   readonly skills: readonly string[];
+  /** Set when `model` was requested but the tenant's catalog didn't
+   * offer it, so the route substituted its default (or left the
+   * definition modelless) instead of baking in a name that can never
+   * resolve (CL-6477). `null` when the requested model — or its
+   * absence — needed no substitution. */
+  readonly modelNote: string | null;
 }
 
 export interface ListedAgentDefinition {
@@ -93,9 +103,10 @@ const CreatedAgentDefinitionResponse = type({
   id: "string",
   name: "string",
   description: "string | null",
-  currentVersion: "number",
+  currentVersion: "string",
   status: "string",
   skills: "string[]",
+  modelNote: "string | null",
 });
 
 /** Thrown when the create-agent route rejects the request — a bad

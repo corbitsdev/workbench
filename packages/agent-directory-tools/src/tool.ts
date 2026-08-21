@@ -161,6 +161,14 @@ async function runCreateAgent(
     return errorResult(call.id, err);
   }
 
+  // Set when the requested `modelPreference` fell outside the tenant's
+  // catalog and the route substituted its default (or left the
+  // definition modelless) instead of baking in a name that can never
+  // resolve (CL-6477) — surfaced on every branch below so the model
+  // relays the substitution to the user rather than claiming the
+  // model it originally asked for.
+  const modelSuffix = created.modelNote !== null ? ` ${created.modelNote}` : "";
+
   // `invite` defaults to `true` — never require the model to pass it,
   // only to opt out explicitly.
   const shouldInvite = call.arguments["invite"] !== false;
@@ -168,7 +176,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It is not in this channel — invite it explicitly if you want it here.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It is not in this channel — invite it explicitly if you want it here.${modelSuffix}`,
     };
   }
 
@@ -177,7 +185,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and invited it into this channel.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and invited it into this channel.${modelSuffix}`,
     };
   } catch (err) {
     // The agent was genuinely created — that half-success must never
@@ -194,7 +202,7 @@ async function runCreateAgent(
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not invite it into this channel: ${reason}.`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not invite it into this channel: ${reason}.${modelSuffix}`,
     };
   }
 }
@@ -254,8 +262,14 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
             modelPreference: {
               type: "string",
               description:
-                "A canonical model name for the new agent, or omitted " +
-                "to use the workspace's catalog default.",
+                "A canonical model name from this workspace's own " +
+                "connected catalog — check list_agents or a models " +
+                "listing tool for real names first. Do not guess or " +
+                "invent a name (e.g. a well-known provider model like " +
+                '"gpt-4o") on the assumption it is available: a name ' +
+                "outside this workspace's catalog is never used and " +
+                "falls back to the workspace default instead. Omit " +
+                "this field entirely to use that default.",
             },
             invite: {
               type: "boolean",

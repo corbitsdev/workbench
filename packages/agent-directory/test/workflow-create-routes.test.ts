@@ -339,7 +339,7 @@ test("a create with no model bakes the tenant's catalog default in, so the defin
   expect(written).toContain("anthropic/claude-sonnet");
 });
 
-test("a create with an explicit model never consults the tenant default", async () => {
+test("a create with an explicit model the tenant's catalog offers never consults the tenant default", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp({
     assetService: fakeAssetService({
@@ -355,16 +355,80 @@ test("a create with an explicit model never consults the tenant default", async 
   const response = await app.request("/definitions", {
     method: "POST",
     headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    // fakeCapabilityInventory (see above) offers exactly this model.
     body: JSON.stringify({
       name: "Research Buddy",
       handle: "research-buddy",
       systemPrompt: "You are a careful research assistant.",
-      model: "openrouter/some-model",
+      model: "anthropic/claude-sonnet",
     }),
   });
   expect(response.status).toBe(201);
   const written = definitionFrom(writtenFiles);
-  expect(written).toContain("openrouter/some-model");
+  expect(written).toContain("anthropic/claude-sonnet");
+  const body = (await response.json()) as { modelNote: string | null };
+  expect(body.modelNote).toBeNull();
+});
+
+test("a create naming a model outside the tenant's catalog falls back to the tenant default and says so, rather than creating a dead agent", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    tenantDefaultModel: (tenantId) =>
+      Promise.resolve(
+        tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined,
+      ),
+  });
+  const response = await app.request("/definitions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({
+      name: "Research Buddy",
+      handle: "research-buddy",
+      systemPrompt: "You are a careful research assistant.",
+      model: "gpt-4o",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const written = definitionFrom(writtenFiles);
+  expect(written).not.toContain("gpt-4o");
+  expect(written).toContain("anthropic/claude-sonnet");
+  const body = (await response.json()) as { modelNote: string | null };
+  expect(body.modelNote).toMatch(/gpt-4o/);
+  expect(body.modelNote).toMatch(/anthropic\/claude-sonnet/);
+});
+
+test("a create naming a model outside the catalog with no tenant default still creates a working, unpinned agent rather than a dead one", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp({
+    assetService: fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    tenantDefaultModel: () => Promise.resolve(undefined),
+  });
+  const response = await app.request("/definitions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({
+      name: "Research Buddy",
+      handle: "research-buddy",
+      systemPrompt: "You are a careful research assistant.",
+      model: "gpt-4o",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const written = definitionFrom(writtenFiles);
+  expect(written).not.toContain("gpt-4o");
+  const body = (await response.json()) as { modelNote: string | null };
+  expect(body.modelNote).toMatch(/gpt-4o/);
 });
 
 test("an invalid body is a 400", async () => {

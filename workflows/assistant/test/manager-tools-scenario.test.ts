@@ -138,9 +138,10 @@ function createFakeHub() {
           id,
           name: body["name"],
           description: null,
-          currentVersion: 1,
+          currentVersion: "1",
           status: "deployed",
           skills: [],
+          modelNote: null,
         },
         { status: 201 },
       );

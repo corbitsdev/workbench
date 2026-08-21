@@ -32,9 +32,13 @@ test("createAgentDefinition posts to the workflow-agent-directory definitions en
         id: "def_1",
         name: "Research Buddy",
         description: null,
-        currentVersion: 1,
+        // The real create route serializes a `text` DB column, always
+        // a string on the wire — never the JS number literal CL-6480
+        // let this schema wrongly accept.
+        currentVersion: "1",
         status: "deployed",
         skills: [],
+        modelNote: null,
       }),
       { status: 201 },
     );
@@ -57,6 +61,32 @@ test("createAgentDefinition posts to the workflow-agent-directory definitions en
     systemPrompt: "You are a careful research assistant.",
   });
   expect(result.id).toBe("def_1");
+  expect(result.currentVersion).toBe("1");
+  expect(result.modelNote).toBeNull();
+});
+
+test("createAgentDefinition rejects a response whose currentVersion is a number, not a string", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        id: "def_1",
+        name: "Research Buddy",
+        description: null,
+        currentVersion: 1,
+        status: "deployed",
+        skills: [],
+        modelNote: null,
+      }),
+      { status: 201 },
+    )) as unknown as typeof fetch;
+
+  await expect(
+    createAgentDefinition(testConfig(fetchImpl), {
+      name: "x",
+      handle: "x",
+      systemPrompt: "x",
+    }),
+  ).rejects.toThrow(/did not match the expected shape/);
 });
 
 test("createAgentDefinition throws CreateAgentDefinitionError on a 400", async () => {
