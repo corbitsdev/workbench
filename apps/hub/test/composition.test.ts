@@ -231,12 +231,17 @@ describeIfDb(
       expect(throttledAlice.status).toBe(429);
 
       // bob's very first attempt is untouched by alice's exhausted budget.
+      // Asserting the specific auth-failure status (better-auth's
+      // INVALID_EMAIL_OR_PASSWORD, since signInAttempt always sends a
+      // wrong password) rather than merely `not.toBe(429)` -- the loose
+      // form would still pass if the request 500'd instead of reaching
+      // the auth handler at all.
       const freshBob = await signInAttempt(
         hub,
         "bob@example.com",
         "203.0.113.40",
       );
-      expect(freshBob.status).not.toBe(429);
+      expect(freshBob.status).toBe(401);
     });
 
     test("a rate-limited sign-in carries a retry hint and a human-readable message", async () => {
@@ -254,9 +259,17 @@ describeIfDb(
       );
 
       expect(throttled.status).toBe(429);
-      expect(throttled.headers.get("x-retry-after")).not.toBeNull();
-      const body = (await throttled.json()) as { message: string };
-      expect(body.message).toMatch(/\S/);
+      const retryAfter = throttled.headers.get("x-retry-after");
+      expect(retryAfter).not.toBeNull();
+      expect(Number(retryAfter)).toBeGreaterThan(0);
+      const body = (await throttled.json()) as {
+        error: string;
+        message: string;
+      };
+      expect(body.error).toBe("rate_limited");
+      expect(body.message).toBe(
+        `Too many sign-in attempts. Try again in ${retryAfter} second${retryAfter === "1" ? "" : "s"}.`,
+      );
     });
   },
 );

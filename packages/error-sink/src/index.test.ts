@@ -104,7 +104,23 @@ describe("reportError context capture", () => {
     const b = new Error("b", { cause: a });
     a.cause = b;
 
-    expect(() => reportError(b, { operation: "op" })).not.toThrow();
+    reportError(b, { operation: "op" });
+
+    // Not just "didn't throw" -- prove the cap actually bit: walk the
+    // redacted chain and confirm it terminates (no cycle survived the
+    // copy) at a fixed, small depth rather than being silently unbounded.
+    const properties = records[0]?.properties as Record<string, unknown>;
+    let node = (properties.error as Error).cause as Error | undefined;
+    let depth = 0;
+    const seen: string[] = [];
+    while (node !== undefined) {
+      seen.push(node.message);
+      depth += 1;
+      expect(depth).toBeLessThanOrEqual(10);
+      node = node.cause as Error | undefined;
+    }
+    expect(depth).toBe(5);
+    expect(seen).toEqual(["a", "b", "a", "b", "a"]);
   });
 });
 

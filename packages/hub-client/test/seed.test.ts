@@ -173,6 +173,36 @@ describe("reconcileSeedGrants", () => {
     expect(posted).toEqual([{ resource: "eval-run:*", action: "read" }]);
   });
 
+  // Pins down a real gap found during a test-quality pass (CL-6508): the
+  // docstring used to claim reconciliation left "nothing beyond"
+  // `SEED_GRANTS`, but `plantGrant` only ever creates -- there is no
+  // revoke path. If a grant is ever pulled from `SEED_GRANTS` for a
+  // security reason, tenants seeded before that change keep it forever
+  // unless a separate revocation pass is added. This test documents the
+  // current (additive-only) behavior so a future revoke-path change is a
+  // deliberate, visible diff here rather than a silent regression either
+  // way.
+  test("does not revoke a grant that's no longer in SEED_GRANTS", async () => {
+    const stale = { resource: "workflow:*", action: "delete" };
+    const alreadyGranted = [...SEED_GRANTS, stale];
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => alreadyGranted, posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    // Nothing new was planted (every current SEED_GRANTS entry was
+    // already held) -- and reconciliation issued no revoke call for the
+    // stale grant either, since plantGrant never deletes.
+    expect(posted).toEqual([]);
+  });
+
   test("reconciling twice never duplicates a grant", async () => {
     const granted: { resource: string; action: string }[] = [];
     const posted: { resource: string; action: string }[] = [];
