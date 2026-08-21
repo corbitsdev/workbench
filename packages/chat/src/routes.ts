@@ -66,6 +66,7 @@ import { isRecentlyActive } from "./workbench-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { ConnectGithubBlockData } from "./blocks";
 import {
+  findResidentAgentForDefinition,
   postCannedGreeting,
   joinHumanParticipant,
   launchAndJoinAgent,
@@ -778,12 +779,30 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
 }
 
 /**
+ * What the command intercept decided about an incoming message:
+ * `command` carries a dispatched command's result; `routeToParticipant`
+ * says the `@name` named a definition already resident in the room, so
+ * the message must post normally and its turn must reach that
+ * participant's existing run (CL-6451) — never a freshly minted one.
+ */
+type WorkbenchCommandDecision =
+  { readonly command: CommandResult } | { readonly routeToParticipant: string };
+
+/**
  * Decides whether an incoming workbench message opens the command path
  * at all, and if so, dispatches it. `undefined` — the caller's cue to
  * post the message normally — for: no registry injected; text that is
  * neither slash- nor `@`-shaped; or an `@name` that names an existing
  * agent participant's handle rather than a command (mention fan-out
  * keeps owning that case exactly as before this rollout).
+ *
+ * The handle check alone cannot keep "one room participant = one live
+ * run" (CL-6451): a participant's mention handle derives from its
+ * definition's display name ("Myra"), while the workflow command is
+ * named after the definition's wire name ("assistant") — so an `@name`
+ * that resolves to a command is ALSO checked against the definitions
+ * the room's agents were launched from, and a resident match routes to
+ * that participant instead of dispatching a launch.
  */
 async function dispatchWorkbenchCommand(
   deps: CreateChatRoutesDeps,
@@ -793,7 +812,7 @@ async function dispatchWorkbenchCommand(
     workbenchId: string;
     text: string;
   },
-): Promise<CommandResult | undefined> {
+): Promise<WorkbenchCommandDecision | undefined> {
   if (deps.commands === undefined) return undefined;
   const ctx = {
     tenantId: input.tenantId,
@@ -802,7 +821,8 @@ async function dispatchWorkbenchCommand(
   };
 
   if (input.text.startsWith("/")) {
-    return dispatchSlashCommand(deps.commands, input.text, ctx);
+    const result = await dispatchSlashCommand(deps.commands, input.text, ctx);
+    return result === undefined ? undefined : { command: result };
   }
 
   if (input.text.startsWith("@")) {
@@ -824,7 +844,25 @@ async function dispatchWorkbenchCommand(
     );
     if (namesKnownHandle) return undefined;
 
-    return dispatchAtCommand(deps.commands, input.text, ctx);
+    const invitable = await deps.platform.listInvitableDefinitions(
+      input.tenantId,
+    );
+    const commandDefinition = invitable.find(
+      (definition) => definition.name === resolved.name,
+    );
+    if (commandDefinition !== undefined) {
+      const resident = await findResidentAgentForDefinition(
+        deps.platform,
+        participants,
+        commandDefinition.id,
+      );
+      if (resident !== undefined) {
+        return { routeToParticipant: resident.address };
+      }
+    }
+
+    const result = await dispatchAtCommand(deps.commands, input.text, ctx);
+    return result === undefined ? undefined : { command: result };
   }
 
   return undefined;
@@ -2088,13 +2126,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // resolving it against the registry only runs once it is
       // confirmed not to name a known handle, so that mention keeps
       // its ordinary fan-out behavior exactly as before.
-      const commandResult = await dispatchWorkbenchCommand(deps, {
+      const commandDecision = await dispatchWorkbenchCommand(deps, {
         tenantId: ownerTenantId,
         principalId: principal.id,
         workbenchId,
         text: textOf(messageParts),
       });
-      if (commandResult !== undefined) {
+      if (commandDecision !== undefined && "command" in commandDecision) {
+        const commandResult = commandDecision.command;
         const resultText = textForCommandResult(commandResult);
         if (resultText !== undefined) {
           await postRoomMessage(
@@ -2135,6 +2174,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           messageParts,
           ...(parsed.inReplyToMessageId !== undefined
             ? { inReplyToMessageId: parsed.inReplyToMessageId }
+            : {}),
+          ...(commandDecision !== undefined &&
+          "routeToParticipant" in commandDecision
+            ? { forcedRecipientAddress: commandDecision.routeToParticipant }
             : {}),
         },
       );
