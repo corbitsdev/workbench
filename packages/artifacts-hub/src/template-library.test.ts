@@ -4,10 +4,13 @@ import { Hono } from "hono";
 
 import {
   WORKBENCH_TEMPLATE_ARTIFACT_KIND,
+  createTemplateLibraryDbStore,
   createTemplateLibraryRoutes,
+  createTemplateLibrarySeeder,
   createUnavailableTemplateLibraryRoutes,
   seedTemplateLibrary,
   type TemplateLibraryEngine,
+  type TemplateLibrarySeeder,
   type TemplateLibraryStore,
 } from "./template-library";
 
@@ -441,11 +444,92 @@ describe("seedTemplateLibrary", () => {
   });
 });
 
+const OTHER_TENANT = { id: "tenant_b" };
+
+describe("createTemplateLibrarySeeder", () => {
+  test("seeds a tenant the first time it is asked, and not again after", async () => {
+    let passes = 0;
+    const seeder = createTemplateLibrarySeeder({
+      db: fakeDb,
+      entries: ENTRIES,
+      seed: async (args) => {
+        passes += 1;
+        return seedTemplateLibrary(args);
+      },
+      engine: memoryEngine().engine,
+    });
+
+    await seeder.ensureSeeded(SCOPE);
+    await seeder.ensureSeeded(SCOPE);
+    expect(passes).toBe(1);
+  });
+
+  test("concurrent first reads share one seed pass", async () => {
+    let passes = 0;
+    const seeder = createTemplateLibrarySeeder({
+      db: fakeDb,
+      entries: ENTRIES,
+      seed: async (args) => {
+        passes += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return seedTemplateLibrary(args);
+      },
+      engine: memoryEngine().engine,
+    });
+
+    await Promise.all([seeder.ensureSeeded(SCOPE), seeder.ensureSeeded(SCOPE)]);
+    expect(passes).toBe(1);
+  });
+
+  test("a failed pass never latches: the next read retries instead of giving up", async () => {
+    let passes = 0;
+    const seeder = createTemplateLibrarySeeder({
+      db: fakeDb,
+      entries: ENTRIES,
+      seed: async (args) => {
+        passes += 1;
+        if (passes === 1) throw new Error("database is booting");
+        return seedTemplateLibrary(args);
+      },
+      engine: memoryEngine().engine,
+    });
+
+    await expect(seeder.ensureSeeded(SCOPE)).rejects.toThrow(
+      "database is booting",
+    );
+    await seeder.ensureSeeded(SCOPE);
+    expect(passes).toBe(2);
+  });
+
+  test("each tenant converges on its own first read — no operator bench involved", async () => {
+    const seededTenants: string[] = [];
+    const seeder = createTemplateLibrarySeeder({
+      db: fakeDb,
+      entries: ENTRIES,
+      seed: async (args) => {
+        seededTenants.push(args.scope.tenantId);
+        return seedTemplateLibrary(args);
+      },
+      engine: memoryEngine().engine,
+    });
+
+    await seeder.ensureSeeded(SCOPE);
+    await seeder.ensureSeeded({
+      tenantId: OTHER_TENANT.id,
+      principalId: "prin_b",
+    });
+    expect(seededTenants).toEqual([TENANT.id, OTHER_TENANT.id]);
+  });
+});
+
 type TestEnv = {
   Variables: { tenant: { id: string }; principal: { id: string } };
 };
 
-function mountRoutes(store: TemplateLibraryStore): Hono<TestEnv> {
+function mountRoutes(
+  store: TemplateLibraryStore,
+  seeder: TemplateLibrarySeeder,
+): Hono<TestEnv> {
   const app = new Hono<TestEnv>();
   app.use("*", async (c, next) => {
     c.set("tenant", TENANT);
@@ -454,10 +538,17 @@ function mountRoutes(store: TemplateLibraryStore): Hono<TestEnv> {
   });
   app.route(
     "/library/templates",
-    createTemplateLibraryRoutes({ store, requireGrant: allowAll }),
+    createTemplateLibraryRoutes({
+      store,
+      seeder,
+      requireGrant: allowAll,
+      log: () => {},
+    }),
   );
   return app;
 }
+
+const noopSeeder: TemplateLibrarySeeder = { ensureSeeded: async () => {} };
 
 const fakeStore: TemplateLibraryStore = {
   async list(tenantId) {
@@ -469,15 +560,29 @@ const fakeStore: TemplateLibraryStore = {
   },
 };
 
+/** The bench the owner actually hit: a tenant nothing ever seeded, on a
+ * hub that never resolved an operator bench. Reads go through the real
+ * store over the same memory engine the seeder writes into, so a served
+ * template proves the read itself converged the shelf. */
+function mountUnseededTenant(): Hono<TestEnv> {
+  const { engine } = memoryEngine();
+  return mountRoutes(
+    createTemplateLibraryDbStore(fakeDb, engine),
+    createTemplateLibrarySeeder({ db: fakeDb, entries: ENTRIES, engine }),
+  );
+}
+
 describe("template library routes", () => {
   test("lists the seeded entries", async () => {
-    const res = await mountRoutes(fakeStore).request("/library/templates");
+    const res = await mountRoutes(fakeStore, noopSeeder).request(
+      "/library/templates",
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: ENTRIES });
   });
 
   test("fetches one template by id", async () => {
-    const res = await mountRoutes(fakeStore).request(
+    const res = await mountRoutes(fakeStore, noopSeeder).request(
       "/library/templates/code-review",
     );
     expect(res.status).toBe(200);
@@ -485,10 +590,40 @@ describe("template library routes", () => {
   });
 
   test("404s an id the library does not hold", async () => {
-    const res = await mountRoutes(fakeStore).request(
+    const res = await mountRoutes(fakeStore, noopSeeder).request(
       "/library/templates/standup",
     );
     expect(res.status).toBe(404);
+  });
+
+  test("a never-seeded tenant's first list read seeds the shelf and serves it", async () => {
+    const res = await mountUnseededTenant().request("/library/templates");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ data: ENTRIES });
+  });
+
+  test("a never-seeded tenant's first template read serves the template instead of 404ing", async () => {
+    const res = await mountUnseededTenant().request(
+      "/library/templates/code-review",
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(CODE_REVIEW_ENTRY);
+  });
+
+  test("a seed the read could not run answers 503, never a 404 that reads as 'no such template'", async () => {
+    const failing: TemplateLibrarySeeder = {
+      ensureSeeded: async () => {
+        throw new Error("artifacts database unreachable");
+      },
+    };
+    const app = mountRoutes(fakeStore, failing);
+
+    const list = await app.request("/library/templates");
+    expect(list.status).toBe(503);
+    const one = await app.request("/library/templates/code-review");
+    expect(one.status).toBe(503);
+    const body = (await one.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("unavailable");
   });
 });
 

@@ -58,8 +58,21 @@ function stubFetch(
     if (path.includes("/api/me/principals")) {
       return Promise.resolve(json(MEMBERSHIP));
     }
-    // The bench library the hub seeded at boot (CL-6344) — what the
-    // create flow instantiates from instead of a hardcoded import.
+    // The bench library the first read converges (CL-6458) — what the
+    // picker offers rows from and the create flow instantiates from,
+    // never a hardcoded import.
+    if (path.endsWith("/library/templates")) {
+      return Promise.resolve(
+        json({
+          data: [
+            {
+              id: "code-review",
+              content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+            },
+          ],
+        }),
+      );
+    }
     if (path.endsWith("/library/templates/code-review")) {
       return Promise.resolve(
         json({
@@ -129,6 +142,54 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Just start talking");
     expect(container?.textContent).toContain("More kinds soon");
+  });
+
+  // CL-6458: the picker offers what the bench's library can actually
+  // serve. A row the library has no manifest for is shown as not set up
+  // — never offered and then dead-ended on a 404 at create time.
+  test("a kind this bench's library cannot serve is not offered", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.endsWith("/library/templates")) {
+        return Promise.resolve(json({ data: [] }));
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    }) as typeof fetch;
+    await renderPicker();
+
+    const radios = Array.from(
+      container?.querySelectorAll('[role="radio"]') ?? [],
+    );
+    expect(radios.length).toBe(1);
+    expect(radios[0]?.textContent).toContain("Just start talking");
+    expect(container?.textContent).toContain("Code review");
+    expect(container?.textContent).toContain("Not set up on this bench yet");
+  });
+
+  test("when the library can't be read, the row list says so instead of offering a dead end", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.endsWith("/library/templates")) {
+        return Promise.resolve(json({ error: "boom" }, 503));
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    }) as typeof fetch;
+    await renderPicker();
+
+    expect(container?.textContent).toContain(
+      "Couldn't load what this bench can set up",
+    );
+    const radios = Array.from(
+      container?.querySelectorAll('[role="radio"]') ?? [],
+    );
+    expect(radios.length).toBe(1);
+    expect(radios[0]?.textContent).toContain("Just start talking");
   });
 
   test("Code review is selected on entry, so Create workbench starts enabled", async () => {
