@@ -49,6 +49,7 @@ import {
 } from "@corbits/recurring-task-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
+import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
 import {
   publishCorbitsToolsRegistry,
   type PublishCorbitsToolsRegistryArgs,
@@ -1286,18 +1287,21 @@ async function ensureCatalogOffering(
     providerId: string;
     priority: number;
     capabilities: readonly Capability[];
+    quirks?: Record<string, unknown>;
   },
   log: (line: string) => void,
 ): Promise<void> {
+  const body: Record<string, unknown> = {
+    modelId: args.modelId,
+    providerId: args.providerId,
+    priority: args.priority,
+    capabilities: args.capabilities,
+  };
+  if (args.quirks !== undefined) body["quirks"] = args.quirks;
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/catalog/offerings`,
-    {
-      modelId: args.modelId,
-      providerId: args.providerId,
-      priority: args.priority,
-      capabilities: args.capabilities,
-    },
+    body,
     cookies,
   );
   if (created.status === 201) {
@@ -1575,6 +1579,18 @@ export async function seedCatalog(
       canonicalName: model.canonicalName,
       capabilities,
     });
+    // Ollama's own openai-compatible endpoint otherwise falls back to a
+    // small built-in context window and `@intx/inference`'s built-in
+    // adapter falls back to 4096 output tokens -- both silent, both
+    // truncating a real conversation. `quirksForDeployment` resolves this
+    // model's real ceiling (or `undefined` for a provider outside this
+    // mechanism's scope, or a model this catalog has not vetted a ceiling
+    // for), landing on the offering's `quirks` column exactly the way
+    // `capabilitiesForDeployment` lands on its `capabilities` column.
+    const quirks = quirksForDeployment({
+      providerName: seed.provider.name,
+      canonicalName: model.canonicalName,
+    });
     await ensureCatalogOffering(
       api,
       cookies,
@@ -1584,6 +1600,7 @@ export async function seedCatalog(
         providerId: catalogProviderId,
         priority: offeringPriority,
         capabilities,
+        ...(quirks !== undefined ? { quirks } : {}),
       },
       log,
     );
