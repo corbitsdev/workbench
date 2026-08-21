@@ -732,7 +732,7 @@ select:disabled,
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  width: 1.9rem;
+  width: 2.75rem;
   overflow: hidden;
   border: 1px solid transparent;
   transition: width var(--duration-standard) var(--ease-in-out);
@@ -755,8 +755,11 @@ select:disabled,
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 1.9rem;
-  height: 1.9rem;
+  /* 40px floor at the 15px root (2.667rem) for a primary chrome control's
+     hit target — this button is the only visible content when the search
+     bar is collapsed, so `.stage-search`'s width tracks it above. */
+  width: 2.75rem;
+  height: 2.75rem;
   border: 0;
   background: transparent;
   color: var(--muted-foreground);
@@ -2562,12 +2565,14 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
-/* react-ui's StatGridItem hardcodes rounded-[12px] (stat-grid.tsx) instead
-   of consuming var(--radius), so it never picks up the app-wide zero-radius
+/* react-ui's StatGridItem hardcodes rounded-lg (stat-grid.tsx) instead of
+   consuming var(--radius), so it never picks up the app-wide zero-radius
    re-assertion above — every KPI tile renders rounded while every
-   neighboring panel is square. Re-assert zero radius here, scoped to the
-   insights stat grids, until StatGridItem consumes var(--radius) upstream. */
-.insights-layout [data-slot="stat-grid-item"] {
+   neighboring panel is square. One global re-assertion here covers every
+   StatGridItem consumer (Insights, Mission Control, Evals, and whatever
+   page reaches for it next) instead of a per-page copy; drop this once
+   StatGridItem consumes var(--radius) upstream. */
+[data-slot="stat-grid-item"] {
   border-radius: 0;
 }
 
@@ -3462,9 +3467,6 @@ tr.insights-row-clickable:hover {
       "main"
       "rail";
   }
-}
-.mission-control-layout [data-slot="stat-grid-item"] {
-  border-radius: 0;
 }
 
 .mission-control-panel {
