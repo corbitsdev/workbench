@@ -89,6 +89,23 @@ function selectChain(rows: unknown[]): SelectChain {
   return chain;
 }
 
+/**
+ * The string parameters bound into a drizzle SQL expression, in query
+ * order: `eq(column, value)` wraps each value in a `Param` whose
+ * `value` is the bound string, and `and(...)` nests sub-expressions
+ * under `queryChunks` — column and operator chunks carry no bare
+ * string `value`, so the walk collects exactly the bound parameters.
+ */
+function boundStringValues(expression: unknown, out: string[] = []): string[] {
+  if (expression === null || typeof expression !== "object") return out;
+  const chunk = expression as { value?: unknown; queryChunks?: unknown[] };
+  if (typeof chunk.value === "string") out.push(chunk.value);
+  if (Array.isArray(chunk.queryChunks)) {
+    for (const nested of chunk.queryChunks) boundStringValues(nested, out);
+  }
+  return out;
+}
+
 type InsertChain = {
   onConflictDoNothing(...args: unknown[]): InsertChain;
   returning(...args: unknown[]): Promise<unknown[]>;
@@ -151,6 +168,7 @@ function createFakeDb(opts: {
         status: string;
         assetId: string | null;
         name?: string;
+        origin?: "authored" | "run";
         grantRequirements?: unknown;
       }
     | undefined;
@@ -162,6 +180,7 @@ function createFakeDb(opts: {
         name: string;
         description?: string;
         assetId?: string | null;
+        origin?: "authored" | "run";
         grantRequirements?: unknown;
       }[]
     | undefined;
@@ -186,11 +205,9 @@ function createFakeDb(opts: {
    * via `select().from(workflowDefinitionVersion)`) returns for each
    * definition id, keyed by id. An id with no entry (or an explicit
    * `null`) mirrors a pre-cutover row that carries no stored
-   * projection. Call order mirrors the real resolution order:
-   * `launchInvite`'s candidates (siblings newest-first, or the single
-   * requested row when no siblings are configured) in order, then
-   * `refreshAgentInstanceFromDefinition`'s single lookup on the run's
-   * own definition row.
+   * projection. Lookups resolve by the definition id actually bound
+   * into the query's `where`, so the record answers exactly the ids
+   * production code asks for, in any order.
    */
   wireProjectionsByDefinitionId?: Record<string, unknown | null> | undefined;
 }) {
@@ -198,19 +215,6 @@ function createFakeDb(opts: {
   const updated: { table: unknown; values: unknown }[] = [];
   const deleted: { table: unknown }[] = [];
 
-  // Mirrors the real resolution order for `loadFrozenWireProjection`
-  // calls: `launchInvite`'s candidates (siblings newest-first, falling
-  // back to the single requested row) or, absent any siblings/requested
-  // row config, `refreshAgentInstanceFromDefinition`'s single lookup
-  // against the run's own definition row.
-  const wireProjectionCandidateIds = (
-    opts.workflowDefinitionRows && opts.workflowDefinitionRows.length > 0
-      ? opts.workflowDefinitionRows
-      : opts.workflowDefinitionRow !== undefined
-        ? [opts.workflowDefinitionRow]
-        : []
-  ).map((row) => row.id);
-  let wireProjectionCallIndex = 0;
   const wireProjectionCalls: string[] = [];
 
   function updateOn(table: unknown): UpdateChain {
@@ -279,14 +283,19 @@ function createFakeDb(opts: {
           }
           if (table === asset) return selectChain([opts.assetRow]);
           if (table === workflowDefinitionVersion) {
-            const definitionId =
-              wireProjectionCandidateIds[wireProjectionCallIndex];
-            wireProjectionCallIndex += 1;
-            if (definitionId === undefined) return selectChain([]);
-            wireProjectionCalls.push(definitionId);
-            const projection =
-              opts.wireProjectionsByDefinitionId?.[definitionId] ?? null;
-            return selectChain([{ wireProjection: projection }]);
+            // `loadFrozenWireProjection` filters on
+            // `and(eq(definitionId, id), eq(version, "1"))`; the first
+            // bound string in that expression is the definition id.
+            return {
+              where: (expression: unknown) => {
+                const [definitionId] = boundStringValues(expression);
+                if (definitionId === undefined) return selectChain([]);
+                wireProjectionCalls.push(definitionId);
+                const projection =
+                  opts.wireProjectionsByDefinitionId?.[definitionId] ?? null;
+                return selectChain([{ wireProjection: projection }]);
+              },
+            };
           }
           if (table === workbenchLaunch) {
             const insertedLaunch = inserted.findLast(
@@ -1239,6 +1248,150 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_dead",
       }),
     ).rejects.toThrow(DefinitionProjectionMissingError);
+  });
+
+  // CL-6452: every run deploy mints a same-named, same-asset sibling
+  // definition row frozen with the projection current at that deploy.
+  // A later invite must launch the hub-authored row's CURRENT
+  // projection — the one a skill pin or instructions save refroze in
+  // place — never a newer run clone's stale snapshot.
+  test("launchInvite launches the hub-authored projection, not a newer run-deploy clone's stale one", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "fact-checker",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowDefinitionRow: {
+        id: "wfd_authored",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_agent",
+        name: "fact-checker",
+        origin: "authored",
+      },
+      workflowDefinitionRows: [
+        // Newest first: the clone the last run deploy minted, frozen
+        // before the skill pin landed.
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "fact-checker",
+          assetId: "asst_agent",
+          origin: "run",
+        },
+        {
+          id: "wfd_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "fact-checker",
+          assetId: "asst_agent",
+          origin: "authored",
+        },
+      ],
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: "pre-pin instructions frozen at the run deploy",
+        }),
+        wfd_authored: inertProjection({
+          id: "wfd_authored",
+          systemPrompt: "post-pin instructions",
+        }),
+      },
+    });
+
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_authored",
+    });
+
+    const runInsert = db.inserted.find((row) => row.table === workflowRun);
+    expect(runInsert?.values).toMatchObject({ definitionId: "wfd_authored" });
+    const launchInsert = db.inserted.find(
+      (row) => row.table === workbenchLaunch,
+    );
+    expect(
+      (launchInsert?.values as { foldedBody: { systemPrompt: string } })
+        .foldedBody.systemPrompt,
+    ).toBe("post-pin instructions");
+  });
+
+  // The candidate set a launch resolves over is the authored row alone:
+  // N runs mint N clones, and none of them may ever be consulted.
+  test("run-deploy clones never grow the authoritative candidate set", async () => {
+    const cloneRows = Array.from({ length: 5 }, (_, index) => ({
+      id: `wfd_run_${String(5 - index)}`,
+      tenantId: "ten_1",
+      status: "deployed",
+      name: "fact-checker",
+      assetId: "asst_agent",
+      origin: "run" as const,
+    }));
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "fact-checker",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowDefinitionRow: {
+        id: "wfd_authored",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_agent",
+        name: "fact-checker",
+        origin: "authored",
+      },
+      workflowDefinitionRows: [
+        ...cloneRows,
+        {
+          id: "wfd_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "fact-checker",
+          assetId: "asst_agent",
+          origin: "authored",
+        },
+      ],
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_run_5: inertProjection({ id: "wfd_run_5" }),
+        wfd_authored: inertProjection({ id: "wfd_authored" }),
+      },
+    });
+
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_authored",
+    });
+
+    expect(db.wireProjectionCalls).toEqual(["wfd_authored"]);
   });
 
   test("launchInvite fails loud when no such definition exists for the tenant", async () => {
@@ -2321,6 +2474,95 @@ describe("createHubChatPlatform", () => {
       expect(deployed.config.systemPrompt).toBe(
         "You are now a blunt, no-nonsense assistant.",
       );
+    });
+
+    // CL-6452: the deploy repoints `workflow_run.definitionId` at the
+    // per-run clone it minted, so the run's own definition row carries
+    // the projection frozen at that deploy — a refresh reading it would
+    // replay the stale body forever. The refresh must recompute from
+    // the hub-authored sibling of the run's asset instead.
+    test("recomputes from the hub-authored definition, not the run's own deploy clone", async () => {
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: null,
+          name: "unused",
+          displayName: null,
+        },
+        definitionId: "wfd_unused",
+        workflowRunRow: {
+          id: "run_agent1",
+          address: "agent1@ten1.workbench.test",
+          principalId: "prin_agent1",
+          definitionId: "wfd_run_clone",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          assetId: "asst_agent1",
+          name: "fact-checker",
+          origin: "run",
+        },
+        workflowDefinitionRows: [
+          {
+            id: "wfd_run_clone",
+            tenantId: "ten_1",
+            status: "deployed",
+            name: "fact-checker",
+            assetId: "asst_agent1",
+            origin: "run",
+          },
+          {
+            id: "wfd_agent1",
+            tenantId: "ten_1",
+            status: "deployed",
+            name: "fact-checker",
+            assetId: "asst_agent1",
+            origin: "authored",
+          },
+        ],
+        workbenchLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "run_agent1",
+          foldedBody: {
+            systemPrompt: "You are a careful research assistant.",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+        wireProjectionsByDefinitionId: {
+          wfd_run_clone: inertProjection({
+            id: "wfd_run_clone",
+            systemPrompt: "You are a careful research assistant.",
+          }),
+          wfd_agent1: NEW_PROJECTION,
+        },
+      });
+      const platform = createHubChatPlatform({
+        toolGrantsForPins: () => [],
+        db: db as never,
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await platform.refreshAgentInstanceFromDefinition(
+        "ten_1",
+        "ch_1",
+        "agent1@ten1.workbench.test",
+      );
+
+      const launchUpdate = db.updated.find(
+        (row) => row.table === workbenchLaunch,
+      );
+      expect(
+        (launchUpdate?.values as { foldedBody: { systemPrompt: string } })
+          .foldedBody.systemPrompt,
+      ).toBe("You are now a blunt, no-nonsense assistant.");
     });
   });
 });

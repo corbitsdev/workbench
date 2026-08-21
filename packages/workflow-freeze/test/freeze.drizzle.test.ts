@@ -177,4 +177,31 @@ describeIfDb("freezeInertWorkflowDefinition against Postgres", () => {
     expect(await loadFrozenWireProjection(db, definitionId)).not.toBeNull();
     expect(await loadFrozenGrantSnapshot(db, definitionId)).not.toBeNull();
   });
+
+  // CL-6452: a run deploy ensures a same-named sibling over the same
+  // asset (its per-run rendered bytes carry a per-run wire hash). The
+  // `origin` column is what keeps that clone out of every authoritative
+  // resolution: the freeze marks its row hub-authored, the bare ensure
+  // leaves the table default.
+  test("a freeze marks its definition authored; a run-deploy ensure mints a run clone", async () => {
+    const assetId = await insertAsset("freeze-origin");
+    const { definitionId } = await freezeInertWorkflowDefinition(db, {
+      assetId,
+      workflowJson: agentWorkflowJson("Authored instructions."),
+    });
+    const authoredRow = await db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, definitionId),
+    });
+    expect(authoredRow?.origin).toBe("authored");
+
+    const sibling = await ensureWorkflowDefinitionForAsset(db, {
+      assetId,
+      wireHash: "per-run-rendered-hash",
+    });
+    expect(sibling.definitionId).not.toBe(definitionId);
+    const cloneRow = await db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, sibling.definitionId),
+    });
+    expect(cloneRow?.origin).toBe("run");
+  });
 });
