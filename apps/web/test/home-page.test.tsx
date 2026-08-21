@@ -221,6 +221,141 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
   });
 });
 
+// CL-6462: what someone sees between "connect a provider" and "talking to
+// Myra". The old answer was a bare centred "0 of 5 ready" on an empty
+// page; these pin the replacement — one warm loader, no counts, a land
+// that happens the moment Myra herself can answer, and an honest way out
+// if she never does.
+describe("the wait right after connecting a provider", () => {
+  /** A bench with no workbenches yet whose agent definitions arrive only
+   * after `readyAfter` reads — everything before that is the window the
+   * person spends waiting. */
+  function benchWhereMyraArrivesAfter(readyAfter: number, provisioning = true) {
+    let definitionReads = 0;
+    const state = { statusCalls: 0 };
+    stubFetch((path, method) => {
+      if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
+      if (path.endsWith("/chat/workbenches") && method === "GET") {
+        return json({ items: [] });
+      }
+      if (path.includes("/workflows/definitions")) {
+        definitionReads += 1;
+        return json({
+          data:
+            definitionReads > readyAfter
+              ? [
+                  {
+                    id: "wfd_assistant",
+                    tenantId: "tnt_1",
+                    name: "assistant",
+                    currentVersion: "1",
+                    status: "deployed",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    updatedAt: "2026-01-01T00:00:00.000Z",
+                  },
+                ]
+              : [],
+          nextCursor: null,
+        });
+      }
+      if (path === "/api/onboarding/provisioning-status") {
+        state.statusCalls += 1;
+        return json({
+          kind: provisioning ? "provisioning" : "ready",
+          setupAgentReady: !provisioning,
+          deployed: [],
+          pending: ["assistant"],
+        });
+      }
+      if (path.endsWith("/chat/workbenches") && method === "POST") {
+        return json({
+          id: "chan_new",
+          title: "New Workbench",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${method} ${path}`);
+    });
+    return state;
+  }
+
+  function renderHome(props: {
+    readonly retryMs: number;
+    readonly stallAfterMs: number;
+    readonly navigated: string[];
+  }) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    return act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={(to) => props.navigated.push(to)}>
+            <BenchProvider>
+              <HomeRoute
+                retryMs={props.retryMs}
+                stallAfterMs={props.stallAfterMs}
+              />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+  }
+
+  test("shows the warm loader while Myra is still coming online — never a count", async () => {
+    benchWhereMyraArrivesAfter(99);
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
+    for (let i = 0; i < 40; i++) {
+      await settle();
+      if ((container?.textContent ?? "") !== "") break;
+    }
+
+    const text = container?.textContent ?? "";
+    expect(text).toContain("Getting your workbench ready");
+    expect(text).toContain("Tip:");
+    expect(text).not.toMatch(/\d+ of \d+/);
+    expect(text).not.toMatch(/\d/);
+    expect(navigated).toEqual([]);
+  });
+
+  test("lands the moment Myra can answer, without waiting on the rest of the seeds", async () => {
+    // The status route still says "provisioning" — other workflows are
+    // mid-deploy — and the land happens anyway.
+    const state = benchWhereMyraArrivesAfter(1);
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
+    for (let i = 0; i < 40; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(navigated).toEqual(["/w/chan_new"]);
+    expect(state.statusCalls).toBeGreaterThan(0);
+  });
+
+  test("says so honestly with a retry once the wait has gone on too long", async () => {
+    benchWhereMyraArrivesAfter(99);
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 40, navigated });
+    for (let i = 0; i < 40; i++) {
+      await settle();
+      if ((container?.textContent ?? "").includes("longer than usual")) break;
+    }
+
+    const text = container?.textContent ?? "";
+    expect(text).toContain("Myra is taking longer than usual");
+    expect(text).not.toMatch(/\d+ of \d+/);
+    const retry = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Try again",
+    );
+    expect(retry).not.toBeUndefined();
+  });
+});
+
 describe('a failed memberships fetch never reads as "pick from the switcher"', () => {
   test("shows an error state with Retry, not the empty-selection copy", async () => {
     let principalsCalls = 0;

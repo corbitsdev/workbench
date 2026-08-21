@@ -6,6 +6,7 @@ import {
   NOOP_MODEL_SOURCE,
   seedCatalog,
   seedTenant,
+  SETUP_AGENT_ASSET_NAME,
   type SeedTenantArgs,
   type WorkflowPusher,
 } from "../src/seed";
@@ -549,13 +550,16 @@ describe("seedTenant", () => {
     );
   });
 
-  test("the default set is non-empty and starts with the echo workflow", () => {
+  test("the default set is non-empty and leads with the setup agent", () => {
+    // CL-6462: the one agent a person talks to deploys before anything
+    // else, so a fresh signup can start the moment she is live instead
+    // of waiting out the whole set.
     expect(DEFAULT_WORKFLOWS.length).toBeGreaterThan(0);
-    expect(DEFAULT_WORKFLOWS[0]?.assetName).toBe("echo");
+    expect(DEFAULT_WORKFLOWS[0]?.assetName).toBe(SETUP_AGENT_ASSET_NAME);
   });
 
-  test("the default set also includes the assistant workflow", () => {
-    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("assistant");
+  test("the default set also includes the echo walking skeleton", () => {
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("echo");
   });
 
   test("the seeded assistant is productized under the Myra display name", () => {
@@ -588,7 +592,7 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is echo, assistant, workbench-digest, recurring-task, and last-30-days-research", () => {
+  test("the default set consumed by real tenant provisioning is assistant, echo, workbench-digest, recurring-task, and last-30-days-research", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup. workbench-digest is the
     // seed automation the Routines picker can honestly offer;
@@ -602,8 +606,8 @@ describe("seedTenant", () => {
     // reach a real user through this array — they are seeded only via
     // the explicit CATALOG_TEST_WORKFLOWS opt-in.
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
-      "echo",
       "assistant",
+      "echo",
       "workbench-digest",
       "recurring-task",
       "last-30-days-research",
@@ -909,6 +913,12 @@ describe("seedTenant", () => {
     );
 
     expect(pushes).toHaveLength(DEFAULT_WORKFLOWS.length);
+    // CL-6462: deploy order is the product decision — the setup agent is
+    // pushed and deployed before any other seeded workflow, so someone
+    // who just connected can start talking while the rest converge.
+    expect(pushes[0]?.remoteUrl).toContain(
+      `/assets/workflow/${SETUP_AGENT_ASSET_NAME}.git`,
+    );
     const output = lines.join("\n");
     for (const workflow of DEFAULT_WORKFLOWS) {
       expect(output).not.toContain(`confirmed workflow ${workflow.assetName}`);
