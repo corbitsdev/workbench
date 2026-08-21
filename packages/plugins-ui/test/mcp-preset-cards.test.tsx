@@ -171,8 +171,8 @@ describe("McpPresetCardsSection", () => {
     const card = container.querySelector(
       '[data-plugin-slug="github-mcp"]',
     ) as HTMLElement;
-    const connectButton = [...card.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Connect"),
+    const connectButton = [...card.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Connect"),
     ) as HTMLButtonElement;
 
     await act(async () => {
