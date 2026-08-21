@@ -51,9 +51,9 @@ function mount(initialWorkbenchId: string | null, staleMs?: number) {
 }
 
 describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
-  test("a tool call in flight renders a running chip with its friendly label", () => {
+  test("a tool call in flight renders a running row phrased in the present tense", () => {
     const harness = mount("chan_a");
-    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();
 
     harness.send("chat.agent", {
       type: "inference.tool_call.start",
@@ -62,15 +62,20 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     });
 
     const row = harness.container.querySelector(
-      ".chat-turn-activity-row",
+      ".chat-tool-activity-row",
     ) as HTMLElement;
     expect(row).not.toBeNull();
-    expect(row.dataset.status).toBe("running");
-    expect(row.textContent).toContain("web_search");
+    expect(
+      row
+        .querySelector(".chat-tool-activity-marker")
+        ?.getAttribute("data-status"),
+    ).toBe("running");
+    expect(row.textContent).toContain("Searching the web");
+    expect(row.textContent).not.toContain("web_search");
     harness.unmount();
   });
 
-  test("mcp_read resolves to server.tool once inference.tool_call.end arrives", () => {
+  test("an MCP dispatch call reads as the tool it actually invoked once its arguments arrive", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", {
       type: "inference.tool_call.start",
@@ -88,11 +93,13 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       },
     });
 
-    expect(harness.container.textContent).toContain("notion.search_pages");
+    expect(harness.container.textContent).toContain(
+      "Searching pages in Notion",
+    );
     harness.unmount();
   });
 
-  test("tool.done flips the chip to done, and the strip disappears once the turn ends", () => {
+  test("tool.done settles the row, and the strip disappears once the turn ends", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", {
       type: "tool.start",
@@ -106,16 +113,20 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     });
 
     const row = harness.container.querySelector(
-      ".chat-turn-activity-row",
+      ".chat-tool-activity-row",
     ) as HTMLElement;
-    expect(row.dataset.status).toBe("done");
+    expect(
+      row
+        .querySelector(".chat-tool-activity-marker")
+        ?.getAttribute("data-status"),
+    ).toBe("success");
 
     harness.send("chat.agent", {
       type: "inference.done",
       seq: 3,
       data: { turn: {}, usage: {}, source: "primary" },
     });
-    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();
     harness.unmount();
   });
 
@@ -128,7 +139,7 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     });
 
     expect(
-      harness.container.querySelector(".chat-turn-activity-thinking"),
+      harness.container.querySelector(".chat-tool-activity-thinking"),
     ).not.toBeNull();
     harness.unmount();
   });
@@ -141,11 +152,11 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       data: { call: { id: "c1", name: "search", arguments: {} } },
     });
     expect(
-      harness.container.querySelector(".chat-turn-activity-row"),
+      harness.container.querySelector(".chat-tool-activity-row"),
     ).not.toBeNull();
 
     harness.switchWorkbench("chan_b");
-    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();
     harness.unmount();
   });
 
@@ -157,12 +168,12 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
       data: { call: { id: "c1", name: "search", arguments: {} } },
     });
     expect(
-      harness.container.querySelector(".chat-turn-activity"),
+      harness.container.querySelector(".chat-tool-activity"),
     ).not.toBeNull();
 
     // No `tool.done`/`reactor.done` ever arrives — a dropped SSE mid-turn.
     await harness.settle(60);
-    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();
     harness.unmount();
   });
 
@@ -182,11 +193,11 @@ describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
     });
     await harness.settle(20);
     expect(
-      harness.container.querySelector(".chat-turn-activity"),
+      harness.container.querySelector(".chat-tool-activity"),
     ).not.toBeNull();
 
     await harness.settle(30);
-    expect(harness.container.querySelector(".chat-turn-activity")).toBeNull();
+    expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();
     harness.unmount();
   });
 });
