@@ -65,7 +65,9 @@ function harness(
     log: (line) => logged.push(line),
     isFullySeededFn: async (_api, _cookies, tenantId) => {
       calls.isFullySeeded += 1;
-      return (deployedByTenant.get(tenantId) ?? []).length === ALL_WORKFLOWS.length;
+      return (
+        (deployedByTenant.get(tenantId) ?? []).length === ALL_WORKFLOWS.length
+      );
     },
     ensureSeededFn: async (args) => {
       calls.ensureSeeded += 1;
@@ -94,7 +96,9 @@ describe("createBenchProvisioner", () => {
     expect(calls.ensureSeeded).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
     expect(report).toMatchObject({ converged: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
+    expect(
+      await store.read({ userId: "user_1", tenantId: "ten_1" }),
+    ).toBeUndefined();
   });
 
   test("is idempotent: a second drain over an already-seeded bench deploys nothing", async () => {
@@ -119,7 +123,9 @@ describe("createBenchProvisioner", () => {
 
     expect(calls.ensureSeeded).toBe(0);
     expect(report).toMatchObject({ converged: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
+    expect(
+      await store.read({ userId: "user_1", tenantId: "ten_1" }),
+    ).toBeUndefined();
   });
 
   test("a half-provisioned bench keeps its row and converges on a later pass", async () => {
@@ -142,11 +148,15 @@ describe("createBenchProvisioner", () => {
     const first = await provisioner.drainOnce();
     expect(first).toMatchObject({ pending: 1 });
     // The row survives precisely so the next pass can finish the job.
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
+      SEED,
+    );
 
     const second = await provisioner.drainOnce({ ignoreBackoff: true });
     expect(second).toMatchObject({ converged: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
+    expect(
+      await store.read({ userId: "user_1", tenantId: "ten_1" }),
+    ).toBeUndefined();
   });
 
   test("a deploy failure leaves the row for the next pass rather than losing the bench", async () => {
@@ -162,7 +172,9 @@ describe("createBenchProvisioner", () => {
 
     const first = await provisioner.drainOnce();
     expect(first).toMatchObject({ failed: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
+      SEED,
+    );
     expect(logged.some((line) => line.includes("sidecar exploded"))).toBe(true);
 
     const second = await provisioner.drainOnce({ ignoreBackoff: true });
@@ -234,7 +246,9 @@ describe("createBenchProvisioner", () => {
 
     expect(calls.ensureSeeded).toBe(0);
     expect(report).toMatchObject({ failed: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
+      SEED,
+    );
   });
 
   test("drains every waiting bench in one tick, not just the first", async () => {

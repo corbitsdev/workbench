@@ -91,7 +91,9 @@ export type DrainReport = {
 export type BenchProvisioner = {
   /** One bench, start to finish. Exposed so a connect can kick its own
    * bench immediately instead of waiting out a poll interval. */
-  provisionBench(seed: PendingSeed): Promise<BenchProvisionOutcome | "deferred">;
+  provisionBench(
+    seed: PendingSeed,
+  ): Promise<BenchProvisionOutcome | "deferred">;
   drainOnce(args?: { ignoreBackoff?: boolean }): Promise<DrainReport>;
   /** Fire-and-forget drain for callers that must not wait on it — a
    * route that just wrote a pending row, or hub boot. Never rejects. */
@@ -133,7 +135,6 @@ export function createBenchProvisioner(
   }
 
   async function runOnce(seed: PendingSeed): Promise<BenchProvisionOutcome> {
-    const key = benchKey(seed);
     const cookies = await deps.sessionFor({
       userId: seed.userId,
       tenantId: seed.tenantId,
@@ -264,7 +265,10 @@ export function createBenchProvisioner(
     wake,
     start(args = {}) {
       if (timer !== undefined) return;
-      timer = setInterval(wake, args.intervalMs ?? PROVISIONING_POLL_INTERVAL_MS);
+      timer = setInterval(
+        wake,
+        args.intervalMs ?? PROVISIONING_POLL_INTERVAL_MS,
+      );
       timer.unref?.();
       wake();
     },

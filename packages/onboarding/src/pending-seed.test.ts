@@ -140,7 +140,12 @@ describe("createInMemoryPendingSeedStore", () => {
     expect(due).toEqual(
       expect.arrayContaining([
         SEED,
-        { ...SEED, userId: "user_2", tenantId: "ten_2", apiKey: "sk-or-v1-second" },
+        {
+          ...SEED,
+          userId: "user_2",
+          tenantId: "ten_2",
+          apiKey: "sk-or-v1-second",
+        },
       ]),
     );
   });
@@ -159,13 +164,19 @@ describe("createInMemoryPendingSeedStore", () => {
 
     expect(due).toEqual([{ ...SEED, userId: "user_2", tenantId: "ten_2" }]);
     // Swept, not merely skipped — the expired row is gone for good.
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 })).toBeUndefined();
+    expect(
+      await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 }),
+    ).toBeUndefined();
   });
 
   test("listDue honors its limit so one drain tick can never scan the whole table", async () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     for (let index = 0; index < 5; index += 1) {
-      await store.put({ ...SEED, userId: `user_${index}`, tenantId: `ten_${index}` });
+      await store.put({
+        ...SEED,
+        userId: `user_${index}`,
+        tenantId: `ten_${index}`,
+      });
     }
 
     const due = await store.listDue({ limit: 2 });

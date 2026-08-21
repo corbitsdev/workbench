@@ -175,11 +175,14 @@ describe("POST /complete — connecting deploys nothing", () => {
       expect(
         requests.filter(
           (line) =>
-            line.includes("/workflows/deployments") &&
-            line.startsWith("POST"),
+            line.includes("/workflows/deployments") && line.startsWith("POST"),
         ),
       ).toEqual([]);
-      expect(requests.filter((line) => line.startsWith("POST /api/tenants/ten_1/assets"))).toEqual([]);
+      expect(
+        requests.filter((line) =>
+          line.startsWith("POST /api/tenants/ten_1/assets"),
+        ),
+      ).toEqual([]);
     } finally {
       server.stop(true);
     }
@@ -290,9 +293,7 @@ describe("GET /provisioning-status", () => {
         ),
       );
 
-      const response = await app.request(
-        "/api/onboarding/provisioning-status",
-      );
+      const response = await app.request("/api/onboarding/provisioning-status");
       const body = (await response.json()) as {
         kind: string;
         deployed: string[];
@@ -319,9 +320,7 @@ describe("GET /provisioning-status", () => {
         ),
       );
 
-      const response = await app.request(
-        "/api/onboarding/provisioning-status",
-      );
+      const response = await app.request("/api/onboarding/provisioning-status");
       const body = (await response.json()) as { kind: string };
 
       expect(body.kind).toBe("ready");

@@ -29,7 +29,11 @@ type LandState =
    * is expected right after someone connects a provider — connecting
    * deliberately no longer waits for deploys — so this is a warm wait
    * with live progress, never an error. */
-  | { readonly kind: "provisioning"; readonly live: number; readonly total: number }
+  | {
+      readonly kind: "provisioning";
+      readonly live: number;
+      readonly total: number;
+    }
   | { readonly kind: "error"; readonly message: string };
 
 const PROVISIONING_POLL_MS = 3_000;
@@ -183,10 +187,7 @@ export function HomeRoute() {
   if (state.kind === "provisioning") {
     return (
       <div className="page-fill shell-route-loading">
-        <WorkbenchLoadingState
-          title="Getting your agents ready…"
-          delayMs={0}
-        />
+        <WorkbenchLoadingState title="Getting your agents ready…" delayMs={0} />
         <p className="shell-route-loading-note" role="status">
           {state.total > 0
             ? `${state.live} of ${state.total} ready`

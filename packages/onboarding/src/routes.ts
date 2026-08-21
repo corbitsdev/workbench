@@ -11,7 +11,6 @@ import type { CredentialCipher } from "@intx/types";
 import {
   cookiesFromHeader,
   createHubAPI,
-  DEFAULT_WORKFLOWS,
   inferenceCredentialName,
   parseAs,
   supportedCredentialProviders,

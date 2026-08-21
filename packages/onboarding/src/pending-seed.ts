@@ -32,18 +32,23 @@
 // replaces whatever was there (upsert) — mirrors the cookie's
 // single-active-token behavior.
 //
+// CL-6457 turned this row into something more than a handoff: it is now
+// the durable work item for background bench provisioning (see
+// `./bench-provisioning.ts`). Connecting a provider deploys nothing, so
+// the row is what says "this bench has a credential and does not yet
+// have its agents" — and because it lives in Postgres rather than in
+// the process that wrote it, a hub that dies mid-deploy resumes the
+// bench on its next boot instead of stranding it half-provisioned. That
+// is also why the TTL is a day rather than ten minutes: it now has to
+// outlive provisioning, not just a redirect.
+//
 // TTL is enforced at read time: a row past its `expiresAt` is deleted
 // and treated as though it were never there, rather than by a periodic
-// sweep job. This is deliberately the simpler of the two designs list
-// in the ticket — a stale row is inert until someone reads it (nothing
-// else in the system scans this table), and the one real reader
-// (`POST /complete-setup`) always reads well inside a user's onboarding
-// session, so a row that outlives its ten-minute TTL unread just sits
-// there harmlessly until that read finally happens (or never comes,
-// in which case it is dead weight, not a correctness or security
-// problem — the ciphertext is worthless without the cipher key, and a
-// forgotten row does not accumulate: the next OAuth connect upserts
-// over it).
+// sweep job — `listDue` applies exactly the same rule as `read` on its
+// way past, so the drain is never handed a dead key. A row that is never
+// read again is dead weight, not a correctness or security problem — the
+// ciphertext is worthless without the cipher key, and a forgotten row
+// does not accumulate: the next connect upserts over it.
 //
 // Future work: once Interchange ships an `InferenceSource`
 // credential-by-reference primitive (the [Intx ask] tracked on this
@@ -140,10 +145,7 @@ export interface PendingSeedStore {
    * the way past, the same read-time sweep `read` performs, so a dead
    * key is never handed to a drain. `limit` bounds one tick's work.
    */
-  listDue(args: {
-    now?: () => number;
-    limit?: number;
-  }): Promise<PendingSeed[]>;
+  listDue(args: { now?: () => number; limit?: number }): Promise<PendingSeed[]>;
   /** Deletes the row for (userId, tenantId), if any. Called once the
    * pending seed has done its job (seeded successfully) or once the
    * bench already reads as fully seeded some other way. */

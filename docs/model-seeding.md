@@ -42,10 +42,12 @@ API — never discovered at runtime:
 - **`packages/onboarding/src/complete-credential.ts`** — plants the
   browsable catalog for whichever provider was connected, key paste and
   OpenRouter/Hugging Face connect alike, via that provider's
-  `CATALOG_SEEDS` entry, and deploys the default workflow set against that
-  same entry's first model (`CATALOG_SEEDS[provider].models[0]`) — the
-  one place a provider's default model is named, so the deploy target and
-  the catalog it is chosen from can never drift apart. This is also how a
+  `CATALOG_SEEDS` entry. The default workflow set is deployed against
+  that same entry's first model (`CATALOG_SEEDS[provider].models[0]`) —
+  the one place a provider's default model is named, so the deploy target
+  and the catalog it is chosen from can never drift apart — but that
+  deploy happens in the background, never in the connect request itself
+  (CL-6457; see [bench-provisioning.md](bench-provisioning.md)). This is also how a
   bench the hub's own sign-in hook could only mark `bench_unseeded` (no
   hub-owned `ANTHROPIC_API_KEY` configured) finishes seeding: the first
   working credential a user connects, through whichever onboarding path
