@@ -48,6 +48,19 @@ import type { SupportedCredentialProvider } from "@workbench/hub-client";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/**
+ * Whether `baseUrl` names a loopback address — the one fact that
+ * distinguishes a developer's own machine from a real deployment
+ * without trusting an operator to have overridden anything. Used to
+ * refuse `ALLOW_PLAINTEXT_SECRETS` (see `readHubConfig`) rather than
+ * relying on an operator to have removed it from an inherited `.env`.
+ */
+function isLoopbackBaseUrl(baseUrl: string): boolean {
+  return LOOPBACK_HOSTNAMES.has(new URL(baseUrl).hostname);
+}
+
 const HubEnv = type({
   DATABASE_URL: type(/^postgres(ql)?:\/\/.+$/).describe(
     "a Postgres connection URL, e.g. postgres://workbench:workbench@localhost:5432/workbench",
@@ -167,7 +180,7 @@ const HubEnv = type({
     "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
   ),
   "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
-    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; never set this for a real deployment",
+    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; refused unless BASE_URL is a loopback address, so a real deployment can never inherit it by accident",
   ),
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
@@ -667,5 +680,24 @@ export function readHubConfig(
   if (sidecarProvisioners.defaultProvisionerId !== undefined)
     hubConfig.defaultSidecarProvisionerId =
       sidecarProvisioners.defaultProvisionerId;
+
+  if (
+    hubConfig.allowPlaintextSecrets &&
+    !isLoopbackBaseUrl(hubConfig.baseUrl)
+  ) {
+    throw new Error(
+      [
+        `ALLOW_PLAINTEXT_SECRETS is set, but BASE_URL (${hubConfig.baseUrl}) is not a loopback address.`,
+        "Storing secrets unencrypted at rest is a dev/test-only fallback for",
+        "http://localhost — refused here because this looks like a real",
+        "deployment. Generate a real key instead and add it to .env:",
+        "",
+        "  openssl rand -hex 32",
+        "",
+        "then set CREDENTIAL_ENCRYPTION_KEY to it and remove ALLOW_PLAINTEXT_SECRETS.",
+      ].join("\n"),
+    );
+  }
+
   return hubConfig;
 }
