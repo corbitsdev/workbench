@@ -15,8 +15,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, CSSProperties, KeyboardEvent } from "react";
 
+import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import type { Part, ParticipantRecord } from "./api";
 import {
   activeMentionQuery,
@@ -721,13 +722,24 @@ export const Composer = forwardRef<
                         event.preventDefault();
                         pickMention(option);
                       }}
+                      style={
+                        isAgent
+                          ? undefined
+                          : (generatedAvatarStyle(
+                              option.candidate.id,
+                            ) as CSSProperties)
+                      }
                     >
                       <Avatar
                         initials={option.candidate.label}
                         label={option.candidate.label}
                         tone={isAgent ? "agent" : "neutral"}
                         size="sm"
-                        className="chat-mention-avatar"
+                        className={
+                          isAgent
+                            ? "chat-mention-avatar"
+                            : `chat-mention-avatar ${AVATAR_IDENTITY_CLASS}`
+                        }
                       />
                       <span className="chat-mention-meta">
                         <span className="chat-mention-name">

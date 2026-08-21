@@ -25,6 +25,7 @@ import {
   toast,
 } from "@corbits/react-ui";
 import { toReactUiReasoning } from "./agent-part-adapter";
+import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -37,6 +38,7 @@ import {
   PushPinSlash,
   Smiley,
 } from "@corbits/icons";
+import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -269,6 +271,10 @@ type SenderDisplay = {
   readonly handle?: string;
   readonly isAgent: boolean;
   readonly initials: string;
+  /** The wire address behind this sender — never shown, only hashed
+   * (`generatedAvatarStyle`) into a stable per-person fallback color for
+   * a human's avatar. */
+  readonly id: string;
 };
 
 function senderDisplay(
@@ -283,7 +289,12 @@ function senderDisplay(
     localPartOf(sender.address) === currentUser.principalId
   ) {
     const label = currentUser.name ?? CHAT_STRINGS.senderYou;
-    return { label, isAgent: false, initials: ownAvatarInitials(currentUser) };
+    return {
+      label,
+      isAgent: false,
+      initials: ownAvatarInitials(currentUser),
+      id: currentUser.principalId,
+    };
   }
 
   const matched = participants.find(
@@ -307,6 +318,7 @@ function senderDisplay(
       handle: matched.handle,
       isAgent,
       initials: initialsOf(displayName ?? matched.handle),
+      id: matched.address,
     };
   }
 
@@ -315,6 +327,7 @@ function senderDisplay(
       label: sender.name,
       isAgent: false,
       initials: initialsOf(sender.name),
+      id: sender.address,
     };
   }
 
@@ -322,33 +335,53 @@ function senderDisplay(
     label: CHAT_STRINGS.senderFallbackMember,
     isAgent: false,
     initials: "?",
+    id: sender.address,
   };
 }
 
 /** The message header's avatar chip — the same react-ui `Avatar` (tone by
  * agent-vs-neutral, a tooltip carrying the full name) `chat-workspace.tsx`'s
- * member stack already uses, rather than a bespoke initials box. */
+ * member stack already uses, rather than a bespoke initials box. A human
+ * sender additionally gets `generatedAvatarStyle`'s deterministic
+ * per-person fill — set on this wrap (Avatar takes no `style` prop) and
+ * inherited into `Avatar`'s own root span through the
+ * `AVATAR_IDENTITY_CLASS` className — so every human reads as their own
+ * color instead of the same flat neutral gray agents already stand apart
+ * from. */
 function SenderAvatar({
+  id,
   initials,
   label,
   isAgent,
   tenantMonogram,
   tenantName,
 }: {
+  id: string;
   initials: string;
   label: string;
   isAgent: boolean;
   tenantMonogram?: string;
   tenantName?: string;
 }) {
+  const identityStyle = isAgent
+    ? undefined
+    : (generatedAvatarStyle(id) as CSSProperties);
   return (
-    <span className="chat-sender-avatar-wrap" title={label}>
+    <span
+      className="chat-sender-avatar-wrap"
+      title={label}
+      style={identityStyle}
+    >
       <Avatar
         initials={initials}
         label={label}
         tone={isAgent ? "agent" : "neutral"}
         size="md"
-        className="chat-sender-avatar"
+        className={
+          isAgent
+            ? "chat-sender-avatar"
+            : `chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`
+        }
       />
       {tenantMonogram !== undefined ? (
         <span
@@ -456,6 +489,7 @@ function TextBubble({
           onClick={handleOpenProfile}
         >
           <SenderAvatar
+            id={display.id}
             initials={display.initials}
             label={display.label}
             isAgent={display.isAgent}
@@ -863,6 +897,7 @@ function StreamingMessageGroup({
       <div className="chat-bubble-row" data-own="false">
         {display !== undefined && (
           <SenderAvatar
+            id={display.id}
             initials={display.initials}
             label={display.label}
             isAgent={display.isAgent}

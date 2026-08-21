@@ -80,7 +80,7 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { colorForPrincipal } from "@corbits/presence/color";
+import { generatedAvatarStyle } from "./avatar-identity";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -120,14 +120,16 @@ export type TenantResolution =
  * One live presence entry for the workbench's who's-here stack (CL-6328) —
  * derived from this workbench's own `/stream` connection
  * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
- * heartbeat poll. `displayName`/`color` are resolved client-side against
- * the workbench's own participants and `@corbits/presence`'s deterministic
- * `colorForPrincipal`, since the roster itself carries only ids.
+ * heartbeat poll. `displayName`/`color`/`textColor` are resolved
+ * client-side against the workbench's own participants and
+ * `generatedAvatarStyle`'s deterministic per-principal fill, since the
+ * roster itself carries only ids.
  */
 export interface PresenceMember {
   readonly principalId: string;
   readonly displayName: string;
   readonly color: string;
+  readonly textColor: string;
 }
 
 /** One entry in the header's combined who's-active stack — an agent
@@ -139,6 +141,7 @@ export interface TeamAvatarEntry {
   readonly label: string;
   readonly tone: "agent" | "neutral";
   readonly color?: string;
+  readonly textColor?: string;
 }
 
 /** How many avatars the header shows before collapsing the rest into a
@@ -170,6 +173,7 @@ export function buildTeamAvatarStack(
     label: member.displayName,
     tone: "neutral" as const,
     color: member.color,
+    textColor: member.textColor,
   }));
   return [...agents, ...humans];
 }
@@ -897,14 +901,18 @@ function ChatWorkspaceInner({
   // `typingLabel` resolves a typing ping's principal.
   const presenceMembers: readonly PresenceMember[] = useMemo(
     () =>
-      presenceRoster.map((member) => ({
-        principalId: member.principalId,
-        displayName: typingLabel(
-          member.principalId,
-          activeWorkbench?.participants ?? [],
-        ),
-        color: colorForPrincipal(member.principalId),
-      })),
+      presenceRoster.map((member) => {
+        const style = generatedAvatarStyle(member.principalId);
+        return {
+          principalId: member.principalId,
+          displayName: typingLabel(
+            member.principalId,
+            activeWorkbench?.participants ?? [],
+          ),
+          color: style["--avatar-identity-bg"],
+          textColor: style["--avatar-identity-fg"],
+        };
+      }),
     [presenceRoster, activeWorkbench?.participants],
   );
 
@@ -1121,7 +1129,10 @@ function ChatWorkspaceInner({
                           <span
                             key={entry.key}
                             className="chat-presence-avatar"
-                            style={{ backgroundColor: entry.color }}
+                            style={{
+                              backgroundColor: entry.color,
+                              color: entry.textColor,
+                            }}
                             title={entry.label}
                           >
                             {entry.initials}

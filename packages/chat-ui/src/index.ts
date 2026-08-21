@@ -13,6 +13,13 @@ export type {
 
 export { WorkbenchLoadingState } from "./loading-state";
 
+export {
+  AVATAR_IDENTITY_CLASS,
+  generatedAvatarStyle,
+  resolveAvatarFill,
+} from "./avatar-identity";
+export type { AvatarFill, GeneratedAvatarStyle } from "./avatar-identity";
+
 export { PinnedStrip } from "./pinned-strip";
 export {
   Composer,

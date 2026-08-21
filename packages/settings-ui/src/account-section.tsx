@@ -18,6 +18,7 @@ import {
 } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
 import { Copy, SignOut } from "@corbits/icons";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -26,6 +27,7 @@ import {
   UnauthenticatedError,
   describeQueryError,
 } from "@corbits/api-query";
+import { AVATAR_IDENTITY_CLASS, resolveAvatarFill } from "@corbits/chat-ui";
 import { getAccount, type Account } from "./api";
 import { SETTINGS_STRINGS } from "./strings";
 
@@ -67,9 +69,13 @@ export function AccountSection({
       <QueryView query={query} label={SETTINGS_STRINGS.accountLoadError}>
         {(account) => (
           <AccountSectionView
+            id={account.id}
             name={account.name}
             email={account.email}
             emailVerified={account.emailVerified}
+            {...(account.image !== null && account.image !== undefined
+              ? { image: account.image }
+              : {})}
             {...(onSignOut !== undefined ? { onSignOut } : {})}
           />
         )}
@@ -106,21 +112,43 @@ async function copyEmail(email: string): Promise<void> {
  * `BenchSectionView` is: directly renderable in tests without a fetch stub.
  */
 export function AccountSectionView({
+  id,
   name,
   email,
   emailVerified,
+  image,
   onSignOut,
 }: {
+  readonly id: string;
   readonly name: string;
   readonly email: string;
   readonly emailVerified: boolean;
+  readonly image?: string;
   readonly onSignOut?: () => void;
 }) {
+  const fill = resolveAvatarFill(id, image);
   return (
     <SettingsPanel title={SETTINGS_STRINGS.accountSectionTitle}>
       <div className="settings-account-card">
         <div className="settings-account-identity">
-          <Avatar initials={initialsOf(name)} label={name} size="lg" />
+          {fill.kind === "image" ? (
+            <img
+              className="settings-account-avatar-image"
+              src={fill.url}
+              alt={name}
+              width={40}
+              height={40}
+            />
+          ) : (
+            <span style={fill.style as CSSProperties}>
+              <Avatar
+                initials={initialsOf(name)}
+                label={name}
+                size="lg"
+                className={AVATAR_IDENTITY_CLASS}
+              />
+            </span>
+          )}
           <div className="settings-account-identity-text">
             <span className="settings-account-name">{name}</span>
             <span className="settings-account-email">
