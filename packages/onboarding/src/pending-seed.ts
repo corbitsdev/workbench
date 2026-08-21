@@ -62,7 +62,20 @@ import {
 } from "@workbench/hub-client";
 import { pendingSeed } from "./schema";
 
-export const PENDING_SEED_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long a row stays usable. This is a provisioning queue's durability
+ * window, not a handoff token's lifetime (CL-6457): the row is what lets
+ * a background drain finish — or, after a hub restart, resume — the
+ * workflow deploys that connect deliberately no longer waits on. It is
+ * deleted the moment provisioning converges, so this bound only governs
+ * a bench that never converged at all: long enough that an overnight
+ * sidecar outage still resolves itself, short enough that an abandoned
+ * one does not keep a duplicate of the key indefinitely. The key itself
+ * already lives on, encrypted, as the tenant's own credential row — this
+ * copy is a duplicate of material the hub holds either way, never a new
+ * class of secret.
+ */
+export const PENDING_SEED_TTL_MS = 24 * 60 * 60 * 1000;
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
   SupportedCredentialProvider,
@@ -118,11 +131,26 @@ export interface PendingSeedStore {
     tenantId: string;
     now?: () => number;
   }): Promise<PendingSeed | undefined>;
+  /**
+   * Every unexpired row, for the background drain that has no request —
+   * and therefore no (userId, tenantId) — to scope itself by. This is
+   * what makes provisioning survive a hub restart: the rows a crashed
+   * process was mid-way through are still here, and the next boot's
+   * first tick picks them straight back up. Expired rows are deleted on
+   * the way past, the same read-time sweep `read` performs, so a dead
+   * key is never handed to a drain. `limit` bounds one tick's work.
+   */
+  listDue(args: {
+    now?: () => number;
+    limit?: number;
+  }): Promise<PendingSeed[]>;
   /** Deletes the row for (userId, tenantId), if any. Called once the
    * pending seed has done its job (seeded successfully) or once the
    * bench already reads as fully seeded some other way. */
   clear(args: { userId: string; tenantId: string }): Promise<void>;
 }
+
+export const PENDING_SEED_SCAN_LIMIT = 50;
 
 interface StoredRow {
   provider: string;
@@ -130,16 +158,63 @@ interface StoredRow {
   expiresAt: Date;
 }
 
+interface IdentifiedRow extends StoredRow {
+  userId: string;
+  tenantId: string;
+}
+
 interface RowAccess {
   get(userId: string, tenantId: string): Promise<StoredRow | undefined>;
   put(userId: string, tenantId: string, row: StoredRow): Promise<void>;
   delete(userId: string, tenantId: string): Promise<void>;
+  list(limit: number): Promise<IdentifiedRow[]>;
 }
 
 function createPendingSeedStore(
   access: RowAccess,
   cipher: CredentialCipher,
 ): PendingSeedStore {
+  /**
+   * The single validity rule both readers apply: a row that is expired,
+   * sealed for an unsupported provider, or undecryptable under the
+   * current key is dead weight — deleted here and reported as absent,
+   * rather than left to linger or handed onward as a usable seed.
+   */
+  async function decodeRow(
+    row: IdentifiedRow,
+    nowMs: number,
+  ): Promise<PendingSeed | undefined> {
+    const drop = async (): Promise<undefined> => {
+      await access.delete(row.userId, row.tenantId);
+      return undefined;
+    };
+
+    if (row.expiresAt.getTime() <= nowMs) return drop();
+    if (!PROVIDER_IDS.includes(row.provider as SupportedCredentialProvider)) {
+      return drop();
+    }
+    const provider = row.provider as SupportedCredentialProvider;
+
+    try {
+      const plaintext = await cipher.decrypt(
+        row.payload,
+        pendingSeedAad(provider),
+      );
+      const parsed = PendingSeedSecret(JSON.parse(plaintext));
+      if (parsed instanceof type.errors) return drop();
+      return {
+        userId: row.userId,
+        tenantId: row.tenantId,
+        provider,
+        principalId: parsed.principalId,
+        tenantDomain: parsed.tenantDomain,
+        apiKey: parsed.apiKey,
+      };
+    } catch {
+      return drop();
+    }
+  }
+
   return {
     async put(seed, args = {}) {
       const now = args.now ?? Date.now;
@@ -163,46 +238,22 @@ function createPendingSeedStore(
       const now = args.now ?? Date.now;
       const row = await access.get(args.userId, args.tenantId);
       if (row === undefined) return undefined;
+      return decodeRow(
+        { ...row, userId: args.userId, tenantId: args.tenantId },
+        now(),
+      );
+    },
 
-      if (row.expiresAt.getTime() <= now()) {
-        await access.delete(args.userId, args.tenantId);
-        return undefined;
+    async listDue(args) {
+      const now = args.now ?? Date.now;
+      const nowMs = now();
+      const rows = await access.list(args.limit ?? PENDING_SEED_SCAN_LIMIT);
+      const due: PendingSeed[] = [];
+      for (const row of rows) {
+        const seed = await decodeRow(row, nowMs);
+        if (seed !== undefined) due.push(seed);
       }
-
-      // Not a supported provider (a row from a since-removed provider,
-      // or outright corrupt) — dead weight, cleared the same as an
-      // expired row.
-      if (!PROVIDER_IDS.includes(row.provider as SupportedCredentialProvider)) {
-        await access.delete(args.userId, args.tenantId);
-        return undefined;
-      }
-      const provider = row.provider as SupportedCredentialProvider;
-
-      let secret: typeof PendingSeedSecret.infer;
-      try {
-        const plaintext = await cipher.decrypt(
-          row.payload,
-          pendingSeedAad(provider),
-        );
-        const parsed = PendingSeedSecret(JSON.parse(plaintext));
-        if (parsed instanceof type.errors) {
-          await access.delete(args.userId, args.tenantId);
-          return undefined;
-        }
-        secret = parsed;
-      } catch {
-        await access.delete(args.userId, args.tenantId);
-        return undefined;
-      }
-
-      return {
-        userId: args.userId,
-        tenantId: args.tenantId,
-        provider,
-        principalId: secret.principalId,
-        tenantDomain: secret.tenantDomain,
-        apiKey: secret.apiKey,
-      };
+      return due;
     },
 
     async clear(args) {
@@ -263,6 +314,16 @@ export function createDrizzlePendingSeedStore<
             ),
           );
       },
+      async list(limit) {
+        const rows = await db.select().from(pendingSeed).limit(limit);
+        return rows.map((row) => ({
+          userId: row.userId,
+          tenantId: row.tenantId,
+          provider: row.provider,
+          payload: row.payload,
+          expiresAt: row.expiresAt,
+        }));
+      },
     },
     cipher,
   );
@@ -286,6 +347,12 @@ export function createInMemoryPendingSeedStore(
       },
       async delete(userId, tenantId) {
         rows.delete(keyOf(userId, tenantId));
+      },
+      async list(limit) {
+        return [...rows.entries()].slice(0, limit).map(([key, row]) => {
+          const [userId = "", tenantId = ""] = key.split(":");
+          return { ...row, userId, tenantId };
+        });
       },
     },
     cipher,

@@ -26,21 +26,20 @@ import type { AccessPolicyStore } from "@workbench/access-policy";
 import { generateRefId, makeErrorEnvelope } from "@workbench/hub-client";
 
 import {
-  isFullySeeded,
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
   ProvisionError,
+  seededWorkflowStatus,
 } from "./provision";
 
 import {
-  completeCredentialSetup,
   ensureSeeded,
   findPersonalTenant,
   testAndPersistCredential,
-  type EnsureSeededResult,
   type PersonalTenant,
   type TestAndPersistCredentialResult,
 } from "./complete-credential";
+import type { BenchProvisioner } from "./bench-provisioning";
 import {
   CONNECTOR_REGISTRY,
   createOAuthConnectRoutes,
@@ -134,11 +133,21 @@ export type CreateOnboardingRoutesDeps = {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
     connectCredential?: typeof testAndPersistCredential;
   };
-  /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
+  /**
+   * The background drain these routes hand provisioning work to
+   * (CL-6457). No route here ever deploys a workflow itself; the most a
+   * route does is write the pending-seed row and nudge this. Absent
+   * only means no nudge — the drain's own poll still picks the row up on
+   * its next tick, which is why this is a latency optimization rather
+   * than a correctness dependency.
+   */
+  benchProvisioner?: Pick<BenchProvisioner, "wake">;
+  /** Test seam standing in for the deploy step, so a route test can
+   * prove the response never waits on one. */
   ensureSeededFn?: typeof ensureSeeded;
-  /** Test seam for `POST /complete`'s own success path — defaults to the
-   * real `completeCredentialSetup`. */
-  completeCredentialSetupFn?: typeof completeCredentialSetup;
+  /** Test seam for `POST /complete`'s fast half — credential persist and
+   * catalog seed, the only work that call still does inline. */
+  testAndPersistCredentialFn?: typeof testAndPersistCredential;
   /**
    * The same provider-health signal `@workbench/connections`' own routes
    * write to (CL-6092): a successful `POST /complete` clears any stale
@@ -176,7 +185,21 @@ export type CreateOnboardingRoutesDeps = {
   credentialCipher?: CredentialCipher;
 };
 
-type CompleteSetupOutcome = { readonly kind: "unseeded" } | EnsureSeededResult;
+/**
+ * What every provisioning-aware route answers with (CL-6457): where this
+ * bench's agents actually are, read from the bench's own asset and
+ * deployment state rather than from anything a caller remembers. `ready`
+ * means every default workflow is live; `provisioning` means the drain
+ * still has work to do, and `deployed`/`pending` are what a waiting
+ * surface renders as live progress instead of a static label.
+ */
+type ProvisioningStatusBody = {
+  readonly kind: "ready" | "provisioning";
+  readonly tenantId: string;
+  readonly tenantSlug: string;
+  readonly deployed: string[];
+  readonly pending: string[];
+};
 
 /**
  * The idempotent-duplicate-callback recovery: when a callback's own
@@ -257,72 +280,28 @@ export function createOnboardingRoutes(
   // short because successful provisioning resolves immediately.
   const PROVISION_RATE_LIMIT_MS = 10_000;
   const lastProvisionByUser = new Map<string, number>();
-  const completeSetupInFlight = new Map<
-    string,
-    Promise<CompleteSetupOutcome>
-  >();
 
-  async function completeSetupOnce(args: {
-    userId: string;
-    cookies: string[];
-    tenant: PersonalTenant;
-  }): Promise<CompleteSetupOutcome> {
-    const key = JSON.stringify([args.userId, args.tenant.tenantId]);
-    const existing = completeSetupInFlight.get(key);
-    if (existing) return existing;
-
-    const operation = (async (): Promise<CompleteSetupOutcome> => {
-      const fullySeeded = await isFullySeeded(
-        api,
-        args.cookies,
-        args.tenant.tenantId,
-      );
-      if (fullySeeded) {
-        await deps.pendingSeedStore.clear({
-          userId: args.userId,
-          tenantId: args.tenant.tenantId,
-        });
-        return {
-          kind: "seeded",
-          workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
-        };
-      }
-
-      const pending = await deps.pendingSeedStore.read({
-        userId: args.userId,
-        tenantId: args.tenant.tenantId,
-      });
-      if (pending === undefined) return { kind: "unseeded" };
-
-      const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
-      const seeded = await runEnsureSeeded({
-        api,
-        cookies: args.cookies,
-        hubUrl: deps.hubUrl,
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-        tenant: args.tenant,
-        provider: pending.provider,
-        apiKey: pending.apiKey,
-      });
-
-      if (seeded.kind === "seeded") {
-        await deps.pendingSeedStore.clear({
-          userId: args.userId,
-          tenantId: args.tenant.tenantId,
-        });
-      }
-      return seeded;
-    })();
-
-    completeSetupInFlight.set(key, operation);
-    try {
-      return await operation;
-    } finally {
-      if (completeSetupInFlight.get(key) === operation) {
-        completeSetupInFlight.delete(key);
-      }
-    }
+  /**
+   * Reads where the bench's agents actually stand. Two hub reads, no
+   * writes, no deploys — cheap enough that every provisioning-aware
+   * route can answer from it directly.
+   */
+  async function provisioningStatus(
+    cookies: string[],
+    tenant: PersonalTenant,
+  ): Promise<ProvisioningStatusBody> {
+    const { deployed, pending } = await seededWorkflowStatus(
+      api,
+      cookies,
+      tenant.tenantId,
+    );
+    return {
+      kind: pending.length === 0 ? "ready" : "provisioning",
+      tenantId: tenant.tenantId,
+      tenantSlug: tenant.tenantSlug,
+      deployed,
+      pending,
+    };
   }
 
   app.post("/provision", async (c) => {
@@ -728,8 +707,8 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
-    const runCompleteCredentialSetup =
-      deps.completeCredentialSetupFn ?? completeCredentialSetup;
+    const runTestAndPersistCredential =
+      deps.testAndPersistCredentialFn ?? testAndPersistCredential;
     const baseCompleteCredentialArgs = {
       api,
       cookies,
@@ -742,7 +721,12 @@ export function createOnboardingRoutes(
       log: deps.log,
     };
     try {
-      const result = await runCompleteCredentialSetup(
+      // The fast half, and only the fast half (CL-6457): persist the
+      // credential, seed its catalog, answer. Deploying this bench's
+      // default workflows is the background drain's job — a request that
+      // waits on it is the 2+ minute "Connecting…" this route exists to
+      // never reproduce.
+      const result = await runTestAndPersistCredential(
         parsed.baseURL !== undefined
           ? { ...baseCompleteCredentialArgs, baseURLOverride: parsed.baseURL }
           : baseCompleteCredentialArgs,
@@ -770,29 +754,35 @@ export function createOnboardingRoutes(
           409,
         );
       }
-      // The credential is durably seeded — clear any stale needs-attention
-      // record for this provider (CL-6092), the same clear-on-success rule
-      // `@workbench/connections`' own routes follow. This runs for both
-      // `seeded` and `seeded-pending-agents`: the credential itself is
-      // proven-durable in either case, only the workflow deploy is still
-      // catching up.
+      // The credential is durably stored — clear any stale
+      // needs-attention record for this provider (CL-6092), the same
+      // clear-on-success rule `@workbench/connections`' own routes
+      // follow. The credential is proven-durable here whether or not the
+      // agents have finished deploying.
       deps.providerHealth?.clear(result.tenantId, parsed.provider);
-      if (result.kind === "seeded-pending-agents") {
-        // CL-6264: reuses the same pending-seed row an OAuth connect
-        // writes (`./pending-seed.ts`) rather than a new queue, so this
-        // account's next `POST /complete-setup` (the onboarding page's
-        // own reload follow-up) picks up exactly where the sidecar-down
-        // deploy left off and finishes the remaining default workflows.
-        await deps.pendingSeedStore.put({
+
+      const status = await provisioningStatus(cookies, result);
+      if (status.kind === "ready") {
+        await deps.pendingSeedStore.clear({
           userId: user.id,
           tenantId: result.tenantId,
-          principalId: result.principalId,
-          tenantDomain: result.tenantDomain,
-          provider: parsed.provider,
-          apiKey: parsed.apiKey,
         });
+        return c.json(status, 200);
       }
-      return c.json(result, 200);
+
+      // The row is the drain's work item — durable, so a hub that dies
+      // mid-deploy resumes this bench on its next boot rather than
+      // stranding it half-provisioned.
+      await deps.pendingSeedStore.put({
+        userId: user.id,
+        tenantId: result.tenantId,
+        principalId: result.principalId,
+        tenantDomain: result.tenantDomain,
+        provider: parsed.provider,
+        apiKey: parsed.apiKey,
+      });
+      deps.benchProvisioner?.wake();
+      return c.json(status, 200);
     } catch (cause) {
       // Neither `ProvisionError` nor `CliError` messages are safe to show
       // verbatim: `CliError` in particular wraps failures like
@@ -849,49 +839,76 @@ export function createOnboardingRoutes(
         );
       }
 
-      const seeded = await completeSetupOnce({
-        userId: user.id,
-        cookies,
-        tenant,
-      });
-      if (seeded.kind === "unseeded") {
-        return c.json({ kind: "unseeded" }, 200);
-      }
-
-      if (seeded.kind === "seeded-pending-agents") {
-        // Sidecar-unavailable (CL-6264): the pending row is left in
-        // place, on purpose — it is exactly what lets the next
-        // `POST /complete-setup` (another reload, or a retry the
-        // onboarding page schedules itself) pick this back up and finish
-        // the deferred workflows once the sidecar is back.
-        return c.json(
-          {
-            kind: "seeded-pending-agents",
-            tenantId: tenant.tenantId,
-            tenantSlug: tenant.tenantSlug,
-            deployed: seeded.deployed,
-            pending: seeded.pending,
-            message: seeded.message,
-          },
-          200,
-        );
-      }
-
-      return c.json(
-        {
-          kind: "seeded",
+      const status = await provisioningStatus(cookies, tenant);
+      if (status.kind === "ready") {
+        await deps.pendingSeedStore.clear({
+          userId: user.id,
           tenantId: tenant.tenantId,
-          tenantSlug: tenant.tenantSlug,
-          workflows: seeded.workflows,
-        },
-        200,
-      );
+        });
+        return c.json(status, 200);
+      }
+
+      // Not yet provisioned, and no credential parked to provision with
+      // — nothing this call can do, and not a failure: the caller falls
+      // back to the ordinary credential step.
+      const pending = await deps.pendingSeedStore.read({
+        userId: user.id,
+        tenantId: tenant.tenantId,
+      });
+      if (pending === undefined) return c.json({ kind: "unseeded" }, 200);
+
+      deps.benchProvisioner?.wake();
+      return c.json(status, 200);
     } catch (cause) {
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
         userAction: `complete-setup for user ${user.id}`,
         code: "complete_setup_failed",
         userMessage:
           "Finishing your workbench setup hit a snag — we're on it. Try again in a moment.",
+        cause,
+      });
+      return c.json({ error: envelope.error }, 500);
+    }
+  });
+
+  // What any surface still waiting on a bench polls for live progress
+  // (CL-6457) — how many agents are live, how many are still coming.
+  // Read-only and cheap: it deploys nothing and starts nothing, so a
+  // client may poll it on a short interval without cost.
+  app.get("/provisioning-status", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Sign in to continue.",
+        }),
+        401,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    try {
+      const expectedSlug = personalTenantSlug(user.email, user.id);
+      const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+      if (!tenant) {
+        return c.json(
+          makeErrorEnvelope({
+            code: "no_personal_bench",
+            userMessage:
+              "No personal bench was found for this account yet. Reload and try again.",
+          }),
+          409,
+        );
+      }
+
+      return c.json(await provisioningStatus(cookies, tenant), 200);
+    } catch (cause) {
+      const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        userAction: `provisioning status for user ${user.id}`,
+        code: "provisioning_status_failed",
+        userMessage:
+          "Checking on your agents hit a snag — we're on it. Try again in a moment.",
         cause,
       });
       return c.json({ error: envelope.error }, 500);

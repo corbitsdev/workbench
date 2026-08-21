@@ -22,6 +22,17 @@ export type {
 export { createOnboardingRoutes } from "./routes";
 export type { CreateOnboardingRoutesDeps } from "./routes";
 export {
+  createBenchProvisioner,
+  PROVISIONING_POLL_INTERVAL_MS,
+} from "./bench-provisioning";
+export type {
+  BenchProvisioner,
+  BenchProvisionerDeps,
+  BenchProvisionOutcome,
+  DrainReport,
+  SessionForUser,
+} from "./bench-provisioning";
+export {
   createDrizzlePendingSeedStore,
   createInMemoryPendingSeedStore,
   PENDING_SEED_TTL_MS,
