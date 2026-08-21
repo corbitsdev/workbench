@@ -1153,6 +1153,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/scout-agent": {
+      "name": "@corbits/scout-agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/web-search-tools": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/settings-ui": {
       "name": "@corbits/settings-ui",
       "version": "0.0.1",
@@ -2098,6 +2112,8 @@
     "@corbits/run-key-history": ["@corbits/run-key-history@workspace:packages/run-key-history"],
 
     "@corbits/sandbox-sidecar": ["@corbits/sandbox-sidecar@workspace:packages/sandbox-sidecar"],
+
+    "@corbits/scout-agent": ["@corbits/scout-agent@workspace:packages/scout-agent"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 

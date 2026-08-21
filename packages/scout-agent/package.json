@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/scout-agent",
+  "private": true,
+  "description": "Scout, the research/due-diligence agent: a ported system prompt plus its firm-memory, web-research, and Library-artifact tool declarations for a workbench chat agent",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@corbits/web-search-tools": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
