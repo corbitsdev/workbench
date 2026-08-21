@@ -1290,6 +1290,10 @@ describe("default skills seeding", () => {
     // kill a re-run.
     const { lines, log } = collector();
     const { push } = recordingPusher();
+    const conflictingSkillName = DEFAULT_SKILLS[0]?.name;
+    if (conflictingSkillName === undefined) {
+      throw new Error("DEFAULT_SKILLS must not be empty for this test");
+    }
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
@@ -1301,7 +1305,7 @@ describe("default skills seeding", () => {
           status: 409,
           data: {
             code: "conflict",
-            message: `a skill named "${DEFAULT_SKILLS[0]!.name}" already exists in this workbench`,
+            message: `a skill named "${conflictingSkillName}" already exists in this workbench`,
           },
         };
       const base = baseRoutes(method, path);
