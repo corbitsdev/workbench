@@ -145,6 +145,7 @@ describe("route table", () => {
   test("covers every screen the app can route to", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
+      "/mission-control",
       "/new",
       "/w",
       "/inbox",

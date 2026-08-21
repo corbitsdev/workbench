@@ -45,6 +45,7 @@ import {
   SignOut,
   Repeat,
   SlidersHorizontal,
+  SquaresFour,
 } from "@corbits/icons";
 import { useMemo } from "react";
 
@@ -58,7 +59,12 @@ import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
-import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
+import {
+  matchesRoute,
+  MISSION_CONTROL_PATH,
+  NEW_WORKBENCH_PATH,
+  SETTINGS_PATH,
+} from "../routes";
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
@@ -143,6 +149,27 @@ export function Sidebar({
       <SidebarPanelBody>
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
+
+      {/* Mission Control is pinned above the footer rail as its own row
+          (DESIGN.md's Shell & Navigation) — not a 7th button inside the
+          rail below, which stays Routines/Files/Skills/Agents/Plugins/
+          Insights exactly as it was. */}
+      <div className="shell-sidebar-mission-control">
+        <button
+          type="button"
+          className="shell-sidebar-mission-control-row"
+          data-active={
+            matchesRoute(MISSION_CONTROL_PATH, path) ? "true" : undefined
+          }
+          aria-current={
+            matchesRoute(MISSION_CONTROL_PATH, path) ? "page" : undefined
+          }
+          onClick={() => onNavigate(MISSION_CONTROL_PATH)}
+        >
+          <SquaresFour />
+          <span>Mission Control</span>
+        </button>
+      </div>
 
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, Insights,
