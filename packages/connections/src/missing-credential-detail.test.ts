@@ -17,7 +17,9 @@ describe("missingCredentialDetail / parseMissingCredentialDetail", () => {
   test("rejects a tool result's detail that isn't this shape", () => {
     expect(parseMissingCredentialDetail(undefined)).toBeUndefined();
     expect(parseMissingCredentialDetail("timed out")).toBeUndefined();
-    expect(parseMissingCredentialDetail({ kind: "something-else" })).toBeUndefined();
+    expect(
+      parseMissingCredentialDetail({ kind: "something-else" }),
+    ).toBeUndefined();
     expect(
       parseMissingCredentialDetail({ kind: "missing-credential" }),
     ).toBeUndefined();

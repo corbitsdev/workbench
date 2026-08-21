@@ -8,7 +8,11 @@ describe("credentialDeliveryError", () => {
   test("names the missing connector instead of a generic failure", () => {
     const reason: CredentialDeliveryFailure = {
       code: "unresolved",
-      binding: { provider: "github", package: "@corbits/github-tools", handle: "github" },
+      binding: {
+        provider: "github",
+        package: "@corbits/github-tools",
+        handle: "github",
+      },
       message: "no credential resolves this binding",
     };
 
@@ -22,7 +26,11 @@ describe("credentialDeliveryError", () => {
   test("keeps a generic error for a non-missing-credential failure", () => {
     const reason: CredentialDeliveryFailure = {
       code: "ambiguous",
-      binding: { provider: "github", package: "@corbits/github-tools", handle: "github" },
+      binding: {
+        provider: "github",
+        package: "@corbits/github-tools",
+        handle: "github",
+      },
       message: "more than one candidate credential resolves this binding",
     };
 

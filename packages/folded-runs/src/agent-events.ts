@@ -98,10 +98,9 @@ export function inferenceDoneBlocks(
  * entries to fill in a tool-trace part's outcome once its call settles. */
 export function toolDoneResult(
   event: unknown,
-): (
+):
   | { callId: string; content: unknown; isError: boolean; detail?: unknown }
-  | undefined
-) {
+  | undefined {
   if (
     typeof event !== "object" ||
     event === null ||

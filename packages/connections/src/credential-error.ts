@@ -17,7 +17,8 @@ export class MissingCredentialError extends Error {
   readonly displayName: string;
 
   constructor(connectorId: string) {
-    const displayName = CONNECTOR_REGISTRY[connectorId]?.displayName ?? connectorId;
+    const displayName =
+      CONNECTOR_REGISTRY[connectorId]?.displayName ?? connectorId;
     super(`${displayName} is not connected.`);
     this.name = "MissingCredentialError";
     this.connectorId = connectorId;
