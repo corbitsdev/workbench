@@ -36,9 +36,6 @@ import {
   type MyraTargetMcpFake,
   type RunConfig,
 } from "@corbits/evals";
-import { createArtifactDb } from "@corbits/artifacts";
-import { seedTemplateLibrary } from "@corbits/artifacts-hub";
-import { workbenchTemplateLibraryEntries } from "@corbits/workflow-catalog";
 import { createDB } from "@intx/db";
 import { createBootAssetWiring } from "../apps/hub/src/asset-service-factory.ts";
 import { resetSchema, setupDatabase } from "./db-setup.ts";
@@ -99,22 +96,6 @@ const infra: MyraTargetInfra = {
         { db, assetService, fakeReceiptsReader: fakeReceipts },
         tenantId,
       );
-    } finally {
-      await close();
-    }
-  },
-  // The same `seedTemplateLibrary` path hub boot runs
-  // (template-library-seed.ts), with the scratch tenant's own admin in
-  // place of the operator bench — same entries, same idempotent seed.
-  seedTemplateLibrary: async (scope) => {
-    const url = requireE2eDatabaseUrl("seedTemplateLibrary");
-    const { db, close } = createArtifactDb(url);
-    try {
-      await seedTemplateLibrary({
-        db,
-        scope,
-        entries: workbenchTemplateLibraryEntries(),
-      });
     } finally {
       await close();
     }

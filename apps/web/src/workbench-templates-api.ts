@@ -1,9 +1,10 @@
-// Reads a workbench template's manifest from the bench library the hub
-// seeded at boot (CL-6344) — `instant-agent-create.ts` instantiates
-// from this seeded row, never from a hardcoded `@corbits/workflow-catalog`
-// import. The wire shape is the library's `{id, content}` entry; the
-// content string re-enters through the catalog's own manifest schema,
-// so a corrupt or stale library row fails loud here rather than
+// Reads a workbench template's manifest from the bench library (CL-6344)
+// — `instant-agent-create.ts` instantiates from this seeded row, never
+// from a hardcoded `@corbits/workflow-catalog` import. The read itself
+// is what converges the shelf (CL-6458), so these routes answer for a
+// bench of any age. The wire shape is the library's `{id, content}`
+// entry; the content string re-enters through the catalog's own manifest
+// schema, so a corrupt or stale library row fails loud here rather than
 // half-instantiating a workbench.
 
 import { type } from "arktype";
@@ -14,6 +15,11 @@ import {
 import { ApiQueryError } from "@corbits/api-query";
 
 const TemplateLibraryEntry = type({ id: "string > 0", content: "string > 0" });
+
+/** What the picker offers rows from: the ids this bench's library can
+ * actually serve, so a kind is never offered and then dead-ended on a
+ * missing manifest at create time. */
+export const TemplateLibraryPage = type({ data: TemplateLibraryEntry.array() });
 
 const TemplateBlockDeployResponse = type({
   id: "string > 0",

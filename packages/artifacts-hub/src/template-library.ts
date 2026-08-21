@@ -3,6 +3,12 @@
  * shipped template manifests in as versioned artifact rows, and the
  * tenant-scoped read routes a create flow instantiates from.
  *
+ * What triggers a seed (CL-6458): the read itself. Every bench that can
+ * read the shelf owns one — the rows are tenant-scoped artifacts, so
+ * "the tenant being read" is the only honest owner, and a bench created
+ * long after the hub booted converges the first time its picker opens.
+ * There is no window to miss and no bench to wait for.
+ *
  * Reconciliation semantics (CL-6400): every boot converges the shelf
  * to the shipped manifests without ever fighting a member. The seed
  * records the hash of the content it last wrote in the artifact's
@@ -337,27 +343,130 @@ export function createTemplateLibraryDbStore(
   };
 }
 
+/**
+ * What makes a tenant's shelf match the shipped manifests before it is
+ * read (CL-6458). Seeding is triggered by the read itself rather than by
+ * a boot-time window: a bench created after the hub booted converges the
+ * first time anyone opens the picker, in any boot order, with no
+ * operator bench in the picture.
+ */
+export type TemplateLibrarySeeder = {
+  ensureSeeded(scope: { tenantId: string; principalId: string }): Promise<void>;
+};
+
+export type CreateTemplateLibrarySeederArgs = {
+  db: ArtifactDb;
+  entries: readonly TemplateLibraryEntry[];
+  engine?: TemplateLibraryEngine;
+  seed?: typeof seedTemplateLibrary;
+  log?: (line: string) => void;
+};
+
+/**
+ * One reconciliation pass per tenant per process: concurrent first reads
+ * share a pass, a converged tenant costs nothing on later reads, and a
+ * failed pass is not remembered, so the next read retries it. Nothing
+ * here is a cache of the shelf's contents — `seedTemplateLibrary` is
+ * itself convergent (CL-6400), so a redeploy carrying changed manifests
+ * reconciles on the new process's first read.
+ */
+export function createTemplateLibrarySeeder(
+  args: CreateTemplateLibrarySeederArgs,
+): TemplateLibrarySeeder {
+  const seed = args.seed ?? seedTemplateLibrary;
+  const log = args.log ?? ((): void => undefined);
+  const converged = new Set<string>();
+  const inFlight = new Map<string, Promise<void>>();
+
+  async function runPass(scope: {
+    tenantId: string;
+    principalId: string;
+  }): Promise<void> {
+    const outcomes =
+      args.engine === undefined
+        ? await seed({ db: args.db, scope, entries: args.entries })
+        : await seed({
+            db: args.db,
+            scope,
+            entries: args.entries,
+            engine: args.engine,
+          });
+    for (const outcome of outcomes) {
+      log(
+        `template library ${scope.tenantId}: "${outcome.id}" ${outcome.outcome}`,
+      );
+    }
+    converged.add(scope.tenantId);
+  }
+
+  return {
+    async ensureSeeded(scope) {
+      if (args.entries.length === 0 || converged.has(scope.tenantId)) return;
+      const running = inFlight.get(scope.tenantId);
+      if (running !== undefined) return running;
+      const pass = runPass(scope).finally(() => {
+        inFlight.delete(scope.tenantId);
+      });
+      inFlight.set(scope.tenantId, pass);
+      return pass;
+    },
+  };
+}
+
 export type CreateTemplateLibraryRoutesDeps = {
   store: TemplateLibraryStore;
+  seeder: TemplateLibrarySeeder;
   requireGrant: RequireGrant;
+  /** Where a failed reconciliation's real cause goes; the client sees
+   * one honest "unavailable", never a 404 that reads as "no such
+   * template". */
+  log: (line: string) => void;
 };
 
 /** `GET /` lists every seeded template entry; `GET /:templateId` fetches
- * one. Content travels as the seeded string — the client parses it with
+ * one. Both converge the tenant's shelf before reading it. Content
+ * travels as the seeded string — the client parses it with
  * `@corbits/workflow-catalog`'s manifest schema at its own boundary. */
 export function createTemplateLibraryRoutes(
   deps: CreateTemplateLibraryRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
+  async function converge(
+    tenantId: string,
+    principalId: string,
+  ): Promise<Response | null> {
+    try {
+      await deps.seeder.ensureSeeded({ tenantId, principalId });
+      return null;
+    } catch (cause) {
+      deps.log(
+        `template library seed failed for ${tenantId}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+      return Response.json(
+        {
+          error: {
+            code: "unavailable",
+            message: "The template library isn't ready yet",
+          },
+        },
+        { status: 503 },
+      );
+    }
+  }
+
   app.get("/", deps.requireGrant("asset:*", "read"), async (c) => {
     const tenant = c.get("tenant");
+    const failed = await converge(tenant.id, c.get("principal").id);
+    if (failed !== null) return failed;
     const entries = await deps.store.list(tenant.id);
     return c.json({ data: entries });
   });
 
   app.get("/:templateId", deps.requireGrant("asset:*", "read"), async (c) => {
     const tenant = c.get("tenant");
+    const failed = await converge(tenant.id, c.get("principal").id);
+    if (failed !== null) return failed;
     const entry = await deps.store.get(tenant.id, c.req.param("templateId"));
     if (entry === null) {
       return c.json(

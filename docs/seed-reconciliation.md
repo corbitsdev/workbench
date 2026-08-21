@@ -16,14 +16,24 @@ onboarding run, a `workbench seed` — must satisfy four properties:
 Ambiguity always resolves toward property 3: when a pass cannot prove a
 row is still seed-owned, it leaves the row alone.
 
-## Template library (hub boot)
+## Template library (first library read)
 
-`apps/hub/src/template-library-seed.ts` schedules
-`seedTemplateLibrary` (`packages/artifacts-hub/src/template-library.ts`)
-against the operator bench. Each shipped template manifest becomes one
-versioned artifact row (`kind: workbench-template`, title = template
-id), and the seed records the SHA-256 of the content it last wrote in
-the artifact's `source.seededContentHash`.
+`createTemplateLibrarySeeder`
+(`packages/artifacts-hub/src/template-library.ts`) runs
+`seedTemplateLibrary` for the tenant whose shelf is being read, on the
+`GET /api/tenants/:id/library/templates` routes themselves. Each shipped
+template manifest becomes one versioned artifact row (`kind:
+workbench-template`, title = template id), and the seed records the
+SHA-256 of the content it last wrote in the artifact's
+`source.seededContentHash`.
+
+The trigger is the read, not a boot window, because template rows are
+tenant-scoped: every bench owns its own shelf, so a bench created long
+after the hub booted converges the first time its picker opens, in any
+boot order. One pass per tenant per process, shared by concurrent first
+reads; a failed pass is not remembered, so the next read retries rather
+than the shelf staying empty until a restart. A read whose pass failed
+answers 503 — never a 404, which would read as "no such template".
 
 - The marker distinguishes "the shipped manifest moved" (head content
   still equals the marker: write a new version) from "a member edited

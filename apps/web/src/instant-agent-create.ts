@@ -106,11 +106,13 @@ export async function createWorkbenchFromTemplate(
   if (setupTemplate === undefined) {
     throw new Error("No default setup agent found for this workbench.");
   }
-  // The manifest comes from the bench library the hub seeded at boot
-  // (CL-6344), never from a hardcoded catalog import. `blank` is the one
-  // id with no manifest by design; any other id resolving to nothing
-  // means this bench's boot seed hasn't run — fail loud rather than
-  // mint a workbench missing its agents.
+  // The manifest comes from the bench library (CL-6344), never from a
+  // hardcoded catalog import; reading it is what seeds the shelf
+  // (CL-6458). `blank` is the one id with no manifest by design; any
+  // other id resolving to nothing means this build ships no such
+  // template — fail loud rather than mint a workbench missing its
+  // agents. The picker only offers ids the library listed, so this is
+  // the race-loser's message, not the everyday path.
   const manifest =
     templateId === "blank"
       ? undefined
@@ -118,7 +120,7 @@ export async function createWorkbenchFromTemplate(
         undefined);
   if (templateId !== "blank" && manifest === undefined) {
     throw new Error(
-      `The "${templateId}" template isn't in this bench's library yet — its boot seed hasn't run.`,
+      `This bench can't set up a ${templateId} workbench yet — it isn't in the library.`,
     );
   }
   const requiresGithub =
