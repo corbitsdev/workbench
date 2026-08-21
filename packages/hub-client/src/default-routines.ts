@@ -209,6 +209,24 @@ export async function ensureDefaultRoutines(
     );
     if (
       created.status === 400 &&
+      /deliveryWorkbenchId is required/.test(JSON.stringify(created.data))
+    ) {
+      // This preset's definition needs somewhere to deliver to, and
+      // seeding names no workbench — a person hasn't picked one yet, and
+      // seeding must never invent one and name it after the routine
+      // (that's exactly the "Daily digest"/"New Workbench" pollution this
+      // preset-planting flow used to cause). The routine simply isn't
+      // planted until a member creates it by hand and picks a real
+      // destination.
+      log(
+        `routine "${preset.name}" skipped: its workflow needs a delivery ` +
+          `workbench and this preset names none — create it by hand and ` +
+          `pick one`,
+      );
+      continue;
+    }
+    if (
+      created.status === 400 &&
       /is required/.test(JSON.stringify(created.data))
     ) {
       // The definition declares a required trigger input this preset has
