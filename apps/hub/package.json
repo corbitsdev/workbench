@@ -21,6 +21,7 @@
     "@corbits/bench": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/commands": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
