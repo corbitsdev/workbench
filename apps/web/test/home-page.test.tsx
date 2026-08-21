@@ -2,17 +2,17 @@
 // resolves to one of two places depending on whether the bench has any
 // workbenches yet. A bench with one or more ensures Myra's workbench exists
 // and opens it — the same land-hop CL-6081 wired up. A brand-new bench
-// with zero workbenches auto-mints its first Myra workbench through the
-// exact same one-creation-verb path every "+ New workbench" control uses
-// (CL-6138, superseding CL-6104's guided describe screen) and lands
-// straight in it — no separate first-run form, no second creation path.
-// All three entries CL-6081 asks for (a direct visit to `/`, `main.tsx`'s
-// post-login `navigate("/")`, and the onboarding wizard's
-// post-credential hand-off) resolve through this exact hop, so proving
-// HomeRoute itself lands correctly in both cases proves the direct-`/`
-// case fully; the other two are proven by the narrower source assertions
-// below, which pin the exact call each entry point makes onto this same
-// route.
+// with zero workbenches waits for Myra's own definition to exist, then
+// sends the person to the guided picker (`/new`, CL-6486) instead of
+// auto-minting an unlabeled workbench and landing straight in it — no
+// separate first-run form, no second creation path, just the same picker
+// every other "+ New workbench" control already opens. All three entries
+// CL-6081 asks for (a direct visit to `/`, `main.tsx`'s post-login
+// `navigate("/")`, and the onboarding wizard's post-credential hand-off)
+// resolve through this exact hop, so proving HomeRoute itself lands
+// correctly in both cases proves the direct-`/` case fully; the other two
+// are proven by the narrower source assertions below, which pin the exact
+// call each entry point makes onto this same route.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -157,42 +157,19 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
     expect(navigated).toEqual(["/w/chan_myra"]);
   });
 
-  test("a brand-new bench with zero workbenches auto-mints its first Myra workbench and lands in it", async () => {
+  test("a brand-new bench with zero workbenches sends the person to the guided picker, not an auto-minted workbench", async () => {
     stubFetch((path, method) => {
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         // listAllWorkbenches finds nothing — this bench has no workbenches
-        // yet, so HomeRoute mints one via the default setup template
-        // rather than calling ensureMyraWorkbench (which only ever finds
-        // or reuses an existing one).
+        // yet, so HomeRoute waits for Myra's readiness and redirects to
+        // the picker rather than minting anything itself.
         return json({ items: [] });
       }
-      if (path.includes("/workflows/definitions")) {
-        return json({
-          data: [
-            {
-              id: "wfd_assistant",
-              tenantId: "tnt_1",
-              name: "assistant",
-              currentVersion: "1",
-              status: "deployed",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-          nextCursor: null,
-        });
-      }
-      if (path.endsWith("/chat/workbenches") && method === "POST") {
-        return json({
-          id: "chan_new",
-          title: "New Workbench",
-          kind: "chat",
-          pinned: false,
-          participants: [],
-        });
+      if (path === "/api/onboarding/provisioning-status") {
+        return json({ kind: "ready", setupAgentReady: true });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
@@ -217,7 +194,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/w/chan_new"]);
+    expect(navigated).toEqual(["/new"]);
   });
 });
 
@@ -227,53 +204,26 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
 // that happens the moment Myra herself can answer, and an honest way out
 // if she never does.
 describe("the wait right after connecting a provider", () => {
-  /** A bench with no workbenches yet whose agent definitions arrive only
-   * after `readyAfter` reads — everything before that is the window the
-   * person spends waiting. */
-  function benchWhereMyraArrivesAfter(readyAfter: number, provisioning = true) {
-    let definitionReads = 0;
+  /** A bench with no workbenches yet whose setup agent (Myra) reports
+   * ready only after `readyAfter` reads — everything before that is the
+   * window the person spends waiting. */
+  function benchWhereMyraArrivesAfter(readyAfter: number) {
+    let statusReads = 0;
     const state = { statusCalls: 0 };
     stubFetch((path, method) => {
       if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         return json({ items: [] });
       }
-      if (path.includes("/workflows/definitions")) {
-        definitionReads += 1;
-        return json({
-          data:
-            definitionReads > readyAfter
-              ? [
-                  {
-                    id: "wfd_assistant",
-                    tenantId: "tnt_1",
-                    name: "assistant",
-                    currentVersion: "1",
-                    status: "deployed",
-                    createdAt: "2026-01-01T00:00:00.000Z",
-                    updatedAt: "2026-01-01T00:00:00.000Z",
-                  },
-                ]
-              : [],
-          nextCursor: null,
-        });
-      }
       if (path === "/api/onboarding/provisioning-status") {
+        statusReads += 1;
         state.statusCalls += 1;
+        const setupAgentReady = statusReads > readyAfter;
         return json({
-          kind: provisioning ? "provisioning" : "ready",
-          setupAgentReady: !provisioning,
+          kind: "provisioning",
+          setupAgentReady,
           deployed: [],
           pending: ["assistant"],
-        });
-      }
-      if (path.endsWith("/chat/workbenches") && method === "POST") {
-        return json({
-          id: "chan_new",
-          title: "New Workbench",
-          kind: "chat",
-          pinned: false,
-          participants: [],
         });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
@@ -333,7 +283,7 @@ describe("the wait right after connecting a provider", () => {
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/w/chan_new"]);
+    expect(navigated).toEqual(["/new"]);
     expect(state.statusCalls).toBeGreaterThan(0);
   });
 
@@ -375,7 +325,7 @@ describe("the wait right after connecting a provider", () => {
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/w/chan_new"]);
+    expect(navigated).toEqual(["/new"]);
   });
 });
 
