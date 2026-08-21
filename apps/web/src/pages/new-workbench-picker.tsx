@@ -125,7 +125,7 @@ export function NewWorkbenchPickerRoute() {
         {creating ? (
           <WorkbenchLoadingState title="Setting up your workbench…" />
         ) : library.kind === "loading" ? (
-          <WorkbenchLoadingState title="Seeing what this bench can set up…" />
+          <WorkbenchLoadingState title="Seeing what you can set up here…" />
         ) : (
           <>
             <h3>What should this workbench do?</h3>

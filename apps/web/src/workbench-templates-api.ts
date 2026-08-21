@@ -63,7 +63,7 @@ export async function deployWorkbenchTemplateBlock(
   );
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(
-      `Unexpected deploy response shape: ${parsed.summary}`,
+      `Couldn't set that up — the answer didn't look right: ${parsed.summary}`,
       undefined,
       path,
     );
