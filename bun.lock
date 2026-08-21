@@ -725,6 +725,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/gotenberg-render": {
+      "name": "@corbits/gotenberg-render",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/error-sink": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
       "version": "0.0.4",
@@ -2040,6 +2052,8 @@
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
     "@corbits/github-tools": ["@corbits/github-tools@workspace:packages/github-tools"],
+
+    "@corbits/gotenberg-render": ["@corbits/gotenberg-render@workspace:packages/gotenberg-render"],
 
     "@corbits/granola-call-workflow": ["@corbits/granola-call-workflow@workspace:workflows/granola-call"],
 
