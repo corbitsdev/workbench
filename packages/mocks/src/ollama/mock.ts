@@ -76,9 +76,7 @@ function nonStreamingResponse(model: string, reply: OllamaChatReply): Response {
 // A single-chunk SSE stream carrying the whole reply, then `[DONE]` — real
 // Ollama and OpenAI both emit the assistant content across many deltas,
 // but this mock's contract is the request it received and the shape of
-// the reply, not reproducing token-by-token pacing. A test that needs to
-// exercise incremental delta assembly can still detect streaming vs. not
-// via `expectStream`.
+// the reply, not reproducing token-by-token pacing.
 function streamingResponse(model: string, reply: OllamaChatReply): Response {
   const chunk = {
     id: "chatcmpl-mock",
@@ -149,9 +147,30 @@ export class OllamaMock {
     }),
   };
 
-  /** The whole mock as a Fetch-API handler — the in-process path. Point
-   * a test's `fetchImpl` at this directly with no network involved. */
-  fetch = async (request: Request): Promise<Response> => {
+  /**
+   * The whole mock as a `fetch`-shaped function — `(input, init?)`, the
+   * same two-argument shape as global `fetch` and, load-bearingly,
+   * `@workbench/hub-client`'s `FetchLike` (the seam every real caller —
+   * `testProviderCredential`, `fetchOllamaModelCatalog`,
+   * `fetchOllamaModelCapabilities` — actually threads a `fetchImpl`
+   * through as). A caller passing a bare `Request`
+   * (`ollama.fetch(new Request(...))`) still works; the common case is a
+   * URL string plus an init object, exactly what those functions build.
+   */
+  fetch = async (
+    input: string | Request,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const request =
+      input instanceof Request
+        ? init === undefined
+          ? input
+          : new Request(input, init)
+        : new Request(input, init);
+    return this.route(request);
+  };
+
+  private async route(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/api/tags") {
       return this.handleTags();
@@ -168,7 +187,7 @@ export class OllamaMock {
       }),
       { status: 404, headers: { "content-type": "application/json" } },
     );
-  };
+  }
 
   private handleTags(): Response {
     const body = {
@@ -222,7 +241,7 @@ export class OllamaMock {
    * path, where the stack is pointed at an Ollama origin via env rather
    * than an in-process fetch. */
   async listen(port = 0): Promise<OllamaMockServer> {
-    const server = Bun.serve({ port, fetch: this.fetch });
+    const server = Bun.serve({ port, fetch: (request) => this.route(request) });
     return {
       url: `http://localhost:${server.port}`,
       close: async () => {
