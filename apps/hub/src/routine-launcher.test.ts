@@ -43,7 +43,7 @@ let foldedBodyMode: "single" | "multi" = "single";
 mock.module("@corbits/folded-runs", () => ({
   ...actualFoldedRuns,
   readDefinitionProjection: async () => ({ __fake: true }),
-  readFoldedBody: (projection: unknown, grantRequirements: unknown) => {
+  readFoldedBody: (_projection: unknown, _grantRequirements: unknown) => {
     if (foldedBodyMode === "multi") {
       throw new actualFoldedRuns.MultiStepFoldUnsupportedError("wfd_1", 3);
     }
