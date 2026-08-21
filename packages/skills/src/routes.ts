@@ -32,12 +32,22 @@ const CreateSkillBody = type({
   scope: skillAccessScopeSchema,
 });
 
+/** A commit id, as the asset store hands them out: one bounded opaque
+ * token, never a path or free text. The store owns the exact alphabet, so
+ * this parses the shape the boundary needs — short, no separators, nothing
+ * that could read as a path — and leaves "is this a real commit" to the
+ * registry's own history lookup. */
+const commitShaSchema = type("string <= 64").narrow(
+  (value, ctx) => /^[A-Za-z0-9._-]+$/.test(value) || ctx.mustBe("a version id"),
+);
+
 const UpdateSkillBody = type({
   description: "string",
   body: "string",
+  "expectedHeadSha?": commitShaSchema,
 });
 
-const RestoreBody = type({ commitSha: "string > 0" });
+const RestoreBody = type({ commitSha: commitShaSchema });
 
 const ScopeBody = type({ scope: skillAccessScopeSchema });
 
@@ -132,6 +142,7 @@ export function createSkillRoutes({
     const skill = await registry.update(caller(c), c.req.param("name"), {
       description: body.description,
       body: body.body,
+      expectedHeadSha: body.expectedHeadSha,
     });
     return c.json({ skill });
   });
@@ -141,6 +152,27 @@ export function createSkillRoutes({
       versions: await registry.versions(caller(c), c.req.param("name")),
     });
   });
+
+  app.get(
+    "/:name/versions/:commitSha",
+    requireGrant("asset:*", "read"),
+    async (c) => {
+      const commitSha = commitShaSchema(c.req.param("commitSha"));
+      if (commitSha instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid version: ${commitSha.summary}`),
+          400,
+        );
+      }
+      return c.json({
+        skill: await registry.versionContent(
+          caller(c),
+          c.req.param("name"),
+          commitSha,
+        ),
+      });
+    },
+  );
 
   app.post("/:name/restore", requireGrant("asset:*", "create"), async (c) => {
     const body = RestoreBody(await c.req.json().catch(() => undefined));

@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/text-diff",
+  "private": true,
+  "description": "Line-level text diff: the shortest add/remove script between two revisions of a document, for review surfaces that show what a save is about to change",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -6,13 +6,13 @@
 // skill now lives in a native `kind:"skill"` hub asset the moment it is
 // created, and its version history is that asset's git history.
 //
-// Two states a skill can be in, both visible here:
+// Two states a skill can be in, both visible in the Access column:
 //   private  — visible only to the person who wrote it (the default)
 //   shared   — visible to the whole workbench
 //
 // There is no external catalog: skills are authored in this workbench.
-// "Share with workbench" and "Make private" are the two directions of
-// that visibility toggle, not an install step.
+// This page lists them; a single skill — its editor, its versions, its
+// visibility toggle — lives on its own page (`skill-detail-page.tsx`).
 
 import {
   PageShell,
@@ -21,40 +21,26 @@ import {
   EmptyState,
   LibrarySearchInput,
   RichEmptyState,
-  Section,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  formatRelativeTime,
 } from "@corbits/react-ui";
-import { Lightning, PencilSimple, Plus } from "@corbits/icons";
+import { Lightning, Plus } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
-import {
-  createSkill,
-  listSkills,
-  listSkillVersions,
-  loadSkill,
-  restoreSkillVersion,
-  setSkillScope,
-  updateSkill,
-  type PinnedByEntry,
-  type SkillDetail,
-  type SkillSummary,
-  type SkillVersion,
-} from "../skills-api";
+import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import {
   CreateSkillDialog,
   type SkillCreateInput,
 } from "./create-skill-dialog";
 import { useBench } from "../bench-context";
-import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
+import { SKILLS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 type RegistryState =
@@ -65,263 +51,27 @@ type RegistryState =
     }
   | { readonly status: "error"; readonly message: string };
 
-type DetailState =
-  | { readonly status: "loading" }
-  | {
-      readonly status: "ready";
-      readonly skill: SkillDetail;
-      readonly pinnedBy: readonly PinnedByEntry[];
-      readonly versions: readonly SkillVersion[];
-    }
-  | { readonly status: "error"; readonly message: string };
-
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function SkillDetailView({
-  tenantId,
-  name,
-  now,
-  onChanged,
-}: {
-  readonly tenantId: string;
-  readonly name: string;
-  readonly now: number;
-  readonly onChanged: () => void;
-}) {
-  const [state, setState] = useState<DetailState>({ status: "loading" });
-  const [busy, setBusy] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-
-  const reload = useCallback(async () => {
-    setState({ status: "loading" });
-    try {
-      const [detail, versions] = await Promise.all([
-        loadSkill(tenantId, name),
-        listSkillVersions(tenantId, name),
-      ]);
-      setState({
-        status: "ready",
-        skill: detail.skill,
-        pinnedBy: detail.pinnedBy,
-        versions,
-      });
-    } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
-    }
-  }, [tenantId, name]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  if (state.status === "loading") {
-    return <WorkbenchLoadingState title="Loading skill…" />;
-  }
-  if (state.status === "error") {
-    return (
-      <RichEmptyState
-        icon={<Lightning />}
-        title="Couldn't load this skill"
-        description="Something went wrong on our side. Try again in a moment."
-        actions={[{ label: "Retry", onClick: () => void reload() }]}
-      />
-    );
-  }
-
-  const { skill, pinnedBy, versions } = state;
-  const shared = skill.scope === "tenant";
-
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true);
-    try {
-      await action();
-      await reload();
-      onChanged();
-    } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold tracking-tight">
-            {skill.name}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {skill.description}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={shared ? "info" : "neutral"}>
-            {shared ? "Shared" : "Private"}
-          </Badge>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => setEditOpen(true)}
-          >
-            <PencilSimple /> Edit
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              void run(() =>
-                setSkillScope(
-                  tenantId,
-                  skill.name,
-                  shared ? "private" : "tenant",
-                ),
-              )
-            }
-          >
-            {shared ? "Make private" : "Share with workbench"}
-          </Button>
-        </div>
-      </header>
-
-      <CreateSkillDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        mode="edit"
-        initialValues={{
-          name: skill.name,
-          description: skill.description,
-          body: skill.body,
-        }}
-        onSubmit={async (input) => {
-          await updateSkill(tenantId, skill.name, {
-            description: input.description,
-            body: input.body,
-          });
-          setEditOpen(false);
-          await reload();
-          onChanged();
-        }}
-      />
-
-      <Section title="About" description="What this skill packages.">
-        <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-          {skill.body}
-        </pre>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Updated {formatRelativeTime(skill.updatedAtIso, now)}
-        </p>
-      </Section>
-
-      <Section
-        title="Pinned by"
-        description="Agents that currently declare this skill."
-      >
-        {pinnedBy.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No agents pin this skill yet.
-          </p>
-        ) : (
-          <ul className="flex flex-wrap gap-2">
-            {pinnedBy.map((entry) => (
-              <li key={entry.definitionId}>
-                <Badge tone="neutral">{entry.name}</Badge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section
-        title="Version history"
-        description="Every saved version of this skill. Restore makes an older version the current one."
-      >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Version</TableHead>
-              <TableHead>Note</TableHead>
-              <TableHead>Who</TableHead>
-              <TableHead>When</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {versions.map((version, index) => (
-              <TableRow key={version.commitSha}>
-                <TableCell className="text-sm" title={version.commitSha}>
-                  {`Version ${versions.length - index}`}
-                  {version.current ? (
-                    <Badge tone="success" className="ml-2">
-                      current
-                    </Badge>
-                  ) : null}
-                </TableCell>
-                <TableCell className="text-sm">{version.message}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {version.author}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatRelativeTime(version.committedAtIso, now)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={version.current || busy}
-                    onClick={() =>
-                      void run(() =>
-                        restoreSkillVersion(
-                          tenantId,
-                          skill.name,
-                          version.commitSha,
-                        ),
-                      )
-                    }
-                  >
-                    Restore
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Section>
-    </div>
-  );
-}
-
 /**
- * The Skills stage: master-detail over one workbench's skill registry, with
- * its own top-nav contract (CL-6409) — the trail says where the reader is
- * (`Skills / <skill>`, the parent crumb deep-linking back to `/skills`) and
- * the top bar's action slot is the only home for "New skill". `tenantId` is
- * the registry every read and write is scoped to; `navigate`/`entityId`
- * drive the `/skills/:name` deep link when passed (see `SkillsRoute`
- * below), or stay local to the component otherwise — same
- * optional-controlled-selection contract `AgentsSection` uses.
+ * The Skills roster over one workbench's skill registry, with its own
+ * top-nav contract (CL-6409): the trail says where the reader is and the
+ * top bar's action slot is the only home for "New skill". `tenantId` is the
+ * registry every read is scoped to; opening a row navigates to that skill's
+ * own page at `/skills/<name>` (CL-6416), which is where editing, versions,
+ * and diffs live — this page never renders a skill inline.
  */
 export function SkillsPage({
   tenantId,
   navigate,
-  entityId,
-  now = Date.now(),
 }: {
   readonly tenantId: string | null;
   readonly navigate?: (to: string) => void;
-  readonly entityId?: string | null;
-  readonly now?: number;
 }) {
   const [state, setState] = useState<RegistryState>({ status: "loading" });
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(entityId ?? null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -339,14 +89,6 @@ export function SkillsPage({
     void reload();
   }, [reload]);
 
-  // The route is the source of truth for which skill is open: the same
-  // component instance stays mounted across `/skills/<name>` → `/skills`
-  // (both match the one route entry), so a crumb click that only changes
-  // the URL has to move the view with it.
-  useEffect(() => {
-    setSelected(entityId ?? null);
-  }, [entityId]);
-
   useEffect(() => {
     if (consumePendingNewSkill()) setCreateOpen(true);
   }, []);
@@ -358,13 +100,8 @@ export function SkillsPage({
       window.removeEventListener("workbench:skills:create", onCreate);
   }, []);
 
-  function select(name: string | null) {
-    setSelected(name);
-    navigate?.(
-      name === null
-        ? SKILLS_PATH_PREFIX
-        : `${SKILLS_PATH_PREFIX}/${encodeURIComponent(name)}`,
-    );
+  function open(name: string) {
+    navigate?.(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(name)}`);
   }
 
   async function handleCreate(input: SkillCreateInput) {
@@ -372,7 +109,7 @@ export function SkillsPage({
     const skill = await createSkill(tenantId, input);
     setCreateOpen(false);
     await reload();
-    select(skill.name);
+    open(skill.name);
   }
 
   const createDialog = (
@@ -383,10 +120,7 @@ export function SkillsPage({
     />
   );
 
-  const crumbs =
-    selected === null
-      ? [{ label: "Skills" }]
-      : [{ label: "Skills", href: SKILLS_PATH_PREFIX }, { label: selected }];
+  const crumbs = [{ label: "Skills" }];
 
   function stage(actions: ReactNode, body: ReactNode) {
     return (
@@ -429,21 +163,6 @@ export function SkillsPage({
         description="Something went wrong on our side. Try again in a moment."
         actions={[{ label: "Retry", onClick: () => void reload() }]}
       />,
-    );
-  }
-
-  if (selected !== null) {
-    return stage(
-      newSkillButton,
-      <div className="flex flex-col gap-4">
-        <SkillDetailView
-          tenantId={tenantId}
-          name={selected}
-          now={now}
-          onChanged={() => void reload()}
-        />
-        {createDialog}
-      </div>,
     );
   }
 
@@ -504,7 +223,7 @@ export function SkillsPage({
                 <TableRow
                   key={skill.assetId}
                   className="cursor-pointer"
-                  {...rowActivationProps(() => select(skill.name))}
+                  {...rowActivationProps(() => open(skill.name))}
                 >
                   <TableCell className="font-medium">{skill.name}</TableCell>
                   <TableCell className="text-muted-foreground">
@@ -527,26 +246,17 @@ export function SkillsPage({
 }
 
 /**
- * Skills stage mount at `/skills` (CL-6355): a thin adapter that resolves
- * the bench tenant and the `/skills/:name` deep link. The stage chrome
- * itself (breadcrumb trail, action slot) belongs to `SkillsPage`, which is
- * the component that knows which skill is open.
+ * Skills roster mount at `/skills` (CL-6355): a thin adapter that resolves
+ * which workbench's registry is listed. The stage chrome (breadcrumb trail,
+ * action slot) belongs to `SkillsPage`; a single skill has its own route
+ * (`/skills/<name>`, `skill-detail-page.tsx`).
  */
 export function SkillsRoute({
-  path,
   navigate,
 }: {
-  readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
-  const entityId = skillIdFromPath(path);
 
-  return (
-    <SkillsPage
-      tenantId={selectedTenantId}
-      navigate={navigate}
-      entityId={entityId}
-    />
-  );
+  return <SkillsPage tenantId={selectedTenantId} navigate={navigate} />;
 }

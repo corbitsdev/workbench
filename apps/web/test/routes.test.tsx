@@ -357,8 +357,14 @@ describe("routes render", () => {
     expect(markup).not.toContain("still being built");
   });
 
+  test("/skills/:slug renders the skill's own page, not a placeholder", async () => {
+    const markup = await renderApp("/skills/pr-review");
+    expect(stagePageTitle(markup)).toBe("pr-review");
+    expect(markup).not.toContain("Back to Skills");
+    expect(activeFooterLabel(markup)).toBe("Skills");
+  });
+
   test.each([
-    ["/skills/pr-review", "pr-review", "Skills"],
     ["/plugins/linear", "linear", "Plugins"],
   ])(
     "%s titles the detail placeholder %s with its roster row lit",

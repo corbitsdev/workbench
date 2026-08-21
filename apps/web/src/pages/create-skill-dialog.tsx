@@ -12,11 +12,10 @@
 // frontmatter must carry. Rejecting it here beats a server error after
 // the person has typed a whole skill body.
 //
-// CL-6355: the same form doubles as the edit surface — `mode="edit"` seeds
-// it from `initialValues` and locks the name field (a skill's name is its
-// identity; renaming means creating a new one). No second editor
-// component: `SkillDetailView`'s "Edit" affordance opens this dialog with
-// `mode="edit"` rather than duplicating the form.
+// Creation only. Editing an existing skill happens on its own page
+// (`skill-detail-page.tsx`, CL-6416), where a save is reviewed as a diff
+// before it publishes a new version — this dialog has no edit mode to
+// duplicate that flow.
 
 import {
   Button,
@@ -63,7 +62,8 @@ const NAME_FIELD: IntakeField = {
   help: "Lowercase letters, digits, and hyphens — this becomes the skill's name in the registry.",
 };
 
-const DESCRIPTION_AND_BODY_FIELDS: readonly IntakeField[] = [
+const FIELDS: readonly IntakeField[] = [
+  NAME_FIELD,
   {
     name: "description",
     label: "Description",
@@ -82,33 +82,12 @@ const DESCRIPTION_AND_BODY_FIELDS: readonly IntakeField[] = [
   },
 ];
 
-const CREATE_FIELDS: readonly IntakeField[] = [
-  NAME_FIELD,
-  ...DESCRIPTION_AND_BODY_FIELDS,
-];
-
-/** Edit mode drops the name field entirely rather than disabling it — a
- * skill's name is its identity, not an editable property; renaming means
- * creating a differently-named skill. The dialog shows it as static text
- * instead (see `DialogDescription` below). */
-const EDIT_FIELDS: readonly IntakeField[] = DESCRIPTION_AND_BODY_FIELDS;
-
 /** Every reason a submission is not yet valid, in plain language — never
  * a generic "invalid form". Exported so the create flow can be proven
  * without SSR-rendering the portal-based dialog (Radix portals yield no
- * static markup). `mode="edit"` skips name validation — the field isn't
- * shown, and the value carried through unchanged is already a valid name. */
-export function validationIssues(
-  values: FormValues,
-  mode: "create" | "edit" = "create",
-): readonly string[] {
+ * static markup). */
+export function validationIssues(values: FormValues): readonly string[] {
   const issues: string[] = [];
-  if (mode === "edit") {
-    if (values.description.trim() === "")
-      issues.push("Description is required.");
-    if (values.body.trim() === "") issues.push("Skill body is required.");
-    return issues;
-  }
   const name = values.name.trim();
   if (name === "") {
     issues.push("Name is required.");
@@ -128,34 +107,26 @@ export function CreateSkillDialog({
   open,
   onOpenChange,
   onSubmit,
-  mode = "create",
-  initialValues,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Writes the skill to the registry — `createSkill` in create mode,
-   * `updateSkill` (a new version) in edit mode. A rejection's message is
-   * shown inline and the form is left as typed. */
+  /** Writes the skill to the registry. A rejection's message is shown
+   * inline and the form is left as typed. */
   readonly onSubmit: (input: SkillCreateInput) => Promise<void>;
-  readonly mode?: "create" | "edit";
-  /** Required in edit mode: seeds the form with the skill being edited. */
-  readonly initialValues?: SkillCreateInput;
 }) {
-  const startingValues = initialValues ?? EMPTY_VALUES;
-  const [values, setValues] = useState<FormValues>(startingValues);
+  const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [showIssues, setShowIssues] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
-    setValues(startingValues);
+    setValues(EMPTY_VALUES);
     setShowIssues(false);
     setServerError(null);
   }
 
   function handleOpenChange(next: boolean) {
-    if (next) setValues(startingValues);
-    else reset();
+    reset();
     onOpenChange(next);
   }
 
@@ -167,8 +138,7 @@ export function CreateSkillDialog({
     });
   }
 
-  const fields = mode === "edit" ? EDIT_FIELDS : CREATE_FIELDS;
-  const issues = validationIssues(values, mode);
+  const issues = validationIssues(values);
 
   async function handleSubmit() {
     if (issues.length > 0) {
@@ -195,13 +165,10 @@ export function CreateSkillDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {mode === "edit" ? `Edit ${values.name}` : "Create skill"}
-          </DialogTitle>
+          <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
-            {mode === "edit"
-              ? "Saving publishes a new version — the version it replaces stays in history and can be restored."
-              : "Define a reusable capability an agent can declare and this workbench can share."}
+            Define a reusable capability an agent can declare and this workbench
+            can share.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -221,10 +188,10 @@ export function CreateSkillDialog({
             </p>
           )}
           <IntakeForm
-            fields={fields}
+            fields={FIELDS}
             values={values}
             onChange={handleFormChange}
-            idPrefix={mode === "edit" ? "edit-skill" : "create-skill"}
+            idPrefix="create-skill"
           />
         </DialogBody>
         <DialogFooter>
@@ -238,9 +205,9 @@ export function CreateSkillDialog({
           <Button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={submitting || !intakeFieldsComplete(fields, values)}
+            disabled={submitting || !intakeFieldsComplete(FIELDS, values)}
           >
-            {mode === "edit" ? "Save" : "Create skill"}
+            Create skill
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -4,15 +4,12 @@
 // testable before the page behind it exists.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { Lightning, SquaresFour } from "@corbits/icons";
+import { SquaresFour } from "@corbits/icons";
 import type { Slug } from "@corbits/slug";
 import type { ReactNode } from "react";
 
 import { Link } from "../navigation";
-import {
-  PLUGINS_PATH_PREFIX,
-  SKILLS_PATH_PREFIX,
-} from "../path-ids";
+import { PLUGINS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 function DetailPlaceholder({
@@ -46,18 +43,6 @@ function DetailPlaceholder({
         />
       </PageShell>
     </div>
-  );
-}
-
-export function SkillDetailPlaceholder({ slug }: { readonly slug: Slug }) {
-  return (
-    <DetailPlaceholder
-      slug={slug}
-      entity="Skill"
-      rosterLabel="Skills"
-      rosterPath={SKILLS_PATH_PREFIX}
-      icon={<Lightning />}
-    />
   );
 }
 

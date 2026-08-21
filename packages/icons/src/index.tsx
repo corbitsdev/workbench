@@ -46,6 +46,7 @@ export {
   FlowArrow,
   FolderOpen,
   GitBranch,
+  GitDiff,
   GitPullRequest,
   Hash,
   Key,
