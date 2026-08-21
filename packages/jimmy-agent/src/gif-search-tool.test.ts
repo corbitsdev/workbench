@@ -66,7 +66,9 @@ test("returns a gif CDN url for a stubbed Giphy search", async () => {
     const bundle = gifSearchTool(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBeUndefined();
-    expect(result.content).toContain("https://media.giphy.com/media/abc123/giphy.gif");
+    expect(result.content).toContain(
+      "https://media.giphy.com/media/abc123/giphy.gif",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

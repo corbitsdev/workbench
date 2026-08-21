@@ -115,7 +115,8 @@ function pickCdnUrl(item: GiphyItem): string | undefined {
   ];
   for (const rendition of renditions) {
     const url = rendition?.url?.trim();
-    if (url !== undefined && url !== "" && isAllowedGiphyHostURL(url)) return url;
+    if (url !== undefined && url !== "" && isAllowedGiphyHostURL(url))
+      return url;
   }
   return undefined;
 }
@@ -187,7 +188,9 @@ async function searchGiphy(
     mapped.push({
       title: sanitizeGifTitle(item.title ?? ""),
       cdnUrl,
-      ...(pageUrl !== undefined && pageUrl !== "" && isAllowedGiphyHostURL(pageUrl)
+      ...(pageUrl !== undefined &&
+      pageUrl !== "" &&
+      isAllowedGiphyHostURL(pageUrl)
         ? { pageUrl }
         : {}),
     });
@@ -230,7 +233,11 @@ async function runGifSearch(
       : undefined,
   );
   try {
-    const results = await searchGiphy(credential.fetchImpl, query.trim(), limit);
+    const results = await searchGiphy(
+      credential.fetchImpl,
+      query.trim(),
+      limit,
+    );
     return { callId: call.id, content: formatResults(results) };
   } catch (err) {
     return {
