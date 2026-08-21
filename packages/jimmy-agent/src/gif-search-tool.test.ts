@@ -5,7 +5,6 @@ import type { CredentialCapability, MediatedCredential } from "@intx/types";
 import { gifSearchTool } from "./gif-search-tool";
 import { GIF_SEARCH_TOOL } from "./metadata";
 import type { GifSearchEnv } from "./gif-search-tool";
-import { GIF_SEARCH_TOOL } from "./metadata";
 
 const CALL: ToolCall = {
   id: "call_1",
