@@ -3,7 +3,9 @@
 // host — the server-side list already excludes it), each with an
 // "Invite" action that launches it into the current workbench. The list
 // itself carries its own loading/empty/error states since it is fetched
-// fresh every time the dialog opens.
+// fresh every time the dialog opens. When Jimmy has never been created
+// in this tenant, an extra "Add Jimmy" row offers to create and invite
+// him in one click — see `quickCreateJimmy` in `./api`.
 
 import {
   Button,
@@ -22,10 +24,17 @@ import { useEffect, useState } from "react";
 import {
   ChatApiError,
   describeChatError,
+  JIMMY_QUICK_CREATE,
   listInvitableDefinitions,
+  quickCreateJimmy,
 } from "./api";
 import type { InvitableDefinition } from "./api";
 import { CHAT_STRINGS } from "./strings";
+
+// A sentinel `invitingId` distinct from any real definition id — lets the
+// "Add Jimmy" row show its own "Adding…" state while `quickCreateJimmy`
+// runs, before a real definition id exists to key off of.
+const JIMMY_QUICK_CREATE_MARKER = "jimmy-quick-create";
 
 type ListState =
   | { readonly kind: "loading" }
@@ -88,6 +97,29 @@ export function InviteAgentDialog({
     }
   }
 
+  /**
+   * Jimmy is no longer seeded by a workbench template (CL-6499: he is not
+   * a "kind of workbench") — this row is his one remaining create path.
+   * Creating him mints a real, tenant-wide agent-directory definition,
+   * exactly like a template's participant create did; inviting him into
+   * this workbench reuses `handleInvite`'s own state and error handling.
+   */
+  async function handleQuickCreateJimmy() {
+    setInvitingId(JIMMY_QUICK_CREATE_MARKER);
+    setInviteError(null);
+    try {
+      const created = await quickCreateJimmy(tenantId);
+      await handleInvite(created.id);
+    } catch {
+      setInviteError(CHAT_STRINGS.inviteAgentQuickCreateError);
+      setInvitingId(null);
+    }
+  }
+
+  const jimmyMissing =
+    state.kind === "ready" &&
+    !state.items.some((item) => item.name === JIMMY_QUICK_CREATE.handle);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="right">
@@ -111,7 +143,7 @@ export function InviteAgentDialog({
               title={CHAT_STRINGS.inviteAgentLoadError}
               description={state.message}
             />
-          ) : state.items.length === 0 ? (
+          ) : state.items.length === 0 && !jimmyMissing ? (
             <EmptyState
               icon={<Users />}
               title={CHAT_STRINGS.inviteAgentEmptyTitle}
@@ -138,6 +170,24 @@ export function InviteAgentDialog({
                   </Button>
                 </li>
               ))}
+              {jimmyMissing && (
+                <li
+                  className="chat-invitable-item"
+                  data-testid="quick-create-jimmy"
+                >
+                  <span>{JIMMY_QUICK_CREATE.description}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={invitingId !== null}
+                    onClick={() => void handleQuickCreateJimmy()}
+                  >
+                    {invitingId === JIMMY_QUICK_CREATE_MARKER
+                      ? CHAT_STRINGS.inviteAgentQuickCreating
+                      : CHAT_STRINGS.inviteAgentQuickCreateAction}
+                  </Button>
+                </li>
+              )}
             </ul>
           )}
         </DialogBody>
