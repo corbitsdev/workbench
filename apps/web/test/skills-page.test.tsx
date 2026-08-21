@@ -192,6 +192,146 @@ describe("SkillsPage", () => {
     expect(navigated).toContain("/skills/summarize");
   });
 
+  test("Upload SKILL.md posts its parsed source and opens the new skill's page", async () => {
+    stubRoutes({
+      ...EMPTY_REGISTRY,
+      [`POST /api/tenants/${TENANT}/skills`]: {
+        skill: { ...TRIAGE, name: "summarize" },
+      },
+    });
+    const navigated: string[] = [];
+    const el = await mount({ navigate: (to) => navigated.push(to) });
+
+    const newSkill = Array.from(el.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("New skill"),
+    );
+    await act(async () => {
+      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const uploadTab = Array.from(
+      document.body.querySelectorAll<HTMLElement>("[role='tab']"),
+    ).find((tab) => tab.textContent === "Upload");
+    await act(async () => {
+      uploadTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const source = [
+      "---",
+      "name: summarize",
+      "description: 'Condenses.'",
+      "---",
+      "",
+      "Do it.",
+      "",
+    ].join("\n");
+    const fileInput = document.body.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+    const file = new File([source], "SKILL.md", { type: "text/markdown" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", {
+        value: transfer.files,
+        configurable: true,
+      });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const create = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create skill",
+    );
+    expect(create?.hasAttribute("disabled")).toBe(false);
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const call = requested.find(
+      (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+    );
+    expect(call?.body).toEqual({ source, scope: "private" });
+    expect(navigated).toContain("/skills/summarize");
+  });
+
+  test("uploading a malformed SKILL.md surfaces the parse error and creates nothing", async () => {
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      requested.push({
+        method,
+        path,
+        body:
+          init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+      });
+      if (method === "POST" && path.endsWith("/skills")) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: "SKILL.md is missing its YAML frontmatter delimiter",
+            },
+          }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify({ skills: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const el = await mount();
+    const newSkill = Array.from(el.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("New skill"),
+    );
+    await act(async () => {
+      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const uploadTab = Array.from(
+      document.body.querySelectorAll<HTMLElement>("[role='tab']"),
+    ).find((tab) => tab.textContent === "Upload");
+    await act(async () => {
+      uploadTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const fileInput = document.body.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["not a skill file"], "SKILL.md", {
+      type: "text/markdown",
+    });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", {
+        value: transfer.files,
+        configurable: true,
+      });
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const create = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create skill",
+    );
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain(
+      "SKILL.md is missing its YAML frontmatter delimiter",
+    );
+    expect(
+      requested.some(
+        (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+      ),
+    ).toBe(true);
+  });
+
   test("a rejected create surfaces the registry's error inline in the dialog and creates nothing", async () => {
     // The dialog's own client-side validationIssues() never checks the
     // description for HTML, so an author typing markup only gets caught
