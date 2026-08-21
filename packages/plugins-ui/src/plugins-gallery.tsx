@@ -236,6 +236,14 @@ export function PluginsGallery({
           <div className="flex flex-col gap-4 pt-3">
             {active === "plugins" ? (
               <>
+                <div>
+                  <h1 className="text-xl font-extrabold">Plugins</h1>
+                  <p className="mt-1 max-w-[65ch] text-sm text-muted-foreground">
+                    A directory to scan, not tiles to admire — one dense row
+                    per connector, grouped by what it does. Click a row's
+                    name for the full page.
+                  </p>
+                </div>
                 <McpPresetCardsSection tenantId={tenantId} query={query} />
                 <McpServersSection tenantId={tenantId} />
                 <PluginsTabPanel
