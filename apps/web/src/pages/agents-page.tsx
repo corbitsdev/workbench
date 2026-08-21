@@ -119,6 +119,53 @@ export function runsInLast7Days(
   ).length;
 }
 
+export type ArchiveDefinitionsResult = {
+  readonly succeededIds: readonly string[];
+  readonly failedIds: readonly string[];
+};
+
+/**
+ * Archives every selected id independently — `Promise.allSettled`, never
+ * `Promise.all`, so one id failing server-side can't hide (or roll back)
+ * the ids that already succeeded. The caller invalidates its queries and
+ * toasts off the returned counts regardless of whether anything failed.
+ */
+export async function archiveDefinitions(
+  ids: readonly string[],
+  archive: (id: string) => Promise<unknown>,
+): Promise<ArchiveDefinitionsResult> {
+  const results = await Promise.allSettled(ids.map((id) => archive(id)));
+  const succeededIds: string[] = [];
+  const failedIds: string[] = [];
+  results.forEach((result, index) => {
+    const id = ids[index];
+    if (id === undefined) return;
+    if (result.status === "fulfilled") succeededIds.push(id);
+    else failedIds.push(id);
+  });
+  return { succeededIds, failedIds };
+}
+
+/** The toast copy for a bulk archive — an honest count either way, never
+ * a blanket success/failure message that could describe a partial run. */
+export function archiveResultToast({
+  succeededIds,
+  failedIds,
+}: ArchiveDefinitionsResult): string {
+  const total = succeededIds.length + failedIds.length;
+  if (failedIds.length === 0) {
+    return succeededIds.length === 1
+      ? "Archived 1 agent"
+      : `Archived ${succeededIds.length} agents`;
+  }
+  if (succeededIds.length === 0) {
+    return failedIds.length === 1
+      ? "Couldn't archive that agent"
+      : "Couldn't archive those agents";
+  }
+  return `Archived ${succeededIds.length} of ${total} — the rest failed`;
+}
+
 /** The short model name for a definition's capabilities — fetched lazily,
  * per row, the same route (and the same plain fetch-effect, no react-query
  * client required) `AgentDetailPanel` below already uses; a load or fetch
@@ -392,7 +439,9 @@ export function AgentsPage({
                         <SelectionCheckbox
                           checked={headerChecked}
                           onToggle={() =>
-                            allSelected ? selection.clear() : selection.selectAll()
+                            allSelected
+                              ? selection.clear()
+                              : selection.selectAll()
                           }
                           rowLabel="all agents"
                           ariaLabel="Select all agents"
@@ -455,7 +504,9 @@ export function AgentsPage({
                             );
                           }}
                         >
-                          <TableCell onClick={(event) => event.stopPropagation()}>
+                          <TableCell
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <SelectionCheckbox
                               checked={isSelected}
                               onToggle={(modifiers) =>
@@ -638,31 +689,20 @@ export function AgentsRoute({
       }}
       onArchiveSelected={(ids) => {
         if (ids.length === 0) return;
-        void Promise.all(
-          ids.map((id) =>
-            setAgentDefinitionStatus(selectedTenantId, id, "stopped"),
-          ),
-        )
-          .then(() => {
-            void queryClient.invalidateQueries({
-              queryKey: tenantKeys.agentDirectory(selectedTenantId),
-            });
-            void queryClient.invalidateQueries({
-              queryKey: ["agent-top-level-runs", selectedTenantId],
-            });
-            toast(
-              ids.length === 1
-                ? "Archived 1 agent"
-                : `Archived ${ids.length} agents`,
-            );
-          })
-          .catch(() =>
-            toast(
-              ids.length === 1
-                ? "Couldn't archive that agent"
-                : "Couldn't archive those agents",
-            ),
-          );
+        void archiveDefinitions(ids, (id) =>
+          setAgentDefinitionStatus(selectedTenantId, id, "stopped"),
+        ).then((result) => {
+          // Invalidate regardless of outcome: a partial failure still
+          // archived some ids server-side, so the roster must not keep
+          // showing them as active.
+          void queryClient.invalidateQueries({
+            queryKey: tenantKeys.agentDirectory(selectedTenantId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["agent-top-level-runs", selectedTenantId],
+          });
+          toast(archiveResultToast(result));
+        });
       }}
     />
   );

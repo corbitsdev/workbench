@@ -76,7 +76,6 @@ export {
   Stack,
   Star,
   SquaresFour,
-  Trash,
   User,
   UserCircle,
   UserPlus,
