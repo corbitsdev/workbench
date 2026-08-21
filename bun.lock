@@ -801,6 +801,7 @@
       "name": "@corbits/inference-catalog",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/ollama-adapter": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/inference-catalog": "0.3.0",
