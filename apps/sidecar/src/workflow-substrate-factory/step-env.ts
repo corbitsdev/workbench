@@ -37,10 +37,16 @@ import {
   type StepToolMaterialization,
 } from "../step-agent-tools";
 import {
+  SUMMARIZE_BUDGETED_TURNS_NAME,
   SUMMARIZE_OLDER_TURNS_NAME,
+  createBudgetedContextCompactor,
   createSummarizeOlderTurnsCompactor,
 } from "./compactors";
 import { createStepInferenceSourceResolver } from "./config";
+import {
+  resolveContextBudgetChars,
+  resolveHardContextLimitChars,
+} from "./context-budget";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
 import { createWorkbenchDirectorRegistry } from "./workbench-director";
 
@@ -48,18 +54,10 @@ import { createWorkbenchDirectorRegistry } from "./workbench-director";
 // the compactor is a pure, stateless `Compactor` (see `./compactors`), so
 // one instance can serve every step's `env.compactors` map. Registering it
 // here (CL-6204) makes the name resolvable to any director that names it
-// via `caps.compact("summarize-older-turns", reason)`; see `./compactors`'s
-// header comment for the remaining gap -- no director in this codebase
-// fires that action yet.
+// via `caps.compact("summarize-older-turns", reason)`.
 const stepCompactors = {
   [SUMMARIZE_OLDER_TURNS_NAME]: createSummarizeOlderTurnsCompactor(),
 };
-
-// Registered once and reused across every step env this builder produces:
-// the workbench director wraps DefaultDirector with empty-turn retry and
-// is the sidecar default (see `./workbench-director`). `@intx/agent/default`
-// stays resolvable for definitions that name it.
-const stepDirectors = createWorkbenchDirectorRegistry();
 
 const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
@@ -228,6 +226,30 @@ export function createSidecarStepBuildEnv(
       );
     }
 
+    // Context-window budget for this step's active source (CL-6204):
+    // sized from `activeSource.quirks`/`activeSource.model` so a 128K
+    // model and a 32K model compact at different points rather than
+    // sharing one constant. Built per invocation (not module scope)
+    // because the budget depends on the step's own resolved source.
+    const contextBudgetChars = resolveContextBudgetChars(
+      activeSource.quirks,
+      activeSource.model,
+    );
+    const contextHardLimitChars = resolveHardContextLimitChars(
+      activeSource.quirks,
+      activeSource.model,
+    );
+    const stepDirectors = createWorkbenchDirectorRegistry({
+      budgetChars: contextBudgetChars,
+      hardLimitChars: contextHardLimitChars,
+      compactorName: SUMMARIZE_BUDGETED_TURNS_NAME,
+    });
+    const compactors = {
+      ...stepCompactors,
+      [SUMMARIZE_BUDGETED_TURNS_NAME]:
+        createBudgetedContextCompactor(contextBudgetChars),
+    };
+
     // Root the per-step scratch (workspace + tool tarball-cache +
     // apply-state). The cold (multi-step) path keys it per
     // run/step/attempt: each run rebuilds the agent and its scratch, and
@@ -346,7 +368,7 @@ export function createSidecarStepBuildEnv(
       workdir,
       audit: storage,
       directors: stepDirectors,
-      compactors: stepCompactors,
+      compactors,
       // Resolve inference adapters through the child's boot-built
       // registry (built-ins + operator custom adapters), so a
       // custom-provider step source resolves in the child the same way
