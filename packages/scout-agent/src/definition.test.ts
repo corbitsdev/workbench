@@ -33,7 +33,7 @@ describe("SCOUT_AGENT_DEFINITION", () => {
       "memory_list",
       "web_search",
       "save_artifact",
-      "list_recent_artifacts",
+      "list_artifacts",
     ]) {
       expect(prompt).toContain(toolName);
     }

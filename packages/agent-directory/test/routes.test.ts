@@ -555,6 +555,53 @@ test("a create request without skills records an empty skills list", async () =>
   expect(await skillsStore.getSkills("ast_1")).toEqual([]);
 });
 
+test("a create request with toolPackagePins pins each named package at version *", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      createAsset: () =>
+        Promise.resolve({
+          id: "ast_1",
+          tenantId: TENANT.id,
+          kind: "workflow" as const,
+          name: "scout",
+          displayName: "Scout",
+          creatorPrincipalId: PRINCIPAL.id,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeCreateDb(),
+  );
+  const response = await post(app, {
+    name: "Scout",
+    handle: "scout",
+    systemPrompt: "You are Scout.",
+    toolPackagePins: ["@corbits/memory-tools", "@corbits/web-search-tools"],
+  });
+  expect(response.status).toBe(201);
+  const workflowJson = definitionFrom(writtenFiles);
+  expect(pinsFrom(workflowJson)).toEqual([
+    { name: "@corbits/memory-tools", version: "*" },
+    { name: "@corbits/web-search-tools", version: "*" },
+  ]);
+});
+
+test("a create request rejects a toolPackagePins entry outside the @corbits scope", async () => {
+  const app = buildApp(fakeAssetService());
+  const response = await post(app, {
+    name: "Scout",
+    handle: "scout",
+    systemPrompt: "You are Scout.",
+    toolPackagePins: ["not-a-corbits-package"],
+  });
+  expect(response.status).toBe(400);
+});
+
 function fakeSkillsDb(
   row: { id: string; assetId: string | null } | undefined,
 ): DB["db"] {

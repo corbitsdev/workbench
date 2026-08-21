@@ -217,6 +217,66 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 });
 
+describe("nextStreamingReplyState (CL-false-no-reply: rendered content, not a lifecycle event, ends the turn)", () => {
+  test("a chat.message from the awaiting turn's agent moves straight to replied — the reply already rendered, connector.reply or not", () => {
+    const state = awaiting("Full answer.");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          sender: { name: null, address: MYRA.address },
+          parts: [{ kind: "text", text: "Full answer." }],
+        },
+      }),
+    ).toEqual({ phase: "replied" });
+  });
+
+  test("a chat.message from the agent's own undelivered-notice address (turnFailed) is never mistaken for a rendered reply", () => {
+    const state = awaiting("");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          sender: { name: null, address: MYRA.address },
+          parts: [
+            { kind: "text", text: "I didn't get that one", turnFailed: true },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("a chat.message from a human sender never ends the turn — it's not the agent's reply", () => {
+    const state = awaiting("");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          sender: { name: null, address: HUMAN.address },
+          parts: [{ kind: "text", text: "hi" }],
+        },
+      }),
+    ).toBe(state);
+  });
+
+  test("a chat.message with no content parts never ends the turn", () => {
+    const state = awaiting("");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          sender: { name: null, address: MYRA.address },
+          parts: [],
+        },
+      }),
+    ).toBe(state);
+  });
+});
+
 describe("nextStreamingReplyState (CL-6432 reopened: a folded run parks after the reply — post-reply tool rounds never re-open the pulse)", () => {
   test("connector.reply moves the turn to the replied phase — the persisted message takes over the timeline", () => {
     expect(

@@ -215,6 +215,71 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
   });
 });
 
+describe("useStreamingReply (CL-false-no-reply: the notice must never fire once a reply has rendered)", () => {
+  const MYRA_ADDRESS = "myra@agents.example";
+
+  test("a full reply renders and the run then goes quiet with no terminal event (parked folded run) — no notice", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    harness.send("chat.agent", delta("Full answer."));
+    // The persisted reply posts as its own chat.message — the real signal
+    // the reader sees on screen — entirely independent of whichever
+    // chat.agent event (or none, if this run parks) follows it.
+    harness.send("chat.message", {
+      id: "msg_1",
+      sender: { name: null, address: MYRA_ADDRESS },
+      parts: [{ kind: "text", text: "Full answer." }],
+    });
+    expect(harness.get()).toEqual({ phase: "replied" });
+
+    // No message.run.ended, no connector.reply — mimics a folded run that
+    // parks instead of ending. The backstop must not have armed for a
+    // "replied" phase, so it must never fire.
+    await harness.settle(60);
+    expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+
+  test("a full reply renders and then a post-reply tool round runs — no notice", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    harness.send("chat.agent", delta("Full answer."));
+    harness.send("chat.message", {
+      id: "msg_1",
+      sender: { name: null, address: MYRA_ADDRESS },
+      parts: [{ kind: "text", text: "Full answer." }],
+    });
+
+    // A memory-write tool round after the reply — must stay inert.
+    harness.send("chat.agent", {
+      type: "inference.start",
+      seq: 10,
+      data: { model: "x" },
+    });
+    harness.send("chat.agent", {
+      type: "inference.done",
+      seq: 11,
+      data: { turn: {}, usage: {}, source: "primary" },
+    });
+
+    await harness.settle(60);
+    expect(harness.get()).toEqual({ phase: "replied" });
+    expect(harness.timedOut()).toBe(false);
+    harness.unmount();
+  });
+
+  test("a turn that never produces any content still times out after the backstop window", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
+
+    await harness.settle(60);
+    expect(harness.get()).toBeNull();
+    expect(harness.timedOut()).toBe(true);
+    harness.unmount();
+  });
+});
+
 describe("useStreamingReply.resumeFromTurn (CL-6380: catch-up on remount)", () => {
   test("hydrates the reply from a running turn's committed text on a fresh mount", () => {
     const harness = mount("chan_a");

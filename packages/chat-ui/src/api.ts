@@ -14,6 +14,7 @@ import { Part } from "@corbits/chat/parts";
 import { parseParticipants } from "@corbits/chat/participants";
 import type { ParticipantRecord } from "@corbits/chat/participants";
 import { UnauthenticatedError } from "@corbits/api-query";
+import { jimmyAgentRequest } from "@corbits/workflow-catalog";
 import { CHAT_STRINGS } from "./strings";
 
 export {
@@ -694,6 +695,32 @@ export function inviteAgent(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
     InvitedAgent,
     { method: "POST", body: JSON.stringify({ definitionId }) },
+  );
+}
+
+// Jimmy's own request shape, the same `@corbits/workflow-catalog` object a
+// workbench template's participant create used to resolve — CL-6499 removed
+// Jimmy's template (he is not a "kind of workbench"), so this dialog's own
+// "Add Jimmy" quick-create row (see `invite-agent-dialog.tsx`) is his only
+// create path left. `jimmyAgentRequest()` is pure data (no tool bodies, no
+// server-only imports), safe to call from browser code.
+export const JIMMY_QUICK_CREATE = jimmyAgentRequest();
+
+const CreatedAgentDefinition = type({ id: "string" });
+
+/**
+ * Creates Jimmy's agent-directory definition in one call — the same
+ * one-shot `POST /agent-definitions` a template-driven participant create
+ * goes through. Idempotency is the caller's job: only offer this when
+ * `JIMMY_QUICK_CREATE.handle` is absent from the tenant's invitable list.
+ */
+export function quickCreateJimmy(
+  tenantId: string,
+): Promise<{ readonly id: string }> {
+  return request(
+    `/api/tenants/${tenantId}/agent-definitions`,
+    CreatedAgentDefinition,
+    { method: "POST", body: JSON.stringify(JIMMY_QUICK_CREATE) },
   );
 }
 

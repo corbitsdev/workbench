@@ -25,7 +25,11 @@ import { type } from "arktype";
 // imports at all, so this subpath keeps every consumer of this
 // manifest (this package's whole point) off that much heavier graph.
 import { CODE_REVIEW_REVIEWERS } from "@corbits/code-review/reviewers";
-
+import {
+  SCOUT_AGENT_HANDLE,
+  SCOUT_AGENT_DISPLAY_NAME,
+  SCOUT_AGENT_DESCRIPTION,
+} from "@corbits/scout-agent/definition";
 /** One workflow a template installs, pinned to the version it was
  * designed against. `assetName` matches a `WORKFLOW_CATALOG` entry. */
 export const WorkbenchTemplateBlock = type({
@@ -55,12 +59,17 @@ export type WorkbenchTemplateRoutine = typeof WorkbenchTemplateRoutine.infer;
 
 /**
  * One agent a person can address in the created workbench. `handle` is
- * what they type to reach it; `blockAssetName` is the workflow behind it.
+ * what they type to reach it. `blockAssetName` names the workflow behind
+ * it when the participant is a lens over one of the template's own
+ * blocks (the code-review reviewers); it is absent for a participant
+ * that is a standalone chat agent installed straight through the
+ * agent-directory create path (Scout, Jimmy) with no block of its own to
+ * reference.
  */
 export const WorkbenchTemplateParticipant = type({
   handle: "/^[a-z][a-z0-9-]*$/",
   displayName: "string > 0",
-  blockAssetName: "string > 0",
+  "blockAssetName?": "string > 0",
   /** One honest line: what this agent is for. */
   role: "string > 0",
 });
@@ -283,9 +292,44 @@ export const CODE_REVIEW_TEMPLATE: WorkbenchTemplateManifest = {
   ],
 };
 
+/**
+ * The due-diligence template (CL-6499): Scout for the web/firm-memory
+ * research and Myra to talk through what it found. Scout is a
+ * standalone chat agent, not a lens over a block workflow — it has no
+ * cron, no webhook, nothing to schedule — so it carries no
+ * `blockAssetName` and this template's `blocks` list stays empty.
+ * Exa (Scout's web-research tool) resolves through the keyless MCP
+ * preset, so nothing here blocks the create on a connection.
+ */
+export const DUE_DILIGENCE_TEMPLATE: WorkbenchTemplateManifest = {
+  id: "due-diligence",
+  title: "Research & due diligence",
+  promise:
+    "Scout researches the web and what your team already knows, and saves what it finds so you can pick it up later.",
+  blocks: [],
+  requiredConnections: [],
+  optionalConnections: ["exa"],
+  routines: [],
+  webhookTriggers: [],
+  participants: [
+    {
+      handle: "myra",
+      displayName: "Myra",
+      role: "Talks through what Scout found and helps you decide what to do with it.",
+    },
+    {
+      handle: SCOUT_AGENT_HANDLE,
+      displayName: SCOUT_AGENT_DISPLAY_NAME,
+      role: SCOUT_AGENT_DESCRIPTION,
+    },
+  ],
+  openInputs: [],
+};
+
 export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplateManifest[] = [
   GTM_TEMPLATE,
   CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
 ];
 
 const templateById = new Map(
@@ -404,7 +448,10 @@ function assertValid(template: WorkbenchTemplateManifest): void {
     }
   }
   for (const participant of template.participants) {
-    if (!blockNames.has(participant.blockAssetName)) {
+    if (
+      participant.blockAssetName !== undefined &&
+      !blockNames.has(participant.blockAssetName)
+    ) {
       throw new Error(
         `workbench template "${template.id}" participant "${participant.handle}" is backed by "${participant.blockAssetName}", which the template does not install`,
       );

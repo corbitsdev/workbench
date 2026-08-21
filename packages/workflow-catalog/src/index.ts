@@ -10,6 +10,7 @@ import { type } from "arktype";
 
 export {
   CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
   WorkbenchTemplateBlock,
@@ -27,9 +28,14 @@ export {
 export type { WorkbenchTemplateManifest } from "./templates";
 export {
   instantiateWorkbenchTemplate,
+  type ParticipantAgentRequest,
   type WorkbenchTemplateInstantiationPorts,
   type WorkbenchTemplateInstantiationResult,
 } from "./instantiate";
+export {
+  jimmyAgentRequest,
+  scoutAgentRequest,
+} from "./participant-agent-requests";
 export {
   TemplateReposSettingsPatch,
   TemplateSettingsPatch,

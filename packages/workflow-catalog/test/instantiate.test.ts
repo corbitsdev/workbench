@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { CODE_REVIEW_REVIEWERS } from "@corbits/code-review/reviewers";
 
-import { CODE_REVIEW_TEMPLATE, GTM_TEMPLATE } from "../src/index";
+import {
+  CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
+  GTM_TEMPLATE,
+} from "../src/index";
 import {
   instantiateWorkbenchTemplate,
   type WorkbenchTemplateInstantiationPorts,
@@ -115,4 +119,81 @@ test("instantiating a manifest with a participant outside the reviewer roster th
   return expect(
     instantiateWorkbenchTemplate(GTM_TEMPLATE, fakePorts()),
   ).rejects.toThrow(/has no known create-agent request/);
+});
+
+test("instantiating the due-diligence template creates Scout, never Myra, with no credential connected", async () => {
+  const ports = fakePorts();
+  const result = await instantiateWorkbenchTemplate(
+    DUE_DILIGENCE_TEMPLATE,
+    ports,
+  );
+  expect(result.createdHandles).toEqual(["scout"]);
+  expect(ports.created).toEqual(["scout"]);
+  expect(ports.created).not.toContain("myra");
+  expect(result.skippedHandles).toEqual([]);
+  // No block to deploy and nothing required up front: seeding never
+  // fails for want of a connected credential (Exa's MCP preset is
+  // keyless, and this template requires nothing at all).
+  expect(ports.deployedBlocks).toEqual([]);
+  expect(result.pendingConnections).toEqual([]);
+});
+
+test("instantiating the due-diligence template twice never creates Scout a second time", async () => {
+  const first = fakePorts();
+  await instantiateWorkbenchTemplate(DUE_DILIGENCE_TEMPLATE, first);
+  const second = fakePorts(["scout"]);
+  const result = await instantiateWorkbenchTemplate(
+    DUE_DILIGENCE_TEMPLATE,
+    second,
+  );
+  expect(result.createdHandles).toEqual([]);
+  expect(result.skippedHandles).toEqual(["scout"]);
+  expect(second.created).toEqual([]);
+});
+
+test("Scout's create request carries its tool package pins", async () => {
+  const requests: { handle: string; toolPackagePins?: readonly string[] }[] =
+    [];
+  const ports: WorkbenchTemplateInstantiationPorts = {
+    async listAgentHandles() {
+      return [];
+    },
+    async createParticipantAgent(request) {
+      requests.push(request);
+      return { id: `def-${request.handle}` };
+    },
+    async deployBlockWorkflow() {
+      return { created: true };
+    },
+    async recordPendingConnections() {
+      /* noop */
+    },
+  };
+  await instantiateWorkbenchTemplate(DUE_DILIGENCE_TEMPLATE, ports);
+  const scout = requests.find((request) => request.handle === "scout");
+  expect(scout?.toolPackagePins).toEqual(
+    expect.arrayContaining([
+      "@corbits/memory-tools",
+      "@corbits/web-search-tools",
+      "@corbits/scout-agent",
+    ]),
+  );
+});
+
+// CL-6499 dropped Jimmy's own template (he is not a "kind of workbench");
+// `@corbits/chat-ui`'s "Add Jimmy" quick-create row calls
+// `jimmyAgentRequest()` directly instead of going through a manifest. This
+// proves `instantiateWorkbenchTemplate`'s request map still resolves his
+// handle, so a future template naming him works with no new plumbing.
+test("a manifest naming Jimmy's handle still resolves and creates him", async () => {
+  const manifestNamingJimmy = {
+    ...DUE_DILIGENCE_TEMPLATE,
+    participants: [
+      { handle: "jimmy", displayName: "Jimmy", role: "Replies with a GIF." },
+    ],
+  };
+  const ports = fakePorts();
+  const result = await instantiateWorkbenchTemplate(manifestNamingJimmy, ports);
+  expect(result.createdHandles).toEqual(["jimmy"]);
+  expect(ports.created).toEqual(["jimmy"]);
 });

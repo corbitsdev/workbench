@@ -1,23 +1,26 @@
-// Default land: a brand-new bench with zero workbenches auto-mints its
-// first Myra workbench and lands straight in it (CL-6138, superseding the
-// CL-6104 describe-screen step) — the same one-creation-verb mint
-// `instant-agent-create.ts` gives every other "+ New workbench" control, so
-// a fresh bench's very first workbench comes from the exact same path as
-// every one after it. A bench that already has one or more lands in (or
-// creates) the Myra workbench in the main stage, unchanged. Home as a
-// dashboard does not earn its keep — `/` only exists as this hop onto
-// `/w/:workbenchId`. Deep links to other pages are unchanged.
+// Default land: a bench that already has one or more workbenches lands in
+// (or creates) the Myra workbench in the main stage. A brand-new bench with
+// zero workbenches has nothing to land in yet, so this hop sends it to the
+// guided create surface (`NewWorkbenchPickerRoute`, CL-6342) instead of
+// auto-minting an unlabeled "New Workbench" and dropping the person straight
+// into it — that auto-mint (CL-6138) is exactly the confusing empty-bench
+// landing this hop used to produce. Home as a dashboard does not earn its
+// keep — `/` only exists as this hop onto `/w/:workbenchId` or `/new`. Deep
+// links to other pages are unchanged.
 //
 // Right after a provider connect this hop is also the wait (CL-6457's
 // deploys run in the background, so landing here can beat them). CL-6462
-// settled what that wait looks like: one warm loader and nothing else.
-// The land is simply attempted again every few seconds, because launching
-// Myra IS the test of whether the person can start — she is deployed
-// first (`SETUP_AGENT_ASSET_NAME` leads `DEFAULT_WORKFLOWS`), so the
-// moment she answers we go, with every other seeded workflow still
-// converging behind us. Readiness is read only to tell a wait from a
-// genuine failure, never to draw a progress number: a seed count is an
-// implementation detail, and "0 of 5" told a waiting person nothing.
+// settled what that wait looks like: one warm loader and nothing else. For
+// a zero-workbench bench the wait is for Myra's own definition to exist at
+// all — the picker's "Create workbench" needs it too, so checking here
+// first means the picker never opens onto a create button that would just
+// throw. The check is simply retried every few seconds, because Myra's
+// readiness IS the test of whether the person can start — she is deployed
+// first (`SETUP_AGENT_ASSET_NAME` leads `DEFAULT_WORKFLOWS`), so the moment
+// she's ready we go, with every other seeded workflow still converging
+// behind us. Readiness is read only to tell a wait from a genuine failure,
+// never to draw a progress number: a seed count is an implementation
+// detail, and "0 of 5" told a waiting person nothing.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { Clock, WarningCircle } from "@corbits/icons";
@@ -29,9 +32,9 @@ import { describeApiError } from "@corbits/api-query";
 import { fetchAgentReadiness } from "../onboarding";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
-import { createAgentAndLaunch } from "../instant-agent-create";
 import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
+import { NEW_WORKBENCH_PATH } from "../routes";
 
 type LandState =
   /** Working on it: the warm loader, whether we are reading the bench's
@@ -98,11 +101,27 @@ export function HomeRoute({
       });
     };
 
+    // Zero workbenches: wait for Myra's own definition to exist, then send
+    // the person to the picker rather than minting anything ourselves —
+    // "she can't start yet" and "here, go create your first workbench"
+    // are different messages, and only the readiness check tells them
+    // apart.
+    const awaitFirstWorkbench = () => {
+      void fetchAgentReadiness().then((readiness) => {
+        if (cancelled) return;
+        if (readiness.kind === "ready" || readiness.kind === "chat-ready") {
+          navigate(NEW_WORKBENCH_PATH);
+          return;
+        }
+        waitAndRetry();
+      });
+    };
+
     void listAllWorkbenches(selectedTenantId).then(
       (workbenches) => {
         if (cancelled) return;
         if (workbenches.length === 0) {
-          createAgentAndLaunch(selectedTenantId, navigate).catch(classify);
+          awaitFirstWorkbench();
           return;
         }
         void ensureMyraWorkbench(selectedTenantId).then((result) => {

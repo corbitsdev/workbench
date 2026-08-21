@@ -24,13 +24,13 @@
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@tanstack/react-query": "catalog:",
     "@workbench/connections": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@corbits/workflow-catalog": "workspace:*",
     "@happy-dom/global-registrator": "^20.11.2",
     "@intx/inference": "0.3.0",
     "@types/bun": "catalog:",
