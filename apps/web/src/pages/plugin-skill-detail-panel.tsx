@@ -131,12 +131,12 @@ export function PluginSkillDetailPanel({
           </DialogBody>
         ) : (
           <DialogBody className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <Badge tone={state.skill.scope === "tenant" ? "info" : "neutral"}>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground">
                 {state.skill.scope === "tenant"
-                  ? "Shared with everyone"
-                  : "Just you"}
-              </Badge>
+                  ? "Everyone in this workbench can use this skill."
+                  : "Only you can use this skill."}
+              </p>
               <Button
                 type="button"
                 size="sm"
@@ -153,8 +153,8 @@ export function PluginSkillDetailPanel({
                 }
               >
                 {state.skill.scope === "tenant"
-                  ? "Make private"
-                  : "Share with everyone"}
+                  ? "Make it private to me"
+                  : "Share with everyone here"}
               </Button>
             </div>
             <pre className="whitespace-pre-wrap break-words border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">

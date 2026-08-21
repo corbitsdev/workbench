@@ -262,4 +262,48 @@ describe("LibraryPage top-nav action placement", () => {
     clone.querySelector('[data-testid="stage-top-bar"]')?.remove();
     expect(clone.textContent).not.toContain("Upload");
   });
+
+  test("the filter, sort and view controls sit in the top bar, not a body toolbar", () => {
+    act(() => {
+      root.render(
+        <LibraryPage
+          artifacts={artifacts}
+          onUpload={() => undefined}
+          workbenchScope={{ title: "Launch plan" }}
+          scope="all"
+          onScopeChange={() => undefined}
+        />,
+      );
+    });
+    const topBarActions = container.querySelector(
+      '[data-testid="stage-top-bar-actions"]',
+    );
+    expect(topBarActions).not.toBeNull();
+    expect(
+      topBarActions?.querySelector('[aria-label="Filter files"]'),
+    ).not.toBeNull();
+    expect(
+      topBarActions?.querySelector('[aria-label="Files scope"]'),
+    ).not.toBeNull();
+    expect(
+      topBarActions?.querySelector('[aria-label="Newest first"]'),
+    ).not.toBeNull();
+    expect(topBarActions?.querySelector('[aria-label="View"]')).not.toBeNull();
+    expect(container.querySelector(".page-toolbar")).toBeNull();
+  });
+
+  test("scoped filtering is labelled as filtering, never as a second search", () => {
+    act(() => {
+      root.render(<LibraryPage artifacts={artifacts} />);
+    });
+    expect(container.querySelector('[aria-label="Search files"]')).toBeNull();
+    expect(container.textContent).not.toContain("Search files");
+  });
+
+  test("files open as rows before grids", () => {
+    act(() => {
+      root.render(<LibraryPage artifacts={artifacts} />);
+    });
+    expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
+  });
 });
