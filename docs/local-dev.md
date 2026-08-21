@@ -53,7 +53,41 @@ exactly this reason.
 
 The memory plane (embeddings-backed recall) needs `EMBED_BASE_URL` set;
 without it, `apps/hub/src/memory-mount.ts` skips mounting the memory plane
-and logs that it did, rather than failing hub startup.
+and logs that it did, rather than failing hub startup — and
+`memory_search`/`memory_add`/`memory_list` answer with a plain "memory
+isn't set up on this server yet" note instead of erroring.
+
+Run `bun run scripts/setup-memory.ts` (or `bun run setup:memory`) for a
+recommendation tailored to this machine — it checks for native Ollama and
+Docker and prints the exact env lines and commands for whichever it finds,
+in the order the platform prefers them:
+
+1. **Native first.** A local `ollama pull nomic-embed-text` needs no
+   container and is the preferred embedding path.
+2. **Docker** for the pieces with no good native story — the reranker
+   (`ghcr.io/huggingface/text-embeddings-inference:cpu-latest`, serving
+   `BAAI/bge-reranker-base`) and Gotenberg PDF rendering
+   (`gotenberg/gotenberg:8`) — and as a fallback for embedding when native
+   Ollama isn't installed.
+3. **A remote endpoint**, always available as a third option — including
+   an existing Ollama, TEI, or Gotenberg instance running elsewhere (the
+   owner's own Tailscale-tunneled Ollama box is a first-class example, not
+   a fallback of last resort).
+
+Two things degrade on purpose rather than failing loudly, and both are
+worth knowing before you rely on either:
+
+- **No embedding configured (`EMBED_BASE_URL` unset):** memory tools reply
+  with a "not set up" note; search finds nothing. Setting
+  `EMBED_BASE_URL` later does **not** retroactively embed anything written
+  while it was unset — migrations create the memory plane's tables either
+  way, but there is no automatic backfill.
+- **No reranker configured (`RERANK_BASE_URL`/`RERANK_MODEL` unset, or a
+  configured reranker failing at request time):** search still works,
+  just ordered by vector/full-text fusion alone rather than a
+  cross-encoder pass — a reranker outage degrades search quietly rather
+  than breaking it. Setting only one of `RERANK_BASE_URL`/`RERANK_MODEL`
+  is a boot-time error, not a silently half-enabled reranker.
 
 ## Isolated capacity (exclusive per-workbench sidecars)
 

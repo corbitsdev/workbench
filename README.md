@@ -44,6 +44,16 @@ cp .env.example .env
 bun run dev
 ```
 
+Recommended: run `bun run setup:memory` for a machine-specific
+recommendation on turning on the memory plane (embeddings-backed recall)
+and its optional reranker — native Ollama, Docker, or a remote endpoint,
+whichever this machine can actually use — then add the env lines it
+prints to `.env`. Skipping this leaves memory off: memory tools answer
+"not set up" instead of erroring, so it's safe to add later, but rows
+written before `EMBED_BASE_URL` is set are never retroactively embedded.
+See [docs/local-dev.md](docs/local-dev.md#memory-plane) for the full
+degradation story.
+
 `bun run dev` validates your `.env` (reporting every missing or malformed
 value at once), verifies the database in `DATABASE_URL` is reachable and
 actually speaks Postgres, applies any pending platform migrations, builds
