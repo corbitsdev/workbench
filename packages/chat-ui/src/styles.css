@@ -1028,6 +1028,56 @@
   align-self: flex-start;
 }
 
+.chat-bubble-row[data-own="true"] .chat-bubble-fix-connection {
+  align-self: flex-end;
+}
+
+/* CL-6558: the owner asked for own messages back on the right, evaluated
+   per viewer (`isOwn` in timeline.tsx already keys off `currentUser`, never
+   a fixed account) — reversing CL-6488's flat, no-alignment timeline. Still
+   no bubble, no border, no background fill: only the row mirrors, so the
+   avatar sits on the right and the header/text shrink to their own content
+   width against that same edge instead of stretching the full row. `.chat-
+   block` (approve/connect-service/connect-github/poll/form/steps) and
+   `.chat-tool-activity` chips render as siblings of the bubble, not inside
+   it, and deliberately stay anchored under the left avatar gutter for every
+   author — mirroring a stack of tool chips or an approval card to the right
+   read as clutter next to the composer and doesn't match any other
+   approval-flow surface in the app. */
+.chat-bubble-row[data-own="true"] {
+  flex-direction: row-reverse;
+}
+
+.chat-bubble-row[data-own="true"] .chat-bubble {
+  align-items: flex-end;
+}
+
+.chat-bubble-row[data-own="true"] .chat-bubble-head {
+  justify-content: flex-end;
+}
+
+.chat-bubble-row[data-own="true"][data-grouped="true"] {
+  padding-left: 0.45rem;
+  padding-right: calc(0.45rem + 2.15rem + 0.65rem);
+}
+
+.chat-bubble-row[data-own="true"] .chat-bubble-time-grouped {
+  left: auto;
+  right: 0.45rem;
+  padding-right: 0;
+  padding-left: 0.3rem;
+  text-align: left;
+}
+
+/* An own message's file/artifact attachment mirrors alongside its bubble —
+   `inline-flex` alone won't respond to `margin-left:auto` (it's an atomic
+   inline-level box, not a block one), so own attachments switch to `flex`
+   only for the own case, matching the bubble's own mirrored edge. */
+.chat-message-group[data-own="true"] .chat-artifact-chip {
+  display: flex;
+  margin-left: auto;
+}
+
 /* Optimistic sends (CL-5879): a message the reader just sent renders
    exactly like a normal message immediately — full opacity, no restyling —
    with only the small clock glyph next to its header while in flight, and
