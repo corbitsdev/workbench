@@ -2,7 +2,7 @@
 // get the catalog's one-click installation path. Presets and previously
 // connected custom servers share the same server-side store.
 
-import { Button, ConfirmButton, toast } from "@corbits/react-ui";
+import { Button, ConfirmButton, Input, toast } from "@corbits/react-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 import { useEffect, useState } from "react";
@@ -33,23 +33,35 @@ function McpPresetCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tokenFieldOpen, setTokenFieldOpen] = useState(false);
+  const [token, setToken] = useState("");
+
+  function submitConnect(pastedToken: string | undefined) {
+    setBusy(true);
+    setError(null);
+    connectMcpPreset(tenantId, preset.slug, pastedToken)
+      .then((result) => {
+        toast(
+          `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
+        );
+        setTokenFieldOpen(false);
+        setToken("");
+        onChanged(result.toolCount);
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)))
+      .finally(() => setBusy(false));
+  }
 
   function handleConnect() {
     if (preset.connectionMode === "oauth") {
       window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
       return;
     }
-    setBusy(true);
-    setError(null);
-    connectMcpPreset(tenantId, preset.slug, undefined)
-      .then((result) => {
-        toast(
-          `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
-        );
-        onChanged(result.toolCount);
-      })
-      .catch((cause: unknown) => setError(messageOf(cause)))
-      .finally(() => setBusy(false));
+    if (preset.connectionMode === "token") {
+      setTokenFieldOpen(true);
+      return;
+    }
+    submitConnect(undefined);
   }
 
   function handleDisconnect() {
@@ -77,52 +89,111 @@ function McpPresetCard({
       : `${toolCount} tool${toolCount === 1 ? "" : "s"}`
     : "Not connected";
 
+  const tokenFieldId = `mcp-preset-token-${preset.slug}`;
+
   return (
     <div
-      className="flex min-h-16 min-w-0 items-center gap-3 border-b border-border px-2 py-2.5"
+      className="border-b border-border px-2 py-2.5"
       data-plugin-slug={preset.slug}
     >
-      <PluginLogo
-        name={preset.displayName}
-        icon={preset.icon ?? connector?.icon}
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium">
-          {preset.displayName}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {preset.description}
-        </span>
-        {error !== null ? (
-          <span className="truncate text-xs text-destructive" role="alert">
-            {error}
+      <div className="flex min-h-11 min-w-0 items-center gap-3">
+        <PluginLogo
+          name={preset.displayName}
+          icon={preset.icon ?? connector?.icon}
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium">
+            {preset.displayName}
           </span>
-        ) : null}
+          <span className="truncate text-xs text-muted-foreground">
+            {preset.description}
+          </span>
+          {error !== null ? (
+            <span className="truncate text-xs text-destructive" role="alert">
+              {error}
+            </span>
+          ) : null}
+        </div>
+        <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
+          {status}
+        </span>
+        {preset.connected ? (
+          <ConfirmButton
+            variant="destructive"
+            size="sm"
+            confirmLabel="Disconnect"
+            disabled={busy}
+            onConfirm={handleDisconnect}
+          >
+            {busy ? "Disconnecting…" : "Disconnect"}
+          </ConfirmButton>
+        ) : tokenFieldOpen ? null : (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={handleConnect}
+          >
+            {busy ? "Connecting…" : "Connect"}
+          </Button>
+        )}
       </div>
-      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
-        {status}
-      </span>
-      {preset.connected ? (
-        <ConfirmButton
-          variant="destructive"
-          size="sm"
-          confirmLabel="Disconnect"
-          disabled={busy}
-          onConfirm={handleDisconnect}
-        >
-          {busy ? "Disconnecting…" : "Disconnect"}
-        </ConfirmButton>
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          onClick={handleConnect}
-        >
-          {busy ? "Connecting…" : "Connect"}
-        </Button>
-      )}
+      {tokenFieldOpen && !preset.connected ? (
+        <div className="mt-2 flex flex-col gap-2 pl-11">
+          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+            {(preset.tokenSteps ?? []).map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <a
+            href={preset.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs underline underline-offset-2"
+          >
+            Create your token
+          </a>
+          <label className="sr-only" htmlFor={tokenFieldId}>
+            {`${preset.displayName} access token`}
+          </label>
+          <Input
+            id={tokenFieldId}
+            type="password"
+            value={token}
+            placeholder="Paste your access token"
+            disabled={busy}
+            onChange={(event) => {
+              setToken(event.target.value);
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || token.trim() === ""}
+              onClick={() => {
+                submitConnect(token.trim());
+              }}
+            >
+              {busy ? "Connecting…" : "Connect"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setTokenFieldOpen(false);
+                setToken("");
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

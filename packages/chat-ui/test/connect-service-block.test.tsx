@@ -73,6 +73,10 @@ describe("ConnectServiceBlockView oauth arm", () => {
     });
     expect(host.textContent).toContain("Connect Gmail");
     expect(host.textContent).toContain(REASON);
+    // The helper walks through what happens, not just "two clicks".
+    expect(host.textContent).toContain(
+      "You'll be sent to Gmail to approve access, then land right back here connected — nothing is shared until you approve.",
+    );
     buttonByText(host, "Connect Gmail").click();
     expect(connected).toBe(1);
     expect(host.querySelector("input")).toBeNull();

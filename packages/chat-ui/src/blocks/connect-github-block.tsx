@@ -104,6 +104,20 @@ function DisconnectedBody({
         <p className="chat-block-text">
           {CHAT_STRINGS.blockConnectGithubIntro}
         </p>
+        <ol className="chat-block-text chat-block-connect-steps">
+          {CHAT_STRINGS.blockConnectGithubTokenSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <p className="chat-block-text chat-block-connect-helper">
+          <a
+            href={CHAT_STRINGS.blockConnectGithubTokenSettingsUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {CHAT_STRINGS.blockConnectGithubTokenSettingsLink}
+          </a>
+        </p>
         <label
           className="chat-block-text chat-block-connect-token-label"
           htmlFor="connect-github-token"
@@ -161,11 +175,7 @@ function DisconnectedBody({
         </Button>
       </div>
       <p className="chat-block-text chat-block-connect-helper">
-        {CHAT_STRINGS.blockConnectGithubTokenPrompt}{" "}
-        <Button type="button" variant="link" onClick={openField}>
-          {CHAT_STRINGS.blockConnectGithubTokenLink}
-        </Button>
-        {CHAT_STRINGS.blockConnectGithubTokenTrust}
+        {CHAT_STRINGS.blockConnectGithubTokenHelper}
       </p>
     </>
   );

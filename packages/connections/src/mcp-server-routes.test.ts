@@ -443,6 +443,55 @@ describe("POST / with presetSlug", () => {
     expect(hub.credentials[0]?.secret).toBe("unauthenticated-mcp-server");
   });
 
+  test("connects GitHub MCP with a pasted token stored as the bearer credential", async () => {
+    const hub = fakeHub({});
+    let probedUrl: string | undefined;
+    let probedToken: string | undefined;
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      probe: async (url, token) => {
+        probedUrl = url;
+        probedToken = token;
+        return { ok: true, toolCount: 40 };
+      },
+    });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "github-mcp", token: "ghp_test" }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { slug: string; url: string };
+    expect(body.slug).toBe("github-mcp");
+    expect(body.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(probedUrl).toBe("https://api.githubcopilot.com/mcp/");
+    expect(probedToken).toBe("ghp_test");
+    expect(hub.providers[0]?.name).toBe("mcp:github-mcp");
+    expect(hub.credentials[0]?.secret).toBe("ghp_test");
+  });
+
+  test("a token preset without a token is a 400 that never probes", async () => {
+    const hub = fakeHub({});
+    let probed = false;
+    const app = buildApp({
+      apiCall: hub.apiCall,
+      probe: async () => {
+        probed = true;
+        return { ok: true, toolCount: 1 };
+      },
+    });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({ presetSlug: "github-mcp" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(probed).toBe(false);
+    expect(hub.providers).toHaveLength(0);
+  });
+
   test("an unknown presetSlug is a 400, never touching storage", async () => {
     const hub = fakeHub({});
     const app = buildApp({ apiCall: hub.apiCall });

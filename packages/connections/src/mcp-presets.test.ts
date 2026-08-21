@@ -14,6 +14,7 @@ describe("MCP_PRESETS", () => {
       [
         "attio",
         "exa",
+        "github-mcp",
         "granola",
         "linear",
         "notion",
@@ -29,13 +30,32 @@ describe("MCP_PRESETS", () => {
     }
   });
 
-  test("Exa is keyless and every account-backed preset uses OAuth", () => {
-    const exa = mcpPresetBySlug("exa");
-    expect(exa?.connectionMode).toBe("keyless");
+  test("Exa is keyless, GitHub MCP is token, every other preset uses OAuth", () => {
+    expect(mcpPresetBySlug("exa")?.connectionMode).toBe("keyless");
+    expect(mcpPresetBySlug("github-mcp")?.connectionMode).toBe("token");
     for (const preset of MCP_PRESETS) {
-      if (preset.slug === "exa") continue;
+      if (preset.slug === "exa" || preset.slug === "github-mcp") continue;
       expect(preset.connectionMode).toBe("oauth");
     }
+  });
+
+  test("GitHub MCP is a token preset that never shadows the github connector", () => {
+    const preset = mcpPresetBySlug("github-mcp");
+    expect(preset?.displayName).toBe("GitHub MCP");
+    expect(preset?.url).toBe("https://api.githubcopilot.com/mcp/");
+    // GitHub's MCP server accepts a personal access token as a bearer but
+    // offers no dynamic client registration, so OAuth can't complete here.
+    expect(preset?.connectionMode).toBe("token");
+    expect(preset?.docsUrl).toBe("https://github.com/settings/tokens");
+    expect(preset?.tokenSteps?.length).toBeGreaterThanOrEqual(2);
+    // The native `github` REST connector (PAT/OAuth-App) stays its own
+    // card: no nativeConnectorId hides it, and neither "github" the slug
+    // nor "GitHub" the display name resolves to this preset.
+    expect(preset?.nativeConnectorId).toBeUndefined();
+    expect(CONNECTOR_REGISTRY["github"]).toBeDefined();
+    expect(mcpPresetByName("github")).toBeUndefined();
+    expect(mcpPresetByName("GitHub")).toBeUndefined();
+    expect(mcpPresetByName("github mcp")?.slug).toBe("github-mcp");
   });
 
   test("uses Sumble's OAuth MCP host, not its product-page URL", () => {
@@ -51,6 +71,7 @@ describe("MCP_PRESETS", () => {
     ).toEqual({
       granola: "https://mcp.granola.ai/mcp",
       exa: "https://mcp.exa.ai/mcp",
+      "github-mcp": "https://api.githubcopilot.com/mcp/",
       linear: "https://mcp.linear.app/mcp",
       notion: "https://mcp.notion.com/mcp",
       sentry: "https://mcp.sentry.dev/mcp",

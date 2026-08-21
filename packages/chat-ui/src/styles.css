@@ -1663,6 +1663,15 @@
 /* GitHub connect card (CL-6342 screen 2). The row's checkbox control is
    `@corbits/react-ui`'s own `Checkbox`; only the row layout around it
    (name left, open-PR count right) is workbench-specific. */
+.chat-block-connect-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  list-style: decimal;
+}
+
 .chat-block-connect-helper {
   margin-top: 0.55rem;
 }

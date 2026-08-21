@@ -332,7 +332,7 @@ async function runScenario(
     new AbortController().signal,
   );
   expect(String(afterConnect.content)).toContain(
-    "Not connected: Notion, Sentry, Attio, Railway, PostHog, Sumble.",
+    "Not connected: GitHub MCP, Notion, Sentry, Attio, Railway, PostHog, Sumble.",
   );
   expect(String(afterConnect.content)).toContain(
     "Connected: Granola, Exa, Linear.",

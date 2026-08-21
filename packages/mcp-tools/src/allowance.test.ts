@@ -53,3 +53,65 @@ describe("createMcpCallClassifier", () => {
     });
   });
 });
+
+// The GitHub MCP preset promises nothing beyond this live check: reads
+// (search, get file, list PRs) ride a grant only when GitHub's own
+// tools/list marks them read-only; writes (create issue, merge) and
+// unannotated tools always stay parked.
+describe("GitHub MCP server classification", () => {
+  const githubTools: readonly McpToolInfo[] = [
+    {
+      name: "search_code",
+      description: "Search code across repositories",
+      inputSchema: { type: "object" },
+      annotations: { readOnlyHint: true },
+    },
+    {
+      name: "get_file_contents",
+      description: "Get file contents",
+      inputSchema: { type: "object" },
+      annotations: { readOnlyHint: true },
+    },
+    {
+      name: "list_pull_requests",
+      description: "List pull requests",
+      inputSchema: { type: "object" },
+      annotations: { readOnlyHint: true },
+    },
+    {
+      name: "create_issue",
+      description: "Create an issue",
+      inputSchema: { type: "object" },
+      annotations: { readOnlyHint: false },
+    },
+    {
+      name: "merge_pull_request",
+      description: "Merge a pull request",
+      inputSchema: { type: "object" },
+    },
+  ];
+
+  const classifyGithub = createMcpCallClassifier((_tenantId, slug) =>
+    Promise.resolve(slug === "github-mcp" ? githubTools : null),
+  );
+
+  test("server-annotated reads classify read-only on the github-mcp resource", async () => {
+    for (const tool of [
+      "search_code",
+      "get_file_contents",
+      "list_pull_requests",
+    ]) {
+      expect(
+        await classifyGithub("tenant_1", { server: "github-mcp", tool }),
+      ).toEqual({ readOnly: true, resource: mcpServerResource("github-mcp") });
+    }
+  });
+
+  test("writes and unannotated tools never classify read-only", async () => {
+    for (const tool of ["create_issue", "merge_pull_request"]) {
+      expect(
+        await classifyGithub("tenant_1", { server: "github-mcp", tool }),
+      ).toEqual({ readOnly: false });
+    }
+  });
+});

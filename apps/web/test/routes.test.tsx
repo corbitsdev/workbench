@@ -364,9 +364,7 @@ describe("routes render", () => {
     expect(activeFooterLabel(markup)).toBe("Skills");
   });
 
-  test.each([
-    ["/plugins/linear", "linear", "Plugins"],
-  ])(
+  test.each([["/plugins/linear", "linear", "Plugins"]])(
     "%s titles the detail placeholder %s with its roster row lit",
     async (path, slug, footerLabel) => {
       const markup = await renderApp(path);
