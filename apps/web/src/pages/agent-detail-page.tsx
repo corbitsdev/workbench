@@ -58,6 +58,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, describeApiError, QueryView } from "@corbits/api-query";
+import { slugify } from "@corbits/slug";
 
 import type {
   AgentDefinition,
@@ -85,7 +86,6 @@ import { AGENTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { AgentSkillsPicker } from "./agent-skills-picker";
-import { slugify } from "./create-agent-panel";
 
 const STATUS_TONE: Record<"deployed" | "stopped", BadgeTone> = {
   deployed: "success",
