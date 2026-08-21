@@ -5,7 +5,13 @@
 // computes the script exactly once per render — the change summary is read
 // off the same result the rows come from.
 
-import { Badge } from "@corbits/react-ui";
+import {
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from "@corbits/react-ui";
 import { diffText } from "@corbits/text-diff";
 import type { DiffLine } from "@corbits/text-diff";
 import { useMemo } from "react";
@@ -73,29 +79,29 @@ export function DiffView({
         )} removed`}
       </p>
       <div className="max-h-96 overflow-auto rounded-md border border-border bg-muted/30">
-        <table className="w-full border-collapse font-mono text-xs leading-relaxed">
-          <tbody>
+        <Table className="w-full border-collapse font-mono text-xs leading-relaxed">
+          <TableBody>
             {diff.lines.map((line, index) => (
-              <tr
+              <TableRow
                 key={`${String(index)}:${line.kind}`}
-                className={ROW_CLASS[line.kind]}
+                className={`${ROW_CLASS[line.kind]} border-b-0 hover:bg-transparent`}
               >
-                <td className="w-10 select-none px-2 text-right tabular-nums text-muted-foreground">
+                <TableCell className="w-10 select-none px-2 text-right tabular-nums text-muted-foreground">
                   {lineNumber(line.beforeLineNumber)}
-                </td>
-                <td className="w-10 select-none px-2 text-right tabular-nums text-muted-foreground">
+                </TableCell>
+                <TableCell className="w-10 select-none px-2 text-right tabular-nums text-muted-foreground">
                   {lineNumber(line.afterLineNumber)}
-                </td>
-                <td className="w-6 select-none px-1 text-center">
+                </TableCell>
+                <TableCell className="w-6 select-none px-1 text-center">
                   {MARKER[line.kind]}
-                </td>
-                <td className="whitespace-pre-wrap break-words px-2 py-0.5">
+                </TableCell>
+                <TableCell className="whitespace-pre-wrap break-words px-2 py-0.5">
                   {line.text === "" ? " " : line.text}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

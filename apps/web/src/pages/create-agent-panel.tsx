@@ -49,6 +49,7 @@ import {
   DialogHeader,
   DialogTitle,
   IntakeForm,
+  Textarea,
 } from "@corbits/react-ui";
 import type { AvatarTone, IntakeField } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
@@ -450,7 +451,7 @@ export function CreateAgentPanel({
 
           <label className="create-agent-quiet-field">
             <span>What should this agent do? (optional)</span>
-            <textarea
+            <Textarea
               id="create-agent-purpose"
               value={values.purpose}
               onChange={(event) => handlePurposeChange(event.target.value)}
