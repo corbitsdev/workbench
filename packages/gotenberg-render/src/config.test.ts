@@ -17,6 +17,8 @@ describe("resolveGotenbergConfig", () => {
   });
 
   test("throws on a value that isn't a URL", () => {
-    expect(() => resolveGotenbergConfig({ GOTENBERG_URL: "not-a-url" })).toThrow();
+    expect(() =>
+      resolveGotenbergConfig({ GOTENBERG_URL: "not-a-url" }),
+    ).toThrow();
   });
 });

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { renderMarkdownArtifactToPdf, type PdfArtifactSink } from "./render";
 
 const CONFIG = { baseUrl: "http://gotenberg.internal:3000" };
-const SOURCE = { title: "Acme Diligence Brief", markdown: "# Acme\n\nFindings." };
+const SOURCE = {
+  title: "Acme Diligence Brief",
+  markdown: "# Acme\n\nFindings.",
+};
 
 describe("renderMarkdownArtifactToPdf", () => {
   test("renders a markdown artifact and hands the PDF bytes to the sink", async () => {
