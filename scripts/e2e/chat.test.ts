@@ -590,33 +590,43 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // contract this test was actually meant to guard: mentioning a
   // participant already resident in the room drives that participant's
   // existing run — twice, never minting a sibling.
+  // A dedicated `kind: "workbench"` room, never `kind: "chat"`: an agent
+  // chat this test minted for itself would sit in the tenant forever as
+  // a second, older "echo" conversation, and `findExistingAgentChat`'s
+  // tenant-wide dedup (below) would then find *this* leftover instead
+  // of the one the "reuses it" test just created and expects back
+  // (CL-6481 — this collision, introduced when this test was rewritten
+  // around a real resident agent, was the reuse test's actual failure).
+  // A plain workbench never enters that dedup's `kind: "chat"` listing,
+  // so it can host a resident participant to mention without leaving
+  // that trap behind.
   test("mention fan-out drives the mentioned run", async () => {
-    const mentioned = await createWorkbench({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
+    const mentionRoom = await createWorkbench({
+      kind: "workbench",
+      name: "mention fan-out room",
     });
-    expectStatus("create mentioned agent chat", mentioned, 201);
-    const mentionedWorkbenchId = stringField(
-      mentioned.data,
+    expectStatus("create mention fan-out room", mentionRoom, 201);
+    const mentionRoomId = stringField(
+      mentionRoom.data,
       "id",
-      "create mentioned agent chat",
+      "create mention fan-out room",
     );
-    const mentionedParticipants = arrayField(
-      mentioned.data,
-      "participants",
-      "create mentioned agent chat",
-    ) as { address: string; handle: string }[];
-    const echoParticipant = mentionedParticipants.find(
-      (participant) => participant.handle === "echo",
+
+    const invited = await api(
+      "POST",
+      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/invite`,
+      { definitionId: await echoDefinitionId() },
+      user1.cookies,
     );
-    if (echoParticipant === undefined) {
-      throw new Error(
-        `agent chat has no "echo" participant: ${JSON.stringify(mentionedParticipants)}`,
-      );
-    }
-    const echoLocalPart = echoParticipant.address.split("@")[0];
+    expectStatus("invite echo into mention fan-out room", invited, 201);
+    const echoAddress = stringField(
+      invited.data,
+      "address",
+      "invite echo into mention fan-out room",
+    );
+    const echoLocalPart = echoAddress.split("@")[0];
     if (echoLocalPart === undefined || echoLocalPart === "") {
-      throw new Error(`malformed echo address: ${echoParticipant.address}`);
+      throw new Error(`malformed echo address: ${echoAddress}`);
     }
 
     const beforeFirst = highestSeq(
@@ -624,7 +634,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
     await postMessage(
       user1.cookies,
-      mentionedWorkbenchId,
+      mentionRoomId,
       `hey @echo take a look ${crypto.randomUUID()}`,
     );
     const afterFirst = await waitForRunProgress(
@@ -644,7 +654,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
     await postMessage(
       user1.cookies,
-      mentionedWorkbenchId,
+      mentionRoomId,
       `hey @echo one more thing ${crypto.randomUUID()}`,
     );
     const afterSecond = await waitForRunProgress(
@@ -656,7 +666,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const settingsAfterSecondMention = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches/${mentionedWorkbenchId}/settings`,
+      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/settings`,
       undefined,
       user1.cookies,
     );
@@ -671,9 +681,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "get settings after second mention",
     ) as { address: string; handle: string }[];
     expect(participantsAfterSecondMention).toHaveLength(1);
-    expect(participantsAfterSecondMention[0]?.address).toBe(
-      echoParticipant.address,
-    );
+    expect(participantsAfterSecondMention[0]?.address).toBe(echoAddress);
   }, 90_000);
 
   test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
