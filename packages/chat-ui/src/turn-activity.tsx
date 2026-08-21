@@ -15,7 +15,11 @@
 
 import { useEffect, useState } from "react";
 
-import { describeToolCall, type ToolActivityRow } from "./tool-activity";
+import {
+  describeToolCall,
+  resolveToolIdentity,
+  type ToolActivityRow,
+} from "./tool-activity";
 import { LiveToolActivity } from "./tool-activity-view";
 
 export type ToolCallActivity = {
@@ -387,6 +391,7 @@ export function toolActivityRows(
     const base = {
       key: call.callId,
       toolName: call.name,
+      provider: resolveToolIdentity(call.name, call.input).provider,
       phrase: describeToolCall(
         call.name,
         call.input,

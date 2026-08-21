@@ -1955,59 +1955,76 @@
   color: var(--muted-foreground);
 }
 
-/* The live turn-activity strip (CL-6196): tool-call chips, a thinking
-   row, and a retry note, shown above the composer while a turn streams.
-   Square, zero-radius, hairline borders — matches `.chat-block`'s
-   generative-UI language rather than the rounded typing-dot pill. */
+/* Tool-use chips (CL-6466, conforming to mock-spec §12.3): inline chips
+   stacked under the agent's prose, one per call — never collapsibles.
+   `.chat-tool-activity` is the stack; each `.chat-tool-activity-row` is one
+   chip, `width:max-content` so a wall of calls reads as short tags, not a
+   list. Radius uses the shared `--radius` token (§1's 8px base), matching
+   every other chip in the app instead of the zero-radius the old
+   generative-UI framing called for. */
 .chat-tool-activity {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  align-items: flex-start;
+  gap: 0.5rem;
   padding: 0.15rem 0;
   font-size: 0.72rem;
   color: var(--muted-foreground);
 }
 
 .chat-tool-activity-live {
-  gap: 0.3rem;
+  gap: 0.4rem;
   padding: 0.35rem 0.7rem;
   border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
+/* The row is the outer wrapper — chip on top, its optional detail
+   underneath. The chip itself (this selector plus `.chat-tool-activity-
+   trigger`) is what's `width:max-content`: it hugs its content so a wall
+   of calls reads as a stack of short tags, never spanning the column. */
 .chat-tool-activity-row {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  align-items: flex-start;
+  gap: 0.3rem;
 }
 
 .chat-tool-activity-row[data-indented="true"] {
-  padding-left: 0.85rem;
-  border-left: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   margin-left: 0.18rem;
 }
 
-/* A row with no detail is inert text, not a control: it lines up with the
-   triggers above and below it but never invites a click. */
-.chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)) {
+.chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)),
+.chat-tool-activity-trigger {
+  display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 0.45rem;
-  padding-block: 0.15rem;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  background: var(--card, var(--background));
+  border-radius: var(--radius);
+  padding: 0.4rem 0.65rem;
 }
 
 .chat-tool-activity-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  width: 100%;
-  padding: 0.15rem 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
+  position: relative;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* The visible chip can stay compact; the hit area cannot — a pseudo-element
+   pads the trigger out to a 40px tall target without changing the chip's
+   footprint in the transcript. */
+.chat-tool-activity-trigger::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto 0;
+  transform: translateY(-50%);
+  min-height: 2.5rem;
 }
 
 .chat-tool-activity-trigger:hover {
@@ -2019,11 +2036,24 @@
   outline-offset: 2px;
 }
 
+.chat-tool-activity-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+}
+
 .chat-tool-activity-marker {
   width: 0.4rem;
   height: 0.4rem;
   flex: none;
-  border-radius: 0;
+  border-radius: 99px;
   background: var(--muted-foreground);
   opacity: 0.6;
 }
@@ -2058,10 +2088,13 @@
   opacity: 0.75;
 }
 
+/* Sized by font-size, never width/height (§1): the svg itself is 1em
+   square, so this class is the only place its size is set. */
 .chat-tool-activity-caret {
   flex: none;
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 1em;
+  height: 1em;
+  font-size: 0.75rem;
   transition: transform 0.15s ease-out;
 }
 
@@ -2070,20 +2103,16 @@
 }
 
 .chat-tool-activity-detail {
-  margin: 0 0 0.2rem 0.85rem;
-  padding-left: 0.7rem;
-  border-left: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 100%;
   max-height: 12rem;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
-}
-
-.chat-tool-activity-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
 }
 
 .chat-tool-activity-thinking {
@@ -2092,6 +2121,28 @@
 
 .chat-tool-activity-retry {
   color: var(--warn, #b7791f);
+}
+
+/* Chips animate in with the same entrance list rows use (§12.3 rule 4),
+   so they don't just pop into layout mid-stream. Only the chip itself
+   plays it — not the detail box that opens later, which has its own
+   moment. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes chat-tool-activity-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)),
+  .chat-tool-activity-trigger {
+    animation: chat-tool-activity-in 160ms var(--chat-ease);
+  }
 }
 
 /* iMessage-style pulse: a small grey bubble of three bouncing dots in

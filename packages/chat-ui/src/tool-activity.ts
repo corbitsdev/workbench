@@ -27,6 +27,9 @@ export type ToolActivityRow = {
   /** The raw tool identifier. Never rendered — carried so a row keeps its
    * provenance for tests and debugging. */
   readonly toolName: string;
+  /** The provider namespace a call belongs to, e.g. `"slack"` — undefined
+   * for a bare local tool. Feeds the chip's leading tile. */
+  readonly provider: string | undefined;
   readonly phrase: string;
   /** The on-demand detail, already plain text. Undefined when the tool
    * returned nothing legible — a row with no detail offers no disclosure
@@ -95,6 +98,46 @@ const PROVIDER_NAMES: Record<string, string> = {
   postgres: "Postgres",
   slack: "Slack",
 };
+
+export type ProviderTile = {
+  readonly initials: string;
+  readonly color: string;
+};
+
+/** Brand mark for the chip's leading tile — two letters and the provider's
+ * own color, the way the mock's `[Li #5E6AD2]` / `[GH #24292f]` read. Only
+ * providers a person would recognise on sight get a fixed brand color;
+ * anything else falls back to a neutral tile rather than guessing a color. */
+const PROVIDER_TILES: Record<string, ProviderTile> = {
+  github: { initials: "GH", color: "#24292f" },
+  gitlab: { initials: "GL", color: "#fc6d26" },
+  linear: { initials: "Li", color: "#5e6ad2" },
+  notion: { initials: "No", color: "#000000" },
+  postgres: { initials: "Pg", color: "#336791" },
+  slack: { initials: "Sl", color: "#4a154b" },
+};
+
+const FALLBACK_TILE_COLOR = "var(--muted-foreground)";
+
+function fallbackInitials(provider: string): string {
+  const word = provider.replace(/[_-]+/g, "").trim();
+  if (word.length >= 2) {
+    return `${word.charAt(0).toUpperCase()}${word.charAt(1).toLowerCase()}`;
+  }
+  return word.toUpperCase() || "?";
+}
+
+/** The tile a tool-use chip leads with. `undefined` (a bare local tool,
+ * no provider namespace) reads as a neutral "-" tile rather than nothing —
+ * the anatomy always has a tile. */
+export function providerTile(provider: string | undefined): ProviderTile {
+  if (provider === undefined) {
+    return { initials: "—", color: FALLBACK_TILE_COLOR };
+  }
+  const known = PROVIDER_TILES[provider.toLowerCase()];
+  if (known !== undefined) return known;
+  return { initials: fallbackInitials(provider), color: FALLBACK_TILE_COLOR };
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -396,50 +439,11 @@ export function toToolActivityRow(
   return {
     key,
     toolName: part.name,
+    provider: resolveToolIdentity(part.name, part.input).provider,
     phrase: describeToolCall(part.name, part.input, tense),
     detail: summarizeToolOutput(status, part.output),
     status,
   };
-}
-
-export type ToolRoundSummary = {
-  readonly label: string;
-  readonly status: ToolActivityStatus;
-  /** Whether the group shows its rows without being asked. A round that
-   * contains a failure is one where the detail is the point. */
-  readonly opensByDefault: boolean;
-};
-
-/**
- * The one line that stands in for a whole round of tool calls. While
- * something is still running the round speaks as that step ("Searching
- * the web for …") — the reader wants to know what is happening now, not
- * that five things happened. Once settled it counts, and says plainly if
- * any of them didn't work.
- */
-export function describeToolRound(
-  rows: readonly ToolActivityRow[],
-): ToolRoundSummary {
-  const active = rows.find(
-    (row) => row.status === "running" || row.status === "pending",
-  );
-  if (active !== undefined) {
-    return {
-      label: active.phrase,
-      status: active.status,
-      opensByDefault: false,
-    };
-  }
-  const failures = rows.filter((row) => row.status === "failed").length;
-  const stepCount = `${rows.length} steps`;
-  if (failures > 0) {
-    return {
-      label: `${stepCount}, ${failures} didn't work`,
-      status: "failed",
-      opensByDefault: true,
-    };
-  }
-  return { label: stepCount, status: "success", opensByDefault: false };
 }
 
 export type TimelinePartGroup =
@@ -451,10 +455,11 @@ export type TimelinePartGroup =
     };
 
 /**
- * Folds a message's parts into render groups, coalescing every run of
- * consecutive tool calls into one. An agent that searches, reads four
- * files and edits two of them produced seven parts and one piece of news:
- * grouping is what keeps the reply visible above its own machinery.
+ * Splits a message's parts into render groups, clustering every run of
+ * consecutive tool calls together. The cluster renders as a stack of
+ * chips, one per call — never folded into a summary line — so this is
+ * purely about keeping tool calls next to each other in the flow, not
+ * about hiding them.
  */
 export function groupTimelineParts(
   parts: readonly Part[],

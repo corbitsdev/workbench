@@ -2,17 +2,19 @@
 //
 // One presentation serves both the live strip (`turn-activity.tsx`) and the
 // persisted transcript (`timeline.tsx`), so a call that reads one way while
-// it runs doesn't restyle itself the moment the turn ends. Rows, not cards:
-// a status marker, one sentence, and — only when there is something to
-// show — a disclosure onto plain-text detail. The sentences come from
-// `tool-activity.ts`; nothing here formats a tool's own data.
+// it runs doesn't restyle itself the moment the turn ends. Chips, not
+// collapsibles: a provider tile, one sentence, a status marker, and — only
+// when there is something to show — a disclosure onto plain-text detail.
+// Calls stack one per call; nothing here ever folds several into a count.
+// The sentences come from `tool-activity.ts`; nothing here formats a
+// tool's own data.
 
 import { CaretRight } from "@corbits/icons";
 import { useState } from "react";
 
 import { CHAT_STRINGS } from "./strings";
 import {
-  describeToolRound,
+  providerTile,
   type ToolActivityRow,
   type ToolActivityStatus,
 } from "./tool-activity";
@@ -24,6 +26,22 @@ function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
       data-status={status}
       aria-hidden="true"
     />
+  );
+}
+
+/** The chip's leading brand mark — 22×22, provider-colored, two letters.
+ * Present on every chip, per §12.3's anatomy; a bare local tool gets the
+ * neutral fallback tile rather than no tile at all. */
+function ProviderTile({ provider }: { readonly provider: string | undefined }) {
+  const tile = providerTile(provider);
+  return (
+    <span
+      className="chat-tool-activity-tile"
+      style={{ background: tile.color }}
+      aria-hidden="true"
+    >
+      {tile.initials}
+    </span>
   );
 }
 
@@ -44,11 +62,12 @@ function ToolActivityLine({
         data-status={row.status}
         data-indented={indented}
       >
-        <StatusMarker status={row.status} />
+        <ProviderTile provider={row.provider} />
         <span className="chat-tool-activity-phrase">{row.phrase}</span>
         {row.meta === undefined ? null : (
           <span className="chat-tool-activity-meta">{row.meta}</span>
         )}
+        <StatusMarker status={row.status} />
       </div>
     );
   }
@@ -65,11 +84,12 @@ function ToolActivityLine({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <StatusMarker status={row.status} />
+        <ProviderTile provider={row.provider} />
         <span className="chat-tool-activity-phrase">{row.phrase}</span>
         {row.meta === undefined ? null : (
           <span className="chat-tool-activity-meta">{row.meta}</span>
         )}
+        <StatusMarker status={row.status} />
         <CaretRight
           className="chat-tool-activity-caret"
           data-open={open}
@@ -82,51 +102,22 @@ function ToolActivityLine({
 }
 
 /**
- * A run of consecutive tool calls, collapsed to the one line that says
- * what the round amounted to. A single call needs no round chrome — it is
- * already one line — so it renders on its own.
+ * A run of consecutive tool calls, stacked one chip per call — never
+ * folded into a summary line (§12.3: chips are not collapsibles). Each
+ * chip keeps its own disclosure onto its detail; there is no group-level
+ * trigger and no count of how many calls happened.
  */
 export function ToolActivityGroup({
   rows,
 }: {
   readonly rows: readonly ToolActivityRow[];
 }) {
-  const round = describeToolRound(rows);
-  const [open, setOpen] = useState(round.opensByDefault);
-
   if (rows.length === 0) return null;
-  const onlyRow = rows[0];
-  if (rows.length === 1 && onlyRow !== undefined) {
-    return (
-      <div className="chat-tool-activity">
-        <ToolActivityLine row={onlyRow} indented={false} />
-      </div>
-    );
-  }
-
   return (
-    <div className="chat-tool-activity" data-round="true">
-      <button
-        type="button"
-        className="chat-tool-activity-trigger"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <StatusMarker status={round.status} />
-        <span className="chat-tool-activity-phrase">{round.label}</span>
-        <CaretRight
-          className="chat-tool-activity-caret"
-          data-open={open}
-          aria-hidden="true"
-        />
-      </button>
-      {open ? (
-        <div className="chat-tool-activity-rows">
-          {rows.map((row) => (
-            <ToolActivityLine key={row.key} row={row} indented />
-          ))}
-        </div>
-      ) : null}
+    <div className="chat-tool-activity">
+      {rows.map((row) => (
+        <ToolActivityLine key={row.key} row={row} indented={false} />
+      ))}
     </div>
   );
 }
