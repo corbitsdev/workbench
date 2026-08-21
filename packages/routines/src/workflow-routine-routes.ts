@@ -38,7 +38,6 @@ import {
   routineView,
   webhookTriggerValid,
   type WorkbenchNoticePort,
-  type DeliverySpacePort,
   type RoutineLauncher,
 } from "./routes";
 
@@ -115,33 +114,15 @@ export type CreateWorkflowRoutineRoutesDeps = {
   /**
    * Resolves the creating run's own workbench — the workbench the person
    * was talking in when they asked for the routine. A routine created
-   * with no `deliveryWorkbenchId` delivers there by default; a brand-new
-   * space (via `deliverySpace` below) is only ever minted for a run
-   * with no home workbench of its own.
+   * with no `deliveryWorkbenchId` delivers there by default; there is no
+   * further fallback — a routine's destination is always a workbench a
+   * person is actually in or explicitly names, never one invented and
+   * named after the routine.
    */
   resolveRunWorkbench?: (
     tenantId: string,
     runId: string,
   ) => Promise<string | undefined>;
-  /**
-   * Same contract as `CreateRoutineRoutesDeps.deliverySpace`: provisions
-   * a brand-new space for a routine created with no `deliveryWorkbenchId`
-   * by a run that `resolveRunWorkbench` cannot place in a workbench, named
-   * after the routine.
-   */
-  deliverySpace?: DeliverySpacePort | undefined;
-  /**
-   * Resolves the tenant's domain, needed only for the `deliverySpace`
-   * auto-provision fallback: `DeliverySpacePort.createDeliverySpace`
-   * requires `tenantDomain`, which a workflow run's authenticated scope
-   * never carries (`WorkflowRoutineRunScope` above deliberately matches
-   * `WorkflowCapabilityRunScope`'s minimal `{tenantId, principalId,
-   * runId}` shape). Omitted disables auto-provisioning even when
-   * `deliverySpace` is wired — a routine needing delivery with no
-   * workbench named still 400s, exactly like a host that never wired
-   * `deliverySpace` at all.
-   */
-  resolveTenantDomain?: (tenantId: string) => Promise<string>;
   /** Same contract as `CreateRoutineRoutesDeps.deliveryWorkbenchRequired`. */
   deliveryWorkbenchRequired?: (
     tenantId: string,
@@ -290,8 +271,10 @@ export function createWorkflowRoutineRoutes(
 
     // Delivery target precedence: the workbench the caller named, then
     // the creating run's own workbench (a routine asked for inside a
-    // workbench reports back into that workbench), then a freshly
-    // provisioned space as the last resort.
+    // workbench reports back into that workbench). Nothing is ever
+    // auto-provisioned — a routine's destination is always a workbench a
+    // person picked or was actually in, never one invented and named
+    // after the routine.
     const namedWorkbenchId =
       body.deliveryWorkbenchId !== undefined && body.deliveryWorkbenchId !== ""
         ? body.deliveryWorkbenchId
@@ -312,11 +295,7 @@ export function createWorkflowRoutineRoutes(
       namedWorkbenchId === undefined &&
       homeWorkbenchId === undefined;
 
-    if (
-      needsDelivery &&
-      (deps.deliverySpace === undefined ||
-        deps.resolveTenantDomain === undefined)
-    ) {
+    if (needsDelivery) {
       return c.json(
         ErrorEnvelope(
           "bad_request",
@@ -337,59 +316,18 @@ export function createWorkflowRoutineRoutes(
       }
     }
 
-    // The space is provisioned before the routine row, and compensated
-    // (deleted) if the row then fails to write — the same mint-then-
-    // compensate shape `./routes.ts`'s own `POST /routines` uses.
-    let provisionedSpace:
-      { workbenchId: string; compensate: () => Promise<void> } | undefined;
-    if (
-      needsDelivery &&
-      deps.deliverySpace !== undefined &&
-      deps.resolveTenantDomain !== undefined
-    ) {
-      const tenantDomain = await deps.resolveTenantDomain(scope.tenantId);
-      provisionedSpace = await deps.deliverySpace.createDeliverySpace({
-        tenantId: scope.tenantId,
-        tenantDomain,
-        creatorPrincipalId: scope.principalId,
-        // A workflow-run principal has no separate "user" id the way a
-        // human tenant-session principal's `refId` names the underlying
-        // user — its own run IS the acting identity, mirroring the
-        // `refId = runId` convention `vendor/intx/hub-api`'s own grant
-        // materialization uses for a workflow-kind principal.
-        creatorUserId: scope.runId,
-        name: body.name,
-      });
-    }
-    const deliveryWorkbenchId =
-      namedWorkbenchId ??
-      homeWorkbenchId ??
-      provisionedSpace?.workbenchId ??
-      null;
+    const deliveryWorkbenchId = namedWorkbenchId ?? homeWorkbenchId ?? null;
 
-    let row: RoutineRow;
-    try {
-      row = await deps.store.createRoutine({
-        tenantId: scope.tenantId,
-        name: body.name,
-        definitionId,
-        trigger: body.trigger,
-        scope: "bench",
-        input: body.input ?? {},
-        deliveryWorkbenchId,
-        createdBy: scope.principalId,
-      });
-    } catch (err) {
-      if (provisionedSpace !== undefined) {
-        try {
-          await provisionedSpace.compensate();
-        } catch {
-          // Best-effort: an orphaned space now requires manual cleanup,
-          // same fallback `./routes.ts`'s own compensation failure takes.
-        }
-      }
-      throw err;
-    }
+    const row = await deps.store.createRoutine({
+      tenantId: scope.tenantId,
+      name: body.name,
+      definitionId,
+      trigger: body.trigger,
+      scope: "bench",
+      input: body.input ?? {},
+      deliveryWorkbenchId,
+      createdBy: scope.principalId,
+    });
 
     if (body.runOnceNow === true) {
       await launchAndCorrelate(

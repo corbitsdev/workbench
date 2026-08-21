@@ -70,24 +70,6 @@ export interface RoutineLauncher {
 }
 
 /**
- * Optional port: provision a new delivery destination ("space") for a
- * routine that didn't pick an existing workbench. Wired to `@corbits/chat`
- * workbench creation at the hub. Returns the new workbench's id plus a
- * `compensate` callback that undoes the provisioning — called if the
- * routine row itself then fails to write, so a space is never left
- * behind with nothing pointing at it.
- */
-export interface DeliverySpacePort {
-  createDeliverySpace(input: {
-    tenantId: string;
-    tenantDomain: string;
-    creatorPrincipalId: string;
-    creatorUserId: string;
-    name: string;
-  }): Promise<{ workbenchId: string; compensate: () => Promise<void> }>;
-}
-
-/**
  * Optional port: posts a plain-text notice into a workbench through the
  * host's existing chat platform — the same path a human's web-UI
  * message takes (mirrors `slack-tag`'s own `SendMessage` port over
@@ -148,15 +130,6 @@ export type CreateRoutineRoutesDeps = {
     webhookTriggerId: string,
     definitionId: string,
   ) => Promise<boolean>;
-  /**
-   * Provisions a brand-new space for a routine created with no
-   * `deliveryWorkbenchId`, named after the routine. When omitted, a
-   * routine whose workflow requires delivery and names no workbench
-   * still 400s exactly as before this port existed — a host that
-   * hasn't wired space creation yet keeps the prior, honest error
-   * instead of silently accepting a routine with nowhere to deliver.
-   */
-  deliverySpace?: DeliverySpacePort | undefined;
   /**
    * Whether a routine on this definition must carry a `deliveryWorkbenchId`
    * — `false` for a workflow whose result never posts to a workbench at
@@ -583,13 +556,12 @@ export function createRoutineRoutes(
           body.deliveryWorkbenchId === "");
 
       // No workbench named and none needed: fall through with a null
-      // delivery workbench, unchanged from before this port existed.
-      // A workbench is named: use it as-is, unchanged. Only the third
-      // case — delivery required, nothing named — is new: a space
-      // named after the routine is auto-provisioned, the routine's
-      // default destination rather than a dead end. A host that
-      // hasn't wired `deliverySpace` yet keeps the prior 400.
-      if (needsDelivery && deps.deliverySpace === undefined) {
+      // delivery workbench. A workbench is named: use it as-is. Delivery
+      // required and nothing named: 400 — a routine's destination is
+      // always a workbench the person picked, never one invented and
+      // named after the routine (CL-6201's own auto-provisioning is gone;
+      // see this file's git history for the removed `deliverySpace` port).
+      if (needsDelivery) {
         return c.json(
           ErrorEnvelope(
             "bad_request",
@@ -610,123 +582,53 @@ export function createRoutineRoutes(
         }
       }
 
-      // The space is provisioned before the routine row: `createRoutine`
-      // is a single insert and effectively never fails on its own, but
-      // if it somehow does, the freshly-made space is compensated
-      // (deleted) rather than left behind pointing at nothing — the
-      // same mint-then-compensate shape `@corbits/chat`'s own
-      // `POST /workbenches` uses for its tenant mint.
-      let provisionedSpace:
-        { workbenchId: string; compensate: () => Promise<void> } | undefined;
-      if (needsDelivery && deps.deliverySpace !== undefined) {
-        provisionedSpace = await deps.deliverySpace.createDeliverySpace({
-          tenantId: tenant.id,
-          tenantDomain: tenant.domain,
-          creatorPrincipalId: principal.id,
-          creatorUserId: principal.refId,
-          name: body.name,
-        });
-      }
-      const deliveryWorkbenchId =
-        body.deliveryWorkbenchId ?? provisionedSpace?.workbenchId ?? null;
+      const deliveryWorkbenchId = body.deliveryWorkbenchId ?? null;
 
       let row: RoutineRow | undefined;
       let created = true;
-      try {
-        if (body.presetKey !== undefined) {
-          const result = await deps.store.createRoutineIfAbsent({
-            tenantId: tenant.id,
-            name: body.name,
-            definitionId: body.definitionId,
-            trigger: body.trigger,
-            scope: body.scope,
-            input: body.input ?? {},
-            // A seeded preset is born disabled: a schedule must never
-            // start firing (or announce itself) just because a bench
-            // was minted — the member enabling it is the announcement.
-            enabled: false,
-            deliveryWorkbenchId,
-            createdBy: principal.id,
-            presetKey: body.presetKey,
-          });
-          if (result.outcome !== "tombstoned") {
-            row = result.row;
-            created = result.outcome === "created";
-          }
-        } else {
-          row = await deps.store.createRoutine({
-            tenantId: tenant.id,
-            name: body.name,
-            definitionId: body.definitionId,
-            trigger: body.trigger,
-            scope: body.scope,
-            input: body.input ?? {},
-            deliveryWorkbenchId,
-            createdBy: principal.id,
-          });
+      if (body.presetKey !== undefined) {
+        const result = await deps.store.createRoutineIfAbsent({
+          tenantId: tenant.id,
+          name: body.name,
+          definitionId: body.definitionId,
+          trigger: body.trigger,
+          scope: body.scope,
+          input: body.input ?? {},
+          // A seeded preset is born disabled: a schedule must never
+          // start firing (or announce itself) just because a bench
+          // was minted — the member enabling it is the announcement.
+          enabled: false,
+          deliveryWorkbenchId,
+          createdBy: principal.id,
+          presetKey: body.presetKey,
+        });
+        if (result.outcome !== "tombstoned") {
+          row = result.row;
+          created = result.outcome === "created";
         }
-      } catch (err) {
-        if (provisionedSpace !== undefined) {
-          log.error(
-            "Routine creation failed after provisioning space " +
-              "{workbenchId}; compensating the orphaned space",
-            { workbenchId: provisionedSpace.workbenchId, err },
-          );
-          try {
-            await provisionedSpace.compensate();
-          } catch (compensationErr) {
-            log.error(
-              "Compensation failed for orphaned space {workbenchId} " +
-                "after routine creation failed; this space now has no " +
-                "routine pointing at it and requires manual cleanup",
-              { workbenchId: provisionedSpace.workbenchId, compensationErr },
-            );
-          }
-        }
-        throw err;
+      } else {
+        row = await deps.store.createRoutine({
+          tenantId: tenant.id,
+          name: body.name,
+          definitionId: body.definitionId,
+          trigger: body.trigger,
+          scope: body.scope,
+          input: body.input ?? {},
+          deliveryWorkbenchId,
+          createdBy: principal.id,
+        });
       }
 
       // Lost the create-if-absent race (or this is a genuine re-seed):
-      // the preset row already exists. Any space this request just
-      // provisioned points at nothing real and is compensated (deleted)
-      // rather than left orphaned — the winning request's own row keeps
-      // whatever delivery workbench it resolved to. No fire, no notice:
-      // both already happened (or are about to happen) on the winning
-      // request.
-      // A member deleted this preset's routine: absence is their
-      // choice, so nothing is (re-)created — 204, and any space this
-      // request just provisioned is compensated like a lost race.
+      // the preset row already exists. A member deleted this preset's
+      // routine: absence is their choice, so nothing is (re-)created —
+      // 204. No fire, no notice: both already happened (or are about to
+      // happen) on the winning request.
       if (row === undefined) {
-        if (provisionedSpace !== undefined) {
-          try {
-            await provisionedSpace.compensate();
-          } catch (compensationErr) {
-            log.error(
-              "Compensation failed for orphaned space {workbenchId} " +
-                "after refusing to resurrect a member-deleted preset " +
-                "routine; this space now has no routine pointing at it " +
-                "and requires manual cleanup",
-              { workbenchId: provisionedSpace.workbenchId, compensationErr },
-            );
-          }
-        }
         return c.body(null, 204);
       }
 
       if (!created) {
-        if (provisionedSpace !== undefined) {
-          try {
-            await provisionedSpace.compensate();
-          } catch (compensationErr) {
-            log.error(
-              "Compensation failed for orphaned space {workbenchId} " +
-                "after losing a routine create-if-absent race; this " +
-                "space now has no routine pointing at it and requires " +
-                "manual cleanup",
-              { workbenchId: provisionedSpace.workbenchId, compensationErr },
-            );
-          }
-        }
         return c.json(routineView(row), 200);
       }
 
