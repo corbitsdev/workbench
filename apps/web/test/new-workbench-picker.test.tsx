@@ -244,6 +244,47 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(codeReview?.getAttribute("aria-checked")).toBe("false");
   });
 
+  // CL-6510: a bench whose default agents haven't finished deploying yet
+  // (CL-6457's background drain still running, or never started without a
+  // credential) must never dead-end the person on the raw internal
+  // precondition message — the picker checks readiness first and shows an
+  // honest, retryable "still setting up" state instead.
+  test("when the setup agent isn't deployed yet, creating shows an honest still-setting-up state, not the raw precondition error", async () => {
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [], nextCursor: null });
+      }
+      if (path.endsWith("/api/onboarding/provisioning-status")) {
+        return json({
+          kind: "provisioning",
+          tenantId: "tnt_1",
+          tenantSlug: "corbits-bench",
+          setupAgentReady: false,
+          deployed: [],
+          pending: ["assistant"],
+        });
+      }
+      return undefined;
+    });
+    await renderPicker();
+
+    const createButton = Array.from(
+      container?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Create workbench");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (container?.textContent?.includes("Still setting up")) break;
+    }
+
+    expect(container?.textContent).toContain("Still setting up your workbench");
+    expect(container?.textContent).not.toContain(
+      "No default setup agent found",
+    );
+  });
+
   test("creating with Code review selected mints a workbench from the template, then navigates in", async () => {
     const createdAgentHandles: string[] = [];
     const calls = stubFetch((path, init) => {

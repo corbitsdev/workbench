@@ -25,6 +25,7 @@ describe("describeWorkbenchCreateFailure", () => {
       describeWorkbenchCreateFailure(
         new WorkbenchPreconditionError(
           "A code-review workbench isn't available here yet.",
+          "template-unavailable",
         ),
       ),
     ).toBe("A code-review workbench isn't available here yet.");

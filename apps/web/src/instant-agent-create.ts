@@ -50,8 +50,34 @@ export const NEW_WORKBENCH_TITLE = "New Workbench";
  * that error type's own describer instead — allow-listing safe
  * throws, rather than denylisting unsafe ones, so a new error type
  * added later fails safe (masked) instead of leaking by default.
+ *
+ * `kind` lets a caller tell "the setup agent isn't deployed yet" apart
+ * from "this template genuinely doesn't exist here" without parsing
+ * `message` text: the first is very often a still-provisioning bench
+ * (CL-6457's background deploy hasn't finished, or never started
+ * without a credential) that the caller should check
+ * `fetchAgentReadiness` over before treating as a dead end; the second
+ * never resolves itself and should surface as-is.
  */
-export class WorkbenchPreconditionError extends Error {}
+export class WorkbenchPreconditionError extends Error {
+  readonly kind: "setup-agent-missing" | "template-unavailable";
+  constructor(
+    message: string,
+    kind: "setup-agent-missing" | "template-unavailable",
+  ) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+/**
+ * Consumer-language stand-in for the system precondition this bench
+ * hit: "no deployed setup agent" describes an internal implementation
+ * detail, never something a person signing in for the first time
+ * should have to parse.
+ */
+const SETUP_AGENT_MISSING_MESSAGE =
+  "Your workbench is still finishing setup. Try again in a moment.";
 
 /**
  * Presents the connected org's repo list for the person to pick from once
@@ -94,7 +120,8 @@ export async function createWorkbenchFromTemplate(
   const setupTemplate = findMyraDefinition(definitions);
   if (setupTemplate === undefined) {
     throw new WorkbenchPreconditionError(
-      "No default setup agent found for this workbench.",
+      SETUP_AGENT_MISSING_MESSAGE,
+      "setup-agent-missing",
     );
   }
   // The manifest comes from the bench library (CL-6344), never from a
@@ -112,6 +139,7 @@ export async function createWorkbenchFromTemplate(
   if (templateId !== "blank" && manifest === undefined) {
     throw new WorkbenchPreconditionError(
       `A ${templateId} workbench isn't available here yet.`,
+      "template-unavailable",
     );
   }
   const requiresGithub =
