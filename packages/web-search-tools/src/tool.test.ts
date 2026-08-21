@@ -53,6 +53,10 @@ test("degrades to a non-throwing 'not connected' error when no credential is bou
   const result = await bundle.run(CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/not connected/i);
+  expect(result.detail).toEqual({
+    kind: "missing-credential",
+    connectorId: "exa",
+  });
 });
 
 test("degrades the same way when the step carries no credentials capability at all", async () => {
@@ -60,6 +64,10 @@ test("degrades the same way when the step carries no credentials capability at a
   const result = await bundle.run(CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/not connected/i);
+  expect(result.detail).toEqual({
+    kind: "missing-credential",
+    connectorId: "exa",
+  });
 });
 
 test("rejects a missing query without calling the network", async () => {
@@ -115,7 +123,7 @@ test("returns results as JSON content on a successful call", async () => {
   }
 });
 
-test("degrades to an error result (never throws) when the underlying call fails", async () => {
+test("degrades to an error result (never throws) when the underlying call fails, and reports it", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
@@ -123,6 +131,9 @@ test("degrades to an error result (never throws) when the underlying call fails"
     const bundle = webSearchTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
+    // The plain-language message survives alongside the durable record —
+    // a ref id a person can quote back to support, from @corbits/error-sink.
+    expect(result.content).toMatch(/\(ref: \S+\)/);
   } finally {
     globalThis.fetch = originalFetch;
   }

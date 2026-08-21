@@ -2,7 +2,7 @@
   "name": "@corbits/web-search-tools",
   "private": true,
   "description": "Web search integration: a minimal Exa client and an @intx/agent tool bundle exposing web_search",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -20,8 +20,10 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0",
+    "@workbench/connections": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

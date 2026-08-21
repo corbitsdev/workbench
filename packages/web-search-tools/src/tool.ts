@@ -5,10 +5,21 @@
 // is not available right now" and say so honestly, never to have the run
 // itself fail because one source is unreachable. Same contract as
 // `@corbits/granola-tools`.
+//
+// The not-connected result also carries `missing-credential-detail`
+// (`@workbench/connections`) so a chat surface can render the "Connect
+// Exa" card instead of a dead-end error string — the same contract every
+// other missing-credential surface in this repo reads. A genuine failure
+// (bad response, network error) is different from "not connected": it's
+// reported through `@corbits/error-sink` for the durable record before
+// the plain-language `ToolResult` goes back to the caller, so a real bug
+// here is never swallowed silently.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
+import { missingCredentialDetail } from "@workbench/connections";
+import { reportError } from "@corbits/error-sink";
 
 import { searchWeb } from "./client";
 
@@ -27,6 +38,7 @@ function notConnectedResult(callId: string): ToolResult {
     callId,
     content: "Web search is not connected for this user.",
     isError: true,
+    detail: missingCredentialDetail(EXA_CREDENTIAL_HANDLE),
   };
 }
 
@@ -74,9 +86,11 @@ async function runWebSearch(
     );
     return { callId: call.id, content: JSON.stringify({ results }) };
   } catch (err) {
+    const refId = reportError(err, { operation: WEB_SEARCH_TOOL });
     return {
       callId: call.id,
-      content: err instanceof Error ? err.message : String(err),
+      content:
+        (err instanceof Error ? err.message : String(err)) + ` (ref: ${refId})`,
       isError: true,
     };
   }
