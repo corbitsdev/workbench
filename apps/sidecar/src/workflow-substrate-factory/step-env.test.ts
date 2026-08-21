@@ -52,7 +52,6 @@ function buildEnvDeps(dataDir: string) {
     hubArtifactsUrl: "https://hub.example.com",
     sidecarToken: "sc-token",
     adapters: { resolve: () => undefined } as never,
-    toolless: true,
     definitionId: "wfd_capability_owner",
   };
 }
@@ -96,7 +95,7 @@ test("the built step env carries the deploying definition's own definitionId and
   );
 });
 
-test("a toolless body-step env still carries definitionId, so the binding is not tool-materialization-gated", async () => {
+test("a body-step env with no staged deploy tree still carries definitionId, so the binding is not tool-materialization-gated", async () => {
   const dataDir = makeTmpDataDir();
   const buildEnv = createSidecarStepBuildEnv({
     ...buildEnvDeps(dataDir),
@@ -112,6 +111,70 @@ test("a toolless body-step env still carries definitionId, so the binding is not
   expect((env as unknown as { definitionId: string }).definitionId).toBe(
     "wfd_parent_definition",
   );
+});
+
+// CL-6448: the body-turn history seam. A section body runs each message as
+// its own child run (`turn__<n>`), so conversation continuity depends on
+// the env builder resolving `storage` through the per-agent durable
+// registry keyed by the STABLE stepId — never the per-run isogit store a
+// changing runId would reset every turn.
+test("with a durable-conversation registry, envs built for different runIds share one storage keyed by stepId", async () => {
+  const dataDir = makeTmpDataDir();
+  const acquired: string[] = [];
+  const sharedStorage = { marker: "durable-store" };
+  const registry = {
+    acquire: (key: string) => {
+      acquired.push(key);
+      return Promise.resolve({ storage: sharedStorage } as never);
+    },
+    get: () => {
+      throw new Error("unused");
+    },
+    peek: () => undefined,
+  };
+  const buildEnv = createSidecarStepBuildEnv({
+    ...buildEnvDeps(dataDir),
+    durableConversation: registry as never,
+  });
+  const sourcesRef: SourcesSnapshotRef = {
+    current: {
+      step_1: [{ id: "src_1", provider: "anthropic", model: "claude" }],
+    },
+  } as unknown as SourcesSnapshotRef;
+
+  const turn1 = stepInvokeRequest();
+  turn1.authzContext.runId = "turn__0";
+  const turn2 = stepInvokeRequest();
+  turn2.authzContext.runId = "turn__1";
+
+  const env1 = await buildEnv(turn1, sourcesRef);
+  const env2 = await buildEnv(turn2, sourcesRef);
+
+  expect(acquired).toEqual(["step_1", "step_1"]);
+  expect(env1.storage).toBe(sharedStorage as never);
+  expect(env2.storage).toBe(env1.storage);
+});
+
+// CL-6448: without the registry, per-run isogit stores stay per-run — the
+// multi-step cold path's behavior is unchanged.
+test("without a durable-conversation registry, envs built for different runIds get distinct storage", async () => {
+  const dataDir = makeTmpDataDir();
+  const buildEnv = createSidecarStepBuildEnv(buildEnvDeps(dataDir));
+  const sourcesRef: SourcesSnapshotRef = {
+    current: {
+      step_1: [{ id: "src_1", provider: "anthropic", model: "claude" }],
+    },
+  } as unknown as SourcesSnapshotRef;
+
+  const turn1 = stepInvokeRequest();
+  turn1.authzContext.runId = "turn__0";
+  const turn2 = stepInvokeRequest();
+  turn2.authzContext.runId = "turn__1";
+
+  const env1 = await buildEnv(turn1, sourcesRef);
+  const env2 = await buildEnv(turn2, sourcesRef);
+
+  expect(env1.storage).not.toBe(env2.storage);
 });
 
 test("the built step env forwards the summarize-older-turns compactor (CL-6204) like the other env fields above", async () => {
