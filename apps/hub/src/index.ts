@@ -95,6 +95,7 @@ import {
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
+import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
@@ -2385,7 +2386,15 @@ export async function createHub(config: HubConfig) {
             myraDefinitionId,
           );
           return chat?.workbenchId;
-        } catch {
+        } catch (cause) {
+          // Best-effort fallback lookup (CL-6496): a failure here means
+          // the task orchestrator falls back further, never that the
+          // caller sees an error -- but that made this failure invisible
+          // until reportError existed. Reported, not swallowed.
+          reportError(cause, {
+            operation: "resolveFallbackWorkbenchId",
+            tenantId,
+          });
           return undefined;
         }
       },
