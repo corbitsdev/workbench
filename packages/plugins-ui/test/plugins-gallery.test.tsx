@@ -190,6 +190,35 @@ describe("PluginsGallery", () => {
     expect(container.textContent).toContain("Inherited");
   });
 
+  test("the plugins tab renders the list heading and directory sub copy (CL-6467)", () => {
+    const { container } = renderGallery();
+
+    const heading = container.querySelector("h1");
+    expect(heading?.textContent).toBe("Plugins");
+    expect(container.textContent).toContain(
+      "A directory to scan, not tiles to admire — one dense row per connector, grouped by what it does. Click a row's name for the full page.",
+    );
+  });
+
+  test("a plugin row's status caption is never hidden — it is a core column, not overflow (CL-6467)", () => {
+    const { container } = renderGallery();
+
+    expect(container.textContent).toContain("Connected here");
+    const captions = [...container.querySelectorAll("span")].filter(
+      (span) => span.textContent === "Connected · Connected here",
+    );
+    expect(captions.length).toBeGreaterThan(0);
+    for (const caption of captions) {
+      expect(caption.className).not.toContain("hidden");
+    }
+  });
+
+  test("an empty plugin directory renders no group rows", () => {
+    const { container } = renderGallery([]);
+
+    expect(container.querySelector(".border.border-border")).toBeNull();
+  });
+
   test("search narrows the plugin grid to matches only", () => {
     const { container } = renderGallery(PLUGINS, "git");
 

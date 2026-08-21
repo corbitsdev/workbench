@@ -52,9 +52,9 @@ export function PluginCard({
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>
       </div>
-      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
-        {caption}
-      </span>
+      {/* A dense directory row's status column is core information, not
+       * an overflow item to drop on narrow viewports (CL-6467). */}
+      <span className="shrink-0 text-xs text-muted-foreground">{caption}</span>
       {plugin.status === "not_connected" ? (
         // The same single Connect verb the MCP preset rows use — one
         // idiom for "not connected yet" across the whole gallery, never
