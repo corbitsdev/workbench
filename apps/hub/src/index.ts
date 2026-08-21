@@ -16,6 +16,7 @@ import {
   createWorkflowRunDispatchStore,
   listVisibleOfferings,
   resolveCredentialByName,
+  resolveCredentialRequirement,
 } from "@intx/db";
 import {
   asset as assetTable,
@@ -2234,8 +2235,18 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      listConnectedProviders: (tenantId) =>
-        listConnectedProviders(db, tenantId),
+      // The same resolution `buildCredentialDelivery` uses at agent-launch
+      // time to decide whether a tool actually gets a credential — so
+      // `list_connections` reports exactly what an agent could really use,
+      // for an inference provider and a tool connector alike (CL-6492).
+      isConnectorConnected: async (tenantId, connectorId) =>
+        (await resolveCredentialRequirement(
+          db,
+          tenantId,
+          { providerName: connectorId, source: "tenant" },
+          null,
+          null,
+        )) !== null,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );

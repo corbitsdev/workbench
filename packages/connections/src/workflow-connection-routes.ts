@@ -13,11 +13,25 @@
 // the tenant every read is scoped to come from the authenticated run
 // alone.
 //
+// `GET /connections` reports a connector connected through the same
+// resolution an actual agent launch uses to deliver its credential —
+// `@intx/db`'s `resolveCredentialRequirement`, keyed on the connector's
+// registry `id` as its provider name (CL-6492). This is deliberately NOT
+// `@corbits/chat`'s `listConnectedProviders`: that lister answers from the
+// model catalog (`modelProvider`, seeded only for inference providers by
+// `persistConnectorCredential`'s `seedCatalog` step), so every
+// non-inference connector — GitHub, Linear, Notion, Sentry, Exa — reads
+// "not connected" there even with a live, verified credential. Resolving
+// through `resolveCredentialRequirement` instead covers both kinds
+// uniformly: an inference provider's credential (however it was named —
+// `persistConnectorCredential`'s own `displayName` row, or an onboarding
+// seed's `<id>-default` row) and a tool connector's credential both
+// resolve the same way, by `provider.name = descriptor.id` and an active
+// `credential` row against it, with no per-connector-kind branch here.
+//
 // No `requireGrant` on `GET /connections`, unlike `./routes.ts`'s
-// tenant-session routes: this endpoint is read-only (it derives its
-// answer from `CONNECTOR_REGISTRY`, a static catalog, and
-// `listConnectedProviders`, itself a read) and mutates nothing, so there
-// is no write to gate. The companion `request_connection` tool
+// tenant-session routes: this endpoint is read-only and mutates nothing,
+// so there is no write to gate. The companion `request_connection` tool
 // (`@corbits/connections-tools`) needs no route at all — it validates a
 // connector id against the same `CONNECTOR_REGISTRY` and builds a
 // deep-link string, entirely in-process, never touching the network or
@@ -69,13 +83,15 @@ export type CreateWorkflowConnectionRoutesDeps = {
   /** A port, not a raw `db` handle — keeps this package decoupled from
    * the credentials schema, mirroring `@corbits/routines`' routes.ts
    * taking ports rather than reaching for database access directly.
-   * `apps/hub` supplies `packages/chat/src/inference-preferences.ts`'s
-   * `listConnectedProviders(db, tenantId)`, curried over `db`, the same
-   * function `listMyraUsableToolPackages` (apps/hub/src/index.ts) is
-   * built on. */
-  readonly listConnectedProviders: (
+   * `apps/hub` supplies `@intx/db`'s `resolveCredentialRequirement`,
+   * curried over `db` and the `"tenant"` source (the same resolution
+   * `buildCredentialDelivery` uses at agent-launch time to decide whether
+   * a tool actually gets a credential), so this route reports exactly
+   * what an agent could really use — never a catalog-derived guess. */
+  readonly isConnectorConnected: (
     tenantId: string,
-  ) => Promise<readonly string[]>;
+    connectorId: string,
+  ) => Promise<boolean>;
   /** Backs `GET /mcp-servers` (`@corbits/mcp-tools`' `mcp_list_servers`):
    * every `mcp:<slug>` server this tenant has connected. `apps/hub`
    * supplies `@workbench/connections`' own `listMcpServerConnections`
@@ -118,17 +134,18 @@ export function createWorkflowConnectionRoutes(
 
   app.get("/connections", async (c) => {
     const scope = c.get("workflowConnectionScope");
-    const connectedIds = new Set(
-      await deps.listConnectedProviders(scope.tenantId),
+    const descriptors = Object.values(CONNECTOR_REGISTRY);
+    const connections: ConnectionSummary[] = await Promise.all(
+      descriptors.map(async (descriptor) => ({
+        id: descriptor.id,
+        displayName: descriptor.displayName,
+        docsUrl: descriptor.docsUrl,
+        connected: await deps.isConnectorConnected(
+          scope.tenantId,
+          descriptor.id,
+        ),
+      })),
     );
-    const connections: ConnectionSummary[] = Object.values(
-      CONNECTOR_REGISTRY,
-    ).map((descriptor) => ({
-      id: descriptor.id,
-      displayName: descriptor.displayName,
-      docsUrl: descriptor.docsUrl,
-      connected: connectedIds.has(descriptor.id),
-    }));
     return c.json({ data: connections }, 200);
   });
 
