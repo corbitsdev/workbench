@@ -311,9 +311,7 @@ function AgentDetailPanel({
               <Skeleton className="h-4 w-16" />
             ) : null}
             {capabilities.status === "error" ? (
-              <span className="text-danger-foreground">
-                {capabilities.message}
-              </span>
+              <span className="text-destructive">{capabilities.message}</span>
             ) : null}
             {capabilities.status === "ready"
               ? (capabilities.data.model ?? "Default")

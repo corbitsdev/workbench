@@ -376,7 +376,7 @@ export function AgentDetailPage({
                 className={
                   saveReport.failed === null
                     ? "text-sm text-muted-foreground"
-                    : "text-sm text-danger-foreground"
+                    : "text-sm text-destructive"
                 }
                 role={saveReport.failed === null ? undefined : "alert"}
               >
@@ -384,7 +384,7 @@ export function AgentDetailPage({
               </p>
             ) : null}
             {lifecycle.kind === "error" ? (
-              <p className="text-sm text-danger-foreground" role="alert">
+              <p className="text-sm text-destructive" role="alert">
                 {lifecycle.message}
               </p>
             ) : null}
@@ -649,7 +649,7 @@ export function AgentDetailRoute({
 
   if (load.kind === "error") {
     return shell(
-      <p className="text-sm text-danger-foreground" role="alert">
+      <p className="text-sm text-destructive" role="alert">
         {load.message}
       </p>,
     );
