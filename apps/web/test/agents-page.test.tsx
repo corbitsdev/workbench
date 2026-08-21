@@ -1,14 +1,21 @@
-// Agents roster (CL-6354): a flat table of every definition a bench owns —
-// rows, never cards — with a "Workbenches" column counting how many open
-// agent DMs currently run each one. `AgentsPage` is the presentational
-// half (same split `LibraryPage`/`LibraryRoute` use in `pages.test.tsx`);
-// no live hub here, just the render given real-shaped props.
+// Agents roster (CL-6354, CL-6469): a flat table of every definition a
+// bench owns — rows, never cards — with Status/Model/Runs·7d columns and a
+// bulk-select bar. `AgentsPage` is the presentational half (same split
+// `LibraryPage`/`LibraryRoute` use in `pages.test.tsx`); no live hub here,
+// just the render given real-shaped props.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AgentsPage } from "../src/pages/agents-page";
+import {
+  AgentsPage,
+  agentRosterStatus,
+  archiveDefinitions,
+  archiveResultToast,
+  runsInLast7Days,
+} from "../src/pages/agents-page";
 import type { AgentDefinitionWithDisplayName } from "../src/agents-directory";
+import type { AgentInstance } from "../src/agents-api";
 
 // `name` is the immutable kebab identifier; `displayName` is what
 // `withDisplayNames` (CL-6413) derives from the definition's description
@@ -26,7 +33,133 @@ const triage: AgentDefinitionWithDisplayName = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+function instance(
+  overrides: Partial<AgentInstance> & { readonly definitionId: string },
+): AgentInstance {
+  return {
+    id: "run_1",
+    definitionName: "triage-bot",
+    tenantId: "tnt_1",
+    address: "run_1@bench",
+    status: "running",
+    createdAt: "2026-08-19T00:00:00.000Z",
+    updatedAt: "2026-08-19T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const NOW = new Date("2026-08-20T00:00:00.000Z").getTime();
+
 const noop = () => undefined;
+
+describe("agentRosterStatus", () => {
+  test("a stopped definition always reads Archived, regardless of its instances", () => {
+    expect(
+      agentRosterStatus({ ...triage, status: "stopped" }, [
+        instance({ definitionId: "wfd_1", status: "running" }),
+      ]),
+    ).toBe("archived");
+  });
+
+  test("a deployed definition with a running instance reads Running", () => {
+    expect(
+      agentRosterStatus(triage, [
+        instance({ definitionId: "wfd_1", status: "running" }),
+      ]),
+    ).toBe("running");
+  });
+
+  test("a deployed definition with only an erroring instance reads Blocked", () => {
+    expect(
+      agentRosterStatus(triage, [
+        instance({ definitionId: "wfd_1", status: "error" }),
+      ]),
+    ).toBe("blocked");
+  });
+
+  test("a deployed definition with no live instances reads Idle", () => {
+    expect(agentRosterStatus(triage, [])).toBe("idle");
+  });
+});
+
+describe("runsInLast7Days", () => {
+  test("counts only this definition's instances created within the trailing week", () => {
+    const instances = [
+      instance({
+        definitionId: "wfd_1",
+        createdAt: "2026-08-19T00:00:00.000Z",
+      }),
+      instance({
+        definitionId: "wfd_1",
+        createdAt: "2026-08-01T00:00:00.000Z",
+      }),
+      instance({
+        definitionId: "wfd_other",
+        createdAt: "2026-08-19T00:00:00.000Z",
+      }),
+    ];
+    expect(runsInLast7Days("wfd_1", instances, NOW)).toBe(1);
+  });
+});
+
+describe("archiveDefinitions", () => {
+  test("one id failing does not roll back or hide the ids that succeeded", async () => {
+    const result = await archiveDefinitions(
+      ["wfd_1", "wfd_2", "wfd_3"],
+      (id) =>
+        id === "wfd_2"
+          ? Promise.reject(new Error("504"))
+          : Promise.resolve(undefined),
+    );
+    expect(result.succeededIds).toEqual(["wfd_1", "wfd_3"]);
+    expect(result.failedIds).toEqual(["wfd_2"]);
+  });
+
+  test("every id succeeding reports no failures", async () => {
+    const result = await archiveDefinitions(["wfd_1", "wfd_2"], () =>
+      Promise.resolve(undefined),
+    );
+    expect(result.succeededIds).toEqual(["wfd_1", "wfd_2"]);
+    expect(result.failedIds).toEqual([]);
+  });
+
+  test("every id failing reports no successes", async () => {
+    const result = await archiveDefinitions(["wfd_1", "wfd_2"], () =>
+      Promise.reject(new Error("504")),
+    );
+    expect(result.succeededIds).toEqual([]);
+    expect(result.failedIds).toEqual(["wfd_1", "wfd_2"]);
+  });
+});
+
+describe("archiveResultToast", () => {
+  test("reports an honest partial count rather than a blanket success or failure", () => {
+    expect(
+      archiveResultToast({
+        succeededIds: ["a", "b", "c", "d"],
+        failedIds: ["e"],
+      }),
+    ).toBe("Archived 4 of 5 — the rest failed");
+  });
+
+  test("reports full success", () => {
+    expect(archiveResultToast({ succeededIds: ["a"], failedIds: [] })).toBe(
+      "Archived 1 agent",
+    );
+    expect(
+      archiveResultToast({ succeededIds: ["a", "b"], failedIds: [] }),
+    ).toBe("Archived 2 agents");
+  });
+
+  test("reports full failure", () => {
+    expect(archiveResultToast({ succeededIds: [], failedIds: ["a"] })).toBe(
+      "Couldn't archive that agent",
+    );
+    expect(
+      archiveResultToast({ succeededIds: [], failedIds: ["a", "b"] }),
+    ).toBe("Couldn't archive those agents");
+  });
+});
 
 describe("AgentsPage", () => {
   test("teaches what will appear once a bench has no agents yet", () => {
@@ -35,46 +168,42 @@ describe("AgentsPage", () => {
         tenantId="tnt_1"
         definitions={[]}
         workbenches={new Map()}
+        instances={[]}
+        now={NOW}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("No agents yet");
   });
 
-  test("renders one row per definition with its workbench count", () => {
+  test("renders one row per definition with its status, name, and slug", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
         definitions={[triage]}
-        workbenches={
-          new Map([
-            [
-              "wfd_1",
-              [
-                { id: "wb_1", title: "Growth" },
-                { id: "wb_2", title: "Support" },
-                { id: "wb_3", title: "Launch" },
-              ],
-            ],
-          ])
-        }
+        workbenches={new Map()}
+        instances={[instance({ definitionId: "wfd_1", status: "running" })]}
+        now={NOW}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("Triage bot");
     expect(markup).toContain("triage-bot");
     expect(markup).toContain("Sorts inbound issues.");
-    expect(markup).toContain(">3<");
-    expect(markup).not.toContain("New agent");
-    expect(markup).not.toContain("Create new agent");
+    expect(markup).toContain("Running");
+    // Running carries the live dot (react-ui's StatusDot, `live` prop) —
+    // the spec's liveness marker for an actively-running agent.
+    expect(markup).toContain('aria-label="Live"');
   });
 
   test("renders a humanized display name for a definition with no description, alongside its slug", () => {
@@ -90,11 +219,14 @@ describe("AgentsPage", () => {
         tenantId="tnt_1"
         definitions={[undescribed]}
         workbenches={new Map()}
+        instances={[]}
+        now={NOW}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("Research Analyst");
@@ -117,11 +249,14 @@ describe("AgentsPage", () => {
             ],
           ])
         }
+        instances={[]}
+        now={NOW}
         selectedId="wfd_1"
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('href="/w/wb_1/settings/agents"');
@@ -130,20 +265,24 @@ describe("AgentsPage", () => {
     expect(markup).toContain(">Support<");
   });
 
-  test("offers Create, never the retired New agent mint action", () => {
+  test("offers New agent as the top-bar create action, per the top-nav page-action contract", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
         definitions={[triage]}
         workbenches={new Map()}
+        instances={[]}
+        now={NOW}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('aria-label="Create an agent"');
+    expect(markup).toContain("New agent");
   });
 
   test("no create affordance without a resolved bench", () => {
@@ -152,13 +291,42 @@ describe("AgentsPage", () => {
         tenantId={null}
         definitions={[]}
         workbenches={new Map()}
+        instances={[]}
+        now={NOW}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).not.toContain('aria-label="Create an agent"');
+  });
+
+  test("carries a selection checkbox per row and a header select-all, but no bulk bar with nothing selected", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        now={NOW}
+        selectedId={null}
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+      />,
+    );
+    expect(markup).toContain('aria-label="Select all agents"');
+    expect(markup).toContain('aria-label="Select Triage bot"');
+    // BulkActionBar renders nothing at count 0 — none of its labels should
+    // leak into the page while nothing is selected.
+    expect(markup).not.toContain("Duplicate");
+    expect(markup).not.toContain("Move");
+    expect(markup).not.toContain("Delete");
+    expect(markup).not.toContain("data-bulk-action");
   });
 });
