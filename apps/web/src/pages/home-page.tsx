@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
 import { describeApiError } from "@corbits/api-query";
 
+import { fetchProvisioningProgress } from "../onboarding";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
 import { createAgentAndLaunch } from "../instant-agent-create";
@@ -23,7 +24,19 @@ import { useNavigate } from "../navigation";
 
 type LandState =
   | { readonly kind: "checking" }
+  /** The bench exists and its credential is connected, but its agents
+   * are still being deployed in the background (CL-6457). Landing here
+   * is expected right after someone connects a provider — connecting
+   * deliberately no longer waits for deploys — so this is a warm wait
+   * with live progress, never an error. */
+  | {
+      readonly kind: "provisioning";
+      readonly live: number;
+      readonly total: number;
+    }
   | { readonly kind: "error"; readonly message: string };
+
+const PROVISIONING_POLL_MS = 3_000;
 
 export function HomeRoute() {
   const navigate = useNavigate();
@@ -42,9 +55,25 @@ export function HomeRoute() {
           createAgentAndLaunch(selectedTenantId, navigate).catch(
             (cause: unknown) => {
               if (cancelled) return;
-              setState({
-                kind: "error",
-                message: describeApiError(cause, "opening Myra"),
+              // Myra cannot be launched if she has not finished
+              // deploying yet. Rather than reading that off an error
+              // message, ask the bench where its agents actually are: a
+              // bench still provisioning is someone waiting, not someone
+              // broken.
+              void fetchProvisioningProgress().then((progress) => {
+                if (cancelled) return;
+                setState(
+                  progress.ready
+                    ? {
+                        kind: "error",
+                        message: describeApiError(cause, "opening Myra"),
+                      }
+                    : {
+                        kind: "provisioning",
+                        live: progress.live,
+                        total: progress.total,
+                      },
+                );
               });
             },
           );
@@ -71,6 +100,32 @@ export function HomeRoute() {
       cancelled = true;
     };
   }, [selectedTenantId, navigate, retryCount]);
+
+  // While agents are still deploying, keep asking — and the moment the
+  // bench is ready, re-run the land so the person drops straight into
+  // Myra without touching anything.
+  useEffect(() => {
+    if (state.kind !== "provisioning") return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void fetchProvisioningProgress().then((progress) => {
+        if (cancelled) return;
+        if (progress.ready) {
+          setRetryCount((count) => count + 1);
+          return;
+        }
+        setState({
+          kind: "provisioning",
+          live: progress.live,
+          total: progress.total,
+        });
+      });
+    }, PROVISIONING_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [state.kind]);
 
   if (memberships.kind === "loading") {
     return (
@@ -126,6 +181,19 @@ export function HomeRoute() {
           }
         />
       </PageShell>
+    );
+  }
+
+  if (state.kind === "provisioning") {
+    return (
+      <div className="page-fill shell-route-loading">
+        <WorkbenchLoadingState title="Getting your agents ready…" delayMs={0} />
+        <p className="shell-route-loading-note" role="status">
+          {state.total > 0
+            ? `${state.live} of ${state.total} ready`
+            : "This only takes a moment."}
+        </p>
+      </div>
     );
   }
 

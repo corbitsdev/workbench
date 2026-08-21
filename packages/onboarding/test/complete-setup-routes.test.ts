@@ -1,14 +1,19 @@
-// The slow half's own route: `POST /complete-setup` is what actually
-// runs `ensureSeeded` — the workflow-deploy step the OAuth callback
-// routes never run inline (see `complete-credential.ts`'s module
-// comment and `openrouter-connect-routes.test.ts`'s "never triggers a
-// workflow deploy call" coverage of the callback side). This is the
-// onboarding page's own follow-up call after landing, and it has to
-// answer three cases correctly: already seeded (no work, no pending
-// row needed), unseeded with nothing to seed with yet (not an error),
-// and unseeded with a just-connected credential's pending row to
-// finish the job — the last case run twice at once must never
-// double-deploy.
+// `POST /complete-setup` reports where a bench stands; it never
+// deploys. CL-6457 moved every workflow deploy onto the background
+// drain in `../src/bench-provisioning.ts`, because a request that
+// waits on deploys is the two-minute "Connecting…" onboarding was
+// stuck behind. What is left here is a status reporter over two cheap
+// hub reads, and it has to answer three cases correctly: every default
+// workflow live (`ready` — clear the pending row, the drain has
+// nothing left to do), still deploying with a pending row parked
+// (`provisioning` — nudge the drain and leave the row alone, it is the
+// drain's durable work item), and nothing live with no row to work
+// from (`unseeded`, a 200 and not an error, telling the caller to fall
+// back to the ordinary credential step).
+//
+// The deploying itself — its idempotency, its retries, its
+// half-provisioned recovery — is covered where it now lives, in
+// `./bench-provisioning.test.ts`.
 //
 // CL-6031 moved the pending credential off the browser: what used to
 // be a sealed HttpOnly cookie is now a row in
@@ -156,7 +161,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("an already fully seeded bench reports seeded without needing a pending row", async () => {
+  test("an already fully seeded bench reports ready without needing a pending row", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
@@ -211,13 +216,15 @@ describe("POST /complete-setup", () => {
       const body = (await response.json()) as {
         kind: string;
         tenantSlug: string;
-        workflows: string[];
+        deployed: string[];
+        pending: string[];
       };
-      expect(body.kind).toBe("seeded");
+      expect(body.kind).toBe("ready");
       expect(body.tenantSlug).toBe(TENANT_SLUG);
-      expect(body.workflows.sort()).toEqual(
+      expect(body.deployed.sort()).toEqual(
         DEFAULT_WORKFLOWS.map((w) => w.assetName).sort(),
       );
+      expect(body.pending).toEqual([]);
       expect(ensureSeededCalls).toBe(0);
     } finally {
       server.stop(true);
@@ -257,7 +264,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("unseeded with a valid pending row runs ensureSeeded and reports seeded", async () => {
+  test("a bench still deploying reports provisioning and never deploys inline", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -267,11 +274,7 @@ describe("POST /complete-setup", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
-      const ensureSeededCalls: {
-        provider: string;
-        apiKey: string;
-        tenant: { tenantId: string };
-      }[] = [];
+      let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
@@ -281,13 +284,9 @@ describe("POST /complete-setup", () => {
           }),
           log: () => undefined,
           pendingSeedStore,
-          ensureSeededFn: async (args) => {
-            ensureSeededCalls.push({
-              provider: args.provider,
-              apiKey: args.apiKey,
-              tenant: { tenantId: args.tenant.tenantId },
-            });
-            return { kind: "seeded", workflows: ["echo", "assistant"] };
+          ensureSeededFn: async () => {
+            ensureSeededCalls += 1;
+            return { kind: "seeded", workflows: [] };
           },
         }),
       );
@@ -302,35 +301,78 @@ describe("POST /complete-setup", () => {
         kind: string;
         tenantId: string;
         tenantSlug: string;
-        workflows: string[];
+        deployed: string[];
+        pending: string[];
       };
       expect(body).toEqual({
-        kind: "seeded",
+        kind: "provisioning",
         tenantId: TENANT_ID,
         tenantSlug: TENANT_SLUG,
-        workflows: ["echo", "assistant"],
+        deployed: [],
+        pending: DEFAULT_WORKFLOWS.map((w) => w.assetName),
       });
-      expect(ensureSeededCalls).toEqual([
-        {
-          provider: "openrouter",
-          apiKey: "sk-or-v1-minted",
-          tenant: { tenantId: TENANT_ID },
-        },
-      ]);
-      // The pending row has done its job — it must not sit in the
-      // store for the rest of its ten-minute TTL once seeding actually
-      // succeeds.
+      // The point of CL-6457: a pending row in front of it is not a
+      // licence to deploy on the request path. The seam still exists,
+      // it just belongs to the drain now.
+      expect(ensureSeededCalls).toBe(0);
+      // And the row stays exactly where it is — it is the drain's
+      // durable work item, not this request's scratch state.
       const stillThere = await pendingSeedStore.read({
         userId: "user_1",
         tenantId: TENANT_ID,
       });
-      expect(stillThere).toBeUndefined();
+      expect(stillThere).toBeDefined();
     } finally {
       server.stop(true);
     }
   });
 
-  test("an already fully seeded bench also clears a stray pending row, not just the freshly-run case", async () => {
+  test("a still-provisioning bench nudges the drain instead of waiting on it", async () => {
+    const hub = new Hono();
+    principalsRoute(hub);
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
+      c.json([]),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
+    try {
+      let wakes = 0;
+      const app = mountAuthenticated(
+        createOnboardingRoutes({
+          hubUrl: `http://localhost:${server.port}`,
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
+          log: () => undefined,
+          pendingSeedStore,
+          benchProvisioner: {
+            wake: () => {
+              wakes += 1;
+            },
+          },
+        }),
+      );
+      await withPendingSeed(pendingSeedStore);
+
+      const response = await app.request("/api/onboarding/complete-setup", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { kind: string };
+      expect(body.kind).toBe("provisioning");
+      // Without the nudge a freshly parked row waits out the drain's
+      // whole tick interval before anything happens — the reason a
+      // waiting onboarding page calls this route at all.
+      expect(wakes).toBe(1);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("an already fully seeded bench also clears a stray pending row, not just the never-written case", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
@@ -371,11 +413,12 @@ describe("POST /complete-setup", () => {
         }),
       );
 
-      // A concurrent call already finished seeding and its own logic
-      // cleared the row; this request just happens to have written its
-      // own pending row moments earlier — exactly what a second
-      // in-flight request from a double effect fire would look like
-      // from the server's perspective.
+      // The drain finished this bench a moment ago but its row is
+      // still sitting there — a crash between the last deploy and the
+      // clear, or a connect that parked a fresh row over an already
+      // complete bench. A `ready` read is the authority: the row has no
+      // work left in it and must not be left for the drain to pick up
+      // again.
       await withPendingSeed(pendingSeedStore);
 
       const response = await app.request("/api/onboarding/complete-setup", {
@@ -384,7 +427,7 @@ describe("POST /complete-setup", () => {
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("seeded");
+      expect(body.kind).toBe("ready");
       const stillThere = await pendingSeedStore.read({
         userId: "user_1",
         tenantId: TENANT_ID,
@@ -476,19 +519,15 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("two overlapping calls reading the same pending row never double-deploy", async () => {
-    // The concurrency guarantee the task calls for: two "finish setup"
-    // requests racing (a double effect fire, a retried fetch) must both
-    // land on `seeded` without planting anything twice. Runs the real
-    // `ensureSeeded` (no stub) against a stateful fake hub — the same
-    // ensure-then-create tolerance `seedTenant` already has everywhere
-    // else, exercised here through the actual route.
-    const grants: { resource: string; action: string }[] = [];
-    const assets: { name: string; id: string }[] = [];
-    const deployments: { definitionAssetId: string; id: string }[] = [];
-    let assetCreatePosts = 0;
-    let deploymentCreatePosts = 0;
-
+  test("two overlapping calls both report provisioning and neither deploys", async () => {
+    // Two "finish setup" requests racing (a double effect fire, a
+    // retried fetch) used to be this route's sharpest edge, because
+    // both would deploy. Post-CL-6457 the route deploys nothing at all,
+    // so the only thing left to hold is that overlapping callers get
+    // the same honest status and still start no work of their own. The
+    // dedupe that matters now lives one layer down and is covered
+    // there: "overlapping drains never double-deploy the same bench" in
+    // ./bench-provisioning.test.ts.
     const hub = new Hono();
     // Deterministic overlap, not a race against real wall-clock
     // scheduling: `findPersonalTenant` is the first hub call each
@@ -531,118 +570,14 @@ describe("POST /complete-setup", () => {
         updatedAt: TIMESTAMP,
       }),
     );
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
-      c.json(
-        assets.map((a) => ({
-          id: a.id,
-          tenantId: TENANT_ID,
-          kind: "workflow",
-          name: a.name,
-          displayName: a.name,
-          creatorPrincipalId: PRINCIPAL_ID,
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-          origin: { tenantId: TENANT_ID, direct: true },
-        })),
-      ),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
     hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json(
-        deployments.map((d) => ({
-          id: d.id,
-          tenantId: TENANT_ID,
-          definitionAssetId: d.definitionAssetId,
-          status: "deployed",
-          createdAt: TIMESTAMP,
-        })),
-      ),
-    );
-    hub.get(`/api/tenants/${TENANT_ID}/grants`, (c) =>
-      c.json({
-        data: grants.map((g, index) => ({
-          id: `grt_${index}`,
-          tenantId: TENANT_ID,
-          resource: g.resource,
-          action: g.action,
-          effect: "allow",
-          principalId: PRINCIPAL_ID,
-          origin: "creator",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        })),
-        nextCursor: null,
-      }),
-    );
-    hub.post(`/api/tenants/${TENANT_ID}/grants`, async (c) => {
-      const g = (await c.req.json()) as { resource: string; action: string };
-      grants.push({ resource: g.resource, action: g.action });
-      return c.json({}, 201);
-    });
-    hub.post(`/api/tenants/${TENANT_ID}/assets`, async (c) => {
-      const body = (await c.req.json()) as { name: string };
-      const existing = assets.find((a) => a.name === body.name);
-      if (existing) return c.json({}, 409);
-      assetCreatePosts += 1;
-      const id = `ast_${body.name}`;
-      assets.push({ name: body.name, id });
-      return c.json(
-        {
-          id,
-          tenantId: TENANT_ID,
-          kind: "workflow",
-          name: body.name,
-          displayName: body.name,
-          creatorPrincipalId: PRINCIPAL_ID,
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-        201,
-      );
-    });
-    hub.post(`/api/tenants/${TENANT_ID}/git-tokens`, (c) =>
-      c.json({ id: "tok_1", secret: "s3cret" }, 201),
-    );
-    hub.get(`/api/tenants/${TENANT_ID}/skills/:name`, (c) => c.json({}, 404));
-    hub.post(`/api/tenants/${TENANT_ID}/skills`, (c) => c.json({}, 201));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/definitions`, (c) =>
-      c.json({ data: [], nextCursor: null }, 200),
-    );
-    hub.get(`/api/tenants/${TENANT_ID}/routines`, (c) =>
-      c.json({ items: [] }, 200),
-    );
-    // The corbits-tools registry publish `seedTenant` now runs ahead of
-    // any workflow deploy: stands in for the real tarball-upload REST
-    // route so that publish succeeds without asserting anything about
-    // its content — this test's own assertions are about deploy
-    // idempotency, not about publishing.
-    hub.put(
-      `/api/tenants/${TENANT_ID}/assets/:assetId/tarballs/:filename`,
-      (c) => c.json({ commit: "deadbeef", integrity: "sha512-test" }, 200),
-    );
-    hub.post(`/api/tenants/${TENANT_ID}/workflows/deployments`, async (c) => {
-      deploymentCreatePosts += 1;
-      const body = (await c.req.json()) as { source: { assetId: string } };
-      const assetId = body.source.assetId;
-      const id = `dep_${assetId}`;
-      deployments.push({ definitionAssetId: assetId, id });
-      return c.json(
-        {
-          id,
-          tenantId: TENANT_ID,
-          definitionAssetId: assetId,
-          status: "deployed",
-          createdAt: TIMESTAMP,
-        },
-        201,
-      );
-    });
-
-    hub.get(`/api/tenants/${TENANT_ID}/assets/:assetId/tarballs`, (c) =>
-      c.json([], 200),
+      c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
+      let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
@@ -652,6 +587,10 @@ describe("POST /complete-setup", () => {
           }),
           log: () => undefined,
           pendingSeedStore,
+          ensureSeededFn: async () => {
+            ensureSeededCalls += 1;
+            return { kind: "seeded", workflows: [] };
+          },
         }),
       );
       await withPendingSeed(pendingSeedStore);
@@ -669,34 +608,53 @@ describe("POST /complete-setup", () => {
       expect(second.status).toBe(200);
       const firstBody = (await first.json()) as { kind: string };
       const secondBody = (await second.json()) as { kind: string };
-      expect(firstBody.kind).toBe("seeded");
-      expect(secondBody.kind).toBe("seeded");
+      expect(firstBody.kind).toBe("provisioning");
+      expect(secondBody.kind).toBe("provisioning");
+      expect(ensureSeededCalls).toBe(0);
 
-      // Both requests share one seed operation, so nothing is planted
-      // twice. One extra asset beyond the workflow set is the tenant's own
-      // corbits-tools package-registry asset, which `seedTenant`
-      // publishes ahead of any workflow deploy and which shares this
-      // fake hub's one `/assets` create route with the workflow assets.
-      expect(assetCreatePosts).toBe(DEFAULT_WORKFLOWS.length + 1);
-      expect(deploymentCreatePosts).toBe(DEFAULT_WORKFLOWS.length);
-      expect(assets.length).toBe(DEFAULT_WORKFLOWS.length + 1);
-      expect(deployments.length).toBe(DEFAULT_WORKFLOWS.length);
+      // One work item, however many callers ask about it.
+      const stillThere = await pendingSeedStore.read({
+        userId: "user_1",
+        tenantId: TENANT_ID,
+      });
+      expect(stillThere).toBeDefined();
     } finally {
       server.stop(true);
     }
   });
 
-  // CL-6264: a sidecar-unavailable deploy must not fail this route —
-  // durable state (credential, tenant, grants, assets) is already
-  // intact — and the pending row must survive so a later reload's call
-  // to this same route can finish the deferred workflows once the
-  // sidecar is back.
-  test("a sidecar-unavailable deploy reports the pending kind and keeps the pending row for the next retry", async () => {
+  // CL-6264, re-homed by CL-6457: a bench that got partway through its
+  // workflows must read as still provisioning, and must keep its
+  // pending row so the drain can finish the rest. The convergence
+  // itself — deploying only what is missing on a later pass — is
+  // covered by "a half-provisioned bench keeps its row and converges on
+  // a later pass" in ./bench-provisioning.test.ts.
+  test("a bench whose agents are not all live keeps its pending row for the drain", async () => {
+    const liveWorkflow = DEFAULT_WORKFLOWS[0];
+    if (liveWorkflow === undefined) {
+      throw new Error("DEFAULT_WORKFLOWS is empty");
+    }
     const hub = new Hono();
     principalsRoute(hub);
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
+      c.json(
+        DEFAULT_WORKFLOWS.map((workflow, index) => ({
+          id: `ast_${index}`,
+          tenantId: TENANT_ID,
+          kind: "workflow",
+          name: workflow.assetName,
+          displayName: workflow.displayName,
+          creatorPrincipalId: PRINCIPAL_ID,
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+          origin: { tenantId: TENANT_ID, direct: true },
+        })),
+      ),
+    );
+    // Only the first workflow made it live; the rest are still waiting
+    // on the drain.
     hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
+      c.json([{ definitionAssetId: "ast_0", status: "deployed" }]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
@@ -710,13 +668,6 @@ describe("POST /complete-setup", () => {
           }),
           log: () => undefined,
           pendingSeedStore,
-          ensureSeededFn: async () => ({
-            kind: "seeded-pending-agents",
-            deployed: ["echo"],
-            pending: ["assistant"],
-            message:
-              "Your workbench is ready — agents will come online shortly.",
-          }),
         }),
       );
       await withPendingSeed(pendingSeedStore);
@@ -732,20 +683,17 @@ describe("POST /complete-setup", () => {
         tenantSlug: string;
         deployed: string[];
         pending: string[];
-        message: string;
       };
       expect(body).toEqual({
-        kind: "seeded-pending-agents",
+        kind: "provisioning",
         tenantId: TENANT_ID,
         tenantSlug: TENANT_SLUG,
-        deployed: ["echo"],
-        pending: ["assistant"],
-        message: "Your workbench is ready — agents will come online shortly.",
+        deployed: [liveWorkflow.assetName],
+        pending: DEFAULT_WORKFLOWS.slice(1).map((w) => w.assetName),
       });
 
-      // Not fully seeded yet — the row must still be there for the next
-      // reload's retry, not cleared the way a full `seeded` result
-      // clears it.
+      // Not finished yet — clearing the row here would strand the
+      // remaining agents with nothing left to deploy them.
       const stillThere = await pendingSeedStore.read({
         userId: "user_1",
         tenantId: TENANT_ID,

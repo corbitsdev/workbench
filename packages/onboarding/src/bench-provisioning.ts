@@ -1,0 +1,281 @@
+// The one place a bench's default workflows are ever deployed
+// (CL-6457). Connecting a provider used to do it inline: a pasted key
+// sat on "Connecting…" for minutes while five workflows deployed at
+// ~20s each, and the owner reasonably concluded the app had frozen.
+// Connect now does the durable, fast half only — persist the credential,
+// seed its catalog — and this converges the bench afterwards, off the
+// request path entirely.
+//
+// It is a drain over `onboarding.pending_seed`, not a queue of jobs: the
+// row IS the work item, and what it means is "this bench has a
+// credential and does not yet have its agents". That framing is what
+// makes the three properties fall out rather than have to be engineered:
+//
+//   - Idempotent. Every pass re-reads the bench's actual asset and
+//     deployment state (`isFullySeeded`) before doing anything, and the
+//     deploy step underneath (`seedTenant`) is ensure-then-create at
+//     every step. A pass over a bench that is already done deploys
+//     nothing and simply clears the row.
+//   - Convergent. A pass that gets partway — the sidecar-unavailable
+//     class `ensureSeeded` reports as `seeded-pending-agents` — leaves
+//     the row in place, so the next pass picks up exactly the workflows
+//     that are still missing.
+//   - Restart-safe. Nothing about a bench's outstanding work lives in
+//     this process. A hub that dies mid-deploy leaves the row behind,
+//     and the next boot's first tick finishes it. In-memory state here
+//     is only ever an optimization (a dedupe guard, a retry backoff),
+//     never a fact the system needs to be correct.
+//
+// Sessions are the one thing a background loop cannot inherit: there is
+// no request to borrow cookies from. `sessionFor` is that seam — the
+// composition root decides how a session is minted for a user, and this
+// module stays out of the auth mechanism entirely.
+
+import {
+  type ApiCall,
+  type WorkflowPusher,
+  type ToolRegistryPublisher,
+} from "@workbench/hub-client";
+import { ensureSeeded } from "./complete-credential";
+import { isFullySeeded } from "./provision";
+import {
+  PENDING_SEED_SCAN_LIMIT,
+  type PendingSeed,
+  type PendingSeedStore,
+} from "./pending-seed";
+
+export const PROVISIONING_POLL_INTERVAL_MS = 15_000;
+const RETRY_BACKOFF_BASE_MS = 15_000;
+const RETRY_BACKOFF_CEILING_MS = 10 * 60 * 1000;
+
+/**
+ * Mints the hub session the drain acts under for one user's own bench,
+ * or `undefined` when no session can be minted (an account since
+ * deleted, an auth backend briefly unavailable). Returning `undefined`
+ * holds the bench for a later pass — it never discards the row.
+ */
+export type SessionForUser = (args: {
+  userId: string;
+  tenantId: string;
+}) => Promise<string[] | undefined>;
+
+export type BenchProvisionerDeps = {
+  api: ApiCall;
+  hubUrl: string;
+  store: PendingSeedStore;
+  pushWorkflow: WorkflowPusher;
+  publishToolRegistry?: ToolRegistryPublisher;
+  sessionFor: SessionForUser;
+  log: (line: string) => void;
+  logError?: (line: string) => void;
+  /** Test seams. Production passes neither; the real implementations are
+   * the module-level imports above. */
+  ensureSeededFn?: typeof ensureSeeded;
+  isFullySeededFn?: typeof isFullySeeded;
+  now?: () => number;
+};
+
+/** What one pass over one bench concluded. `converged` and `pending` are
+ * both healthy — the difference is only whether there is more to do. */
+export type BenchProvisionOutcome = "converged" | "pending" | "failed";
+
+export type DrainReport = {
+  readonly converged: number;
+  readonly pending: number;
+  readonly failed: number;
+  /** Benches skipped this tick because a previous failure's backoff has
+   * not elapsed, or because a pass over them is still running. */
+  readonly deferred: number;
+};
+
+export type BenchProvisioner = {
+  /** One bench, start to finish. Exposed so a connect can kick its own
+   * bench immediately instead of waiting out a poll interval. */
+  provisionBench(
+    seed: PendingSeed,
+  ): Promise<BenchProvisionOutcome | "deferred">;
+  drainOnce(args?: { ignoreBackoff?: boolean }): Promise<DrainReport>;
+  /** Fire-and-forget drain for callers that must not wait on it — a
+   * route that just wrote a pending row, or hub boot. Never rejects. */
+  wake(): void;
+  start(args?: { intervalMs?: number }): void;
+  stop(): void;
+};
+
+function benchKey(seed: { userId: string; tenantId: string }): string {
+  return `${seed.userId}:${seed.tenantId}`;
+}
+
+export function createBenchProvisioner(
+  deps: BenchProvisionerDeps,
+): BenchProvisioner {
+  const now = deps.now ?? Date.now;
+  const logError = deps.logError ?? deps.log;
+  const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
+  const runIsFullySeeded = deps.isFullySeededFn ?? isFullySeeded;
+
+  const inFlight = new Map<string, Promise<BenchProvisionOutcome>>();
+  const retryAfter = new Map<string, number>();
+  const failureCount = new Map<string, number>();
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  function holdOff(key: string): void {
+    const failures = (failureCount.get(key) ?? 0) + 1;
+    failureCount.set(key, failures);
+    const backoff = Math.min(
+      RETRY_BACKOFF_BASE_MS * 2 ** (failures - 1),
+      RETRY_BACKOFF_CEILING_MS,
+    );
+    retryAfter.set(key, now() + backoff);
+  }
+
+  function clearHold(key: string): void {
+    retryAfter.delete(key);
+    failureCount.delete(key);
+  }
+
+  async function runOnce(seed: PendingSeed): Promise<BenchProvisionOutcome> {
+    const cookies = await deps.sessionFor({
+      userId: seed.userId,
+      tenantId: seed.tenantId,
+    });
+    if (cookies === undefined) {
+      logError(
+        `bench provisioning for tenant ${seed.tenantId} has no session to act under; holding for a later pass`,
+      );
+      return "failed";
+    }
+
+    if (await runIsFullySeeded(deps.api, cookies, seed.tenantId)) {
+      await deps.store.clear({
+        userId: seed.userId,
+        tenantId: seed.tenantId,
+      });
+      return "converged";
+    }
+
+    const seededArgs = {
+      api: deps.api,
+      cookies,
+      hubUrl: deps.hubUrl,
+      pushWorkflow: deps.pushWorkflow,
+      log: deps.log,
+      tenant: {
+        tenantId: seed.tenantId,
+        tenantSlug: "",
+        principalId: seed.principalId,
+        tenantDomain: seed.tenantDomain,
+      },
+      provider: seed.provider,
+      apiKey: seed.apiKey,
+    };
+    const result = await runEnsureSeeded(
+      deps.publishToolRegistry !== undefined
+        ? { ...seededArgs, publishToolRegistry: deps.publishToolRegistry }
+        : seededArgs,
+    );
+
+    if (result.kind === "seeded-pending-agents") {
+      deps.log(
+        `bench ${seed.tenantId} is partly provisioned (${result.deployed.length} live, ${result.pending.length} waiting); its pending row stays for the next pass`,
+      );
+      return "pending";
+    }
+
+    await deps.store.clear({ userId: seed.userId, tenantId: seed.tenantId });
+    deps.log(
+      `bench ${seed.tenantId} finished provisioning: ${result.workflows.length} agents live`,
+    );
+    return "converged";
+  }
+
+  async function provisionBench(
+    seed: PendingSeed,
+  ): Promise<BenchProvisionOutcome | "deferred"> {
+    const key = benchKey(seed);
+    const running = inFlight.get(key);
+    if (running !== undefined) return "deferred";
+
+    const operation = (async (): Promise<BenchProvisionOutcome> => {
+      try {
+        const outcome = await runOnce(seed);
+        if (outcome === "converged") clearHold(key);
+        else holdOff(key);
+        return outcome;
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logError(
+          `bench provisioning for tenant ${seed.tenantId} failed; its pending row stays for a retry: ${message}`,
+        );
+        holdOff(key);
+        return "failed";
+      }
+    })();
+
+    inFlight.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      if (inFlight.get(key) === operation) inFlight.delete(key);
+    }
+  }
+
+  async function drainOnce(
+    args: { ignoreBackoff?: boolean } = {},
+  ): Promise<DrainReport> {
+    const due = await deps.store.listDue({ limit: PENDING_SEED_SCAN_LIMIT });
+    let converged = 0;
+    let pending = 0;
+    let failed = 0;
+    let deferred = 0;
+
+    for (const seed of due) {
+      const key = benchKey(seed);
+      const heldUntil = retryAfter.get(key);
+      if (
+        args.ignoreBackoff !== true &&
+        heldUntil !== undefined &&
+        heldUntil > now()
+      ) {
+        deferred += 1;
+        continue;
+      }
+      if (args.ignoreBackoff === true) clearHold(key);
+
+      const outcome = await provisionBench(seed);
+      if (outcome === "converged") converged += 1;
+      else if (outcome === "pending") pending += 1;
+      else if (outcome === "failed") failed += 1;
+      else deferred += 1;
+    }
+
+    return { converged, pending, failed, deferred };
+  }
+
+  function wake(): void {
+    void drainOnce().catch((cause: unknown) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logError(`bench provisioning drain failed: ${message}`);
+    });
+  }
+
+  return {
+    provisionBench,
+    drainOnce,
+    wake,
+    start(args = {}) {
+      if (timer !== undefined) return;
+      timer = setInterval(
+        wake,
+        args.intervalMs ?? PROVISIONING_POLL_INTERVAL_MS,
+      );
+      timer.unref?.();
+      wake();
+    },
+    stop() {
+      if (timer === undefined) return;
+      clearInterval(timer);
+      timer = undefined;
+    },
+  };
+}

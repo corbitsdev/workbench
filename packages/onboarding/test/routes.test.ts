@@ -14,11 +14,10 @@ import { createInMemoryPendingSeedStore } from "../src/pending-seed";
 import { createProviderHealthStore } from "@workbench/connections/provider-health";
 import { CliError } from "@workbench/hub-client";
 
-// Most of these tests never exercise the pending-seed store — it is
-// required wiring for `createOnboardingRoutes` (see
-// `./complete-setup-routes.test.ts` and `../src/pending-seed.test.ts`
-// for its dedicated coverage) — but the sidecar-unavailable `/complete`
-// tests below read it back to confirm the retry row landed.
+// These tests never exercise the pending-seed store — it is required
+// wiring for `createOnboardingRoutes`, and its dedicated coverage lives
+// in `./complete-setup-routes.test.ts`, `./connect-deploys-nothing.test.ts`
+// and `../src/pending-seed.test.ts`.
 const pendingSeedStore = createInMemoryPendingSeedStore(
   createNoopCredentialCipher(),
 );
@@ -376,32 +375,45 @@ describe("POST /complete", () => {
   test("a successful connect clears a stale needs_attention record for the connected provider", async () => {
     const providerHealth = createProviderHealthStore();
     providerHealth.report("tnt_own", "anthropic", "credential_failure");
-    const routes = createOnboardingRoutes({
-      hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      log: () => undefined,
-      pendingSeedStore,
-      providerHealth,
-      completeCredentialSetupFn: async () => ({
-        kind: "seeded",
-        tenantId: "tnt_own",
-        tenantSlug: "alice",
-        workflows: [],
-      }),
-    });
-    const app = mountAuthenticated(routes);
+    // A durable credential is the whole trigger for clearing the record,
+    // so the connect only has to get past the fast half. The bench still
+    // has every default workflow to deploy — this hub reports none of
+    // them present — which is exactly the state the clear must survive.
+    const hub = new Hono();
+    hub.get("/api/tenants/:id/assets", (c) => c.json([]));
+    hub.get("/api/tenants/:id/workflows/deployments", (c) => c.json([]));
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
+        log: () => undefined,
+        pendingSeedStore,
+        providerHealth,
+        testAndPersistCredentialFn: async () => ({
+          kind: "connected",
+          tenantId: "tnt_own",
+          tenantSlug: "alice",
+          principalId: "prn_own",
+          tenantDomain: "alice.bench.local",
+        }),
+      });
+      const app = mountAuthenticated(routes);
 
-    const response = await app.request("/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-good" }),
-    });
+      const response = await app.request("/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-good" }),
+      });
 
-    expect(response.status).toBe(200);
-    expect(providerHealth.get("tnt_own", "anthropic")).toBeUndefined();
+      expect(response.status).toBe(200);
+      expect(providerHealth.get("tnt_own", "anthropic")).toBeUndefined();
+    } finally {
+      server.stop(true);
+    }
   });
 
   test("an invalid credential never clears the needs_attention record", async () => {
@@ -416,7 +428,7 @@ describe("POST /complete", () => {
       log: () => undefined,
       pendingSeedStore,
       providerHealth,
-      completeCredentialSetupFn: async () => ({
+      testAndPersistCredentialFn: async () => ({
         kind: "invalid-credential",
         message: "the key was rejected",
       }),
@@ -435,71 +447,14 @@ describe("POST /complete", () => {
     );
   });
 
-  // CL-6264: tonight's live failure — a sidecar-unavailable deploy used
-  // to turn a durably-persisted credential into a hard "setting up your
-  // workbench failed" for the whole flow. The route must answer 200 with
-  // the honest partial state, and write a pending-seed row so the
-  // existing `/complete-setup` retry machinery — not a new queue —
-  // finishes the deferred workflows on this account's next visit.
-  test("a sidecar-unavailable deploy completes onboarding with a pending-agents response and writes a retry row", async () => {
-    const routes = createOnboardingRoutes({
-      hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      log: () => undefined,
-      pendingSeedStore,
-      completeCredentialSetupFn: async () => ({
-        kind: "seeded-pending-agents",
-        tenantId: "tnt_own",
-        tenantSlug: "alice",
-        principalId: "prn_own",
-        tenantDomain: "alice.bench.local",
-        deployed: ["echo"],
-        pending: [
-          "assistant",
-          "workbench-digest",
-          "recurring-task",
-          "last-30-days-research",
-        ],
-        message: "Your workbench is ready — agents will come online shortly.",
-      }),
-    });
-    const app = mountAuthenticated(routes);
-
-    const response = await app.request("/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-good" }),
-    });
-
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      kind: string;
-      deployed: string[];
-      pending: string[];
-      message: string;
-    };
-    expect(body.kind).toBe("seeded-pending-agents");
-    expect(body.deployed).toEqual(["echo"]);
-    expect(body.message).toBe(
-      "Your workbench is ready — agents will come online shortly.",
-    );
-
-    const row = await pendingSeedStore.read({
-      userId: "user_1",
-      tenantId: "tnt_own",
-    });
-    expect(row).toEqual({
-      userId: "user_1",
-      tenantId: "tnt_own",
-      principalId: "prn_own",
-      tenantDomain: "alice.bench.local",
-      provider: "anthropic",
-      apiKey: "sk-ant-good",
-    });
-  });
+  // CL-6457 moved partial-deploy convergence off this route entirely:
+  // `/complete` no longer deploys anything, so there is no half-finished
+  // deploy for it to report. What the route still owes the drain — a
+  // durable pending row carrying the key the deploy runs against — is
+  // covered by `./connect-deploys-nothing.test.ts` ("hands the drain a
+  // pending row carrying the key it will deploy against"), and the
+  // convergence that row buys is covered by `./bench-provisioning.test.ts`
+  // ("a half-provisioned bench keeps its row and converges on a later pass").
 
   test("a non-sidecar failure during setup still fails loudly with the existing 500 envelope", async () => {
     const routes = createOnboardingRoutes({
@@ -510,7 +465,7 @@ describe("POST /complete", () => {
       }),
       log: () => undefined,
       pendingSeedStore,
-      completeCredentialSetupFn: async () => {
+      testAndPersistCredentialFn: async () => {
         throw new Error("the hub rejected deployment with status 500");
       },
     });
@@ -544,7 +499,7 @@ describe("POST /complete", () => {
       log: () => undefined,
       logError: (line) => lines.push(line),
       pendingSeedStore,
-      completeCredentialSetupFn: async () => {
+      testAndPersistCredentialFn: async () => {
         throw new CliError(
           "publishing the corbits-tools package-registry asset failed: " +
             "tool-package freshness: @corbits/memory-tools@1.2.0 changed " +

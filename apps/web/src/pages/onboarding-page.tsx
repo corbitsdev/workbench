@@ -295,7 +295,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   useEffect(() => {
     if (state.phase === "finishing-setup") {
       void completeSetup().then((outcome) => {
-        if (outcome.kind === "seeded") {
+        if (outcome.kind === "connected") {
           navigate("/");
         } else if (outcome.kind === "unseeded") {
           setResumingUnseeded(true);
@@ -343,7 +343,11 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         ? submitCredential(provider, OLLAMA_PLACEHOLDER_SECRET, urlValue)
         : submitCredential(provider, apiKey);
       void submission.then((outcome) => {
-        if (outcome.kind === "seeded") {
+        // Connected is the finish line for this screen (CL-6457):
+        // whether or not the agents have finished deploying, the person
+        // moves on now, and the warm loading state on the other side
+        // covers whatever is still coming online.
+        if (outcome.kind === "connected") {
           navigate("/");
         } else {
           setState(

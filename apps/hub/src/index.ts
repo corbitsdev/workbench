@@ -275,6 +275,7 @@ import {
 import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
 import {
   createDrizzlePendingSeedStore,
+  createBenchProvisioner,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
 import {
@@ -319,6 +320,7 @@ import {
 } from "./credential-expiry-sweep";
 
 import { betterAuth } from "better-auth";
+import { createBenchSessionMinter } from "./bench-session";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
@@ -3239,13 +3241,34 @@ export async function createHub(config: HubConfig) {
   // session it serves belongs to no tenant yet. The route is
   // `@workbench/onboarding`'s; what it decides is documented in that
   // package's provision.ts.
+  // Connecting a provider deploys nothing (CL-6457): the onboarding
+  // routes persist the credential and hand the workflow deploys to this
+  // drain, which converges every bench with a pending row — including
+  // one a previous process died halfway through, since the row itself is
+  // the durable work item.
+  const pendingSeedStore = createDrizzlePendingSeedStore(db, credentialCipher);
+  const benchProvisioner = createBenchProvisioner({
+    api: selfApi,
+    hubUrl: config.baseUrl,
+    store: pendingSeedStore,
+    pushWorkflow: createGitWorkflowPusher(),
+    sessionFor: createBenchSessionMinter({
+      auth,
+      log: (line) => log.warn`${line}`,
+    }),
+    log: (line) => log.info`${line}`,
+    logError: (line) => log.error`${line}`,
+  });
+  benchProvisioner.start();
+
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
     credentialCipher,
-    pendingSeedStore: createDrizzlePendingSeedStore(db, credentialCipher),
+    pendingSeedStore,
+    benchProvisioner,
     accessPolicy: {
       store: accessPolicyStore,
       envSignupMode: config.signupMode,
@@ -3479,6 +3502,7 @@ export async function createHub(config: HubConfig) {
       stuckLegSweep.stop();
       routineScheduler.stop();
       credentialExpirySweep.stop();
+      benchProvisioner.stop();
       await insightsUsage.close();
       await insightsLatency.close();
       await preferences.close();

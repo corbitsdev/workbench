@@ -16,14 +16,21 @@
 // operator-configured one land the same bench.
 //
 // Two halves, on purpose. `testAndPersistCredential` — the fast half —
-// plants the credential and its catalog; it is the only half an OAuth
-// callback route runs before redirecting, because nothing in it ever
-// deploys a workflow. `ensureSeeded` — the slow half — is the
-// workflow-deploy step that used to run inline in the same request:
-// minutes of deploy calls a browser had no business waiting on
-// mid-redirect. A pasted-key submission (`/complete`, a plain fetch, not
-// a redirect the browser can double-fire) still runs both halves
-// synchronously through `completeCredentialSetup` below, unchanged.
+// plants the credential and its catalog; nothing in it ever deploys a
+// workflow, so it is all any connect route runs before answering.
+// `ensureSeeded` — the slow half — is the workflow-deploy step, minutes
+// of deploy calls no browser has any business waiting on.
+//
+// CL-6457 finished that split: NO HTTP route runs the slow half any
+// more. Connecting a provider persists the credential, seeds its
+// catalog, and returns in seconds; the deploys belong to the background
+// drain in `./bench-provisioning.ts`, which is also what makes them
+// survive a hub restart. `completeCredentialSetup` at the bottom of this
+// file still composes both halves back-to-back, but it is an
+// eval-harness convenience — a bench that must be fully deployed before
+// a scenario runs — and never the connect path. A route that calls it
+// re-creates the 2+ minute "Connecting…" freeze this split exists to
+// prevent.
 //
 // `ensureSeeded` runs with `confirmDeployments: false`: there is nothing
 // to confirm by triggering a real, billed inference call against an
@@ -512,11 +519,12 @@ export async function ensureSeeded(
 }
 
 /**
- * The synchronous, single-request path a pasted-key submission
- * (`POST /complete`) still takes: fast half then slow half, back to
- * back. Unlike an OAuth callback's redirect, a `/complete` fetch is a
- * single explicit submit the browser does not double-fire, so there is
- * no double-request hazard to split around here.
+ * Both halves back to back, blocking until the bench is genuinely
+ * deployed. For harnesses that need a fully provisioned bench before
+ * they can begin — `@workbench/evals`' real-target is the only caller —
+ * never for a route serving a person. Connect returns in seconds
+ * precisely because it does NOT do this (CL-6457); see the module
+ * comment above.
  */
 export async function completeCredentialSetup(
   args: CompleteCredentialArgs,

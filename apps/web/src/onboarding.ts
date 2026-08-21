@@ -385,16 +385,22 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] = [
   ...SECONDARY_CREDENTIAL_PROVIDERS,
 ];
 
-const CredentialSeeded = type({
-  kind: "'seeded'",
+/** What every provisioning-aware onboarding route answers with
+ * (CL-6457). `ready` means the bench's agents are all live;
+ * `provisioning` means connecting succeeded and the agents are still
+ * coming online in the background — both are success, and the wizard
+ * moves the person forward either way. */
+const CredentialConnected = type({
+  kind: "'ready' | 'provisioning'",
   "tenantId?": "string",
   tenantSlug: "string",
-  workflows: "string[]",
+  deployed: "string[]",
+  pending: "string[]",
 });
 
 export type CredentialOutcome =
   | {
-      readonly kind: "seeded";
+      readonly kind: "connected";
       /** Absent only for a response older than this field existing --
        * every current `/complete` response carries it. The wizard itself
        * no longer branches on it (CL-6104 dropped the optional "Connect
@@ -402,7 +408,10 @@ export type CredentialOutcome =
        * server response carries it regardless. */
       readonly tenantId?: string;
       readonly tenantSlug: string;
-      readonly workflows: string[];
+      /** Whether this account's agents still have deploying left to do.
+       * The wizard does not wait on it — it decides whether the next
+       * screen shows the warm "getting your agents ready" state. */
+      readonly agentsPending: boolean;
     }
   | {
       readonly kind: "rejected";
@@ -484,21 +493,22 @@ export async function submitCredential(
         ? { kind: "error", message }
         : { kind: "error", message, refId };
     }
-    const parsed = CredentialSeeded(body);
+    const parsed = CredentialConnected(body);
     if (parsed instanceof type.errors) {
       return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
+    const agentsPending = parsed.pending.length > 0;
     return parsed.tenantId === undefined
       ? {
-          kind: "seeded",
+          kind: "connected",
           tenantSlug: parsed.tenantSlug,
-          workflows: parsed.workflows,
+          agentsPending,
         }
       : {
-          kind: "seeded",
+          kind: "connected",
           tenantId: parsed.tenantId,
           tenantSlug: parsed.tenantSlug,
-          workflows: parsed.workflows,
+          agentsPending,
         };
   } catch {
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
@@ -506,19 +516,21 @@ export async function submitCredential(
 }
 
 const CompleteSetupResult = type({
-  kind: "'seeded' | 'unseeded'",
+  kind: "'ready' | 'provisioning' | 'unseeded'",
   "tenantId?": "string",
   "tenantSlug?": "string",
-  "workflows?": "string[]",
+  "deployed?": "string[]",
+  "pending?": "string[]",
 });
 
 export type CompleteSetupOutcome =
   | {
-      readonly kind: "seeded";
+      readonly kind: "connected";
       /** See `CredentialOutcome`'s own note on this field. */
       readonly tenantId?: string;
       readonly tenantSlug: string;
-      readonly workflows: string[];
+      /** See `CredentialOutcome.agentsPending`. */
+      readonly agentsPending: boolean;
     }
   | { readonly kind: "unseeded" }
   | {
@@ -554,22 +566,64 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
       return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     if (parsed.kind === "unseeded") return { kind: "unseeded" };
-    if (parsed.tenantSlug === undefined || parsed.workflows === undefined) {
+    if (parsed.tenantSlug === undefined || parsed.pending === undefined) {
       return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
+    const agentsPending = parsed.pending.length > 0;
     return parsed.tenantId === undefined
       ? {
-          kind: "seeded",
+          kind: "connected",
           tenantSlug: parsed.tenantSlug,
-          workflows: parsed.workflows,
+          agentsPending,
         }
       : {
-          kind: "seeded",
+          kind: "connected",
           tenantId: parsed.tenantId,
           tenantSlug: parsed.tenantSlug,
-          workflows: parsed.workflows,
+          agentsPending,
         };
   } catch {
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
+  }
+}
+
+const ProvisioningStatus = type({
+  kind: "'ready' | 'provisioning'",
+  deployed: "string[]",
+  pending: "string[]",
+});
+
+export type ProvisioningProgress = {
+  readonly ready: boolean;
+  /** How many of this bench's agents are live, and how many there are in
+   * total — the numbers a waiting surface shows so the wait reads as
+   * progress rather than a frozen label. */
+  readonly live: number;
+  readonly total: number;
+};
+
+/**
+ * Where this account's agents stand right now. Cheap and read-only, so a
+ * surface that has to wait may poll it on a short interval. An
+ * unreachable or unparseable answer reports "not ready yet" rather than
+ * throwing: a hiccup in a progress check must never turn into an error
+ * screen over work that is, in fact, still progressing fine.
+ */
+export async function fetchProvisioningProgress(): Promise<ProvisioningProgress> {
+  try {
+    const response = await fetch("/api/onboarding/provisioning-status");
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) return { ready: false, live: 0, total: 0 };
+    const parsed = ProvisioningStatus(body);
+    if (parsed instanceof type.errors) {
+      return { ready: false, live: 0, total: 0 };
+    }
+    return {
+      ready: parsed.kind === "ready",
+      live: parsed.deployed.length,
+      total: parsed.deployed.length + parsed.pending.length,
+    };
+  } catch {
+    return { ready: false, live: 0, total: 0 };
   }
 }
