@@ -8,17 +8,35 @@
  * `POST /` is the write side `pain-point-collateral`'s and
  * `collateral-generation`'s finalize tools call once approved. `GET
  * /recent` is the read side `@corbits/artifact-tools`' `artifact_list_recent`
- * calls. Both scope every read/write to the authenticated run's own
- * tenant + principal — a run can never see or write another tenant's
- * artifacts, and the child process itself never holds a database handle.
+ * calls. `GET /:id` (CL-6499) lets a run read back one artifact's content —
+ * the render step of a research/due-diligence workflow reading the Markdown
+ * brief it just saved with `POST /`, for instance — and `POST /binary`
+ * (CL-6499) is the write side that same render step needs to persist its
+ * rendered PDF: the tenant Library's own `POST /upload` accepts arbitrary
+ * bytes but is authenticated by browser tenant session, not a workflow
+ * run's sidecar token, so this route gives the workflow surface an
+ * equivalent binary path over the same `ContentStore` (`@corbits/artifacts`'
+ * `InlineContentStore` in production). Every route here scopes every
+ * read/write to the authenticated run's own tenant + principal — a run can
+ * never see or write another tenant's artifacts, and the child process
+ * itself never holds a database handle.
  */
 import { type } from "arktype";
 import {
+  ARTIFACT_UPLOAD_POLICY,
   anonymousIdentity,
   createArtifact,
+  createFileArtifact,
+  getArtifact,
   listArtifacts,
+  MAX_UPLOAD_BYTES,
+  serializeArtifact,
   serializeArtifactListItem,
+  SKILL_DRAFT_KIND,
+  UnsupportedUploadTypeError,
   type ArtifactDb,
+  type ContentStore,
+  type SerializedArtifact,
   type SerializedArtifactListItem,
 } from "@corbits/artifacts";
 import { Hono } from "hono";
@@ -42,6 +60,15 @@ const MAX_ARTIFACT_CONTENT_CHARS = 64_000;
 // catching a runaway loop before it floods Library storage.
 const MAX_CREATES_PER_RUN_PER_MINUTE = 30;
 const RATE_WINDOW_MS = 60_000;
+
+// Same per-file ceiling the tenant Library's own `POST /upload` enforces
+// (`MAX_UPLOAD_BYTES`) — one number for "how big a file artifact may be"
+// rather than a second cap that could drift from it. A rendered
+// due-diligence brief is a handful of pages, well under it, while an
+// agent loop that tried to write something huge in one call still hits
+// a hard wall before this same route's rate limiter (below) even sees a
+// repeated attempt.
+export const MAX_WORKFLOW_BINARY_BYTES = MAX_UPLOAD_BYTES;
 
 /**
  * In-process sliding-window rate limiter, closed over per
@@ -89,6 +116,12 @@ export type CreatedWorkflowArtifact = {
   readonly version: number;
 };
 
+export type CreateWorkflowBinaryArtifactInput = {
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly bytes: Uint8Array;
+};
+
 /** Minimal port the routes need — production wraps the artifacts engine db. */
 export type WorkflowArtifactRoutesStore = {
   create(
@@ -99,12 +132,32 @@ export type WorkflowArtifactRoutesStore = {
     scope: ResolvedWorkflowRunScope,
     limit: number,
   ): Promise<readonly SerializedArtifactListItem[]>;
+  /**
+   * Fetch one artifact's full content back. Scoped exactly like
+   * `@corbits/artifacts-hub`'s tenant-session `ArtifactRoutesStore.get`:
+   * fetch by id, then treat any id that does not belong to this run's own
+   * tenant as not found — never a distinguishable "forbidden".
+   */
+  get(
+    scope: ResolvedWorkflowRunScope,
+    artifactId: string,
+  ): Promise<SerializedArtifact | null>;
+  createBinary(
+    scope: ResolvedWorkflowRunScope,
+    input: CreateWorkflowBinaryArtifactInput,
+  ): Promise<CreatedWorkflowArtifact>;
 };
 
 const CreateWorkflowArtifactBody = type({
   title: "string > 0",
   kind: "string > 0",
   content: "string > 0",
+});
+
+const CreateWorkflowBinaryArtifactBody = type({
+  filename: "string > 0",
+  mimeType: "string > 0",
+  contentBase64: "string > 0",
 });
 
 function parseLimit(raw: string | undefined): number {
@@ -114,9 +167,15 @@ function parseLimit(raw: string | undefined): number {
   return Math.min(n, MAX_RECENT_LIMIT);
 }
 
-/** Production store over an artifacts engine db handle. */
+/**
+ * Production store over an artifacts engine db handle. `contentStore` is
+ * the same byte sink the tenant Library's `createArtifactDbStore` wraps
+ * (`InlineContentStore` in production) — reused rather than a second
+ * storage mechanism for the workflow surface's binary path.
+ */
 export function createWorkflowArtifactDbStore(
   db: ArtifactDb,
+  contentStore: ContentStore,
 ): WorkflowArtifactRoutesStore {
   return {
     async create(scope, input) {
@@ -145,6 +204,43 @@ export function createWorkflowArtifactDbStore(
         },
       );
       return result.rows.map(serializeArtifactListItem);
+    },
+    async get(scope, artifactId) {
+      const row = await getArtifact(db, artifactId);
+      // Fetch-then-check, exactly mirroring `createArtifactDbStore`'s own
+      // `get` in `routes.ts`: an id from another tenant reads back
+      // identically to an id that never existed, never a distinguishable
+      // 403. Additionally excludes `skill-draft` rows — internal
+      // skill-authoring scratch that every artifact surface treats as not
+      // found (see `SKILL_DRAFT_KIND`'s doc comment upstream) — a check
+      // `routes.ts`'s browser-session `get` is missing today.
+      if (
+        row === null ||
+        row.tenantId !== scope.tenantId ||
+        row.kind === SKILL_DRAFT_KIND
+      ) {
+        return null;
+      }
+      return serializeArtifact(row);
+    },
+    async createBinary(scope, input) {
+      const artifactScope = {
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+      };
+      const row = await db.transaction((tx) =>
+        createFileArtifact(tx, contentStore, {
+          scope: artifactScope,
+          ownerPrincipalId: null,
+          filename: input.filename,
+          mimeType: input.mimeType,
+          bytes: input.bytes,
+          policy: ARTIFACT_UPLOAD_POLICY,
+          origin: "workflow",
+          generatedBy: scope.runId,
+        }),
+      );
+      return { id: row.id, version: row.version };
     },
   };
 }
@@ -243,6 +339,87 @@ export function createWorkflowArtifactRoutes(
     return c.json({ data });
   });
 
+  app.post("/binary", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(
+        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        400,
+      );
+    }
+    const parsed = CreateWorkflowBinaryArtifactBody(body);
+    if (parsed instanceof type.errors) {
+      return c.json(
+        { error: { code: "bad_request", message: parsed.summary } },
+        400,
+      );
+    }
+
+    const bytes = Buffer.from(parsed.contentBase64, "base64");
+    if (bytes.byteLength > MAX_WORKFLOW_BINARY_BYTES) {
+      return c.json(
+        {
+          error: {
+            code: "content_too_large",
+            message:
+              `content is ${bytes.byteLength} bytes, over the ` +
+              `${MAX_WORKFLOW_BINARY_BYTES}-byte limit — shorten it or ` +
+              "split it into multiple artifacts and try again.",
+          },
+        },
+        413,
+      );
+    }
+
+    const scope = c.get("workflowRunScope");
+    if (!createRateLimiter.allow(scope.runId)) {
+      return c.json(
+        {
+          error: {
+            code: "rate_limited",
+            message:
+              `too many artifact writes for this run in the last minute ` +
+              `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
+              "moment before creating more.",
+          },
+        },
+        429,
+      );
+    }
+
+    try {
+      const created = await deps.store.createBinary(scope, {
+        filename: parsed.filename,
+        mimeType: parsed.mimeType,
+        bytes: new Uint8Array(bytes),
+      });
+      return c.json({ data: created }, 201);
+    } catch (err) {
+      if (err instanceof UnsupportedUploadTypeError) {
+        return c.json(
+          { error: { code: "unsupported_media_type", message: err.message } },
+          415,
+        );
+      }
+      throw err;
+    }
+  });
+
+  app.get("/:id", async (c) => {
+    const scope = c.get("workflowRunScope");
+    const artifactId = c.req.param("id");
+    const row = await deps.store.get(scope, artifactId);
+    if (row === null) {
+      return c.json(
+        { error: { code: "not_found", message: "Artifact not found" } },
+        404,
+      );
+    }
+    return c.json({ data: row });
+  });
+
   return app;
 }
 
@@ -266,5 +443,7 @@ export function createUnavailableWorkflowArtifactRoutes(): Hono<WorkflowArtifact
     );
   app.post("/", unavailable);
   app.get("/recent", unavailable);
+  app.post("/binary", unavailable);
+  app.get("/:id", unavailable);
   return app;
 }

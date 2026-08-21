@@ -3551,7 +3551,10 @@ export async function createHub(config: HubConfig) {
       "/api/workflow-artifacts",
       createWorkflowArtifactRoutes({
         authenticator: createWorkflowRunAuthenticator({ db }),
-        store: createWorkflowArtifactDbStore(artifactsHandle.db),
+        store: createWorkflowArtifactDbStore(
+          artifactsHandle.db,
+          artifactsHandle.contentStore,
+        ),
       }),
     );
   } else {
