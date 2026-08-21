@@ -135,6 +135,25 @@ test("an unbound credential is reported as not connected, not as a crash", async
   expect(String(result.content)).toContain("not connected");
 });
 
+test("an unbound credential names GitHub structurally, for the chat's connect prompt", async () => {
+  const result = await bundle(false).run(
+    call(GITHUB_PULL_REQUEST_DIFF_TOOL, { pullRequestUrl: PULL_URL }),
+    new AbortController().signal,
+  );
+  expect(result.detail).toEqual({
+    kind: "missing-credential",
+    connectorId: "github",
+  });
+});
+
+test("a resolved credential carries no missing-credential detail", async () => {
+  const result = await bundle(true).run(
+    call(GITHUB_PULL_REQUEST_DIFF_TOOL, { pullRequestUrl: PULL_URL }),
+    new AbortController().signal,
+  );
+  expect(result.detail).toBeUndefined();
+});
+
 test("a URL that is not a pull request comes back as a tool error", async () => {
   const result = await bundle(true).run(
     call(GITHUB_PULL_REQUEST_DIFF_TOOL, {

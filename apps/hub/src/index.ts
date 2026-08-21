@@ -238,6 +238,7 @@ import {
   type WsHandle,
 } from "@intx/hub-sessions";
 import { createLaunchCaches } from "./launch-caches";
+import { hubErrorHandler } from "./hub-error-handler";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
@@ -328,6 +329,7 @@ import {
 
 import { betterAuth } from "better-auth";
 import { createBenchSessionMinter } from "./bench-session";
+import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
@@ -373,6 +375,7 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
+const SIGN_IN_EMAIL_PATH = "/sign-in/email";
 // Chat residents carry a real hub-driven idle-reap again (reversing
 // CL-5477's removal): the sidecar's own park/wake scheme it was meant to
 // replace has itself been retired in favor of a simpler reap-and-relaunch
@@ -554,6 +557,25 @@ export async function createHub(config: HubConfig) {
     database: drizzleAdapter(db, { provider: "pg" }),
     emailAndPassword: { enabled: true },
     socialProviders: config.socialProviders,
+    // Client-IP resolution for the sign-up rate limit below. Railway's docs
+    // (docs.railway.com/networking/public-networking/specs-and-limits) list
+    // `X-Real-IP` as the header its edge sets for the client's address —
+    // that's the only claim about it this codebase can actually stand
+    // behind. It is deliberately NOT relied on for sign-in: Railway's
+    // private networking lets any same-project service (sidecars included)
+    // reach this hub directly, bypassing the edge, and with no
+    // `trustedProxies` configured (Railway publishes no stable edge CIDR
+    // list to populate one with) a single-value header is trusted verbatim
+    // regardless of who set it. That's an acceptable, low-stakes gap for
+    // sign-up's coarse throttling — a closed-by-default, operator-gated
+    // path — but not for brute-force resistance on sign-in, which is why
+    // sign-in has its own account-keyed limiter instead (see
+    // `sign-in-rate-limit.ts`).
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["x-real-ip"],
+      },
+    },
     rateLimit: {
       // Explicit and always on: better-auth's own default only enables
       // this in production (`enabled ?? isProduction`), which would
@@ -565,6 +587,13 @@ export async function createHub(config: HubConfig) {
           window: config.signupRateLimit.windowSeconds,
           max: config.signupRateLimit.max,
         },
+        // `false` fully disables better-auth's own built-in special rule
+        // for /sign-in* (3 attempts / 10 seconds, keyed on the client IP
+        // above) rather than leaving it running in parallel as a second,
+        // weaker mechanism: that IP key is exactly what CL-6494's
+        // private-network bypass defeats, so enforcement for this path
+        // lives entirely in `signInAttemptLimiter` below instead.
+        [SIGN_IN_EMAIL_PATH]: false,
       },
     },
     // No mailer is wired up anywhere in this stack, so better-auth can
@@ -587,6 +616,13 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
+  // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
+  // for why this replaces better-auth's own IP-keyed sign-in enforcement
+  // entirely rather than composing with it.
+  const signInAttemptLimiter = createSignInAttemptLimiter(
+    config.signInRateLimit.windowSeconds,
+    config.signInRateLimit.max,
+  );
   const { signingKey, agentRepoStore, assetService } =
     await createBootAssetWiring({ db, dataDir: config.hubDataDir });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
@@ -978,6 +1014,37 @@ export async function createHub(config: HubConfig) {
           }
         }
       }
+      // Account-keyed sign-in brute-force protection (CL-6494) — see
+      // `sign-in-rate-limit.ts` for why this fully replaces better-auth's
+      // own IP-keyed enforcement for this path instead of running beside
+      // it.
+      if (c.req.method === "POST" && c.req.path.endsWith(SIGN_IN_EMAIL_PATH)) {
+        let email = "";
+        try {
+          const body: unknown = await c.req.raw.clone().json();
+          if (
+            body !== null &&
+            typeof body === "object" &&
+            "email" in body &&
+            typeof (body as { email: unknown }).email === "string"
+          ) {
+            email = (body as { email: string }).email;
+          }
+        } catch {
+          email = "";
+        }
+        const decision = signInAttemptLimiter.consume(email);
+        if (!decision.allowed) {
+          return c.json(
+            {
+              error: "rate_limited",
+              message: `Too many sign-in attempts. Try again in ${decision.retryAfterSeconds} second${decision.retryAfterSeconds === 1 ? "" : "s"}.`,
+            },
+            429,
+            { "X-Retry-After": decision.retryAfterSeconds.toString() },
+          );
+        }
+      }
       return auth.handler(c.req.raw);
     },
     db,
@@ -1002,6 +1069,11 @@ export async function createHub(config: HubConfig) {
       };
     }),
   });
+
+  // Without this, any exception escaping a route (extension or platform
+  // alike) falls through to Hono's built-in handler: a bare 500 with
+  // nothing logged. See `hubErrorHandler`'s own doc comment.
+  app.onError(hubErrorHandler(getLogger(["hub", "error"])));
 
   // Extension routes mount under the tenant prefix, inside the
   // platform's native tenant middleware, so every extension handler
@@ -3479,7 +3551,10 @@ export async function createHub(config: HubConfig) {
       "/api/workflow-artifacts",
       createWorkflowArtifactRoutes({
         authenticator: createWorkflowRunAuthenticator({ db }),
-        store: createWorkflowArtifactDbStore(artifactsHandle.db),
+        store: createWorkflowArtifactDbStore(
+          artifactsHandle.db,
+          artifactsHandle.contentStore,
+        ),
       }),
     );
   } else {

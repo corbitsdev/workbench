@@ -76,6 +76,12 @@ const HubEnv = type({
   "SIGNUP_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum sign-ups a single IP may make per window, e.g. 5",
   ),
+  "SIGNIN_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
+    "the per-IP sign-in rate-limit window, in seconds, e.g. 60; overrides better-auth's built-in 10-second/3-attempt default, which is too tight for a person retyping a password",
+  ),
+  "SIGNIN_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
+    "the maximum sign-in attempts a single IP may make per window, e.g. 10",
+  ),
   "WORKBENCH_SIGNUP?": type("'open' | 'closed'").describe(
     "open = self-serve email signup allowed; closed (default) = owner adds users or copy-link invite only",
   ),
@@ -194,6 +200,20 @@ const HubEnv = type({
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
+// better-auth's own built-in special rule for /sign-in* is 3 attempts per
+// 10 seconds, keyed per client IP -- too tight for a bucket that can end up
+// shared (CL-6494): when the IP can't be resolved, or is forged, every
+// signed-out visitor, or an attacker replaying the same forged header, can
+// starve it. index.ts now disables that built-in rule for sign-in entirely
+// (see sign-in-rate-limit.ts) and uses these knobs to configure its
+// account-keyed replacement instead, applied the same in every environment
+// rather than branched on NODE_ENV (this file already rejects inferring
+// auth behavior from NODE_ENV — see `rateLimit.enabled` below). This gives
+// real users room to mistype a password, and a lone local developer room
+// to keep working even while no IP can be resolved, without loosening
+// brute-force resistance.
+const DEFAULT_SIGNIN_RATE_LIMIT_WINDOW_SECONDS = 60;
+const DEFAULT_SIGNIN_RATE_LIMIT_MAX = 10;
 
 /**
  * Production default for `WORKBENCH_CHAT_IDLE_REAP_MS`: 30 minutes,
@@ -290,6 +310,10 @@ export type HubConfig = {
   readonly hubStaticDir: string;
   readonly operatorTenantId?: string;
   readonly signupRateLimit: {
+    readonly windowSeconds: number;
+    readonly max: number;
+  };
+  readonly signInRateLimit: {
     readonly windowSeconds: number;
     readonly max: number;
   };
@@ -598,6 +622,14 @@ export function readHubConfig(
       max: parsed.SIGNUP_RATE_LIMIT_MAX
         ? Number(parsed.SIGNUP_RATE_LIMIT_MAX)
         : DEFAULT_SIGNUP_RATE_LIMIT_MAX,
+    },
+    signInRateLimit: {
+      windowSeconds: parsed.SIGNIN_RATE_LIMIT_WINDOW_SECONDS
+        ? Number(parsed.SIGNIN_RATE_LIMIT_WINDOW_SECONDS)
+        : DEFAULT_SIGNIN_RATE_LIMIT_WINDOW_SECONDS,
+      max: parsed.SIGNIN_RATE_LIMIT_MAX
+        ? Number(parsed.SIGNIN_RATE_LIMIT_MAX)
+        : DEFAULT_SIGNIN_RATE_LIMIT_MAX,
     },
     envProviderKeys: envProviderKeysFrom(parsed),
     envProviderBaseUrls: envProviderBaseUrlsFrom(parsed),

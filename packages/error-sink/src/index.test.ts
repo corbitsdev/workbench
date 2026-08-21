@@ -85,6 +85,27 @@ describe("reportError context capture", () => {
     const loggedError = records[0]?.message;
     expect(String(loggedError)).not.toContain("abc.def.ghi");
   });
+
+  test("preserves the error's cause chain, redacted", () => {
+    const inner = new Error("rejected Bearer abc.def.ghi");
+    const outer = new Error("wrapped failure", { cause: inner });
+    reportError(outer, { operation: "op" });
+
+    const properties = records[0]?.properties as Record<string, unknown>;
+    const loggedError = properties.error as Error;
+    expect(loggedError.cause).toBeInstanceOf(Error);
+    const cause = loggedError.cause as Error;
+    expect(cause.message).not.toContain("abc.def.ghi");
+    expect(cause.message).toContain("[redacted]");
+  });
+
+  test("caps a cyclic cause chain instead of recursing forever", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    a.cause = b;
+
+    expect(() => reportError(b, { operation: "op" })).not.toThrow();
+  });
 });
 
 describe("reportError never throws", () => {

@@ -83,14 +83,65 @@ describe("workbench command dispatch", () => {
     };
     expect(body.command).toEqual({
       type: "message",
-      text: "Unknown command: /nope",
+      text:
+        "Unknown command: /nope. No agent commands are available in this " +
+        "workbench yet.",
     });
 
     // Only the result reaches the timeline; the raw "/nope some args"
     // never does.
     expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "Unknown command: /nope",
+      "Unknown command: /nope. No agent commands are available in this " +
+        "workbench yet.",
     ]);
+  });
+
+  test("a path-shaped message starting with '/' is posted normally, never swallowed as a command", async () => {
+    const registry = createCommandRegistry();
+    const deps = buildDeps({ commands: registry });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const response = await sendText(app, workbench.id, "/usr/local/bin");
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body["command"]).toBeUndefined();
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "/usr/local/bin",
+    ]);
+  });
+
+  test("/<agent> invokes that agent directly with the rest of the line as its message — CL-6499", async () => {
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_jimmy", name: "jimmy", description: "Jimmy" }],
+    });
+    const deps = buildWorkflowCommandDeps(platform);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const response = await sendText(
+      app,
+      workbench.id,
+      "/jimmy throw me a gif for shipping code",
+    );
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      command: { type: string; handle: string };
+    };
+    expect(body.command.type).toBe("workflow-started");
+    expect(body.command.handle).toBe("jimmy");
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    const delivered = platform.sentMail.find(
+      (mail) => mail.workbenchId === "ins_invited1",
+    );
+    expect(delivered?.content.content).toContain(
+      "throw me a gif for shipping code",
+    );
   });
 
   test("a registered slash command runs its handler with the parsed args", async () => {

@@ -3,7 +3,12 @@
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
 :root {
-  --chat-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Deliberately not an invented curve: this aliases react-ui's own
+     `--ease-out` (DESIGN.md's "out" — straightforward entrances/exits, no
+     overshoot) so the chat surface never carries a third easing curve of
+     its own. Falls back to the equivalent cubic-bezier only for the rare
+     test/story context that doesn't load react-ui's theme stylesheet. */
+  --chat-ease: var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
 }
 
 .chat-workspace {
@@ -770,7 +775,8 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .chat-workbench-loading-tip {
-    animation: chat-workbench-loading-tip-fade 0.4s ease;
+    /* DESIGN.md's motion ceiling is 300ms — this was 400ms. */
+    animation: chat-workbench-loading-tip-fade 0.28s ease;
   }
 }
 
@@ -2213,7 +2219,10 @@
    thing moves"). Shrink-on-delete rides the same transition. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-composer-input {
-    transition: height 120ms var(--chat-ease);
+    /* Grows/shrinks in place, not an entrance — DESIGN.md calls for
+       `--ease-in-out` here specifically, not the entrance curve every
+       other `--chat-ease` transition in this file uses. */
+    transition: height 120ms var(--ease-in-out, var(--chat-ease));
   }
 }
 
