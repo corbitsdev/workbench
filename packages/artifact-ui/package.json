@@ -8,7 +8,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./kind-filter": "./src/kind-filter.ts"
+    "./kind-filter": "./src/kind-filter.ts",
+    "./renderer-kind": "./src/renderer-kind.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

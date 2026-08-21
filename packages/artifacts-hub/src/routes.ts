@@ -20,6 +20,7 @@ import {
   serializeArtifactListItem,
   UnsupportedUploadTypeError,
   type ArtifactDb,
+  type ArtifactRow,
   type ContentStore,
   type SerializedArtifact,
   type SerializedArtifactListItem,
@@ -29,6 +30,7 @@ import {
   artifactMatchesLibraryKindSegment,
   type LibraryKindSegment,
 } from "@corbits/artifact-ui/kind-filter";
+import { isTextDecodableMediaType } from "@corbits/artifact-ui/renderer-kind";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { Hono } from "hono";
 
@@ -89,6 +91,36 @@ export type ArtifactRoutesStore = {
 /** Bare MIME type, stripped of any `; charset=...` parameter. */
 function baseMimeType(mimeType: string): string {
   return mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+/**
+ * `createFileArtifact` (the ONE path a browser upload goes through) always
+ * leaves the artifact row's own `content` column empty — the bytes it just
+ * accepted live out-of-band, in `ContentStore`, referenced by
+ * `source.upload.id`. That is correct for the store, but a naive detail read
+ * of `content` alone reads back as "no content" even when the upload was a
+ * plain-text file (Markdown, CSV, JSON, ...) whose bytes are intact.
+ *
+ * This resolves the out-of-band blob and inlines it into `content` whenever
+ * it decodes as text — the same thing `/preview` already does for HTML,
+ * generalized to every text-decodable MIME type. A non-text blob (an image,
+ * a real PDF, a legacy `.docx`) is left as `""`: its bytes are still safe in
+ * the content store, this route only ever projects them into `content` when
+ * doing so is an honest text rendering.
+ */
+export async function resolvePreviewableContent(
+  db: ArtifactDb,
+  contentStore: ContentStore,
+  row: ArtifactRow,
+): Promise<string> {
+  if (row.content !== "") return row.content;
+  const download = await resolveDownload(db, contentStore, row, false);
+  if ("status" in download || !isTextDecodableMediaType(download.mimeType)) {
+    return row.content;
+  }
+  return typeof download.body === "string"
+    ? download.body
+    : new TextDecoder().decode(download.body);
 }
 
 export type CreateArtifactRoutesDeps = {
@@ -216,7 +248,8 @@ export function createArtifactDbStore(
     async get(tenantId, artifactId) {
       const row = await getArtifact(db, artifactId);
       if (row === null || row.tenantId !== tenantId) return null;
-      return serializeArtifact(row);
+      const content = await resolvePreviewableContent(db, contentStore, row);
+      return { ...serializeArtifact(row), content };
     },
     async upload(tenantId, principalId, files) {
       const scope = { tenantId, principalId };
