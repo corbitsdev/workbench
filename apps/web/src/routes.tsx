@@ -24,6 +24,7 @@ import {
   FlowArrow,
   FolderOpen,
   Lightning,
+  ListBullets,
   Robot,
   SlidersHorizontal,
   SquaresFour,
@@ -33,6 +34,7 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import {
   AGENTS_PATH_PREFIX,
+  EVALS_PATH_PREFIX,
   PLUGINS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
@@ -74,6 +76,9 @@ const SkillsRoute = lazy(async () => ({
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
+}));
+const EvalsRoute = lazy(async () => ({
+  default: (await import("./pages/evals-page")).EvalsRoute,
 }));
 const PluginsRoute = lazy(async () => ({
   default: (await import("./pages/plugins-page")).PluginsRoute,
@@ -215,6 +220,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/library" ||
     routePath === "/files" ||
     routePath === "/insights" ||
+    routePath === EVALS_PATH_PREFIX ||
     routePath === "/agents" ||
     routePath === "/skills" ||
     routePath === "/settings/agents" ||
@@ -369,6 +375,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
+    path: EVALS_PATH_PREFIX,
+    label: "Evals",
+    icon: <ListBullets />,
+    render: (path: string) => <EvalsRoute path={path} />,
+  },
+  {
     path: PLUGIN_DETAIL_PATH,
     label: "Plugin",
     icon: <SquaresFour />,
@@ -419,5 +431,6 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/skills",
   "/agents",
   "/insights",
+  EVALS_PATH_PREFIX,
   SETTINGS_PATH,
 ]);
