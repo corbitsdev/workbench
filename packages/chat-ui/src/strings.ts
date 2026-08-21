@@ -275,6 +275,9 @@ export const CHAT_STRINGS = {
   replyTimedOutNotice: "No reply arrived — the agent may be unavailable.",
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
+  noUsableModelBannerText:
+    "No model is connected yet, so a reply here won't come through.",
+  noUsableModelBannerAction: "Connect a model",
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",

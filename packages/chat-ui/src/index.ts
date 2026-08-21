@@ -1,7 +1,8 @@
 export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
-export { WorkbenchTimeline, messageDomId } from "./timeline";
+export { WorkbenchTimeline, messageDomId, findRetryText } from "./timeline";
+export { NoUsableModelBanner } from "./no-usable-model-banner";
 export type {
   CurrentUser,
   ReactionActions,

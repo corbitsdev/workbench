@@ -55,6 +55,7 @@ import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
+import { NoUsableModelBanner } from "./no-usable-model-banner";
 import type {
   CurrentUser,
   PinActions,
@@ -407,6 +408,8 @@ function ChatWorkspaceInner({
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
+  hasUsableModel,
+  onConnectModel,
 }: {
   readonly tenantId: string;
   readonly workbenchId?: string | null;
@@ -493,6 +496,18 @@ function ChatWorkspaceInner({
    * retry that can only ever hit the same 401. Omitted, that state falls
    * back to no action at all (never "Try again" for a session that's gone). */
   readonly onSignIn?: () => void;
+  /** Whether this tenant can actually run inference right now — the
+   * host's read of `hasUsableModel` (`@corbits/inference-settings`)
+   * against its resolved catalog, never mere `model_provider` row
+   * presence (CL-6568). `undefined` while that read is still in flight:
+   * the banner stays hidden rather than flashing "no model" before the
+   * real answer lands. */
+  readonly hasUsableModel?: boolean;
+  /** The pre-send banner's "Connect a model" action — the host's own
+   * navigation into Settings → AI providers. Undefined still renders the
+   * banner, just with an inert button, matching every other optional
+   * action this file wires. */
+  readonly onConnectModel?: () => void;
 }) {
   const queryClient = useQueryClient();
   const refreshWorkbenchLists = useCallback(() => {
@@ -521,6 +536,18 @@ function ChatWorkspaceInner({
   // navigated to next.
 
   const composerRef = useRef<ComposerHandle>(null);
+
+  /** Retry on a failed-turn strip: the request text was already
+   * recovered (`findRetryText`) rather than resent silently — a person
+   * may have since fixed what broke, or may not want it re-sent
+   * verbatim, so this hands it back into the composer ready to send
+   * rather than re-sending on their behalf. */
+  const handleRetryFailedTurn = useCallback(
+    (_item: TimelineMessageItem, retryText?: string) => {
+      if (retryText !== undefined) composerRef.current?.insertText(retryText);
+    },
+    [],
+  );
 
   const feed = useWorkbenchFeed({
     tenantId,
@@ -1274,6 +1301,7 @@ function ChatWorkspaceInner({
                       : {})}
                     reactionActions={reactionActions}
                     pinActions={pinActions}
+                    onRetryFailedTurn={handleRetryFailedTurn}
                     pendingActions={{
                       onRetry: retryPendingSend,
                       onDiscard: discardPendingSend,
@@ -1302,6 +1330,11 @@ function ChatWorkspaceInner({
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
+                    {hasUsableModel === false && hasAgentParticipant ? (
+                      <NoUsableModelBanner
+                        onConnectModel={() => onConnectModel?.()}
+                      />
+                    ) : null}
                     <Composer
                       ref={composerRef}
                       agents={mentionCandidatesFromParticipants(
@@ -1377,6 +1410,8 @@ export function ChatWorkspace({
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
+  hasUsableModel,
+  onConnectModel,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active workbench (e.g. from the app's URL); null = pick the first. */
@@ -1456,6 +1491,10 @@ export function ChatWorkspace({
   readonly onBackToWorkbenchList?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onSignIn?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly hasUsableModel?: boolean;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onConnectModel?: () => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1508,6 +1547,8 @@ export function ChatWorkspace({
             ? { onBackToWorkbenchList }
             : {})}
           {...(onSignIn !== undefined ? { onSignIn } : {})}
+          {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
+          {...(onConnectModel !== undefined ? { onConnectModel } : {})}
         />
       );
     case "empty":

@@ -24,3 +24,4 @@ export type {
   EffectiveInferenceRow,
   PriorityPatch,
 } from "./effective-list";
+export { hasUsableModel } from "./usable-model";
