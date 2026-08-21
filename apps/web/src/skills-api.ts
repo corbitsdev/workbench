@@ -183,6 +183,22 @@ export function createSkill(
 }
 
 /**
+ * Creates a skill from an uploaded `SKILL.md`'s raw contents. The registry
+ * parses `source` with the same `parseSkillMd` it reads a skill back with —
+ * name, description, and body come from the file, never from a client-side
+ * guess — and rejects a malformed file without creating anything.
+ */
+export function createSkillFromFile(
+  tenantId: string,
+  source: string,
+): Promise<SkillSummary> {
+  return request(base(tenantId), SkillResponse, {
+    method: "POST",
+    body: { source, scope: DEFAULT_CREATE_SCOPE },
+  }).then((page) => page.skill);
+}
+
+/**
  * Republishes a skill's description/body as a new version on its same
  * asset — scope untouched, name untouched (only the author may rename by
  * creating a differently-named skill). Mirrors `createSkill`'s shape minus
