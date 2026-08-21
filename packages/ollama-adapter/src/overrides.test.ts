@@ -65,11 +65,7 @@ describe("resolveOverride", () => {
       default: { reasoningEffort: "low" },
       perModel: { "gpt-oss:20b": { reasoningEffort: "high" } },
     });
-    expect(resolveOverride(config, "gpt-oss:20b").reasoningEffort).toBe(
-      "high",
-    );
-    expect(resolveOverride(config, "qwen3.8:27b").reasoningEffort).toBe(
-      "low",
-    );
+    expect(resolveOverride(config, "gpt-oss:20b").reasoningEffort).toBe("high");
+    expect(resolveOverride(config, "qwen3.8:27b").reasoningEffort).toBe("low");
   });
 });

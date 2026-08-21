@@ -43,10 +43,14 @@ provider's model). The shape:
 {
   // Applies to every model resolved through this source unless a
   // perModel entry below overrides a field.
-  "default": { "numCtx": 8192, "maxOutputTokens": 4096, "reasoningEffort": "medium" },
+  "default": {
+    "numCtx": 8192,
+    "maxOutputTokens": 4096,
+    "reasoningEffort": "medium",
+  },
   "perModel": {
-    "gpt-oss:20b": { "numCtx": 32768, "reasoningEffort": "high" }
-  }
+    "gpt-oss:20b": { "numCtx": 32768, "reasoningEffort": "high" },
+  },
 }
 ```
 

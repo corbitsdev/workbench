@@ -28,7 +28,11 @@ test("parses a complete environment into config", () => {
 
 test("carries a valid adapter manifest through as its parsed form", () => {
   const manifest = [
-    { provider: "ollama", specifier: "@corbits/ollama-adapter", export: "createOllamaAdapter" },
+    {
+      provider: "ollama",
+      specifier: "@corbits/ollama-adapter",
+      export: "createOllamaAdapter",
+    },
   ];
   const config = readSidecarConfig({
     ...VALID_ENV,
