@@ -110,9 +110,15 @@ describe("connect GitHub card — 2a disconnected", () => {
       onSubmitAccessToken: () => Promise.resolve({ ok: true }),
     });
 
+    // Honest PAT-first framing — there is no hosted GitHub sign-in in
+    // this card, so it never claims an app install it can't do.
     expect(el.textContent).toContain(
-      "Install the Workbench app on your GitHub account. Two clicks — you pick the repos on the next step, and nothing is read until you do.",
+      "Connect GitHub with a personal access token — three quick steps, about a minute.",
     );
+    expect(el.textContent).toContain(
+      "stored encrypted, only your agents use it, and you can remove it any time",
+    );
+    expect(el.textContent).not.toContain("Install the Workbench app");
 
     const connect = [...el.querySelectorAll("button")].find(
       (button) => button.textContent === "Connect GitHub",
@@ -125,25 +131,34 @@ describe("connect GitHub card — 2a disconnected", () => {
     expect(connected).toBe(true);
   });
 
-  test("the token link sits inside the trust sentence, verbatim, and opens the inline field", async () => {
+  test("connect opens the numbered token walkthrough with the settings link and the field", async () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
       onSubmitAccessToken: () => Promise.resolve({ ok: true }),
     });
 
-    expect(el.textContent).toContain(
-      "On a server without GitHub sign-in? Use an access token instead — a token carries whatever access it was made with, so the app install is the safer path when you have the choice.",
-    );
-
-    const tokenLink = [...el.querySelectorAll("button")].find(
-      (button) => button.textContent === "Use an access token instead",
+    const connect = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect GitHub",
     ) as HTMLButtonElement | undefined;
-    expect(tokenLink).not.toBeUndefined();
+    expect(connect).not.toBeUndefined();
 
     await act(async () => {
-      tokenLink?.click();
+      connect?.click();
     });
+
+    const steps = [...el.querySelectorAll("ol li")].map(
+      (item) => item.textContent,
+    );
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toContain(
+      "Open github.com/settings/tokens and generate a new token.",
+    );
+    expect(steps[1]).toContain("repo scope");
+    expect(steps[2]).toContain("Paste it here");
+    expect(
+      el.querySelector('a[href="https://github.com/settings/tokens"]'),
+    ).not.toBeNull();
 
     const field = el.querySelector("#connect-github-token");
     expect(field).not.toBeNull();
@@ -161,7 +176,7 @@ describe("connect GitHub card — 2a disconnected", () => {
     });
 
     const openLink = [...el.querySelectorAll("button")].find(
-      (button) => button.textContent === "Use an access token instead",
+      (button) => button.textContent === "Connect GitHub",
     ) as HTMLButtonElement;
     await act(async () => {
       openLink.click();
@@ -196,7 +211,7 @@ describe("connect GitHub card — 2a disconnected", () => {
     });
 
     const openLink = [...el.querySelectorAll("button")].find(
-      (button) => button.textContent === "Use an access token instead",
+      (button) => button.textContent === "Connect GitHub",
     ) as HTMLButtonElement;
     await act(async () => {
       openLink.click();
