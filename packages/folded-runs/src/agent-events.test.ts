@@ -128,6 +128,28 @@ describe("toolDoneResult", () => {
     expect(toolDoneResult({ type: "connector.reply" })).toBeUndefined();
     expect(toolDoneResult(undefined)).toBeUndefined();
   });
+
+  test("carries a failed tool's structured detail alongside its content", () => {
+    expect(
+      toolDoneResult({
+        type: "tool.done",
+        seq: 1,
+        data: {
+          result: {
+            callId: "call_1",
+            content: "GitHub is not connected.",
+            isError: true,
+            detail: { kind: "missing-credential", connectorId: "github" },
+          },
+        },
+      }),
+    ).toEqual({
+      callId: "call_1",
+      content: "GitHub is not connected.",
+      isError: true,
+      detail: { kind: "missing-credential", connectorId: "github" },
+    });
+  });
 });
 
 describe("messageRunEnded", () => {

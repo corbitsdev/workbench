@@ -701,6 +701,7 @@
         "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",

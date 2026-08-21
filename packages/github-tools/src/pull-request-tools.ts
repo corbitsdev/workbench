@@ -43,8 +43,28 @@ const ReviewArguments = type({
   }).array(),
 });
 
-function errorResult(callId: string, message: string): ToolResult {
-  return { callId, content: message, isError: true };
+function errorResult(
+  callId: string,
+  message: string,
+  detail?: unknown,
+): ToolResult {
+  return {
+    callId,
+    content: message,
+    isError: true,
+    ...(detail !== undefined ? { detail } : {}),
+  };
+}
+
+// The wire shape `@corbits/chat`'s orchestrator parses
+// (`@workbench/connections`' `parseMissingCredentialDetail`) to render the
+// live connect-service card. Written literally rather than imported: a
+// sandboxed tool package stays free of a dependency on the hub-side
+// connections package for one constant shape both sides already agree on
+// by convention, the same way `toolDoneResult` narrows `event.type`
+// without importing a shared literal.
+function missingCredentialDetail(connectorId: string) {
+  return { kind: "missing-credential", connectorId } as const;
 }
 
 function failureMessage(err: unknown): string {
@@ -83,7 +103,13 @@ async function runDiff(
     );
   }
   const config = await resolveConfig(env);
-  if (config === null) return errorResult(call.id, NOT_CONNECTED);
+  if (config === null) {
+    return errorResult(
+      call.id,
+      NOT_CONNECTED,
+      missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE),
+    );
+  }
   try {
     const ref = parsePullRequestUrl(args.pullRequestUrl);
     const diff = await fetchPullRequestDiff(config, ref);
@@ -105,7 +131,13 @@ async function runPostReview(
     );
   }
   const config = await resolveConfig(env);
-  if (config === null) return errorResult(call.id, NOT_CONNECTED);
+  if (config === null) {
+    return errorResult(
+      call.id,
+      NOT_CONNECTED,
+      missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE),
+    );
+  }
   try {
     const ref = parsePullRequestUrl(args.pullRequestUrl);
     const posted = await postPullRequestReview(config, ref, args.headSha, {

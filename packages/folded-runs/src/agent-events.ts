@@ -98,7 +98,9 @@ export function inferenceDoneBlocks(
  * entries to fill in a tool-trace part's outcome once its call settles. */
 export function toolDoneResult(
   event: unknown,
-): { callId: string; content: unknown; isError: boolean } | undefined {
+):
+  | { callId: string; content: unknown; isError: boolean; detail?: unknown }
+  | undefined {
   if (
     typeof event !== "object" ||
     event === null ||
@@ -112,7 +114,13 @@ export function toolDoneResult(
   if (typeof callId !== "string") return undefined;
   const content = (result as { content?: unknown }).content;
   const isError = (result as { isError?: unknown }).isError === true;
-  return { callId, content, isError };
+  // `detail` rides alongside `content` on the underlying `ToolResult`
+  // (`@intx/types/runtime`) as the side channel for structured metadata
+  // that isn't meant for the model's own eyes — a missing-credential
+  // signal (`@workbench/connections`' `parseMissingCredentialDetail`)
+  // being the one caller today.
+  const detail = (result as { detail?: unknown }).detail;
+  return { callId, content, isError, detail };
 }
 
 export type MessageRunEnded = {

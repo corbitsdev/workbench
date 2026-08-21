@@ -22,6 +22,7 @@ import {
   workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
+import { credentialDeliveryError } from "./credential-delivery-error";
 import { foldedRun } from "./schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
@@ -341,9 +342,7 @@ export async function deployAtHead(
       credentialCipher: deps.credentialCipher,
     });
     if (!delivery.ok) {
-      throw new Error(
-        `${params.launchLabel}: credential binding resolution failed: ${delivery.reason.message}`,
-      );
+      throw credentialDeliveryError(params.launchLabel, delivery.reason);
     }
     for (const descriptor of delivery.delivery?.bindings ?? []) {
       grants.push({
