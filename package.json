@@ -33,6 +33,7 @@
     "check:ui-vocabulary": "bun run scripts/checks/ui-vocabulary.ts",
     "check:react-ui-drift": "bun run scripts/checks/react-ui-drift.ts",
     "check:react-ui-pin": "bun run scripts/checks/react-ui-pin.ts",
+    "check:tool-package-pins": "bun run scripts/checks/tool-package-pins.ts",
     "build:sidecar-image": "docker build -f apps/sidecar/Dockerfile -t corbits-sidecar:dev .",
     "eval": "bun run scripts/evals-run.ts"
   },

@@ -41,6 +41,7 @@ jobs:
       - run: bun run check:ui-vocabulary
       - run: bun run check:react-ui-drift
       - run: bun run check:react-ui-pin
+      - run: bun run check:tool-package-pins
 
   walking-skeleton:
     runs-on: ubuntu-latest
