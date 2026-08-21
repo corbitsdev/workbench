@@ -449,15 +449,20 @@ async function plantGrant(
 }
 
 /**
- * Reconciles one tenant's grants to exactly `SEED_GRANTS`: every declared
- * grant present, nothing beyond it. This is the one path that plants
- * `SEED_GRANTS` — `seedTenant`'s full seed and `provisionPersonalTenantIfNeeded`'s
- * already-seeded short-circuit both call this instead of each owning
- * their own pass, so a grant added to `SEED_GRANTS` after a tenant was
- * first seeded reaches that tenant the next time either path runs, not
- * only on a brand-new signup. `plantGrant` is itself idempotent (it
- * checks for an equivalent grant before creating one), so reconciling
- * twice never duplicates a row.
+ * Plants every grant in `SEED_GRANTS` onto one tenant that doesn't already
+ * hold it. This is additive-only: a grant a tenant already holds that has
+ * since been removed from `SEED_GRANTS` is left in place, not revoked.
+ * This is the one path that plants `SEED_GRANTS` — `seedTenant`'s full seed
+ * and `provisionPersonalTenantIfNeeded`'s already-seeded short-circuit both
+ * call this instead of each owning their own pass, so a grant added to
+ * `SEED_GRANTS` after a tenant was first seeded reaches that tenant the
+ * next time either path runs, not only on a brand-new signup. `plantGrant`
+ * is itself idempotent (it checks for an equivalent grant before creating
+ * one), so reconciling twice never duplicates a row.
+ *
+ * If a grant is ever pulled from `SEED_GRANTS` for a security reason,
+ * this alone does not remove it from tenants that already hold it —
+ * that requires a separate, explicit revocation pass.
  */
 export async function reconcileSeedGrants(
   api: ApiCall,
