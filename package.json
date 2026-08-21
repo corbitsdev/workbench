@@ -20,6 +20,7 @@
     "test:e2e": "bun test scripts/e2e",
     "dev": "bun run scripts/dev.ts",
     "setup": "bun packages/cli/src/index.ts setup",
+    "setup:memory": "bun run scripts/setup-memory.ts",
     "seed": "bun packages/cli/src/index.ts seed",
     "reset": "bun packages/cli/src/index.ts reset",
     "check:deletion": "bun run scripts/checks/deletion.ts",
