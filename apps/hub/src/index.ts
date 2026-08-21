@@ -128,6 +128,11 @@ import {
   createPostgresBenchSettingsStore,
 } from "@corbits/bench";
 import {
+  applyEvalsMigrations,
+  createEvalRunRoutes,
+  createPostgresEvalRunStore,
+} from "@corbits/evals";
+import {
   applyInferenceCatalogMigrations,
   createBenchModelPolicyRoutes,
   createPostgresBenchModelPolicyStore,
@@ -1587,6 +1592,22 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/bench-settings`,
     createBenchRoutes({
       store: benchSettings.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  // Eval run history: read-only surface over the package-owned
+  // `evals.run` table, migrated at hub start like insights and
+  // bench-settings. Eval runs aren't tenant-owned (same as
+  // run-key-history), so the tenant prefix here is only the grant gate.
+  await applyEvalsMigrations(config.databaseUrl);
+  const evalRuns = createPostgresEvalRunStore(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/eval-runs`,
+    createEvalRunRoutes({
+      store: evalRuns.store,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -3507,6 +3528,7 @@ export async function createHub(config: HubConfig) {
       await insightsLatency.close();
       await preferences.close();
       await benchSettings.close();
+      await evalRuns.close();
       await closeMailbox();
       await close();
     },

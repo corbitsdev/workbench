@@ -24,6 +24,7 @@
     "@corbits/credential-providers": "workspace:*",
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
+    "@corbits/evals": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
