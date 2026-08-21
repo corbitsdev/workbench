@@ -925,7 +925,9 @@ describe("message fan-out", () => {
 
 describe("POST /workbenches/:id/invite", () => {
   test("launches the definition, appends the participant, and posts a join event", async () => {
-    const deps = buildDeps();
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
@@ -960,8 +962,11 @@ describe("POST /workbenches/:id/invite", () => {
       TENANT.id,
       workbench.id,
     );
+    // The handle is derived from the definition's own name ("Echo" ->
+    // "echo") — never the run's own address local part, which is what
+    // it fell back to before CL-6471's fix.
     expect(settingsRow?.settings["chat/participants"]).toEqual([
-      { address: "ins_invited1@acme.example", handle: "ins_invited1" },
+      { address: "ins_invited1@acme.example", handle: "echo" },
     ]);
 
     // Joining is a fact about the room, so it is posted onto the room's
@@ -1025,7 +1030,9 @@ describe("POST /workbenches/:id/invite", () => {
   });
 
   test("appends onto an existing participant list rather than replacing it", async () => {
-    const deps = buildDeps();
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
@@ -1044,7 +1051,7 @@ describe("POST /workbenches/:id/invite", () => {
     );
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "existing@acme.example", handle: "existing" },
-      { address: "ins_invited1@acme.example", handle: "ins_invited1" },
+      { address: "ins_invited1@acme.example", handle: "echo" },
     ]);
   });
 
@@ -1102,6 +1109,70 @@ describe("POST /workbenches/:id/invite", () => {
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "myra" },
     ]);
+  });
+
+  // CL-6471: a freshly created/redeployed definition can miss the
+  // `invitable` snapshot the caller pre-fetched (the exact "fresh stack,
+  // instantiate a template" race the owner hit) — this must resolve the
+  // real name live rather than degrading to the run's own address.
+  test("a definition missing from the invitable snapshot still resolves its real name via a live lookup (CL-6471)", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [], // the stale/pre-fetched snapshot misses it
+        resolveDefinitionNameSource: async (definitionId) =>
+          definitionId === "wfd_reviewer"
+            ? {
+                name: "architecture-reviewer",
+                description: "Architecture reviewer",
+              }
+            : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const response = await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_reviewer" }),
+    });
+
+    expect(response.status).toBe(201);
+    const settingsRow = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      workbench.id,
+    );
+    // Never "ins_invited1" (the raw address local part) and never
+    // "run_..."/"ins_..." in any form — the real, humanized name.
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      { address: "ins_invited1@acme.example", handle: "architecture-reviewer" },
+    ]);
+  });
+
+  test("a definition unresolvable anywhere fails loud rather than leaking the run's own address as its name (CL-6471)", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [] }), // no live lookup will find it either
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const response = await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_ghost" }),
+    });
+
+    // Never a 201 with a participant record carrying a leaked id.
+    expect(response.status).not.toBe(201);
+    const settingsRow = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      workbench.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([]);
   });
 
   test("a malformed body is rejected with the structured error envelope", async () => {

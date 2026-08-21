@@ -1283,9 +1283,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
         const agentAddress = joined.address;
         const joinEventDelivered = joined.joinEventDelivered;
-        const agentDisplayName =
-          invitable.find((definition) => definition.id === definitionId)
-            ?.description ?? joined.handle;
+        const agentDisplayName = joined.displayName;
         const templatePromise = body.templatePromise;
         const connectGithubRequiredFor = body.connectGithubRequiredFor;
         runPostMintDelivery(async () => {

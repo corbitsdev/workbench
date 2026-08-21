@@ -243,7 +243,9 @@ describe("POST /workbenches", () => {
     expect(greeting?.workbenchId).toBe(body.id);
     expect(greeting?.runId).toBe("ins_invited1");
     expect(greeting?.sender.address).toBe("ins_invited1@acme.example");
-    expect(timelineTexts(timeline)[0]).toContain("echo");
+    // The greeting names the agent by its real display name (CL-6471) —
+    // never its lowercase mention handle.
+    expect(timelineTexts(timeline)[0]).toContain("Echo");
     expect(timelineTexts(timeline)[0]).toMatch(/\?$/);
   });
 
@@ -274,6 +276,42 @@ describe("POST /workbenches", () => {
     expect(timelineTexts(timeline)[0]).toContain(
       "Three reviewers read every pull request and post what they'd change.",
     );
+  });
+
+  // CL-6471: the owner's live repro — instantiating the code-review
+  // template on a fresh stack, the setup agent's own definition missed
+  // the pre-fetched `invitable` snapshot (a just-seeded/just-redeployed
+  // row the snapshot predates), and its greeting rendered "I'm
+  // run_737a058d…" instead of its real name. The greeting must resolve
+  // the real name through a live lookup instead, never the run's own
+  // address.
+  test("a definition missing from the invitable snapshot still greets with its real name, never its own run address (CL-6471)", async () => {
+    const deliveries: (() => Promise<void>)[] = [];
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [], // the stale/pre-fetched snapshot misses it
+        resolveDefinitionNameSource: async (definitionId) =>
+          definitionId === "wfd_echo"
+            ? { name: "echo", description: "Myra" }
+            : undefined,
+      }),
+      runPostMintDelivery: (work) => {
+        deliveries.push(work);
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { body } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      templatePromise:
+        "Three reviewers read every pull request and post what they'd change.",
+    });
+    await deliveries[0]?.();
+
+    const timeline = await timelineOf(deps, body.id);
+    expect(timelineTexts(timeline)[0]).toContain("I'm Myra");
+    expect(timelineTexts(timeline)[0]).not.toContain("ins_invited1");
   });
 
   test("creating a chat with connectGithubRequiredFor posts a connect-github block after the greeting", async () => {
@@ -331,7 +369,7 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(201);
     const timeline = await timelineOf(deps, body.id);
-    expect(timelineTexts(timeline)[0]).toContain("echo");
+    expect(timelineTexts(timeline)[0]).toContain("Echo");
   });
 
   test("creating a chat deploys nothing on the request path — the deploys ride the post-mint delivery", async () => {
@@ -1060,6 +1098,7 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
   test("removes an invited agent and releases its launched instance", async () => {
     const released: { address: string; reason: string }[] = [];
     const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
       releaseAgentInstance: async (address, reason) => {
         released.push({ address, reason });
       },
@@ -1096,7 +1135,9 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
   });
 
   test("still removes the participant when no releaseAgentInstance is wired", async () => {
-    const deps = buildDeps();
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
@@ -1220,6 +1261,7 @@ describe("GET /workbenches/:id/agents", () => {
   test("resolves the workbench's agent participant back to its definition id", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
         resolveDefinitionIdByAddress: async (address) =>
           address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
       }),
@@ -1249,6 +1291,10 @@ describe("GET /workbenches/:id/agents", () => {
     let invited = 0;
     const deps = buildDeps({
       platform: fakePlatform({
+        invitable: [
+          { id: "wfd_echo", name: "Echo" },
+          { id: "wfd_other", name: "Other" },
+        ],
         launchInvite: async () => {
           invited += 1;
           return {
