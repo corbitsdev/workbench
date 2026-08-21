@@ -1,0 +1,31 @@
+{
+  "name": "@corbits/jimmy-agent",
+  "private": true,
+  "description": "Jimmy: a one-shot chat agent that searches Giphy and replies with a GIF",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "giphy"
+      }
+    ]
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
