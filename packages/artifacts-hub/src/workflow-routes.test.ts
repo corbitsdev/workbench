@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SerializedArtifact } from "@corbits/artifacts";
 import type { ResolvedWorkflowRunScope } from "./workflow-auth";
 import {
   createUnavailableWorkflowArtifactRoutes,
   createWorkflowArtifactRoutes,
+  MAX_WORKFLOW_BINARY_BYTES,
   type CreateWorkflowArtifactInput,
+  type CreateWorkflowBinaryArtifactInput,
   type CreatedWorkflowArtifact,
   type WorkflowArtifactRoutesStore,
 } from "./workflow-routes";
@@ -15,13 +18,25 @@ const SCOPE: ResolvedWorkflowRunScope = {
   runId: "run_1",
 };
 
+const OTHER_SCOPE: ResolvedWorkflowRunScope = {
+  tenantId: "ten_2",
+  principalId: "prn_2",
+  runId: "run_2",
+};
+
 const GOOD_TOKEN = "sidecar-token";
 const GOOD_ADDRESS = "run_1@workflow";
+const OTHER_TOKEN = "sidecar-token-2";
+const OTHER_ADDRESS = "run_2@workflow";
 
 function fakeStore(overrides: Partial<WorkflowArtifactRoutesStore> = {}) {
   const created: {
     scope: ResolvedWorkflowRunScope;
     input: CreateWorkflowArtifactInput;
+  }[] = [];
+  const createdBinary: {
+    scope: ResolvedWorkflowRunScope;
+    input: CreateWorkflowBinaryArtifactInput;
   }[] = [];
   const store: WorkflowArtifactRoutesStore = {
     async create(scope, input) {
@@ -31,19 +46,92 @@ function fakeStore(overrides: Partial<WorkflowArtifactRoutesStore> = {}) {
     async listRecent() {
       return [];
     },
+    async get() {
+      return null;
+    },
+    async createBinary(scope, input) {
+      createdBinary.push({ scope, input });
+      return { id: "art_pdf_1", version: 1 } satisfies CreatedWorkflowArtifact;
+    },
     ...overrides,
   };
-  return { store, created };
+  return { store, created, createdBinary };
 }
 
-function appFor(store: WorkflowArtifactRoutesStore) {
-  return createWorkflowArtifactRoutes({
-    authenticator: {
-      async resolve(token, address) {
-        if (token === GOOD_TOKEN && address === GOOD_ADDRESS) return SCOPE;
-        return null;
-      },
+/**
+ * Stands in for `createWorkflowArtifactDbStore`'s real fetch-then-check
+ * tenant scoping (`row.tenantId !== scope.tenantId` -> not found) — an
+ * in-memory table of artifacts keyed by their true owning tenant, so a
+ * test authenticated as one run's scope genuinely cannot read a row
+ * seeded under another tenant, the same way the production store can't.
+ */
+function fakeTenantScopedStore(
+  rows: readonly { id: string; tenantId: string; artifact: SerializedArtifact }[],
+) {
+  const store: WorkflowArtifactRoutesStore = {
+    async create() {
+      throw new Error("not used in this test");
     },
+    async listRecent() {
+      return [];
+    },
+    async get(scope, artifactId) {
+      const row = rows.find((r) => r.id === artifactId);
+      if (row === undefined || row.tenantId !== scope.tenantId) return null;
+      return row.artifact;
+    },
+    async createBinary() {
+      throw new Error("not used in this test");
+    },
+  };
+  return store;
+}
+
+function serializedArtifactFixture(
+  overrides: Partial<SerializedArtifact> = {},
+): SerializedArtifact {
+  return {
+    id: "art_1",
+    kind: "text",
+    title: "Due diligence brief",
+    content: "# Findings\n...",
+    source: { origin: "workflow" },
+    version: 1,
+    ownerPrincipalId: null,
+    ownerName: null,
+    archivedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function twoTenantAuthenticator() {
+  return {
+    async resolve(token: string, address: string) {
+      if (token === GOOD_TOKEN && address === GOOD_ADDRESS) return SCOPE;
+      if (token === OTHER_TOKEN && address === OTHER_ADDRESS) return OTHER_SCOPE;
+      return null;
+    },
+  };
+}
+
+function appFor(
+  store: WorkflowArtifactRoutesStore,
+  authenticator: {
+    resolve(
+      token: string,
+      address: string,
+    ): Promise<ResolvedWorkflowRunScope | null>;
+  } = {
+    async resolve(token, address) {
+      if (token === GOOD_TOKEN && address === GOOD_ADDRESS) return SCOPE;
+      return null;
+    },
+  },
+) {
+  return createWorkflowArtifactRoutes({
+    authenticator,
     store,
   });
 }
@@ -240,12 +328,140 @@ describe("GET /recent (list)", () => {
   });
 });
 
+describe("GET /:id (read back)", () => {
+  test("a run can read back an artifact it wrote", async () => {
+    const artifact = serializedArtifactFixture({
+      id: "art_1",
+      content: "# Brief\nfindings here",
+    });
+    const store = fakeTenantScopedStore([
+      { id: "art_1", tenantId: SCOPE.tenantId, artifact },
+    ]);
+    const res = await appFor(store).request("/art_1", {
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: SerializedArtifact };
+    expect(body.data).toEqual(artifact);
+  });
+
+  test("a run cannot read an artifact belonging to another tenant", async () => {
+    const artifact = serializedArtifactFixture({
+      id: "art_owned_by_other_tenant",
+      content: "someone else's brief",
+    });
+    const store = fakeTenantScopedStore([
+      { id: "art_owned_by_other_tenant", tenantId: OTHER_SCOPE.tenantId, artifact },
+    ]);
+    const res = await appFor(store, twoTenantAuthenticator()).request(
+      "/art_owned_by_other_tenant",
+      {
+        headers: {
+          authorization: `Bearer ${GOOD_TOKEN}`,
+          "x-workflow-run-address": GOOD_ADDRESS,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
+    const text = await res.text();
+    expect(text).not.toContain("someone else's brief");
+  });
+
+  test("answers 404 for an id that does not exist", async () => {
+    const store = fakeTenantScopedStore([]);
+    const res = await appFor(store).request("/does-not-exist", {
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+      },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /binary (create binary artifact)", () => {
+  const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]); // "%PDF-1.4"
+
+  test("round-trips binary content through base64 to the store", async () => {
+    const { store, createdBinary } = fakeStore();
+    const res = await appFor(store).request("/binary", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        filename: "brief.pdf",
+        mimeType: "application/pdf",
+        contentBase64: Buffer.from(pdfBytes).toString("base64"),
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: CreatedWorkflowArtifact };
+    expect(body.data).toEqual({ id: "art_pdf_1", version: 1 });
+    expect(createdBinary).toHaveLength(1);
+    expect(createdBinary[0]?.scope).toEqual(SCOPE);
+    expect(createdBinary[0]?.input.filename).toBe("brief.pdf");
+    expect(createdBinary[0]?.input.mimeType).toBe("application/pdf");
+    expect(Array.from(createdBinary[0]?.input.bytes ?? [])).toEqual(
+      Array.from(pdfBytes),
+    );
+  });
+
+  test("rejects oversized binary content with a clear error", async () => {
+    const { store, createdBinary } = fakeStore();
+    const oversized = new Uint8Array(MAX_WORKFLOW_BINARY_BYTES + 1);
+    const res = await appFor(store).request("/binary", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        filename: "brief.pdf",
+        mimeType: "application/pdf",
+        contentBase64: Buffer.from(oversized).toString("base64"),
+      }),
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("content_too_large");
+    expect(body.error.message).toMatch(/byte/i);
+    expect(createdBinary).toHaveLength(0);
+  });
+
+  test("rejects a body missing required fields", async () => {
+    const { store } = fakeStore();
+    const res = await appFor(store).request("/binary", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ filename: "brief.pdf" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("createUnavailableWorkflowArtifactRoutes", () => {
-  test("both routes answer 503", async () => {
+  test("every route answers 503", async () => {
     const app = createUnavailableWorkflowArtifactRoutes();
     const createRes = await app.request("/", { method: "POST" });
     const recentRes = await app.request("/recent");
+    const getRes = await app.request("/some-id");
+    const binaryRes = await app.request("/binary", { method: "POST" });
     expect(createRes.status).toBe(503);
     expect(recentRes.status).toBe(503);
+    expect(getRes.status).toBe(503);
+    expect(binaryRes.status).toBe(503);
   });
 });
