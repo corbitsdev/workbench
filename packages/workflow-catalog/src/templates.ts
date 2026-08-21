@@ -29,8 +29,8 @@ import {
   SCOUT_AGENT_HANDLE,
   SCOUT_AGENT_DISPLAY_NAME,
   SCOUT_AGENT_DESCRIPTION,
-} from "@corbits/scout-agent";
-import { JIMMY_AGENT_ID } from "@corbits/jimmy-agent";
+} from "@corbits/scout-agent/definition";
+import { JIMMY_AGENT_ID } from "@corbits/jimmy-agent/metadata";
 
 /** One workflow a template installs, pinned to the version it was
  * designed against. `assetName` matches a `WORKFLOW_CATALOG` entry. */

@@ -10,12 +10,14 @@
 // agent-directory create request" (it owns `codeReviewAgentRequests`'
 // caller), so the mapping belongs beside it, not duplicated into every
 // agent package that wants to be installable this way.
-import { SCOUT_AGENT_DEFINITION } from "@corbits/scout-agent";
+import { SCOUT_AGENT_DEFINITION } from "@corbits/scout-agent/definition";
 import {
   JIMMY_AGENT_ID,
+  JIMMY_DESCRIPTION,
+  JIMMY_DISPLAY_NAME,
   JIMMY_SYSTEM_PROMPT,
   JIMMY_TOOL_PACKAGE_PINS,
-} from "@corbits/jimmy-agent";
+} from "@corbits/jimmy-agent/metadata";
 
 import type { ParticipantAgentRequest } from "./instantiate";
 
@@ -38,9 +40,9 @@ export function scoutAgentRequest(): ParticipantAgentRequest {
  * is both his id and the handle a person types to reach him. */
 export function jimmyAgentRequest(): ParticipantAgentRequest {
   return {
-    name: "Jimmy",
+    name: JIMMY_DISPLAY_NAME,
     handle: JIMMY_AGENT_ID,
-    description: "Searches Giphy and replies with a GIF",
+    description: JIMMY_DESCRIPTION,
     systemPrompt: JIMMY_SYSTEM_PROMPT,
     toolPackagePins: JIMMY_TOOL_PACKAGE_PINS.map((pin) => pin.name),
   };

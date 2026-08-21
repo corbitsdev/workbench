@@ -12,7 +12,7 @@ import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
-export const GIF_SEARCH_TOOL = "gif_search";
+import { GIF_SEARCH_TOOL } from "./metadata";
 
 /** `defineTool` requires a namespaced id; the agent-facing call name stays `gif_search`. */
 const GIF_SEARCH_TOOL_ID = "@corbits/jimmy-agent/gif-search";

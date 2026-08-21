@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
-import { GIF_SEARCH_TOOL, gifSearchTool } from "./gif-search-tool";
+import { gifSearchTool } from "./gif-search-tool";
+import { GIF_SEARCH_TOOL } from "./metadata";
 import type { GifSearchEnv } from "./gif-search-tool";
+import { GIF_SEARCH_TOOL } from "./metadata";
 
 const CALL: ToolCall = {
   id: "call_1",
