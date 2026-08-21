@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Clock } from "@corbits/icons";
+import { Clock, PlayCircle, Plus } from "@corbits/icons";
 import type { KeyboardEvent } from "react";
 import {
   routineHealth,
@@ -203,6 +203,7 @@ export function scheduleSentence(row: GlobalRoutineRow): string {
  * scheduler is behind, and the word for that is overdue.
  */
 export function nextRunLabel(row: GlobalRoutineRow, now: number): string {
+  if (!row.routine.enabled) return "Paused";
   const nextFireAt = row.routine.nextFireAt ?? null;
   if (nextFireAt === null) return "Not scheduled";
   const due = Date.parse(nextFireAt);
@@ -332,11 +333,22 @@ export function GlobalRoutinesList({
                 />
               </TableCell>
               <TableCell>
-                <RunNowButton
-                  variant="outline"
-                  size="sm"
-                  onRun={() => onRunNow(row)}
-                />
+                {health.state === "paused" || !row.routine.enabled ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onToggleEnabled(row, true)}
+                  >
+                    <PlayCircle /> Resume
+                  </Button>
+                ) : (
+                  <RunNowButton
+                    variant="outline"
+                    size="sm"
+                    onRun={() => onRunNow(row)}
+                  />
+                )}
               </TableCell>
             </TableRow>
           );
@@ -363,14 +375,10 @@ export function RoutinesRoute({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[{ label: "Routines" }]}
-        subtitle={
-          routinesQuery.kind === "ready"
-            ? `${String(rows.length)} automation${rows.length === 1 ? "" : "s"} across your workbenches`
-            : null
-        }
+        subtitle="Scheduled work. Next fire time, last result, and health at a glance — every run is a steppable trace."
         actions={
           <Button size="sm" onClick={() => openRoutine({ routineId: null })}>
-            New routine
+            <Plus /> New routine
           </Button>
         }
       />
