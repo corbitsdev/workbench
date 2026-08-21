@@ -1,8 +1,9 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// utility icon row (Files, Skills, Agents, Plugins, Insights — CL-6353/
-// CL-6354/CL-6355 moved the first three out of Settings and onto this row),
-// and below it the account row —
+// utility icon row (Files, Skills, Agents, Plugins, Insights, Evals —
+// CL-6353/CL-6354/CL-6355 moved the first three out of Settings and onto
+// this row; CL-6465 added Evals alongside Insights), and below it the
+// account row —
 // avatar + name, the whole row is the trigger for a menu that pops upward
 // with weekly usage, settings, feedback, and log out. Always present;
 // there is no collapse affordance and no second nav column. Approvals
@@ -37,6 +38,7 @@ import {
   ChatCircleDots,
   FolderOpen,
   Lightning,
+  ListBullets,
   Plus,
   PuzzlePiece,
   Robot,
@@ -144,10 +146,10 @@ export function Sidebar({
 
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, Insights,
-            then the account row anchors everything else (weekly usage,
-            Settings, Log out) in its pop-up menu — a single footer, never
-            two stacked rows. Routines (CL-6362) is global-only here — no
-            per-workbench routines chrome remains. */}
+            Evals, then the account row anchors everything else (weekly
+            usage, Settings, Log out) in its pop-up menu — a single footer,
+            never two stacked rows. Routines (CL-6362) is global-only here —
+            no per-workbench routines chrome remains. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"
@@ -207,6 +209,16 @@ export function Sidebar({
         >
           <ChartBar />
           <span>Insights</span>
+        </button>
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/evals", path) ? "true" : undefined}
+          aria-current={matchesRoute("/evals", path) ? "page" : undefined}
+          onClick={() => onNavigate("/evals")}
+        >
+          <ListBullets />
+          <span>Evals</span>
         </button>
 
         <Menu>
