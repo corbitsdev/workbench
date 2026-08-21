@@ -77,10 +77,10 @@ const HubEnv = type({
     "the maximum sign-ups a single IP may make per window, e.g. 5",
   ),
   "SIGNIN_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
-    "the per-IP sign-in rate-limit window, in seconds, e.g. 60; overrides better-auth's built-in 10-second/3-attempt default, which is too tight for a person retyping a password",
+    "the per-account sign-in rate-limit window, in seconds, e.g. 60; overrides better-auth's built-in 10-second/3-attempt default, which is too tight for a person retyping a password",
   ),
   "SIGNIN_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
-    "the maximum sign-in attempts a single IP may make per window, e.g. 10",
+    "the maximum failed sign-in attempts a single account may accrue per window before further failures are rejected, e.g. 10 — keyed on the target email, not client IP (see sign-in-rate-limit.ts); a correct password always succeeds regardless of this budget",
   ),
   "WORKBENCH_SIGNUP?": type("'open' | 'closed'").describe(
     "open = self-serve email signup allowed; closed (default) = owner adds users or copy-link invite only",

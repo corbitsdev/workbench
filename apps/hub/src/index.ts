@@ -332,6 +332,7 @@ import {
   createDrizzleCredentialExpirySweepStore,
 } from "./credential-expiry-sweep";
 
+import { type } from "arktype";
 import { betterAuth } from "better-auth";
 import { createBenchSessionMinter } from "./bench-session";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
@@ -381,6 +382,7 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const SIGN_IN_EMAIL_PATH = "/sign-in/email";
+const SignInEmailBody = type({ email: "string" });
 // Chat residents carry a real hub-driven idle-reap again (reversing
 // CL-5477's removal): the sidecar's own park/wake scheme it was meant to
 // replace has itself been retired in favor of a simpler reap-and-relaunch
@@ -1034,26 +1036,29 @@ export async function createHub(config: HubConfig) {
           }
         }
       }
-      // Account-keyed sign-in brute-force protection (CL-6494) — see
-      // `sign-in-rate-limit.ts` for why this fully replaces better-auth's
-      // own IP-keyed enforcement for this path instead of running beside
-      // it.
+      // Account-keyed sign-in brute-force protection (CL-6494, hardened
+      // CL-6521) — see `sign-in-rate-limit.ts` for why this fully replaces
+      // better-auth's own IP-keyed enforcement for this path instead of
+      // running beside it, and for why only failures ever consume budget.
       if (c.req.method === "POST" && c.req.path.endsWith(SIGN_IN_EMAIL_PATH)) {
-        let email = "";
+        let email: string | undefined;
         try {
           const body: unknown = await c.req.raw.clone().json();
-          if (
-            body !== null &&
-            typeof body === "object" &&
-            "email" in body &&
-            typeof (body as { email: unknown }).email === "string"
-          ) {
-            email = (body as { email: string }).email;
-          }
+          const parsed = SignInEmailBody(body);
+          if (!(parsed instanceof type.errors)) email = parsed.email;
         } catch {
-          email = "";
+          email = undefined;
         }
-        const decision = signInAttemptLimiter.consume(email);
+        // A body that doesn't parse to `{ email: string }` never touches
+        // the limiter at all — there is no account to key a bucket on,
+        // and better-auth will reject the request on its own terms.
+        const response = await auth.handler(c.req.raw);
+        if (email === undefined) return response;
+        if (response.status >= 200 && response.status < 300) {
+          signInAttemptLimiter.recordSuccess(email);
+          return response;
+        }
+        const decision = signInAttemptLimiter.recordFailure(email);
         if (!decision.allowed) {
           return c.json(
             {
@@ -1061,9 +1066,10 @@ export async function createHub(config: HubConfig) {
               message: `Too many sign-in attempts. Try again in ${decision.retryAfterSeconds} second${decision.retryAfterSeconds === 1 ? "" : "s"}.`,
             },
             429,
-            { "X-Retry-After": decision.retryAfterSeconds.toString() },
+            { "Retry-After": decision.retryAfterSeconds.toString() },
           );
         }
+        return response;
       }
       return auth.handler(c.req.raw);
     },

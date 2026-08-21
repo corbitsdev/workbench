@@ -1,4 +1,4 @@
-// Account-keyed sign-in attempt limiter (CL-6494).
+// Account-keyed sign-in attempt limiter (CL-6494, hardened CL-6521).
 //
 // better-auth's own rate limiter keys solely on client IP (falling back to
 // one shared bucket when no IP resolves), configured via
@@ -42,12 +42,23 @@
 // *secondary* per-source budget could be layered on top of this one, to
 // also blunt one source spraying many different accounts.
 //
-// Guards against the account key itself becoming a way to lock a known
-// user out of their own account: the window is short and the count is
-// generous (60s / 10 by default — `config.signInRateLimit`), so a lockout
-// an attacker forces self-heals within the window and never compounds
-// across windows, while a real user mistyping a password a few times in a
-// row is never affected.
+// Only failed attempts consume budget, and a successful sign-in clears the
+// bucket outright. This is deliberate, not incidental: an account-keyed
+// limiter that also counted (or blocked) successful attempts would let an
+// attacker who never learns the password still deny the real owner access
+// indefinitely — send a handful of wrong-password guesses against a known
+// email every window, forever, at near-zero cost, and the genuine holder
+// of the account is locked out by the same mechanism meant to protect
+// them. Counting only failures closes that: the caller in `index.ts`
+// always lets a sign-in attempt reach `auth.handler` and inspects the
+// real outcome before touching this limiter, so a correct password is
+// never rejected on account of someone else's prior wrong guesses,
+// however many there were. A distributed password spray against one
+// account — many source IPs, one target email — is still bounded: once
+// `max` wrong guesses have been recorded inside `windowSeconds`, every
+// further failure in that window is turned into a generic 429 instead of
+// a distinguishing auth failure, regardless of which IP it came from,
+// because the key is the email, never the source.
 
 const MAX_TRACKED_EMAILS = 50_000;
 
@@ -56,7 +67,21 @@ export type SignInAttemptDecision =
   | { readonly allowed: false; readonly retryAfterSeconds: number };
 
 export type SignInAttemptLimiter = {
-  consume(email: string): SignInAttemptDecision;
+  /**
+   * Records one failed sign-in attempt against `email`'s budget. Returns
+   * `allowed: false` once that account has already exhausted its budget
+   * for the current window — the caller should surface that as a 429
+   * instead of the underlying auth failure. Never called for an attempt
+   * that succeeded.
+   */
+  recordFailure(email: string): SignInAttemptDecision;
+  /**
+   * Clears `email`'s bucket entirely. Called after a successful sign-in
+   * so a prior run of wrong guesses — an attacker's or the account
+   * owner's own mistyping — never carries over to block the next
+   * legitimate attempt.
+   */
+  recordSuccess(email: string): void;
 };
 
 function normalizeEmail(email: string): string {
@@ -84,7 +109,7 @@ export function createSignInAttemptLimiter(
   }
 
   return {
-    consume(email: string): SignInAttemptDecision {
+    recordFailure(email: string): SignInAttemptDecision {
       const now = Date.now();
       pruneExpiredAndOverflow(now);
       const key = normalizeEmail(email);
@@ -103,6 +128,9 @@ export function createSignInAttemptLimiter(
       }
       bucket.count += 1;
       return { allowed: true };
+    },
+    recordSuccess(email: string): void {
+      buckets.delete(normalizeEmail(email));
     },
   };
 }
