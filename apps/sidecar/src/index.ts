@@ -74,10 +74,12 @@ const CACHE_ROOT = path.join(config.dataDir, "cache", "tarballs");
 const CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024;
 const REGISTRY_MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 
-// Inference adapters are the statically-linked built-ins. Custom
-// adapter modules are code; installing one means installing a package
-// into this workspace, not naming a specifier in the environment.
-const adapters = await loadAdapterRegistry([]);
+// Built-in adapters merged with any operator-configured custom adapters
+// named in `SIDECAR_ADAPTER_MANIFEST`. Installing a custom adapter still
+// means installing its package into this workspace -- the manifest only
+// names an already-installed module's specifier and export, it never
+// carries code of its own.
+const adapters = await loadAdapterRegistry(config.adapterManifest);
 
 // Sweep any tmp staging directories left behind by a tarball put or
 // extract that crashed between staging and the final rename on a
@@ -171,7 +173,10 @@ const multistepSubstrateEnv: Record<string, string> = {
   PATH: config.path,
   SIDECAR_CACHE_MAX_BYTES: String(CACHE_MAX_BYTES),
   SIDECAR_REGISTRY_MAX_TARBALL_BYTES: String(REGISTRY_MAX_TARBALL_BYTES),
-  SIDECAR_ADAPTER_MANIFEST: JSON.stringify([]),
+  // Threaded verbatim from this boot edge's own resolved manifest so a
+  // workflow-process child resolves the exact custom adapters this
+  // process resolved -- never a default of its own.
+  SIDECAR_ADAPTER_MANIFEST: JSON.stringify(config.adapterManifest),
   // Always serialized, defaulting to the public npmjs registry when the
   // operator pinned none, so the child's per-step tool materialization
   // resolves the exact registries this boot edge resolved — a child

@@ -1,0 +1,25 @@
+{
+  "name": "@corbits/ollama-adapter",
+  "private": true,
+  "description": "Custom Interchange inference adapter for the Ollama openai-compatible provider: operator-configured context-window (num_ctx), max-output-token, and reasoning-effort overrides, general or per model, wrapping the built-in OpenAI adapter's request/response handling rather than reimplementing it.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./overrides": "./src/overrides.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/inference": "0.3.0",
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
