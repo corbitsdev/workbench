@@ -149,9 +149,8 @@ describe("modelSourceFor", () => {
   });
 
   // CL-6366 red/green: a fresh instance whose live catalog carries only
-  // llama3.2 (the curated `qwen3.8:27b` name is absent entirely) still
-  // resolves to what the instance actually serves, never a pin it can't
-  // answer for.
+  // llama3.2 (the curated default name is absent entirely) still resolves
+  // to what the instance actually serves, never a pin it can't answer for.
   test("ollama resolves to the instance's own seeded model, never the curated pin it may lack", async () => {
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
@@ -218,7 +217,7 @@ describe("modelSourceFor", () => {
             capabilities: ["plain-text"],
           },
           {
-            canonicalName: "qwen3.8:27b",
+            canonicalName: "gpt-oss:20b",
             providerName: "ollama",
             capabilities: ["plain-text"],
           },
@@ -234,7 +233,7 @@ describe("modelSourceFor", () => {
       "ollama",
       "ollama",
     );
-    expect(result.model).toBe("qwen3.8:27b");
+    expect(result.model).toBe("gpt-oss:20b");
   });
 
   test("ollama's baseURLOverride is normalized to the /v1 form", async () => {
