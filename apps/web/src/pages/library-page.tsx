@@ -251,7 +251,7 @@ function PreviewPane({
       ? artifactPreviewPath(tenantId, detail.id)
       : undefined;
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col border-l border-border bg-card">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col border-l border-border bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">
@@ -443,15 +443,24 @@ export function LibraryPage({
         actions={
           <>
             {selectedSummary !== null ? (
-              <Button variant="outline" size="sm" onClick={() => select(null)}>
-                All
+              // This clears the open file and returns to the list — an
+              // action, not a filter. It used to say bare "All", which read
+              // as a third option in the scope group right beside it ("All"
+              // vs. "All workbenches"); this label can't be mistaken for
+              // that.
+              <Button variant="ghost" size="sm" onClick={() => select(null)}>
+                Back to files
               </Button>
             ) : null}
             {workbenchScope !== null && onScopeChange !== undefined ? (
+              // One control, two states — answers exactly one question
+              // ("whose files"), styled as the bordered segmented group
+              // `ViewToggle` already uses for rows/grid in this same bar, so
+              // it reads as one control rather than two stray chips.
               <div
                 role="group"
                 aria-label="Files scope"
-                className="hidden items-center gap-1 lg:flex"
+                className="hidden items-center gap-0.5 rounded-md border border-border p-0.5 lg:flex"
               >
                 <Button
                   type="button"
@@ -770,11 +779,23 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                 setUploading(true);
                 setUploadError(null);
                 try {
-                  await uploadArtifactFiles(selectedTenantId, files);
+                  const uploaded = await uploadArtifactFiles(
+                    selectedTenantId,
+                    files,
+                  );
                   await queryClient.invalidateQueries({
                     queryKey: tenantKeys.artifacts(selectedTenantId),
                   });
-                  toast(artifactUploadToast(files.map((file) => file.name)));
+                  // The confirmation names what the server actually stored
+                  // (its own titles), never the local `File` picked — the
+                  // two can differ (e.g. a collision rename), and a sibling
+                  // fix for empty content read-back means this toast must
+                  // only ever repeat the upload response, not assume it.
+                  toast(
+                    artifactUploadToast(
+                      uploaded.map((artifact) => artifact.title),
+                    ),
+                  );
                 } catch (err) {
                   setUploadError(
                     describeApiError(err, "uploading those files"),

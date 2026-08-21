@@ -12,6 +12,21 @@
 @import "@corbits/tasks-ui/styles.css";
 @import "@corbits/plugins-ui/styles.css";
 
+/* react-ui's `.corbits-toast` ships a hardcoded horizontal-center transform
+   (`left: 50%; transform: translateX(-50%) !important`) regardless of the
+   `position` prop passed to `<Toaster>` — main.tsx now mounts it
+   bottom-right, and without this the toast would still visually sit
+   centered while claiming to be on the right. Sonner itself already
+   right-aligns the toast via its own `[data-x-position="right"]` rule
+   (injected at runtime, unrelated to this stylesheet); this just stops
+   react-ui's override from fighting it. Higher specificity than that rule
+   wins the cascade on its own, so this is safe regardless of load order. */
+[data-sonner-toaster][data-x-position="right"]
+  [data-sonner-toast].corbits-toast {
+  left: auto !important;
+  transform: none !important;
+}
+
 /* Mock chrome: 15px root so rem-based density matches the interactive mock. */
 html {
   font-size: 15px;
