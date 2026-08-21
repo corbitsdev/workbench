@@ -350,7 +350,7 @@ describe("the wait right after connecting a provider", () => {
     expect(text).toContain("Myra is taking longer than usual");
     expect(text).not.toMatch(/\d+ of \d+/);
     const retry = Array.from(container?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Try again",
+      (button) => button.textContent === "Retry",
     );
     expect(retry).not.toBeUndefined();
   });
