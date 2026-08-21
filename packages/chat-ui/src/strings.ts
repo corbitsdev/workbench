@@ -187,12 +187,17 @@ export const CHAT_STRINGS = {
   blockConnectGithubHeadline: "Connect GitHub",
   blockConnectGithubPickHeadline: "Pick your repos",
   blockConnectGithubIntro:
-    "Install the Workbench app on your GitHub account. Two clicks — you pick the repos on the next step, and nothing is read until you do.",
+    "Connect GitHub with a personal access token — three quick steps, about a minute.",
   blockConnectGithubAction: "Connect GitHub",
-  blockConnectGithubTokenPrompt: "On a server without GitHub sign-in?",
-  blockConnectGithubTokenLink: "Use an access token instead",
-  blockConnectGithubTokenTrust:
-    " — a token carries whatever access it was made with, so the app install is the safer path when you have the choice.",
+  blockConnectGithubTokenSteps: [
+    "Open github.com/settings/tokens and generate a new token.",
+    "Give it the repo scope — that lets agents read code, issues, and pull requests.",
+    "Paste it here. It's stored encrypted, only your agents use it, and you can remove it any time.",
+  ] as readonly string[],
+  blockConnectGithubTokenSettingsUrl: "https://github.com/settings/tokens",
+  blockConnectGithubTokenSettingsLink: "Open github.com/settings/tokens",
+  blockConnectGithubTokenHelper:
+    "Your token is stored encrypted, only your agents use it, and you can remove it any time.",
   blockConnectGithubConnectedAs: (org: string) =>
     `Connected to GitHub as ${org}`,
   blockConnectGithubChange: "change",
@@ -216,7 +221,7 @@ export const CHAT_STRINGS = {
   blockConnectServiceHeadline: (name: string) => `Connect ${name}`,
   blockConnectServiceAction: (name: string) => `Connect ${name}`,
   blockConnectServiceOAuthHelper: (name: string) =>
-    `Two clicks — you approve in ${name}'s own window, and nothing is touched until you do.`,
+    `You'll be sent to ${name} to approve access, then land right back here connected — nothing is shared until you approve.`,
   blockConnectServiceKeylessHelper: "One click — no account keys needed.",
   blockConnectServiceKeyHelper: (name: string) =>
     `You'll paste a ${name} API key — it stays in your workspace and you can disconnect any time.`,

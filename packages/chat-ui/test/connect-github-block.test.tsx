@@ -416,7 +416,7 @@ describe("connect GitHub card — accessibility", () => {
     expect(document.activeElement).toBe(firstCheckbox);
   });
 
-  test("the disconnected state's primary and quiet actions are both real buttons, not divs", async () => {
+  test("the disconnected state's actions are real buttons, not divs", async () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
@@ -424,7 +424,8 @@ describe("connect GitHub card — accessibility", () => {
     });
 
     const buttons = el.querySelectorAll("button");
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    // One clear primary action closed; submit + cancel once opened.
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
     for (const button of buttons) {
       expect(button.getAttribute("type")).toBe("button");
     }
