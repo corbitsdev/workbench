@@ -24,7 +24,7 @@ describe("createWorkflowConnectionRoutes", () => {
   test("rejects a call with a missing or unrecognized sidecar bearer token / run address", async () => {
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
-      listConnectedProviders: async () => [],
+      isConnectorConnected: async () => false,
     });
 
     const response = await app.request("/connections", {
@@ -39,13 +39,22 @@ describe("createWorkflowConnectionRoutes", () => {
     expect(body.error.code).toBe("unauthorized");
   });
 
-  test("returns every registry entry with its live connected status for the authenticated tenant", async () => {
+  test("reports a non-inference connector (GitHub) connected once it has a real, verified credential", async () => {
+    // CL-6492: `list_connections` used to resolve every connector's
+    // status from the inference-only model catalog, so a verified
+    // GitHub PAT (never seeded into that catalog) always read "not
+    // connected" — the agent would refuse work it could actually do.
     let seenTenantId: string | undefined;
+    let seenConnectorId: string | undefined;
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
-      listConnectedProviders: async (tenantId) => {
-        seenTenantId = tenantId;
-        return ["granola", "exa"];
+      isConnectorConnected: async (tenantId, connectorId) => {
+        if (connectorId === "github") {
+          seenTenantId = tenantId;
+          seenConnectorId = connectorId;
+          return true;
+        }
+        return false;
       },
     });
 
@@ -58,12 +67,32 @@ describe("createWorkflowConnectionRoutes", () => {
 
     expect(response.status).toBe(200);
     expect(seenTenantId).toBe("tenant_1");
+    expect(seenConnectorId).toBe("github");
     const body = (await response.json()) as {
       data: { id: string; displayName: string; connected: boolean }[];
     };
-    const granola = body.data.find((entry) => entry.id === "granola");
+    const github = body.data.find((entry) => entry.id === "github");
+    expect(github?.connected).toBe(true);
+  });
+
+  test("still reports an unconnected connector as not connected", async () => {
+    const app = createWorkflowConnectionRoutes({
+      authenticator: fakeAuthenticator(),
+      isConnectorConnected: async () => false,
+    });
+
+    const response = await app.request("/connections", {
+      headers: {
+        authorization: `Bearer ${VALID_TOKEN}`,
+        "x-workflow-run-address": VALID_ADDRESS,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { id: string; displayName: string; connected: boolean }[];
+    };
     const linear = body.data.find((entry) => entry.id === "linear");
-    expect(granola?.connected).toBe(true);
     expect(linear?.connected).toBe(false);
     // The full registry, not a filtered subset — an unconnected
     // connector still gets a card the client can render a "not
@@ -71,13 +100,35 @@ describe("createWorkflowConnectionRoutes", () => {
     expect(body.data.length).toBeGreaterThan(2);
   });
 
-  test("never calls listConnectedProviders before authentication succeeds", async () => {
+  test("keeps reporting an inference provider (Anthropic) connected", async () => {
+    const app = createWorkflowConnectionRoutes({
+      authenticator: fakeAuthenticator(),
+      isConnectorConnected: async (_tenantId, connectorId) =>
+        connectorId === "anthropic",
+    });
+
+    const response = await app.request("/connections", {
+      headers: {
+        authorization: `Bearer ${VALID_TOKEN}`,
+        "x-workflow-run-address": VALID_ADDRESS,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { id: string; displayName: string; connected: boolean }[];
+    };
+    const anthropic = body.data.find((entry) => entry.id === "anthropic");
+    expect(anthropic?.connected).toBe(true);
+  });
+
+  test("never calls isConnectorConnected before authentication succeeds", async () => {
     let called = false;
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
-      listConnectedProviders: async () => {
+      isConnectorConnected: async () => {
         called = true;
-        return [];
+        return false;
       },
     });
 
