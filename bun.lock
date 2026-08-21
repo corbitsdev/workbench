@@ -965,6 +965,7 @@
       "name": "@workbench/onboarding",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "0.3.0",
