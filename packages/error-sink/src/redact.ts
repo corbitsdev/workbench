@@ -19,13 +19,31 @@ const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/g,
 ];
 
-// `token=`, `key=`, `access_token=`, ... assignments: covers both a raw
-// OAuth callback URL's query string (`?access_token=...&code=...`) and the
-// same shape typed into a free-text error message. Only the value is
-// replaced so the param name -- and the rest of the URL/message -- stays
-// readable for debugging.
-const SENSITIVE_ASSIGNMENT_PATTERN =
-  /\b(access_token|refresh_token|id_token|api[-_]?key|apikey|secret|password|passwd|token|code|credential|key)(\s*=\s*)([^\s&#]+)/gi;
+// A value's character set once past `name=`: covers hex/base64/JWT-shaped
+// tokens without running past the value into unrelated trailing text (a
+// closing paren, a stack-frame's `:12:5)`, ...).
+const ASSIGNMENT_VALUE = "[\\w.+/=%-]+";
+
+// `token=`, `access_token=`, ... assignments: covers both a raw OAuth
+// callback URL's query string (`?access_token=...`) and the same shape
+// typed into a free-text error message. Only the value is replaced so the
+// param name -- and the rest of the URL/message -- stays readable for
+// debugging. These names are unambiguous: outside of a credential they
+// don't ordinarily show up as a bare `name=value` assignment at all.
+const SENSITIVE_ASSIGNMENT_PATTERN = new RegExp(
+  `\\b(access_token|refresh_token|id_token|api[-_]?key|apikey|secret|password|passwd|token|credential)(\\s*=\\s*)(${ASSIGNMENT_VALUE})`,
+  "gi",
+);
+
+// `code` and `key` are NOT unambiguous -- `code=404`, logfmt's
+// `code=DB_TIMEOUT`, and `key=user:1234:profile` are everyday non-secret
+// shapes. The only place they reliably mean "secret" is a URL query string
+// (an OAuth `code`, a `key=` API credential passed as a param), so these
+// two are scoped to right after a literal `?` or `&`.
+const QUERY_PARAM_SENSITIVE_ASSIGNMENT_PATTERN = new RegExp(
+  `([?&])(code|key)(\\s*=\\s*)(${ASSIGNMENT_VALUE})`,
+  "gi",
+);
 
 export function redactText(text: string): string {
   let redacted = text;
@@ -36,6 +54,11 @@ export function redactText(text: string): string {
     SENSITIVE_ASSIGNMENT_PATTERN,
     (_match, name: string, separator: string) =>
       `${name}${separator}[redacted]`,
+  );
+  redacted = redacted.replace(
+    QUERY_PARAM_SENSITIVE_ASSIGNMENT_PATTERN,
+    (_match, prefix: string, name: string, separator: string) =>
+      `${prefix}${name}${separator}[redacted]`,
   );
   return redacted;
 }
