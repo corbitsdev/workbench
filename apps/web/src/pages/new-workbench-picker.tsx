@@ -15,6 +15,8 @@ import { useState } from "react";
 
 import type { ConnectGithubRepo } from "@corbits/chat-ui";
 
+import { useAPIQuery } from "../api";
+import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbenchFromTemplate,
@@ -45,14 +47,39 @@ function ctaLabel(selected: boolean): string {
   return selected ? "Selected" : "Choose";
 }
 
+/** The one kind that needs no manifest: an empty room is always
+ * something this bench can set up. */
+const BLANK_TEMPLATE_ID: WorkbenchTemplateId = "blank";
+
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
   const { selectedTenantId } = useBench();
-  const [selectedId, setSelectedId] = useState<WorkbenchTemplateId>(
-    WORKBENCH_TEMPLATES[0]?.id ?? "blank",
+  const library = useAPIQuery(
+    selectedTenantId === null
+      ? ""
+      : `/api/tenants/${selectedTenantId}/library/templates`,
+    TemplateLibraryPage,
   );
+  const [picked, setPicked] = useState<WorkbenchTemplateId | null>(null);
   const [creating, setCreating] = useState(false);
   const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
+
+  // What this bench's library can actually serve (CL-6458). A kind whose
+  // manifest the library doesn't hold is shown as not set up rather than
+  // offered and then dead-ended on a 404 at create time.
+  const servedTemplateIds =
+    library.kind === "ready"
+      ? new Set(library.data.data.map((entry) => entry.id))
+      : new Set<string>();
+  const offeredTemplates = WORKBENCH_TEMPLATES.filter(
+    (template) =>
+      template.id === BLANK_TEMPLATE_ID || servedTemplateIds.has(template.id),
+  );
+  const unavailableTemplates = WORKBENCH_TEMPLATES.filter(
+    (template) => !offeredTemplates.includes(template),
+  );
+  const selectedId =
+    picked ?? offeredTemplates[0]?.id ?? WORKBENCH_TEMPLATES[0]?.id ?? "blank";
 
   const pickGithubRepos: PickGithubRepos = ({
     orgName,
@@ -97,6 +124,8 @@ export function NewWorkbenchPickerRoute() {
       <div className="new-workbench-picker">
         {creating ? (
           <WorkbenchLoadingState title="Setting up your workbench…" />
+        ) : library.kind === "loading" ? (
+          <WorkbenchLoadingState title="Seeing what this bench can set up…" />
         ) : (
           <>
             <h3>What should this workbench do?</h3>
@@ -104,12 +133,27 @@ export function NewWorkbenchPickerRoute() {
               Pick one. You can change your mind later — nothing is locked in.
             </p>
 
+            {library.kind === "error" ? (
+              <p className="new-workbench-picker-sub" role="status">
+                Couldn't load what this bench can set up, so only a plain room
+                is on offer right now.{" "}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => library.retry()}
+                >
+                  Try again
+                </Button>
+              </p>
+            ) : null}
+
             <div
               className="new-workbench-pick-list"
               role="radiogroup"
               aria-label="Workbench kind"
             >
-              {WORKBENCH_TEMPLATES.map((template) => {
+              {offeredTemplates.map((template) => {
                 const Icon = ROW_ICON[template.id];
                 const selected = template.id === selectedId;
                 return (
@@ -120,7 +164,7 @@ export function NewWorkbenchPickerRoute() {
                     aria-checked={selected}
                     data-selected={selected ? "true" : undefined}
                     className="new-workbench-pick-row"
-                    onClick={() => setSelectedId(template.id)}
+                    onClick={() => setPicked(template.id)}
                   >
                     <span
                       className="new-workbench-pick-glyph"
@@ -140,6 +184,33 @@ export function NewWorkbenchPickerRoute() {
                       {ctaLabel(selected)}
                     </span>
                   </button>
+                );
+              })}
+
+              {unavailableTemplates.map((template) => {
+                const Icon = ROW_ICON[template.id];
+                return (
+                  <span
+                    key={template.id}
+                    className="new-workbench-pick-row"
+                    aria-disabled="true"
+                  >
+                    <span
+                      className="new-workbench-pick-glyph"
+                      aria-hidden="true"
+                    >
+                      <Icon size={16} strokeWidth={1.8} />
+                    </span>
+                    <span className="new-workbench-pick-text">
+                      <span className="new-workbench-pick-title">
+                        {template.title}
+                      </span>
+                      <span className="new-workbench-pick-promise">
+                        Not set up on this bench yet.
+                      </span>
+                    </span>
+                    <span className="new-workbench-pick-cta">Unavailable</span>
+                  </span>
                 );
               })}
 

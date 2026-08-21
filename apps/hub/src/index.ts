@@ -257,6 +257,7 @@ import {
   createArtifactRoutes,
   createTemplateLibraryDbStore,
   createTemplateLibraryRoutes,
+  createTemplateLibrarySeeder,
   createUnavailableArtifactRoutes,
   createUnavailableTemplateLibraryRoutes,
   createUnavailableWorkflowArtifactRoutes,
@@ -333,7 +334,6 @@ import {
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
-import { scheduleTemplateLibrarySeed } from "./template-library-seed";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
@@ -3307,15 +3307,23 @@ export async function createHub(config: HubConfig) {
 
     // The bench library's template shelf (CL-6344): what the
     // new-workbench picker instantiates from — seeded rows, never a
-    // hardcoded import.
+    // hardcoded import. Reading the shelf is what seeds it (CL-6458), so
+    // a bench created at any point after boot carries the shipped
+    // manifests the first time its picker opens.
     app.route(
       `${TENANT_PREFIX}/library/templates`,
       createTemplateLibraryRoutes({
         store: createTemplateLibraryDbStore(artifactsHandle.db),
+        seeder: createTemplateLibrarySeeder({
+          db: artifactsHandle.db,
+          entries: workbenchTemplateLibraryEntries(),
+          log: (line) => log.info`${line}`,
+        }),
         requireGrant: createRequireGrant({
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
         }),
+        log: (line) => log.error`${line}`,
       }),
     );
 
@@ -3456,23 +3464,6 @@ export async function createHub(config: HubConfig) {
     fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
   });
 
-  // Bench-library template seed (CL-6344): the hub, as system, plants
-  // the shipped workbench template manifests and their tool tarballs
-  // into the operator bench's library at boot — idempotently, so a
-  // second boot leaves exactly one entry per template. Skipped in
-  // degraded (no-artifacts) mode: with no library to seed into there is
-  // nothing honest to do. See ./template-library-seed.ts.
-  const templateLibrarySeed =
-    artifactsHandle !== undefined
-      ? scheduleTemplateLibrarySeed({
-          baseUrl: config.baseUrl,
-          admin: config.envCredentialPlantAdmin,
-          fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
-          artifactsDb: artifactsHandle.db,
-          entries: workbenchTemplateLibraryEntries(),
-        })
-      : { stop: (): void => {} };
-
   return {
     app: guardedApp,
     db,
@@ -3482,7 +3473,6 @@ export async function createHub(config: HubConfig) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
       envCredentialPlant.stop();
-      templateLibrarySeed.stop();
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();

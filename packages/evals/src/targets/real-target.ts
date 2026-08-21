@@ -139,16 +139,6 @@ export interface MyraTargetInfra {
     hubDataDir: string;
     fakeReceipts: () => readonly FakeReceipt[];
   }) => Promise<WorldSnapshot>;
-  /** Seeds the bench-library template shelf for the freshly provisioned
-   * scratch tenant — the SAME `seedTemplateLibrary` path hub boot runs
-   * (`@corbits/artifacts-hub`), with the scratch tenant's own admin
-   * standing in for the operator bench the env-credential-plant admin
-   * resolves in production. Without it the eval tenant has no seeded
-   * manifests and `installTemplate` fails loudly on the library read. */
-  seedTemplateLibrary?: (scope: {
-    tenantId: string;
-    principalId: string;
-  }) => Promise<void>;
 }
 
 /** Never sent anywhere for real in plumbing mode — see the module
@@ -421,37 +411,6 @@ export async function bootMyraTarget(
       },
     );
 
-    // Bench-library template seed: same path, scratch admin (see
-    // `MyraTargetInfra.seedTemplateLibrary`). Runs before any install
-    // step so `installTemplate`'s library read finds the manifests.
-    if (infra.seedTemplateLibrary !== undefined) {
-      const principalsRes = await api(
-        hub.baseUrl,
-        "GET",
-        "/api/me/principals",
-        undefined,
-        cookies,
-      );
-      expectStatus("list principals for the library seed", principalsRes, 200);
-      const memberships = arrayField(
-        principalsRes.data,
-        "data",
-        "list principals for the library seed",
-      ) as { tenantId: string; principalId: string }[];
-      const membership = memberships.find(
-        (row) => row.tenantId === seeded.tenantId,
-      );
-      if (membership === undefined) {
-        throw new Error(
-          `library seed: no principal membership for tenant ${seeded.tenantId}`,
-        );
-      }
-      await infra.seedTemplateLibrary({
-        tenantId: seeded.tenantId,
-        principalId: membership.principalId,
-      });
-    }
-
     // Connect every started fake through the exact same route Plugins
     // uses for a real MCP server — no eval-only connect mechanism.
     for (const [index, fake] of startedFakes.entries()) {
@@ -723,6 +682,8 @@ export async function bootMyraTarget(
     // `createWorkbenchFromTemplate` drives — seeded-library manifest
     // read, workbench mint, `instantiateWorkbenchTemplate` over
     // HTTP-bound ports — never an eval-only instantiation mechanism.
+    // The library read is also what seeds this scratch tenant's shelf
+    // (CL-6458), so a passing install proves convergence on first read.
     async function installTemplate(templateId: string): Promise<Turn> {
       const entryRes = await api(
         hub.baseUrl,
