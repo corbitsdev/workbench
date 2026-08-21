@@ -3,7 +3,9 @@
 The structured convention every catch block reports a failure to instead of
 swallowing it (CL-6496 — the owner ruling this package exists to enforce):
 one function, `reportError(error, context)`, that never throws and returns
-a `refId` a person can quote to support.
+a `refId` a person can quote to support. It redacts (see below) and
+preserves the error's `.cause` chain, depth-capped so a cyclic or
+unbounded chain can't blow up the logger.
 
 ## Why this isn't a second logger
 
@@ -22,6 +24,48 @@ structured-error shape (`operation`, optional `tenantId`/`roomId`/
 `getLogger(["errors"])`. Reaching OTEL/Sentry later is a LogTape sink
 registered once via `@intx/log`'s own `configureSync`/`setup` — no call
 site of `reportError` changes when that happens.
+
+New code should always go through `reportError` rather than calling
+`log.error` directly. The repo's existing raw `log.error` call sites predate
+this package and are grandfathered, not a pattern to copy — they don't get
+the redaction pass below, the `refId`, or the structured context shape.
+
+## What redaction does and doesn't catch
+
+`redactText`/`redactExtra` (`src/redact.ts`) are a heuristic pass, not a
+general-purpose secret scanner — the bar is "never ships an obvious secret
+in a common shape," not "catches every possible one."
+
+Caught:
+
+- A `Bearer <token>` fragment or an `Authorization: <value>` header fragment
+  anywhere in a string.
+- Known provider key prefixes: `sk-`/`pk-`/`rk-`/`ghp-`/`gho-`/`ghu-`/`ghs-`
+  and their underscore variants (`ghp_...`, as GitHub actually issues them).
+- A raw JWT (`eyJ...eyJ...`. shape) even with no keyword nearby — the
+  base64url header is distinctive enough to key off directly.
+- `token=`, `key=`, `code=`, `secret=`, `password=`, `api_key=`, and similar
+  assignments, whether in a URL's query string (an OAuth callback landing in
+  an error message keeps its host/path/param names, only the sensitive
+  values become `[redacted]`) or in free-text messages.
+- Any object key that itself looks credential-shaped (`token`, `secret`,
+  `password`, `apiKey`, `cookie`, ...) is redacted wholesale, including when
+  its value is an array or a nested object — `redactExtra` recurses through
+  both.
+
+Not caught, by design:
+
+- A raw secret string with no recognizable prefix, keyword, or shape sitting
+  under an unrelated key (e.g. a bare AWS access key in a field named
+  `values`). There is no reliable heuristic for this that doesn't also flag
+  ordinary IDs; put such values behind a credential-shaped key instead.
+- Because the `token=`/`key=`/`code=`/... assignment match is name-based,
+  it can occasionally over-redact a non-secret field sharing one of these
+  names in free text (e.g. an HTTP `code=404` written inline). Prefer
+  structured `extra` fields over interpolating such values into a message
+  string if this matters for a given call site.
+- Secrets embedded in non-string values (numbers, binary blobs) or inside a
+  JSON-serialized string that isn't itself parsed back into an object.
 
 ## Retiring `@corbits/client-log`
 
