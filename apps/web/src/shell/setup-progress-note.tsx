@@ -78,8 +78,8 @@ export function SetupProgressNote() {
   return (
     <div className="setup-progress-note" role="status">
       <p className="setup-progress-note-text">
-        Your workbench is still setting up the rest of its agents. Nothing to
-        wait for — keep going.
+        Your workbench is still setting up in the background. Nothing to wait
+        for — keep going.
       </p>
       <Button
         variant="ghost"

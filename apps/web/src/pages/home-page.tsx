@@ -20,7 +20,7 @@
 // implementation detail, and "0 of 5" told a waiting person nothing.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { WarningCircle } from "@corbits/icons";
+import { Clock, WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
@@ -75,8 +75,10 @@ export function HomeRoute({
       if (cancelled) return;
       if ((attempt + 1) * retryMs >= stallAfterMs) {
         setState({ kind: "slow" });
-        return;
       }
+      // Slow is a message, not a stop: retries keep going underneath it so
+      // a backend that recovers after the stall still lands on its own —
+      // "Retry" stays as an escape hatch, never the only way forward.
       retryTimer = setTimeout(() => setAttempt((count) => count + 1), retryMs);
     };
 
@@ -185,12 +187,12 @@ export function HomeRoute({
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
-          icon={<WarningCircle />}
+          icon={<Clock />}
           title="Myra is taking longer than usual"
           description="She's still getting set up. Give it another moment, or try again."
           action={
             <Button variant="outline" onClick={startOver}>
-              Try again
+              Retry
             </Button>
           }
         />

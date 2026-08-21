@@ -350,9 +350,32 @@ describe("the wait right after connecting a provider", () => {
     expect(text).toContain("Myra is taking longer than usual");
     expect(text).not.toMatch(/\d+ of \d+/);
     const retry = Array.from(container?.querySelectorAll("button") ?? []).find(
-      (button) => button.textContent === "Try again",
+      (button) => button.textContent === "Retry",
     );
     expect(retry).not.toBeUndefined();
+  });
+
+  test("auto-navigates once Myra becomes ready even after the stall message fires, with no click", async () => {
+    // Myra doesn't answer until well past the stall threshold — the slow
+    // message must not be the end of the line. Polling keeps going
+    // underneath it, and the land happens on its own once she's ready.
+    benchWhereMyraArrivesAfter(6);
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 40, navigated });
+    for (let i = 0; i < 40; i++) {
+      await settle();
+      if ((container?.textContent ?? "").includes("longer than usual")) break;
+    }
+    expect(container?.textContent ?? "").toContain(
+      "Myra is taking longer than usual",
+    );
+
+    for (let i = 0; i < 60; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(navigated).toEqual(["/w/chan_new"]);
   });
 });
 
