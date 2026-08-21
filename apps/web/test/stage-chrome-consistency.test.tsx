@@ -51,6 +51,7 @@ describe("stage chrome consistency (CL-6368)", () => {
           },
         ]}
         workbenches={new Map()}
+        instances={[]}
         selectedId={null}
         onSelect={noop}
         createOpen={false}
