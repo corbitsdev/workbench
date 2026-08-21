@@ -157,6 +157,15 @@ the runtime runs occurrences, older rows can be left `running`. Closing
 that gap properly needs the runtime to report the occurrence id on the
 event, not a heuristic here.
 
+**Stale turns fail, never zombie (CL-6451).** A dispatch can die without
+any closing event ever reaching the hub — the workflow-host supervisor's
+terminal-or-park backstop failing it, or the process dying mid-turn. An
+occurrence cannot legitimately outlive the per-turn timeout the section
+body enforces, so both turn stores fail any row still `running` past
+that timeout plus a settle grace (`AGENT_TURN_STALE_MS`) on their next
+read or write: the room shows a failed turn instead of typing forever,
+and the reply path can never attribute a later reply to a dead row.
+
 Proved live end to end by `scripts/e2e/cl-6329-turn-swap-proof.ts`: two
 agents replying in one room under distinct occurrences, three rapid
 messages serializing into ordered turns, and a sidecar killed
@@ -204,6 +213,20 @@ name a mention actually types — `@echo`, never the underlying run's
 unreadable instance id. Handles are derived from a definition's name at
 invite time and de-duplicated against every handle already in the workbench
 (`echo`, `echo-2`, `echo-3`, ...).
+
+**One room participant = one live run (CL-6451).** The `/name` / `@name`
+workflow commands resolve residency first
+(`findResidentAgentForDefinition`, comparing by the definition's asset so
+re-deployed rows still match): a definition already resident reaches the
+run the room already has, never a freshly minted sibling that would then
+race the original for every message. An `@name` typed as a definition's
+wire name (`@assistant`) whose participant answers to a display-name
+handle (`@myra`) posts as an ordinary message and rides the normal turn
+pipeline into that participant's run, queueing behind an in-flight turn
+like any mention. The explicit invite affordance is the one deliberate
+way to place a second instance of a definition in a room — it always
+launches, which is exactly what handle de-duplication ("echo", "echo-2")
+exists for.
 
 A **mention** is `@` followed by a participant's handle at a word boundary,
 anywhere in a message's text. Mentioning an agent participant triggers
