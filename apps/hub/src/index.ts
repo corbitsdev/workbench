@@ -327,6 +327,7 @@ import {
 
 import { betterAuth } from "better-auth";
 import { createBenchSessionMinter } from "./bench-session";
+import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
@@ -554,6 +555,25 @@ export async function createHub(config: HubConfig) {
     database: drizzleAdapter(db, { provider: "pg" }),
     emailAndPassword: { enabled: true },
     socialProviders: config.socialProviders,
+    // Client-IP resolution for the sign-up rate limit below. Railway's docs
+    // (docs.railway.com/networking/public-networking/specs-and-limits) list
+    // `X-Real-IP` as the header its edge sets for the client's address —
+    // that's the only claim about it this codebase can actually stand
+    // behind. It is deliberately NOT relied on for sign-in: Railway's
+    // private networking lets any same-project service (sidecars included)
+    // reach this hub directly, bypassing the edge, and with no
+    // `trustedProxies` configured (Railway publishes no stable edge CIDR
+    // list to populate one with) a single-value header is trusted verbatim
+    // regardless of who set it. That's an acceptable, low-stakes gap for
+    // sign-up's coarse throttling — a closed-by-default, operator-gated
+    // path — but not for brute-force resistance on sign-in, which is why
+    // sign-in has its own account-keyed limiter instead (see
+    // `sign-in-rate-limit.ts`).
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["x-real-ip"],
+      },
+    },
     rateLimit: {
       // Explicit and always on: better-auth's own default only enables
       // this in production (`enabled ?? isProduction`), which would
@@ -565,14 +585,13 @@ export async function createHub(config: HubConfig) {
           window: config.signupRateLimit.windowSeconds,
           max: config.signupRateLimit.max,
         },
-        // Overrides better-auth's built-in special rule for /sign-in*
-        // (3 attempts / 10 seconds) — see `DEFAULT_SIGNIN_RATE_LIMIT_MAX`'s
-        // doc comment in config.ts for why this is raised the same way in
-        // every environment instead of a dev-only carve-out.
-        [SIGN_IN_EMAIL_PATH]: {
-          window: config.signInRateLimit.windowSeconds,
-          max: config.signInRateLimit.max,
-        },
+        // `false` fully disables better-auth's own built-in special rule
+        // for /sign-in* (3 attempts / 10 seconds, keyed on the client IP
+        // above) rather than leaving it running in parallel as a second,
+        // weaker mechanism: that IP key is exactly what CL-6494's
+        // private-network bypass defeats, so enforcement for this path
+        // lives entirely in `signInAttemptLimiter` below instead.
+        [SIGN_IN_EMAIL_PATH]: false,
       },
     },
     // No mailer is wired up anywhere in this stack, so better-auth can
@@ -595,6 +614,13 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
+  // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
+  // for why this replaces better-auth's own IP-keyed sign-in enforcement
+  // entirely rather than composing with it.
+  const signInAttemptLimiter = createSignInAttemptLimiter(
+    config.signInRateLimit.windowSeconds,
+    config.signInRateLimit.max,
+  );
   const { signingKey, agentRepoStore, assetService } =
     await createBootAssetWiring({ db, dataDir: config.hubDataDir });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
@@ -984,6 +1010,37 @@ export async function createHub(config: HubConfig) {
               403,
             );
           }
+        }
+      }
+      // Account-keyed sign-in brute-force protection (CL-6494) — see
+      // `sign-in-rate-limit.ts` for why this fully replaces better-auth's
+      // own IP-keyed enforcement for this path instead of running beside
+      // it.
+      if (c.req.method === "POST" && c.req.path.endsWith(SIGN_IN_EMAIL_PATH)) {
+        let email = "";
+        try {
+          const body: unknown = await c.req.raw.clone().json();
+          if (
+            body !== null &&
+            typeof body === "object" &&
+            "email" in body &&
+            typeof (body as { email: unknown }).email === "string"
+          ) {
+            email = (body as { email: string }).email;
+          }
+        } catch {
+          email = "";
+        }
+        const decision = signInAttemptLimiter.consume(email);
+        if (!decision.allowed) {
+          return c.json(
+            {
+              error: "rate_limited",
+              message: `Too many sign-in attempts. Try again in ${decision.retryAfterSeconds} second${decision.retryAfterSeconds === 1 ? "" : "s"}.`,
+            },
+            429,
+            { "X-Retry-After": decision.retryAfterSeconds.toString() },
+          );
         }
       }
       return auth.handler(c.req.raw);

@@ -173,73 +173,93 @@ describeIfDb("extension mounting", () => {
   });
 });
 
-describeIfDb("auth rate limiting resolves the client IP (CL-6494)", () => {
-  function signInAttempt(
-    hub: Awaited<ReturnType<typeof createHub>>,
-    ip: string,
-  ) {
-    return hub.app.request("/api/auth/sign-in/email", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": ip },
-      body: JSON.stringify({
-        email: "nobody@example.com",
-        password: "wrong-password",
-      }),
+describeIfDb(
+  "sign-in rate limiting is keyed on the target account, not client IP (CL-6494)",
+  () => {
+    // A forged/rotating `x-forwarded-for` is exactly what a caller reaching
+    // this hub over Railway's private network (bypassing the edge) can
+    // send on every request — the header this suite deliberately varies
+    // per attempt below to prove it buys the attacker nothing.
+    function signInAttempt(
+      hub: Awaited<ReturnType<typeof createHub>>,
+      email: string,
+      forgedIp: string,
+    ) {
+      return hub.app.request("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": forgedIp,
+        },
+        body: JSON.stringify({ email, password: "wrong-password" }),
+      });
+    }
+
+    test("a forged, rotating IP header per attempt cannot exceed the per-account budget", async () => {
+      const hub = await createHub({
+        ...config,
+        signInRateLimit: { windowSeconds: 60, max: 2 },
+      });
+      closers.push(hub.close);
+
+      // Same targeted account, a distinct forged source IP every attempt.
+      await signInAttempt(hub, "victim@example.com", "203.0.113.10");
+      await signInAttempt(hub, "victim@example.com", "203.0.113.20");
+      const throttled = await signInAttempt(
+        hub,
+        "victim@example.com",
+        "203.0.113.30",
+      );
+
+      expect(throttled.status).toBe(429);
     });
-  }
 
-  test("two distinct client IPs get independent sign-in buckets", async () => {
-    const hub = await createHub({
-      ...config,
-      signInRateLimit: { windowSeconds: 60, max: 2 },
+    test("two genuinely different accounts get independent budgets", async () => {
+      const hub = await createHub({
+        ...config,
+        signInRateLimit: { windowSeconds: 60, max: 1 },
+      });
+      closers.push(hub.close);
+
+      // Exhausts alice's budget (max: 1), from the same source IP.
+      await signInAttempt(hub, "alice@example.com", "203.0.113.40");
+      const throttledAlice = await signInAttempt(
+        hub,
+        "alice@example.com",
+        "203.0.113.40",
+      );
+      expect(throttledAlice.status).toBe(429);
+
+      // bob's very first attempt is untouched by alice's exhausted budget.
+      const freshBob = await signInAttempt(
+        hub,
+        "bob@example.com",
+        "203.0.113.40",
+      );
+      expect(freshBob.status).not.toBe(429);
     });
-    closers.push(hub.close);
 
-    // Exhausts IP A's bucket (max: 2).
-    await signInAttempt(hub, "203.0.113.10");
-    await signInAttempt(hub, "203.0.113.10");
-    const throttledA = await signInAttempt(hub, "203.0.113.10");
-    expect(throttledA.status).toBe(429);
+    test("a rate-limited sign-in carries a retry hint and a human-readable message", async () => {
+      const hub = await createHub({
+        ...config,
+        signInRateLimit: { windowSeconds: 60, max: 1 },
+      });
+      closers.push(hub.close);
 
-    // IP B's very first request is untouched by A's bucket.
-    const freshB = await signInAttempt(hub, "203.0.113.20");
-    expect(freshB.status).not.toBe(429);
-  });
+      await signInAttempt(hub, "throttle-me@example.com", "203.0.113.50");
+      const throttled = await signInAttempt(
+        hub,
+        "throttle-me@example.com",
+        "203.0.113.60",
+      );
 
-  test("a rate-limited sign-in carries a retry hint and a human-readable message", async () => {
-    const hub = await createHub({
-      ...config,
-      signInRateLimit: { windowSeconds: 60, max: 1 },
+      expect(throttled.status).toBe(429);
+      expect(throttled.headers.get("x-retry-after")).not.toBeNull();
+      const body = (await throttled.json()) as { message: string };
+      expect(body.message).toMatch(/\S/);
     });
-    closers.push(hub.close);
-
-    await signInAttempt(hub, "203.0.113.30");
-    const throttled = await signInAttempt(hub, "203.0.113.30");
-
-    expect(throttled.status).toBe(429);
-    expect(throttled.headers.get("x-retry-after")).not.toBeNull();
-    const body = (await throttled.json()) as { message: string };
-    expect(body.message).toMatch(/\S/);
-  });
-
-  test("a resolvable x-forwarded-for means the shared-bucket boot warning never fires", async () => {
-    const warnSpy = spyOn(console, "warn");
-    const hub = await createHub(config);
-    closers.push(hub.close);
-
-    await signInAttempt(hub, "203.0.113.40");
-
-    const sharedBucketWarning = warnSpy.mock.calls.some((call) =>
-      call.some(
-        (arg) =>
-          typeof arg === "string" &&
-          arg.includes("falling back to a single shared per-path bucket"),
-      ),
-    );
-    expect(sharedBucketWarning).toBe(false);
-    warnSpy.mockRestore();
-  });
-});
+  },
+);
 
 describeIfDb("dev-mode email verification", () => {
   test("ALLOW_UNVERIFIED_EMAILS auto-verifies a fresh self-serve signup, so it never 403s on the unverified-email gate", async () => {
