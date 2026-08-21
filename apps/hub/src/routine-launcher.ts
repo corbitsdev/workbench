@@ -51,6 +51,7 @@ import {
   readDefinitionProjection,
   readFoldedBody,
   sendFoldedMailWithRetry,
+  MultiStepFoldUnsupportedError,
   type CryptoProviderCache,
   type FoldedRunsDeps,
 } from "@corbits/folded-runs";
@@ -66,6 +67,7 @@ import {
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
 import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 import type { LaunchTaskInput, TaskRecord } from "@corbits/tasks";
+import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 
 const log = getLogger(["hub", "routine-launcher"]);
 
@@ -167,10 +169,65 @@ export function createHubRoutineLauncher(
       }
 
       const projection = await readDefinitionProjection(deps.db, definitionRow);
-      const foldedBody = readFoldedBody(
-        projection,
-        definitionRow.grantRequirements,
-      );
+
+      // A multi-step definition can only exist as a code-sourced
+      // `@intx/workflow` deployed through `POST /workflows/deployments`
+      // (see `native-workflow-routine-launch.ts`'s own header) — it never
+      // reaches `readFoldedBody` successfully, because that reader's
+      // deploy target has no notion of step order at all. Route it onto
+      // Interchange's native workflow-run trigger instead of throwing
+      // the folded path's 500: this is a deliberate split by definition
+      // shape, not two launchers competing for the same case — a
+      // single-step, hand-authored definition has no source of its own
+      // and still needs `launchFoldedRun`'s render-and-deploy bridge
+      // below; a multi-step definition already has real, deployed
+      // source and only needs firing.
+      let foldedBody;
+      try {
+        foldedBody = readFoldedBody(
+          projection,
+          definitionRow.grantRequirements,
+        );
+      } catch (err) {
+        if (!(err instanceof MultiStepFoldUnsupportedError)) throw err;
+        const content = renderRoutineInput(input.input);
+        const triggered = await triggerNativeWorkflowRoutineRun(deps, {
+          tenantId: input.tenantId,
+          definitionId: input.definitionId,
+          principalId: input.principalId,
+          fromDomain: tenantRow.domain,
+          // A native run only starts on its first trigger mail — unlike
+          // a folded run, there is no "start from the system prompt
+          // alone" fallback, so an empty stored input still needs a
+          // real message to fire the deployment.
+          content: content === "" ? "Run this routine now." : content,
+        });
+
+        if (
+          input.deliveryWorkbenchId !== undefined &&
+          input.deliveryWorkbenchId !== null &&
+          input.deliveryWorkbenchId !== ""
+        ) {
+          try {
+            await deps.joinDeliveryWorkbench({
+              tenantId: input.tenantId,
+              workbenchId: input.deliveryWorkbenchId,
+              principalId: input.principalId,
+              address: triggered.address,
+              handle: handleFromName(
+                input.routineName ?? "",
+                triggered.address,
+              ),
+            });
+          } catch (joinErr) {
+            const reason =
+              joinErr instanceof Error ? joinErr.message : String(joinErr);
+            log.error`routine run ${triggered.runId} launched but could not join delivery workbench ${input.deliveryWorkbenchId}: ${reason}`;
+          }
+        }
+
+        return { runId: triggered.runId };
+      }
 
       const instanceId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);

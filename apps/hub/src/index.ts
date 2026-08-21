@@ -38,6 +38,7 @@ import { credentialAad } from "@intx/types";
 import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
+  createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
   type AppEnv,
@@ -656,8 +657,23 @@ export async function createHub(config: HubConfig) {
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ) => Promise<void>;
   } = {};
+  // CL-6499 (native multi-step routines): materializes a mail-triggered
+  // run's authorization grants from its deploy-approved snapshot, so
+  // ANY plain mail delivered to a workflow deployment's address — not
+  // only the dedicated `POST /workflows/:id/mail` HTTP trigger route,
+  // which stages this itself inline — starts a properly authorized
+  // run. Without this wired, `sidecarRouter.routeMail` alone would
+  // deliver the mail but leave the run's `runs/<runId>/grants.json`
+  // unwritten, and its `onRunStart` barrier would never resolve. This
+  // is the one piece of plumbing `apps/hub/src/native-workflow-routine-launch.ts`
+  // relies on to trigger a native multi-step deployment safely.
+  const mailTriggeredRunGrants = createMailTriggeredRunGrantsMaterializer({
+    db,
+    grantStore: createGrantStore(db),
+  });
   const lookups = {
     ...baseLookups,
+    materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ): Promise<void> {
