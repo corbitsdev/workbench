@@ -31,6 +31,7 @@ const config: HubConfig = {
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
+  signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
   signupMode: "closed",
   allowedEmailDomains: [],
@@ -169,6 +170,74 @@ describeIfDb("extension mounting", () => {
     expect(await gated.json()).toEqual({
       error: { code: "unauthorized", message: "Authentication required" },
     });
+  });
+});
+
+describeIfDb("auth rate limiting resolves the client IP (CL-6494)", () => {
+  function signInAttempt(
+    hub: Awaited<ReturnType<typeof createHub>>,
+    ip: string,
+  ) {
+    return hub.app.request("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": ip },
+      body: JSON.stringify({
+        email: "nobody@example.com",
+        password: "wrong-password",
+      }),
+    });
+  }
+
+  test("two distinct client IPs get independent sign-in buckets", async () => {
+    const hub = await createHub({
+      ...config,
+      signInRateLimit: { windowSeconds: 60, max: 2 },
+    });
+    closers.push(hub.close);
+
+    // Exhausts IP A's bucket (max: 2).
+    await signInAttempt(hub, "203.0.113.10");
+    await signInAttempt(hub, "203.0.113.10");
+    const throttledA = await signInAttempt(hub, "203.0.113.10");
+    expect(throttledA.status).toBe(429);
+
+    // IP B's very first request is untouched by A's bucket.
+    const freshB = await signInAttempt(hub, "203.0.113.20");
+    expect(freshB.status).not.toBe(429);
+  });
+
+  test("a rate-limited sign-in carries a retry hint and a human-readable message", async () => {
+    const hub = await createHub({
+      ...config,
+      signInRateLimit: { windowSeconds: 60, max: 1 },
+    });
+    closers.push(hub.close);
+
+    await signInAttempt(hub, "203.0.113.30");
+    const throttled = await signInAttempt(hub, "203.0.113.30");
+
+    expect(throttled.status).toBe(429);
+    expect(throttled.headers.get("x-retry-after")).not.toBeNull();
+    const body = (await throttled.json()) as { message: string };
+    expect(body.message).toMatch(/\S/);
+  });
+
+  test("a resolvable x-forwarded-for means the shared-bucket boot warning never fires", async () => {
+    const warnSpy = spyOn(console, "warn");
+    const hub = await createHub(config);
+    closers.push(hub.close);
+
+    await signInAttempt(hub, "203.0.113.40");
+
+    const sharedBucketWarning = warnSpy.mock.calls.some((call) =>
+      call.some(
+        (arg) =>
+          typeof arg === "string" &&
+          arg.includes("falling back to a single shared per-path bucket"),
+      ),
+    );
+    expect(sharedBucketWarning).toBe(false);
+    warnSpy.mockRestore();
   });
 });
 

@@ -372,6 +372,7 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
+const SIGN_IN_EMAIL_PATH = "/sign-in/email";
 // Chat residents carry a real hub-driven idle-reap again (reversing
 // CL-5477's removal): the sidecar's own park/wake scheme it was meant to
 // replace has itself been retired in favor of a simpler reap-and-relaunch
@@ -563,6 +564,14 @@ export async function createHub(config: HubConfig) {
         [SIGN_UP_EMAIL_PATH]: {
           window: config.signupRateLimit.windowSeconds,
           max: config.signupRateLimit.max,
+        },
+        // Overrides better-auth's built-in special rule for /sign-in*
+        // (3 attempts / 10 seconds) — see `DEFAULT_SIGNIN_RATE_LIMIT_MAX`'s
+        // doc comment in config.ts for why this is raised the same way in
+        // every environment instead of a dev-only carve-out.
+        [SIGN_IN_EMAIL_PATH]: {
+          window: config.signInRateLimit.windowSeconds,
+          max: config.signInRateLimit.max,
         },
       },
     },
