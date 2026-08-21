@@ -20,6 +20,7 @@ export type {
   OAuthExchangeResult,
 } from "./descriptor";
 export { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
+export { MissingCredentialError } from "./credential-error";
 export {
   testExaCredential,
   testGitHubCredential,
