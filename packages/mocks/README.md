@@ -122,18 +122,68 @@ See `src/ollama/cl-6448-demo.test.ts` for the full demonstration: the same
 assertions failing against CL-6448's broken request shape, and passing
 once tools and history are actually sent.
 
+### The adversarial output catalogue (CL-6478's shape)
+
+Real local models misbehave in specific, repeatable ways. Every scenario
+below reproduces one we actually hit — not a hypothetical edge case —
+selectable in one line straight off `ollama.reply`, exactly like `.text`
+and `.toolCall`:
+
+```ts
+ollama.onChat(() => ollama.reply.malformedToolName());
+```
+
+| Scenario                            | What it reproduces                                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `.malformedToolName()`              | CL-6478's flagship case: `qwen3.8:27b` leaked `\n</parameter` into a tool-call function name.              |
+| `.toolNameOfLength(n)`              | A tool name of exactly `n` characters — pass 63, 64, 65 to prove the boundary three shipping tools sit at. |
+| `.textlessToolCall(name, args?)`    | An `inference.done` with no text at all — a tool-only round, not an empty reply.                           |
+| `.wrongShapedToolArgs(name, args)`  | Valid JSON tool-call arguments that don't match the declared schema.                                       |
+| `.truncatedToolArgs(name, rawArgs)` | Arguments that are NOT valid JSON — a mid-stream cutoff, reaching the wire byte-for-byte.                  |
+| `.refusal(text?)`                   | The model declines to answer.                                                                              |
+| `.oversized(approxChars?)`          | A large enough text blob to exercise a truncation or blob-spill path.                                      |
+| `.hallucinatedToolName()`           | A plausible-but-nonexistent tool name (`skills_load` instead of the real `load_skill`).                    |
+
+`sequence([...])` scripts one reply per turn — turn 1 malformed, turn 2
+normal — so CL-6478's "does the room survive?" contract is directly
+testable:
+
+```ts
+import { sequence } from "@corbits/mocks/ollama";
+
+ollama.onChat(
+  sequence([
+    ollama.reply.malformedToolName(),
+    ollama.reply.text("turn 2 — does the room survive?"),
+  ]),
+);
+```
+
+CL-6478's real fix — `sanitizeToolNameForPersistence` in
+`vendor/intx/hub-sessions/src/sanitize-tool-name.ts` — collapses a name
+`@intx/inference`'s `encodeToolName` cannot round-trip to a stable
+placeholder before it is ever persisted, so one bad tool-call name can
+never wedge a room forever. `src/ollama/cl-6478-demo.test.ts` demonstrates
+that regression-guard shape at this mock layer: a turn assembler that
+persists the malformed name unchanged carries it straight into the next
+turn's history. Wiring an equivalent guard through the real hub-sessions
+turn assembler is a follow-up — this package proves the shape, it does not
+(yet) replace that test.
+
 ## API shape
 
-| Export                                         | What it's for                                                                |
-| ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| `createOllamaMock(options?)`                   | Builds one mock instance. `options.models` seeds the `/api/tags` catalogue.  |
-| `mock.fetch`                                   | A `(Request) => Promise<Response>` handler — the in-process path.            |
-| `mock.listen(port?)`                           | Starts a real Bun HTTP server; returns `{ url, close() }` — the server path. |
-| `mock.setModels(models)`                       | Rewrites the catalogue mid-test (a connect flow that re-reads it).           |
-| `mock.onChat(handler)`                         | Scripts every subsequent `/v1/chat/completions` reply.                       |
-| `mock.reply.text` / `.toolCall` / `.toolCalls` | Builds an `OllamaChatReply` for a handler to return.                         |
-| `mock.requests`                                | The `CapturedRequestLog` — `.all`, `.count`, `.last()`, `.clear()`.          |
-| `CapturedChatRequest`                          | One captured request: `.model`, `.tools`, `.messages`, plus every `expect*`. |
+| Export                                                                                                                                                                           | What it's for                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `createOllamaMock(options?)`                                                                                                                                                     | Builds one mock instance. `options.models` seeds the `/api/tags` catalogue.  |
+| `mock.fetch`                                                                                                                                                                     | A `(Request) => Promise<Response>` handler — the in-process path.            |
+| `mock.listen(port?)`                                                                                                                                                             | Starts a real Bun HTTP server; returns `{ url, close() }` — the server path. |
+| `mock.setModels(models)`                                                                                                                                                         | Rewrites the catalogue mid-test (a connect flow that re-reads it).           |
+| `mock.onChat(handler)`                                                                                                                                                           | Scripts every subsequent `/v1/chat/completions` reply.                       |
+| `mock.reply.text` / `.toolCall` / `.toolCalls`                                                                                                                                   | Builds an `OllamaChatReply` for a handler to return.                         |
+| `mock.requests`                                                                                                                                                                  | The `CapturedRequestLog` — `.all`, `.count`, `.last()`, `.clear()`.          |
+| `CapturedChatRequest`                                                                                                                                                            | One captured request: `.model`, `.tools`, `.messages`, plus every `expect*`. |
+| `mock.reply.malformedToolName` / `.toolNameOfLength` / `.textlessToolCall` / `.wrongShapedToolArgs` / `.truncatedToolArgs` / `.refusal` / `.oversized` / `.hallucinatedToolName` | The adversarial output catalogue — see above.                                |
+| `sequence(replies)`                                                                                                                                                              | Scripts one reply per turn for `onChat`; repeats the last once exhausted.    |
 
 Routes covered: `GET /api/tags` (native catalogue), `POST /api/show`
 (per-model capability probe), `POST /v1/chat/completions`
@@ -147,11 +197,10 @@ the openai adapter's request-building actually call. No `/api/generate`,
 - **OpenAI-compatible and Anthropic provider mocks** — `@corbits/mocks/openai`
   and `@corbits/mocks/anthropic`, same request-capture and reply-scripting
   API shape as this one.
-- **Adversarial output catalogue** — seeded canned failures a handler can
-  return in one call: malformed tool names (`\n</parameter` embedded in a
-  function name), truncated JSON tool arguments, refusals, wrong-shaped
-  tool args, oversized outputs, a textless `inference.done`, and the
-  tool-name-length edges three of our real tools sit at (63/64 chars).
+- **Wiring the CL-6478 regression guard through the real turn
+  assembler** — `cl-6478-demo.test.ts` demonstrates the shape at this mock
+  layer only; an equivalent test exercising `@workbench/hub-sessions`'s
+  actual turn assembly (vendored, out of scope for this unit) is next.
 - **Converging the scattered fakes** — `packages/evals`' github MCP fake
   and its stub inference harness should be rebuilt on top of this package
   rather than living on beside it.
