@@ -91,8 +91,17 @@ check:*` script, so a violation fails CI rather than waiting for review.
   `undefined` to an optional field the compiler expects omitted is a
   recurring CI break — omit the key instead.
 
+## Product decisions
+
+[docs/DECISIONS.md](docs/DECISIONS.md) records rulings the owner has made
+that the code does not imply — where a routine delivers, what the top-bar
+search does, what a brand-new tenant must have. **Read it before building in
+those areas.** A decision there overrides an inference drawn from existing
+code: when the two disagree, the code is what is wrong.
+
 ## Docs map
 
+- [DECISIONS.md](docs/DECISIONS.md) — owner rulings the code does not imply
 - [README.md](README.md) — quickstart and repo layout
 - [PRODUCT.md](PRODUCT.md) — what Workbench is and why
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system structure
