@@ -30,7 +30,7 @@ never a convenience.
 | `vendor/intx/hub-sessions`    | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                        | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the usage forward (CL-5879), pack-acceptance fixes, adopted deploy front, wire-projection writer, event-collector serialization, or anchor ordering                                    | sawyer | 2026-09-19 | `check:killdates` |
 | `vendor/intx/workflow`        | `@intx/workflow` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                            | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the `onBodyFailure` trigger policy and its projection (CL-6326, CL-6324); retired when upstream absorbs the delta                                                                      | sawyer | 2026-09-19 | `check:killdates` |
 | `vendor/intx/workflow-deploy` | `@intx/workflow-deploy` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | Carries no delta of its own, but must bind against the vendored `@intx/workflow` (whose `onBodyFailure` field flows through the projection it hashes); retired with the workflow delta                                           | sawyer | 2026-09-19 | `check:killdates` |
-| `vendor/intx/workflow-host`   | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the empty-mail drop (CL-6164) or the action/loop runtime bind (CL-6325; its adapters live in `packages/workflow-host-actions` since CL-6435); retired when upstream absorbs the deltas | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/workflow-host`   | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0) | npm 0.3.0 covers the base package but not the empty-mail drop (CL-6164), the action/loop runtime bind (CL-6325; its adapters live in `packages/workflow-host-actions` since CL-6435), or the body-spawn authorize/credential threading (CL-6448); retired when upstream absorbs the deltas | sawyer | 2026-09-19 | `check:killdates` |
 
 The pinned commit `b5580a02` is upstream's `v0.3.0` release tag, 16 commits
 past the previous pin `4ed8baf4`: a workflow-host supervisor
@@ -115,7 +115,16 @@ defaulting to the fail-closed empty registries; `buildRuntimeEnv` wires
 `effects`, `invokeAction`, `loopFns`, and `runLoopIteration` into every
 run's env and is exported so a host's runtime-env-level probe
 (`apps/sidecar/test/action-runtime-env.test.ts`) can exercise the bind
-without the full control-channel harness. `vendor/intx/workflow` (CL-6326, CL-6324) gives
+without the full control-channel harness. `vendor/intx/workflow-host`
+(CL-6448) also threads the parent child's credentials-backed authorize and
+live `CredentialWiring` through the suspendable-child (onTrigger body) spawn
+seam: `RunSuspendableChild`'s input and
+`createInMemorySpawnSuspendableChild`'s opts gain optional
+`authorize`/`credentialWiring` fields, and `run-child.ts` passes both when
+building the body resolver, so a body agent's tool calls gate through the
+same per-step grant snapshot a top-level step's do instead of the host's
+throwing authorize stub. Upstream never runs tool-bearing body agents, so
+the seam has no upstream analog yet. `vendor/intx/workflow` (CL-6326, CL-6324) gives
 `onTrigger` an `onBodyFailure?: "end" | "continue"` policy: absent or `"end"`
 preserves terminal-is-final, while `"continue"` lets a long-lived section
 re-arm past a `failed` body occurrence instead of one bad turn permanently
