@@ -25,6 +25,30 @@ describe("redactText", () => {
       "could not reach the hub",
     );
   });
+
+  test("redacts sensitive query-param values in a URL while keeping it readable", () => {
+    expect(
+      redactText(
+        "callback failed: https://api.example.com/cb?access_token=SECRETVALUE123&code=abc&state=xyz",
+      ),
+    ).toBe(
+      "callback failed: https://api.example.com/cb?access_token=[redacted]&code=[redacted]&state=xyz",
+    );
+  });
+
+  test("redacts token= and key= style assignments in free text", () => {
+    expect(redactText("failed request token=abc123xyz key=def456")).toBe(
+      "failed request token=[redacted] key=[redacted]",
+    );
+  });
+
+  test("redacts a raw JWT with no keyword prefix", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGhpc2lzbm90YXJlYWxzaWc";
+    expect(redactText(`session restore failed for ${jwt}`)).toBe(
+      "session restore failed for [redacted]",
+    );
+  });
 });
 
 describe("redactExtra", () => {
@@ -63,5 +87,13 @@ describe("redactExtra", () => {
 
   test("passes undefined through unchanged", () => {
     expect(redactExtra(undefined)).toBeUndefined();
+  });
+
+  test("redacts a raw secret string inside an array under a non-secret key", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGhpc2lzbm90YXJlYWxzaWc";
+    expect(redactExtra({ sessions: [jwt, "plain-session-id"] })).toEqual({
+      sessions: ["[redacted]", "plain-session-id"],
+    });
   });
 });
