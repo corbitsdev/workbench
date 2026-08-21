@@ -29,7 +29,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 
 import { RoutineTrigger } from "./trigger";
-import type { RoutineRow, RoutineStore, UpdateRoutineInput } from "./store";
+import type { RoutineStore, UpdateRoutineInput } from "./store";
 import {
   fireOnceTriggerIfNeeded,
   isDeliveryWorkbenchRequired,
