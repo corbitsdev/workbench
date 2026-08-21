@@ -163,18 +163,6 @@ export interface SidecarStepBuildEnvDeps {
    * need no cross-run conversation durability.
    */
   durableConversation?: DurableConversationRegistry;
-  /**
-   * Build a TOOLLESS env: skip tool materialization entirely and attach an
-   * empty tool runtime. Set for an onTrigger body step. A body agent is
-   * guaranteed toolless by the deploy-time guard (a tool-bearing body agent
-   * is rejected at deploy), and -- critically -- the body child runs under
-   * the PARENT deployment's `mailboxAddress`/`stepCount`, so resolving a
-   * body step's deploy tree through `stepDeployTreeDir` would read the
-   * PARENT step's tools for a body stepId that happens to collide with a
-   * parent step id. Skipping materialization makes the toolless-body
-   * invariant structural rather than incidental on non-collision.
-   */
-  toolless: boolean;
 }
 
 /**
@@ -291,22 +279,23 @@ export function createSidecarStepBuildEnv(
     // case); a present-but-broken manifest surfaces loudly through
     // `materializeStepTools` rather than degrading to empty tools.
     //
-    // A toolless body step skips this entirely (empty tools), so a body
-    // stepId that collides with a parent step id can never read the parent's
-    // deploy tree; the body agent is guaranteed toolless by the deploy
-    // guard, so there is nothing to materialize.
-    const materialization: StepToolMaterialization =
-      deps.toolless === true
-        ? { factories: [], pluginFactories: [] }
-        : await materializeStepTools({
-            dataDir: deps.dataDir,
-            mailboxAddress: deps.mailboxAddress,
-            stepId,
-            stepCount: deps.stepCount,
-            storeDir,
-            cache: deps.cache,
-            registries: deps.registries,
-          });
+    // An onTrigger body step (CL-6448) materializes through the same call:
+    // for the single-step section deployment the head/step collapse in
+    // `stepDeployTreeDir` reads the deployment's own staged manifest --
+    // exactly the body agent's pins the folded launch staged -- and a
+    // deployment that staged no tree for the body's stepId reads ENOENT
+    // into the legitimate empty-tools case.
+    const materialization: StepToolMaterialization = await materializeStepTools(
+      {
+        dataDir: deps.dataDir,
+        mailboxAddress: deps.mailboxAddress,
+        stepId,
+        stepCount: deps.stepCount,
+        storeDir,
+        cache: deps.cache,
+        registries: deps.registries,
+      },
+    );
 
     // Supervisor-backed transport for the step agent's mail tools
     // (OUTBOUND half of mailbox ownership). Inbound is inert -- the
@@ -411,9 +400,6 @@ export function createSidecarStepBuildEnv(
     // Carry this step's live credential wiring the same way, so the
     // tool-bearing `agentFactory` can shape a consumer-scoped
     // `credentials` capability for any tool package that declares one.
-    // Omitted for a toolless body step's cold env builder (`toolless:
-    // true` callers pass no `credentialWiring`) -- a body agent is
-    // guaranteed toolless, so it has no tool to hand a credential to.
     if (credentialWiring !== undefined) {
       attachStepCredentials(env, { wiring: credentialWiring, stepId });
     }

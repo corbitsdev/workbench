@@ -360,7 +360,6 @@ export function createSidecarSubstrateFactory(
       outboundMailBridge: env.outboundMailBridge,
       cache: stepToolCache,
       adapters: childAdapterRegistry,
-      toolless: false,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
       definitionId: validated.WORKFLOW_DEFINITION_ID,
@@ -428,49 +427,50 @@ export function createSidecarSubstrateFactory(
         new ChildStepNotImplementedError(req.agent.id, req.authzContext.stepId),
       );
 
-    // onTrigger BODY step invoker. Unlike a childWorkflow child, an
-    // onTrigger section body IS staged: its definition and per-step
-    // inference sources land on disk beside each other at deploy, and its
-    // agents are guaranteed toolless (a tool-bearing body agent is rejected
-    // at deploy). So a body agent step runs for real through the same
-    // `createWorkflowStepInvoker` the top level uses -- built COLD per
-    // invocation (no warm registry: a body is a fresh run per section
-    // event, so no durableConversation, warmCache, or run-boundary mirror)
-    // and TOOLLESS (the build-env skips tool materialization, so a body
-    // stepId colliding with a parent step id can never read the parent's
-    // tools). The per-body `sourcesRef` is threaded in per spawn, disjoint
-    // from the top level's. `onEvent` is the per-run event funnel from the
-    // parent run's event channel, so a body agent's live inference events
-    // reach the hub stream (per-run attribution stays durable via
+    // onTrigger BODY step invoker (CL-6448). Unlike a childWorkflow child,
+    // an onTrigger section body IS staged: its definition and per-step
+    // inference sources land on disk beside each other at deploy. A body
+    // agent step runs for real through the same `createWorkflowStepInvoker`
+    // and the same `buildStepEnv` the top level uses -- so a warm-kept
+    // section deployment's body turns share the per-agent durable
+    // conversation store (each turn's agent loads every prior turn, keyed
+    // by the body's stable stepId across `turn__<n>` occurrences) and
+    // materialize the deployment's staged tool manifest (the head/step
+    // collapse reads the folded launch's own staged pins for a single-step
+    // deployment). The agent itself stays cold per occurrence; the mirror
+    // in the `finally` below is the body path's run-boundary durability
+    // flush, matching the warm top-level path's `onRunBoundary`. The
+    // per-body `sourcesRef` is threaded in per spawn, disjoint from the
+    // top level's. `onEvent` is the per-run event funnel from the parent
+    // run's event channel, so a body agent's live inference events reach
+    // the hub stream (per-run attribution stays durable via
     // runs/<childRunId>/events/).
-    const coldBodyBuildStepEnv = createSidecarStepBuildEnv({
-      dataDir: validated.SIDECAR_DATA_DIR,
-      workflowRunRepoId,
-      signer: conversationSigner,
-      registries: parseToolRegistries(validated.SIDECAR_TOOL_REGISTRIES),
-      mailboxAddress: env.spawn.mailboxAddress,
-      stepCount: env.spawn.stepCount,
-      outboundMailBridge: env.outboundMailBridge,
-      cache: stepToolCache,
-      adapters: childAdapterRegistry,
-      toolless: true,
-      hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
-      sidecarToken: validated.SIDECAR_TOKEN,
-      definitionId: validated.WORKFLOW_DEFINITION_ID,
-    });
-    const bodyInvokeStep: SidecarBodyStepInvoker = (
+    const bodyInvokeStep: SidecarBodyStepInvoker = async (
       req,
       authorize,
       sourcesRef,
       onEvent,
-    ) =>
-      createWorkflowStepInvoker({
-        workflowAuthorize: authorize,
-        buildEnv: (buildReq) => coldBodyBuildStepEnv(buildReq, sourcesRef),
-        agentFactory: stepAgentFactory,
-        sourcesRef,
-        onEvent,
-      })(req);
+      credentialWiring,
+    ) => {
+      try {
+        return await createWorkflowStepInvoker({
+          workflowAuthorize: authorize,
+          buildEnv: (buildReq) =>
+            buildStepEnv(buildReq, sourcesRef, credentialWiring),
+          agentFactory: stepAgentFactory,
+          sourcesRef,
+          onEvent,
+        })(req);
+      } finally {
+        const bodyStepId = req.authzContext.stepId;
+        if (durableConversation !== undefined && bodyStepId !== undefined) {
+          // `peek`, not `get`: a build failure before the env's acquire
+          // must surface as itself, not as the registry's missing-store
+          // throw.
+          await durableConversation.peek(bodyStepId)?.mirrorToSubstrate();
+        }
+      }
+    };
 
     // Adapt the workflow-runtime `StepInvoker` shape onto the host's
     // `ChildStepInvoker` shape. The host's `onEvent` is the child's

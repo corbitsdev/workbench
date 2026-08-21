@@ -227,7 +227,7 @@ export function createCredentialsBackedAuthorize(
     // iteration shares the base step's grants. `baseStepId` is the identity
     // on an unscoped id, so a plain step is unaffected.
     const lookupStepId = baseStepId(stepId);
-    const entry = snapshot.steps.find((s) => s.stepId === lookupStepId);
+    const entry = findStepGrantsEntry(snapshot.steps, lookupStepId);
     if (entry === undefined) {
       const scopedNote =
         lookupStepId === stepId
@@ -246,6 +246,26 @@ export function createCredentialsBackedAuthorize(
       grants: entry.grants,
     });
   };
+}
+
+/**
+ * Resolve a step's grants entry from the credentials snapshot, with the
+ * head collapse for onTrigger body steps (CL-6448): the snapshot is
+ * keyed by the PARENT deployment's stepOrder, so a body step's own id
+ * (`reply`) never appears in it. For a single-step deployment the sole
+ * entry IS the deployment's grant set — the same head/step collapse
+ * `resolveStepAddress` applies when the body's tools materialize from
+ * the head deploy tree — so a missed lookup resolves to that sole
+ * entry. A multi-step deployment gets no collapse: an unknown stepId
+ * against several entries is ambiguous and stays a miss.
+ */
+function findStepGrantsEntry<T extends { stepId: string }>(
+  steps: readonly T[],
+  lookupStepId: string,
+): T | undefined {
+  const exact = steps.find((step) => step.stepId === lookupStepId);
+  if (exact !== undefined) return exact;
+  return steps.length === 1 ? steps[0] : undefined;
 }
 
 /**
@@ -608,9 +628,7 @@ export async function runWorkflowChild(
           `workflow-child credential wiring: no credentials snapshot for step ${stepId}; a tool-bearing step cannot resolve its grants before the run carries any`,
         );
       }
-      const entry = snapshot.steps.find(
-        (step) => step.stepId === baseStepId(stepId),
-      );
+      const entry = findStepGrantsEntry(snapshot.steps, baseStepId(stepId));
       if (entry === undefined) {
         throw new Error(
           `workflow-child credential wiring: credentials snapshot has no entry for step ${baseStepId(stepId)}`,
@@ -717,6 +735,11 @@ export async function runWorkflowChild(
   // fail loud at startup rather than silently falling back to a disk read (the
   // exact behaviour this arm exists to avoid). A deployment with no onTrigger
   // body leaves the host undefined; its suspendable-child slot is never invoked.
+  const authorize = createCredentialsBackedAuthorize(
+    credentialsRef,
+    opts.bindings.evaluateGrants,
+  );
+
   let suspendableChildHost: HostSpawnSuspendableChild | undefined;
   if (bodiesMap.size > 0) {
     const executor = opts.bindings.runSuspendableChild;
@@ -727,9 +750,15 @@ export async function runWorkflowChild(
           "bodies in-memory",
       );
     }
+    // CL-6448: thread the parent's credentials-backed authorize and live
+    // credential wiring into every body spawn, so a body agent's tool
+    // calls gate through the same per-step grant snapshot (and its tool
+    // bundles resolve credentials) exactly as a top-level step's do.
     suspendableChildHost = createInMemorySpawnSuspendableChild({
       bodies: bodiesMap,
       runSuspendableChild: executor,
+      authorize,
+      credentialWiring,
     });
   }
 
@@ -767,11 +796,6 @@ export async function runWorkflowChild(
       );
     };
   }
-
-  const authorize = createCredentialsBackedAuthorize(
-    credentialsRef,
-    opts.bindings.evaluateGrants,
-  );
 
   const drainController = createWorkflowHostDrainController({ definition });
 
