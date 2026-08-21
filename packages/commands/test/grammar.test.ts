@@ -35,6 +35,18 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/")).toBeUndefined();
     expect(parseSlashCommand("/ hello")).toBeUndefined();
   });
+
+  test("undefined for a path-shaped leading slash — never swallows a plain message that happens to start with '/'", () => {
+    expect(parseSlashCommand("/usr/local/bin")).toBeUndefined();
+    expect(parseSlashCommand("/usr/local/bin is on my PATH")).toBeUndefined();
+  });
+
+  test("still parses a hyphenated command name", () => {
+    expect(parseSlashCommand("/code-reviewer take a look")).toEqual({
+      name: "code-reviewer",
+      args: "take a look",
+    });
+  });
 });
 
 describe("parseAtCommand", () => {
