@@ -244,10 +244,10 @@ describe("resolveNewestProjectedDefinition", () => {
     ).rejects.toThrow(DefinitionProjectionMissingError);
   });
 
-  test("raises with consumer-language re-deploy guidance when there are no candidates at all", async () => {
+  test("raises with consumer-language recovery guidance when there are no candidates at all", async () => {
     await expect(
       resolveNewestProjectedDefinition({} as never, []),
-    ).rejects.toThrow(/re-deploy it/);
+    ).rejects.toThrow(/save its instructions/);
   });
 });
 

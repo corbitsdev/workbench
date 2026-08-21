@@ -414,7 +414,7 @@ describe("POST /workbenches", () => {
   // whose approval never completed) — it answers a named 4xx with
   // consumer-language guidance, and still compensates the orphaned
   // tenant/settings exactly as every other agent-mint failure does.
-  test("a definition with no stored launch body answers 409 with re-deploy guidance, not 500, and still compensates", async () => {
+  test("a definition with no stored launch body answers 409 with recovery guidance, not 500, and still compensates", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -436,7 +436,7 @@ describe("POST /workbenches", () => {
       error: { code: string; message: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/re-deploy it/);
+    expect(errorBody.error.message).toMatch(/save its instructions/);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -1028,7 +1028,7 @@ describe("POST /workbenches/:id/invite", () => {
       error: { code: string; message: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/re-deploy it/);
+    expect(errorBody.error.message).toMatch(/save its instructions/);
   });
 });
 

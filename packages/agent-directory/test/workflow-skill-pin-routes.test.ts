@@ -138,11 +138,31 @@ const authenticateAsTenant1: WorkflowRunAuthenticator = {
     ),
 };
 
+/** Records freeze/re-freeze calls instead of running the real
+ * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
+ * half); routes here are asserted to invoke it on every content write. */
+function recordingDefinitionFreezer() {
+  const freezes: { assetId: string; workflowJson: string }[] = [];
+  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+  return {
+    freezes,
+    refreezes,
+    freeze: (input: { assetId: string; workflowJson: string }) => {
+      freezes.push(input);
+      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
+    },
+    refreeze: (input: { definitionId: string; workflowJson: string }) => {
+      refreezes.push(input);
+      return Promise.resolve({ wireHash: "hash_2" });
+    },
+  };
+}
 function buildApp(opts: {
   assetService?: AssetService;
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
   skillsStore?: DefinitionSkillsStore;
+  definitionFreezer?: ReturnType<typeof recordingDefinitionFreezer>;
 }): Hono {
   return createWorkflowSkillPinRoutes({
     db: opts.db ?? fakeDbWithRows([]),
@@ -150,6 +170,7 @@ function buildApp(opts: {
     skillIndex: fakeSkillIndex,
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     authenticator: opts.authenticator ?? authenticateAsTenant1,
+    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
   }) as unknown as Hono;
 }
 
@@ -237,6 +258,7 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
+  const freezer = recordingDefinitionFreezer();
   const app = buildApp({
     db: fakeDbWithRows([
       {
@@ -254,12 +276,17 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
       },
     }),
     skillsStore,
+    definitionFreezer: freezer,
   });
   const response = await postPin(app, {
     definitionId: TARGET_DEFINITION_ID,
     skillName: "research",
   });
   expect(response.status).toBe(200);
+  // The pin's rewrite re-freezes the projection so the next launch
+  // advertises the pinned skill (CL-6447).
+  expect(freezer.refreezes).toHaveLength(1);
+  expect(freezer.refreezes[0]?.definitionId).toBe(TARGET_DEFINITION_ID);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
   expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);

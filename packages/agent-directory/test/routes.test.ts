@@ -263,6 +263,25 @@ const allowAllRequireGrant: RequireGrant = () => async (_c, next) => {
   await next();
 };
 
+/** Records freeze/re-freeze calls instead of running the real
+ * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
+ * half); routes here are asserted to invoke it on every content write. */
+function recordingDefinitionFreezer() {
+  const freezes: { assetId: string; workflowJson: string }[] = [];
+  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+  return {
+    freezes,
+    refreezes,
+    freeze: (input: { assetId: string; workflowJson: string }) => {
+      freezes.push(input);
+      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
+    },
+    refreeze: (input: { definitionId: string; workflowJson: string }) => {
+      refreezes.push(input);
+      return Promise.resolve({ wireHash: "hash_2" });
+    },
+  };
+}
 function buildApp(
   assetService: AssetService,
   db: DB["db"] = fakeDb(),
@@ -270,6 +289,9 @@ function buildApp(
   history: DefinitionAssetHistory = fakeHistory(),
   capabilityInventory: CapabilityInventoryProvider = fakeCapabilityInventory,
   skillsStore: DefinitionSkillsStore = createInMemoryDefinitionSkillsStore(),
+  definitionFreezer: ReturnType<
+    typeof recordingDefinitionFreezer
+  > = recordingDefinitionFreezer(),
 ): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
     db,
@@ -279,6 +301,7 @@ function buildApp(
     history,
     capabilityInventory,
     requireGrant,
+    definitionFreezer,
   });
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT);
@@ -447,6 +470,7 @@ function fakeCreateDb(): DB["db"] {
 test("a create request with skills writes the definition source tree to the asset and records skills in the skills store", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
+  const freezer = recordingDefinitionFreezer();
   const app = buildApp(
     fakeAssetService({
       createAsset: () =>
@@ -470,6 +494,7 @@ test("a create request with skills writes the definition source tree to the asse
     fakeHistory(),
     fakeCapabilityInventory,
     skillsStore,
+    freezer,
   );
   const response = await post(app, {
     name: "Research Buddy",
@@ -480,6 +505,11 @@ test("a create request with skills writes the definition source tree to the asse
   expect(response.status).toBe(201);
   expect(writtenFiles).toBeDefined();
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
+  // The projection freeze receives the exact source the asset carries —
+  // this is what makes the created definition launchable (CL-6447).
+  expect(freezer.freezes).toHaveLength(1);
+  expect(freezer.freezes[0]?.assetId).toBe("ast_1");
+  expect(freezer.freezes[0]?.workflowJson).toBe(definitionFrom(writtenFiles));
   expect(await skillsStore.getSkills("ast_1")).toEqual([
     "web-research",
     "long-form-write",
@@ -851,6 +881,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
     assetId: "ast_1",
     name: "research-buddy",
   });
+  const freezer = recordingDefinitionFreezer();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: () =>
@@ -863,6 +894,11 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
       },
     }),
     db,
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    createInMemoryDefinitionSkillsStore(),
+    freezer,
   );
   const response = await put(app, "/def_1", {
     name: "Research Buddy",
@@ -871,6 +907,14 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(promptFrom(definitionFrom(writtenFiles))).toBe(
+    "You are now a blunt, no-nonsense researcher.",
+  );
+  // Saving instructions re-freezes the definition's projection in
+  // place, so the next launch answers with the edit — and a legacy
+  // definition frozen without a projection is healed by the same save.
+  expect(freezer.refreezes).toHaveLength(1);
+  expect(freezer.refreezes[0]?.definitionId).toBe("def_1");
+  expect(promptFrom(freezer.refreezes[0]?.workflowJson ?? "")).toBe(
     "You are now a blunt, no-nonsense researcher.",
   );
   expect(db.updateCalls).toEqual([
@@ -1293,6 +1337,7 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
     requireGrant: () => async (_c, next) => {
       await next();
     },
+    definitionFreezer: recordingDefinitionFreezer(),
   });
   const app = new Hono<TenantEnv>();
   app.use("*", async (c, next) => {
