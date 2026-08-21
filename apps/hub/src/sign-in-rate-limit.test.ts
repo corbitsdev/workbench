@@ -2,21 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit.ts";
 
 describe("createSignInAttemptLimiter", () => {
-  test("the Nth attempt against one account past the configured max is rejected", () => {
+  test("the Nth failure against one account past the configured max is rejected", () => {
     const limiter = createSignInAttemptLimiter(60, 2);
 
-    expect(limiter.consume("victim@example.com").allowed).toBe(true);
-    expect(limiter.consume("victim@example.com").allowed).toBe(true);
-    const throttled = limiter.consume("victim@example.com");
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    const throttled = limiter.recordFailure("victim@example.com");
 
     expect(throttled.allowed).toBe(false);
   });
 
-  test("a rejected attempt reports how many seconds remain in the window", () => {
+  test("a rejected failure reports how many seconds remain in the window", () => {
     const limiter = createSignInAttemptLimiter(60, 1);
 
-    limiter.consume("victim@example.com");
-    const throttled = limiter.consume("victim@example.com");
+    limiter.recordFailure("victim@example.com");
+    const throttled = limiter.recordFailure("victim@example.com");
 
     expect(throttled.allowed).toBe(false);
     if (!throttled.allowed) {
@@ -33,27 +33,49 @@ describe("createSignInAttemptLimiter", () => {
     // email — nothing about a rotated header changes it.
     const limiter = createSignInAttemptLimiter(60, 3);
 
-    expect(limiter.consume("victim@example.com").allowed).toBe(true);
-    expect(limiter.consume("victim@example.com").allowed).toBe(true);
-    expect(limiter.consume("victim@example.com").allowed).toBe(true);
-    expect(limiter.consume("victim@example.com").allowed).toBe(false);
-    expect(limiter.consume("victim@example.com").allowed).toBe(false);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(false);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(false);
   });
 
   test("two distinct accounts get independent budgets", () => {
     const limiter = createSignInAttemptLimiter(60, 1);
 
-    expect(limiter.consume("alice@example.com").allowed).toBe(true);
-    expect(limiter.consume("alice@example.com").allowed).toBe(false);
+    expect(limiter.recordFailure("alice@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("alice@example.com").allowed).toBe(false);
 
     // Bob's own budget is untouched by Alice's exhausted one.
-    expect(limiter.consume("bob@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("bob@example.com").allowed).toBe(true);
   });
 
   test("email matching is case- and whitespace-insensitive, so it can't be sidestepped by casing/padding", () => {
     const limiter = createSignInAttemptLimiter(60, 1);
 
-    expect(limiter.consume("Victim@Example.com").allowed).toBe(true);
-    expect(limiter.consume(" victim@example.com ").allowed).toBe(false);
+    expect(limiter.recordFailure("Victim@Example.com").allowed).toBe(true);
+    expect(limiter.recordFailure(" victim@example.com ").allowed).toBe(false);
+  });
+
+  test("a successful sign-in clears the account's budget, so a prior run of failures never carries over", () => {
+    const limiter = createSignInAttemptLimiter(60, 1);
+
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(false);
+
+    limiter.recordSuccess("victim@example.com");
+
+    // The next failure is treated as a fresh first attempt, not a
+    // continuation of the exhausted budget from before the success.
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+  });
+
+  test("recordSuccess is case- and whitespace-insensitive, matching the key recordFailure uses", () => {
+    const limiter = createSignInAttemptLimiter(60, 1);
+
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
+    limiter.recordSuccess(" Victim@Example.com ");
+
+    expect(limiter.recordFailure("victim@example.com").allowed).toBe(true);
   });
 });
