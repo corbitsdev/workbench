@@ -12,6 +12,7 @@ import {
   Button,
   PageShell,
   RichEmptyState,
+  RUN_STATUS_TONE,
   Skeleton,
   StatGrid,
   StatGridItem,
@@ -73,7 +74,14 @@ function taskInFlightRow(task: WorkingTask): InFlightRow {
     context: `${task.agentName} · task`,
     createdAt: task.createdAt,
     statusLabel,
-    statusTone: task.status === "needs-you" ? "accent" : "info",
+    // needs-you is react-ui's `awaiting` (the one status a person can act
+    // on); every other in-flight task reads `running` — both read their
+    // tone from react-ui's own `RUN_STATUS_TONE` rather than a hand-picked
+    // one.
+    statusTone:
+      task.status === "needs-you"
+        ? RUN_STATUS_TONE.awaiting
+        : RUN_STATUS_TONE.running,
     // stepCount is the task's planned total; runIds is how many legs have
     // actually dispatched so far — a real ratio, not an invented total.
     steps: `${task.runIds.length}/${task.stepCount}`,
@@ -87,7 +95,7 @@ function routineInFlightRow(routine: RoutineActivityItem): InFlightRow {
     context: "routine",
     createdAt: routine.startedAt,
     statusLabel: "Running",
-    statusTone: "info",
+    statusTone: RUN_STATUS_TONE.running,
     // The routine feed carries no step count — an honest dash, not a guess.
     steps: "—",
   };

@@ -26,6 +26,8 @@ import {
   TimeSeriesChart,
   TokenMosaic,
   TraceWaterfall,
+  type BadgeTone,
+  type RunStatus,
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartBar } from "@corbits/icons";
@@ -50,6 +52,7 @@ import {
   type OverallUsage,
 } from "@corbits/insights/client";
 
+import type { WorkflowRunStatus } from "@intx/types";
 import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
 import {
   workbenchesQueryKey,
@@ -128,30 +131,23 @@ export function formatWhen(iso: string): string {
   });
 }
 
-export function statusTone(
-  status: string,
-): "success" | "warning" | "danger" | "neutral" | "info" {
-  switch (status) {
-    case "completed":
-    case "succeeded":
-    case "ok":
-    case "deployed":
-      return "success";
-    case "running":
-    case "pending":
-    case "awaiting":
-    case "updating":
-      return "info";
-    case "failed":
-    case "errored":
-    case "error":
-      return "danger";
-    case "cancelled":
-    case "stopped":
-      return "warning";
-    default:
-      return "neutral";
-  }
+/** A platform workflow run's status (`WorkflowRunStatus`) doesn't spell
+ * react-ui's `RunStatus` vocabulary the same way — normalize onto it here
+ * so the badge tone always comes from `RUN_STATUS_TONE`, the one source
+ * every run-status tone reads from, rather than a second opinion invented
+ * on this page. */
+const WORKFLOW_RUN_STATUS_ALIAS: Readonly<
+  Record<WorkflowRunStatus, RunStatus>
+> = {
+  deployed: "completed",
+  running: "running",
+  updating: "running",
+  error: "failed",
+  stopped: "stopped",
+};
+
+export function statusTone(status: WorkflowRunStatus): BadgeTone {
+  return RUN_STATUS_TONE[WORKFLOW_RUN_STATUS_ALIAS[status]];
 }
 
 function tileValue(value: string | number | null, loading: boolean): string {
