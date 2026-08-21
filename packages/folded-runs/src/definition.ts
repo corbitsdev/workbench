@@ -84,6 +84,40 @@ export function authoredDefinitionCandidates<
 }
 
 /**
+ * Thrown when a definition's frozen projection carries more than one
+ * step. The folded-run launch target (`@corbits/agent-runtime`'s
+ * `AgentRuntimeConfig`) renders exactly one `systemPrompt` into one
+ * mailbox-triggered turn — it has no notion of step order at all, so
+ * there is nothing here a length check could safely relax: reading past
+ * `stepOrder[0]` would silently drop every later step's behavior rather
+ * than run it. Genuine multi-step launch needs a different deploy
+ * front (Interchange's native workflow-run trigger, `@intx/workflow-host`'s
+ * DAG supervisor) than this package provides. Carries consumer language
+ * so an HTTP boundary can answer with a named 4xx instead of an
+ * unhandled 500, mirroring `DefinitionProjectionMissingError`.
+ */
+export class MultiStepFoldUnsupportedError extends Error {
+  readonly definitionId: string;
+  readonly stepCount: number;
+  readonly guidance: string;
+  constructor(definitionId: string, stepCount: number) {
+    const guidance =
+      "This agent has multiple workflow steps, which this launch path " +
+      "does not yet support — only its first step would run. Reduce it " +
+      "to a single step, or wait for multi-step routine launch support.";
+    super(
+      `definition ${definitionId} is not single-step (${String(
+        stepCount,
+      )} steps) (${guidance})`,
+    );
+    this.name = "MultiStepFoldUnsupportedError";
+    this.definitionId = definitionId;
+    this.stepCount = stepCount;
+    this.guidance = guidance;
+  }
+}
+
+/**
  * Resolves a definition's launch body by trying its candidates
  * newest-first and returning the first one that actually carries a
  * frozen projection — a stale pre-cutover sibling never wins over a
@@ -243,10 +277,9 @@ export function readFoldedBody(
   }
   const [stepId, ...rest] = definition.stepOrder;
   if (stepId === undefined || rest.length > 0) {
-    throw new Error(
-      `definition ${definition.id} is not single-step (${String(
-        definition.stepOrder.length,
-      )} steps)`,
+    throw new MultiStepFoldUnsupportedError(
+      definition.id,
+      definition.stepOrder.length,
     );
   }
   const step = extractAgentBearingStep(
@@ -282,10 +315,9 @@ export function readLiveFoldedBody(raw: unknown): FoldedBody {
   }
   const [stepId, ...rest] = definition.stepOrder;
   if (stepId === undefined || rest.length > 0) {
-    throw new Error(
-      `live definition ${definition.id} is not single-step (${String(
-        definition.stepOrder.length,
-      )} steps)`,
+    throw new MultiStepFoldUnsupportedError(
+      definition.id,
+      definition.stepOrder.length,
     );
   }
   const step = LiveWorkflowStepSchema(definition.steps[stepId]);
