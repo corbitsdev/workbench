@@ -22,6 +22,11 @@ export type {
 export { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
 export { MissingCredentialError } from "./credential-error";
 export {
+  missingCredentialDetail,
+  parseMissingCredentialDetail,
+  type MissingCredentialDetail,
+} from "./missing-credential-detail";
+export {
   testExaCredential,
   testGitHubCredential,
   testGranolaCredential,
