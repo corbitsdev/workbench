@@ -134,4 +134,61 @@ describe("InsightsPage 'Running now' strip", () => {
     expect(el.textContent).toContain("1 in progress");
     expect(el.textContent).toContain("Weekly digest");
   });
+
+  // Liveness is not a windowed property: a run that started long before the
+  // 7-day window and is still running must not disappear from the strip or
+  // read 0 in the "Running now" KPI just because its start time falls
+  // outside `range`.
+  test("a run started 8 days ago that is still running stays in the strip and the KPI", () => {
+    const eightDaysAgo = new Date(
+      Date.now() - 8 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const el = render("/insights", {
+      data: [
+        {
+          id: "run_long_haul",
+          tenantId: "tnt_bench_a",
+          definitionId: "wfd_a",
+          definitionName: "Long haul",
+          address: "addr",
+          status: "running",
+          createdAt: eightDaysAgo,
+          updatedAt: eightDaysAgo,
+          routineId: null,
+          routineName: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    expect(el.textContent).toContain("Running now");
+    expect(el.textContent).toContain("1 in progress");
+    expect(el.textContent).toContain("Long haul");
+    expect(el.textContent).toContain("in flight");
+  });
+
+  test("the elapsed label ticks forward while a run is live, not frozen at first render", async () => {
+    const startedAt = new Date(Date.now() - 2_000).toISOString();
+    const el = render("/insights", {
+      data: [
+        {
+          id: "run_ticking",
+          tenantId: "tnt_bench_a",
+          definitionId: "wfd_a",
+          definitionName: "Weekly digest",
+          address: "addr",
+          status: "running",
+          createdAt: startedAt,
+          updatedAt: startedAt,
+          routineId: null,
+          routineName: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    const before = el.textContent;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+    expect(el.textContent).not.toBe(before);
+  });
 });

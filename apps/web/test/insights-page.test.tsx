@@ -278,6 +278,51 @@ describe("InsightsPage scope switcher", () => {
   });
 });
 
+function renderAtPathWithRuns(path: string, nextCursor: string | null): string {
+  return renderToStaticMarkup(
+    <TestQueryProvider>
+      <NavigationProvider navigate={() => undefined}>
+        <BenchProvider>
+          <InsightsPage
+            path={path}
+            summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
+            activity={{ kind: "ready", data: [] }}
+            byTool={{ kind: "ready", data: [] }}
+            runs={{
+              kind: "ready",
+              data: { data: [purposeRun], nextCursor },
+            }}
+            routines={emptyRoutines}
+            workbenches={emptyWorkbenches}
+            latency={emptyLatency}
+            range={range}
+            scope={null}
+            resolveWorkbenchIdForTenant={() => null}
+            scopeLabel="All workbenches"
+          />
+        </BenchProvider>
+      </NavigationProvider>
+    </TestQueryProvider>,
+  );
+}
+
+describe("InsightsPage landing run-cap disclosure", () => {
+  // The feed is fetched at a fixed limit=100 (see insightsTopLevelRunsPath).
+  // A non-null nextCursor means the window truly holds more runs than were
+  // fetched, so the KPIs/sparkline/outcome chart built from that truncated
+  // set must say so rather than presenting it as the complete series —
+  // InsightsRunsHistory already discloses its own cap; the landing must too.
+  test("a non-null nextCursor discloses the 100-run cap on the landing view", () => {
+    const markup = renderAtPathWithRuns("/insights", "cursor_2");
+    expect(markup).toContain("100 most recent runs");
+  });
+
+  test("a null nextCursor (fewer than 100 runs) shows no cap disclosure", () => {
+    const markup = renderAtPathWithRuns("/insights", null);
+    expect(markup).not.toContain("100 most recent runs");
+  });
+});
+
 describe("InsightsPage breadcrumbs", () => {
   test("runs history puts an Insights / Run history trail in the top bar", () => {
     const markup = renderAtPath("/insights/runs");
