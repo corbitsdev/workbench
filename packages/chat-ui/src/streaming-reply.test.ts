@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   hydrateStreamingReplyFromTurn,
+  isPendingReply,
   nextStreamingReplyState,
   openPendingReply,
   typingAgentNames,
@@ -22,12 +23,18 @@ function delta(text: string) {
   });
 }
 
+const AWAITING_EMPTY = { phase: "awaiting", text: "" } as const;
+
+function awaiting(text: string) {
+  return { phase: "awaiting", text } as const;
+}
+
 describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing reply)", () => {
   test("a non chat.agent event never opens or changes the reply", () => {
     expect(
       nextStreamingReplyState(null, { eventType: "chat.typing", data: {} }),
     ).toBeNull();
-    const current = { text: "hi" };
+    const current = awaiting("hi");
     expect(
       nextStreamingReplyState(current, {
         eventType: "chat.pin",
@@ -42,11 +49,11 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
         null,
         agentEvent({ type: "inference.start", seq: 0, data: { model: "x" } }),
       ),
-    ).toEqual({ text: "" });
+    ).toEqual(AWAITING_EMPTY);
   });
 
   test("inference.start never wipes tokens already streamed", () => {
-    const state = { text: "Hello" };
+    const state = awaiting("Hello");
     expect(
       nextStreamingReplyState(
         state,
@@ -61,14 +68,14 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
       agentEvent({ type: "inference.start", seq: 0, data: { model: "x" } }),
     );
     state = nextStreamingReplyState(state, delta("Hel"));
-    expect(state).toEqual({ text: "Hel" });
+    expect(state).toEqual(awaiting("Hel"));
     state = nextStreamingReplyState(state, delta("Hello"));
-    expect(state).toEqual({ text: "Hello" });
+    expect(state).toEqual(awaiting("Hello"));
   });
 
   test("inference.done clears the reply — the persisted message takes over", () => {
     const state = nextStreamingReplyState(
-      { text: "Hello there" },
+      awaiting("Hello there"),
       agentEvent({
         type: "inference.done",
         seq: 5,
@@ -79,7 +86,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
   });
 
   test("inference.done keeps an empty pending reply — the next inference round is still owed", () => {
-    const pending = { text: "" };
+    const pending = awaiting("");
     expect(
       nextStreamingReplyState(
         pending,
@@ -107,7 +114,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
 
   test("inference.error clears the reply rather than leaving a stuck cursor", () => {
     const state = nextStreamingReplyState(
-      { text: "Hello" },
+      awaiting("Hello"),
       agentEvent({
         type: "inference.error",
         seq: 5,
@@ -118,7 +125,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
   });
 
   test("an event with no known inner shape (tool calls, usage) leaves the reply untouched", () => {
-    const state = { text: "Hello" };
+    const state = awaiting("Hello");
     expect(
       nextStreamingReplyState(
         state,
@@ -137,11 +144,11 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
         null,
         agentEvent({ type: "reactor.start", seq: 0, data: {} }),
       ),
-    ).toEqual({ text: "" });
+    ).toEqual(AWAITING_EMPTY);
   });
 
   test("reactor.start never resets an in-progress reply", () => {
-    const state = { text: "Hello" };
+    const state = awaiting("Hello");
     expect(
       nextStreamingReplyState(
         state,
@@ -154,7 +161,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
     for (const type of ["reactor.done", "reactor.error"]) {
       expect(
         nextStreamingReplyState(
-          { text: "Hello" },
+          awaiting("Hello"),
           agentEvent({ type, seq: 10, data: {} }),
         ),
       ).toBeNull();
@@ -162,7 +169,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
   });
 
   test("a malformed delta payload (no partial.text) is ignored rather than crashing", () => {
-    const state = { text: "Hello" };
+    const state = awaiting("Hello");
     expect(
       nextStreamingReplyState(
         state,
@@ -176,7 +183,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
 
 describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatch failure too)", () => {
   test("a chat.message carrying a turnFailed part clears a pending reply", () => {
-    const state = { text: "" };
+    const state = awaiting("");
     expect(
       nextStreamingReplyState(state, {
         eventType: "chat.message",
@@ -191,7 +198,7 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 
   test("an ordinary chat.message (no turnFailed part) leaves the reply untouched", () => {
-    const state = { text: "" };
+    const state = awaiting("");
     expect(
       nextStreamingReplyState(state, {
         eventType: "chat.message",
@@ -210,76 +217,89 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 });
 
-describe("nextStreamingReplyState (CL-6432: folded-run turns end on connector.reply / message.run.ended, not reactor.done)", () => {
-  test("connector.reply clears the reply — the orchestrator posts the persisted message off this very event", () => {
+describe("nextStreamingReplyState (CL-6432 reopened: a folded run parks after the reply — post-reply tool rounds never re-open the pulse)", () => {
+  test("connector.reply moves the turn to the replied phase — the persisted message takes over the timeline", () => {
     expect(
       nextStreamingReplyState(
-        { text: "Hey! What are you working on today?" },
+        awaiting("Hey! What are you working on right now?"),
         agentEvent({
           type: "connector.reply",
           seq: 9,
-          data: { content: "Hey! What are you working on today?" },
+          data: { content: "Hey! What are you working on right now?" },
         }),
       ),
-    ).toBeNull();
+    ).toEqual({ phase: "replied" });
   });
 
-  test("connector.reply clears an empty pending reply too — the reply is finalized even when its tokens never streamed here", () => {
+  test("connector.reply settles an empty pending reply too — the reply is finalized even when its tokens never streamed here", () => {
     expect(
       nextStreamingReplyState(
-        { text: "" },
+        awaiting(""),
         agentEvent({
           type: "connector.reply",
           seq: 9,
           data: { content: "Hey!" },
         }),
       ),
-    ).toBeNull();
+    ).toEqual({ phase: "replied" });
   });
 
-  test("message.run.ended clears an empty pending reply — the turn bracket closed, nothing more streams", () => {
-    expect(
-      nextStreamingReplyState(
-        { text: "" },
-        agentEvent({
-          type: "message.run.ended",
-          seq: 12,
-          data: { status: "completed" },
-        }),
-      ),
-    ).toBeNull();
+  test("the replied phase renders nothing — no pulse, no bubble", () => {
+    const replied = nextStreamingReplyState(
+      awaiting(""),
+      agentEvent({ type: "connector.reply", seq: 9, data: { content: "x" } }),
+    );
+    expect(isPendingReply(replied)).toBe(false);
+    expect(typingAgentNames(replied, [HUMAN, MYRA])).toEqual([]);
   });
 
-  test("connector.reply and message.run.ended while idle stay idle", () => {
+  test("message.run.started opens the next turn's pulse — the one event that ends the replied phase from the stream", () => {
+    const replied = nextStreamingReplyState(
+      awaiting(""),
+      agentEvent({ type: "connector.reply", seq: 9, data: { content: "x" } }),
+    );
     expect(
       nextStreamingReplyState(
-        null,
-        agentEvent({ type: "connector.reply", seq: 9, data: { content: "x" } }),
+        replied,
+        agentEvent({ type: "message.run.started", seq: 0, data: {} }),
       ),
-    ).toBeNull();
-    expect(
-      nextStreamingReplyState(
-        null,
-        agentEvent({
-          type: "message.run.ended",
-          seq: 12,
-          data: { status: "completed" },
-        }),
-      ),
-    ).toBeNull();
+    ).toEqual(AWAITING_EMPTY);
   });
 
-  test("the Myra repro: a post-reply tool round reopens the pulse and the turn's own terminal events shut it", () => {
-    // Round 1: the visible reply streams and its inference.done hands off
-    // to the persisted message.
+  test("message.run.ended returns to idle from any phase — the bracket closed, nothing more streams", () => {
+    for (const state of [awaiting(""), awaiting("Hello")]) {
+      expect(
+        nextStreamingReplyState(
+          state,
+          agentEvent({
+            type: "message.run.ended",
+            seq: 12,
+            data: { status: "completed" },
+          }),
+        ),
+      ).toBeNull();
+    }
+  });
+
+  test("the live Myra sequence: reply posts, memory rounds follow, the run parks — the pulse never comes back", () => {
+    // Captured from a live folded run (scratch stack, real provider): the
+    // run brackets open per dequeued message, the visible reply streams
+    // and posts via connector.reply, then post-reply tool-only rounds
+    // (memory writes) run inference again, and the run PARKS — no
+    // message.run.ended ever arrives.
     let state = openPendingReply(null);
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "message.run.started", seq: 0, data: {} }),
+    );
     state = nextStreamingReplyState(
       state,
       agentEvent({ type: "inference.start", seq: 1, data: { model: "x" } }),
     );
+    expect(isPendingReply(state)).toBe(true);
     state = nextStreamingReplyState(
       state,
-      delta("Hey! What are you working on today?"),
+      delta("Hey! What are you working on right now?"),
     );
     state = nextStreamingReplyState(
       state,
@@ -289,54 +309,82 @@ describe("nextStreamingReplyState (CL-6432: folded-run turns end on connector.re
         data: { turn: {}, usage: {}, source: "primary" },
       }),
     );
-    expect(state).toBeNull();
-
-    // Round 2: a tool-only follow-up (memory writes) reopens the pulse and
-    // its textless inference.done deliberately leaves it up mid-turn.
-    state = nextStreamingReplyState(
-      state,
-      agentEvent({ type: "inference.start", seq: 5, data: { model: "x" } }),
-    );
-    expect(state).toEqual({ text: "" });
-    state = nextStreamingReplyState(
-      state,
-      agentEvent({
-        type: "inference.done",
-        seq: 7,
-        data: { turn: {}, usage: {}, source: "primary" },
-      }),
-    );
-    expect(state).toEqual({ text: "" });
-
-    // The folded run never emits reactor.done — its turn ends here.
     state = nextStreamingReplyState(
       state,
       agentEvent({
         type: "connector.reply",
-        seq: 8,
-        data: { content: "Hey!" },
+        seq: 5,
+        data: { content: "Hey! What are you working on right now?" },
       }),
     );
-    expect(state).toBeNull();
+    expect(state).toEqual({ phase: "replied" });
+
+    // Post-reply memory rounds: inference.start must NOT re-open the
+    // pulse, and the textless inference.done must not strand one either.
+    for (const round of [
+      agentEvent({ type: "inference.start", seq: 6, data: { model: "x" } }),
+      agentEvent({
+        type: "inference.tool_call.start",
+        seq: 7,
+        data: { callId: "c1", name: "memory_write" },
+      }),
+      agentEvent({
+        type: "tool.done",
+        seq: 8,
+        data: { result: { callId: "c1", content: [], isError: false } },
+      }),
+      agentEvent({
+        type: "inference.done",
+        seq: 9,
+        data: { turn: {}, usage: {}, source: "primary" },
+      }),
+      agentEvent({ type: "inference.start", seq: 10, data: { model: "x" } }),
+      agentEvent({
+        type: "inference.done",
+        seq: 11,
+        data: { turn: {}, usage: {}, source: "primary" },
+      }),
+    ]) {
+      state = nextStreamingReplyState(state, round);
+      expect(state).toEqual({ phase: "replied" });
+      expect(isPendingReply(state)).toBe(false);
+    }
+    // The run parks here: no message.run.ended, and the state stays
+    // invisible until the next turn's message.run.started.
+  });
+
+  test("the next user turn brings the pulse back — replied never suppresses a genuinely new turn", () => {
+    const replied = nextStreamingReplyState(
+      awaiting(""),
+      agentEvent({ type: "connector.reply", seq: 5, data: { content: "x" } }),
+    );
+    // Locally, the send itself re-opens the pulse...
+    expect(openPendingReply(replied)).toEqual(AWAITING_EMPTY);
+    // ...and on the stream, the dequeued message's own bracket does.
+    let state = nextStreamingReplyState(
+      replied,
+      agentEvent({ type: "message.run.started", seq: 0, data: {} }),
+    );
+    expect(isPendingReply(state)).toBe(true);
     state = nextStreamingReplyState(
       state,
-      agentEvent({
-        type: "message.run.ended",
-        seq: 9,
-        data: { status: "completed" },
-      }),
+      agentEvent({ type: "inference.start", seq: 1, data: { model: "x" } }),
     );
-    expect(state).toBeNull();
+    expect(isPendingReply(state)).toBe(true);
   });
 });
 
 describe("openPendingReply", () => {
   test("opens an empty pending reply when idle", () => {
-    expect(openPendingReply(null)).toEqual({ text: "" });
+    expect(openPendingReply(null)).toEqual(AWAITING_EMPTY);
+  });
+
+  test("opens an empty pending reply from a replied previous turn", () => {
+    expect(openPendingReply({ phase: "replied" })).toEqual(AWAITING_EMPTY);
   });
 
   test("never resets a reply already streaming", () => {
-    const state = { text: "Hel" };
+    const state = awaiting("Hel");
     expect(openPendingReply(state)).toBe(state);
   });
 });
@@ -347,23 +395,23 @@ describe("typingAgentNames", () => {
   });
 
   test("a pending reply with no tokens names the workbench's agent participant", () => {
-    expect(typingAgentNames({ text: "" }, [HUMAN, MYRA])).toEqual(["Myra"]);
+    expect(typingAgentNames(awaiting(""), [HUMAN, MYRA])).toEqual(["Myra"]);
   });
 
   test("once tokens stream the bubble takes over — the typing line goes quiet", () => {
-    expect(typingAgentNames({ text: "Hel" }, [HUMAN, MYRA])).toEqual([]);
+    expect(typingAgentNames(awaiting("Hel"), [HUMAN, MYRA])).toEqual([]);
   });
 
   test('a slugified handle is shown as a display name — "myra" reads "Myra"', () => {
     expect(
-      typingAgentNames({ text: "" }, [
+      typingAgentNames(awaiting(""), [
         { address: "myra@agents.example", handle: "myra" },
       ]),
     ).toEqual(["Myra"]);
   });
 
   test("no agent participant on the workbench means nobody is named", () => {
-    expect(typingAgentNames({ text: "" }, [HUMAN])).toEqual([]);
+    expect(typingAgentNames(awaiting(""), [HUMAN])).toEqual([]);
   });
 });
 
@@ -375,12 +423,12 @@ describe("hydrateStreamingReplyFromTurn (CL-6380: reattach snapshot)", () => {
   test("a running turn with committed text opens the reply carrying it", () => {
     expect(
       hydrateStreamingReplyFromTurn({ textSnapshot: "streamed so far" }),
-    ).toEqual({ text: "streamed so far" });
+    ).toEqual(awaiting("streamed so far"));
   });
 
   test("a running turn with no text yet opens the same empty pending pulse as openPendingReply", () => {
-    expect(hydrateStreamingReplyFromTurn({ textSnapshot: null })).toEqual({
-      text: "",
-    });
+    expect(hydrateStreamingReplyFromTurn({ textSnapshot: null })).toEqual(
+      AWAITING_EMPTY,
+    );
   });
 });

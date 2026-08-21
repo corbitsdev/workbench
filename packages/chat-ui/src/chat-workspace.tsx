@@ -253,8 +253,16 @@ export function mergeStreamingReply(
 ): readonly TimelineMessageItem[] {
   // A pending reply with no tokens yet stays off the timeline — an
   // empty bubble with no timestamp reads as broken; the typing pulse
-  // in the incoming-message slot owns that phase until the first delta lands.
-  if (streamingReply === null || streamingReply.text === "") return items;
+  // in the incoming-message slot owns that phase until the first delta
+  // lands. A `"replied"` turn renders nothing: its reply is already a
+  // persisted message.
+  if (
+    streamingReply === null ||
+    streamingReply.phase === "replied" ||
+    streamingReply.text === ""
+  ) {
+    return items;
+  }
   const agent = participants.find((participant) =>
     isAgentAddress(participant.address),
   );
