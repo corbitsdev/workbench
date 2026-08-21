@@ -7,8 +7,11 @@ import { expect, test } from "bun:test";
 import type { ConversationTurn, StrategyContext } from "@intx/types/runtime";
 
 import {
+  SUMMARIZE_BUDGETED_TURNS_NAME,
   SUMMARIZE_OLDER_TURNS_NAME,
+  createBudgetedContextCompactor,
   createSummarizeOlderTurnsCompactor,
+  estimateTurnsChars,
 } from "./compactors";
 
 function textTurn(
@@ -117,4 +120,47 @@ test("carries the compactor's name and a version for the manifest record", () =>
   const compactor = createSummarizeOlderTurnsCompactor({ keep: 12 });
   expect(compactor.name).toBe(SUMMARIZE_OLDER_TURNS_NAME);
   expect(compactor.version).toBe("1");
+});
+
+test("createBudgetedContextCompactor: a short conversation under budget is untouched", async () => {
+  const turns = Array.from({ length: 6 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `turn ${i}`, i),
+  );
+  const compactor = createBudgetedContextCompactor(
+    estimateTurnsChars(turns) + 1_000,
+  );
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  expect(result.output).toEqual(turns);
+  expect(result.record.reason).toBe("within-budget");
+});
+
+test("createBudgetedContextCompactor: a conversation past the budget is folded rather than resent whole", async () => {
+  const turns = Array.from({ length: 40 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `message number ${i}`, i),
+  );
+  // A budget generous enough for only the newest handful of turns.
+  const budgetChars = estimateTurnsChars(turns.slice(-6));
+  const compactor = createBudgetedContextCompactor(budgetChars);
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  expect(result.record.reason).toBe("folded-older-turns");
+  expect(result.record.strategy).toBe(SUMMARIZE_BUDGETED_TURNS_NAME);
+  expect(result.output.length).toBeLessThan(turns.length);
+  const [summary] = result.output;
+  expect(summary?.role).toBe("system");
+});
+
+test("createBudgetedContextCompactor: always keeps a minimum verbatim tail even under a near-zero budget", async () => {
+  const turns = Array.from({ length: 10 }, (_, i) =>
+    textTurn(i % 2 === 0 ? "user" : "assistant", `message ${i}`, i),
+  );
+  const compactor = createBudgetedContextCompactor(1);
+
+  const result = await compactor.apply(turns, makeCtx());
+
+  // 1 synthetic summary turn + at least the floor of kept turns.
+  expect(result.output.length).toBeGreaterThanOrEqual(2);
 });
