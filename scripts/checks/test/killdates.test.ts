@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   auditKillDates,
   auditVendorCoverage,
   auditVendorDrift,
+  hasVendoredSource,
   listVendoredPaths,
   parseKillDates,
 } from "../killdates";
@@ -80,6 +81,13 @@ test("listVendoredPaths finds directories two levels under vendor/, not files", 
   try {
     mkdirSync(path.join(root, "vendor", "intx", "log"), { recursive: true });
     mkdirSync(path.join(root, "vendor", "intx", "agent"), { recursive: true });
+    writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "");
+    writeFileSync(path.join(root, "vendor", "intx", "agent", "index.ts"), "");
+    // What `bun install` leaves behind for a workspace glob: a directory
+    // holding nothing but linked dependencies, and no source of its own.
+    mkdirSync(path.join(root, "vendor", "intx", "installed", "node_modules"), {
+      recursive: true,
+    });
     writeFileSync(path.join(root, "vendor", "intx", "LICENSE"), "LGPL");
     writeFileSync(path.join(root, "vendor", "stray-file"), "");
     expect(listVendoredPaths(root)).toEqual([
@@ -190,4 +198,19 @@ test("a vendored row without a valid hash column is a drift violation", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+describe("hasVendoredSource", () => {
+  test("a directory holding only node_modules is an install artifact", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "killdates-"));
+    mkdirSync(path.join(dir, "node_modules"));
+    expect(hasVendoredSource(dir)).toBe(false);
+  });
+
+  test("a directory carrying its own source is a vendored tree", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "killdates-"));
+    mkdirSync(path.join(dir, "node_modules"));
+    mkdirSync(path.join(dir, "src"));
+    expect(hasVendoredSource(dir)).toBe(true);
+  });
 });
