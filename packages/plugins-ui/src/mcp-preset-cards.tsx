@@ -210,6 +210,14 @@ export function McpPresetCardsSection({
     new Map(),
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Whether the presets fetch has resolved at least once — distinct from
+  // "zero presets": this catalog is the same ~10 curated apps for every
+  // tenant, so an empty `presets` array before this flips true is a
+  // loading gap, never a real "nothing to connect" state (CL-6472). The
+  // section used to `return null` whenever presets were empty regardless
+  // of why, which let a load-in-progress render as if the whole catalog
+  // had vanished — this component must never go quiet like that again.
+  const [loaded, setLoaded] = useState(false);
 
   function reload() {
     listMcpPresets(tenantId)
@@ -217,7 +225,8 @@ export function McpPresetCardsSection({
         setPresets(data);
         setLoadError(null);
       })
-      .catch((cause: unknown) => setLoadError(messageOf(cause)));
+      .catch((cause: unknown) => setLoadError(messageOf(cause)))
+      .finally(() => setLoaded(true));
   }
 
   useEffect(() => {
@@ -233,8 +242,6 @@ export function McpPresetCardsSection({
         .includes(needle),
   );
 
-  if (visiblePresets.length === 0 && loadError === null) return null;
-
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -244,25 +251,34 @@ export function McpPresetCardsSection({
         <p className="text-sm text-destructive" role="alert">
           {loadError}
         </p>
-      ) : null}
-      <div className="border border-border [&>*:last-child]:border-b-0">
-        {visiblePresets.map((preset) => (
-          <McpPresetCard
-            key={preset.slug}
-            tenantId={tenantId}
-            preset={preset}
-            toolCount={toolCounts.get(preset.slug)}
-            onChanged={(toolCount) => {
-              if (toolCount !== undefined) {
-                setToolCounts((prev) =>
-                  new Map(prev).set(preset.slug, toolCount),
-                );
-              }
-              reload();
-            }}
-          />
-        ))}
-      </div>
+      ) : !loaded ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : visiblePresets.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {presets.length === 0
+            ? "No apps to connect right now."
+            : `No app matches "${query.trim()}".`}
+        </p>
+      ) : (
+        <div className="border border-border [&>*:last-child]:border-b-0">
+          {visiblePresets.map((preset) => (
+            <McpPresetCard
+              key={preset.slug}
+              tenantId={tenantId}
+              preset={preset}
+              toolCount={toolCounts.get(preset.slug)}
+              onChanged={(toolCount) => {
+                if (toolCount !== undefined) {
+                  setToolCounts((prev) =>
+                    new Map(prev).set(preset.slug, toolCount),
+                  );
+                }
+                reload();
+              }}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
