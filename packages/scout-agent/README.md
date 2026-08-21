@@ -6,15 +6,15 @@ Library-artifact tool — everything one chat agent needs, in one package.
 
 ## What's ported and how it's wired
 
-| Original tool     | Status                        | Wired to                                                                 |
-| ------------------ | ------------------------------ | ------------------------------------------------------------------------- |
-| `knowledge-search` | ported as `memory_search`      | `@corbits/memory-tools` (existing, unmodified)                            |
-| `memory-add`       | ported as `memory_add`         | `@corbits/memory-tools` (existing, unmodified)                            |
-| `memory-list`      | ported as `memory_list`        | `@corbits/memory-tools` (existing, unmodified)                            |
-| `web-research`     | ported as `web_search`         | `@corbits/web-search-tools`, Exa-backed, credential handle `"exa"` (existing, unmodified) |
-| `artifacts`        | narrowed to save + list-recent | `./src/artifact-tool.ts` (new, this package), against `@corbits/artifacts-hub`'s workflow-artifacts HTTP surface |
-| `launch-diligence-brief` | **deferred, dropped**    | —                                                                          |
-| `launch-fact-check`      | **deferred, dropped**    | —                                                                          |
+| Original tool            | Status                         | Wired to                                                                                                         |
+| ------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `knowledge-search`       | ported as `memory_search`      | `@corbits/memory-tools` (existing, unmodified)                                                                   |
+| `memory-add`             | ported as `memory_add`         | `@corbits/memory-tools` (existing, unmodified)                                                                   |
+| `memory-list`            | ported as `memory_list`        | `@corbits/memory-tools` (existing, unmodified)                                                                   |
+| `web-research`           | ported as `web_search`         | `@corbits/web-search-tools`, Exa-backed, credential handle `"exa"` (existing, unmodified)                        |
+| `artifacts`              | narrowed to save + list-recent | `./src/artifact-tool.ts` (new, this package), against `@corbits/artifacts-hub`'s workflow-artifacts HTTP surface |
+| `launch-diligence-brief` | **deferred, dropped**          | —                                                                                                                |
+| `launch-fact-check`      | **deferred, dropped**          | —                                                                                                                |
 
 Scout's own tool bodies were never portable as-is: scout's
 `docs/design/scout-core-purity.md` says the core/surface split that would

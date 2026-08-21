@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createScoutArtifact, listRecentScoutArtifacts } from "./artifact-client";
+import {
+  createScoutArtifact,
+  listRecentScoutArtifacts,
+} from "./artifact-client";
 
 const CONFIG = {
   hubArtifactsUrl: "https://hub.example",
@@ -14,9 +17,12 @@ describe("createScoutArtifact", () => {
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       capturedUrl = url;
       capturedInit = init;
-      return new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), {
-        status: 201,
-      });
+      return new Response(
+        JSON.stringify({ data: { id: "art_1", version: 1 } }),
+        {
+          status: 201,
+        },
+      );
     }) as unknown as typeof fetch;
 
     const result = await createScoutArtifact(
@@ -53,7 +59,12 @@ describe("listRecentScoutArtifacts", () => {
       new Response(
         JSON.stringify({
           data: [
-            { id: "art_1", title: "Note", kind: "text", createdAt: "2026-08-01T00:00:00Z" },
+            {
+              id: "art_1",
+              title: "Note",
+              kind: "text",
+              createdAt: "2026-08-01T00:00:00Z",
+            },
           ],
         }),
         { status: 200 },
@@ -61,7 +72,12 @@ describe("listRecentScoutArtifacts", () => {
 
     const items = await listRecentScoutArtifacts({ ...CONFIG, fetchImpl });
     expect(items).toEqual([
-      { id: "art_1", title: "Note", kind: "text", createdAt: "2026-08-01T00:00:00Z" },
+      {
+        id: "art_1",
+        title: "Note",
+        kind: "text",
+        createdAt: "2026-08-01T00:00:00Z",
+      },
     ]);
   });
 
@@ -71,8 +87,8 @@ describe("listRecentScoutArtifacts", () => {
         status: 200,
       })) as unknown as typeof fetch;
 
-    await expect(listRecentScoutArtifacts({ ...CONFIG, fetchImpl })).rejects.toThrow(
-      /did not match the expected shape/,
-    );
+    await expect(
+      listRecentScoutArtifacts({ ...CONFIG, fetchImpl }),
+    ).rejects.toThrow(/did not match the expected shape/);
   });
 });
