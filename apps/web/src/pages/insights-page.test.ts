@@ -8,9 +8,15 @@
 // own `/insights/workbench/:workbenchId` route (see `InsightsWorkbenchPage`),
 // so this landing scope never takes a workbench override anymore.
 import { describe, expect, test } from "bun:test";
+import type { DayActivity } from "@corbits/insights/client";
 
-import { resolveInsightsScope } from "./insights-page";
-import type { InsightsScope } from "../insights-api";
+import {
+  costPerDay,
+  elapsedLabel,
+  resolveInsightsScope,
+  runsPerDay,
+} from "./insights-page";
+import type { InsightsRun, InsightsScope } from "../insights-api";
 
 const workspaceMemberScope: InsightsScope = {
   tenantId: "tnt_bench_a",
@@ -83,5 +89,92 @@ describe("resolveInsightsScope", () => {
       scopeData: null,
     });
     expect(result.effectiveTenantId).toBeNull();
+  });
+});
+
+function day(
+  partial: Partial<DayActivity> & Pick<DayActivity, "day">,
+): DayActivity {
+  return { turns: 0, tokens: 0, byModel: [], ...partial };
+}
+
+function run(
+  partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "createdAt">,
+): InsightsRun {
+  return {
+    tenantId: "t1",
+    definitionId: "wfd_a",
+    definitionName: "Research brief",
+    address: "addr",
+    status: "running",
+    updatedAt: partial.createdAt,
+    routineId: null,
+    routineName: null,
+    ...partial,
+  };
+}
+
+describe("runsPerDay", () => {
+  test("buckets each run's date onto the matching day, zero elsewhere", () => {
+    const days = [
+      day({ day: "2026-01-01" }),
+      day({ day: "2026-01-02" }),
+      day({ day: "2026-01-03" }),
+    ];
+    const runs = [
+      run({ id: "a", createdAt: "2026-01-01T09:00:00.000Z" }),
+      run({ id: "b", createdAt: "2026-01-01T18:00:00.000Z" }),
+      run({ id: "c", createdAt: "2026-01-03T00:00:01.000Z" }),
+    ];
+    expect(runsPerDay(runs, days)).toEqual([2, 0, 1]);
+  });
+
+  test("a run outside the window contributes to no bucket", () => {
+    const days = [day({ day: "2026-01-01" })];
+    const runs = [run({ id: "a", createdAt: "2025-12-25T00:00:00.000Z" })];
+    expect(runsPerDay(runs, days)).toEqual([0]);
+  });
+
+  test("no days: returns an empty series, not a fabricated one", () => {
+    expect(
+      runsPerDay([run({ id: "a", createdAt: "2026-01-01T00:00:00.000Z" })], []),
+    ).toEqual([]);
+  });
+});
+
+describe("costPerDay", () => {
+  test("sums known per-model costs for each day", () => {
+    const days = [
+      day({
+        day: "2026-01-01",
+        byModel: [
+          { model: "opus-5", tokens: 100, costUsd: 1.5 },
+          { model: "sonnet-5", tokens: 50, costUsd: 0.25 },
+        ],
+      }),
+      day({ day: "2026-01-02", byModel: [] }),
+    ];
+    expect(costPerDay(days)).toEqual([1.75, 0]);
+  });
+
+  test("a null model rate contributes 0, not NaN — caller decides whether to show it", () => {
+    const days = [
+      day({
+        day: "2026-01-01",
+        byModel: [{ model: "new-model", tokens: 10, costUsd: null }],
+      }),
+    ];
+    expect(costPerDay(days)).toEqual([0]);
+  });
+});
+
+describe("elapsedLabel", () => {
+  test("formats wall-clock time since createdAt", () => {
+    const now = Date.parse("2026-01-01T00:02:12.000Z");
+    expect(elapsedLabel("2026-01-01T00:00:00.000Z", now)).toBe("2.2m");
+  });
+
+  test("an invalid timestamp reads as unknown, not a fabricated duration", () => {
+    expect(elapsedLabel("not-a-date", Date.now())).toBe("—");
   });
 });

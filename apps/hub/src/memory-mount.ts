@@ -34,30 +34,71 @@ import {
 
 const log = getLogger(["hub", "memory-mount"]);
 
-// The one boundary this module parses: whether the memory plane is
-// configured at all. `"string > 0"` rejects a blank `EMBED_BASE_URL=`
-// the same as an absent one — both mean "no memory plane" — while
-// catching a non-string env value at the arktype boundary rather than
-// letting a falsy check quietly wave through something unexpected.
+// The boundary this module parses: whether the memory plane is configured
+// at all, and — when a reranker is in play — whether it's configured
+// completely. `"string > 0"` rejects a blank value the same as an absent
+// one, while catching a non-string env value at the arktype boundary
+// rather than letting a falsy check quietly wave through something
+// unexpected.
+//
+// RERANK_BASE_URL and RERANK_MODEL must be set together: `@corbits/memory`
+// treats each independently optional and would otherwise let a
+// half-configured reranker surface as a confusing runtime failure deep in
+// its rerank client, rather than a boot-time error naming the missing
+// half — the same "fail loud on a half-configured pair" contract this
+// hub already applies to GOOGLE_CLIENT_ID/SECRET (see ../config.ts).
+// Reranking itself stays a soft-fail enhancement once configured (a
+// reranker outage degrades search quietly, never breaks it) — this check
+// only guards against shipping a pair that can never work at all.
 const MemoryMountEnv = type({
   "EMBED_BASE_URL?": "string > 0",
+  "RERANK_BASE_URL?": "string > 0",
+  "RERANK_MODEL?": "string > 0",
 });
 
-function embedBaseUrlFrom(
+type ParsedMemoryMountEnv = typeof MemoryMountEnv.infer;
+
+function omitUndefined(
   env: Record<string, string | undefined>,
-): string | undefined {
-  // Build the input object with the key OMITTED rather than present with
-  // an `undefined` value: arktype's optional-key check is keyed off
+  keys: readonly string[],
+): Record<string, string> {
+  // Build the input object with unset keys OMITTED rather than present
+  // with an `undefined` value: arktype's optional-key check is keyed off
   // property presence, and `process.env` (and this suite's env stashing)
   // both sometimes leave an unset variable as a present-but-`undefined`
   // own property rather than an absent one.
-  const rawValue = env["EMBED_BASE_URL"];
-  const input = rawValue === undefined ? {} : { EMBED_BASE_URL: rawValue };
+  const input: Record<string, string> = {};
+  for (const key of keys) {
+    const value = env[key];
+    if (value !== undefined) input[key] = value;
+  }
+  return input;
+}
+
+function parseMemoryMountEnv(
+  env: Record<string, string | undefined>,
+): ParsedMemoryMountEnv {
+  const input = omitUndefined(env, [
+    "EMBED_BASE_URL",
+    "RERANK_BASE_URL",
+    "RERANK_MODEL",
+  ]);
   const parsed = MemoryMountEnv(input);
   if (parsed instanceof type.errors) {
     throw new Error(`invalid memory-plane environment: ${parsed.summary}`);
   }
-  return parsed.EMBED_BASE_URL;
+  if (
+    (parsed.RERANK_BASE_URL === undefined) !==
+    (parsed.RERANK_MODEL === undefined)
+  ) {
+    throw new Error(
+      [
+        "invalid memory-plane environment: RERANK_BASE_URL and RERANK_MODEL must be set together to enable reranking; only one is set",
+        "Set both in .env, or unset both to search without reranking; see .env.example.",
+      ].join("\n"),
+    );
+  }
+  return parsed;
 }
 
 export type MountMemoryOptions<E extends object = object> = {
@@ -84,7 +125,8 @@ export async function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
 ): Promise<MemoryMountHandle | undefined> {
   const optional = options.optional !== false;
-  const embedBaseUrl = embedBaseUrlFrom(process.env);
+  const parsedEnv = parseMemoryMountEnv(process.env);
+  const embedBaseUrl = parsedEnv.EMBED_BASE_URL;
   if (embedBaseUrl === undefined) {
     if (optional) {
       log.info("EMBED_BASE_URL not set — memory plane will not be mounted");

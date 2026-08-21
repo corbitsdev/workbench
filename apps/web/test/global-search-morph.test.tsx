@@ -1,7 +1,10 @@
-// CL-6410: the product's one search surface. DESIGN.md's Search section fixes
-// how it is invoked from chrome: the top-nav magnifier morphs in place into an
-// inline bar, Esc collapses it, and cmd+K reaches the identical palette —
-// never a second search implementation.
+// CL-6410 / CL-6487: the product's one search surface. DESIGN.md's Search
+// section fixes how it is invoked from chrome: the top-nav magnifier morphs
+// in place into an inline bar, Esc collapses it, and cmd+K reaches the
+// identical palette — never a second search implementation, and never a
+// centered dialog. The field the morph reveals IS the real, focusable
+// search input (react-ui's `CommandPaletteInline`) — not a span mirroring a
+// query typed somewhere else.
 //
 // The motion assertions deliberately check the authored stylesheet and the
 // tokens it consumes, not class names on the element: react-ui ships a
@@ -161,12 +164,6 @@ function magnifier(): HTMLButtonElement {
   return button;
 }
 
-function morphField(): HTMLElement | null {
-  return container.querySelector<HTMLElement>(
-    '[data-testid="stage-search-field"]',
-  );
-}
-
 function paletteInputs(): readonly HTMLInputElement[] {
   return [...document.querySelectorAll<HTMLInputElement>('[role="combobox"]')];
 }
@@ -224,8 +221,9 @@ function Harness({
       <ThemeProvider>
         <NavigationProvider navigate={navigate}>
           <BenchProvider>
-            <CommandPaletteProvider path={path} navigate={navigate} />
-            <StageTopBar crumbs={[{ label: "Agents" }]} />
+            <CommandPaletteProvider path={path} navigate={navigate}>
+              <StageTopBar crumbs={[{ label: "Agents" }]} />
+            </CommandPaletteProvider>
           </BenchProvider>
         </NavigationProvider>
       </ThemeProvider>
@@ -237,7 +235,7 @@ describe("the top-nav search morph", () => {
   test("the collapsed control is a magnifier and nothing else", async () => {
     await render(<Harness />);
     expect(magnifier().getAttribute("aria-expanded")).toBe("false");
-    expect(morphField()).toBeNull();
+    expect(paletteInputs()).toHaveLength(0);
   });
 
   test("clicking the magnifier morphs it in place into the inline bar", async () => {
@@ -247,7 +245,7 @@ describe("the top-nav search morph", () => {
     });
     await settle();
 
-    expect(morphField()).not.toBeNull();
+    expect(paletteInputs()).toHaveLength(1);
     expect(magnifier().getAttribute("aria-expanded")).toBe("true");
     expect(searchShell().dataset.expanded).toBe("true");
   });
@@ -283,7 +281,7 @@ describe("the top-nav search morph", () => {
     expect(reducedMotionBlock).toContain("transition-duration: 0.01ms");
   });
 
-  test("the inline bar shows the query instead of impersonating an input", async () => {
+  test("the inline bar's field is the real search input, not a second surface mirroring one", async () => {
     await render(<Harness />);
     await act(async () => {
       magnifier().click();
@@ -291,11 +289,11 @@ describe("the top-nav search morph", () => {
     await settle();
     await typeInPalette("resea");
 
-    const field = morphField();
-    expect(field?.tagName).toBe("SPAN");
-    expect(field?.textContent).toBe("resea");
-    // The palette owns the one editable search field in the product.
+    // Exactly one editable field in the whole surface, and it lives inside
+    // the top-bar morph itself — never a separate dialog elsewhere.
     expect(paletteInputs()).toHaveLength(1);
+    expect(searchShell().contains(paletteInput())).toBe(true);
+    expect(paletteInput().value).toBe("resea");
   });
 });
 
@@ -306,11 +304,11 @@ describe("collapsing back to the magnifier", () => {
       magnifier().click();
     });
     await settle();
-    expect(morphField()).not.toBeNull();
+    expect(paletteInputs()).toHaveLength(1);
 
     await pressEscapeInPalette();
 
-    expect(morphField()).toBeNull();
+    expect(paletteInputs()).toHaveLength(0);
     expect(magnifier().getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(magnifier());
   });
@@ -345,7 +343,6 @@ describe("collapsing back to the magnifier", () => {
     await render(<Harness path="/agents/research-analyst" />);
 
     expect(paletteInputs()).toHaveLength(0);
-    expect(morphField()).toBeNull();
   });
 });
 

@@ -18,7 +18,10 @@ import type {
   SourcesSnapshotRef,
 } from "@intx/workflow-host";
 
-import { SUMMARIZE_OLDER_TURNS_NAME } from "./compactors";
+import {
+  SUMMARIZE_BUDGETED_TURNS_NAME,
+  SUMMARIZE_OLDER_TURNS_NAME,
+} from "./compactors";
 import { createSidecarStepBuildEnv } from "./step-env";
 
 const tmpDirs: string[] = [];
@@ -191,8 +194,13 @@ test("the built step env forwards the summarize-older-turns compactor (CL-6204) 
   const compactors = (
     env as unknown as { compactors: Record<string, { name: string }> }
   ).compactors;
-  expect(Object.keys(compactors)).toEqual([SUMMARIZE_OLDER_TURNS_NAME]);
+  expect(Object.keys(compactors).sort()).toEqual(
+    [SUMMARIZE_OLDER_TURNS_NAME, SUMMARIZE_BUDGETED_TURNS_NAME].sort(),
+  );
   expect(compactors[SUMMARIZE_OLDER_TURNS_NAME]?.name).toBe(
     SUMMARIZE_OLDER_TURNS_NAME,
+  );
+  expect(compactors[SUMMARIZE_BUDGETED_TURNS_NAME]?.name).toBe(
+    SUMMARIZE_BUDGETED_TURNS_NAME,
   );
 });

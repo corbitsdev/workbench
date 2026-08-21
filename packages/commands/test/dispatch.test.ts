@@ -14,12 +14,44 @@ describe("dispatchSlashCommand", () => {
     expect(await dispatchSlashCommand(registry, "hello", CTX)).toBeUndefined();
   });
 
-  test("unknown command dispatches a loud message", async () => {
+  test("unknown command with no commands registered names none as available", async () => {
     const registry = createCommandRegistry();
     expect(await dispatchSlashCommand(registry, "/nope", CTX)).toEqual({
       type: "message",
-      text: "Unknown command: /nope",
+      text:
+        "Unknown command: /nope. No agent commands are available in this " +
+        "workbench yet.",
     });
+  });
+
+  test("unknown command names the commands that ARE available", async () => {
+    const registry = createCommandRegistry();
+    registry.registerCommand({
+      name: "jimmy",
+      description: "Starts Jimmy",
+      handler: () => ({ type: "noop" }),
+    });
+    registry.registerCommand({
+      name: "scout",
+      description: "Starts Scout",
+      handler: () => ({ type: "noop" }),
+    });
+    expect(await dispatchSlashCommand(registry, "/nope", CTX)).toEqual({
+      type: "message",
+      text: "Unknown command: /nope. Available: /jimmy, /scout.",
+    });
+  });
+
+  test("a path-shaped message (not a command) is never swallowed as one", async () => {
+    const registry = createCommandRegistry();
+    registry.registerCommand({
+      name: "jimmy",
+      description: "Starts Jimmy",
+      handler: () => ({ type: "noop" }),
+    });
+    expect(
+      await dispatchSlashCommand(registry, "/usr/local/bin", CTX),
+    ).toBeUndefined();
   });
 
   test("runs the resolved command's handler with the parsed args and context", async () => {

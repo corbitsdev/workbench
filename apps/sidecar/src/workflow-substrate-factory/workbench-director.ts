@@ -1,4 +1,5 @@
-// Workbench director: DefaultDirector plus an empty-turn retry.
+// Workbench director: DefaultDirector plus an empty-turn retry and a
+// context-budget gate (CL-6204).
 //
 // `@intx/inference`'s DefaultDirector checkpoints and waits when
 // inference.done has no text and no tool calls. The human then sits in a
@@ -8,6 +9,35 @@
 // tool.done is unchanged: DefaultDirector already re-infers once the
 // outstanding batch is complete, including when the result is an error.
 // We compose that path rather than reimplement it.
+//
+// Context budget (`contextBudget`, optional -- absent means unbudgeted,
+// today's pre-CL-6204 behavior): before letting any inner decision that
+// includes `infer` through, checks the turn history against the
+// model's real context window (`resolveContextBudgetChars` /
+// `resolveHardContextLimitChars` in `./context-budget`, sized from
+// `InferenceSource.quirks`).
+//
+//   - Over the hard limit (no headroom left at all): this is Ollama's
+//     silent-truncation case made honest -- reply with the same
+//     "exceeded the model's context limit" message hosted providers
+//     produce via `inference.error`'s `context_overflow` category
+//     (`@intx/inference`'s `default-director.js`), instead of sending a
+//     request that would truncate server-side with no error.
+//   - Over the (headroomed) budget but under the hard limit, on a
+//     non-final `tool.done` in a multi-call batch (DefaultDirector
+//     returns `[]` for every `tool.done` before the batch's last):
+//     fire `caps.compact` here instead of the no-op. This is the one
+//     point in the reactor's event flow where `compact` cannot stall a
+//     reply -- the batch's remaining `tool.done` events are already
+//     enqueued (`@intx/inference`'s `reactor.js` `executeTools` enqueues
+//     every result from one `Promise.all` before the reactor dequeues
+//     any of them) and will still drive the eventual re-infer. Firing
+//     compact on `message.received` or the batch's *last* `tool.done`
+//     would instead stall that message's reply waiting for a follow-up
+//     event the reactor never produces (`compactors.ts`'s header
+//     comment) -- this director never does that.
+//   - Otherwise: let the inner decision through unchanged. Compaction is
+//     deferred to the next safe point rather than forced here.
 //
 // Registered as the sidecar step-env default via
 // `createWorkbenchDirectorRegistry` (see `./step-env`). Id is
@@ -38,8 +68,21 @@ import {
   type ToolDefinition,
 } from "@intx/types/runtime";
 
+import { estimateTurnsChars } from "./compactors";
+
 export const WORKBENCH_DIRECTOR_ID = "@workbench/sidecar/workbench";
 export const EMPTY_TURN_REPLY = "I got an empty model turn";
+export const CONTEXT_OVERFLOW_MESSAGE =
+  "This agent could not complete your request because the conversation exceeded the model's context limit";
+
+export type ContextBudgetOptions = {
+  /** Headroomed char budget past which a safe compaction point fires. */
+  budgetChars: number;
+  /** Raw char limit past which sending would overflow the model's window. */
+  hardLimitChars: number;
+  /** Name the compactor is registered under in `env.compactors`. */
+  compactorName: string;
+};
 
 function extractToolCalls(turn: AssistantTurn): ToolCall[] {
   const calls: ToolCall[] = [];
@@ -79,17 +122,20 @@ export class WorkbenchDirector implements ReactorDirector {
   private readonly systemPrompt: string;
   private readonly toolDefinitions: ToolDefinition[];
   private readonly conversational: boolean;
+  private readonly contextBudget: ContextBudgetOptions | undefined;
   private emptyTurnRetried = false;
 
   constructor(
     systemPrompt: string,
     toolDefinitions: ToolDefinition[] = [],
     policy: DefaultDirectorPolicy = {},
+    contextBudget?: ContextBudgetOptions,
   ) {
     this.inner = createDefaultDirector(systemPrompt, toolDefinitions, policy);
     this.systemPrompt = systemPrompt;
     this.toolDefinitions = toolDefinitions;
     this.conversational = policy.mode !== "reactive";
+    this.contextBudget = contextBudget;
   }
 
   async decide(
@@ -102,6 +148,16 @@ export class WorkbenchDirector implements ReactorDirector {
     }
 
     const actions = await this.inner.decide(event, state, capabilities);
+
+    const budgeted = this.applyContextBudget(
+      event,
+      state,
+      capabilities,
+      actions,
+    );
+    if (budgeted !== undefined) {
+      return budgeted;
+    }
 
     if (event.type !== "inference.done") {
       return actions;
@@ -142,14 +198,66 @@ export class WorkbenchDirector implements ReactorDirector {
       extractTextContent(turn).length === 0
     );
   }
+
+  /**
+   * Returns a replacement action set when the context budget overrides
+   * the inner director's decision, `undefined` to let it through
+   * unchanged. See this file's header comment for the two cases this
+   * covers (honest overflow, safe-point compaction) and why every other
+   * case passes through untouched.
+   */
+  private applyContextBudget(
+    event: ReactorInboundEvent,
+    state: ReactorState,
+    capabilities: ReactorCapabilities,
+    actions: ReactorAction | ReactorAction[],
+  ): ReactorAction[] | undefined {
+    if (this.contextBudget === undefined) {
+      return undefined;
+    }
+    const list = Array.isArray(actions) ? actions : [actions];
+    const chars = estimateTurnsChars(state.turns);
+
+    if (list.some((action) => action.type === "infer")) {
+      if (chars > this.contextBudget.hardLimitChars) {
+        return [
+          capabilities.checkpoint("context-overflow"),
+          capabilities.reply(CONTEXT_OVERFLOW_MESSAGE),
+        ];
+      }
+      return undefined;
+    }
+
+    if (
+      event.type === "tool.done" &&
+      list.length === 0 &&
+      chars > this.contextBudget.budgetChars
+    ) {
+      return [
+        capabilities.checkpoint("context-budget-compact"),
+        capabilities.compact(
+          this.contextBudget.compactorName,
+          "context-budget",
+        ),
+      ];
+    }
+
+    return undefined;
+  }
 }
 
 export function createWorkbenchDirector(
   systemPrompt: string,
   toolDefinitions: ToolDefinition[] = [],
   policy: DefaultDirectorPolicy = {},
+  contextBudget?: ContextBudgetOptions,
 ): ReactorDirector {
-  return new WorkbenchDirector(systemPrompt, toolDefinitions, policy);
+  return new WorkbenchDirector(
+    systemPrompt,
+    toolDefinitions,
+    policy,
+    contextBudget,
+  );
 }
 
 const WorkbenchDirectorConfigSchema = type({
@@ -159,6 +267,27 @@ const WorkbenchDirectorConfigSchema = type({
 export type WorkbenchDirectorConfig = {
   mode?: "conversational" | "reactive";
 };
+
+function buildWorkbenchFactory(
+  contextBudget: ContextBudgetOptions | undefined,
+) {
+  return defineDirector<WorkbenchDirectorConfig>({
+    id: WORKBENCH_DIRECTOR_ID,
+    configSchema: WorkbenchDirectorConfigSchema,
+    factory: (config, _env, agent) => {
+      const policy: DefaultDirectorPolicy = {};
+      if (config.mode !== undefined) {
+        policy.mode = config.mode;
+      }
+      return createWorkbenchDirector(
+        agent.systemPrompt,
+        [...agent.toolDefinitions],
+        policy,
+        contextBudget,
+      );
+    },
+  }).factory;
+}
 
 const defined = defineDirector<WorkbenchDirectorConfig>({
   id: WORKBENCH_DIRECTOR_ID,
@@ -183,10 +312,21 @@ export const buildWorkbenchDirectorRef = defined.build;
  * Sidecar step-env director registry: workbench is the default so
  * unspecified AgentDefinitions get empty-turn retry. The built-in
  * `@intx/agent/default` stays resolvable for definitions that name it.
+ *
+ * `contextBudget`, when supplied, bakes a per-step context-window budget
+ * (sized from the step's active `InferenceSource`, which varies per
+ * step/model) into the workbench factory this registry resolves --
+ * `createSidecarStepBuildEnv` builds a fresh registry per step build
+ * rather than reusing one shared instance so each step's budget matches
+ * its own model. See `WorkbenchDirector`'s header comment for what the
+ * budget gates.
  */
-export function createWorkbenchDirectorRegistry(): DirectorRegistry {
+export function createWorkbenchDirectorRegistry(
+  contextBudget?: ContextBudgetOptions,
+): DirectorRegistry {
+  const workbenchFactory = buildWorkbenchFactory(contextBudget);
   return createDirectorRegistry({
-    factories: [workbenchDirectorFactory, defaultDirectorFactory],
-    defaultId: workbenchDirectorFactory.id,
+    factories: [workbenchFactory, defaultDirectorFactory],
+    defaultId: workbenchFactory.id,
   });
 }

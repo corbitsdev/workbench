@@ -11,6 +11,15 @@ export interface ParsedCommand {
   readonly args: string;
 }
 
+// A command name is a bare word — letters, digits, underscore, hyphen —
+// the same shape the composer's own `activeSlashQuery` already commits
+// to before it ever opens the popover. Anything else (a path like
+// "/usr/local/bin", a URL, plain punctuation) is not a command attempt
+// at all, so `parseWithPrefix` returns `undefined` for it rather than
+// naming it an "unknown command" — that misfire used to swallow an
+// ordinary message and answer it with a command error instead.
+const NAME_PATTERN = /^[\w-]+$/;
+
 function parseWithPrefix(
   text: string,
   prefix: string,
@@ -19,7 +28,7 @@ function parseWithPrefix(
   const rest = text.slice(prefix.length);
   const spaceIndex = rest.indexOf(" ");
   const name = spaceIndex === -1 ? rest : rest.slice(0, spaceIndex);
-  if (name === "") return undefined;
+  if (!NAME_PATTERN.test(name)) return undefined;
   const args = spaceIndex === -1 ? "" : rest.slice(spaceIndex + 1).trim();
   return { name, args };
 }

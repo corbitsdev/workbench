@@ -10,6 +10,7 @@
     "./concepts": "./src/concepts.ts",
     "./resolve-chain": "./src/resolve-chain.ts",
     "./offering-capabilities": "./src/offering-capabilities.ts",
+    "./ollama-context-defaults": "./src/ollama-context-defaults.ts",
     "./migrations": "./src/migrations.ts"
   },
   "scripts": {
@@ -17,6 +18,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/ollama-adapter": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/inference-catalog": "0.3.0",

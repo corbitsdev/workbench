@@ -6,7 +6,8 @@
 // skill now lives in a native `kind:"skill"` hub asset the moment it is
 // created, and its version history is that asset's git history.
 //
-// Two states a skill can be in, both visible in the Access column:
+// Two states a skill can be in, both visible in the "Who can see it"
+// column:
 //   private  — visible only to the person who wrote it (the default)
 //   shared   — visible to the whole workbench
 //
@@ -213,9 +214,9 @@ export function SkillsPage({
           <Table aria-label="Skills">
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Access</TableHead>
+                <TableHead className="w-48">Name</TableHead>
+                <TableHead className="max-w-sm">Description</TableHead>
+                <TableHead className="w-36">Who can see it</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -225,13 +226,15 @@ export function SkillsPage({
                   className="cursor-pointer"
                   {...rowActivationProps(() => open(skill.name))}
                 >
-                  <TableCell className="font-medium">{skill.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="w-48 font-medium">
+                    {skill.name}
+                  </TableCell>
+                  <TableCell className="max-w-sm truncate text-muted-foreground">
                     {skill.description}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="w-36">
                     <Badge tone={skill.scope === "tenant" ? "info" : "neutral"}>
-                      {skill.scope === "tenant" ? "Shared" : "Private"}
+                      {skill.scope === "tenant" ? "Everyone" : "Only me"}
                     </Badge>
                   </TableCell>
                 </TableRow>

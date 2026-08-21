@@ -15,8 +15,30 @@ import type {
   CommandResult,
 } from "./registry";
 
-function unknownCommandResult(name: string, prefix: "/" | "@"): CommandResult {
-  return { type: "message", text: `Unknown command: ${prefix}${name}` };
+/**
+ * Names what IS available rather than answering a miss with a bare
+ * error: every command this tenant actually has right now (built-ins
+ * plus every invitable agent's own workflow command), so a mistyped
+ * `/jimmi` tells the sender what to try instead of leaving them to
+ * guess.
+ */
+async function unknownCommandResult(
+  registry: CommandRegistry,
+  name: string,
+  prefix: "/" | "@",
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  const available = await registry.listCommands(ctx.tenantId);
+  const suffix =
+    available.length === 0
+      ? "No agent commands are available in this workbench yet."
+      : `Available: ${available
+          .map((command) => `${prefix}${command.name}`)
+          .join(", ")}.`;
+  return {
+    type: "message",
+    text: `Unknown command: ${prefix}${name}. ${suffix}`,
+  };
 }
 
 async function runParsed(
@@ -26,7 +48,9 @@ async function runParsed(
   ctx: CommandContext,
 ): Promise<CommandResult> {
   const command = await registry.getCommand(parsed.name, ctx.tenantId);
-  if (command === undefined) return unknownCommandResult(parsed.name, prefix);
+  if (command === undefined) {
+    return unknownCommandResult(registry, parsed.name, prefix, ctx);
+  }
   return command.handler(parsed.args, ctx);
 }
 
