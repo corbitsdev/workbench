@@ -11,6 +11,7 @@ import type { Root } from "react-dom/client";
 
 import type { ConnectorDescriptor } from "@workbench/connections/registry";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 
 import { PluginsGallery } from "../src/plugins-gallery";
 import type { SkillCardData } from "../src/skill-card";
@@ -268,5 +269,50 @@ describe("PluginsGallery", () => {
       expect(container.textContent).not.toContain(excluded);
     }
     expect(container.textContent).not.toContain("Add MCP server");
+  });
+
+  // CL-6472: the owner's live repro found the presets route returns all 10
+  // curated MCP presets on a fresh bench with zero connections, but the
+  // gallery showed none of them. Reproduce that exact fetch shape here so
+  // a regression in how the gallery composes `McpPresetCardsSection`
+  // (as opposed to a bug in that component alone) gets caught too.
+  test("every MCP preset the route returns reaches the gallery on a fresh bench (CL-6472)", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/mcp-servers/presets")) {
+        return new Response(
+          JSON.stringify({
+            data: MCP_PRESETS.map((preset) => ({
+              slug: preset.slug,
+              displayName: preset.displayName,
+              description: preset.description,
+              url: preset.url,
+              connectionMode: preset.connectionMode,
+              docsUrl: preset.docsUrl,
+              ...(preset.icon === undefined ? {} : { icon: preset.icon }),
+              ...(preset.tokenSteps === undefined
+                ? {}
+                : { tokenSteps: preset.tokenSteps }),
+              connected: false,
+            })),
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }));
+    }) as unknown as typeof fetch;
+
+    try {
+      const { container } = renderGallery([]);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+      for (const preset of MCP_PRESETS) {
+        expect(container.textContent).toContain(preset.displayName);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

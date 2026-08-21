@@ -8,6 +8,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+
 import { McpPresetCardsSection } from "../src/mcp-preset-cards";
 
 const realFetch = globalThis.fetch;
@@ -266,5 +268,56 @@ describe("McpPresetCardsSection", () => {
     const deleteCall = calls.find((call) => call.init?.method === "DELETE");
     expect(deleteCall).not.toBeUndefined();
     expect(deleteCall?.url).toBe("/api/tenants/tenant_test/mcp-servers/exa");
+  });
+
+  // CL-6472: a fresh bench with zero connections still owns the same
+  // curated catalog — the route returns all 10 presets regardless, so
+  // every one of them must reach the page.
+  test("every preset the route returns reaches the page on a fresh bench", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: MCP_PRESETS.map((preset) => ({
+            slug: preset.slug,
+            displayName: preset.displayName,
+            description: preset.description,
+            url: preset.url,
+            connectionMode: preset.connectionMode,
+            docsUrl: preset.docsUrl,
+            ...(preset.icon === undefined ? {} : { icon: preset.icon }),
+            ...(preset.tokenSteps === undefined
+              ? {}
+              : { tokenSteps: preset.tokenSteps }),
+            connected: false,
+          })),
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(
+      MCP_PRESETS.length,
+    );
+    for (const preset of MCP_PRESETS) {
+      expect(container.textContent).toContain(preset.displayName);
+    }
+  });
+
+  // CL-6472: this section must never silently disappear. Before this
+  // fix it `return null`ed for any load that resolved with zero presets
+  // (including one still in flight), which is indistinguishable from the
+  // whole "Connect apps" catalog vanishing.
+  test("never renders nothing — a failed load surfaces an error, not silence", async () => {
+    globalThis.fetch = (async () =>
+      new Response("Internal Server Error", {
+        status: 500,
+      })) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    expect(container.textContent).toContain("Connect apps");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

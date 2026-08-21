@@ -174,6 +174,79 @@ describe("seedTenant", () => {
     expect(output).toContain("seed complete: 1 workflow(s)");
   });
 
+  // CL-6465: `@corbits/evals`' read routes (mounted at
+  // `/eval-runs/runs` and `/eval-runs/runs/:runId` in the hub) gate on
+  // this resource. Without it here, every newly seeded tenant would
+  // get a 403 from a UI that lists eval runs.
+  test("plants the eval-run:*/read grant", async () => {
+    const { log } = collector();
+    const { push } = recordingPusher();
+    const grantsPosted: { resource: string; action: string }[] = [];
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const grant = body as { resource: string; action: string };
+        grantsPosted.push({ resource: grant.resource, action: grant.action });
+        return { status: 201, data: {} };
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_1", "echo") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            runId: "dep_1",
+            address: `ins_dep_1@${TENANT_DOMAIN}`,
+            messageId: "<m1@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+      }),
+    );
+
+    expect(grantsPosted).toContainEqual({
+      resource: "eval-run:*",
+      action: "read",
+    });
+  });
+
   test("publishes the tenant's corbits-tools registry before deploying any workflow", async () => {
     const { push } = recordingPusher();
     const publishCalls: { tenantId: string; hubUrl: string }[] = [];

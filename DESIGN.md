@@ -193,17 +193,24 @@ Tense follows state: a call still running speaks in the present
 render mid-turn and in the persisted transcript, so nothing restyles
 itself the moment a turn ends.
 
-Consecutive calls fold into one round on a single line — the step
-currently working while the turn is open, then a count of steps once it
-settles. Rounds stay collapsed by default, including while running: the
-answer is what the reader is waiting for, and a transcript that expands
-its own machinery pushes the answer off screen. Detail opens on demand,
-one click, and a row with nothing to show offers no disclosure at all.
+Tool calls render as inline chips inside the agent's message body, stacked
+under the prose, one per call — never a collapsible, never a count.
+Consecutive calls do not fold into a summary line or a "3 steps" total: a
+count of implementation objects tells a reader nothing about what actually
+happened, and hides the one call among many that might matter (a public
+Slack post reads identically to three benign file reads once it's
+flattened to a number). Each chip is `width:max-content` — it hugs its own
+content rather than spanning the column, so a wall of calls reads as a
+stack of short tags, not a wall of prose.
 
-A failure says so plainly, in words, and opens itself — it is the one
-state where the detail is the point. A tool that failed without saying
-why still says that much. Failure is the only state in this strip that
-earns colour; everything else is quiet chrome.
+A chip's anatomy, left to right: a small provider tile (brand-colored,
+two-letter initials) so a reader can tell at a glance which system a call
+touched, then the sentence describing what happened, then a quiet status
+marker. Detail opens on demand, one click, on the individual chip that has
+something to show; a chip with nothing to disclose offers no control at
+all. A failure says so plainly, in words, on its own chip — it is the one
+state where colour appears; everything else in this strip is quiet
+chrome.
 
 ## State Pills
 
