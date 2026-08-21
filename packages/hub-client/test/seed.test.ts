@@ -12,6 +12,7 @@ import {
 } from "../src/seed";
 import { DEFAULT_SKILLS } from "../src/default-skills";
 import { CATALOG_SEEDS } from "../src/catalog-seed-data";
+import { OLLAMA_MODEL_DEFAULTS } from "@corbits/inference-catalog/ollama-context-defaults";
 import {
   assetRow,
   collector,
@@ -1277,6 +1278,92 @@ describe("seedCatalog", () => {
     expect(output).toContain("created catalog provider anthropic");
     expect(output).toContain("created catalog offering");
     expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
+  });
+
+  test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
+    const { log } = collector();
+    const offeringBodies: Record<string, unknown>[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "ollama") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "ollama-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const modelBody = body as { canonicalName: string };
+        return {
+          status: 201,
+          data: catalogModelRow(
+            `mdl_${modelBody.canonicalName}`,
+            modelBody.canonicalName,
+          ),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "ollama",
+            "cre_1",
+            "openai-compatible",
+            "http://127.0.0.1:1/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        offeringBodies.push(body as Record<string, unknown>);
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "ollama",
+      // Port 1 on loopback refuses instantly (nothing ever listens there),
+      // so this test's own `fetchOllamaModelCatalog` probe fails fast and
+      // falls back to the curated static seed, instead of depending on
+      // whatever Ollama instance (if any) happens to be reachable from
+      // wherever this test runs.
+      baseURLOverride: "http://127.0.0.1:1/v1",
+      apiKey: "unused",
+      log,
+    });
+
+    const gptOssDefault = OLLAMA_MODEL_DEFAULTS["gpt-oss:20b"];
+    const qwenDefault = OLLAMA_MODEL_DEFAULTS["qwen3.8:27b"];
+    if (gptOssDefault === undefined || qwenDefault === undefined) {
+      throw new Error("missing fixture entry");
+    }
+    const gptOss = offeringBodies.find(
+      (entry) => entry["modelId"] === "mdl_gpt-oss:20b",
+    );
+    expect(gptOss?.["quirks"]).toEqual({ default: gptOssDefault });
+    const qwen = offeringBodies.find(
+      (entry) => entry["modelId"] === "mdl_qwen3.8:27b",
+    );
+    expect(qwen?.["quirks"]).toEqual({ default: qwenDefault });
+    expect(
+      (qwen?.["quirks"] as { default: { numCtx: number } })?.default?.numCtx,
+    ).toBeLessThan(
+      (gptOss?.["quirks"] as { default: { numCtx: number } })?.default?.numCtx,
+    );
   });
 
   test("an oauth_token credential with metadata posts both through to the credential row", async () => {
