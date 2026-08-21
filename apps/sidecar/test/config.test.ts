@@ -20,9 +20,36 @@ test("parses a complete environment into config", () => {
     home: undefined,
     tmpdir: undefined,
     toolRegistries: undefined,
+    adapterManifest: [],
     consumedRetentionMs: undefined,
     readyTimeoutMs: undefined,
   });
+});
+
+test("carries a valid adapter manifest through as its parsed form", () => {
+  const manifest = [
+    { provider: "ollama", specifier: "@corbits/ollama-adapter", export: "createOllamaAdapter" },
+  ];
+  const config = readSidecarConfig({
+    ...VALID_ENV,
+    SIDECAR_ADAPTER_MANIFEST: JSON.stringify(manifest),
+  });
+  expect(config.adapterManifest).toEqual(manifest);
+});
+
+test("a malformed adapter manifest fails boot naming the variable", () => {
+  expect(() =>
+    readSidecarConfig({ ...VALID_ENV, SIDECAR_ADAPTER_MANIFEST: "{not json" }),
+  ).toThrow(/SIDECAR_ADAPTER_MANIFEST/);
+});
+
+test("an adapter manifest entry missing a required field fails boot", () => {
+  expect(() =>
+    readSidecarConfig({
+      ...VALID_ENV,
+      SIDECAR_ADAPTER_MANIFEST: JSON.stringify([{ provider: "ollama" }]),
+    }),
+  ).toThrow(/SIDECAR_ADAPTER_MANIFEST/);
 });
 
 test("carries operator overrides for consumedRetentionMs/readyTimeoutMs through when present", () => {
