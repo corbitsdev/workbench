@@ -9,7 +9,12 @@
 // next slice).
 
 import { Button, toast } from "@corbits/react-ui";
-import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
+import {
+  ChatCircle,
+  GitPullRequest,
+  MagnifyingGlass,
+  Plus,
+} from "@corbits/icons";
 import {
   ChatApiError,
   describeChatError,
@@ -74,6 +79,7 @@ type RepoPickerState = {
 
 const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
+  "due-diligence": MagnifyingGlass,
   blank: ChatCircle,
 };
 
