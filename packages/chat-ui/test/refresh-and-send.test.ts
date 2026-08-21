@@ -575,9 +575,11 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
   });
 
   test("a growing reply appends a streaming item attributed to the workbench's agent", () => {
-    const merged = mergeStreamingReply(serverItems, { text: "Working on it" }, [
-      agent,
-    ]);
+    const merged = mergeStreamingReply(
+      serverItems,
+      { phase: "awaiting", text: "Working on it" },
+      [agent],
+    );
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({
       streaming: true,
@@ -587,12 +589,20 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
   });
 
   test("no agent participant to attribute the reply to means no synthetic item", () => {
-    const merged = mergeStreamingReply(serverItems, { text: "hi" }, []);
+    const merged = mergeStreamingReply(
+      serverItems,
+      { phase: "awaiting", text: "hi" },
+      [],
+    );
     expect(merged).toBe(serverItems);
   });
 
   test("a pending reply with no tokens yet renders no ghost bubble — the typing line owns that phase", () => {
-    const merged = mergeStreamingReply(serverItems, { text: "" }, [agent]);
+    const merged = mergeStreamingReply(
+      serverItems,
+      { phase: "awaiting", text: "" },
+      [agent],
+    );
     expect(merged).toBe(serverItems);
   });
 });

@@ -94,20 +94,20 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
       seq: 0,
       data: { model: "x" },
     });
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
 
     harness.send("chat.agent", delta("Hel"));
-    expect(harness.get()).toEqual({ text: "Hel" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hel" });
 
     harness.send("chat.agent", delta("Hello"));
-    expect(harness.get()).toEqual({ text: "Hello" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hello" });
     harness.unmount();
   });
 
   test("inference.done clears the reply once the turn ends", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", delta("Hello"));
-    expect(harness.get()).toEqual({ text: "Hello" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hello" });
 
     harness.send("chat.agent", {
       type: "inference.done",
@@ -121,7 +121,7 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
   test("switching workbenches clears whatever was streaming in the one just left", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", delta("Hello"));
-    expect(harness.get()).toEqual({ text: "Hello" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hello" });
 
     harness.switchWorkbench("chan_b");
     expect(harness.get()).toBeNull();
@@ -131,13 +131,13 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
   test("noteAwaitingReply opens a pending reply after a send, and deltas take over", () => {
     const harness = mount("chan_a");
     harness.awaitReply();
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
 
     harness.send("chat.agent", delta("Hel"));
-    expect(harness.get()).toEqual({ text: "Hel" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hel" });
 
     harness.awaitReply();
-    expect(harness.get()).toEqual({ text: "Hel" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hel" });
     harness.unmount();
   });
 
@@ -145,7 +145,7 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", delta("Hello"));
     harness.send("chat.typing", { principalId: "prn_other" });
-    expect(harness.get()).toEqual({ text: "Hello" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hello" });
     harness.unmount();
   });
 });
@@ -154,7 +154,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
   test("a pending reply with no tokens for the whole clearMs marks replyTimedOut", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
     expect(harness.timedOut()).toBe(false);
 
     await harness.settle(60);
@@ -169,7 +169,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.send("chat.agent", delta("Hi"));
 
     await harness.settle(60);
-    expect(harness.get()).toEqual({ text: "Hi" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hi" });
     expect(harness.timedOut()).toBe(false);
     harness.unmount();
   });
@@ -203,14 +203,17 @@ describe("useStreamingReply.resumeFromTurn (CL-6380: catch-up on remount)", () =
     expect(harness.get()).toBeNull();
 
     harness.resumeFromTurn({ textSnapshot: "already streamed so far" });
-    expect(harness.get()).toEqual({ text: "already streamed so far" });
+    expect(harness.get()).toEqual({
+      phase: "awaiting",
+      text: "already streamed so far",
+    });
     harness.unmount();
   });
 
   test("a running turn with no text yet opens the same empty pending pulse as noteAwaitingReply", () => {
     const harness = mount("chan_a");
     harness.resumeFromTurn({ textSnapshot: null });
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
     harness.unmount();
   });
 
@@ -222,20 +225,20 @@ describe("useStreamingReply.resumeFromTurn (CL-6380: catch-up on remount)", () =
       data: { model: "x" },
     });
     harness.send("chat.agent", delta("hi"));
-    expect(harness.get()).toEqual({ text: "hi" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "hi" });
 
     harness.resumeFromTurn(null);
-    expect(harness.get()).toEqual({ text: "hi" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "hi" });
     harness.unmount();
   });
 
   test("a live event that already opened the reply wins over a slower snapshot fetch", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", delta("live wins"));
-    expect(harness.get()).toEqual({ text: "live wins" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "live wins" });
 
     harness.resumeFromTurn({ textSnapshot: "stale snapshot" });
-    expect(harness.get()).toEqual({ text: "live wins" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "live wins" });
     harness.unmount();
   });
 });
@@ -244,13 +247,13 @@ describe("useStreamingReply's typing-pulse floor", () => {
   test("a token arriving immediately still leaves the empty pulse up until minVisibleMs", async () => {
     const harness = mount("chan_a", undefined, 40);
     harness.awaitReply();
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
 
     harness.send("chat.agent", delta("Hi"));
-    expect(harness.get()).toEqual({ text: "" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
 
     await harness.settle(60);
-    expect(harness.get()).toEqual({ text: "Hi" });
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "Hi" });
     harness.unmount();
   });
 });
