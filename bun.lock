@@ -32,6 +32,7 @@
         "@chat-adapter/state-memory": "^4.35.0",
         "@corbits/agent-directory": "workspace:*",
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/agent-workflow-authoring": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/artifacts-hub": "workspace:*",
@@ -258,6 +259,23 @@
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/agent-workflow-authoring": {
+      "name": "@corbits/agent-workflow-authoring",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/authz": "0.3.0",
+        "@intx/db": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1470,6 +1488,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workflow-authoring-tools": {
+      "name": "@corbits/workflow-authoring-tools",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workflow-catalog": {
       "name": "@corbits/workflow-catalog",
       "version": "0.0.1",
@@ -1712,6 +1743,20 @@
     },
     "workflows/collateral-generation": {
       "name": "@corbits/collateral-generation-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/diligence-brief": {
+      "name": "@corbits/diligence-brief-workflow",
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "0.3.0",
@@ -1996,6 +2041,8 @@
 
     "@corbits/agent-runtime": ["@corbits/agent-runtime@workspace:packages/agent-runtime"],
 
+    "@corbits/agent-workflow-authoring": ["@corbits/agent-workflow-authoring@workspace:packages/agent-workflow-authoring"],
+
     "@corbits/api-query": ["@corbits/api-query@workspace:packages/api-query"],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
@@ -2039,6 +2086,8 @@
     "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
 
     "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
+
+    "@corbits/diligence-brief-workflow": ["@corbits/diligence-brief-workflow@workspace:workflows/diligence-brief"],
 
     "@corbits/docker-provisioner": ["@corbits/docker-provisioner@workspace:packages/docker-provisioner"],
 
@@ -2169,6 +2218,8 @@
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
+
+    "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
 
