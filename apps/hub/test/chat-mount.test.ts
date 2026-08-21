@@ -29,6 +29,7 @@ const config: HubConfig = {
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
+  signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
   signupMode: "closed",
   allowedEmailDomains: [],

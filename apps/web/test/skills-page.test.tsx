@@ -144,7 +144,7 @@ describe("SkillsPage", () => {
     const el = await mount();
     expect(el.textContent).toContain("triage");
     expect(el.textContent).toContain("Sorts inbound issues.");
-    expect(el.textContent).toContain("Private");
+    expect(el.textContent).toContain("Only me");
   });
 
   test("Create skill posts directly to the registry and opens the new skill's page", async () => {

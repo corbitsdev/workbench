@@ -32,6 +32,7 @@ describe("readHubConfig", () => {
       signupMode: "closed",
       allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
+      signInRateLimit: { windowSeconds: 60, max: 10 },
       allowPlaintextSecrets: false,
       allowUnverifiedEmails: false,
       sidecarProvisioners: [],
@@ -181,6 +182,19 @@ describe("readHubConfig", () => {
       SIGNUP_RATE_LIMIT_MAX: "2",
     });
     expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
+  });
+
+  test("the sign-in rate limit is configurable and defaults well above better-auth's built-in 3-per-10-seconds special rule (CL-6494)", () => {
+    expect(readHubConfig(validEnv).signInRateLimit).toEqual({
+      windowSeconds: 60,
+      max: 10,
+    });
+    const config = readHubConfig({
+      ...validEnv,
+      SIGNIN_RATE_LIMIT_WINDOW_SECONDS: "30",
+      SIGNIN_RATE_LIMIT_MAX: "2",
+    });
+    expect(config.signInRateLimit).toEqual({ windowSeconds: 30, max: 2 });
   });
 
   test("WORKBENCH_SIGNUP defaults closed and accepts open", () => {

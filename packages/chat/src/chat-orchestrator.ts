@@ -42,6 +42,10 @@ import {
   type ClassifiedInferenceFailureCategory,
   type ProviderHealthPort,
 } from "@workbench/connections/provider-health";
+import {
+  CONNECTOR_REGISTRY,
+  parseMissingCredentialDetail,
+} from "@workbench/connections/registry";
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
@@ -204,11 +208,16 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
  * matching `repliedAddresses`' own per-address bookkeeping above); reset
  * the moment a turn's `connector.reply` or turn-drop notice consumes it.
  */
-function createReplyPartsAccumulator(): {
+export function createReplyPartsAccumulator(): {
   onInferenceDone(agentAddress: string, blocks: ReplyContentBlock[]): void;
   onToolDone(
     agentAddress: string,
-    result: { callId: string; content: unknown; isError: boolean },
+    result: {
+      callId: string;
+      content: unknown;
+      isError: boolean;
+      detail?: unknown;
+    },
   ): void;
   /** Returns and clears the address's accumulated parts, or undefined if
    * nothing was ever accumulated for it this turn. */
@@ -251,6 +260,36 @@ function createReplyPartsAccumulator(): {
         status: result.isError ? "error" : "success",
         output: result.content,
       };
+      // A tool that stopped rather than guessing because a connector's
+      // credential isn't connected (CL-6495's mid-turn halt) carries
+      // that fact structurally in `detail`, not just as prose in
+      // `content`. When it does, append the same `connect-service` card
+      // `request_connection` already posts for the agent-initiated path
+      // — same block type, same render path, same live actions port —
+      // so the person sees a real "Connect X" button in this turn
+      // instead of a dead-end error.
+      const missingCredential = result.isError
+        ? parseMissingCredentialDetail(result.detail)
+        : undefined;
+      if (missingCredential !== undefined) {
+        const displayName =
+          CONNECTOR_REGISTRY[missingCredential.connectorId]?.displayName ??
+          missingCredential.connectorId;
+        parts.push({
+          kind: "block",
+          block: {
+            type: "connect-service",
+            data: {
+              connectorId: missingCredential.connectorId,
+              displayName,
+              reason:
+                typeof result.content === "string" && result.content.length > 0
+                  ? result.content
+                  : `${displayName} isn't connected, so this couldn't run.`,
+            },
+          },
+        });
+      }
     },
     take(agentAddress) {
       const parts = partsByAddress.get(agentAddress);

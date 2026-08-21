@@ -25,6 +25,62 @@ describe("redactText", () => {
       "could not reach the hub",
     );
   });
+
+  test("redacts sensitive query-param values in a URL while keeping it readable", () => {
+    expect(
+      redactText(
+        "callback failed: https://api.example.com/cb?access_token=SECRETVALUE123&code=abc&state=xyz",
+      ),
+    ).toBe(
+      "callback failed: https://api.example.com/cb?access_token=[redacted]&code=[redacted]&state=xyz",
+    );
+  });
+
+  test("redacts token= style assignments in free text", () => {
+    expect(redactText("failed request token=abc123xyz retries=3")).toBe(
+      "failed request token=[redacted] retries=3",
+    );
+  });
+
+  test("redacts a raw JWT with no keyword prefix", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGhpc2lzbm90YXJlYWxzaWc";
+    expect(redactText(`session restore failed for ${jwt}`)).toBe(
+      "session restore failed for [redacted]",
+    );
+  });
+
+  test("redacts code=/key= only in query-string position, not free text", () => {
+    expect(redactText('code=404 message="Not Found"')).toBe(
+      'code=404 message="Not Found"',
+    );
+    expect(
+      redactText('level=error msg="db timeout" code=DB_TIMEOUT retries=3'),
+    ).toBe('level=error msg="db timeout" code=DB_TIMEOUT retries=3');
+    expect(redactText("cache miss for key=user:1234:profile")).toBe(
+      "cache miss for key=user:1234:profile",
+    );
+    expect(redactText("at /routes/key=handler.ts:12:5)")).toBe(
+      "at /routes/key=handler.ts:12:5)",
+    );
+  });
+
+  test("redacts code=/key= when they appear as a URL query param", () => {
+    expect(
+      redactText(
+        "https://api.example.com/authorize?client_id=abc&code=SECRETCODE",
+      ),
+    ).toBe("https://api.example.com/authorize?client_id=abc&code=[redacted]");
+    expect(
+      redactText("https://api.example.com/data?key=APIKEYVALUE&format=json"),
+    ).toBe("https://api.example.com/data?key=[redacted]&format=json");
+  });
+
+  test("does not let the value group run past a stack-frame's trailing text", () => {
+    expect(
+      redactText("auth failed token=abc123).authenticate() at line 4"),
+    ).toBe("auth failed token=[redacted]).authenticate() at line 4");
+  });
 });
 
 describe("redactExtra", () => {
@@ -63,5 +119,13 @@ describe("redactExtra", () => {
 
   test("passes undefined through unchanged", () => {
     expect(redactExtra(undefined)).toBeUndefined();
+  });
+
+  test("redacts a raw secret string inside an array under a non-secret key", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGhpc2lzbm90YXJlYWxzaWc";
+    expect(redactExtra({ sessions: [jwt, "plain-session-id"] })).toEqual({
+      sessions: ["[redacted]", "plain-session-id"],
+    });
   });
 });

@@ -14,6 +14,7 @@ export {
   readLiveFoldedBody,
   resolveNewestProjectedDefinition,
   DefinitionProjectionMissingError,
+  MultiStepFoldUnsupportedError,
   FoldedBodySchema,
   type DefinitionCandidate,
 } from "./definition";

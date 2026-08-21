@@ -29,6 +29,9 @@ import { redactExtra, redactText } from "./redact";
 import { generateRefId } from "./ref-id";
 
 const UNKNOWN_OPERATION = "unknown";
+// A cyclic or unbounded `.cause` chain must not make the logger recurse
+// forever; this caps how many links get carried over.
+const MAX_CAUSE_DEPTH = 5;
 
 const log = getLogger(["errors"]);
 
@@ -36,9 +39,12 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function redactedCopyOf(error: Error): Error {
+function redactedCopyOf(error: Error, depth = 0): Error {
   const redacted = new Error(redactText(error.message));
   if (error.stack !== undefined) redacted.stack = redactText(error.stack);
+  if (depth < MAX_CAUSE_DEPTH && error.cause !== undefined) {
+    redacted.cause = redactedCopyOf(asError(error.cause), depth + 1);
+  }
   return redacted;
 }
 
