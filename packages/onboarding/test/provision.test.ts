@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
+import { DEFAULT_WORKFLOWS, SEED_GRANTS } from "@workbench/hub-client";
 import type { ApiCall } from "@workbench/hub-client";
 import type {
   WorkflowPusher,
@@ -718,11 +718,137 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(assetCreateAttempts).toBe(6);
   });
 
-  test("a fully seeded personal bench reports existing-member with seeded: true", async () => {
+  test("a fully seeded personal bench reports existing-member with seeded: true, and backfills a grant added to SEED_GRANTS after it was provisioned", async () => {
     // Every default workflow already has an active deployment — nothing
-    // for this hook to do, but the caller must be able to tell "already
-    // seeded" apart from "seeded and unseeded look identical," which is
-    // exactly the ambiguity that hid the bench_unseeded defect.
+    // for this hook to do on the workflow side, but the caller must be
+    // able to tell "already seeded" apart from "seeded and unseeded look
+    // identical," which is exactly the ambiguity that hid the
+    // bench_unseeded defect. This tenant also stands in for CL-6475: it
+    // was provisioned before eval-run:*/read existed (CL-6465 added it),
+    // so every grant except that one is already planted. The "fully
+    // seeded" workflow check must never short-circuit past reconciling
+    // it in.
+    const missingGrant = { resource: "eval-run:*", action: "read" };
+    const alreadyGranted = SEED_GRANTS.filter(
+      (g) =>
+        !(
+          g.resource === missingGrant.resource &&
+          g.action === missingGrant.action
+        ),
+    );
+    const grantsPosted: { resource: string; action: string }[] = [];
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        const resource = new URL(`http://x${path}`).searchParams.get(
+          "resource",
+        );
+        const rows = alreadyGranted
+          .filter((g) => g.resource === resource)
+          .map((g, index) => ({
+            id: `grt_${resource}_${index}`,
+            tenantId: TENANT_ID,
+            principalId: PRINCIPAL_ID,
+            resource: g.resource,
+            action: g.action,
+            effect: "allow",
+            origin: "creator",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }));
+        return {
+          status: 200,
+          data: { data: rows, nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const grant = body as { resource: string; action: string };
+        grantsPosted.push({ resource: grant.resource, action: grant.action });
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
+            id: `ast_${index}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: workflow.assetName,
+            displayName: workflow.displayName,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+            definitionAssetId: `ast_${index}`,
+            status: "deployed",
+          })),
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      // No seedModel needed: nothing left to seed on the workflow side.
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+    });
+
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
+    // Exactly the one grant this tenant was missing — no more, no less.
+    expect(grantsPosted).toEqual([missingGrant]);
+  });
+
+  test("a grant-reconcile failure is reported, not thrown -- sign-in still succeeds for a fully seeded bench", async () => {
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -741,6 +867,17 @@ describe("provisionPersonalTenantIfNeeded", () => {
             ],
             nextCursor: null,
           },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        // A transient hub failure while reconciling grants.
+        return {
+          status: 500,
+          data: { error: "grants unavailable" },
           cookies: [],
         };
       }
@@ -788,7 +925,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      // No seedModel needed: nothing left to seed.
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
@@ -827,6 +963,21 @@ describe("provisionPersonalTenantIfNeeded", () => {
           },
           cookies: [],
         };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        // Grant reconciliation runs regardless of seed-model
+        // availability -- it needs no model, only the hub API.
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
       }
       if (
         method === "GET" &&

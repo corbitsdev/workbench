@@ -4,6 +4,8 @@ import {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   NOOP_MODEL_SOURCE,
+  reconcileSeedGrants,
+  SEED_GRANTS,
   seedCatalog,
   seedTenant,
   SETUP_AGENT_ASSET_NAME,
@@ -93,6 +95,111 @@ function baseRoutes(method: string, path: string) {
     return { status: 200, data: { items: [] } };
   return undefined;
 }
+
+describe("reconcileSeedGrants", () => {
+  function grantsAPI(
+    granted: () => readonly { resource: string; action: string }[],
+    posted: { resource: string; action: string }[],
+  ) {
+    return fakeAPI((method, path, body) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        const resource = new URL(`http://x${path}`).searchParams.get(
+          "resource",
+        );
+        const rows = granted()
+          .filter((g) => g.resource === resource)
+          .map((g, index) => ({
+            id: `grt_${resource}_${index}`,
+            tenantId: TENANT_ID,
+            principalId: PRINCIPAL_ID,
+            resource: g.resource,
+            action: g.action,
+            effect: "allow" as const,
+            origin: "creator" as const,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }));
+        return { status: 200, data: { data: rows, nextCursor: null } };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const grant = body as { resource: string; action: string };
+        posted.push({ resource: grant.resource, action: grant.action });
+        return { status: 201, data: {} };
+      }
+      return undefined;
+    });
+  }
+
+  test("plants exactly the declared SEED_GRANTS set, nothing more", async () => {
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => [], posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual(
+      SEED_GRANTS.map((g) => ({ resource: g.resource, action: g.action })),
+    );
+  });
+
+  test("backfills a grant added to SEED_GRANTS after the tenant was already seeded", async () => {
+    // Simulates a tenant provisioned before eval-run:*/read existed
+    // (CL-6465): every grant except that one is already planted.
+    const alreadyGranted = SEED_GRANTS.filter(
+      (g) => !(g.resource === "eval-run:*" && g.action === "read"),
+    );
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => alreadyGranted, posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual([{ resource: "eval-run:*", action: "read" }]);
+  });
+
+  test("reconciling twice never duplicates a grant", async () => {
+    const granted: { resource: string; action: string }[] = [];
+    const posted: { resource: string; action: string }[] = [];
+    const api = grantsAPI(() => granted, posted);
+    const { log } = collector();
+
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+    granted.push(...posted);
+    expect(posted).toHaveLength(SEED_GRANTS.length);
+
+    posted.length = 0;
+    await reconcileSeedGrants(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      PRINCIPAL_ID,
+      log,
+    );
+
+    expect(posted).toEqual([]);
+  });
+});
 
 describe("seedTenant", () => {
   test("fresh run pushes, deploys, and confirms the echo workflow", async () => {
