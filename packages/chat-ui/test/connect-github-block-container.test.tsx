@@ -1,0 +1,164 @@
+// CL-6463: a successful PAT submit must flip the connect-github card to
+// connected on its own — never leaning on a host that happens to fan the
+// change out through `subscribeConnectState` (real hosts vary, and
+// `chat.settings` never carries the credential-save path at all; see
+// `connect-github-stream.ts`'s own header). These fakes deliberately never
+// call the subscriber from `submitAccessToken`, so a pass here proves the
+// container drove its own state from the submit's own result — not from a
+// side channel a differently-wired host might forget.
+import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+
+import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
+
+import type {
+  ConnectGithubActions,
+  ConnectGithubQuery,
+  ConnectGithubRepo,
+} from "../src/blocks/connect-github-actions";
+import { ConnectGithubBlockContainer } from "../src/blocks/connect-github-block-container";
+
+const DATA: ConnectGithubBlockData = {
+  requiredForTemplate: "github",
+  state: "disconnected",
+};
+
+const REPOS: readonly ConnectGithubRepo[] = [
+  { id: "1", name: "acme/widgets", openPullRequestCount: 2 },
+];
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+afterEach(() => {
+  if (root !== null) act(() => root?.unmount());
+  container?.remove();
+  container = null;
+  root = null;
+});
+
+async function mount(actions: ConnectGithubActions) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <ConnectGithubBlockContainer
+        data={DATA}
+        messageId="m1"
+        actions={actions}
+      />,
+    );
+  });
+  return container;
+}
+
+function typeInto(element: HTMLInputElement, text: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    globalThis.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(element, text);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** A host that never notifies `subscribeConnectState` from
+ * `submitAccessToken` — the exact shape of the real gap this ticket fixes:
+ * the credential save succeeds, but nothing about it ever reaches the
+ * fold. `getConnectState` is the only thing that reports the new
+ * connected fact, mirroring the real `/github/state` route reading the
+ * just-written credential. */
+function buildNeverNotifiesHarness(options?: {
+  readonly submitResult?:
+    { readonly ok: true } | { readonly ok: false; readonly message: string };
+}) {
+  let connected = false;
+  return {
+    actions: {
+      getConnectState: () =>
+        Promise.resolve<ConnectGithubQuery>(
+          connected
+            ? {
+                kind: "connected",
+                orgName: "octocat",
+                repos: REPOS,
+                selectedRepoIds: [],
+              }
+            : { kind: "disconnected" },
+        ),
+      subscribeConnectState: () => () => {},
+      requestConnect: () => {},
+      submitAccessToken: async (_token: string) => {
+        const result = options?.submitResult ?? { ok: true as const };
+        if (result.ok) connected = true;
+        return result;
+      },
+      startReviewing: async () => ({ startedTriggerCount: 0 }),
+      skip: async () => {},
+    } satisfies ConnectGithubActions,
+  };
+}
+
+async function openFieldAndSubmit(el: HTMLElement, token: string) {
+  const connectButton = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === "Connect GitHub",
+  ) as HTMLButtonElement;
+  await act(async () => {
+    connectButton.click();
+  });
+  const tokenField = el.querySelector(
+    "#connect-github-token",
+  ) as HTMLInputElement;
+  await act(async () => {
+    typeInto(tokenField, token);
+  });
+  const submitButton = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === "Connect",
+  ) as HTMLButtonElement;
+  await act(async () => {
+    submitButton.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
+  test("a successful PAT submit flips the card to connected on its own, even when the host never fans the change out through subscribeConnectState", async () => {
+    const harness = buildNeverNotifiesHarness();
+    const el = await mount(harness.actions);
+
+    expect(el.textContent).toContain("Connect GitHub");
+    await openFieldAndSubmit(el, "ghp_test123");
+
+    expect(el.textContent).toContain("Connected to GitHub as octocat");
+    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
+      REPOS.length,
+    );
+  });
+
+  test("a rejected token shows what went wrong and leaves a working submit button, never a dead card", async () => {
+    const harness = buildNeverNotifiesHarness({
+      submitResult: { ok: false, message: "That token looks expired." },
+    });
+    const el = await mount(harness.actions);
+
+    await openFieldAndSubmit(el, "ghp_bad");
+
+    expect(el.textContent).toContain("That token looks expired.");
+    expect(el.textContent).not.toContain("Connected to GitHub as");
+
+    const submitButton = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+
+    const tokenField = el.querySelector(
+      "#connect-github-token",
+    ) as HTMLInputElement;
+    expect(tokenField.disabled).toBe(false);
+  });
+});
