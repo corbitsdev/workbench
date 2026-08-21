@@ -442,6 +442,29 @@ export function elapsedLabel(createdAt: string, now: number): string {
   return durationLabel(Math.max(0, now - startMs));
 }
 
+const ELAPSED_TICK_MS = 1_000;
+
+/** Ticks once a second while `enabled` — the clock the elapsed label next to
+ * the pulsing `StatusDot` reads from, so it counts up like the live indicator
+ * beside it instead of freezing at whatever instant this component mounted
+ * or last re-rendered for an unrelated reason. */
+function useTickingNow(enabled: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), ELAPSED_TICK_MS);
+    return () => clearInterval(timer);
+  }, [enabled]);
+  return now;
+}
+
+/** A run actually in flight right now (`status: running | updating`) —
+ * liveness is not a windowed property, so this filters the full run set,
+ * never the range-filtered one. */
+function isRunningNow(run: InsightsRun): boolean {
+  return run.status === "running" || run.status === "updating";
+}
+
 /**
  * "Running now" — a horizontally scrolling strip of the runs actually in
  * flight this instant (`status: running | updating`), not a fabricated
@@ -457,11 +480,9 @@ function RunningNowStrip({
   readonly runs: readonly InsightsRun[];
   readonly onOpenRun: (id: string) => void;
 }) {
-  const running = runs.filter(
-    (r) => r.status === "running" || r.status === "updating",
-  );
+  const running = runs.filter(isRunningNow);
+  const now = useTickingNow(running.length > 0);
   if (running.length === 0) return null;
-  const now = Date.now();
 
   return (
     <section className="insights-running-now" aria-label="Running now">
@@ -619,6 +640,7 @@ function InsightsLanding({
   byModel,
   byTool,
   runs,
+  runsNextCursor,
   routines,
   workbenches,
   latency,
@@ -633,6 +655,12 @@ function InsightsLanding({
   readonly byModel: readonly ModelUsage[] | null;
   readonly byTool: readonly ToolCall[] | null;
   readonly runs: readonly InsightsRun[];
+  /** The feed's own `nextCursor` (`limit=100` fetch, see
+   * `insightsTopLevelRunsPath`) — non-null means more runs exist in this
+   * window than the 100 fetched, so the KPIs/sparkline/outcome chart below
+   * disclose the cap instead of silently presenting a truncated series as
+   * complete. */
+  readonly runsNextCursor: string | null;
   readonly routines: readonly Routine[];
   /** Null while `/workbenches` hasn't resolved (or this landing is already
    * scoped to one workbench, where a breakdown of one has nothing to
@@ -652,6 +680,12 @@ function InsightsLanding({
   const windowedRuns = filterRunsByCreatedAt(runs, range.from, range.to);
   const stats = computeInsightsStats(windowedRuns, routines);
   const purposeRuns = purposeRunsForInsights(windowedRuns);
+
+  // Liveness is not a windowed property: a run that started before
+  // `range.from` and is still going is running right now regardless of when
+  // it started, so "Running now" reads off every fetched run, never the
+  // range-filtered subset above.
+  const runningNow = purposeRunsForInsights(runs).filter(isRunningNow);
 
   // Absent usage → zeros at the client boundary (never demo peaks / em-dash
   // for "no spend"). Real fetched summary is preserved when present.
@@ -726,17 +760,17 @@ function InsightsLanding({
             loading={loading}
           />
         ) : null}
-        {stats.running > 0 || loading ? (
+        {runningNow.length > 0 || loading ? (
           <InsightsStat
             label="Running now"
-            value={tileValue(formatCount(stats.running), loading)}
+            value={tileValue(formatCount(runningNow.length), loading)}
             detail="in flight"
             loading={loading}
           />
         ) : null}
       </StatGrid>
 
-      <RunningNowStrip runs={purposeRuns} onOpenRun={onOpenRun} />
+      <RunningNowStrip runs={runningNow} onOpenRun={onOpenRun} />
 
       {latency !== null && latency.total.samples > 0 ? (
         <StatGrid columns={4}>
@@ -777,6 +811,21 @@ function InsightsLanding({
         <p className="insights-note">
           Rates unknown for: {missingRates.join(", ")}. Those turns do not
           contribute a fabricated cost.
+        </p>
+      ) : null}
+
+      {runsNextCursor !== null ? (
+        <p className="insights-note">
+          Runs, sparkline, and outcomes below reflect the 100 most recent runs —
+          more exist in this window.{" "}
+          <button
+            type="button"
+            className="font-semibold text-primary-emphasis"
+            onClick={onOpenRuns}
+          >
+            See all runs & traces
+          </button>
+          .
         </p>
       ) : null}
 
@@ -1476,6 +1525,7 @@ export function InsightsPage({
             byModel={byModelData}
             byTool={byToolData}
             runs={runsData}
+            runsNextCursor={runsNextCursor}
             routines={routinesData}
             workbenches={workbenchesData}
             latency={latencyData}
