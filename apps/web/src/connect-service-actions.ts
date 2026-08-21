@@ -12,7 +12,6 @@
 // hub's connect-settling hook posts the in-room resume message — so no
 // client-side event fold is needed for the flip.
 import type {
-  ConnectAffordance,
   ConnectServiceActions,
   ConnectServiceQuery,
 } from "@corbits/chat-ui";

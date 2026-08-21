@@ -65,7 +65,7 @@ describe("createChatConnectServiceActions with a token preset", () => {
   });
 
   test("submitKey connects the preset with the pasted token via the mcp-servers route", async () => {
-    const calls = stubFetch((path, method) => {
+    const calls = stubFetch((_path, method) => {
       if (method === "POST") {
         return new Response(
           JSON.stringify({
