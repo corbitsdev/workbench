@@ -131,6 +131,7 @@ export {
   isKnownWorkbenchKind,
   MessageSender,
   ChatApiError,
+  describeChatError,
   listWorkbenches,
   listAllWorkbenches,
   workbenchesQueryKey,

@@ -47,6 +47,18 @@ import type { WorkbenchTemplateId } from "./workbench-templates";
 export const NEW_WORKBENCH_TITLE = "New Workbench";
 
 /**
+ * Marks the two precondition failures below as intentionally
+ * user-facing: their `message` is authored copy, never a raw request
+ * path or schema summary, so a caller can show it verbatim. Every
+ * other throw on this path (`ApiQueryError`, `ChatApiError`, or a
+ * plain `Error` from a package that hasn't opted in) must go through
+ * that error type's own describer instead — allow-listing safe
+ * throws, rather than denylisting unsafe ones, so a new error type
+ * added later fails safe (masked) instead of leaking by default.
+ */
+export class WorkbenchPreconditionError extends Error {}
+
+/**
  * Presents the connected org's repo list for the person to pick from once
  * the workbench exists — the create flow's own "select" half of CL-6386
  * ("connect in Plugins; select on new-workbench"). Resolving `null` means
@@ -72,7 +84,9 @@ export async function createAgentAndLaunch(
   const definitions = await listAgentDefinitions(tenantId);
   const template = findMyraDefinition(definitions);
   if (template === undefined) {
-    throw new Error("No default setup agent found for this workbench.");
+    throw new WorkbenchPreconditionError(
+      "No default setup agent found for this workbench.",
+    );
   }
   await launchAgentChat(tenantId, template.id, navigate, NEW_WORKBENCH_TITLE);
 }
@@ -104,7 +118,9 @@ export async function createWorkbenchFromTemplate(
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
   if (setupTemplate === undefined) {
-    throw new Error("No default setup agent found for this workbench.");
+    throw new WorkbenchPreconditionError(
+      "No default setup agent found for this workbench.",
+    );
   }
   // The manifest comes from the bench library (CL-6344), never from a
   // hardcoded catalog import; reading it is what seeds the shelf
@@ -119,7 +135,9 @@ export async function createWorkbenchFromTemplate(
       : ((await fetchWorkbenchTemplateManifest(tenantId, templateId)) ??
         undefined);
   if (templateId !== "blank" && manifest === undefined) {
-    throw new Error(`A ${templateId} workbench isn't available here yet.`);
+    throw new WorkbenchPreconditionError(
+      `A ${templateId} workbench isn't available here yet.`,
+    );
   }
   const requiresGithub =
     manifest?.requiredConnections.includes("github") ?? false;
