@@ -130,6 +130,38 @@ function storedDefinitionBytes(
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
+/** A stored definition that already pins a model — the state a person
+ * un-pins from. */
+function storedDefinitionBytesWithModel(model: string): Uint8Array {
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: serializeAgentDefinitionWorkflow(
+      buildAgentDefinitionWorkflow({
+        handle: "research-buddy",
+        tenantDomain: TENANT.domain,
+        description: "",
+        systemPrompt: "You are a careful research assistant.",
+        model,
+      }),
+    ),
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+}
+
+/** The model the one step agent resolves against, or `undefined` when it
+ * pins none. */
+function modelFrom(workflowJson: string): string | undefined {
+  const parsed = JSON.parse(workflowJson) as {
+    steps: Record<
+      string,
+      { agent: { inference?: { sources: { model?: string }[] } } }
+    >;
+  };
+  const step = Object.values(parsed.steps)[0];
+  if (step === undefined) throw new Error("definition carries no steps");
+  return step.agent.inference?.sources[0]?.model;
+}
+
 /** The one step agent's tool-package pins inside a serialized definition. */
 function pinsFrom(workflowJson: string): { name: string; version: string }[] {
   const parsed = JSON.parse(workflowJson) as {
@@ -669,7 +701,12 @@ test("PUT /:definitionId/skills rejects a blank skill name with a 400", async ()
 function fakeInstructionsDb(
   row: { id: string; assetId: string | null; name: string } | undefined,
   options: { readonly failSecondUpdate?: boolean } = {},
-): DB["db"] & { readonly updateCalls: readonly unknown[] } {
+): DB["db"] & {
+  readonly updateCalls: readonly unknown[];
+  /** `.set(...)` calls made straight on `db.update`, outside a
+   * transaction — what the status route writes. */
+  readonly directUpdateCalls: readonly unknown[];
+} {
   const updateCalls: unknown[] = [];
   const committedUpdateCalls: unknown[] = [];
   const makeUpdater = (target: unknown[]) => () => ({
@@ -693,6 +730,10 @@ function fakeInstructionsDb(
                 assetId: row.assetId,
                 name: row.name,
                 description: null,
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: new Date("2026-08-01T00:00:00.000Z"),
+                updatedAt: new Date("2026-08-01T00:00:00.000Z"),
               },
       },
     },
@@ -708,7 +749,11 @@ function fakeInstructionsDb(
       updateCalls.push(...txCalls);
     },
     updateCalls,
-  } as unknown as DB["db"] & { readonly updateCalls: readonly unknown[] };
+    directUpdateCalls: committedUpdateCalls,
+  } as unknown as DB["db"] & {
+    readonly updateCalls: readonly unknown[];
+    readonly directUpdateCalls: readonly unknown[];
+  };
 }
 
 test("GET /:definitionId returns the agent's display name and system prompt", async () => {
@@ -1008,6 +1053,188 @@ test("PUT /:definitionId updates the definition's row and its asset's row togeth
   // Neither row update is left standing when the transaction fails
   // partway through.
   expect(failingDb.updateCalls).toEqual([]);
+});
+
+// --- GET /by-name/:name (slug resolution) ---
+
+test("a definition resolves by its immutable slug, not by scanning a listing page", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await app.request("/by-name/research-buddy");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as { id: string; name: string };
+  expect(body.id).toBe("def_1");
+  expect(body.name).toBe("research-buddy");
+});
+
+test("an unknown slug 404s, and a workbench host's name is never resolvable by slug", async () => {
+  const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  expect((await unknown.request("/by-name/nobody")).status).toBe(404);
+
+  const hostName = `run-${"a".repeat(32)}`;
+  const host = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
+  );
+  expect((await host.request(`/by-name/${hostName}`)).status).toBe(404);
+});
+
+// --- DELETE /:definitionId/capabilities/model (un-pin a model) ---
+
+test("clearing a model rewrites the definition with no inference source", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  let writtenMessage: string | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
+      ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        writtenMessage = params.tree.message;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+
+  const response = await app.request("/def_1/capabilities/model", {
+    method: "DELETE",
+  });
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as { model?: string };
+  expect(body.model).toBeUndefined();
+  expect(writtenMessage).toBe("Clear research-buddy's model");
+  expect(modelFrom(definitionFrom(writtenFiles))).toBeUndefined();
+});
+
+test("clearing a model 404s for an unknown definition and scopes its grant per id", async () => {
+  const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  expect(
+    (
+      await unknown.request("/def_missing/capabilities/model", {
+        method: "DELETE",
+      })
+    ).status,
+  ).toBe(404);
+
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await app.request("/def_1/capabilities/model", { method: "DELETE" });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
+});
+
+// --- PUT /:definitionId/status (archive and restore) ---
+
+test("archiving a definition writes the stopped status and touches nothing else", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  let populateCalled = false;
+  const app = buildApp(
+    fakeAssetService({
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    db,
+  );
+  const response = await put(app, "/def_1/status", { status: "stopped" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ id: "def_1", status: "stopped" });
+  expect(db.directUpdateCalls).toEqual([
+    { status: "stopped", updatedAt: expect.any(Date) },
+  ]);
+  // Archiving is a row-status change: the definition's asset and its git
+  // history are never rewritten, which is what makes a restore possible.
+  expect(populateCalled).toBe(false);
+});
+
+test("restoring a definition writes the deployed status back", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(fakeAssetService(), db);
+  const response = await put(app, "/def_1/status", { status: "deployed" });
+  expect(response.status).toBe(200);
+  expect(db.directUpdateCalls).toEqual([
+    { status: "deployed", updatedAt: expect.any(Date) },
+  ]);
+});
+
+test("a status outside the schema's two lifecycle states is a 400, never written", async () => {
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(fakeAssetService(), db);
+  const response = await put(app, "/def_1/status", { status: "deleted" });
+  expect(response.status).toBe(400);
+  expect(db.directUpdateCalls).toEqual([]);
+});
+
+test("status 404s for an unknown definition and for a workbench host", async () => {
+  const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  expect(
+    (await put(unknown, "/def_missing/status", { status: "stopped" })).status,
+  ).toBe(404);
+
+  const host = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_host",
+      assetId: "ast_host",
+      name: `run-${"a".repeat(32)}`,
+    }),
+  );
+  expect(
+    (await put(host, "/def_host/status", { status: "stopped" })).status,
+  ).toBe(404);
+});
+
+test("status scopes its grant check per definition id and requires update", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await put(app, "/def_1/status", { status: "stopped" });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
 });
 
 test("a create request indexes its pinned skills into the stored system prompt", async () => {

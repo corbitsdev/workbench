@@ -4,6 +4,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  clearAgentModel,
+  getAgentDefinitionBySlug,
   listCatalogModels,
   loadAgentDirectory,
   updateAgentSkills,
@@ -239,5 +241,45 @@ describe("updateAgentSkills", () => {
     expect(calls.length).toBe(1);
     expect(calls[0]?.method).toBe("PUT");
     expect(skills).toEqual(["web-research"]);
+  });
+});
+
+describe("getAgentDefinitionBySlug", () => {
+  // A slug-addressed page must not depend on the definition being inside
+  // the listing's first (and only) page — it asks the server by name.
+  test("resolves one definition by name, never through the paginated listing", async () => {
+    const calls = stubFetch((path) => {
+      expect(path).toBe(
+        "/api/tenants/tnt_1/agent-definitions/by-name/triage-bot",
+      );
+      return json({
+        id: "wfd_1",
+        tenantId: "tnt_1",
+        name: "triage-bot",
+        description: "Triage bot",
+        currentVersion: "1",
+        status: "deployed",
+        createdAt: "2026-08-01T00:00:00.000Z",
+        updatedAt: "2026-08-01T00:00:00.000Z",
+      });
+    });
+
+    const definition = await getAgentDefinitionBySlug("tnt_1", "triage-bot");
+    expect(definition.id).toBe("wfd_1");
+    expect(calls.every((call) => !call.path.includes("limit="))).toBe(true);
+  });
+});
+
+describe("clearAgentModel", () => {
+  test("DELETEs the model capability rather than posting an empty name", async () => {
+    const calls = stubFetch((path) => {
+      expect(path).toBe(
+        "/api/tenants/tnt_1/agent-definitions/wfd_1/capabilities/model",
+      );
+      return json({ skills: [] });
+    });
+
+    await clearAgentModel("tnt_1", "wfd_1");
+    expect(calls[0]?.method).toBe("DELETE");
   });
 });

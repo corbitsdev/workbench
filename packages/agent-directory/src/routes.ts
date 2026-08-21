@@ -40,6 +40,7 @@ import {
   withAgentModel,
   withAgentSystemPrompt,
   withAgentToolPackagePin,
+  withoutAgentModel,
   type CreateAgentDefinitionCoreDeps,
   type CreateAgentDefinitionCoreInput,
 } from "./agent-workflow";
@@ -56,6 +57,7 @@ import {
   RestoreDefinitionInput,
   UpdateAgentInstructionsInput,
   UpdateAgentSkillsInput,
+  UpdateDefinitionStatusInput,
 } from "./validation";
 import {
   AddCapabilityInput,
@@ -295,6 +297,41 @@ export function createAgentDefinitionRoutes({
       const tenant = c.get("tenant");
       const definitions = await listVisibleAgentDefinitions(db, tenant.id);
       return c.json({ definitions });
+    },
+  );
+
+  // A definition's kebab `name` is its immutable, URL-facing slug
+  // (CL-6413), so a slug-addressed detail screen resolves through this
+  // route rather than scanning a page of the definitions listing — an
+  // agent past the listing's pagination ceiling still answers on its own
+  // URL. Grant-checked tenant-wide because there is no definition id to
+  // scope to until the lookup itself has run.
+  app.get(
+    "/by-name/:name",
+    requireGrant("workflow-definition:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const name = c.req.param("name");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.name, name),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(name), 404);
+      }
+
+      return c.json({
+        id: row.id,
+        tenantId: row.tenantId,
+        name: row.name,
+        description: row.description ?? null,
+        currentVersion: row.currentVersion,
+        status: row.status,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      });
     },
   );
 
@@ -617,6 +654,125 @@ export function createAgentDefinitionRoutes({
       }
 
       return c.json({ name: body.name, systemPrompt: body.systemPrompt });
+    },
+  );
+
+  // Un-pinning a model is its own verb, not `POST /capabilities` with an
+  // empty name: that route's whole contract is "a name from this tenant's
+  // live inventory", and "no model at all" is not a name. Clearing returns
+  // the definition to resolving whatever catalog default the tenant has
+  // seeded, which is where a definition created without a model already
+  // sits — so "Bench default" is a state a person can get back to, not a
+  // one-way door.
+  app.delete(
+    "/:definitionId/capabilities/model",
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      const workflowJson = await readAgentDefinitionWorkflowJson(
+        assetService,
+        row.assetId,
+      );
+      const nextWorkflowJson = withoutAgentModel(workflowJson);
+      await assetService.populateAsset({
+        assetId: row.assetId,
+        ref: DEFAULT_ASSET_REF,
+        principal: { kind: "hub" },
+        tree: {
+          files: agentDefinitionSourceTree({
+            handle: row.name,
+            workflowJson: nextWorkflowJson,
+          }),
+          message: `Clear ${row.name}'s model`,
+        },
+      });
+
+      const capabilities = readAgentCapabilities(nextWorkflowJson);
+      const skills = await skillsStore.getSkills(row.assetId);
+      return c.json({
+        toolPackagePins: capabilities.toolPackagePins,
+        skills,
+        model: capabilities.model,
+      });
+    },
+  );
+
+  // Archive and restore: a definition's status is the whole lifecycle a
+  // person controls from the agent detail page. `stopped` drops it out of
+  // every launchable listing (`listVisibleAgentDefinitions`,
+  // `listInvitableDefinitions`) while leaving the row, its asset, and its
+  // git history untouched — which is what makes the same route, with
+  // `deployed`, a restore rather than a re-create.
+  //
+  // The invariant this route relies on, and the two other writers of
+  // `workflow_definition.status` in this build:
+  //
+  //   1. Row creation. `@intx/hub-sessions`' `ensureWorkflowDefinitionForAsset`
+  //      inserts with the column default (`deployed`) under
+  //      `onConflictDoNothing` on `(assetId, wireHash)` — so re-deploying
+  //      the same definition body over an archived row is a no-op and can
+  //      never silently un-archive it. Editing an agent through this
+  //      package's own routes only repopulates the asset and never
+  //      re-projects a definition row at all.
+  //   2. `apps/hub`'s `undeployAgentDefinition`, which writes `stopped` —
+  //      the same direction as archiving, so the two cannot fight.
+  //
+  // The one way an archived agent reappears as launchable is a deploy of a
+  // CHANGED body over the same asset: a new `wireHash` misses the unique
+  // constraint and inserts a SECOND definition row, `deployed` by default,
+  // beside the archived one. Nothing in this build takes that path for a
+  // hand-authored agent (only `createAgentDefinitionCore` and Interchange's
+  // own selector deploys call the ensure), but it is a real hole in the
+  // status-as-lifecycle model rather than a hypothetical one, and archiving
+  // by row status is what makes it reachable.
+  app.put(
+    "/:definitionId/status",
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
+    async (c) => {
+      const body = UpdateDefinitionStatusInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid status: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      await db
+        .update(workflowDefinition)
+        .set({ status: body.status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenant.id),
+          ),
+        );
+
+      return c.json({ id: definitionId, status: body.status });
     },
   );
 

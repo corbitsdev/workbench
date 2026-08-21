@@ -79,7 +79,7 @@ async function postJSON<T>(
   path: string,
   schema: Validator<T>,
   body: unknown,
-  method: "POST" | "PUT" = "POST",
+  method: "POST" | "PUT" | "DELETE" = "POST",
 ): Promise<T> {
   let response: Response;
   try {
@@ -242,6 +242,111 @@ export function getAgentCapabilities(
   return getJSON(
     `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
     AgentCapabilitiesResponse,
+  );
+}
+
+/** `GET /agent-definitions/by-name/:slug` — one definition resolved by its
+ * immutable slug, server-side. A slug-addressed page reads this instead of
+ * scanning the paginated definitions listing, so an agent past that
+ * listing's ceiling still answers on its own URL. */
+export function getAgentDefinitionBySlug(
+  tenantId: string,
+  slug: string,
+): Promise<AgentDefinition> {
+  return getJSON(
+    `/api/tenants/${tenantId}/agent-definitions/by-name/${encodeURIComponent(slug)}`,
+    WorkflowDefinitionResponse,
+  );
+}
+
+const AgentDefinitionDetailResponse = type({
+  name: "string",
+  systemPrompt: "string",
+  "model?": "string",
+  skills: "string[]",
+});
+export type AgentDefinitionDetail = typeof AgentDefinitionDetailResponse.infer;
+
+/** Everything the agent detail page edits, read from the one route that
+ * owns a definition's authored state (`GET /agent-definitions/:id`): its
+ * display name, its system prompt, its pinned skills, and the model it
+ * resolves against. `name` here is the display name the definition's row
+ * carries, never its immutable slug. */
+export function getAgentDefinitionDetail(
+  tenantId: string,
+  definitionId: string,
+): Promise<AgentDefinitionDetail> {
+  return getJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
+    AgentDefinitionDetailResponse,
+  );
+}
+
+/** Replaces a definition's display name and system prompt in one write —
+ * the same route the per-workbench Assistant editor saves through, never
+ * a second write path of this page's own. */
+export function updateAgentInstructions(
+  tenantId: string,
+  definitionId: string,
+  input: { readonly name: string; readonly systemPrompt: string },
+): Promise<{ readonly name: string; readonly systemPrompt: string }> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
+    type({ name: "string", systemPrompt: "string" }),
+    input,
+    "PUT",
+  );
+}
+
+const AgentCapabilitiesWriteResponse = type({
+  skills: "string[]",
+  "model?": "string",
+});
+
+/** Sets the model a definition resolves against, through the guided
+ * capability-add route — which re-checks the name against the tenant's
+ * live catalog, so a model this bench cannot actually reach is refused
+ * rather than written. */
+export function setAgentModel(
+  tenantId: string,
+  definitionId: string,
+  canonicalName: string,
+): Promise<{ readonly model?: string }> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities`,
+    AgentCapabilitiesWriteResponse,
+    { kind: "model", canonicalName },
+  );
+}
+
+/** Un-pins a definition's model, returning it to the bench default. Its own
+ * verb rather than `setAgentModel("")`: "no model" is not a name the
+ * capability route's inventory check could ever accept. */
+export function clearAgentModel(
+  tenantId: string,
+  definitionId: string,
+): Promise<{ readonly model?: string }> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities/model`,
+    AgentCapabilitiesWriteResponse,
+    {},
+    "DELETE",
+  );
+}
+
+/** Archives (`stopped`) or restores (`deployed`) a definition. Nothing is
+ * deleted either way — an archived agent keeps its row, its asset, and its
+ * history, and simply stops appearing anywhere a person can launch it. */
+export function setAgentDefinitionStatus(
+  tenantId: string,
+  definitionId: string,
+  status: "deployed" | "stopped",
+): Promise<{ readonly status: string }> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/status`,
+    type({ id: "string", status: "string" }),
+    { status },
+    "PUT",
   );
 }
 
