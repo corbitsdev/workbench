@@ -43,7 +43,6 @@ import {
   useToggleCanvasFocus,
 } from "./canvas-availability";
 import { ProviderHealthBanner } from "./provider-health-banner";
-import { SetupProgressNote } from "./setup-progress-note";
 import { Sidebar } from "./sidebar";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 
@@ -173,7 +172,6 @@ export function AppShell({
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
           <ProviderHealthBanner />
-          <SetupProgressNote />
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
               crumbs={[{ label: routeLabel(path) }]}
