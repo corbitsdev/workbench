@@ -142,8 +142,11 @@ describe("the one toast system (CL-6372)", () => {
 
     const shown = visibleToasts();
     expect(shown.length).toBe(1);
+    // The stub serves an empty definitions list, so the create fails its
+    // precondition before any request is sent. That is a
+    // `WorkbenchPreconditionError`, which the picker shows verbatim.
     expect(shown[0]?.textContent).toBe(
-      "Couldn't create the workbench — try again.",
+      "No default setup agent found for this workbench.",
     );
     await waitForClear();
   });
