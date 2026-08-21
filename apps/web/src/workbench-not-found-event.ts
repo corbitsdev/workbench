@@ -1,8 +1,8 @@
 /** App-local event so a workbench-level 404 (`chat-page.tsx`, driven by
  * `ChatWorkspace`'s `onWorkbenchNotFound`) can tell the command palette to
  * drop a stale Recents entry, without coupling the chat route to
- * `CommandPaletteProvider` state — same pattern as
- * `command-palette-events.ts`'s open-palette event. */
+ * `CommandPaletteProvider` state — the chat route and that provider are
+ * siblings in the Shell. */
 
 export const WORKBENCH_NOT_FOUND_EVENT = "workbench:workbench-not-found";
 

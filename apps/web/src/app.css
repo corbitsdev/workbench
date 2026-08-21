@@ -699,6 +699,63 @@ select:disabled,
   margin-left: auto;
 }
 
+/* The one search entry point: a magnifier that morphs in place into the
+   palette's inline bar. Width is the animated property, so both states have
+   to be the same element — never a swap between two boxes. The transition is
+   authored here rather than as Tailwind utilities: react-ui ships a prebuilt
+   stylesheet, and `duration-standard`/`ease-*` compile to classes only in
+   react-ui's own build, so a utility class would be inert here. `--ease-in-out`
+   is react-ui's documented curve for something growing in place — a spring's
+   overshoot would jitter the whole top bar. Reduced motion is already handled
+   by that stylesheet's global transition-duration collapse. */
+.stage-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  width: 1.9rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+  transition: width var(--duration-standard) var(--ease-in-out);
+}
+
+.stage-search[data-expanded="true"] {
+  width: 15rem;
+  max-width: 40vw;
+  border-color: var(--border);
+  background: var(--card);
+  padding-right: 0.4rem;
+}
+
+.stage-search-button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.stage-search-button:hover {
+  color: var(--foreground);
+}
+
+.stage-search-field {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--foreground);
+}
+
+.stage-search-field[data-placeholder="true"] {
+  color: var(--muted-foreground);
+}
+
 /* Breadcrumb trails live in the title slot, always top-left. */
 .stage-crumbs {
   display: flex;

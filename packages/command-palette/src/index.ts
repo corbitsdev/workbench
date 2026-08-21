@@ -43,6 +43,9 @@ export type {
   PaletteSource,
 } from "./command-groups";
 
+export { detailPath } from "./detail-paths";
+export type { DetailAddressable } from "./detail-paths";
+
 export {
   addRecentEntry,
   createRecentsStore,

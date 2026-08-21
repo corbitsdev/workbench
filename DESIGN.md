@@ -99,8 +99,9 @@ as a document, and these are working surfaces.
 There is exactly one search surface in the product: the command-palette
 scope. It is reachable two ways that resolve to the same UI — cmd+K
 anywhere, or clicking the magnifier in the top nav, which morphs in place
-into an inline search bar over about 200ms with the spring easing (see
-Motion). Esc collapses it back to the magnifier. There is no page-local
+into an inline search bar over about 200ms with the in-place morph easing
+(see Motion). Esc collapses it back to the magnifier, with focus returning
+to the magnifier itself. There is no page-local
 search input that duplicates palette scope; a page that needs scoped
 filtering builds it as a filter control, not a second "search." See
 `docs/command-palette.md` for the palette's scoring and result-group
@@ -139,9 +140,22 @@ Durations run 150–300ms; entrances ease out, never linear or bouncy-in.
 Two named easings cover the system:
 
 - `spring` — `cubic-bezier(.2, .9, .3, 1.15)` — for things that pop into
-  place with a little overshoot (the search bar's morph).
+  place with a little overshoot.
 - `out` — `cubic-bezier(.2, .8, .3, 1)` — for straightforward entrances and
   exits with no overshoot.
+
+Something that grows or shrinks _in place_ — the search bar's morph, a rail
+resizing — takes `--ease-in-out` instead: an overshoot there does not read as
+liveliness, it drags every neighbour in the row along with it. This
+supersedes the earlier reading of `spring` as the search morph's curve
+(CL-6410 review); the curves themselves are react-ui's, and its `theme.css`
+documents `--ease-in-out` as the morph curve.
+
+These are tokens on `@corbits/react-ui`'s theme, not Tailwind utilities the
+product can name: the app imports react-ui's _prebuilt_ stylesheet, so a
+`duration-standard` or `ease-spring` class compiles to nothing here. Product
+motion is authored as a real `transition` declaration reading
+`var(--duration-*)` / `var(--ease-*)`.
 
 Motion always encodes a state change — something entering, something
 transforming, focus moving — never plain decoration. If removing an

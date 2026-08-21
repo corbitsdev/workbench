@@ -33,7 +33,7 @@ import {
 } from "../library-artifacts";
 import { workbenchPath } from "../../workbench-path";
 import { requestWorkbenchRename } from "../../workbench-rename-events";
-import { requestOpenCommandPalette } from "../../command-palette-events";
+import { openCommandPalette } from "../../command-palette-open-store";
 import { runRoutineNow } from "../../routines-api";
 import { SETTINGS_PATH } from "../../routes";
 import type { ShellContextMenuTarget } from "./targets";
@@ -240,7 +240,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
         id: "search",
         label: "Search…",
         icon: <MagnifyingGlass />,
-        onSelect: () => requestOpenCommandPalette(),
+        onSelect: () => openCommandPalette(),
       }),
       contextMenuItem({
         id: "workbenches",

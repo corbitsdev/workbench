@@ -88,6 +88,8 @@ export const tenantKeys = {
     ["tenant", tenantId, "approvals", "needs-you"] as const,
   routines: (tenantId: string) => ["tenant", tenantId, "routines"] as const,
   skills: (tenantId: string) => ["tenant", tenantId, "skills"] as const,
+  mcpServers: (tenantId: string) =>
+    ["tenant", tenantId, "mcp-servers"] as const,
   routineRuns: (tenantId: string, routineId: string) =>
     ["tenant", tenantId, "routines", routineId, "runs"] as const,
   routineRunHistories: (tenantId: string) =>

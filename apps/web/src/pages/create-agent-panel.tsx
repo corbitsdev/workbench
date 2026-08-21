@@ -61,16 +61,15 @@ import {
   draftAgentDefinition,
   listCatalogModels,
 } from "../agents-api";
+import { isValidSlug, slugify } from "@corbits/slug";
+
 import { AgentSkillsPicker } from "./agent-skills-picker";
 
-const HANDLE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+// A handle IS the agent's slug — the immutable name `/agents/<slug>` is
+// addressed by (DESIGN.md → Detail Pages). Minting and validating it through
+// `@corbits/slug` rather than a local regex and a local slugify is what keeps
+// that true: one implementation, so a handle suggested or accepted here can
+// never be a shape the router refuses to resolve.
 
 function initialsFromName(name: string): string {
   const [first, second] = name.trim().split(/\s+/).filter(Boolean);
@@ -207,7 +206,7 @@ function blockedReason(
   draftFailed: boolean,
 ): string | null {
   if (values.name.trim() === "") return "Add a name to continue.";
-  if (values.handle.trim() === "" || !HANDLE_PATTERN.test(values.handle)) {
+  if (!isValidSlug(values.handle.trim())) {
     return "Fix the handle below — lowercase letters, digits, and hyphens only.";
   }
   if (draftFailed && values.manualSystemPrompt.trim() === "") {

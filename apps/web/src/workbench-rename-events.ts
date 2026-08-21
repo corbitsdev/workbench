@@ -1,6 +1,6 @@
 /** App-local event so the global context menu can trigger a workbench panel
  * row's own inline-rename input without either side owning the other's
- * state, mirroring `command-palette-events.ts`. */
+ * state. */
 
 export const REQUEST_WORKBENCH_RENAME_EVENT =
   "workbench:request-workbench-rename";
