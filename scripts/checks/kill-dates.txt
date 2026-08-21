@@ -14,7 +14,7 @@
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
 apps/sidecar | sawyer | 2026-09-19
-vendor/intx/db | sawyer | 2026-09-19 | 35b49059e1efc52025e2b3d38e81f0a9911200eec5c685b13e4d561ddadf3945
+vendor/intx/db | sawyer | 2026-09-19 | 642b29735a7e36a1d3decdf8af26c33fa91e0989720323addb4c2f786ae88a18
 vendor/intx/hub-api | sawyer | 2026-09-19 | f60df0650a87529068450abd6b1d482439cd82984dd4ad52ed71680748adaeee
 vendor/intx/hub-sessions | sawyer | 2026-09-19 | ac63efef43d612a610af470a632298a3358fff6f9400cf4ce4b4fa431ef10015
 vendor/intx/workflow | sawyer | 2026-09-19 | 34628e7bbd0587f131a07e3a206141983881106963a20ab607e68aeed1135593
