@@ -6,25 +6,37 @@
 // (today, `apps/web`'s `instant-agent-create.ts`) can bind the ports to
 // its own REST clients and this stays testable with plain fakes.
 //
-// Today this only resolves a manifest whose non-Myra participants are
-// backed by `@corbits/code-review`'s reviewer roster (CL-6344's
-// `CODE_REVIEW_TEMPLATE`). A template like `GTM_TEMPLATE`, whose
-// participants are backed by their own deployed workflow definitions
-// rather than an agent-directory create request, needs its own
-// resolution path — a later ticket, not this one; calling this
-// function against such a manifest throws rather than silently doing
-// nothing.
-// `./agent-requests`, not the package root — see `./templates.ts`'s own
-// comment on its `CODE_REVIEW_REVIEWERS` import for why.
+// This resolves a manifest whose non-Myra participants are backed by
+// either `@corbits/code-review`'s reviewer roster (CL-6344's
+// `CODE_REVIEW_TEMPLATE`) or one of the standalone chat agents this
+// catalog installs the same way — Scout (`DUE_DILIGENCE_TEMPLATE`) and
+// Jimmy (`DEFAULT_TEAMMATES_TEMPLATE`), see `./participant-agent-requests.ts`.
+// A template like `GTM_TEMPLATE`, whose participants are backed by their
+// own deployed workflow definitions rather than an agent-directory
+// create request, needs its own resolution path — a later ticket, not
+// this one; calling this function against such a manifest throws rather
+// than silently doing nothing.
 import {
   codeReviewAgentRequests,
   type CodeReviewAgentRequest,
 } from "@corbits/code-review/agent-requests";
+import {
+  jimmyAgentRequest,
+  scoutAgentRequest,
+} from "./participant-agent-requests";
 
 import type {
   WorkbenchTemplateBlock,
   WorkbenchTemplateManifest,
 } from "./templates";
+
+/** The agent-directory create-request shape every participant resolves
+ * to: `CodeReviewAgentRequest`'s own fields, plus the tool-package pins
+ * a tool-calling participant (Scout, Jimmy) needs and a pure-text
+ * reviewer does not. */
+export type ParticipantAgentRequest = CodeReviewAgentRequest & {
+  readonly toolPackagePins?: readonly string[];
+};
 
 export interface WorkbenchTemplateInstantiationPorts {
   /** Every agent definition handle already deployed in the bench —
@@ -35,7 +47,7 @@ export interface WorkbenchTemplateInstantiationPorts {
   /** The agent-directory create path (`POST /agent-definitions`), or a
    * fake of it in tests. */
   createParticipantAgent(
-    request: CodeReviewAgentRequest,
+    request: ParticipantAgentRequest,
   ): Promise<{ readonly id: string }>;
   /** Deploys one of the manifest's referenced block workflows through
    * the same source-form deploy the participant agents use
@@ -102,8 +114,12 @@ export async function instantiateWorkbenchTemplate(
   ports: WorkbenchTemplateInstantiationPorts,
 ): Promise<WorkbenchTemplateInstantiationResult> {
   const existingHandles = new Set(await ports.listAgentHandles());
-  const requestsByHandle = new Map(
-    codeReviewAgentRequests().map((request) => [request.handle, request]),
+  const requestsByHandle = new Map<string, ParticipantAgentRequest>(
+    [
+      ...codeReviewAgentRequests(),
+      scoutAgentRequest(),
+      jimmyAgentRequest(),
+    ].map((request) => [request.handle, request]),
   );
 
   // The manifest's referenced block workflows deploy first: a

@@ -207,6 +207,11 @@ export type CreateAgentDefinitionInput = {
   readonly systemPrompt: string;
   readonly model?: string;
   readonly skills?: readonly string[];
+  /** Tool packages to pin by name (no version — the create route
+   * resolves each to `*`). Used by a template-driven create
+   * (`instantiateWorkbenchTemplate`'s Scout/Jimmy requests), never by
+   * the hand-authored create form, which has no field for it. */
+  readonly toolPackagePins?: readonly string[];
 };
 
 const CreatedAgentDefinition = WorkflowDefinitionResponse.and({
