@@ -115,6 +115,7 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("No agents yet");
@@ -135,12 +136,16 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("Triage bot");
     expect(markup).toContain("triage-bot");
     expect(markup).toContain("Sorts inbound issues.");
     expect(markup).toContain("Running");
+    // Running carries the live dot (react-ui's StatusDot, `live` prop) —
+    // the spec's liveness marker for an actively-running agent.
+    expect(markup).toContain('aria-label="Live"');
   });
 
   test("renders a humanized display name for a definition with no description, alongside its slug", () => {
@@ -163,6 +168,7 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain("Research Analyst");
@@ -192,6 +198,7 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('href="/w/wb_1/settings/agents"');
@@ -213,6 +220,7 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('aria-label="Create an agent"');
@@ -232,6 +240,7 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).not.toContain('aria-label="Create an agent"');
@@ -250,10 +259,16 @@ describe("AgentsPage", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('aria-label="Select all agents"');
     expect(markup).toContain('aria-label="Select Triage bot"');
+    // BulkActionBar renders nothing at count 0 — none of its labels should
+    // leak into the page while nothing is selected.
     expect(markup).not.toContain("Duplicate");
+    expect(markup).not.toContain("Move");
+    expect(markup).not.toContain("Delete");
+    expect(markup).not.toContain("data-bulk-action");
   });
 });

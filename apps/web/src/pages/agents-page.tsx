@@ -17,6 +17,7 @@ import {
   RichEmptyState,
   SelectionCheckbox,
   Skeleton,
+  StatusDot,
   Table,
   TableBody,
   TableCell,
@@ -27,7 +28,7 @@ import {
   useListSelection,
 } from "@corbits/react-ui";
 import type { BadgeTone, SelectionCheckboxState } from "@corbits/react-ui";
-import { Archive, Copy, FolderOpen, Plus, Robot, Trash } from "@corbits/icons";
+import { Archive, Plus, Robot } from "@corbits/icons";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -36,6 +37,7 @@ import { describeApiError, QueryView } from "@corbits/api-query";
 import {
   getAgentCapabilities,
   listTopLevelRuns,
+  setAgentDefinitionStatus,
   useAgentDirectory,
   type AgentCapabilities,
   type AgentDefinition,
@@ -75,9 +77,15 @@ const AGENT_ROSTER_STATUS_LABEL: Record<AgentRosterStatus, string> = {
   archived: "Archived",
 };
 
+// Adopts `@corbits/react-ui`'s own run-status convention
+// (`RUN_STATUS_TONE`/`workflow-run.ts`) rather than inventing a mapping:
+// running is the blue "live/streaming" tone (with a pulsing `StatusDot`,
+// the same liveness marker that vocabulary already carries); idle is the
+// green "healthy, nothing wrong" tone (`pill-ok` in the spec); blocked and
+// archived were already right.
 const AGENT_ROSTER_STATUS_TONE: Record<AgentRosterStatus, BadgeTone> = {
-  running: "success",
-  idle: "neutral",
+  running: "info",
+  idle: "success",
   blocked: "danger",
   archived: "neutral",
 };
@@ -110,13 +118,6 @@ export function runsInLast7Days(
       now - new Date(instance.createdAt).getTime() <= SEVEN_DAYS_MS,
   ).length;
 }
-
-const AGENT_BULK_ACTIONS = [
-  { id: "duplicate", label: "Duplicate", icon: Copy },
-  { id: "archive", label: "Archive", icon: Archive },
-  { id: "move", label: "Move", icon: FolderOpen },
-  { id: "delete", label: "Delete", icon: Trash },
-] as const;
 
 /** The short model name for a definition's capabilities — fetched lazily,
  * per row, the same route (and the same plain fetch-effect, no react-query
@@ -305,10 +306,13 @@ function AgentDetailPanel({
  * Selecting a row opens its detail alongside the table; "New agent" opens
  * `CreateAgentPanel`. Rows are also bulk-selectable (checkbox + shift/cmd
  * range select, `useListSelection`) with a floating `BulkActionBar` for
- * Duplicate/Archive/Move/Delete — none of those four mutate anything yet
- * (the hub exposes no bulk endpoint for any of them), so each one is a
- * clearly-labelled no-op toast rather than a button that lies about doing
- * something.
+ * Archive — the only bulk action with a real backend primitive
+ * (`setAgentDefinitionStatus`, the same PUT the single-agent Archive
+ * button on the detail page already uses). Duplicate/Move/Delete are not
+ * offered here: batch duplication needs slug-collision handling the detail
+ * page's single-agent duplicate never had to solve, and Move/Delete have
+ * no backend primitive at all — a button that cannot do what it says is
+ * worse than no button.
  */
 export function AgentsPage({
   tenantId,
@@ -321,6 +325,7 @@ export function AgentsPage({
   createOpen,
   onCreateOpenChange,
   onCreated,
+  onArchiveSelected,
 }: {
   readonly tenantId: string | null;
   readonly definitions: readonly AgentDefinitionWithDisplayName[];
@@ -335,6 +340,7 @@ export function AgentsPage({
   readonly createOpen: boolean;
   readonly onCreateOpenChange: (open: boolean) => void;
   readonly onCreated: (definition: AgentDefinition) => void;
+  readonly onArchiveSelected: (ids: readonly string[]) => void;
 }) {
   const selected = definitions.find((d) => d.id === selectedId) ?? null;
   const definitionIds = useMemo(
@@ -350,10 +356,6 @@ export function AgentsPage({
       : allSelected
         ? true
         : "indeterminate";
-
-  function runBulkAction(label: string) {
-    toast(`${label} isn't wired to the hub yet.`);
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -480,9 +482,19 @@ export function AgentsPage({
                               : "—"}
                           </TableCell>
                           <TableCell>
-                            <Badge tone={AGENT_ROSTER_STATUS_TONE[status]}>
-                              {AGENT_ROSTER_STATUS_LABEL[status]}
-                            </Badge>
+                            <span className="inline-flex items-center gap-1.5">
+                              {status === "running" ? (
+                                <StatusDot
+                                  label="Live"
+                                  live
+                                  tone="emphasis"
+                                  size="xs"
+                                />
+                              ) : null}
+                              <Badge tone={AGENT_ROSTER_STATUS_TONE[status]}>
+                                {AGENT_ROSTER_STATUS_LABEL[status]}
+                              </Badge>
+                            </span>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
                             {tenantId !== null ? (
@@ -529,19 +541,20 @@ export function AgentsPage({
         />
       ) : null}
       <BulkActionBar count={selection.selectedCount} onClear={selection.clear}>
-        {AGENT_BULK_ACTIONS.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            type="button"
-            size="sm"
-            variant="outline"
-            data-bulk-action={id}
-            onClick={() => runBulkAction(label)}
-          >
-            <Icon aria-hidden="true" />
-            {label}
-          </Button>
-        ))}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-bulk-action="archive"
+          onClick={() => {
+            const ids = [...selection.selectedIds];
+            selection.clear();
+            onArchiveSelected(ids);
+          }}
+        >
+          <Archive aria-hidden="true" />
+          Archive
+        </Button>
       </BulkActionBar>
     </div>
   );
@@ -622,6 +635,34 @@ export function AgentsRoute({
         void queryClient.invalidateQueries({
           queryKey: tenantKeys.agentDirectory(selectedTenantId),
         });
+      }}
+      onArchiveSelected={(ids) => {
+        if (ids.length === 0) return;
+        void Promise.all(
+          ids.map((id) =>
+            setAgentDefinitionStatus(selectedTenantId, id, "stopped"),
+          ),
+        )
+          .then(() => {
+            void queryClient.invalidateQueries({
+              queryKey: tenantKeys.agentDirectory(selectedTenantId),
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ["agent-top-level-runs", selectedTenantId],
+            });
+            toast(
+              ids.length === 1
+                ? "Archived 1 agent"
+                : `Archived ${ids.length} agents`,
+            );
+          })
+          .catch(() =>
+            toast(
+              ids.length === 1
+                ? "Couldn't archive that agent"
+                : "Couldn't archive those agents",
+            ),
+          );
       }}
     />
   );

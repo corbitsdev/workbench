@@ -57,6 +57,7 @@ describe("stage chrome consistency (CL-6368)", () => {
         createOpen={false}
         onCreateOpenChange={noop}
         onCreated={noop}
+        onArchiveSelected={noop}
       />,
     );
     expect(markup).toContain('data-testid="stage-top-bar"');
