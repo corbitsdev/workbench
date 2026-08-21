@@ -321,6 +321,10 @@ import {
   createWorkflowMemoryStore,
 } from "@corbits/memory-hub";
 import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
+import {
+  createWorkflowAuthorRegistry,
+  createWorkflowAuthorRoutes,
+} from "@corbits/agent-workflow-authoring";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
 import {
@@ -1769,6 +1773,28 @@ export async function createHub(config: HubConfig) {
     createWorkflowSkillRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
       registry: skills.registry,
+    }),
+  );
+  // Agent-authored workflows (CL-agent-authored-workflows): an agent
+  // publishes a workflow codebase as a native `kind:"workflow"` asset
+  // through this workflow-run-authenticated surface, then deploys the
+  // resulting asset through the tenant-session `/workflows/deployments`
+  // route this hub already mounts (unchanged, below) — this package never
+  // reimplements that deploy gating. Unlike `/api/workflow-skills` above,
+  // every write here also runs a real `chatGrantStore` authorization
+  // check (`asset:*`/create, `asset:<id>`/write) before reaching
+  // `RepoStore`, because authoring is publishing executable code, not a
+  // markdown skill.
+  app.route(
+    "/api/workflow-workflow-authoring",
+    createWorkflowAuthorRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: createWorkflowAuthorRegistry({
+        db,
+        assetService,
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
     }),
   );
   // The guided-capability-add fail-closed check reuses the exact same

@@ -40,6 +40,7 @@
     "@corbits/routines": "workspace:*",
     "@corbits/run-key-history": "workspace:*",
     "@corbits/sidecar-placement": "workspace:*",
+    "@corbits/agent-workflow-authoring": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",
     "@corbits/task-planner": "workspace:*",

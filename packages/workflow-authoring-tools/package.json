@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/workflow-authoring-tools",
+  "private": true,
+  "description": "author_workflow/republish_workflow and deploy_workflow as an @intx/agent tool bundle — an agent authors a workflow codebase as code into the hub's git-backed asset store (@corbits/agent-workflow-authoring's workflow-run-authenticated routes) and deploys it through @intx/hub-api's existing source-based deploy route. deploy_workflow carries approval:\"ask\": deploying runs the workflow for real, the external-side-effect gate every state-changing action in this codebase sits behind",
+  "version": "0.1.0",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
