@@ -44,10 +44,14 @@ Caught:
   and their underscore variants (`ghp_...`, as GitHub actually issues them).
 - A raw JWT (`eyJ...eyJ...`. shape) even with no keyword nearby — the
   base64url header is distinctive enough to key off directly.
-- `token=`, `key=`, `code=`, `secret=`, `password=`, `api_key=`, and similar
-  assignments, whether in a URL's query string (an OAuth callback landing in
-  an error message keeps its host/path/param names, only the sensitive
-  values become `[redacted]`) or in free-text messages.
+- `token=`, `secret=`, `password=`, `api_key=`, and similar assignments,
+  whether in a URL's query string or in a free-text message — only the
+  value becomes `[redacted]`, the param/field name stays.
+- `code=` and `key=` specifically **only** when they appear as a URL query
+  param (right after a literal `?` or `&`, e.g. an OAuth callback's
+  `?code=...`). Elsewhere these two names are common non-secret shapes
+  (`code=404`, logfmt's `code=DB_TIMEOUT`, a cache `key=user:1234:profile`)
+  and are deliberately left untouched — see below.
 - Any object key that itself looks credential-shaped (`token`, `secret`,
   `password`, `apiKey`, `cookie`, ...) is redacted wholesale, including when
   its value is an array or a nested object — `redactExtra` recurses through
@@ -59,11 +63,13 @@ Not caught, by design:
   under an unrelated key (e.g. a bare AWS access key in a field named
   `values`). There is no reliable heuristic for this that doesn't also flag
   ordinary IDs; put such values behind a credential-shaped key instead.
-- Because the `token=`/`key=`/`code=`/... assignment match is name-based,
-  it can occasionally over-redact a non-secret field sharing one of these
-  names in free text (e.g. an HTTP `code=404` written inline). Prefer
-  structured `extra` fields over interpolating such values into a message
-  string if this matters for a given call site.
+- `code=`/`key=` outside a URL query string. These two names are too
+  ambiguous with everyday non-secret shapes (an HTTP status `code=404`,
+  logfmt's `code=DB_TIMEOUT`, a cache `key=...`) to redact in free text
+  without regularly destroying debugging context — a log nobody can read is
+  a log nobody uses. If a call site genuinely has a bare secret under one of
+  these names outside a URL, put it in `extra` under a credential-shaped
+  key instead of interpolating it into the message string.
 - Secrets embedded in non-string values (numbers, binary blobs) or inside a
   JSON-serialized string that isn't itself parsed back into an object.
 
