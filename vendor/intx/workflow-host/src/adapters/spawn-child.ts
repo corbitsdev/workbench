@@ -65,9 +65,12 @@ import type {
   SpawnChildWorkflow,
   SpawnSuspendableChild,
   SuspendableChildHandle,
+  WorkflowAuthorizeFn,
   WorkflowDefinition,
   WorkflowEvent,
 } from "@intx/workflow";
+
+import type { CredentialWiring } from "../child/run-child";
 
 /**
  * The terminal-status shape the runtime body expects back from a
@@ -180,6 +183,21 @@ export type RunSuspendableChild = (
     parentStepId: string;
     signal: AbortSignal;
     resumeFromEvents?: readonly WorkflowEvent[];
+    /**
+     * The parent child's credentials-backed workflow authorize (CL-6448).
+     * A body agent's tool calls gate through the SAME per-step grant
+     * snapshot the top-level step invoker consults; without this the
+     * body env's throwing authorize stub blocks every tool invocation a
+     * body agent makes. Optional so a host that runs bodies toolless
+     * keeps its stub.
+     */
+    authorize?: WorkflowAuthorizeFn;
+    /**
+     * The parent child's live credential wiring (CL-6448), so a body
+     * step's tool bundles can shape consumer-scoped `credentials`
+     * capabilities exactly as a top-level step's do.
+     */
+    credentialWiring?: CredentialWiring;
   },
   /**
    * Live inference-event sink for the child's agent steps. Threaded from the
@@ -220,6 +238,9 @@ export type HostSpawnSuspendableChild = (
 export function createInMemorySpawnSuspendableChild(opts: {
   bodies: ReadonlyMap<string, WorkflowDefinition>;
   runSuspendableChild: RunSuspendableChild;
+  /** Threaded through verbatim to every spawn's input (CL-6448). */
+  authorize?: WorkflowAuthorizeFn;
+  credentialWiring?: CredentialWiring;
 }): HostSpawnSuspendableChild {
   return async (
     {
@@ -260,6 +281,10 @@ export function createInMemorySpawnSuspendableChild(opts: {
         parentStepId,
         signal,
         ...(resumeFromEvents !== undefined ? { resumeFromEvents } : {}),
+        ...(opts.authorize !== undefined ? { authorize: opts.authorize } : {}),
+        ...(opts.credentialWiring !== undefined
+          ? { credentialWiring: opts.credentialWiring }
+          : {}),
       },
       onEvent,
     );

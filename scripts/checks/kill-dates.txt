@@ -19,7 +19,7 @@ vendor/intx/hub-api | sawyer | 2026-09-19 | f60df0650a87529068450abd6b1d482439cd
 vendor/intx/hub-sessions | sawyer | 2026-09-19 | 4898613ce9d77771a6207bf82c6ea5084537df7afc1890ec4343db377ecbb48c
 vendor/intx/workflow | sawyer | 2026-09-19 | 34628e7bbd0587f131a07e3a206141983881106963a20ab607e68aeed1135593
 vendor/intx/workflow-deploy | sawyer | 2026-09-19 | 95711adf282180852b0daec1cac39d00a4dc24aff15f9a515e07eb3d2ca749f9
-vendor/intx/workflow-host | sawyer | 2026-09-19 | 4daab41ed006ce9e8b54533583d5863fca3b0d03159684b572e4a661f5b847ab
+vendor/intx/workflow-host | sawyer | 2026-09-19 | 6e6717e784cc55035a595320b2b8e6ea01b49ac42d4c77b444a0dc59e354b8d0
 
 packages/folded-runs | sawyer | 2026-11-01
 

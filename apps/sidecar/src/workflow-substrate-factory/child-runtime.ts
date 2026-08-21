@@ -37,6 +37,7 @@ import {
   createWorkflowRunBlobSubstrate,
   createWorkflowRunRepoStore,
   createInMemorySpawnChild,
+  type CredentialWiring,
   type RunChildWorkflow,
   type RunSuspendableChild,
   type SourcesSnapshotRef,
@@ -57,16 +58,19 @@ import {
  * from the body's on-disk `sources.json`, disjoint from the top-level's
  * mutable source table so a top-level source rotation never leaks into a
  * body. It also carries an `onEvent` funnel that attributes the body child's
- * live inference events to the body run id on the hub timeline, and the
- * child env's workflow-typed `authorize` so any tool gate a (guaranteed
- * toolless) body agent would somehow reach fails loud through the child's
- * throwing authorize stub.
+ * live inference events to the body run id on the hub timeline, the
+ * workflow-typed `authorize` the spawn seam threaded from the parent child
+ * (CL-6448: the credentials-backed authorize, so a body agent's tool calls
+ * gate through the same per-step grant snapshot a top-level step's do),
+ * and the parent's live `CredentialWiring` for tool bundles that declare a
+ * `credentials` capability.
  */
 export type SidecarBodyStepInvoker = (
   req: StepInvokeRequest,
   authorize: WorkflowAuthorizeFn,
   sourcesRef: SourcesSnapshotRef,
   onEvent: (event: InferenceEvent) => void,
+  credentialWiring?: CredentialWiring,
 ) => Promise<StepInvokeResult>;
 
 /**
@@ -320,7 +324,15 @@ export function createSidecarSpawnSuspendableChild(
   const runChild = createSidecarRunChild(deps);
 
   return async (
-    { definition, childRunId, input, resumeFromEvents, signal },
+    {
+      definition,
+      childRunId,
+      input,
+      resumeFromEvents,
+      signal,
+      authorize: threadedAuthorize,
+      credentialWiring,
+    },
     onEvent,
   ) => {
     const {
@@ -361,9 +373,19 @@ export function createSidecarSpawnSuspendableChild(
         ),
       };
       const bodyInvokeStep = deps.bodyInvokeStep;
-      const authorize = baseEnv.authorize;
+      // CL-6448: prefer the parent child's credentials-backed authorize
+      // the spawn seam threaded in; a spawn that carried none keeps the
+      // fail-loud stub, so an unthreaded tool gate still surfaces
+      // precisely rather than silently authorizing.
+      const authorize = threadedAuthorize ?? baseEnv.authorize;
       invokeStep = (req) =>
-        bodyInvokeStep(req, authorize, bodySourcesRef, onEvent);
+        bodyInvokeStep(
+          req,
+          authorize,
+          bodySourcesRef,
+          onEvent,
+          credentialWiring,
+        );
     }
 
     // FIFO the caller drains via `next()`: each entry is either an approval

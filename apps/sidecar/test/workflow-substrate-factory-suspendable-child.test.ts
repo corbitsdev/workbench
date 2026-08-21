@@ -277,6 +277,91 @@ describe("createSidecarSpawnSuspendableChild", () => {
     expect(seen.sources).toEqual(bodySources);
   });
 
+  // CL-6448: the body-turn tool seam. The spawn input threads the parent
+  // child's credentials-backed authorize and live credential wiring; the
+  // body invoker must receive exactly those, so a body agent's tool calls
+  // gate through the parent's per-step grant snapshot instead of the
+  // throwing stub.
+  test("the spawn input's authorize and credentialWiring reach the body invoker", async () => {
+    const substrate = await makeSubstrate("suspendable-body-authorize-");
+    const dataDir = await makeTempDir("suspendable-body-authz-datadir-");
+    const sourcesDir = path.join(
+      dataDir,
+      "assets",
+      "workflow",
+      "body-wf-authz",
+    );
+    await fs.promises.mkdir(sourcesDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(sourcesDir, "sources.json"),
+      JSON.stringify({
+        s: [
+          {
+            id: "s",
+            provider: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            apiKey: "sk-body",
+            model: "claude-3-5",
+          },
+        ],
+      }),
+    );
+
+    const threadedAuthorize = () =>
+      Promise.resolve({ effect: "allow" as const });
+    const threadedWiring = {
+      materialRef: { current: null },
+      resolveStepGrants: () => [],
+    };
+    const seen: { authorize?: unknown; credentialWiring?: unknown } = {};
+    const bodyInvokeStep: SidecarBodyStepInvoker = async (
+      _req,
+      authorize,
+      _sourcesRef,
+      _onEvent,
+      credentialWiring,
+    ) => {
+      seen.authorize = authorize;
+      seen.credentialWiring = credentialWiring;
+      return { output: { done: true } };
+    };
+    const spawn = createSidecarSpawnSuspendableChild({
+      substrate,
+      workflowRunRepoId: WORKFLOW_RUN_REPO_ID,
+      workflowRunRef: REF,
+      principal: PRINCIPAL,
+      scheduler: createInMemoryScheduler({
+        repoStore: createInMemoryRepoStore(),
+        clock: () => new Date(),
+      }),
+      invokeStep: () => {
+        throw new Error("must route through bodyInvokeStep");
+      },
+      bodyInvokeStep,
+      dataDir,
+    });
+
+    const handle = await spawn(
+      {
+        definition: bodyDefinition("body-wf-authz"),
+        definitionRef: REF,
+        childRunId: "run-body-3",
+        input: { text: "event-3" },
+        parentRunId: "run-parent",
+        parentStepId: "section",
+        signal: new AbortController().signal,
+        authorize: threadedAuthorize as never,
+        credentialWiring: threadedWiring as never,
+      },
+      () => undefined,
+    );
+
+    const terminal = await handle.next();
+    expect(terminal.kind).toBe("terminal");
+    expect(seen.authorize).toBe(threadedAuthorize);
+    expect(seen.credentialWiring).toBe(threadedWiring);
+  });
+
   test("a parent abort while parked cancels the child and surfaces a terminal", async () => {
     const substrate = await makeSubstrate("suspendable-abort-");
     const spawn = makeSpawner(substrate, suspendThenComplete({}));

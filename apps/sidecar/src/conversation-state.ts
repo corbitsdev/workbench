@@ -649,6 +649,13 @@ export interface DurableConversationRegistryOpts {
 export interface DurableConversationRegistry {
   acquire(key: string): Promise<DurableConversationStore>;
   get(key: string): DurableConversationStore;
+  /**
+   * The store for `key` if one has been acquired, else `undefined`.
+   * The body-turn mirror (CL-6448) runs in a `finally` that must not
+   * mask a build failure with `get`'s throw when the env builder never
+   * reached its acquire.
+   */
+  peek(key: string): DurableConversationStore | undefined;
 }
 
 export function createDurableConversationRegistry(
@@ -703,6 +710,10 @@ export function createDurableConversationRegistry(
     return promise;
   }
 
+  function peek(key: string): DurableConversationStore | undefined {
+    return stores.get(key);
+  }
+
   function get(key: string): DurableConversationStore {
     const store = stores.get(key);
     if (store === undefined) {
@@ -713,7 +724,7 @@ export function createDurableConversationRegistry(
     return store;
   }
 
-  return { acquire, get };
+  return { acquire, get, peek };
 }
 
 interface SnapshotMetadataValue {
