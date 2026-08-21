@@ -19,6 +19,13 @@ export type OllamaCatalogEntry = {
 export type OllamaToolCall = {
   readonly name: string;
   readonly arguments: unknown;
+  /** Wire-level override: when set, this exact string is sent as the
+   * `function.arguments` field instead of `JSON.stringify(arguments)` --
+   * the only way to script arguments that are NOT valid JSON (a truncated
+   * or otherwise unparseable tool-call payload, the shape a mid-stream
+   * cutoff produces on a real model). Leave `arguments` as `undefined`
+   * when this is set. */
+  readonly rawArguments?: string;
 };
 
 /**

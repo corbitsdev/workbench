@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { CapturedChatRequest, CapturedRequestLog } from "./capture";
+import { createAdversarialReplies } from "./scenarios";
 import {
   ChatCompletionRequestBody,
   type OllamaCatalogEntry,
@@ -31,7 +32,10 @@ function toolCallToWire(call: OllamaToolCall, index: number) {
   return {
     id: `call_${index}`,
     type: "function" as const,
-    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+    function: {
+      name: call.name,
+      arguments: call.rawArguments ?? JSON.stringify(call.arguments),
+    },
   };
 }
 
@@ -145,6 +149,7 @@ export class OllamaMock {
       toolCalls: calls,
       finishReason: "tool_calls",
     }),
+    ...createAdversarialReplies(),
   };
 
   /**
