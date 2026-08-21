@@ -175,12 +175,56 @@ export type LaunchAndJoinAgentResult = {
 };
 
 /**
+ * The agent participant this room already holds for `definitionId`, or
+ * undefined when none of the room's agents was launched from it. One
+ * room participant = one live run (CL-6451): every path that could
+ * start a definition in a room checks residency here first, so a
+ * mention, a workflow command, or a repeated invite reaches the run the
+ * room already has instead of minting a sibling. Identity is the
+ * definition's ASSET when both sides resolve one (a code-sourced deploy
+ * projects a fresh definition row per wire projection over the same
+ * asset — see `resolveDefinitionAssetId`), falling back to row-id
+ * equality when either side's asset is unresolvable.
+ */
+export async function findResidentAgentForDefinition(
+  platform: Pick<
+    WorkbenchLauncher,
+    "resolveDefinitionIdByAddress" | "resolveDefinitionAssetId"
+  >,
+  participants: readonly ParticipantRecord[],
+  definitionId: string,
+): Promise<ParticipantRecord | undefined> {
+  const assetId = await platform.resolveDefinitionAssetId(definitionId);
+  for (const participant of participants) {
+    if (!isAgentAddress(participant.address)) continue;
+    const launchedFrom = await platform.resolveDefinitionIdByAddress(
+      participant.address,
+    );
+    if (launchedFrom === undefined) continue;
+    if (launchedFrom === definitionId) return participant;
+    if (assetId === undefined) continue;
+    const launchedFromAssetId =
+      await platform.resolveDefinitionAssetId(launchedFrom);
+    if (launchedFromAssetId === assetId) return participant;
+  }
+  return undefined;
+}
+
+/**
  * The invite core: launches the definition's own instance, derives
  * its friendly mention handle, appends the participant record, posts
  * the join event onto the workbench's timeline, and arms the reply
  * bridge. Shared by `POST .../invite` and chat creation (a chat's
  * single agent is invited exactly this way, at creation) so the two
  * paths can never drift.
+ *
+ * Always launches: an explicit invite deliberately CAN place a second
+ * instance of one definition in a room (that is what handle
+ * de-duplication — "echo", "echo-2" — exists for). "One room
+ * participant = one live run" (CL-6451) is enforced where the sibling
+ * was never asked for: the message pipeline's command intercept and
+ * `startWorkflowCommand` resolve residency via
+ * `findResidentAgentForDefinition` before ever reaching this launch.
  */
 export async function launchAndJoinAgent(
   deps: LaunchAndJoinAgentDeps,
@@ -696,6 +740,13 @@ export type StartWorkflowCommandResult = {
  * mailbox. An empty invocation ("/echo" with nothing after it) still
  * starts the run, mirroring corbits-code's own workflow dispatch: no
  * args is "Continue.", not "nothing to do".
+ *
+ * One room participant = one live run (CL-6451): a command naming a
+ * definition already resident in the room delivers into the existing
+ * participant's run — the same anti-sibling rule the message
+ * pipeline's `@name` intercept enforces — instead of launching again.
+ * A deliberate second instance stays possible through the explicit
+ * invite affordance, which always launches.
  */
 export async function startWorkflowCommand(
   deps: StartWorkflowCommandDeps,
@@ -709,6 +760,23 @@ export async function startWorkflowCommand(
     throw new Error(
       `No workbench "${input.workbenchId}" to start a workflow in`,
     );
+  }
+
+  const resident = await findResidentAgentForDefinition(
+    deps.platform,
+    participantsOf(existing.settings),
+    input.definitionId,
+  );
+  if (resident !== undefined) {
+    const text = input.args.trim() !== "" ? input.args.trim() : "Continue.";
+    await deps.platform.sendMail({
+      tenantId: input.tenantId,
+      workbenchId: localPartOf(resident.address),
+      principalId: input.principalId,
+      content: encodeParts([{ kind: "text", text }]),
+      fromWorkbenchId: input.workbenchId,
+    });
+    return { handle: resident.handle, address: resident.address };
   }
 
   const joined = await launchAndJoinAgent(
@@ -787,6 +855,17 @@ export type SendWorkbenchMessageInput = {
    * mentions nobody — the reply gesture is itself an address.
    */
   readonly inReplyToMessageId?: string;
+  /**
+   * A participant this message must reach regardless of what its text
+   * mentions (CL-6451): an `@name` typed as a definition's wire name
+   * ("assistant") resolves to a participant whose handle derives from
+   * its display name ("myra"), so mention matching alone would miss it.
+   * The command intercept resolves that residency and passes the
+   * participant's address here, so the message rides the ordinary turn
+   * pipeline — queueing behind an in-flight turn like any mention —
+   * into the run the room already has.
+   */
+  readonly forcedRecipientAddress?: string;
 };
 
 export type SendWorkbenchMessageResult = {
@@ -951,6 +1030,9 @@ async function routeToRecipients(
   const recipientSet = new Set(
     mentionedParticipants(input.messageParts, participants),
   );
+  if (input.forcedRecipientAddress !== undefined) {
+    recipientSet.add(input.forcedRecipientAddress);
+  }
   if (input.inReplyToMessageId !== undefined) {
     const target = await replyTargetAgent(deps.roomMessages, {
       tenantId: input.tenantId,

@@ -14,7 +14,10 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import { createDrizzleAgentTurnStore } from "../src/agent-turns";
+import {
+  AGENT_TURN_STALE_MS,
+  createDrizzleAgentTurnStore,
+} from "../src/agent-turns";
 import { applyChatMigrations } from "../src/migrations";
 
 function scratchUrlFor(e2eUrl: string): string {
@@ -156,6 +159,41 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
       expect(new Set(listed.map((turn) => turn.childRunId)).size).toBe(
         listed.length,
       );
+    } finally {
+      await sql.end();
+    }
+  });
+
+  // CL-6451: a dispatch the supervisor failed never sends the event
+  // that closes its row — a `running` row past the stale cutoff is dead
+  // by construction and must read back failed.
+  test("a running turn past the stale cutoff reads back failed", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      let clock = Date.now();
+      const store = createDrizzleAgentTurnStore(drizzle(sql), {
+        now: () => clock,
+      });
+      const input = {
+        tenantId: TENANT,
+        workbenchId: "run_stale",
+        agentAddress: AGENT,
+        requestMessageIds: ["msg_stale"],
+      };
+      const opened = await store.startTurn(input);
+
+      // `startedAt` is stamped by the database, not the injected clock,
+      // so age the clock from a fresh reading with a wide margin.
+      clock = Date.now() + AGENT_TURN_STALE_MS + 60_000;
+
+      expect(await store.findRunningTurn(input)).toBeUndefined();
+      const read = await store.getTurn({
+        tenantId: TENANT,
+        turnId: opened.id,
+      });
+      expect(read?.status).toBe("failed");
+      expect(read?.error).not.toBeNull();
+      expect(read?.endedAt).not.toBeNull();
     } finally {
       await sql.end();
     }

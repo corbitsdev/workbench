@@ -5,7 +5,12 @@
 // participant's handle, so an ordinary agent mention is untouched.
 import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
-import { createCommandRegistry } from "@corbits/commands";
+import {
+  createCommandRegistry,
+  createWorkflowCommandPlugin,
+} from "@corbits/commands";
+import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { startWorkflowCommand } from "../src/workbench-service";
 import {
   buildDeps,
   createWorkbench,
@@ -14,7 +19,40 @@ import {
   sendText,
   timelineOf,
   timelineTexts,
+  TENANT,
 } from "./test-support";
+
+/**
+ * The full workflow-command wiring the hub composes: the registrar's
+ * commands are the tenant's invitable definitions, dispatching through
+ * `startWorkflowCommand` against the same store/platform the routes use.
+ */
+function buildWorkflowCommandDeps(
+  platform: ReturnType<typeof fakePlatform>,
+): ReturnType<typeof buildDeps> & {
+  agentTurns: ReturnType<typeof createInMemoryAgentTurnStore>;
+} {
+  const registry = createCommandRegistry();
+  const agentTurns = createInMemoryAgentTurnStore();
+  const deps = buildDeps({ commands: registry, platform, agentTurns });
+  registry.registerCommandPlugin(
+    createWorkflowCommandPlugin({
+      listInvitableDefinitions: (tenantId) =>
+        platform.listInvitableDefinitions(tenantId),
+      startWorkflow: (input) =>
+        startWorkflowCommand(
+          {
+            store: deps.store,
+            platform,
+            roomMessages: deps.roomMessages,
+            publish: () => undefined,
+          },
+          input,
+        ),
+    }),
+  );
+  return Object.assign(deps, { agentTurns });
+}
 
 describe("workbench command dispatch", () => {
   test("without an injected registry, a leading slash is posted as an ordinary message", async () => {
@@ -135,5 +173,119 @@ describe("workbench command dispatch", () => {
       type: "message",
       text: "starting: do the thing",
     });
+  });
+
+  // CL-6451: the participant's mention handle derives from the
+  // definition's display name ("Myra"), while the workflow command is
+  // named after the definition's wire name ("assistant") — so the
+  // known-handle guard alone cannot see that `@assistant` names an agent
+  // already in the room, and the command path used to mint a SECOND run
+  // for the same participant.
+  test("an @name naming an already-resident definition routes to the existing run, never a second one", async () => {
+    const platform = fakePlatform({
+      invitable: [
+        { id: "wfd_assistant", name: "assistant", description: "Myra" },
+      ],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_invited1@acme.example" ? "wfd_assistant" : undefined,
+    });
+    const deps = buildWorkflowCommandDeps(platform);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const invite = await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_assistant" }),
+    });
+    expect(invite.status).toBe(201);
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    const response = await sendText(
+      app,
+      workbench.id,
+      "@assistant set up a sales workbench",
+    );
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as Record<string, unknown>;
+    // Not a command dispatch: the message posts as an ordinary message.
+    expect(body["command"]).toBeUndefined();
+    // One participant, one run: no second launch.
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    // The message reached the EXISTING participant's run...
+    const delivered = platform.sentMail.filter(
+      (mail) => mail.workbenchId === "ins_invited1",
+    );
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]?.content.content).toContain("set up a sales workbench");
+    // ...through the ordinary turn pipeline: one turn row, on the same
+    // occurrence sequence every later turn of this participant rides.
+    const turns = await deps.agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+    });
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      agentAddress: "ins_invited1@acme.example",
+      childRunId: "turn__0",
+      status: "running",
+    });
+    // The user's words stay on the timeline, never swallowed by the
+    // command intercept.
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
+      "@assistant set up a sales workbench",
+    ]);
+
+    // CL-6453: the next mention rides the SAME run's occurrence
+    // sequence — turn__0 then turn__1 on one section run — so the
+    // first exchange lives in the same stepId-keyed history every later
+    // turn restores.
+    await sendText(app, workbench.id, "@assistant continue");
+    const afterSecond = await deps.agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+    });
+    expect(
+      afterSecond
+        .map((turn) => ({
+          agentAddress: turn.agentAddress,
+          childRunId: turn.childRunId,
+        }))
+        .sort((a, b) => a.childRunId.localeCompare(b.childRunId)),
+    ).toEqual([
+      {
+        agentAddress: "ins_invited1@acme.example",
+        childRunId: "turn__0",
+      },
+      {
+        agentAddress: "ins_invited1@acme.example",
+        childRunId: "turn__1",
+      },
+    ]);
+    expect(platform.launchInviteCalls).toHaveLength(1);
+  });
+
+  test("an @name for a definition NOT in the room still starts it as a command", async () => {
+    const platform = fakePlatform({
+      invitable: [
+        { id: "wfd_assistant", name: "assistant", description: "Myra" },
+      ],
+    });
+    const deps = buildWorkflowCommandDeps(platform);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const response = await sendText(app, workbench.id, "@assistant hello");
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      command: { type: string; handle: string };
+    };
+    expect(body.command.type).toBe("workflow-started");
+    expect(platform.launchInviteCalls).toHaveLength(1);
   });
 });

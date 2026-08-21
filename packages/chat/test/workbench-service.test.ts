@@ -981,6 +981,49 @@ describe("POST /workbenches/:id/invite", () => {
     ]);
   });
 
+  // The explicit invite affordance deliberately CAN place a second
+  // instance of one definition in a room — proven live by the CL-6329
+  // turn-swap proof and the reason handle de-duplication exists.
+  // CL-6451's anti-sibling rule lives on the command/mention paths,
+  // never here.
+  test("an explicit re-invite of the same definition mints a second instance", async () => {
+    let launches = 0;
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "echo" }],
+      launchInvite: async () => {
+        launches += 1;
+        return {
+          instanceId: `ins_invited${launches}`,
+          address: `ins_invited${launches}@acme.example`,
+        };
+      },
+    });
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const invite = () =>
+      app.request(`/workbenches/${workbench.id}/invite`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definitionId: "wfd_echo" }),
+      });
+    expect((await invite()).status).toBe(201);
+    expect((await invite()).status).toBe(201);
+
+    expect(platform.launchInviteCalls).toHaveLength(2);
+    const settingsRow = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      workbench.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+      { address: "ins_invited2@acme.example", handle: "echo-2" },
+    ]);
+  });
+
   test("appends onto an existing participant list rather than replacing it", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");

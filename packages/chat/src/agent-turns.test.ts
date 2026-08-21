@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { createInMemoryAgentTurnStore } from "./agent-turns";
+import {
+  AGENT_TURN_STALE_MS,
+  createInMemoryAgentTurnStore,
+} from "./agent-turns";
 
 const BASE = {
   tenantId: "ten_1",
@@ -105,5 +108,51 @@ describe("createInMemoryAgentTurnStore", () => {
       workbenchId: BASE.workbenchId,
     });
     expect(listed.map((turn) => turn.id)).toEqual([second.id, first.id]);
+  });
+
+  // CL-6451: a dispatch the supervisor failed (or a hub that died
+  // mid-turn) never sends the event that closes its row, so a turn
+  // still `running` past the occurrence timeout is dead by construction
+  // — it fails visibly instead of showing "typing" forever.
+  test("a running turn past the stale cutoff reads back failed, never running", async () => {
+    let clock = 1_000;
+    const store = createInMemoryAgentTurnStore({ now: () => clock });
+    await store.startTurn(BASE);
+
+    clock += AGENT_TURN_STALE_MS + 1;
+
+    expect(await store.findRunningTurn(BASE)).toBeUndefined();
+    const listed = await store.listTurns({
+      tenantId: BASE.tenantId,
+      workbenchId: BASE.workbenchId,
+    });
+    expect(listed[0]?.status).toBe("failed");
+    expect(listed[0]?.error).not.toBeNull();
+    expect(listed[0]?.endedAt).not.toBeNull();
+  });
+
+  test("a running turn within the stale cutoff stays running", async () => {
+    let clock = 1_000;
+    const store = createInMemoryAgentTurnStore({ now: () => clock });
+    const opened = await store.startTurn(BASE);
+
+    clock += AGENT_TURN_STALE_MS - 1;
+
+    expect((await store.findRunningTurn(BASE))?.id).toBe(opened.id);
+  });
+
+  test("starting a new turn expires a stale predecessor rather than leaving two running", async () => {
+    let clock = 1_000;
+    const store = createInMemoryAgentTurnStore({ now: () => clock });
+    const stale = await store.startTurn(BASE);
+
+    clock += AGENT_TURN_STALE_MS + 1;
+    const fresh = await store.startTurn(BASE);
+
+    expect((await store.findRunningTurn(BASE))?.id).toBe(fresh.id);
+    expect(
+      (await store.getTurn({ tenantId: BASE.tenantId, turnId: stale.id }))
+        ?.status,
+    ).toBe("failed");
   });
 });
