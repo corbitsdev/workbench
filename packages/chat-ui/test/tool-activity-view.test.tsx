@@ -102,31 +102,30 @@ describe("ToolActivityGroup", () => {
     ).toBe("running");
   });
 
-  test("consecutive rounds collapse to one line that opens onto the steps", () => {
+  test("consecutive calls stack as individual chips, never a count", () => {
     const el = mount([
       trace({ name: "web_search", input: { query: "a" } }),
       trace({ name: "read_file", input: { path: "src/app.ts" } }),
       trace({ name: "write_file", input: { path: "src/app.ts" } }),
     ]);
-    expect(el.textContent).toContain("3 steps");
-    expect(el.textContent).not.toContain("Wrote a file");
-
-    click(el.querySelector(".chat-tool-activity-trigger"));
+    expect(el.textContent).not.toContain("steps");
     expect(el.textContent).toContain('Searched the web for "a"');
     expect(el.textContent).toContain("Read a file — app.ts");
     expect(el.textContent).toContain("Wrote a file — app.ts");
+    expect(el.querySelectorAll(".chat-tool-activity-row").length).toBe(3);
   });
 
-  test("a round that is still working shows the step that is working", () => {
+  test("a call still running renders alongside settled calls, not folded", () => {
     const el = mount([
       trace({ name: "read_file", input: { path: "a.ts" } }),
       trace({ name: "web_search", input: { query: "b" }, status: "running" }),
     ]);
     expect(el.textContent).toContain('Searching the web for "b"');
+    expect(el.textContent).toContain("Read a file — a.ts");
     expect(el.textContent).not.toContain("2 steps");
   });
 
-  test("a round containing a failure names the failure and opens itself", () => {
+  test("a failed call among others names its own failure, on its own chip", () => {
     const el = mount([
       trace({ name: "read_file", input: { path: "a.ts" } }),
       trace({
@@ -135,7 +134,20 @@ describe("ToolActivityGroup", () => {
         output: "Repository not found",
       }),
     ]);
-    expect(el.textContent).toContain("2 steps, 1 didn't work");
+    expect(el.textContent).not.toContain("didn't work");
     expect(el.textContent).toContain("Retrieved an issue in GitHub");
+    const failedRow = el.querySelector('[data-status="failed"]');
+    expect(failedRow).not.toBeNull();
+    click(failedRow?.querySelector(".chat-tool-activity-trigger") ?? null);
+    expect(el.textContent).toContain("Repository not found");
+  });
+
+  test("every chip carries a provider tile", () => {
+    const el = mount([
+      trace({ name: "slack__post_message", input: { channel: "general" } }),
+    ]);
+    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
+      "Sl",
+    );
   });
 });
