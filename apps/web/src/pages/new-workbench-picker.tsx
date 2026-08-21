@@ -10,7 +10,11 @@
 
 import { Button, toast } from "@corbits/react-ui";
 import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import {
+  ChatApiError,
+  describeChatError,
+  WorkbenchLoadingState,
+} from "@corbits/chat-ui";
 import { useState } from "react";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
@@ -22,6 +26,7 @@ import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbenchFromTemplate,
+  WorkbenchPreconditionError,
   type PickGithubRepos,
 } from "../instant-agent-create";
 import { useNavigate } from "../navigation";
@@ -35,20 +40,29 @@ import { GithubRepoSelectDialog } from "./github-repo-select-dialog";
 
 const log = getLogger("web.new-workbench-picker");
 
+const GENERIC_CREATE_FAILURE =
+  "Something went wrong creating this workbench. Try again.";
+
 /**
- * "Try again" is only honest advice for a transient failure (a bad
- * connection, a 5xx) — `describeApiError` already speaks to that case.
- * A missing setup agent or an unavailable template is a precondition
- * this bench doesn't meet, not a fluke: `createWorkbenchFromTemplate`
- * throws a plain `Error` with that exact, already-human message for
- * those, and the honest move is to show it verbatim rather than
- * flattening it into a generic retry prompt.
+ * Allow-lists what's safe to show verbatim, rather than denylisting
+ * what to hide — a new error type `createWorkbenchFromTemplate`'s path
+ * starts throwing later lands here unrecognized and falls to the
+ * generic message, not into the toast raw. Only
+ * `WorkbenchPreconditionError` carries authored, always-safe copy
+ * ("try again" is a lie for a missing template, so its own message
+ * says so instead); `ApiQueryError` and `ChatApiError` both embed raw
+ * request paths and schema summaries in `.message` and must go through
+ * their own describer, never shown directly.
  */
 export function describeWorkbenchCreateFailure(cause: unknown): string {
-  if (cause instanceof Error && !(cause instanceof ApiQueryError)) {
-    return cause.message;
+  if (cause instanceof WorkbenchPreconditionError) return cause.message;
+  if (cause instanceof ApiQueryError) {
+    return describeApiError(cause, "creating this workbench");
   }
-  return describeApiError(cause, "creating this workbench");
+  if (cause instanceof ChatApiError) {
+    return describeChatError(cause, GENERIC_CREATE_FAILURE);
+  }
+  return GENERIC_CREATE_FAILURE;
 }
 
 type RepoPickerState = {
@@ -123,7 +137,10 @@ export function NewWorkbenchPickerRoute() {
     } catch (cause) {
       log.error("Couldn't create the workbench", {
         message: cause instanceof Error ? cause.message : String(cause),
-        status: cause instanceof ApiQueryError ? cause.status : undefined,
+        status:
+          cause instanceof ApiQueryError || cause instanceof ChatApiError
+            ? cause.status
+            : undefined,
         path: cause instanceof ApiQueryError ? cause.path : undefined,
       });
       toast(describeWorkbenchCreateFailure(cause));
