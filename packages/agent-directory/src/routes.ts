@@ -201,6 +201,9 @@ export function createAgentDefinitionRoutes({
     if (body.description !== undefined)
       coreInput.description = body.description;
     if (body.model !== undefined) coreInput.model = body.model;
+    if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
+      coreInput.toolPackagePins = body.toolPackagePins;
+    }
 
     let row: Awaited<ReturnType<typeof createAgentDefinitionCore>>["row"];
     try {
