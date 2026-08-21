@@ -7,33 +7,24 @@ navigation.
 
 ## How it's invoked
 
-This palette is the product's only search surface (DESIGN.md → Search), and
-it has exactly two doors: Cmd/Ctrl-K anywhere, and the magnifier the shell's
-top bar carries on every route (`StageSearch` in
-`apps/web/src/shell/stage-search.tsx`). Clicking the magnifier morphs it in
-place into an inline bar — a width transition authored in `app.css` on
-react-ui's `--duration-standard` and `--ease-in-out` (the curve its theme
-documents for something growing in place; the app imports react-ui's
-prebuilt stylesheet, where Tailwind motion utilities do not exist) — and
-opens this same overlay. Escape collapses the bar back to the magnifier and
-returns focus to it. Reduced motion needs nothing here: that stylesheet
-already collapses every transition duration under
-`prefers-reduced-motion`.
+This palette is a separate surface from the stage top bar's per-page filter
+magnifier (DESIGN.md → Search, `docs/DECISIONS.md` → Search) — the two are
+never merged, and neither opens the other. The palette has exactly two doors:
+Cmd/Ctrl-K anywhere, and a context-menu item. Both call
+`openCommandPalette()` from `command-palette-open-store.ts`, an external
+store rather than component state because those doors and
+`CommandPaletteProvider` (which renders the palette itself, mounted once in
+`app.tsx`'s Shell above `AppShell`) are siblings, not ancestor/descendant.
+That state outlives a remount, so it is scoped explicitly — the provider
+closes search on a route change (a Back out of a result never leaves the
+overlay standing) and on a bench switch. cmd+K opens and does not toggle:
+react-ui's shortcut yields to text fields, and an open palette holds focus in
+its own input, so Escape and the overlay are the ways back out.
 
-Both doors read and write one state, `command-palette-open-store.ts`: an
-external store rather than component state, because the palette provider and
-the top bar are siblings in `app.tsx`'s Shell, and a context-menu item opens
-the palette too. That state outlives a remount, so it is scoped explicitly —
-the provider closes search on a route change (a Back out of a result never
-leaves the overlay standing) and on a bench switch. cmd+K opens and does not
-toggle: react-ui's shortcut yields to text fields, and an open palette holds
-focus in its own input, so Escape and the overlay are the ways back out.
-
-Because react-ui's `CommandPalette` is a modal dialog that owns the editable
-input once open, the morphed bar _shows_ the live query as text rather than
-rendering a second input a click could land in — one editable search field in
-the product, with the morph showing where the overlay came from. An anchored,
-non-modal palette in react-ui would let that bar be the input itself.
+The palette renders as react-ui's `CommandPalette`, a centered modal dialog —
+its own surface, independent of any page's stage top bar, which is exactly
+what makes it reachable from a route that renders no stage top bar of its
+own (an unmatched route included).
 
 ## Where it lives
 
@@ -68,9 +59,10 @@ with three responsibilities:
 as small per-bench catalogs (filtered client-side, the same way the static
 route list already is), lists the bench's connected MCP servers as Plugins,
 builds `@corbits/command-palette`'s static commands
-from `apps/web/src/routes.tsx`, and hands the assembled groups to react-ui's
-data-driven palette. No new endpoint beyond the ones the Routines, Skills,
-and Library pages already use, no domain logic in the app.
+from `apps/web/src/routes.tsx`, and renders the assembled groups through
+react-ui's data-driven `CommandPalette` itself. No new endpoint beyond the
+ones the Routines, Skills, and Library pages already use, no domain logic in
+the app.
 
 ## Groups, in display order
 
