@@ -36,6 +36,7 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@corbits/mocks": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

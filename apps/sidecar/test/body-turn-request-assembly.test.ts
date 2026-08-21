@@ -22,6 +22,7 @@ import {
 } from "@intx/agent";
 import { createDependencies } from "@intx/inference";
 import { createBuiltinRegistry } from "@intx/inference/providers";
+import { createOllamaMock } from "@corbits/mocks/ollama";
 
 const PRIOR_TURNS = [
   {
@@ -53,49 +54,13 @@ function contextStoreStub() {
   };
 }
 
-function sseResponse(): Response {
-  const chunk = {
-    id: "c1",
-    object: "chat.completion.chunk",
-    created: 1,
-    model: "stub-model",
-    choices: [
-      {
-        index: 0,
-        delta: { role: "assistant", content: "ok" },
-        finish_reason: null,
-      },
-    ],
-  };
-  const stop = {
-    id: "c1",
-    object: "chat.completion.chunk",
-    created: 1,
-    model: "stub-model",
-    choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-  };
-  const body = [
-    `data: ${JSON.stringify(chunk)}`,
-    "",
-    `data: ${JSON.stringify(stop)}`,
-    "",
-    "data: [DONE]",
-    "",
-    "",
-  ].join("\n");
-  return new Response(body, {
-    status: 200,
-    headers: { "content-type": "text/event-stream" },
-  });
-}
-
 test("an openai-compatible turn's wire request carries the restored history and the declared tools", async () => {
-  const captured: { url?: string; body?: unknown } = {};
-  const fetchStub = (url: string | URL | Request, init?: RequestInit) => {
-    captured.url = String(url);
-    captured.body = JSON.parse(String(init?.body));
-    return Promise.resolve(sseResponse());
-  };
+  // `OllamaMock`'s `/v1/chat/completions` route is provider-agnostic (it
+  // matches on path, not host) and doubles as the OpenAI-compatible wire
+  // format this agent's `openai` provider speaks, so it stands in here
+  // without pretending to be Ollama specifically -- real SSE framing and
+  // request validation instead of a hand-rolled stub.
+  const ollama = createOllamaMock();
 
   const echoDefinition = {
     name: "@corbits/test-tools/echo",
@@ -149,7 +114,7 @@ test("an openai-compatible turn's wire request carries the restored history and 
       authorize: () => Promise.resolve({ effect: "allow" }),
       deps: {
         ...createDependencies(createBuiltinRegistry()),
-        fetch: fetchStub,
+        fetch: ollama.fetch,
       },
     } as never,
   );
@@ -160,27 +125,22 @@ test("an openai-compatible turn's wire request carries the restored history and 
     await agent.close();
   }
 
-  expect(captured.url).toBe(
-    "http://inference.stub.invalid/v1/chat/completions",
-  );
-  const request = captured.body as {
-    messages: { role: string; content: unknown }[];
-    tools?: { function: { name: string } }[];
-  };
+  const request = ollama.requests.last();
 
   // History: every prior turn the context store restored precedes the
-  // new user message on the wire.
-  const serialized = JSON.stringify(request.messages);
-  expect(serialized).toContain("My favorite color is teal.");
-  expect(serialized).toContain("Noted: teal.");
-  expect(serialized).toContain("What is my favorite color?");
-  const roles = request.messages.map((m) => m.role);
-  expect(roles[0]).toBe("system");
-  expect(roles).toContain("assistant");
+  // new user message on the wire, and the roles land in the expected
+  // order -- not just present somewhere in the serialized blob.
+  request.expectHistoryContains([
+    { role: "system" },
+    { role: "user", content: "My favorite color is teal." },
+    { role: "assistant", content: "Noted: teal." },
+    { role: "user", content: "What is my favorite color?" },
+  ]);
+  expect(request.roles()).toContain("assistant");
 
   // Tools: the declared tool rides the request (name is
-  // provider-encoded, so match on the stable suffix).
-  expect(request.tools).toBeDefined();
-  expect(request.tools?.length).toBe(1);
-  expect(request.tools?.[0]?.function.name).toContain("echo");
+  // provider-encoded, so match on the stable suffix) -- this is the
+  // direct CL-6448 regression shape (`tools: []` reaching the model).
+  expect(request.tools.length).toBe(1);
+  expect(request.toolNames()[0]).toContain("echo");
 });
