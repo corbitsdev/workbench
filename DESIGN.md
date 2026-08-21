@@ -19,11 +19,12 @@ Top to bottom:
    conversations, with search built into the list itself. Nothing
    page-scoped ever renders in this body; it lists conversations, not
    product sections.
-3. **Footer rail** — Routines, Files, Skills, Agents, Plugins, Insights, in
-   that order. Mission Control is pinned above the rail once it ships;
-   Evals joins the rail below Insights once it ships. These are utility
-   destinations, not workbenches, and each is its own top-level route
-   (`/routines`, `/files`, `/skills`, `/agents`, `/plugins`, `/insights`).
+3. **Footer rail** — Mission Control is pinned above the rail as its own
+   row; below it the rail reads Routines, Files, Skills, Agents, Plugins,
+   Insights, Evals, in that order. These are utility destinations, not
+   workbenches, and each is its own top-level route (`/mission-control`,
+   `/routines`, `/files`, `/skills`, `/agents`, `/plugins`, `/insights`,
+   `/evals`).
 4. **Account row** — avatar and name, anchoring the rail. The whole row is
    a menu trigger (weekly usage, Settings, feedback, log out) that pops
    upward. Settings is reached only through this menu — it has no rail
