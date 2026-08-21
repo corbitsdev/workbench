@@ -19,7 +19,7 @@ import {
 } from "./artifact-client";
 
 export const SCOUT_ARTIFACT_SAVE_TOOL = "save_artifact";
-export const SCOUT_ARTIFACT_LIST_TOOL = "list_recent_artifacts";
+export const SCOUT_ARTIFACT_LIST_TOOL = "list_artifacts";
 
 const SaveArgs = type({
   title: "string > 0",

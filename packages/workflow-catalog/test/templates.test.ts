@@ -4,6 +4,7 @@ import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 
 import {
   CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
   WORKFLOW_CATALOG,
@@ -164,6 +165,35 @@ test("participants are addressable by a distinct handle", () => {
       (participant) => participant.handle,
     );
     expect(new Set(handles).size).toBe(handles.length);
+  }
+});
+
+test("the due-diligence template's participants are Myra and Scout, neither backed by a block", () => {
+  expect(workbenchTemplate("due-diligence")).toBe(DUE_DILIGENCE_TEMPLATE);
+  expect(
+    DUE_DILIGENCE_TEMPLATE.participants.map(
+      (participant) => participant.handle,
+    ),
+  ).toEqual(["myra", "scout"]);
+  expect(templateBlockAssetNames(DUE_DILIGENCE_TEMPLATE)).toEqual([]);
+  for (const participant of DUE_DILIGENCE_TEMPLATE.participants) {
+    expect(participant.blockAssetName).toBeUndefined();
+  }
+});
+
+test("the due-diligence template blocks the create on nothing — Exa is offered, never required", () => {
+  expect(DUE_DILIGENCE_TEMPLATE.requiredConnections).toEqual([]);
+  expect(DUE_DILIGENCE_TEMPLATE.optionalConnections).toEqual(["exa"]);
+});
+
+test("Jimmy is not a workbench template — the picker offers no such kind of workbench", () => {
+  expect(workbenchTemplate("default-teammates")).toBeUndefined();
+  for (const template of WORKBENCH_TEMPLATES) {
+    expect(
+      template.participants.some(
+        (participant) => participant.handle === "jimmy",
+      ),
+    ).toBe(false);
   }
 });
 

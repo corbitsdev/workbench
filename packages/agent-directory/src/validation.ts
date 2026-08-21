@@ -40,6 +40,21 @@ const SkillNameArray = skillNameSchema.array().narrow((skills, ctx) => {
   return true;
 });
 
+// A pinned tool package names a `@corbits/*` workspace package, the only
+// namespace this catalog ever resolves a pin against.
+const ToolPackageNamePattern = type(/^@corbits\/[a-z0-9-]+$/);
+const ToolPackagePinArray = ToolPackageNamePattern.array().narrow(
+  (pins, ctx) => {
+    const seen = new Set<string>();
+    for (const name of pins) {
+      if (seen.has(name))
+        return ctx.mustBe(`a list without duplicate tool package "${name}"`);
+      seen.add(name);
+    }
+    return true;
+  },
+);
+
 export const CreateAgentDefinitionInput = type({
   name: boundedNonBlankString(100),
   handle: HANDLE_PATTERN.describe(
@@ -49,14 +64,15 @@ export const CreateAgentDefinitionInput = type({
   systemPrompt: boundedNonBlankString(8000),
   "model?": boundedNonBlankString(200),
   "skills?": SkillNameArray,
-  // No `toolPackagePins` field, deliberately: this is the HTTP route
-  // for a person hand-authoring an agent through a form, which has no
-  // affordance for typing an arbitrary tool-package pin. The one
-  // caller that needs `buildAgentDefinitionWorkflow`'s optional
-  // `toolPackagePins` (CL-6051's `{create}` planner branch, see
-  // `@corbits/task-planner`) calls that builder directly, in-process,
-  // never through this REST boundary — so parity here isn't needed
-  // unless a future UI grows a "pin a tool package" field of its own.
+  // `toolPackagePins` names tool packages by name only (no version — the
+  // core resolves each to `*`, matching `./workflow-create-routes.ts`'s
+  // own handling of the same field). Absent for a person hand-authoring
+  // an agent through a form, which has no affordance for typing one; the
+  // one caller that supplies it is `@corbits/workflow-catalog`'s
+  // `instantiateWorkbenchTemplate`, installing a template participant
+  // (Scout, Jimmy) whose tools ship as pinned packages rather than
+  // inline capabilities.
+  "toolPackagePins?": ToolPackagePinArray,
 });
 export type CreateAgentDefinitionInput =
   typeof CreateAgentDefinitionInput.infer;

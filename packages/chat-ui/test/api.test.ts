@@ -10,6 +10,7 @@ import {
   createWorkbench,
   runDisplayName,
   inviteAgent,
+  JIMMY_QUICK_CREATE,
   listWorkbenches,
   listAllWorkbenches,
   listRuns,
@@ -19,6 +20,7 @@ import {
   openAgentDm,
   listMessages,
   listPinnedMessages,
+  quickCreateJimmy,
   sendMessage,
   fetchWorkbenchBlob,
   getWorkbenchSettings,
@@ -501,6 +503,19 @@ describe("inviteAgent", () => {
       address: "ins_invited1@acme.example",
       definitionId: "wfd_echo",
     });
+  });
+});
+
+describe("quickCreateJimmy", () => {
+  test("posts Jimmy's own request shape to the agent-definitions create route", async () => {
+    const calls = stubFetch(() => json({ id: "wfd_jimmy" }, 201));
+    const created = await quickCreateJimmy("tenant_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/agent-definitions");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(
+      JIMMY_QUICK_CREATE,
+    );
+    expect(created).toEqual({ id: "wfd_jimmy" });
   });
 });
 

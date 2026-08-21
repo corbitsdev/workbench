@@ -38,4 +38,10 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../web-search-tools", import.meta.url).pathname,
   new URL("../../granola-tools", import.meta.url).pathname,
   new URL("../../linear-tools", import.meta.url).pathname,
+  // Scout's own artifact-save/list tool bundle (`scoutArtifactTools`) and
+  // Jimmy's `gif_search` bundle: each package pins itself in its own
+  // `toolPackagePins` (`SCOUT_TOOL_PACKAGE_PINS`, `JIMMY_TOOL_PACKAGE_PINS`),
+  // so each must publish here too or that self-pin never resolves.
+  new URL("../../scout-agent", import.meta.url).pathname,
+  new URL("../../jimmy-agent", import.meta.url).pathname,
 ];
