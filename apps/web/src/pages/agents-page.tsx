@@ -83,7 +83,7 @@ const AGENT_ROSTER_STATUS_LABEL: Record<AgentRosterStatus, string> = {
 // the same liveness marker that vocabulary already carries); idle is the
 // green "healthy, nothing wrong" tone (`pill-ok` in the spec); blocked and
 // archived were already right.
-const AGENT_ROSTER_STATUS_TONE: Record<AgentRosterStatus, BadgeTone> = {
+export const AGENT_ROSTER_STATUS_TONE: Record<AgentRosterStatus, BadgeTone> = {
   running: "info",
   idle: "success",
   blocked: "danger",

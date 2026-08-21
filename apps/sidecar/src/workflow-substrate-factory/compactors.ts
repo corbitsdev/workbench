@@ -56,9 +56,89 @@ const MIN_KEPT_TURNS = 4;
 function turnChars(turn: ConversationTurn): number {
   let total = 0;
   for (const block of turn.content) {
-    total += excerptBlock(block).length;
+    total += blockPayloadChars(block);
   }
   return total;
+}
+
+/**
+ * A media block's real payload size: base64 data / a URL / a file
+ * reference, whichever the source carries. Shared by top-level media
+ * blocks and the media items nested in a `tool_result`'s `content`.
+ */
+function mediaSourceChars(source: {
+  kind: "base64" | "file-reference" | "url";
+  data?: string;
+  url?: string;
+  reference?: string;
+}): number {
+  switch (source.kind) {
+    case "base64":
+      return source.data?.length ?? 0;
+    case "url":
+      return source.url?.length ?? 0;
+    case "file-reference":
+      return source.reference?.length ?? 0;
+  }
+}
+
+/**
+ * A `tool_result` content item's real size: text length, or the
+ * underlying media source's size for every other item kind.
+ */
+function toolResultItemChars(
+  item: Extract<ContentBlock, { type: "tool_result" }>["content"][number],
+): number {
+  return item.type === "text"
+    ? item.text.length
+    : mediaSourceChars(item.source);
+}
+
+/**
+ * A block's true payload size -- what actually ships to the model --
+ * as distinct from {@link excerptBlock}'s human-readable placeholder.
+ * `tool_call.arguments` and `tool_result.content` carry real request/
+ * response payloads that can dwarf the rest of a turn; a budget
+ * estimator blind to them silently undercounts by orders of magnitude.
+ */
+function blockPayloadChars(block: ContentBlock): number {
+  switch (block.type) {
+    case "text":
+      return block.text.length;
+    case "refusal":
+      return block.reason.length;
+    case "thinking":
+      return block.thinking.length;
+    case "redacted_thinking":
+      return block.data.length;
+    case "citation":
+      return block.citedText.length;
+    case "safety_rating":
+      return block.blockReason.length;
+    case "code_execution_request":
+      return block.code.length;
+    case "code_execution_result":
+      return (block.stdout?.length ?? 0) + (block.stderr?.length ?? 0);
+    case "image":
+    case "audio":
+    case "video":
+    case "document":
+      return mediaSourceChars(block.source);
+    case "tool_call":
+      return block.name.length + JSON.stringify(block.arguments).length;
+    case "tool_result": {
+      let total = 0;
+      for (const item of block.content) {
+        total += toolResultItemChars(item);
+      }
+      if (block.detail !== undefined) {
+        total += JSON.stringify(block.detail).length;
+      }
+      return total;
+    }
+    default:
+      return 0;
+  }
 }
 
 /** Total character length of a turn list -- the budget check's estimate. */
@@ -279,8 +359,11 @@ export function createBudgetedContextCompactor(
       turns: ConversationTurn[],
       _ctx: StrategyContext,
     ): Promise<StrategyResult<ConversationTurn[]>> {
-      const keep = countTurnsWithinBudget(turns, budgetChars);
-      if (keep >= turns.length) {
+      // First check against the full budget, exactly as when no fold is
+      // needed at all -- a conversation already under budget must stay
+      // untouched rather than being folded pre-emptively to make room
+      // for a summary turn nothing will produce.
+      if (countTurnsWithinBudget(turns, budgetChars) >= turns.length) {
         return {
           output: turns,
           record: {
@@ -296,6 +379,13 @@ export function createBudgetedContextCompactor(
           },
         };
       }
+
+      // Folding does happen: reserve the summary turn's own worst-case
+      // size out of the budget so kept-turns chars + summary chars
+      // together stay within `budgetChars`, instead of the summary
+      // landing on top of an already-full budget.
+      const keepBudgetChars = Math.max(0, budgetChars - maxSummaryChars);
+      const keep = countTurnsWithinBudget(turns, keepBudgetChars);
       return foldOlderTurns(turns, keep, {
         strategy: SUMMARIZE_BUDGETED_TURNS_NAME,
         version: SUMMARIZE_BUDGETED_TURNS_VERSION,

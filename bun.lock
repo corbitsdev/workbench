@@ -11,6 +11,7 @@
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/artifacts-hub": "workspace:*",
         "@corbits/evals": "workspace:*",
+        "@corbits/ollama-adapter": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@eslint/js": "^10.0.0",
         "@intx/db": "workspace:*",
@@ -106,6 +107,7 @@
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
+        "@corbits/ollama-adapter": "workspace:*",
         "@corbits/workflow-host-actions": "workspace:*",
         "@intx/agent": "0.3.0",
         "@intx/authz": "0.3.0",

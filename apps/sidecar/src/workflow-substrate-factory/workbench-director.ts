@@ -289,25 +289,6 @@ function buildWorkbenchFactory(
   }).factory;
 }
 
-const defined = defineDirector<WorkbenchDirectorConfig>({
-  id: WORKBENCH_DIRECTOR_ID,
-  configSchema: WorkbenchDirectorConfigSchema,
-  factory: (config, _env, agent) => {
-    const policy: DefaultDirectorPolicy = {};
-    if (config.mode !== undefined) {
-      policy.mode = config.mode;
-    }
-    return createWorkbenchDirector(
-      agent.systemPrompt,
-      [...agent.toolDefinitions],
-      policy,
-    );
-  },
-});
-
-export const workbenchDirectorFactory = defined.factory;
-export const buildWorkbenchDirectorRef = defined.build;
-
 /**
  * Sidecar step-env director registry: workbench is the default so
  * unspecified AgentDefinitions get empty-turn retry. The built-in

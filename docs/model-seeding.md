@@ -62,8 +62,15 @@ model/provider name in the codebase is a literal string someone typed in.
 Read from the upstream Interchange checkout's `packages/` directory (upstream,
 not vendored into this repo): `inference-discovery`,
 `inference-discovery-{anthropic,google-genai,openai}`, and
-`inference-testing`. There is no `@intx/inference-catalog` package — it does
-not exist upstream or on npm (confirmed via `npm view`).
+`inference-testing`. These are separate from `@intx/inference-catalog`,
+which does exist and already ships in this repo: pinned in `package.json`
+at `0.3.0` and imported directly (not vendored — see `VENDORED.md`) by
+`packages/inference-catalog/src/offering-capabilities.ts` for
+`catalogProviders`, the pinned catalog data that `seedCatalog` reads
+through today (see "How workbench seeds models and providers today",
+above). It is a baked catalog of prior probe results, not a discovery
+service — it has no relation to `inference-discovery`/`inference-testing`
+beyond the name.
 
 `@intx/inference-discovery` is **not** a live model/provider discovery
 service. Per its own README, it is the runtime for Interchange's internal
