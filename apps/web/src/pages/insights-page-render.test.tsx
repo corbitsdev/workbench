@@ -42,7 +42,13 @@ const benchState: BenchState = {
   onBenchCreated: () => {},
 };
 
-function InsightsPageAtPath({ path }: { readonly path: string }) {
+function InsightsPageAtPath({
+  path,
+  runs = { data: [], nextCursor: null },
+}: {
+  readonly path: string;
+  readonly runs?: { data: unknown[]; nextCursor: string | null };
+}) {
   const range = useInsightsWindow();
   return (
     <NavigationProvider navigate={() => {}}>
@@ -52,7 +58,7 @@ function InsightsPageAtPath({ path }: { readonly path: string }) {
           summary={readyEmpty(EMPTY_OVERALL_USAGE)}
           activity={readyEmpty([])}
           byTool={readyEmpty([])}
-          runs={readyEmpty({ data: [], nextCursor: null })}
+          runs={readyEmpty(runs)}
           routines={readyEmpty([])}
           workbenches={readyEmpty({ items: [] })}
           latency={{ kind: "loading" }}
@@ -66,12 +72,15 @@ function InsightsPageAtPath({ path }: { readonly path: string }) {
   );
 }
 
-function render(path: string) {
+function render(
+  path: string,
+  runs?: { data: unknown[]; nextCursor: string | null },
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(<InsightsPageAtPath path={path} />);
+    root?.render(<InsightsPageAtPath path={path} runs={runs} />);
   });
   return container;
 }
@@ -89,5 +98,35 @@ describe("InsightsPage with a malformed URL escape", () => {
     expect(el.textContent).not.toBe("");
     expect(el.textContent).toContain("Insights");
     expect(el.textContent).toContain("All workbenches");
+  });
+});
+
+describe("InsightsPage 'Running now' strip", () => {
+  test("no in-flight runs: the strip renders nothing, not an empty-state fixture", () => {
+    const el = render("/insights", { data: [], nextCursor: null });
+    expect(el.textContent).not.toContain("Running now");
+  });
+
+  test("a genuinely running run surfaces in the strip by name", () => {
+    const el = render("/insights", {
+      data: [
+        {
+          id: "run_1",
+          tenantId: "tnt_bench_a",
+          definitionId: "wfd_a",
+          definitionName: "Weekly digest",
+          address: "addr",
+          status: "running",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          routineId: null,
+          routineName: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    expect(el.textContent).toContain("Running now");
+    expect(el.textContent).toContain("1 in progress");
+    expect(el.textContent).toContain("Weekly digest");
   });
 });
