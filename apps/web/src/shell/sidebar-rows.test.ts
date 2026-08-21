@@ -95,6 +95,64 @@ describe("buildSidebarRows", () => {
     expect(rows).toEqual([{ kind: "workbench", workbench: freshDm }]);
   });
 
+  test("every workbench deliberately created against the same agent definition keeps its own row (CL-6459)", () => {
+    const created = ["ch_new_1", "ch_new_2", "ch_new_3"].map((id, index) =>
+      workbench({
+        id,
+        kind: "chat",
+        title: "New Workbench",
+        definitionId: "wfd_myra",
+        participants: [{ address: "myra@acme.localhost", handle: "myra" }],
+        lastActivityAt: `2026-01-0${index + 1}T00:00:00.000Z`,
+      }),
+    );
+
+    const rows = buildSidebarRows([], created);
+
+    expect(rows.map((row) => row.workbench.id)).toEqual([
+      "ch_new_3",
+      "ch_new_2",
+      "ch_new_1",
+    ]);
+  });
+
+  test("a stale cross-tenant sibling drops without taking the live definition's deliberate workbenches with it", () => {
+    const staleAncestorDm = workbench({
+      id: "ch_myra_ancestor",
+      kind: "chat",
+      title: "Myra",
+      definitionId: "wfd_myra_ancestor",
+      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+    });
+    const homeDm = workbench({
+      id: "ch_myra_home",
+      kind: "chat",
+      title: "Myra",
+      definitionId: "wfd_myra_leaf",
+      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
+      lastActivityAt: "2026-01-04T00:00:00.000Z",
+    });
+    const createdWorkbench = workbench({
+      id: "ch_myra_new",
+      kind: "chat",
+      title: "New Workbench",
+      definitionId: "wfd_myra_leaf",
+      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
+      lastActivityAt: "2026-01-05T00:00:00.000Z",
+    });
+
+    const rows = buildSidebarRows(
+      [],
+      [staleAncestorDm, homeDm, createdWorkbench],
+    );
+
+    expect(rows.map((row) => row.workbench.id)).toEqual([
+      "ch_myra_new",
+      "ch_myra_home",
+    ]);
+  });
+
   test("two distinct agents whose slugs humanize to the same title never collapse into one row (CL-6413)", () => {
     const researchAnalystHyphen = workbench({
       id: "ch_research_analyst_hyphen",
