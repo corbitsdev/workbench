@@ -8,6 +8,7 @@ export type {
   ListedFoldedMailItem,
 } from "./types";
 export {
+  authoredDefinitionCandidates,
   readDefinitionProjection,
   readFoldedBody,
   readLiveFoldedBody,

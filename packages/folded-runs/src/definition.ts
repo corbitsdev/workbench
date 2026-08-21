@@ -62,12 +62,26 @@ export async function readDefinitionProjection(
   return projection;
 }
 
-/** One definition candidate for a name, ordered newest-first by the
- * caller (typically `createdAt desc`). */
+/** One definition candidate, ordered newest-first by the caller
+ * (typically `createdAt desc`). */
 export type DefinitionCandidate = {
   readonly id: string;
   readonly name: string;
 };
+
+/**
+ * The launch-authoritative subset of an asset's definition rows: only
+ * the hub-authored row(s), whose projection a skill pin or
+ * instructions save refreezes in place. Every code-sourced run deploy
+ * ensures a same-named sibling over the same asset under its per-run
+ * wire hash — a frozen deploy record carrying whatever projection was
+ * current at that deploy, which must never resolve a launch (CL-6452).
+ */
+export function authoredDefinitionCandidates<
+  T extends { readonly origin: "authored" | "run" },
+>(rows: readonly T[]): T[] {
+  return rows.filter((row) => row.origin === "authored");
+}
 
 /**
  * Resolves a definition's launch body by trying its candidates

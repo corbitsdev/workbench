@@ -136,6 +136,9 @@ export async function projectAndWalkInertDefinition(
  * path. Persists through `createDbFrozenApprovalWriter`, so the ensure
  * and the stamp are one transaction and the row can never exist in the
  * half-frozen state a bare `ensureWorkflowDefinitionForAsset` leaves.
+ * The row keeps the schema's `origin: "authored"` default — only a
+ * folded run's own deploy demotes the sibling it mints to a per-run
+ * record (CL-6452, `@corbits/folded-runs`' `markRunDeployClone`).
  */
 export async function freezeInertWorkflowDefinition(
   db: DBExecutor,

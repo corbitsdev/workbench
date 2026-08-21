@@ -20,6 +20,7 @@ mock.module("@intx/db", () => ({
 }));
 
 const {
+  authoredDefinitionCandidates,
   readFoldedBody,
   readLiveFoldedBody,
   readDefinitionProjection,
@@ -217,6 +218,45 @@ describe("readLiveFoldedBody", () => {
     expect(() => readLiveFoldedBody({ not: "a definition" })).toThrow(
       /live definition is malformed/,
     );
+  });
+});
+
+// CL-6452: every run deploy mints a same-named, same-asset sibling
+// definition row (its per-run rendered bytes carry a per-run wire hash),
+// frozen with the projection current AT THAT DEPLOY. Those run clones
+// are deploy records, never launch candidates — only the hub-authored
+// row, whose projection a skill pin or instructions save refreezes in
+// place, may resolve a launch.
+describe("authoredDefinitionCandidates", () => {
+  test("keeps only the hub-authored row, dropping run-deploy clones", () => {
+    const authored = {
+      id: "wfd_authored",
+      name: "fact-checker",
+      origin: "authored",
+    } as const;
+    expect(
+      authoredDefinitionCandidates([
+        // Newest first: the clones every run deploy minted after the
+        // agent was authored.
+        { id: "wfd_run_2", name: "fact-checker", origin: "run" },
+        { id: "wfd_run_1", name: "fact-checker", origin: "run" },
+        authored,
+      ]),
+    ).toEqual([authored]);
+  });
+
+  test("N run deploys never grow the authoritative candidate set", () => {
+    const authored = {
+      id: "wfd_authored",
+      name: "fact-checker",
+      origin: "authored",
+    } as const;
+    const clones = Array.from({ length: 5 }, (_, index) => ({
+      id: `wfd_run_${String(index + 1)}`,
+      name: "fact-checker",
+      origin: "run" as const,
+    }));
+    expect(authoredDefinitionCandidates([...clones, authored])).toHaveLength(1);
   });
 });
 

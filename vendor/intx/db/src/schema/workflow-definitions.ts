@@ -52,6 +52,18 @@ export const workflowDefinition = pgTable(
     wireHash: text("wire_hash"),
     name: text("name").notNull(),
     description: text("description"),
+    // WORKBENCH DELTA (see VENDORED.md): whether this row is a
+    // definition in its own right or the per-run record of one deploy.
+    // "authored" (the default: a definition someone deployed or the hub
+    // froze) is launch-authoritative — the row an agent's edits refreeze
+    // in place. "run" is the sibling a folded run's deploy ensures over
+    // that same asset under the wire hash of its per-run rendered bytes:
+    // a frozen deploy record, never a launch candidate. Without the
+    // distinction, resolution fell back to matching on `name` and every
+    // run's clone shadowed the agent's own definition (CL-6452).
+    origin: text("origin", { enum: ["authored", "run"] })
+      .notNull()
+      .default("authored"),
     // Grant requirements manifest, resolved at launch into materialized grants.
     // Validated as GrantRequirement[] at parse time.
     grantRequirements: jsonb("grant_requirements"),

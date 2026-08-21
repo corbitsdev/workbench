@@ -177,4 +177,30 @@ describeIfDb("freezeInertWorkflowDefinition against Postgres", () => {
     expect(await loadFrozenWireProjection(db, definitionId)).not.toBeNull();
     expect(await loadFrozenGrantSnapshot(db, definitionId)).not.toBeNull();
   });
+
+  // CL-6452: a freeze produces a launch-authoritative definition. Only
+  // a folded run's own deploy demotes the sibling it mints to a per-run
+  // record (`@corbits/folded-runs`' `markRunDeployClone`), so a freeze —
+  // and any other deploy that ensures a definition — stays authored.
+  test("a freeze produces a launch-authoritative definition", async () => {
+    const assetId = await insertAsset("freeze-origin");
+    const { definitionId } = await freezeInertWorkflowDefinition(db, {
+      assetId,
+      workflowJson: agentWorkflowJson("Authored instructions."),
+    });
+    const authoredRow = await db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, definitionId),
+    });
+    expect(authoredRow?.origin).toBe("authored");
+
+    const sibling = await ensureWorkflowDefinitionForAsset(db, {
+      assetId,
+      wireHash: "another-deploy-hash",
+    });
+    expect(sibling.definitionId).not.toBe(definitionId);
+    const siblingRow = await db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, sibling.definitionId),
+    });
+    expect(siblingRow?.origin).toBe("authored");
+  });
 });
