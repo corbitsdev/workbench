@@ -82,7 +82,47 @@ describe("createWorkflowCommandPlugin", () => {
     const result = await dispatchSlashCommand(registry, "/nonexistent", CTX);
     expect(result).toEqual({
       type: "message",
-      text: "Unknown command: /nonexistent",
+      text:
+        "Unknown command: /nonexistent. No agent commands are available " +
+        "in this workbench yet.",
+    });
+  });
+
+  test("any agent present in the room gets a command automatically — /jimmy routes to the definition named jimmy", async () => {
+    const registry = createCommandRegistry();
+    const startCalls: unknown[] = [];
+    registry.registerCommandPlugin(
+      createWorkflowCommandPlugin({
+        listInvitableDefinitions: async () => [
+          { id: "def-jimmy", name: "jimmy" },
+        ],
+        startWorkflow: async (input) => {
+          startCalls.push(input);
+          return { handle: "jimmy", address: "ins_jimmy@tenant.test" };
+        },
+      }),
+    );
+
+    const result = await dispatchSlashCommand(
+      registry,
+      "/jimmy throw me a gif for shipping code",
+      CTX,
+    );
+
+    expect(startCalls).toEqual([
+      {
+        tenantId: CTX.tenantId,
+        principalId: CTX.principalId,
+        workbenchId: CTX.workbenchId,
+        definitionId: "def-jimmy",
+        args: "throw me a gif for shipping code",
+      },
+    ]);
+    expect(result).toEqual({
+      type: "workflow-started",
+      definitionId: "def-jimmy",
+      address: "ins_jimmy@tenant.test",
+      handle: "jimmy",
     });
   });
 });
