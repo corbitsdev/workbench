@@ -59,7 +59,7 @@ export function InstalledStrip({
               <span
                 aria-hidden="true"
                 data-state={plugin.status}
-                className="absolute -bottom-0.5 -right-0.5 size-2 border border-background data-[state=connected]:bg-success data-[state=needs_attention]:bg-destructive"
+                className="absolute -bottom-0.5 -right-0.5 size-2 border border-background data-[state=connected]:bg-success data-[state=needs\_attention]:bg-destructive"
               />
             </Button>
           );
