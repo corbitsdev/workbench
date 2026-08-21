@@ -133,4 +133,81 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(container.querySelector(".chat-turn-failed")).toBeNull();
     expect(container.querySelector(".chat-bubble")).not.toBeNull();
   });
+
+  test("the expanded detail shows the notice's own cause-aware text, not a generic guess", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const items: MessageItem[] = [
+      {
+        id: "msg_ok",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "text", text: "hi @echo" }],
+        sender: { name: null, address: "prn_alice@agents.example" },
+      },
+      {
+        id: "msg_notice",
+        createdAt: "2026-01-01T00:00:05.000Z",
+        parts: [
+          {
+            kind: "text",
+            text: "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up.",
+            turnFailed: true,
+          },
+        ],
+        sender: { name: null, address: "ins_echo1@agents.example" },
+      },
+    ];
+    await act(async () => {
+      root?.render(
+        <WorkbenchTimeline
+          items={items}
+          participants={[
+            { address: "ins_echo1@agents.example", handle: "echo" },
+          ]}
+        />,
+      );
+    });
+
+    act(() => {
+      container
+        ?.querySelector(".chat-turn-failed-disclosure")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const detail = container.querySelector(".chat-turn-failed-detail");
+    expect(detail?.textContent).toBe(
+      "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up.",
+    );
+    // Never the fixed guess this strip used to always show, regardless of cause.
+    expect(detail?.textContent).not.toBe(
+      "No reply arrived — the agent may be unavailable.",
+    );
+  });
+
+  test("Retry hands back the original request text so it isn't lost", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const retried: (string | undefined)[] = [];
+    await act(async () => {
+      root?.render(
+        <WorkbenchTimeline
+          items={failedTurnItem()}
+          participants={[
+            { address: "ins_echo1@agents.example", handle: "echo" },
+          ]}
+          onRetryFailedTurn={(_item, retryText) => retried.push(retryText)}
+        />,
+      );
+    });
+
+    act(() => {
+      (
+        container?.querySelector(".chat-turn-failed-retry") as HTMLButtonElement
+      ).click();
+    });
+
+    expect(retried).toEqual(["hi @echo"]);
+  });
 });
