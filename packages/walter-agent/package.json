@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/walter-agent",
+  "private": true,
+  "description": "Walter, the writer/editor agent: a ported system prompt for a default workbench teammate with no tools and no connections to set up",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

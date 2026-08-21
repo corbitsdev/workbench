@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/lincoln-agent",
+  "private": true,
+  "description": "Lincoln, the LinkedIn writing agent: a ported system prompt plus an optional web-search pin for grounding — degrades to drafting from conversation alone when nothing is connected",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@corbits/web-search-tools": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
