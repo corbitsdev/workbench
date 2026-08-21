@@ -32,4 +32,6 @@
 @source "../../../packages/artifact-ui/src";
 @source "../../../packages/bench-ui/src";
 @source "../../../packages/chat-ui/src";
+@source "../../../packages/plugins-ui/src";
 @source "../../../packages/settings-ui/src";
+@source "../../../packages/tasks-ui/src";
