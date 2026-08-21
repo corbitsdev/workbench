@@ -11,6 +11,25 @@ import { AdapterManifest } from "@intx/inference";
 
 import { parseToolRegistries } from "./tool-materialization";
 
+/**
+ * The shipped default manifest: registers `@corbits/ollama-adapter`'s
+ * `createOllamaAdapter` for the `"ollama"` provider key so a seeded
+ * Ollama deployment's `quirks.numCtx` (see `@corbits/hub-client`'s
+ * seed and `./workflow-substrate-factory/context-budget`) actually
+ * reaches Ollama's `options.num_ctx` instead of silently falling back
+ * to the built-in adapter's defaults. An operator who sets
+ * `SIDECAR_ADAPTER_MANIFEST` explicitly gets exactly what they wrote --
+ * this default never merges with an operator value, only replaces the
+ * unset case.
+ */
+const DEFAULT_ADAPTER_MANIFEST: AdapterManifest = [
+  {
+    provider: "ollama",
+    specifier: "@corbits/ollama-adapter",
+    export: "createOllamaAdapter",
+  },
+];
+
 const WsURL = type("string").narrow((url, ctx) => {
   if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
     return ctx.mustBe("a ws:// or wss:// URL");
@@ -40,14 +59,15 @@ const SidecarEnv = type({
   // workflow-process child's spawn env so per-step tool
   // materialization resolves the exact registries the operator pinned.
   "SIDECAR_TOOL_REGISTRIES?": "string",
-  // Optional JSON-encoded custom inference adapter manifest
+  // Optional JSON-encoded custom inference adapter manifest override
   // (`AdapterManifestEntry[]`, `[{"provider","specifier","export"}]`).
-  // Unset means no custom adapters -- `loadAdapterRegistry` resolves the
-  // built-ins only. Validated here so a malformed manifest kills the boot
-  // with the variable named, and threaded (as its parsed form) into both
-  // this process's own adapter registry and every workflow-process
-  // child's `SIDECAR_ADAPTER_MANIFEST` substrate-config entry, so a child
-  // resolves the exact custom adapters this boot edge resolved.
+  // Unset resolves to `DEFAULT_ADAPTER_MANIFEST` (the shipped Ollama
+  // adapter); set, it replaces that default entirely rather than merging
+  // with it. Validated here so a malformed manifest kills the boot with
+  // the variable named, and threaded (as its parsed form) into both this
+  // process's own adapter registry and every workflow-process child's
+  // `SIDECAR_ADAPTER_MANIFEST` substrate-config entry, so a child
+  // resolves the exact adapters this boot edge resolved.
   "SIDECAR_ADAPTER_MANIFEST?": "string",
   // Operator overrides for two workflow-supervisor timing bindings,
   // threaded verbatim to every deployment's supervisor
@@ -95,9 +115,10 @@ export type SidecarConfig = {
    */
   readonly toolRegistries: string | undefined;
   /**
-   * The operator's custom inference adapter manifest, already validated
-   * against {@link AdapterManifest}. Empty when the operator configured
-   * none -- `loadAdapterRegistry([])` then resolves the built-ins only.
+   * The inference adapter manifest, already validated against
+   * {@link AdapterManifest}: {@link DEFAULT_ADAPTER_MANIFEST} unless the
+   * operator set `SIDECAR_ADAPTER_MANIFEST`, in which case it is exactly
+   * (and only) what the operator wrote.
    */
   readonly adapterManifest: AdapterManifest;
   /**
@@ -117,14 +138,16 @@ export type SidecarConfig = {
 
 /**
  * Parse the optional `SIDECAR_ADAPTER_MANIFEST` env value into a validated
- * {@link AdapterManifest}. Unset resolves to `[]` (no custom adapters);
- * a malformed value dies at boot with the variable named, rather than
- * surfacing as a deep-stack `loadAdapterRegistry` import failure.
+ * {@link AdapterManifest}. Unset resolves to {@link DEFAULT_ADAPTER_MANIFEST}
+ * (the shipped Ollama adapter, so `num_ctx` reaches Ollama without operator
+ * configuration); a malformed value dies at boot with the variable named,
+ * rather than surfacing as a deep-stack `loadAdapterRegistry` import
+ * failure.
  */
 export function parseSidecarAdapterManifest(
   raw: string | undefined,
 ): AdapterManifest {
-  if (raw === undefined) return [];
+  if (raw === undefined) return DEFAULT_ADAPTER_MANIFEST;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);

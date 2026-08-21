@@ -42,6 +42,7 @@
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
     "@corbits/artifacts-hub": "workspace:*",
     "@corbits/evals": "workspace:*",
+    "@corbits/ollama-adapter": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
     "@eslint/js": "^10.0.0",
