@@ -83,7 +83,7 @@ describe("scoutArtifactTools", () => {
     expect(String(result.content)).toContain("Failed to persist");
   });
 
-  test("list_recent_artifacts returns the recent items", async () => {
+  test("list_artifacts returns the recent items", async () => {
     const result = await withMockFetch(
       () =>
         new Response(
