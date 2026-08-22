@@ -22,13 +22,21 @@ describe("reclassifyThinkingEvents", () => {
     expect(out[0]?.type).toBe("inference.thinking.delta");
     expect((out[0]?.data as { token: string }).token).toBe("plan the approach");
     expect(out[1]?.type).toBe("inference.text.delta");
-    expect((out[1]?.data as { token: string }).token).toBe("Here is the answer.");
+    expect((out[1]?.data as { token: string }).token).toBe(
+      "Here is the answer.",
+    );
   });
 
   test("a <think> span split across multiple chunks stays classified as thinking across the boundary", () => {
     const state = createThinkSplitState();
-    const first = reclassifyThinkingEvents([textDelta("<think>step one, ")], state);
-    const second = reclassifyThinkingEvents([textDelta("step two</think>final reply")], state);
+    const first = reclassifyThinkingEvents(
+      [textDelta("<think>step one, ")],
+      state,
+    );
+    const second = reclassifyThinkingEvents(
+      [textDelta("step two</think>final reply")],
+      state,
+    );
 
     expect(first).toHaveLength(1);
     expect(first[0]?.type).toBe("inference.thinking.delta");
@@ -41,7 +49,10 @@ describe("reclassifyThinkingEvents", () => {
 
   test("ordinary text with no <think> tag passes through as text-delta unchanged", () => {
     const state = createThinkSplitState();
-    const out = reclassifyThinkingEvents([textDelta("just a normal reply")], state);
+    const out = reclassifyThinkingEvents(
+      [textDelta("just a normal reply")],
+      state,
+    );
     expect(out).toEqual([textDelta("just a normal reply")]);
   });
 
@@ -50,7 +61,11 @@ describe("reclassifyThinkingEvents", () => {
     const toolCallStart: InferenceEvent = {
       type: "inference.tool_call.start",
       seq: 1,
-      data: { callId: "call-1", name: "slack__post_message", partial: { text: "" } },
+      data: {
+        callId: "call-1",
+        name: "slack__post_message",
+        partial: { text: "" },
+      },
     };
     const out = reclassifyThinkingEvents([toolCallStart], state);
     expect(out).toEqual([toolCallStart]);
@@ -62,8 +77,12 @@ describe("reclassifyThinkingEvents", () => {
       [textDelta("<think>internal notes</think>visible reply", 3)],
       state,
     );
-    const thinkingEvent = out.find((event) => event.type === "inference.thinking.delta");
-    const textEvent = out.find((event) => event.type === "inference.text.delta");
+    const thinkingEvent = out.find(
+      (event) => event.type === "inference.thinking.delta",
+    );
+    const textEvent = out.find(
+      (event) => event.type === "inference.text.delta",
+    );
     expect((thinkingEvent?.data as { index?: number }).index).not.toBe(
       (textEvent?.data as { index?: number }).index,
     );
@@ -76,12 +95,21 @@ describe("reclassifyThinkingEvents", () => {
       [textDelta("<think>internal notes</think>visible reply")],
       state,
     );
-    const thinkingEvent = out.find((event) => event.type === "inference.thinking.delta");
-    const textEvent = out.find((event) => event.type === "inference.text.delta");
-    expect((thinkingEvent?.data as { partial: { thinking?: string } }).partial.thinking).toBe(
-      "internal notes",
+    const thinkingEvent = out.find(
+      (event) => event.type === "inference.thinking.delta",
     );
-    expect((textEvent?.data as { partial: { text: string } }).partial.text).toBe("visible reply");
-    expect((textEvent?.data as { partial: { text: string } }).partial.text).not.toContain("<think>");
+    const textEvent = out.find(
+      (event) => event.type === "inference.text.delta",
+    );
+    expect(
+      (thinkingEvent?.data as { partial: { thinking?: string } }).partial
+        .thinking,
+    ).toBe("internal notes");
+    expect(
+      (textEvent?.data as { partial: { text: string } }).partial.text,
+    ).toBe("visible reply");
+    expect(
+      (textEvent?.data as { partial: { text: string } }).partial.text,
+    ).not.toContain("<think>");
   });
 });
