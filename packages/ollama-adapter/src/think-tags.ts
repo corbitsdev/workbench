@@ -42,7 +42,10 @@ const THINK_CLOSE = "</think>";
  * sentinel is guaranteed to never collide with one it hands out. */
 const THINKING_BLOCK_INDEX = -1;
 
-type TokenSplit = { readonly textToken: string; readonly thinkingToken: string };
+type TokenSplit = {
+  readonly textToken: string;
+  readonly thinkingToken: string;
+};
 
 /** Peels `<think>`/`</think>` spans out of one token, folding the result
  * into the running cumulative text/thinking strings. A tag never splits
@@ -59,7 +62,6 @@ function splitToken(state: ThinkSplitState, token: string): TokenSplit {
       const openIndex = remaining.indexOf(THINK_OPEN);
       if (openIndex === -1) {
         textToken += remaining;
-        remaining = "";
         break;
       }
       textToken += remaining.slice(0, openIndex);
@@ -69,7 +71,6 @@ function splitToken(state: ThinkSplitState, token: string): TokenSplit {
       const closeIndex = remaining.indexOf(THINK_CLOSE);
       if (closeIndex === -1) {
         thinkingToken += remaining;
-        remaining = "";
         break;
       }
       thinkingToken += remaining.slice(0, closeIndex);
@@ -134,7 +135,9 @@ export function reclassifyThinkingEvents(
         data: {
           token: textToken,
           partial,
-          ...(event.data.index !== undefined ? { index: event.data.index } : {}),
+          ...(event.data.index !== undefined
+            ? { index: event.data.index }
+            : {}),
         },
       });
     }
