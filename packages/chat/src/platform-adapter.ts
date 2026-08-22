@@ -957,6 +957,21 @@ export function createHubChatPlatform(
       // fresh run at a fresh address. Re-resolve afterwards so the
       // send that follows targets the run that is actually alive, not
       // the one that just died.
+      //
+      // CL-6677: this wake — and the deploy/source-re-derivation it can
+      // trigger for a deferred-to-wake single-step deployment (CL-6648,
+      // `apps/sidecar/src/workflow-host-wiring/index.ts`'s
+      // `restoreDeploymentFromRecord`) — emits no progress event of its
+      // own. The reader sees nothing but the generic empty typing pulse
+      // for however long this call takes, indistinguishable from an
+      // agent that is simply thinking; a real cold wake measured ~105s
+      // of that silence before the client's own reply-timeout backstop
+      // fired (`streaming-reply.ts`'s `PENDING_REPLY_CLEAR_MS`). Surfacing
+      // a "waking up…" state needs a wake-in-progress signal threaded
+      // through this call, out through `subscribeToWorkbench`'s
+      // `chat.agent` stream, and into `useStreamingReply` — real plumbing
+      // across this package and the sidecar, not a client-side fix, so
+      // it is left as a follow-up rather than done here.
       if (lifecycle !== undefined) {
         await lifecycle.ensureAwake(liveAddress);
       } else if (!isRoutable(liveAddress)) {

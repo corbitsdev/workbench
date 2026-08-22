@@ -18,6 +18,7 @@
     "@corbits/api-query": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/context-menu": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",

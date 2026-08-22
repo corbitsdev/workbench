@@ -250,17 +250,26 @@ export function composerPlaceholderFor(
  * `POST`/`GET` routes with a different shape). */
 const STREAMING_REPLY_ITEM_ID = "streaming_reply";
 
+/** The workbench's first agent participant — the best available
+ * attribution for a synthetic timeline item that has no real sender of
+ * its own (`chat.agent` events carry none, and a client-side timeout
+ * notice never had a server-issued sender to begin with). Workbenches
+ * with more than one invited agent are a known approximation here, not a
+ * regression — today's non-streaming refetch has the same "which agent
+ * replied" gap until the persisted message's real sender lands. */
+function firstAgentParticipant(
+  participants: readonly ParticipantRecord[],
+): ParticipantRecord | undefined {
+  return participants.find((participant) =>
+    isAgentAddress(participant.address),
+  );
+}
+
 /**
  * Folds the active turn's in-progress reply onto the end of the timeline,
  * exactly the way `mergePendingSends` folds this reader's own optimistic
  * sends — except this synthetic item is the *other* side's message, so it
- * needs a sender to attribute it to. `chat.agent` events carry no sender
- * (the raw `InferenceEvent` union has no such field, see
- * `streaming-reply.ts`), so this picks the workbench's first agent
- * participant as the best available attribution; workbenches with more than
- * one invited agent are a known approximation here, not a regression —
- * today's non-streaming refetch has the same "which agent replied" gap
- * until the persisted message's real sender lands.
+ * needs a sender to attribute it to (see `firstAgentParticipant`).
  */
 export function mergeStreamingReply(
   items: readonly TimelineMessageItem[],
@@ -279,9 +288,7 @@ export function mergeStreamingReply(
   ) {
     return items;
   }
-  const agent = participants.find((participant) =>
-    isAgentAddress(participant.address),
-  );
+  const agent = firstAgentParticipant(participants);
   if (agent === undefined) return items;
   return [
     ...items,
@@ -303,22 +310,38 @@ const REPLY_TIMED_OUT_ITEM_ID = "reply_timed_out_notice";
  * Appends an honest inline notice once `useStreamingReply`'s own backstop
  * (`PENDING_REPLY_CLEAR_MS`) has fired — a turn that opened but never got a
  * single token and never closed out either, so the reader was left staring
- * at a typing indicator that just vanished with no explanation. Renders
- * through the same event-line path `mergeStreamingReply`'s bubble and every
- * other system line already use — no new CSS, no new item shape.
+ * at a typing indicator that just vanished with no explanation. This is
+ * the same class of failure `postUndeliveredNotice` (`@corbits/chat`)
+ * already gives an honest, actionable backstop to when the dispatch fails
+ * loud enough for the server to see it — a cold-waking agent that never
+ * streams a token back fails silently instead, so before CL-6677 this
+ * synthetic notice rendered as a bare quiet event line with no ref id and
+ * no Retry. It now carries a `turnFailed` text part exactly like the
+ * server's own notice (`replyTimedOutRefId` is minted by `reportError` at
+ * the moment `useStreamingReply`'s timer fires), so it renders through
+ * `FailedTurnStrip` — same ref-quotable copy, same Retry action — instead
+ * of a second, weaker backstop living beside the real one.
  */
 export function appendReplyTimedOutNotice(
   items: readonly TimelineMessageItem[],
-  replyTimedOut: boolean,
+  replyTimedOutRefId: string | null,
+  participants: readonly ParticipantRecord[],
 ): readonly TimelineMessageItem[] {
-  if (!replyTimedOut) return items;
+  if (replyTimedOutRefId === null) return items;
+  const agent = firstAgentParticipant(participants);
   return [
     ...items,
     {
       id: REPLY_TIMED_OUT_ITEM_ID,
       createdAt: new Date().toISOString(),
-      parts: [{ kind: "event", event: "chat.reply-timed-out", data: {} }],
-      sender: { name: null, address: "" },
+      parts: [
+        {
+          kind: "text",
+          text: `${CHAT_STRINGS.replyTimedOutNotice} (ref ${replyTimedOutRefId})`,
+          turnFailed: true,
+        },
+      ],
+      sender: { name: null, address: agent?.address ?? "" },
     },
   ];
 }
@@ -667,7 +690,7 @@ function ChatWorkspaceInner({
     useTypingIndicator(currentUser?.principalId, activeWorkbenchId);
   const {
     streamingReply,
-    replyTimedOut,
+    replyTimedOutRefId,
     handleStreamEvent: handleStreamingReplyEvent,
     noteAwaitingReply,
     resumeFromTurn,
@@ -1282,7 +1305,8 @@ function ChatWorkspaceInner({
                         streamingReply,
                         activeWorkbench?.participants ?? [],
                       ),
-                      replyTimedOut,
+                      replyTimedOutRefId,
+                      activeWorkbench?.participants ?? [],
                     )}
                     participants={activeWorkbench?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}

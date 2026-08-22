@@ -271,7 +271,13 @@ describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not 
   });
 });
 
-describe("appendReplyTimedOutNotice (CL-6252 #6: an honest note when the reply backstop fires)", () => {
+// CL-6677: this notice used to render as a bare `event`-kind item with no
+// ref id and no Retry — unlike `postUndeliveredNotice`'s server-side
+// backstop for the same class of failure (a turn that ends with no
+// reply). It now carries a `turnFailed` text part instead, so it renders
+// through the same `FailedTurnStrip` treatment: ref id quotable, Retry
+// wired.
+describe("appendReplyTimedOutNotice (CL-6677: same ref+Retry backstop as the server-side notice)", () => {
   const serverItems = [
     {
       id: "m1",
@@ -280,17 +286,36 @@ describe("appendReplyTimedOutNotice (CL-6252 #6: an honest note when the reply b
       sender: { name: null, address: "prn_alice@acme.example" },
     },
   ];
+  const participants = [{ address: "myra@agents.example", handle: "myra" }];
 
-  test("not timed out leaves the timeline untouched", () => {
-    expect(appendReplyTimedOutNotice(serverItems, false)).toBe(serverItems);
+  test("no timeout leaves the timeline untouched", () => {
+    expect(appendReplyTimedOutNotice(serverItems, null, participants)).toBe(
+      serverItems,
+    );
   });
 
-  test("timed out appends an event-kind notice item", () => {
-    const withNotice = appendReplyTimedOutNotice(serverItems, true);
+  test("a timed-out turn appends a turnFailed text part carrying the ref id, attributed to the agent", () => {
+    const withNotice = appendReplyTimedOutNotice(
+      serverItems,
+      "mt4ewrje-zvbmti",
+      participants,
+    );
     expect(withNotice).toHaveLength(2);
     expect(withNotice[1]?.parts).toEqual([
-      { kind: "event", event: "chat.reply-timed-out", data: {} },
+      {
+        kind: "text",
+        text: "No reply arrived — the agent may be unavailable. (ref mt4ewrje-zvbmti)",
+        turnFailed: true,
+      },
     ]);
+    expect(withNotice[1]?.sender.address).toBe("myra@agents.example");
+  });
+
+  test("with no agent participant to attribute to, still appends the notice", () => {
+    const withNotice = appendReplyTimedOutNotice(serverItems, "abc-123", []);
+    expect(withNotice).toHaveLength(2);
+    expect(withNotice[1]?.parts[0]).toMatchObject({ turnFailed: true });
+    expect(withNotice[1]?.sender.address).toBe("");
   });
 });
 
