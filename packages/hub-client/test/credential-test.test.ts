@@ -539,6 +539,51 @@ describe("fetchOllamaModelCatalog", () => {
     ]);
   });
 
+  test("excludes ollama.com cloud-proxy models (a signed-out box can never serve them)", async () => {
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.toString().endsWith("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [
+              { name: "gpt-oss:20b" },
+              { name: "qwen3-coder:480b-cloud" },
+              { name: "minimax-m2:cloud" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ capabilities: ["completion"] }), {
+        status: 200,
+      });
+    };
+
+    const models = await fetchOllamaModelCatalog(
+      "http://localhost:11434",
+      fetchImpl,
+    );
+    expect(models?.map((model) => model.canonicalName)).toEqual([
+      "gpt-oss:20b",
+    ]);
+  });
+
+  test("returns undefined when every model is a cloud-proxy model", async () => {
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.toString().endsWith("/api/tags")) {
+        return new Response(
+          JSON.stringify({ models: [{ name: "minimax-m2:cloud" }] }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ capabilities: ["completion"] }), {
+        status: 200,
+      });
+    };
+    expect(
+      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
+    ).toBeUndefined();
+  });
+
   test("returns undefined when the instance is unreachable", async () => {
     const fetchImpl: FetchLike = async () => {
       throw new Error("ECONNREFUSED");
