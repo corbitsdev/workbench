@@ -189,6 +189,27 @@ export interface ScannedWorkflowDeployment {
 }
 
 /**
+ * Splits a boot scan into what still needs restoring and what a prior
+ * hibernate already put to sleep. `parkedAt` is the durable, locally
+ * decidable signal for "genuinely live" (CL-6282): a deployment the hub
+ * deliberately hibernated resumes on the next message or routine fire
+ * that addresses it, not by being pre-spawned at boot.
+ */
+export function partitionScannedDeployments(
+  scanned: readonly ScannedWorkflowDeployment[],
+): {
+  live: ScannedWorkflowDeployment[];
+  parked: ScannedWorkflowDeployment[];
+} {
+  const live: ScannedWorkflowDeployment[] = [];
+  const parked: ScannedWorkflowDeployment[] = [];
+  for (const entry of scanned) {
+    (entry.record.parkedAt === undefined ? live : parked).push(entry);
+  }
+  return { live, parked };
+}
+
+/**
  * Enumerate the persisted deployment records under `workflow-runs/` so a
  * boot-time restore can re-establish each deployment. Soft-fails per record:
  * a missing `deployment.json`, unparseable JSON, or a record that fails schema

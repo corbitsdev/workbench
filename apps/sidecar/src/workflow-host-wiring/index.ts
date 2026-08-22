@@ -53,10 +53,12 @@ import type {
 import {
   deleteWorkflowDeploymentRecord,
   markWorkflowDeploymentRecordParked,
+  partitionScannedDeployments,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "../workflow-deployment-record";
+import { runWithConcurrency } from "../concurrency";
 import {
   computeWireDefinitionHash,
   validateWorkflowProjection,
@@ -127,6 +129,16 @@ export const CHILD_KILL_ESCALATION_MS = 3000;
  * shape.
  */
 export const TEARDOWN_DRAIN_DEADLINE_MS = 5000;
+
+/**
+ * How many workflow deployment records `restoreWorkflowDeployments` restores
+ * at once. Bounded, not unbounded, so a host with many live records at boot
+ * cannot storm the OS with concurrent `Bun.spawn` calls all at once; 8 is
+ * comfortably below typical per-process fd/thread pressure from a handful of
+ * child processes while still cutting a boot with dozens of records from
+ * minutes of serial restore to a few bounded rounds.
+ */
+export const RESTORE_CONCURRENCY = 8;
 
 /**
  * Await a supervisor's graceful `shutdown()`, escalating to a direct
@@ -1389,11 +1401,14 @@ export function createSidecarDeployRouter(deps: {
     record: WorkflowDeploymentRecord,
   ): Promise<void> {
     // Integrity: the stored address must re-derive to its own directory
-    // name. A mismatch means a corrupt or misplaced record; skip it
-    // rather than restore a deployment under the wrong slug.
+    // name. A mismatch is deterministic and permanent -- the same address
+    // always derives the same slug, so a record that disagrees with its
+    // own directory will disagree on every future boot too. Prune it now
+    // rather than restore under the wrong slug and warn forever.
     const derived = deriveDeploymentId(record.agentAddress);
     if (derived !== deploymentId) {
-      logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
+      await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
+      logger.warn`pruned workflow deployment record ${deploymentId}: ${record.agentAddress} derives slug ${derived}, not its directory`;
       return;
     }
 
@@ -1625,36 +1640,38 @@ export function createSidecarDeployRouter(deps: {
       }
 
       const scanned = await scanWorkflowDeploymentRecords(dataDir);
-      // Report parked-vs-live counts from the `parkedAt` marker
-      // (`markWorkflowDeploymentRecordParked`, written on the hibernate
-      // teardown) before restoring anything. This is REPORT-ONLY: every
-      // record below still restores LIVE regardless of this count, exactly
-      // as before this marker existed. Making the boot scan actually skip
-      // (or defer) the parked ones is CL-6282 -- a separate change, once its
-      // design pass lands -- and needs a signal this scan cannot see on its
-      // own before that cutover is safe: whether the hub still wants a
-      // parked deployment running is a hub-side decision, not something a
-      // sidecar with no hub connection yet can determine at boot.
-      const parkedCount = scanned.filter(
-        ({ record }) => record.parkedAt !== undefined,
-      ).length;
-      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parkedCount} parked, ${scanned.length - parkedCount} live; restoring all of them (parked-aware boot restore is CL-6282)`;
-      // Restore serially, not in parallel: deterministic boot-log ordering,
-      // one isolable warning per failed record, and no concurrent
-      // child-spawn / transport-register storm. Restore runs before
-      // `hubLink.connect()`, so there are no concurrent deploys to contend
-      // with. Each record's failure is caught so one bad deployment cannot
-      // strand the rest. Every persisted record restores LIVE: a deployment
-      // that was previously torn down as a state-preserving hibernate is
-      // relaunched by the hub's own reap-and-relaunch flow, not by this
-      // boot scan guessing at staleness.
-      for (const { deploymentId, record } of scanned) {
-        try {
+      // CL-6282: `parkedAt` (written by `markWorkflowDeploymentRecordParked`
+      // on a state-preserving hibernate teardown) is the durable, locally
+      // decidable answer to "is this deployment genuinely live" -- a
+      // deployment the hub deliberately put to sleep does not need to be
+      // running to be correct; it resumes the moment a message or routine
+      // fire addresses it again (the same wake path `ensureAwake`/`deployAtHead`
+      // already use for an idle-slept deployment that never crashed at all).
+      // Restoring it anyway at every boot is exactly the "restart dead
+      // stuff" cost this cutover removes. A record with no `parkedAt`
+      // (never hibernated, or predates the field) restores as before --
+      // absent is "assume live", matching `readWorkflowDeploymentRecord`'s
+      // own backward-compatible read.
+      const { live, parked } = partitionScannedDeployments(scanned);
+      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parked.length} parked (left asleep; will wake on the next message or routine fire), ${live.length} to restore`;
+      // Bounded-parallel, not fully parallel: `RESTORE_CONCURRENCY` caps how
+      // many workflow-process children spawn at once so a boot with many
+      // live deployments cannot storm the host, while still restoring far
+      // faster than one-at-a-time. Restore runs before `hubLink.connect()`,
+      // so there are no concurrent hub-driven deploys to contend with.
+      // `runWithConcurrency` isolates each record's failure the same way the
+      // old serial loop's per-iteration `try`/`catch` did -- one bad record
+      // logs a warning and never strands the rest.
+      const failures = await runWithConcurrency(
+        live,
+        RESTORE_CONCURRENCY,
+        async ({ deploymentId, record }) => {
           await restoreDeploymentFromRecord(dataDir, deploymentId, record);
-        } catch (cause) {
-          const reason = cause instanceof Error ? cause.message : String(cause);
-          logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
-        }
+        },
+      );
+      for (const { item, error } of failures) {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.warn`Failed to restore workflow deployment ${item.deploymentId}: ${reason}`;
       }
     },
     activeAddresses(): string[] {
