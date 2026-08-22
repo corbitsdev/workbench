@@ -36,4 +36,9 @@ export const REACT_UI_DRIFT_ALLOWLIST: readonly DriftAllowlistEntry[] = [
   },
 ];
 
-export const REACT_UI_DRIFT_SNAPSHOT = 48;
+// CL-6628 adds the prompt box's `<textarea>` — react-ui has no Textarea
+// primitive, and every existing multi-line input in this codebase
+// (composer.tsx, form-block.tsx, general-section.tsx, ...) is the same raw
+// element, so this follows the established convention rather than
+// inventing a one-off wrapper.
+export const REACT_UI_DRIFT_SNAPSHOT = 49;
