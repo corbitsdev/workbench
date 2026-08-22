@@ -118,6 +118,12 @@ async function makeRouter(
   });
 }
 
+// Two steps, deliberately: CL-6648 defers a SINGLE-step ("warm-keep")
+// deployment's boot-time restore to its wake path instead of restoring it
+// from a frozen `sources` snapshot (see `workflow-restore-defer-to-wake.test.ts`),
+// so this file's transient/permanent classification scenarios below need a
+// record shape that still goes through the (unchanged) eager restore path
+// to actually exercise it.
 function stageClosureDefinition(deploymentId: string): void {
   closureDefinitions.set(
     deploymentId,
@@ -128,6 +134,15 @@ function stageClosureDefinition(deploymentId: string): void {
         "step-1": step({
           agent: buildSingleStepAgentDefinition({
             id: "step-1",
+            systemPrompt: "",
+            inferencePreferences: [],
+            toolFactories: [],
+          }),
+          triggers: "unbounded",
+        }),
+        "step-2": step({
+          agent: buildSingleStepAgentDefinition({
+            id: "step-2",
             systemPrompt: "",
             inferencePreferences: [],
             toolFactories: [],
@@ -229,7 +244,14 @@ test("a transiently unbuildable provider is retried every boot and never quarant
     version: 1,
     agentAddress,
     definitionId: "def_1",
-    sources: { "step-1": [makeSource("unbuildable")] },
+    // `step-1`'s unbuildable source throws before `step-2` is ever
+    // consulted -- `step-2` only needs to be present to satisfy
+    // `validateWorkflowProjection`'s "sources covers every stepOrder
+    // entry" invariant for this two-step definition.
+    sources: {
+      "step-1": [makeSource("unbuildable")],
+      "step-2": [makeSource("buildable")],
+    },
     approvedWireHash: "d".repeat(64),
     sourceRef: SOURCE_REF,
   };
@@ -300,7 +322,10 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
     // "transient" by the boot loop's default. What matters for this test
     // is only that this record's own restore is attempted every boot,
     // independent of the broken sibling record.
-    sources: { "step-1": [makeSource("buildable")] },
+    sources: {
+      "step-1": [makeSource("buildable")],
+      "step-2": [makeSource("buildable")],
+    },
     approvedWireHash: "d".repeat(64),
     sourceRef: SOURCE_REF,
   };
