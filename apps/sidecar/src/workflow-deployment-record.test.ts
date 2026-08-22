@@ -4,8 +4,12 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  RESTORE_QUARANTINE_THRESHOLD,
+  clearWorkflowDeploymentRestoreFailure,
+  isWorkflowDeploymentRestoreQuarantined,
   markWorkflowDeploymentRecordParked,
   readWorkflowDeploymentRecord,
+  recordWorkflowDeploymentRestoreFailure,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
@@ -141,5 +145,145 @@ describe("scanWorkflowDeploymentRecords reaps pre-cutover records", () => {
     expect(scanned).toHaveLength(0);
     // Still on disk -- never silently eaten.
     await fs.access(filePath);
+  });
+});
+
+describe("recordWorkflowDeploymentRestoreFailure", () => {
+  test("starts a kind's counter at 1 and persists reason/timestamp", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
+
+    const updated = await recordWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      baseRecord,
+      { kind: "permanent", reason: "address derives a different slug" },
+    );
+
+    expect(updated.restoreFailure).toEqual({
+      kind: "permanent",
+      attempts: 1,
+      reason: "address derives a different slug",
+      lastAttemptAt: updated.restoreFailure?.lastAttemptAt ?? "",
+    });
+    const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_1");
+    expect(onDisk?.restoreFailure?.attempts).toBe(1);
+  });
+
+  test("increments the counter across repeated failures of the same kind", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
+
+    let record = baseRecord;
+    for (let i = 0; i < 3; i++) {
+      record = await recordWorkflowDeploymentRestoreFailure(
+        dataDir,
+        "dep_1",
+        record,
+        { kind: "permanent", reason: "still malformed" },
+      );
+    }
+
+    expect(record.restoreFailure?.attempts).toBe(3);
+    expect(record.restoreFailure?.kind).toBe("permanent");
+  });
+
+  test("a kind change resets the counter rather than adding to the other kind's count", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
+
+    let record = await recordWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      baseRecord,
+      { kind: "permanent", reason: "malformed" },
+    );
+    record = await recordWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      record,
+      { kind: "permanent", reason: "still malformed" },
+    );
+    expect(record.restoreFailure?.attempts).toBe(2);
+
+    record = await recordWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      record,
+      { kind: "transient", reason: "provider not registered" },
+    );
+
+    expect(record.restoreFailure?.kind).toBe("transient");
+    expect(record.restoreFailure?.attempts).toBe(1);
+  });
+});
+
+describe("clearWorkflowDeploymentRestoreFailure", () => {
+  test("drops restoreFailure after a successful restore", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
+    const failed = await recordWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      baseRecord,
+      { kind: "transient", reason: "provider not registered" },
+    );
+
+    await clearWorkflowDeploymentRestoreFailure(dataDir, "dep_1", failed);
+
+    const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_1");
+    expect(onDisk?.restoreFailure).toBeUndefined();
+  });
+
+  test("is a no-op when there is no failure to clear", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
+
+    await clearWorkflowDeploymentRestoreFailure(dataDir, "dep_1", baseRecord);
+
+    const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_1");
+    expect(onDisk?.agentAddress).toBe(baseRecord.agentAddress);
+  });
+});
+
+describe("isWorkflowDeploymentRestoreQuarantined", () => {
+  test("is false below the threshold and true at or above it, for permanent failures only", () => {
+    const belowThreshold: WorkflowDeploymentRecord = {
+      ...baseRecord,
+      restoreFailure: {
+        kind: "permanent",
+        attempts: RESTORE_QUARANTINE_THRESHOLD - 1,
+        reason: "malformed",
+        lastAttemptAt: new Date().toISOString(),
+      },
+    };
+    const atThreshold: WorkflowDeploymentRecord = {
+      ...baseRecord,
+      restoreFailure: {
+        kind: "permanent",
+        attempts: RESTORE_QUARANTINE_THRESHOLD,
+        reason: "malformed",
+        lastAttemptAt: new Date().toISOString(),
+      },
+    };
+    const transientAtSameCount: WorkflowDeploymentRecord = {
+      ...baseRecord,
+      restoreFailure: {
+        kind: "transient",
+        attempts: RESTORE_QUARANTINE_THRESHOLD + 5,
+        reason: "provider not registered",
+        lastAttemptAt: new Date().toISOString(),
+      },
+    };
+
+    expect(isWorkflowDeploymentRestoreQuarantined(belowThreshold)).toBe(false);
+    expect(isWorkflowDeploymentRestoreQuarantined(atThreshold)).toBe(true);
+    expect(isWorkflowDeploymentRestoreQuarantined(baseRecord)).toBe(false);
+    // A transient failure never quarantines, no matter how high its own
+    // counter climbs -- it is tracked on a separate counter from the
+    // permanent one.
+    expect(isWorkflowDeploymentRestoreQuarantined(transientAtSameCount)).toBe(
+      false,
+    );
   });
 });
