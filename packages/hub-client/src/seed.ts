@@ -521,6 +521,14 @@ async function plantDefaultSkills(
       },
       cookies,
     );
+    if (created.status === 409) {
+      // The by-name GET above missed a row that the create route still
+      // considers a conflict (an inherited/other-scope row, or a race
+      // with a concurrent seed pass) — "already exists" is a skip, not
+      // a fatal error, exactly like every other seed step's 409.
+      log(`skill ${skill.name} already exists (skipped)`);
+      continue;
+    }
     if (created.status !== 201) {
       throw new CliError(
         `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
