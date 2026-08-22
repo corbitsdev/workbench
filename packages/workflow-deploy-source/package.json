@@ -1,0 +1,28 @@
+{
+  "name": "@corbits/workflow-deploy-source",
+  "private": true,
+  "description": "Durable, hub-side record of a native workflow's deploy source (WorkflowDefinitionSource: an asset commit or a registry name@range pin), for every sidecar placement — so a deployment can be recreated from Postgres alone, with nothing owed to the sidecar's local disk.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "0.3.0",
+    "@intx/types": "0.3.0",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
