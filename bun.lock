@@ -68,6 +68,7 @@
         "@corbits/url-path": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
+        "@corbits/workflow-deploy-source": "workspace:*",
         "@corbits/workflow-freeze": "workspace:*",
         "@corbits/workflow-source": "workspace:*",
         "@intx/authz": "0.3.0",
@@ -899,7 +900,7 @@
     },
     "packages/jimmy-agent": {
       "name": "@corbits/jimmy-agent",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "0.3.0",
         "@intx/types": "0.3.0",
@@ -1190,7 +1191,7 @@
     },
     "packages/scout-agent": {
       "name": "@corbits/scout-agent",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "0.3.0",
         "@intx/types": "0.3.0",
@@ -1524,6 +1525,22 @@
         "@corbits/workflow-freeze": "workspace:*",
         "@types/bun": "catalog:",
         "@workbench/connections": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/workflow-deploy-source": {
+      "name": "@corbits/workflow-deploy-source",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -2226,6 +2243,8 @@
     "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
+
+    "@corbits/workflow-deploy-source": ["@corbits/workflow-deploy-source@workspace:packages/workflow-deploy-source"],
 
     "@corbits/workflow-freeze": ["@corbits/workflow-freeze@workspace:packages/workflow-freeze"],
 
